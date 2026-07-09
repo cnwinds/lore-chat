@@ -1,4 +1,6 @@
+# Virtual environment (do not commit)
 .venv/
+.venv
 .pytest_cache/
 __pycache__/
 *.pyc

@@ -1,0 +1,22 @@
+# Python virtual environments
+.venv/
+**/.venv/
+backend/.venv/
+
+# Local runtime data
+backend/knowledge/
+**/.pytest_cache/
+__pycache__/
+*.pyc
+
+# Secrets
+.env
+backend/.env
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
+# OS / IDE
+.DS_Store
+Thumbs.db
