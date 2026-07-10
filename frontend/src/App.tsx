@@ -7,6 +7,7 @@ import type { SourceRef } from "./api";
 
 export default function App() {
   const [sidebarRefreshKey, setSidebarRefreshKey] = useState(0);
+  const [docRefreshKey, setDocRefreshKey] = useState(0);
   const [previewPath, setPreviewPath] = useState<string | null>(null);
   const [highlightText, setHighlightText] = useState<string | undefined>();
   const [snippetSource, setSnippetSource] = useState<Extract<
@@ -19,6 +20,24 @@ export default function App() {
 
   function refreshSidebar() {
     setSidebarRefreshKey((k) => k + 1);
+  }
+
+  /** 知识库内容变更：刷新目录树，并在需要时重载当前预览文档 */
+  function refreshKb(changedPath?: string) {
+    refreshSidebar();
+    if (
+      previewPath &&
+      (!changedPath ||
+        changedPath === previewPath ||
+        previewPath.startsWith(`${changedPath}/`))
+    ) {
+      setDocRefreshKey((k) => k + 1);
+    }
+  }
+
+  function handleConversationCreated(id: string) {
+    setActiveConversationId(id);
+    refreshSidebar();
   }
 
   function openDocPreview(path: string, excerpt?: string) {
@@ -52,8 +71,9 @@ export default function App() {
   const chatProps = {
     conversationId: activeConversationId,
     previewPath,
-    onConversationCreated: setActiveConversationId,
+    onConversationCreated: handleConversationCreated,
     onSidebarRefresh: refreshSidebar,
+    onKbChanged: refreshKb,
     onOpenSource: handleOpenSource,
     onOpenDoc: openDocPreview,
   };
@@ -81,6 +101,7 @@ export default function App() {
         <aside className="doc-panel">
           <DocViewer
             path={previewPath}
+            refreshKey={docRefreshKey}
             highlightText={highlightText}
             mode="panel"
             onClose={closeDocPreview}

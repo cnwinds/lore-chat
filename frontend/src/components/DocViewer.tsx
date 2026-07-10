@@ -4,12 +4,19 @@ import { MarkdownContent } from "./MarkdownContent";
 
 type Props = {
   path: string;
+  refreshKey?: number;
   highlightText?: string;
   mode?: "panel" | "page";
   onClose: () => void;
 };
 
-export function DocViewer({ path, highlightText, mode = "panel", onClose }: Props) {
+export function DocViewer({
+  path,
+  refreshKey = 0,
+  highlightText,
+  mode = "panel",
+  onClose,
+}: Props) {
   const [doc, setDoc] = useState<DocContent | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -19,12 +26,16 @@ export function DocViewer({ path, highlightText, mode = "panel", onClose }: Prop
     let cancelled = false;
     setLoading(true);
     setError(null);
+    setDoc(null);
     getDoc(path)
       .then((d) => {
         if (!cancelled) setDoc(d);
       })
       .catch((e) => {
-        if (!cancelled) setError(e instanceof Error ? e.message : "加载失败");
+        if (!cancelled) {
+          setDoc(null);
+          setError(e instanceof Error ? e.message : "加载失败");
+        }
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -32,7 +43,7 @@ export function DocViewer({ path, highlightText, mode = "panel", onClose }: Prop
     return () => {
       cancelled = true;
     };
-  }, [path]);
+  }, [path, refreshKey]);
 
   useEffect(() => {
     if (!highlightText || loading || !doc || !bodyRef.current) return;

@@ -25,9 +25,16 @@ type Props = {
   previewPath?: string | null;
   onConversationCreated?: (id: string) => void;
   onSidebarRefresh?: () => void;
+  onKbChanged?: (changedPath?: string) => void;
   onOpenSource?: (src: SourceRef) => void;
   onOpenDoc?: (path: string, excerpt?: string) => void;
 };
+
+function kbPathFromToolResult(data: Record<string, unknown>): string | undefined {
+  const sources = data.sources as SourceRef[] | undefined;
+  const kb = sources?.find((s) => s.type === "kb");
+  return kb?.path;
+}
 
 const INPUT_MIN_HEIGHT = 34;
 const INPUT_MAX_HEIGHT = 160;
@@ -82,6 +89,7 @@ export function Chat({
   previewPath,
   onConversationCreated,
   onSidebarRefresh,
+  onKbChanged,
   onOpenSource,
   onOpenDoc,
 }: Props) {
@@ -247,8 +255,15 @@ export function Chat({
           return msg;
         });
 
-        if (event === "tool_result" && data.tool === "write_kb") {
+        if (event === "done") {
           onSidebarRefresh?.();
+        }
+        if (event === "tool_result") {
+          if (data.tool === "write_kb") {
+            onKbChanged?.(kbPathFromToolResult(data));
+          } else if (data.tool === "delete_kb") {
+            onKbChanged?.();
+          }
         }
       }
     } catch (err) {
@@ -274,7 +289,7 @@ export function Chat({
     choiceLabel: string,
   ) {
     setMsgs((prev) => markToolBlockResolved(prev, blockId, choiceLabel));
-    onSidebarRefresh?.();
+    onKbChanged?.(result.rel_path ?? undefined);
 
     if (result.status === "continue" && result.continue_prompt) {
       void runAgentStream(result.continue_prompt, choiceLabel);
@@ -319,7 +334,7 @@ export function Chat({
       const cid = await ensureConversationId();
       await appendConversationMessages(cid, [assistantMsg]);
       setMsgs((m) => [...m, assistantMsg]);
-      onSidebarRefresh?.();
+      onKbChanged?.(r.attachment);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "上传失败";
       setMsgs((m) => [...m, { role: "assistant", text: `错误：${msg}` }]);
