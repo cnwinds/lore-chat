@@ -76,6 +76,54 @@ async def test_orchestrator_emits_timeline_events(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_orchestrator_tool_result_includes_search_query(tmp_path):
+    orchestrator = _make_orchestrator(
+        tmp_path,
+        tool_responses=[
+            {
+                "content": None,
+                "tool_calls": [
+                    ToolCall(id="1", name="search_kb", arguments={"query": "docker 日志"}),
+                ],
+            },
+            {"content": "结论", "tool_calls": []},
+        ],
+    )
+    events = []
+    async for ev in orchestrator.run("问题", mode="no_write"):
+        events.append(ev)
+
+    tool_result_data = None
+    for ev in events:
+        if ev.startswith("event: tool_result\n"):
+            tool_result_data = json.loads(ev.split("data: ", 1)[1].strip())
+            break
+    assert tool_result_data is not None
+    assert tool_result_data["query"] == "docker 日志"
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_passes_conversation_history(tmp_path):
+    orchestrator = _make_orchestrator(
+        tmp_path,
+        tool_responses=[{"content": "好的", "tool_calls": []}],
+    )
+    history = [
+        {"role": "user", "content": "Claude Opus 是什么"},
+        {"role": "assistant", "content": "Opus 是 Anthropic 的旗舰模型。"},
+    ]
+    async for _ in orchestrator.run("那 4.8 呢？", history=history):
+        pass
+
+    llm = orchestrator.llm
+    assert llm.calls
+    messages = llm.calls[-1]["messages"]
+    assert messages[0]["role"] == "system"
+    assert messages[1:3] == history
+    assert messages[-1] == {"role": "user", "content": "那 4.8 呢？"}
+
+
+@pytest.mark.asyncio
 async def test_orchestrator_parallel_batch(tmp_path):
     orchestrator = _make_orchestrator(
         tmp_path,

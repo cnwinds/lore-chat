@@ -74,6 +74,9 @@ class _TimelineAccumulator:
                 "ts": data["ts"],
                 "status": "running",
             }
+            inp = data.get("input")
+            if isinstance(inp, dict) and inp.get("query"):
+                block["query"] = inp["query"]
             self._tools[data["id"]] = block
             if self._active_parallel:
                 self._parallel[self._active_parallel]["children"].append(block)
@@ -91,6 +94,8 @@ class _TimelineAccumulator:
                     block["content"] = data["content"]
                 if data.get("duration_ms") is not None:
                     block["duration_ms"] = data["duration_ms"]
+                if data.get("query"):
+                    block["query"] = data["query"]
                 for key in ("question_id", "question", "options", "multi_select"):
                     if data.get(key) is not None:
                         block[key] = data[key]
@@ -231,11 +236,15 @@ async def chat(body: ChatBody, request: Request):
     async def event_generator():
         acc = _TimelineAccumulator()
         assistant_ts = now_ts()
+        history: list[dict] = []
+        if body.conversation_id:
+            history = c.conversations.llm_history(c.conversations.get(body.conversation_id))
         try:
             async for ev in c.agent.run(
                 body.text,
                 mode="default",
                 active_doc_path=body.active_doc_path,
+                history=history,
             ):
                 yield ev
                 _accumulate_timeline(acc, ev)

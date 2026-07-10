@@ -87,3 +87,49 @@ def test_persistence_across_instances(tmp_path):
     store.append_exchange(cid, "hi", {"role": "assistant", "text": "hello"})
     store2 = ConversationStore(path)
     assert len(store2.get(cid)["messages"]) == 2
+
+
+def test_llm_history_from_timeline(tmp_path):
+    store = ConversationStore(tmp_path / "c.json")
+    cid = store.create()
+    store.append_exchange(
+        cid,
+        "第一轮问题",
+        {
+            "role": "assistant",
+            "timeline": [
+                {"type": "tool", "tool": "search_kb", "summary": "找到 1 条"},
+                {"type": "text", "content": "第一轮回答"},
+            ],
+        },
+    )
+    store.append_exchange(
+        cid,
+        "追问一下",
+        {"role": "assistant", "text": "第二轮回答"},
+    )
+    history = ConversationStore.llm_history(store.get(cid))
+    assert history == [
+        {"role": "user", "content": "第一轮问题"},
+        {"role": "assistant", "content": "第一轮回答"},
+        {"role": "user", "content": "追问一下"},
+        {"role": "assistant", "content": "第二轮回答"},
+    ]
+
+
+def test_llm_history_truncates_by_turns(tmp_path):
+    store = ConversationStore(tmp_path / "c.json")
+    cid = store.create()
+    for i in range(3):
+        store.append_exchange(
+            cid,
+            f"问题{i}",
+            {"role": "assistant", "text": f"回答{i}"},
+        )
+    history = ConversationStore.llm_history(store.get(cid), max_turns=2)
+    assert history == [
+        {"role": "user", "content": "问题1"},
+        {"role": "assistant", "content": "回答1"},
+        {"role": "user", "content": "问题2"},
+        {"role": "assistant", "content": "回答2"},
+    ]

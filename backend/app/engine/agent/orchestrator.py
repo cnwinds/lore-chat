@@ -42,6 +42,10 @@ def _emit_tool_result(tc: ToolCall, out: dict, duration_ms: int) -> str:
         for key in ("question_id", "question", "options", "multi_select"):
             if key in out:
                 extra[key] = out[key]
+    elif tc.name in ("search_kb", "web_search"):
+        q = tc.arguments.get("query")
+        if isinstance(q, str) and q.strip():
+            extra["query"] = q.strip()
     return tool_result(
         tc.id,
         tc.name,
@@ -81,6 +85,7 @@ class AgentOrchestrator:
         *,
         mode: str = "default",
         active_doc_path: str | None = None,
+        history: list[dict] | None = None,
     ) -> AsyncIterator[str]:
         if active_doc_path:
             user_text = (
@@ -89,8 +94,10 @@ class AgentOrchestrator:
         start = time.monotonic()
         messages: list[dict] = [
             {"role": "system", "content": build_system_prompt(mode)},
-            {"role": "user", "content": user_text},
         ]
+        if history:
+            messages.extend(history)
+        messages.append({"role": "user", "content": user_text})
         all_sources: list[dict] = []
         tool_call_count = 0
 

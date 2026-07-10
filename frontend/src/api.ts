@@ -63,6 +63,12 @@ export type SourceRef =
       snippet: string;
     };
 
+function toolQueryFromInput(input: unknown): string | undefined {
+  if (!input || typeof input !== "object" || !("query" in input)) return undefined;
+  const q = (input as { query?: unknown }).query;
+  return typeof q === "string" && q.trim() ? q.trim() : undefined;
+}
+
 export type TimelineBlock =
   | {
       type: "tool";
@@ -71,6 +77,8 @@ export type TimelineBlock =
       label: string;
       ts: string;
       status: "running" | "done";
+      /** 检索/搜索关键词（search_kb、web_search） */
+      query?: string;
       summary?: string;
       sources?: SourceRef[];
       content?: string;
@@ -304,6 +312,7 @@ export function updateTimeline(
   data: Record<string, unknown>,
 ): TimelineBlock[] {
   if (event === "tool_start") {
+    const query = toolQueryFromInput(data.input);
     const toolBlock: TimelineBlock = {
       type: "tool",
       id: data.id as string,
@@ -311,6 +320,7 @@ export function updateTimeline(
       label: (data.label as string) || TOOL_LABELS[data.tool as string] || (data.tool as string),
       ts: data.ts as string,
       status: "running",
+      ...(query ? { query } : {}),
     };
     const parallelIdx = findActiveParallelIndex(timeline);
     if (parallelIdx >= 0) {
@@ -333,6 +343,9 @@ export function updateTimeline(
       ...(data.content ? { content: data.content as string } : {}),
       ...(data.duration_ms !== undefined
         ? { duration_ms: data.duration_ms as number }
+        : {}),
+      ...(typeof data.query === "string" && data.query.trim()
+        ? { query: (data.query as string).trim() }
         : {}),
       ...(data.question_id
         ? { question_id: data.question_id as string }

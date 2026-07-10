@@ -108,6 +108,50 @@ class ConversationStore:
         self._write(data)
 
     @staticmethod
+    def _assistant_content(msg: dict) -> str:
+        if msg.get("text"):
+            return str(msg["text"]).strip()
+        parts: list[str] = []
+        for block in msg.get("timeline") or []:
+            if block.get("type") == "text" and block.get("content"):
+                part = str(block["content"]).strip()
+                if part:
+                    parts.append(part)
+        return "\n\n".join(parts)
+
+    @classmethod
+    def llm_history(
+        cls,
+        conv: dict,
+        *,
+        max_turns: int = 20,
+        max_chars: int = 32000,
+    ) -> list[dict]:
+        """将已保存的对话转为 LLM 多轮 messages（不含本轮尚未保存的用户消息）。"""
+        candidates: list[dict] = []
+        for msg in conv.get("messages", []):
+            role = msg.get("role")
+            if role == "user":
+                text = (msg.get("text") or "").strip()
+                if text:
+                    candidates.append({"role": "user", "content": text})
+            elif role == "assistant":
+                text = cls._assistant_content(msg)
+                if text:
+                    candidates.append({"role": "assistant", "content": text})
+
+        user_indices = [i for i, m in enumerate(candidates) if m["role"] == "user"]
+        if len(user_indices) > max_turns:
+            candidates = candidates[user_indices[-max_turns] :]
+
+        while candidates:
+            total = sum(len(m["content"]) for m in candidates)
+            if total <= max_chars:
+                break
+            candidates.pop(0)
+        return candidates
+
+    @staticmethod
     def context_excerpt(conv: dict, *, max_chars: int = 4000) -> str:
         lines: list[str] = []
         for msg in conv.get("messages", [])[-8:]:
@@ -115,13 +159,12 @@ class ConversationStore:
             if role == "user" and msg.get("text"):
                 lines.append(f"用户：{msg['text']}")
             elif role == "assistant":
-                if msg.get("text"):
-                    lines.append(f"助手：{msg['text']}")
+                text = ConversationStore._assistant_content(msg)
+                if text:
+                    lines.append(f"助手：{text[:800]}")
                 elif msg.get("timeline"):
                     for block in msg["timeline"]:
-                        if block.get("type") == "text" and block.get("content"):
-                            lines.append(f"助手：{block['content'][:800]}")
-                        elif block.get("type") == "tool" and block.get("tool") == "ask_user":
+                        if block.get("type") == "tool" and block.get("tool") == "ask_user":
                             q = block.get("question") or block.get("summary") or ""
                             if q:
                                 lines.append(f"助手征询：{q}")

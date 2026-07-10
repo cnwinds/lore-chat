@@ -29,10 +29,18 @@ type Props = {
 
 /** 折叠时单行摘要：工具类型 + 关键结果 */
 function toolOneLiner(block: Extract<TimelineBlock, { type: "tool" }>): string | undefined {
-  if (block.status === "running") return "执行中…";
+  if (block.status === "running") {
+    return block.query || "执行中…";
+  }
   if (block.tool === "fetch_url") {
     const web = block.sources?.find((s) => s.type === "web");
     if (web) return web.url;
+  }
+  if (
+    (block.tool === "web_search" || block.tool === "search_kb") &&
+    block.query
+  ) {
+    return block.summary ? `${block.query} · ${block.summary}` : block.query;
   }
   return block.summary;
 }
@@ -107,6 +115,11 @@ function ToolBlockView({
         )}
         <span className="timeline-tool-chevron">{open ? "▾" : "▸"}</span>
       </button>
+      {open &&
+        (block.tool === "web_search" || block.tool === "search_kb") &&
+        block.query && (
+          <div className="timeline-tool-query">{block.query}</div>
+        )}
       {open && block.status === "done" && block.sources && block.sources.length > 0 && (
         <div className="timeline-tool-sources timeline-tool-sources-inline">
           {block.sources.map((src, i) => (
