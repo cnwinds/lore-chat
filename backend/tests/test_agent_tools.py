@@ -33,6 +33,7 @@ def _make_registry(tmp_path, chat_responses=None):
 def test_can_parallelize_read_only():
     assert can_parallelize(["search_kb", "fetch_url"]) is True
     assert can_parallelize(["search_kb", "write_kb"]) is False
+    assert can_parallelize(["search_kb", "delete_kb"]) is False
 
 
 @pytest.mark.asyncio
@@ -59,4 +60,38 @@ async def test_read_doc_not_found(tmp_path):
     result = await registry.execute("read_doc", {"path": "nope.md"})
     assert "不存在" in result["summary"]
     assert result.get("error")
+
+
+@pytest.mark.asyncio
+async def test_delete_kb_doc(tmp_path):
+    registry, repo, idx = _make_registry(tmp_path)
+    repo.write_doc(
+        "projects/mini-app/version-todo.md",
+        {"title": "待办"},
+        "待办内容\n",
+        commit_msg="seed",
+    )
+    idx.reindex_doc("projects/mini-app/version-todo.md", "待办内容\n")
+    result = await registry.execute(
+        "delete_kb", {"path": "projects/mini-app/version-todo.md"}
+    )
+    assert "已删除" in result["summary"]
+    assert result["deleted_paths"] == ["projects/mini-app/version-todo.md"]
+    with pytest.raises(FileNotFoundError):
+        repo.read_doc("projects/mini-app/version-todo.md")
+
+
+@pytest.mark.asyncio
+async def test_delete_kb_directory(tmp_path):
+    registry, repo, idx = _make_registry(tmp_path)
+    repo.write_doc(
+        "projects/mini-app/version-todo.md",
+        {"title": "待办"},
+        "待办内容\n",
+        commit_msg="seed",
+    )
+    idx.reindex_doc("projects/mini-app/version-todo.md", "待办内容\n")
+    result = await registry.execute("delete_kb", {"path": "projects/mini-app/"})
+    assert "已删除" in result["summary"]
+    assert not (repo.root / "projects" / "mini-app").exists()
 

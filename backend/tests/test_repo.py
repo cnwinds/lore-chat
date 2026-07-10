@@ -57,3 +57,30 @@ def test_log_change_appends_changelog(repo):
 def test_read_missing_doc_raises(repo):
     with pytest.raises(FileNotFoundError):
         repo.read_doc("nope.md")
+
+
+def test_delete_doc(repo):
+    repo.write_doc("projects/a/todo.md", {"title": "A"}, "body\n", commit_msg="add")
+    deleted = repo.delete_path("projects/a/todo.md", commit_msg="delete")
+    assert deleted == ["projects/a/todo.md"]
+    with pytest.raises(FileNotFoundError):
+        repo.read_doc("projects/a/todo.md")
+    assert "projects/a/todo.md" not in repo.list_tree()
+
+
+def test_delete_directory(repo):
+    repo.write_doc("projects/mini-app/a.md", {"title": "A"}, "a\n", commit_msg="add")
+    repo.write_doc("projects/mini-app/b.md", {"title": "B"}, "b\n", commit_msg="add")
+    deleted = repo.delete_path("projects/mini-app", commit_msg="delete dir")
+    assert set(deleted) == {"projects/mini-app/a.md", "projects/mini-app/b.md"}
+    assert not (repo.root / "projects" / "mini-app").exists()
+
+
+def test_delete_protected_path_raises(repo):
+    with pytest.raises(ValueError, match="禁止删除"):
+        repo.delete_path(".kb/changelog.md", commit_msg="nope")
+
+
+def test_delete_missing_raises(repo):
+    with pytest.raises(FileNotFoundError):
+        repo.delete_path("nope.md", commit_msg="nope")

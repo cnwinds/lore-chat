@@ -1,113 +1,224 @@
 import { useState } from "react";
-import type { SourceRef, TimelineBlock } from "../api";
+import {
+  formatDuration,
+  type CumulativeInfo,
+  type IngestResult,
+  type QuestionOption,
+  type SourceRef,
+  type TimelineBlock,
+} from "../api";
 import { MarkdownContent } from "./MarkdownContent";
+import { PendingQuestion } from "./PendingQuestion";
 import { SourceChip } from "./SourceChip";
 
 type Props = {
   block: TimelineBlock;
+  cumulative: CumulativeInfo;
+  liveElapsedMs?: number;
+  inParallel?: boolean;
+  durationBold?: boolean;
+  previewPath?: string | null;
   onOpenSource: (src: SourceRef) => void;
+  conversationId?: string | null;
+  onQuestionResolved?: (
+    blockId: string,
+    result: IngestResult,
+    choiceLabel: string,
+  ) => void;
 };
 
-function formatTs(ts: string): string {
-  try {
-    const d = new Date(ts);
-    if (Number.isNaN(d.getTime())) return "";
-    return d.toLocaleTimeString("zh-CN", {
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    });
-  } catch {
-    return "";
+/** 折叠时单行摘要：工具类型 + 关键结果 */
+function toolOneLiner(block: Extract<TimelineBlock, { type: "tool" }>): string | undefined {
+  if (block.status === "running") return "执行中…";
+  if (block.tool === "fetch_url") {
+    const web = block.sources?.find((s) => s.type === "web");
+    if (web) return web.url;
   }
+  return block.summary;
+}
+
+/** 并行组内各工具步耗时的最大值 */
+function maxParallelDuration(children: TimelineBlock[]): number | undefined {
+  let max: number | undefined;
+  for (const child of children) {
+    if (child.type === "tool" && child.duration_ms !== undefined) {
+      max = max === undefined ? child.duration_ms : Math.max(max, child.duration_ms);
+    }
+  }
+  return max;
 }
 
 function ToolBlockView({
   block,
+  liveElapsedMs,
+  durationBold,
   onOpenSource,
+  previewPath,
+  conversationId,
+  onQuestionResolved,
 }: {
   block: Extract<TimelineBlock, { type: "tool" }>;
+  liveElapsedMs?: number;
+  durationBold?: boolean;
   onOpenSource: (src: SourceRef) => void;
+  previewPath?: string | null;
+  conversationId?: string | null;
+  onQuestionResolved?: (
+    blockId: string,
+    result: IngestResult,
+    choiceLabel: string,
+  ) => void;
 }) {
-  const [open, setOpen] = useState(block.status === "running");
-  const time = formatTs(block.ts);
+  const needsChoice =
+    block.tool === "ask_user" &&
+    block.status === "done" &&
+    !!block.question_id &&
+    !!block.options?.length;
+  const [open, setOpen] = useState(block.status === "running" || needsChoice);
+  const oneLiner = toolOneLiner(block);
+  const displayMs =
+    block.status === "running" && liveElapsedMs !== undefined
+      ? liveElapsedMs
+      : block.duration_ms;
 
   return (
     <div className={`timeline-tool timeline-tool-${block.status}`}>
       <button
         type="button"
-        className="timeline-tool-header"
+        className={`timeline-tool-header${open ? "" : " timeline-tool-header-collapsed"}`}
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
+        title={!open && oneLiner ? `${block.label}  ${oneLiner}` : undefined}
       >
         <span className="timeline-tool-label">
-          {block.status === "running" ? "⏳" : "✓"} {block.label}
+          <span className="timeline-tool-name">
+            {block.status === "running" ? "⏳" : "✓"} {block.label}
+          </span>
+          {!open && oneLiner && (
+            <span className="timeline-tool-oneline">{oneLiner}</span>
+          )}
         </span>
-        {time && <span className="timeline-ts">{time}</span>}
-        {block.duration_ms !== undefined && (
-          <span className="timeline-duration">{block.duration_ms}ms</span>
+        {displayMs !== undefined && (
+          <span
+            className={`timeline-duration${durationBold ? " timeline-duration-bold" : ""}`}
+          >
+            {formatDuration(displayMs)}
+          </span>
         )}
         <span className="timeline-tool-chevron">{open ? "▾" : "▸"}</span>
       </button>
-      {open && (
-        <div className="timeline-tool-body">
-          {block.summary && <div className="timeline-tool-summary">{block.summary}</div>}
-          {block.sources && block.sources.length > 0 && (
-            <div className="timeline-tool-sources">
-              {block.sources.map((src, i) => (
-                <SourceChip
-                  key={`${src.type}-${i}`}
-                  source={src}
-                  onOpenSource={onOpenSource}
-                />
-              ))}
-            </div>
-          )}
+      {open && block.status === "done" && block.sources && block.sources.length > 0 && (
+        <div className="timeline-tool-sources timeline-tool-sources-inline">
+          {block.sources.map((src, i) => (
+            <SourceChip
+              key={`${src.type}-${i}`}
+              source={src}
+              active={src.type === "kb" && previewPath === src.path}
+              onOpen={onOpenSource}
+            />
+          ))}
         </div>
       )}
+      {open && block.content && block.tool === "fetch_url" && (
+        <div className="timeline-tool-body timeline-tool-content">
+          <MarkdownContent className="markdown-body chat-markdown">
+            {block.content}
+          </MarkdownContent>
+        </div>
+      )}
+      {open && block.summary && (
+        (block.tool === "write_kb" || !block.sources?.length) &&
+        block.tool !== "ask_user" && (
+        <div className="timeline-tool-body">
+          <div className="timeline-tool-summary">{block.summary}</div>
+        </div>
+        )
+      )}
+      {open &&
+        block.tool === "ask_user" &&
+        block.status === "done" &&
+        block.question_id &&
+        block.options &&
+        block.options.length > 0 && (
+          <div className="timeline-tool-body timeline-ask-user">
+            <PendingQuestion
+              question={{
+                id: block.question_id,
+                question: block.question || block.summary || "请选择",
+                options: block.options as QuestionOption[],
+                multi_select: block.multi_select,
+              }}
+              conversationId={conversationId}
+              resolvedLabel={block.choice_resolved}
+              onResolved={(result, choiceLabel) =>
+                onQuestionResolved?.(block.id, result, choiceLabel)
+              }
+            />
+          </div>
+        )}
     </div>
   );
 }
 
-export function TimelineBlockView({ block, onOpenSource }: Props) {
+export function TimelineBlockView({
+  block,
+  cumulative,
+  liveElapsedMs,
+  inParallel,
+  durationBold,
+  onOpenSource,
+  previewPath,
+  conversationId,
+  onQuestionResolved,
+}: Props) {
   if (block.type === "tool") {
-    return <ToolBlockView block={block} onOpenSource={onOpenSource} />;
+    return (
+      <ToolBlockView
+        block={block}
+        liveElapsedMs={liveElapsedMs}
+        durationBold={inParallel ? durationBold : true}
+        onOpenSource={onOpenSource}
+        previewPath={previewPath}
+        conversationId={conversationId}
+        onQuestionResolved={onQuestionResolved}
+      />
+    );
   }
 
   if (block.type === "parallel") {
-    const time = formatTs(block.ts);
+    const maxMs = maxParallelDuration(block.children);
     return (
       <div className="timeline-parallel">
-        <div className="timeline-parallel-header">
-          <span>检索资料</span>
-          {time && <span className="timeline-ts">{time}</span>}
-          {block.duration_ms !== undefined && (
-            <span className="timeline-duration">{block.duration_ms}ms</span>
-          )}
-        </div>
-        <div className="timeline-parallel-children">
-          {block.children.map((child, i) => (
-            <TimelineBlockView
-              key={
-                child.type === "tool"
-                  ? child.id
-                  : child.type === "parallel"
-                    ? child.batch_id
-                    : `text-${i}`
-              }
-              block={child}
-              onOpenSource={onOpenSource}
-            />
-          ))}
-        </div>
+        {block.children.map((child, i) => (
+          <TimelineBlockView
+            key={
+              child.type === "tool"
+                ? child.id
+                : child.type === "parallel"
+                  ? child.batch_id
+                  : `text-${i}`
+            }
+            block={child}
+            cumulative={cumulative}
+            liveElapsedMs={liveElapsedMs}
+            inParallel
+            durationBold={
+              child.type === "tool" &&
+              maxMs !== undefined &&
+              child.duration_ms === maxMs
+            }
+            onOpenSource={onOpenSource}
+            previewPath={previewPath}
+            conversationId={conversationId}
+            onQuestionResolved={onQuestionResolved}
+          />
+        ))}
       </div>
     );
   }
 
-  const time = formatTs(block.ts);
   return (
     <div className="timeline-text">
-      {time && <span className="timeline-ts timeline-text-ts">{time}</span>}
       <MarkdownContent className="markdown-body chat-markdown">
         {block.content}
       </MarkdownContent>

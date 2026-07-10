@@ -29,7 +29,8 @@ def test_second_similar_note_merges(tmp_path):
             "reason": "同为 docker 命令",
         }
     )
-    llm = FakeLLMClient(chat_responses=["摘要1", d1, "摘要2", d2], embed_dim=8)
+    merged = "docker ps 查看容器\n\ndocker logs 查看日志\n"
+    llm = FakeLLMClient(chat_responses=["摘要1", d1, "摘要2", d2, merged], embed_dim=8)
     c = build_container(settings, llm=llm)
     c.organizer.ingest_text("docker ps 查看容器")
     c.organizer.ingest_text("docker logs 查看日志")

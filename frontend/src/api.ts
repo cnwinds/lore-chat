@@ -30,13 +30,15 @@ export type Question = {
   id: string;
   question: string;
   options: QuestionOption[];
+  multi_select?: boolean;
 };
 
 export type IngestResult = {
-  status: "saved" | "question" | string;
+  status: "saved" | "question" | "continue" | "acknowledged" | string;
   rel_path: string | null;
   question_id: string | null;
   message: string;
+  continue_prompt?: string | null;
 };
 
 export type ChatRecallResult = {
@@ -71,7 +73,13 @@ export type TimelineBlock =
       status: "running" | "done";
       summary?: string;
       sources?: SourceRef[];
+      content?: string;
       duration_ms?: number;
+      question_id?: string;
+      question?: string;
+      options?: QuestionOption[];
+      multi_select?: boolean;
+      choice_resolved?: string;
     }
   | {
       type: "parallel";
@@ -93,6 +101,23 @@ export type ChatMessage = {
   /** 本轮回复总耗时（毫秒），来自 SSE done 事件 */
   total_duration_ms?: number;
 };
+
+/** 提取消息可复制文本；助手仅含 timeline 中的结论文字 */
+export function getMessageCopyText(m: ChatMessage): string | null {
+  if (m.role === "user") {
+    const text = m.text?.trim();
+    return text || null;
+  }
+  if (m.timeline?.length) {
+    const parts = m.timeline
+      .filter((b): b is Extract<TimelineBlock, { type: "text" }> => b.type === "text")
+      .map((b) => b.content.trim())
+      .filter(Boolean);
+    if (parts.length) return parts.join("\n\n");
+  }
+  const text = m.text?.trim();
+  return text || null;
+}
 
 /** 将毫秒格式化为可读耗时 */
 export function formatDuration(ms: number): string {
@@ -142,6 +167,23 @@ export function computeCumulative(timeline: TimelineBlock[]): CumulativeInfo {
   return { toolCumulative, parallelCumulative };
 }
 
+/** 按 path/url 去重来源列表 */
+export function dedupeSources(sources: SourceRef[]): SourceRef[] {
+  const seen = new Set<string>();
+  const out: SourceRef[] = [];
+  for (const s of sources) {
+    const key =
+      s.type === "kb"
+        ? `kb:${s.path}`
+        : `${s.type}:${s.url}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      out.push(s);
+    }
+  }
+  return out;
+}
+
 export type ChatStreamEvent = { event: string; data: Record<string, unknown> };
 
 export const TOOL_LABELS: Record<string, string> = {
@@ -180,6 +222,7 @@ export async function chat(text: string, conversationId?: string | null) {
 export async function* chatStream(
   text: string,
   conversationId?: string | null,
+  activeDocPath?: string | null,
 ): AsyncGenerator<ChatStreamEvent> {
   const r = await fetch(`${BASE}/api/chat`, {
     method: "POST",
@@ -190,6 +233,7 @@ export async function* chatStream(
     body: JSON.stringify({
       text,
       conversation_id: conversationId ?? undefined,
+      active_doc_path: activeDocPath ?? undefined,
     }),
   });
   if (!r.ok) {
@@ -286,8 +330,19 @@ export function updateTimeline(
       status: "done",
       summary: (data.summary as string) || "",
       sources: (data.sources as SourceRef[]) || [],
+      ...(data.content ? { content: data.content as string } : {}),
       ...(data.duration_ms !== undefined
         ? { duration_ms: data.duration_ms as number }
+        : {}),
+      ...(data.question_id
+        ? { question_id: data.question_id as string }
+        : {}),
+      ...(data.question ? { question: data.question as string } : {}),
+      ...(data.options
+        ? { options: data.options as QuestionOption[] }
+        : {}),
+      ...(data.multi_select !== undefined
+        ? { multi_select: data.multi_select as boolean }
         : {}),
     }));
   }
@@ -381,11 +436,14 @@ export async function getQuestions() {
   return apiFetch<{ questions: Question[] }>("/api/questions");
 }
 
-export async function resolveQuestion(qid: string, choice: string) {
+export async function resolveQuestion(
+  qid: string,
+  body: { choice?: string; choices?: string[]; conversation_id?: string },
+) {
   return apiFetch<IngestResult>(`/api/questions/${qid}/resolve`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ choice }),
+    body: JSON.stringify(body),
   });
 }
 

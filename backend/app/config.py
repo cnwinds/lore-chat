@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     embed_api_key: str | None = None
 
     # Agent
-    agent_max_tool_calls: int = 8
+    agent_max_tool_calls: int = 100
     agent_parallel_tools: bool = True
     agent_max_parallel: int = 4
     fetch_url_timeout: int = 15

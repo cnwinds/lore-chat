@@ -29,13 +29,63 @@ _LIMIT_MSG = "（已达工具调用上限，以上为目前能给出的结论。
 _NON_SERIALIZABLE_KEYS = frozenset({"hits", "ingest_result"})
 
 
+def _tool_result_content(tool: str, out: dict) -> str | None:
+    if tool == "fetch_url":
+        markdown = out.get("markdown")
+        return markdown if markdown else None
+    return None
+
+
+def _emit_tool_result(tc: ToolCall, out: dict, duration_ms: int) -> str:
+    extra: dict = {}
+    if tc.name == "ask_user":
+        for key in ("question_id", "question", "options", "multi_select"):
+            if key in out:
+                extra[key] = out[key]
+    return tool_result(
+        tc.id,
+        tc.name,
+        out["summary"],
+        out.get("sources"),
+        duration_ms,
+        content=_tool_result_content(tc.name, out),
+        **extra,
+    )
+
+
+def _source_key(source: dict) -> str:
+    st = source.get("type")
+    if st == "kb":
+        return f"kb:{source.get('path')}"
+    return f"{st}:{source.get('url')}"
+
+
+def _extend_sources(all_sources: list[dict], new_sources: list[dict]) -> None:
+    seen = {_source_key(s) for s in all_sources}
+    for s in new_sources:
+        key = _source_key(s)
+        if key not in seen:
+            all_sources.append(s)
+            seen.add(key)
+
+
 class AgentOrchestrator:
     def __init__(self, settings: Settings, llm: LLMClient, tools: ToolRegistry):
         self.settings = settings
         self.llm = llm
         self.tools = tools
 
-    async def run(self, user_text: str, *, mode: str = "default") -> AsyncIterator[str]:
+    async def run(
+        self,
+        user_text: str,
+        *,
+        mode: str = "default",
+        active_doc_path: str | None = None,
+    ) -> AsyncIterator[str]:
+        if active_doc_path:
+            user_text = (
+                f"{user_text}\n\n[用户当前正在查看文档：{active_doc_path}]"
+            )
         start = time.monotonic()
         messages: list[dict] = [
             {"role": "system", "content": build_system_prompt(mode)},
@@ -45,7 +95,17 @@ class AgentOrchestrator:
         tool_call_count = 0
 
         while tool_call_count < self.settings.agent_max_tool_calls:
-            result = self.llm.chat_with_tools(messages, TOOL_DEFINITIONS, big=True)
+            # 流式消费：文字增量边到边发；最终轮携带完整 result（含 tool_calls）。
+            result: ChatWithToolsResult | None = None
+            for chunk in self.llm.stream_chat_with_tools(
+                messages, TOOL_DEFINITIONS, big=True
+            ):
+                if chunk.text_delta:
+                    yield text_delta(chunk.text_delta)
+                if chunk.result is not None:
+                    result = chunk.result
+            if result is None:
+                break
             if result.tool_calls:
                 turn_outputs: list[tuple[ToolCall, dict, int]] = []
                 batches = self._split_batches(result.tool_calls)
@@ -56,31 +116,28 @@ class AgentOrchestrator:
                         and self.settings.agent_parallel_tools
                         and can_parallelize(names)
                     ):
-                        async for ev, entry in self._run_parallel_batch(batch):
+                        async for ev, entry in self._run_parallel_batch(
+                            batch, active_doc_path=active_doc_path
+                        ):
                             yield ev
                             if entry is not None:
                                 turn_outputs.append(entry)
-                                all_sources.extend(entry[1].get("sources", []))
+                                _extend_sources(all_sources, entry[1].get("sources", []))
                     else:
                         for tc in batch:
                             yield tool_start(tc.id, tc.name, TOOL_LABELS[tc.name], tc.arguments)
-                            out, duration_ms = await self._execute_tool(tc)
-                            yield tool_result(
-                                tc.id,
-                                tc.name,
-                                out["summary"],
-                                out.get("sources"),
-                                duration_ms,
+                            out, duration_ms = await self._execute_tool(
+                                tc, active_doc_path=active_doc_path
                             )
+                            yield _emit_tool_result(tc, out, duration_ms)
                             turn_outputs.append((tc, out, duration_ms))
-                            all_sources.extend(out.get("sources", []))
+                            _extend_sources(all_sources, out.get("sources", []))
 
                 self._append_tool_turn(messages, result, turn_outputs)
                 tool_call_count += len(result.tool_calls)
                 continue
 
-            if result.content:
-                yield text_delta(result.content)
+            # 无工具调用：最终答复文字已在上面的流式循环中逐块发出
             break
         else:
             yield text_delta(_LIMIT_MSG)
@@ -112,14 +169,21 @@ class AgentOrchestrator:
         flush_parallel()
         return batches
 
-    async def _execute_tool(self, tc: ToolCall) -> tuple[dict, int]:
+    async def _execute_tool(
+        self, tc: ToolCall, *, active_doc_path: str | None = None
+    ) -> tuple[dict, int]:
         t0 = time.monotonic()
-        out = await self.tools.execute(tc.name, tc.arguments)
+        out = await self.tools.execute(
+            tc.name, tc.arguments, active_doc_path=active_doc_path
+        )
         duration_ms = int((time.monotonic() - t0) * 1000)
         return out, duration_ms
 
     async def _run_parallel_batch(
-        self, batch: list[ToolCall]
+        self,
+        batch: list[ToolCall],
+        *,
+        active_doc_path: str | None = None,
     ) -> AsyncIterator[tuple[str, tuple[ToolCall, dict, int] | None]]:
         batch_id = uuid.uuid4().hex[:8]
         batch_start = time.monotonic()
@@ -129,19 +193,15 @@ class AgentOrchestrator:
             yield tool_start(tc.id, tc.name, TOOL_LABELS[tc.name], tc.arguments), None
 
         async def run_one(tc: ToolCall) -> tuple[ToolCall, dict, int]:
-            out, duration_ms = await self._execute_tool(tc)
+            out, duration_ms = await self._execute_tool(
+                tc, active_doc_path=active_doc_path
+            )
             return tc, out, duration_ms
 
         tasks = [asyncio.create_task(run_one(tc)) for tc in batch]
         for coro in asyncio.as_completed(tasks):
             tc, out, duration_ms = await coro
-            yield tool_result(
-                tc.id,
-                tc.name,
-                out["summary"],
-                out.get("sources"),
-                duration_ms,
-            ), (tc, out, duration_ms)
+            yield _emit_tool_result(tc, out, duration_ms), (tc, out, duration_ms)
 
         batch_duration = int((time.monotonic() - batch_start) * 1000)
         yield parallel_batch_end(batch_id, batch_duration), None

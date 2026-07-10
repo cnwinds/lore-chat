@@ -13,12 +13,24 @@ def sse_event(event_type: str, data: dict) -> str:
 def tool_start(id, tool, label, input_data):
     return sse_event("tool_start", {"id": id, "tool": tool, "label": label, "input": input_data})
 
-def tool_result(id, tool, summary, sources=None, duration_ms=None, ts=None):
+def tool_result(
+    id,
+    tool,
+    summary,
+    sources=None,
+    duration_ms=None,
+    ts=None,
+    content=None,
+    **extra,
+):
     payload = {"id": id, "tool": tool, "summary": summary, "sources": sources or []}
     if duration_ms is not None:
         payload["duration_ms"] = duration_ms
     if ts:
         payload["ts"] = ts
+    if content:
+        payload["content"] = content
+    payload.update(extra)
     return sse_event("tool_result", payload)
 
 def parallel_batch_start(batch_id, tools):

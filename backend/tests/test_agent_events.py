@@ -12,6 +12,27 @@ def test_sse_event_format():
     assert "ts" in data
 
 
+def test_tool_result_with_content():
+    ev = tool_result("t1", "fetch_url", "Example", content="# Hello")
+    data = json.loads(ev.split("data: ", 1)[1].strip())
+    assert data["content"] == "# Hello"
+
+
+def test_tool_result_with_ask_user_fields():
+    ev = tool_result(
+        "t1",
+        "ask_user",
+        "等待用户选择",
+        question_id="q1",
+        question="请选择",
+        options=[{"id": "a", "label": "选项 A"}],
+        multi_select=False,
+    )
+    data = json.loads(ev.split("data: ", 1)[1].strip())
+    assert data["question_id"] == "q1"
+    assert data["options"][0]["label"] == "选项 A"
+
+
 def test_now_ts_has_timezone():
     ts = now_ts()
     assert "T" in ts

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
@@ -23,6 +24,14 @@ class ChatWithToolsResult:
     tool_calls: list[ToolCall] = field(default_factory=list)
 
 
+@dataclass
+class ChatStreamChunk:
+    """流式增量：text_delta 为逐块文字；final 轮携带完整 result（含 tool_calls）。"""
+
+    text_delta: str | None = None
+    result: ChatWithToolsResult | None = None
+
+
 @runtime_checkable
 class LLMClient(Protocol):
     def chat(self, messages: list[dict], *, big: bool = False, temperature: float = 0.2) -> str: ...
@@ -34,6 +43,14 @@ class LLMClient(Protocol):
         big: bool = True,
         temperature: float = 0.2,
     ) -> ChatWithToolsResult: ...
+    def stream_chat_with_tools(
+        self,
+        messages: list[dict],
+        tools: list[dict],
+        *,
+        big: bool = True,
+        temperature: float = 0.2,
+    ) -> Iterator[ChatStreamChunk]: ...
     def embed(self, texts: list[str]) -> list[list[float]]: ...
 
 
@@ -86,6 +103,65 @@ class OpenAILLMClient:
                 )
         return ChatWithToolsResult(content=msg.content, tool_calls=tool_calls)
 
+    def stream_chat_with_tools(
+        self,
+        messages: list[dict],
+        tools: list[dict],
+        *,
+        big: bool = True,
+        temperature: float = 0.2,
+    ) -> Iterator[ChatStreamChunk]:
+        client = self._big if big else self._small
+        model = self.settings.big_model if big else self.settings.small_model
+        kwargs: dict[str, Any] = {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature,
+            "stream": True,
+        }
+        if tools:
+            kwargs["tools"] = tools
+        stream = client.chat.completions.create(**kwargs)
+
+        content_parts: list[str] = []
+        # 按 index 跨块累积 tool_calls（OpenAI 流式把 name/arguments 分片发送）
+        tc_acc: dict[int, dict[str, Any]] = {}
+        for chunk in stream:
+            if not chunk.choices:
+                continue
+            delta = chunk.choices[0].delta
+            if delta.content:
+                content_parts.append(delta.content)
+                yield ChatStreamChunk(text_delta=delta.content)
+            for tcd in delta.tool_calls or []:
+                slot = tc_acc.setdefault(
+                    tcd.index, {"id": None, "name": None, "arguments": ""}
+                )
+                if tcd.id:
+                    slot["id"] = tcd.id
+                if tcd.function:
+                    if tcd.function.name:
+                        slot["name"] = tcd.function.name
+                    if tcd.function.arguments:
+                        slot["arguments"] += tcd.function.arguments
+
+        tool_calls: list[ToolCall] = []
+        for idx in sorted(tc_acc):
+            slot = tc_acc[idx]
+            if not slot["name"]:
+                continue
+            try:
+                args = json.loads(slot["arguments"] or "{}")
+            except json.JSONDecodeError:
+                args = {}
+            tool_calls.append(
+                ToolCall(id=slot["id"] or f"call_{idx}", name=slot["name"], arguments=args)
+            )
+        content = "".join(content_parts) or None
+        yield ChatStreamChunk(
+            result=ChatWithToolsResult(content=content, tool_calls=tool_calls)
+        )
+
     def embed(self, texts: list[str]) -> list[list[float]]:
         resp = self._embed.embeddings.create(model=self.settings.embed_model, input=texts)
         return [d.embedding for d in resp.data]
@@ -131,6 +207,20 @@ class FakeLLMClient:
                 tool_calls=list(entry.get("tool_calls") or []),
             )
         return ChatWithToolsResult(content="", tool_calls=[])
+
+    def stream_chat_with_tools(
+        self,
+        messages: list[dict],
+        tools: list[dict],
+        *,
+        big: bool = True,
+        temperature: float = 0.2,
+    ) -> Iterator[ChatStreamChunk]:
+        # 委托给 chat_with_tools，使子类（如 AgentFakeLLM）对其的重写依旧生效
+        result = self.chat_with_tools(messages, tools, big=big, temperature=temperature)
+        if result.content:
+            yield ChatStreamChunk(text_delta=result.content)
+        yield ChatStreamChunk(result=result)
 
     def embed(self, texts: list[str]) -> list[list[float]]:
         vecs = []

@@ -21,12 +21,15 @@ class AskBody(BaseModel):
 
 
 class ResolveBody(BaseModel):
-    choice: str
+    choice: str | None = None
+    choices: list[str] | None = None
+    conversation_id: str | None = None
 
 
 class ChatBody(BaseModel):
     text: str
     conversation_id: str | None = None
+    active_doc_path: str | None = None
 
 
 class AppendMessagesBody(BaseModel):
@@ -84,8 +87,13 @@ class _TimelineAccumulator:
                 block["status"] = "done"
                 block["summary"] = data.get("summary", "")
                 block["sources"] = data.get("sources") or []
+                if data.get("content"):
+                    block["content"] = data["content"]
                 if data.get("duration_ms") is not None:
                     block["duration_ms"] = data["duration_ms"]
+                for key in ("question_id", "question", "options", "multi_select"):
+                    if data.get(key) is not None:
+                        block[key] = data[key]
                 self.all_sources.extend(block["sources"])
 
         elif event_type == "parallel_batch_start":
@@ -224,7 +232,11 @@ async def chat(body: ChatBody, request: Request):
         acc = _TimelineAccumulator()
         assistant_ts = now_ts()
         try:
-            async for ev in c.agent.run(body.text, mode="default"):
+            async for ev in c.agent.run(
+                body.text,
+                mode="default",
+                active_doc_path=body.active_doc_path,
+            ):
                 yield ev
                 _accumulate_timeline(acc, ev)
             assistant_msg: dict = {
@@ -308,9 +320,49 @@ async def questions(request: Request):
     return {"questions": _c(request).pending.list_open()}
 
 
+def _is_agent_question(q: dict) -> bool:
+    if q.get("payload", {}).get("kind") == "agent":
+        return True
+    if q.get("multi_select"):
+        return True
+    question = q.get("question", "")
+    if "可多选" in question or "多选" in question:
+        return True
+    payload = q.get("payload", {})
+    # ask_user 创建的征询（无 organizer 的 decision/content）
+    return not payload.get("decision") and not payload.get("content")
+
+
 @router.post("/questions/{qid}/resolve")
 async def resolve(qid: str, body: ResolveBody, request: Request):
-    result = _c(request).organizer.resolve_pending(qid, body.choice)
+    c = _c(request)
+    try:
+        q = c.pending.get(qid)
+    except KeyError as e:
+        raise HTTPException(404, "问题不存在") from e
+    conversation_context = ""
+    if body.conversation_id:
+        try:
+            conv = c.conversations.get(body.conversation_id)
+            conversation_context = c.conversations.context_excerpt(conv)
+        except KeyError as e:
+            raise HTTPException(404, "对话不存在") from e
+    if body.choices:
+        if _is_agent_question(q):
+            result = c.organizer.resolve_agent_choices(
+                qid, body.choices, conversation_context=conversation_context
+            )
+        else:
+            raise HTTPException(400, "该问题不支持多选")
+    elif body.choice:
+        if _is_agent_question(q):
+            result = c.organizer.resolve_agent_choices(
+                qid, [body.choice], conversation_context=conversation_context
+            )
+        else:
+            result = c.organizer.resolve_pending(qid, body.choice)
+    else:
+        raise HTTPException(400, "请提供 choice 或 choices")
     return result.__dict__
 
 

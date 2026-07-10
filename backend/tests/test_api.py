@@ -146,3 +146,60 @@ def test_chat_saves_to_conversation(client):
     assert tool_blocks
     assert all("duration_ms" in b for b in tool_blocks)
     assert conv["title"] == "docker 怎么用"
+
+
+def test_resolve_legacy_agent_multi_select(client, tmp_path):
+    """旧版 ask_user 待确认项（空 payload、无 kind）应支持多选 resolve。"""
+    pending_path = tmp_path / "knowledge" / ".kb" / "pending.json"
+    pending_path.parent.mkdir(parents=True, exist_ok=True)
+    qid = "legacy123abc"
+    pending_path.write_text(
+        json.dumps(
+            {
+                qid: {
+                    "id": qid,
+                    "question": "以下哪些想记录？（可多选，我来整理）",
+                    "options": [
+                        {"id": "basic", "label": "基本信息"},
+                        {"id": "today", "label": "今日进展"},
+                    ],
+                    "payload": {},
+                    "status": "open",
+                    "choice": None,
+                }
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    r = client.post(f"/api/questions/{qid}/resolve", json={"choices": ["basic", "today"]})
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "saved"
+    open_ids = {q["id"] for q in client.get("/api/questions").json()["questions"]}
+    assert qid not in open_ids
+
+
+def test_resolve_legacy_agent_single_choice(client, tmp_path):
+    """多选征询只选一项时，用 choice 字段也应能 resolve。"""
+    pending_path = tmp_path / "knowledge" / ".kb" / "pending.json"
+    pending_path.parent.mkdir(parents=True, exist_ok=True)
+    qid = "legacy456def"
+    pending_path.write_text(
+        json.dumps(
+            {
+                qid: {
+                    "id": qid,
+                    "question": "以下哪些想记录？（可多选，我来整理）",
+                    "options": [{"id": "basic", "label": "基本信息"}],
+                    "payload": {},
+                    "status": "open",
+                    "choice": None,
+                }
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    r = client.post(f"/api/questions/{qid}/resolve", json={"choice": "basic"})
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "saved"

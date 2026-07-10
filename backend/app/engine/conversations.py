@@ -106,3 +106,24 @@ class ConversationStore:
             raise KeyError(cid)
         del data[cid]
         self._write(data)
+
+    @staticmethod
+    def context_excerpt(conv: dict, *, max_chars: int = 4000) -> str:
+        lines: list[str] = []
+        for msg in conv.get("messages", [])[-8:]:
+            role = msg.get("role")
+            if role == "user" and msg.get("text"):
+                lines.append(f"用户：{msg['text']}")
+            elif role == "assistant":
+                if msg.get("text"):
+                    lines.append(f"助手：{msg['text']}")
+                elif msg.get("timeline"):
+                    for block in msg["timeline"]:
+                        if block.get("type") == "text" and block.get("content"):
+                            lines.append(f"助手：{block['content'][:800]}")
+                        elif block.get("type") == "tool" and block.get("tool") == "ask_user":
+                            q = block.get("question") or block.get("summary") or ""
+                            if q:
+                                lines.append(f"助手征询：{q}")
+        text = "\n".join(lines)
+        return text[:max_chars] if len(text) > max_chars else text

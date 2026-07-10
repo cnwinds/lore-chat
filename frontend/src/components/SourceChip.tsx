@@ -2,32 +2,38 @@ import type { SourceRef } from "../api";
 
 type Props = {
   source: SourceRef;
-  onOpenSource: (src: SourceRef) => void;
+  active?: boolean;
+  onOpen: (src: SourceRef) => void;
 };
 
-function chipLabel(src: SourceRef): string {
+function linkLabel(src: SourceRef): string {
   if (src.type === "kb") {
     return src.path.split("/").pop() || src.path;
   }
   return src.title || src.url;
 }
 
-export function SourceChip({ source, onOpenSource }: Props) {
+function linkTitle(src: SourceRef): string {
+  if (src.type === "kb") return src.path;
+  return src.url;
+}
+
+export function SourceChip({ source, active, onOpen }: Props) {
   return (
     <button
       type="button"
-      className="source-chip"
-      onClick={() => onOpenSource(source)}
-      title={
-        source.type === "kb"
-          ? source.path
-          : source.type === "web"
-            ? source.url
-            : source.url
-      }
+      className={`source-link${active ? " active" : ""}`}
+      title={linkTitle(source)}
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onOpen(source);
+      }}
     >
-      {source.type === "kb" ? "📄 " : source.type === "web" ? "🔗 " : "🔍 "}
-      {chipLabel(source)}
+      <span className="source-link-icon" aria-hidden>
+        {source.type === "kb" ? "📄" : source.type === "web" ? "🔗" : "🔍"}
+      </span>
+      <span className="source-link-text">{linkLabel(source)}</span>
     </button>
   );
 }

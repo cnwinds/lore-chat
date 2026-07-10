@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 READ_ONLY_TOOLS = frozenset({"search_kb", "read_doc", "fetch_url", "web_search"})
-WRITE_TOOLS = frozenset({"write_kb", "ask_user"})
+WRITE_TOOLS = frozenset({"write_kb", "delete_kb", "ask_user"})
 
 
 def can_parallelize(tool_names: list[str]) -> bool:
@@ -14,6 +14,7 @@ TOOL_LABELS = {
     "fetch_url": "打开链接",
     "web_search": "搜索网页",
     "write_kb": "整理到知识库",
+    "delete_kb": "删除知识库内容",
     "ask_user": "征询用户",
 }
 
@@ -89,8 +90,29 @@ TOOL_DEFINITIONS: list[dict] = [
                         "type": "string",
                         "description": "可选上下文（如来源说明），会拼接到正文前",
                     },
+                    "target_path": {
+                        "type": "string",
+                        "description": "可选，指定写入目标文档路径（用户正在编辑的文档）",
+                    },
                 },
                 "required": ["text"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "delete_kb",
+            "description": "删除知识库中的文档或目录（含目录下所有文件）",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "要删除的相对路径，如 projects/mini-app/version-todo.md 或 projects/mini-app/",
+                    },
+                },
+                "required": ["path"],
             },
         },
     },
@@ -115,6 +137,15 @@ TOOL_DEFINITIONS: list[dict] = [
                             "required": ["id", "label"],
                         },
                     },
+                    "multi_select": {
+                        "type": "boolean",
+                        "description": "是否允许多选，默认 false",
+                        "default": False,
+                    },
+                    "context": {
+                        "type": "string",
+                        "description": "可选背景信息，帮助用户理解选项",
+                    },
                 },
                 "required": ["question", "options"],
             },
@@ -132,7 +163,9 @@ class ToolRegistry:
         self.web_search = web_search
         self.pending = pending
 
-    async def execute(self, name: str, args: dict) -> dict:
+    async def execute(
+        self, name: str, args: dict, *, active_doc_path: str | None = None
+    ) -> dict:
         if name == "search_kb":
             return self._search_kb(args)
         if name == "read_doc":
@@ -142,7 +175,9 @@ class ToolRegistry:
         if name == "web_search":
             return await self._web_search(args)
         if name == "write_kb":
-            return self._write_kb(args)
+            return self._write_kb(args, active_doc_path=active_doc_path)
+        if name == "delete_kb":
+            return self._delete_kb(args)
         if name == "ask_user":
             return self._ask_user(args)
         return {"summary": f"未知工具：{name}", "sources": [], "error": f"unknown tool: {name}"}
@@ -178,9 +213,14 @@ class ToolRegistry:
         }
 
     async def _fetch_url(self, args: dict) -> dict:
-        result = await self.fetcher.fetch(args["url"])
+        url = args["url"]
+        result = await self.fetcher.fetch(url)
         if result.error:
-            return {"summary": result.error, "sources": [], "error": result.error}
+            return {
+                "summary": f"{url} — {result.error}",
+                "sources": [],
+                "error": result.error,
+            }
         sources = [
             {
                 "type": "web",
@@ -217,11 +257,12 @@ class ToolRegistry:
             "sources": sources,
         }
 
-    def _write_kb(self, args: dict) -> dict:
+    def _write_kb(self, args: dict, *, active_doc_path: str | None = None) -> dict:
         text = args["text"]
         if args.get("context"):
             text = args["context"] + "\n\n" + text
-        result = self.organizer.ingest_text(text)
+        hint_path = args.get("target_path") or active_doc_path
+        result = self.organizer.ingest_text(text, hint_path=hint_path)
         sources = [{"type": "kb", "path": result.rel_path}] if result.rel_path else []
         out: dict = {
             "summary": result.message,
@@ -232,11 +273,47 @@ class ToolRegistry:
             out["question_id"] = result.question_id
         return out
 
+    def _delete_kb(self, args: dict) -> dict:
+        path = args["path"]
+        try:
+            deleted = self.repo.delete_path(path, commit_msg=f"delete: {path}")
+        except FileNotFoundError:
+            return {
+                "summary": f"路径不存在：{path}",
+                "sources": [],
+                "error": f"FileNotFoundError: {path}",
+            }
+        except ValueError as e:
+            return {"summary": str(e), "sources": [], "error": str(e)}
+
+        for rel in deleted:
+            if rel.endswith(".md"):
+                self.organizer.indexer.remove_doc(rel)
+
+        if deleted:
+            self.repo.log_change(
+                f"删除 {path}（共 {len(deleted)} 个文件）",
+                commit_msg=f"chore: changelog for delete {path}",
+            )
+
+        return {
+            "summary": f"已删除 {path}（{len(deleted)} 个文件）",
+            "sources": [],
+            "deleted_paths": deleted,
+        }
+
     def _ask_user(self, args: dict) -> dict:
         question = args["question"]
         options = args["options"]
-        payload = args.get("payload", {})
-        qid = self.pending.create(question, options, payload)
+        multi_select = bool(args.get("multi_select", False))
+        payload = {
+            "kind": "agent",
+            "context": args.get("context", ""),
+            **(args.get("payload") or {}),
+        }
+        qid = self.pending.create(
+            question, options, payload, multi_select=multi_select
+        )
         return {
             "summary": "等待用户选择",
             "sources": [],

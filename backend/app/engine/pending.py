@@ -18,7 +18,14 @@ class PendingStore:
     def _write(self, data: dict) -> None:
         self.path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    def create(self, question: str, options: list[dict], payload: dict) -> str:
+    def create(
+        self,
+        question: str,
+        options: list[dict],
+        payload: dict,
+        *,
+        multi_select: bool = False,
+    ) -> str:
         data = self._read()
         qid = uuid.uuid4().hex[:12]
         data[qid] = {
@@ -26,6 +33,7 @@ class PendingStore:
             "question": question,
             "options": options,
             "payload": payload,
+            "multi_select": multi_select,
             "status": "open",
             "choice": None,
         }
@@ -44,3 +52,6 @@ class PendingStore:
         data[qid]["choice"] = choice
         self._write(data)
         return data[qid]
+
+    def resolve_many(self, qid: str, choices: list[str]) -> dict:
+        return self.resolve(qid, ",".join(choices))

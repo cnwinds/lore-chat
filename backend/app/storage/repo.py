@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shutil
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -90,6 +91,39 @@ class KnowledgeRepo:
         if not abs_p.exists():
             raise FileNotFoundError(rel_path)
         return abs_p.read_bytes()
+
+    def _is_protected(self, rel_path: str) -> bool:
+        norm = rel_path.replace("\\", "/").lstrip("/")
+        return norm == ".kb" or norm.startswith(".kb/") or norm.startswith(".git/")
+
+    def delete_path(self, rel_path: str, *, commit_msg: str) -> list[str]:
+        norm = rel_path.replace("\\", "/").rstrip("/")
+        if self._is_protected(norm):
+            raise ValueError(f"禁止删除系统目录: {rel_path}")
+        abs_p = self._abs(norm)
+        if not abs_p.exists():
+            raise FileNotFoundError(rel_path)
+
+        if abs_p.is_file():
+            if not norm.endswith(".md"):
+                raise ValueError(f"只能删除 Markdown 文档: {rel_path}")
+            deleted = [norm]
+            abs_p.unlink()
+        else:
+            deleted = []
+            for p in sorted(abs_p.rglob("*")):
+                if not p.is_file():
+                    continue
+                rel = p.relative_to(self.root).as_posix()
+                if self._is_protected(rel):
+                    continue
+                deleted.append(rel)
+            shutil.rmtree(abs_p)
+
+        if deleted:
+            self.repo.index.remove(deleted)
+            self.repo.index.commit(commit_msg)
+        return deleted
 
     def log_change(
         self, entry: str, *, commit_msg: str = "chore: update changelog"
