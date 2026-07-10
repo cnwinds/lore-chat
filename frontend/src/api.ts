@@ -1,50 +1,374 @@
-const BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
+// 生产环境经 nginx 同源代理时 VITE_API_BASE 留空；本地开发在 .env 中设为 http://localhost:8000
+const BASE = import.meta.env.VITE_API_BASE ?? "";
+
+async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const r = await fetch(`${BASE}${path}`, init);
+  if (!r.ok) {
+    let detail = r.statusText;
+    try {
+      const body = await r.json();
+      detail =
+        typeof body.detail === "string"
+          ? body.detail
+          : typeof body.message === "string"
+            ? body.message
+            : JSON.stringify(body);
+    } catch {
+      try {
+        detail = (await r.text()) || detail;
+      } catch {
+        /* ignore */
+      }
+    }
+    throw new Error(detail || `请求失败 (${r.status})`);
+  }
+  return r.json() as Promise<T>;
+}
+
+export type QuestionOption = { id: string; label: string };
+export type Question = {
+  id: string;
+  question: string;
+  options: QuestionOption[];
+};
+
+export type IngestResult = {
+  status: "saved" | "question" | string;
+  rel_path: string | null;
+  question_id: string | null;
+  message: string;
+};
+
+export type ChatRecallResult = {
+  intent: "recall";
+  text: string;
+  sources: string[];
+  attachments: string[];
+};
+
+export type ChatRememberResult = IngestResult & { intent: "remember" };
+
+export type ChatResult = ChatRecallResult | ChatRememberResult;
+
+export type SourceRef =
+  | { type: "kb"; path: string; excerpt?: string; line?: number }
+  | { type: "web"; url: string; title: string; snippet: string }
+  | {
+      type: "search";
+      provider: string;
+      url: string;
+      title: string;
+      snippet: string;
+    };
+
+export type TimelineBlock =
+  | {
+      type: "tool";
+      id: string;
+      tool: string;
+      label: string;
+      ts: string;
+      status: "running" | "done";
+      summary?: string;
+      sources?: SourceRef[];
+      duration_ms?: number;
+    }
+  | {
+      type: "parallel";
+      batch_id: string;
+      ts: string;
+      children: TimelineBlock[];
+      duration_ms?: number;
+    }
+  | { type: "text"; ts: string; content: string };
+
+export type ChatMessage = {
+  role: "user" | "assistant";
+  ts?: string;
+  text?: string;
+  timeline?: TimelineBlock[];
+  sources?: SourceRef[];
+  attachments?: string[];
+  intent?: "recall" | "remember";
+};
+
+export type ChatStreamEvent = { event: string; data: Record<string, unknown> };
+
+export const TOOL_LABELS: Record<string, string> = {
+  search_kb: "检索本地知识库",
+  read_doc: "读取文档",
+  fetch_url: "打开链接",
+  web_search: "搜索网页",
+  write_kb: "整理到知识库",
+  ask_user: "征询用户",
+};
+
+export type ConversationSummary = {
+  id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+  message_count: number;
+};
+
+export type Conversation = ConversationSummary & {
+  messages: ChatMessage[];
+};
+
+/** @deprecated Use chatStream() — /api/chat now returns SSE. */
+export async function chat(text: string, conversationId?: string | null) {
+  return apiFetch<ChatResult>("/api/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      text,
+      conversation_id: conversationId ?? undefined,
+    }),
+  });
+}
+
+export async function* chatStream(
+  text: string,
+  conversationId?: string | null,
+): AsyncGenerator<ChatStreamEvent> {
+  const r = await fetch(`${BASE}/api/chat`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "text/event-stream",
+    },
+    body: JSON.stringify({
+      text,
+      conversation_id: conversationId ?? undefined,
+    }),
+  });
+  if (!r.ok) {
+    let detail = r.statusText;
+    try {
+      detail = (await r.text()) || detail;
+    } catch {
+      /* ignore */
+    }
+    throw new Error(detail || `请求失败 (${r.status})`);
+  }
+  const reader = r.body!.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const parts = buffer.split("\n\n");
+    buffer = parts.pop() ?? "";
+    for (const part of parts) {
+      if (!part.trim()) continue;
+      const lines = part.split("\n");
+      const eventLine = lines.find((l) => l.startsWith("event: "));
+      const dataLine = lines.find((l) => l.startsWith("data: "));
+      if (eventLine && dataLine) {
+        yield {
+          event: eventLine.slice(7).trim(),
+          data: JSON.parse(dataLine.slice(6)) as Record<string, unknown>,
+        };
+      }
+    }
+  }
+}
+
+function findActiveParallelIndex(timeline: TimelineBlock[]): number {
+  for (let i = timeline.length - 1; i >= 0; i--) {
+    const block = timeline[i];
+    if (block.type === "parallel" && block.duration_ms === undefined) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+function updateToolBlock(
+  blocks: TimelineBlock[],
+  id: string,
+  updater: (block: Extract<TimelineBlock, { type: "tool" }>) => TimelineBlock,
+): TimelineBlock[] {
+  return blocks.map((block) => {
+    if (block.type === "tool" && block.id === id) {
+      return updater(block);
+    }
+    if (block.type === "parallel") {
+      return {
+        ...block,
+        children: updateToolBlock(block.children, id, updater),
+      };
+    }
+    return block;
+  });
+}
+
+export function updateTimeline(
+  timeline: TimelineBlock[],
+  event: string,
+  data: Record<string, unknown>,
+): TimelineBlock[] {
+  if (event === "tool_start") {
+    const toolBlock: TimelineBlock = {
+      type: "tool",
+      id: data.id as string,
+      tool: data.tool as string,
+      label: (data.label as string) || TOOL_LABELS[data.tool as string] || (data.tool as string),
+      ts: data.ts as string,
+      status: "running",
+    };
+    const parallelIdx = findActiveParallelIndex(timeline);
+    if (parallelIdx >= 0) {
+      return timeline.map((block, i) =>
+        i === parallelIdx && block.type === "parallel"
+          ? { ...block, children: [...block.children, toolBlock] }
+          : block,
+      );
+    }
+    return [...timeline, toolBlock];
+  }
+
+  if (event === "tool_result") {
+    const id = data.id as string;
+    return updateToolBlock(timeline, id, (block) => ({
+      ...block,
+      status: "done",
+      summary: (data.summary as string) || "",
+      sources: (data.sources as SourceRef[]) || [],
+      ...(data.duration_ms !== undefined
+        ? { duration_ms: data.duration_ms as number }
+        : {}),
+    }));
+  }
+
+  if (event === "parallel_batch_start") {
+    const parallelBlock: TimelineBlock = {
+      type: "parallel",
+      batch_id: data.batch_id as string,
+      ts: data.ts as string,
+      children: [],
+    };
+    return [...timeline, parallelBlock];
+  }
+
+  if (event === "parallel_batch_end") {
+    const batchId = data.batch_id as string;
+    return timeline.map((block) =>
+      block.type === "parallel" && block.batch_id === batchId
+        ? {
+            ...block,
+            ...(data.duration_ms !== undefined
+              ? { duration_ms: data.duration_ms as number }
+              : {}),
+          }
+        : block,
+    );
+  }
+
+  if (event === "text_delta") {
+    const delta = (data.delta as string) || "";
+    const last = timeline[timeline.length - 1];
+    if (last?.type === "text") {
+      return [
+        ...timeline.slice(0, -1),
+        { ...last, content: last.content + delta },
+      ];
+    }
+    return [
+      ...timeline,
+      { type: "text", ts: data.ts as string, content: delta },
+    ];
+  }
+
+  return timeline;
+}
 
 export async function ingest(text: string) {
-  const r = await fetch(`${BASE}/api/ingest`, {
+  return apiFetch<IngestResult>("/api/ingest", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ text }),
   });
-  return r.json();
 }
 
 export async function ask(query: string) {
-  const r = await fetch(`${BASE}/api/ask`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ query }),
-  });
-  return r.json();
+  return apiFetch<{ text: string; sources: string[]; attachments: string[] }>(
+    "/api/ask",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query }),
+    },
+  );
 }
 
 export async function uploadFile(file: File, category: string) {
   const fd = new FormData();
   fd.append("file", file);
   fd.append("category", category);
-  const r = await fetch(`${BASE}/api/upload`, { method: "POST", body: fd });
-  return r.json();
+  return apiFetch<{ attachment: string; indexed: boolean }>("/api/upload", {
+    method: "POST",
+    body: fd,
+  });
 }
 
 export async function getTree() {
-  const r = await fetch(`${BASE}/api/tree`);
-  return r.json();
+  return apiFetch<{ docs: string[] }>("/api/tree");
+}
+
+export type DocContent = {
+  rel_path: string;
+  meta: Record<string, unknown>;
+  body: string;
+};
+
+export async function getDoc(path: string) {
+  return apiFetch<DocContent>(`/api/doc?path=${encodeURIComponent(path)}`);
 }
 
 export async function getQuestions() {
-  const r = await fetch(`${BASE}/api/questions`);
-  return r.json();
+  return apiFetch<{ questions: Question[] }>("/api/questions");
 }
 
 export async function resolveQuestion(qid: string, choice: string) {
-  const r = await fetch(`${BASE}/api/questions/${qid}/resolve`, {
+  return apiFetch<IngestResult>(`/api/questions/${qid}/resolve`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ choice }),
   });
-  return r.json();
 }
 
 export function downloadUrl(path: string) {
   return `${BASE}/api/download?path=${encodeURIComponent(path)}`;
+}
+
+export async function listConversations() {
+  return apiFetch<{ conversations: ConversationSummary[] }>("/api/conversations");
+}
+
+export async function createConversation() {
+  return apiFetch<{ id: string }>("/api/conversations", { method: "POST" });
+}
+
+export async function getConversation(id: string) {
+  return apiFetch<Conversation>(`/api/conversations/${encodeURIComponent(id)}`);
+}
+
+export async function appendConversationMessages(
+  id: string,
+  messages: ChatMessage[],
+) {
+  return apiFetch<Conversation>(`/api/conversations/${encodeURIComponent(id)}/messages`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ messages }),
+  });
+}
+
+export async function deleteConversation(id: string) {
+  return apiFetch<{ ok: boolean }>(
+    `/api/conversations/${encodeURIComponent(id)}`,
+    { method: "DELETE" },
+  );
 }
