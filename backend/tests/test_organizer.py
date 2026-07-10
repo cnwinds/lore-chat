@@ -21,6 +21,14 @@ def _make(tmp_path, chat_responses):
     return org, repo, pending
 
 
+def test_ingest_rejects_question_only(tmp_path):
+    org, repo, pending = _make(tmp_path, [])
+    result = org.ingest_text("windows终端怎么设置utf8编码")
+    assert result.status == "rejected"
+    assert result.rel_path is None
+    assert repo.list_tree() == []
+
+
 def test_ingest_new_doc(tmp_path):
     decision = json.dumps({"action": "new", "rel_path": "技术/docker/常用命令.md",
                            "title": "常用命令", "category": "技术/docker",
@@ -34,7 +42,7 @@ def test_ingest_new_doc(tmp_path):
     assert "docker ps" in doc.body
 
 
-def test_ingest_ambiguous_creates_question(tmp_path):
+def test_ingest_ambiguous_creates_question_when_no_related(tmp_path):
     decision = json.dumps({"action": "merge", "rel_path": "技术/docker/常用命令.md",
                            "title": "常用命令", "category": "技术/docker",
                            "tags": ["docker"], "ambiguous": True, "reason": "可能与已有重叠"})
@@ -43,6 +51,21 @@ def test_ingest_ambiguous_creates_question(tmp_path):
     assert result.status == "question"
     assert result.question_id is not None
     assert len(pending.list_open()) == 1
+
+
+def test_ingest_auto_merges_when_related_exists(tmp_path):
+    decision = json.dumps({"action": "merge", "rel_path": "技术/docker/常用命令.md",
+                           "title": "常用命令", "category": "技术/docker",
+                           "tags": ["docker"], "ambiguous": True, "reason": "同一主题"})
+    org, repo, pending = _make(tmp_path, ["摘要", decision])
+    repo.write_doc("技术/docker/常用命令.md", {"title": "常用命令"}, "docker ps\n", commit_msg="seed")
+    org.indexer.reindex_doc("技术/docker/常用命令.md", "docker ps\n")
+    result = org.ingest_text("docker logs 看日志")
+    assert result.status == "saved"
+    assert result.rel_path == "技术/docker/常用命令.md"
+    assert len(pending.list_open()) == 0
+    doc = repo.read_doc("技术/docker/常用命令.md")
+    assert "docker logs" in doc.body
 
 
 def test_ingest_records_changelog(tmp_path):

@@ -1,0 +1,43 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: lorechat-backend
+    env_file:
+      - .env
+    environment:
+      KB_PATH: /data/knowledge
+    volumes:
+      - knowledge-data:/data/knowledge
+    restart: unless-stopped
+    networks:
+      - lorechat
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/tree')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  web:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    container_name: lorechat-web
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - lorechat
+
+volumes:
+  knowledge-data:
+    name: lorechat-knowledge
+
+networks:
+  lorechat:
+    name: lorechat-net

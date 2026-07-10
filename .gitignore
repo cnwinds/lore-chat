@@ -20,3 +20,6 @@ frontend/dist/
 # OS / IDE
 .DS_Store
 Thumbs.db
+
+# Runtime / local control
+.lorechat/

@@ -90,7 +90,57 @@ export type ChatMessage = {
   sources?: SourceRef[];
   attachments?: string[];
   intent?: "recall" | "remember";
+  /** 本轮回复总耗时（毫秒），来自 SSE done 事件 */
+  total_duration_ms?: number;
 };
+
+/** 将毫秒格式化为可读耗时 */
+export function formatDuration(ms: number): string {
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  const s = ms / 1000;
+  if (s < 60) return `${s.toFixed(1)}s`;
+  const m = Math.floor(s / 60);
+  const rem = Math.round(s % 60);
+  return `${m}m ${rem}s`;
+}
+
+export type CumulativeInfo = {
+  toolCumulative: Map<string, number>;
+  parallelCumulative: Map<string, number>;
+};
+
+/** 按时间线顺序计算各步骤完成时的累计耗时 */
+export function computeCumulative(timeline: TimelineBlock[]): CumulativeInfo {
+  const toolCumulative = new Map<string, number>();
+  const parallelCumulative = new Map<string, number>();
+  let cumulative = 0;
+
+  for (const block of timeline) {
+    if (block.type === "tool") {
+      if (block.status === "done" && block.duration_ms !== undefined) {
+        cumulative += block.duration_ms;
+      }
+      toolCumulative.set(block.id, cumulative);
+    } else if (block.type === "parallel") {
+      const batchStart = cumulative;
+      for (const child of block.children) {
+        if (child.type === "tool") {
+          const afterBatch =
+            block.duration_ms !== undefined
+              ? batchStart + block.duration_ms
+              : batchStart;
+          toolCumulative.set(child.id, afterBatch);
+        }
+      }
+      if (block.duration_ms !== undefined) {
+        cumulative = batchStart + block.duration_ms;
+      }
+      parallelCumulative.set(block.batch_id, cumulative);
+    }
+  }
+
+  return { toolCumulative, parallelCumulative };
+}
 
 export type ChatStreamEvent = { event: string; data: Record<string, unknown> };
 

@@ -55,6 +55,7 @@ class _TimelineAccumulator:
     def __init__(self) -> None:
         self.timeline: list[dict] = []
         self.all_sources: list[dict] = []
+        self.total_duration_ms: int | None = None
         self._tools: dict[str, dict] = {}
         self._parallel: dict[str, dict] = {}
         self._active_parallel: str | None = None
@@ -125,6 +126,8 @@ class _TimelineAccumulator:
                 if key not in seen:
                     self.all_sources.append(source)
                     seen.add(key)
+            if data.get("total_duration_ms") is not None:
+                self.total_duration_ms = data["total_duration_ms"]
 
 
 def _accumulate_timeline(
@@ -224,12 +227,14 @@ async def chat(body: ChatBody, request: Request):
             async for ev in c.agent.run(body.text, mode="default"):
                 yield ev
                 _accumulate_timeline(acc, ev)
-            assistant_msg = {
+            assistant_msg: dict = {
                 "role": "assistant",
                 "ts": assistant_ts,
                 "timeline": acc.timeline,
                 "sources": acc.all_sources,
             }
+            if acc.total_duration_ms is not None:
+                assistant_msg["total_duration_ms"] = acc.total_duration_ms
             if body.conversation_id:
                 c.conversations.append_exchange(
                     body.conversation_id,

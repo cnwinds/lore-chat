@@ -4,6 +4,7 @@ import json
 from dataclasses import dataclass
 
 from app.storage.repo import KnowledgeRepo
+from app.engine.intent import is_question_only
 from app.engine.retriever import Retriever
 from app.engine.pending import PendingStore
 from app.index.indexer import Indexer
@@ -45,9 +46,17 @@ class Organizer:
         self.llm = llm
 
     def ingest_text(self, content: str) -> IngestResult:
+        if is_question_only(content):
+            return IngestResult(
+                status="rejected",
+                rel_path=None,
+                question_id=None,
+                message="这是提问而非资料，未写入知识库。",
+            )
+
         summary = self._understand(content)
         related = self.retriever.search(summary or content, k=5)
-        decision = self._decide(content, summary, related)
+        decision = self._normalize_decision(self._decide(content, summary, related), related)
 
         if decision.ambiguous:
             qid = self.pending.create(
@@ -109,10 +118,14 @@ class Organizer:
             {
                 "role": "system",
                 "content": (
-                    "你是知识库组织员。根据新内容和已有相关文档，决定如何归置。"
-                    "只输出 JSON，字段：action(new|merge|append), rel_path(目标md相对路径,以.md结尾), "
-                    "title, category(目录,如 技术/docker,可空), tags(数组), ambiguous(bool,重叠但拿不准时true), reason。"
-                    "若与某已有文档明显是同一主题应 merge/append；全新主题用 new；拿不准是否重叠时 ambiguous=true。"
+                    "你是知识库组织员。果断决策，避免让用户确认。\n"
+                    "规则：\n"
+                    "1. 与已有文档同一主题、同一问题的补充 → merge/append 到最相关的一篇，ambiguous=false\n"
+                    "2. 不要为同一主题创建重复文档；已有相关文档时优先合并\n"
+                    "3. 全新主题 → action=new\n"
+                    "4. ambiguous=true 仅在完全无法判断归到哪篇时使用（应极少出现）\n"
+                    "只输出 JSON：action(new|merge|append), rel_path(以.md结尾), "
+                    "title, category(如 技术/powershell), tags(数组), ambiguous(bool), reason"
                 ),
             },
             {
@@ -131,6 +144,39 @@ class Organizer:
             ambiguous=bool(data.get("ambiguous", False)),
             reason=data.get("reason", ""),
         )
+
+    def _normalize_decision(self, decision: PlacementDecision, related) -> PlacementDecision:
+        """有相关文档时自动合并，不再向用户确认。"""
+        if not decision.ambiguous:
+            if decision.action in ("merge", "append") and related:
+                related_paths = {h.source for h in related}
+                if decision.rel_path not in related_paths:
+                    decision = PlacementDecision(
+                        action="merge",
+                        rel_path=related[0].source,
+                        title=decision.title,
+                        category=decision.category,
+                        tags=decision.tags,
+                        ambiguous=False,
+                        reason=decision.reason or f"合并到 {related[0].source}",
+                    )
+            return decision
+
+        if related:
+            target = decision.rel_path
+            related_paths = {h.source for h in related}
+            if target not in related_paths:
+                target = related[0].source
+            return PlacementDecision(
+                action="merge",
+                rel_path=target,
+                title=decision.title,
+                category=decision.category,
+                tags=decision.tags,
+                ambiguous=False,
+                reason=decision.reason or f"自动合并到 {target}",
+            )
+        return decision
 
     @staticmethod
     def _parse_json(raw: str) -> dict:

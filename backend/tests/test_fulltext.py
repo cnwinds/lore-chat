@@ -24,3 +24,11 @@ def test_reindex_replaces(tmp_path):
     fi.add("doc1.md", ["新词语"], source="doc1.md")
     assert fi.query("旧词语", k=5) == []
     assert any(h.doc_id == "doc1.md" for h in fi.query("新词语", k=5))
+
+
+def test_query_with_markdown_special_chars(tmp_path):
+    fi = FullTextIndex(tmp_path / "fts.db")
+    fi.add("doc1.md", ["PowerShell 配置 `$PROFILE` 路径"], source="doc1.md")
+    # 含反引号、星号等 FTS5 特殊字符时不应抛语法错误
+    hits = fi.query("```powershell\n$PROFILE = `$env:USERPROFILE`", k=5)
+    assert isinstance(hits, list)
