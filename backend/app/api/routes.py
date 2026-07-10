@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import io
+import json
 
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+
+from app.engine.agent.events import error_event, now_ts
 
 router = APIRouter(prefix="/api")
 
@@ -21,20 +24,223 @@ class ResolveBody(BaseModel):
     choice: str
 
 
+class ChatBody(BaseModel):
+    text: str
+    conversation_id: str | None = None
+
+
+class AppendMessagesBody(BaseModel):
+    messages: list[dict]
+
+
 def _c(request: Request):
     return request.app.state.container
 
 
+def _parse_sse(ev: str) -> tuple[str, dict] | None:
+    lines = ev.strip().split("\n")
+    event_type = None
+    data = None
+    for line in lines:
+        if line.startswith("event: "):
+            event_type = line[7:]
+        elif line.startswith("data: "):
+            data = json.loads(line[6:])
+    if event_type and data is not None:
+        return event_type, data
+    return None
+
+
+class _TimelineAccumulator:
+    def __init__(self) -> None:
+        self.timeline: list[dict] = []
+        self.all_sources: list[dict] = []
+        self._tools: dict[str, dict] = {}
+        self._parallel: dict[str, dict] = {}
+        self._active_parallel: str | None = None
+        self._text_block: dict | None = None
+
+    def accumulate(self, event_type: str, data: dict) -> None:
+        if event_type == "tool_start":
+            block = {
+                "type": "tool",
+                "id": data["id"],
+                "tool": data["tool"],
+                "label": data["label"],
+                "ts": data["ts"],
+                "status": "running",
+            }
+            self._tools[data["id"]] = block
+            if self._active_parallel:
+                self._parallel[self._active_parallel]["children"].append(block)
+            else:
+                self.timeline.append(block)
+            self._text_block = None
+
+        elif event_type == "tool_result":
+            block = self._tools.get(data["id"])
+            if block:
+                block["status"] = "done"
+                block["summary"] = data.get("summary", "")
+                block["sources"] = data.get("sources") or []
+                if data.get("duration_ms") is not None:
+                    block["duration_ms"] = data["duration_ms"]
+                self.all_sources.extend(block["sources"])
+
+        elif event_type == "parallel_batch_start":
+            block = {
+                "type": "parallel",
+                "batch_id": data["batch_id"],
+                "ts": data["ts"],
+                "children": [],
+            }
+            self._parallel[data["batch_id"]] = block
+            self.timeline.append(block)
+            self._active_parallel = data["batch_id"]
+            self._text_block = None
+
+        elif event_type == "parallel_batch_end":
+            block = self._parallel.get(data["batch_id"])
+            if block and data.get("duration_ms") is not None:
+                block["duration_ms"] = data["duration_ms"]
+            if self._active_parallel == data["batch_id"]:
+                self._active_parallel = None
+
+        elif event_type == "text_delta":
+            delta = data.get("delta", "")
+            if self._text_block is None:
+                self._text_block = {
+                    "type": "text",
+                    "ts": data["ts"],
+                    "content": delta,
+                }
+                self.timeline.append(self._text_block)
+            else:
+                self._text_block["content"] += delta
+
+        elif event_type == "done":
+            seen = {json.dumps(s, sort_keys=True) for s in self.all_sources}
+            for source in data.get("sources") or []:
+                key = json.dumps(source, sort_keys=True)
+                if key not in seen:
+                    self.all_sources.append(source)
+                    seen.add(key)
+
+
+def _accumulate_timeline(
+    acc: _TimelineAccumulator, ev: str
+) -> None:
+    parsed = _parse_sse(ev)
+    if parsed:
+        acc.accumulate(parsed[0], parsed[1])
+
+
+def _ingest_from_write_kb_result(data: dict) -> dict:
+    message = data.get("summary", "")
+    sources = data.get("sources") or []
+    rel_path = sources[0]["path"] if sources and sources[0].get("path") else None
+    if "未写入" in message:
+        status = "rejected"
+    elif "需要你确认" in message:
+        status = "question"
+    elif rel_path:
+        status = "saved"
+    else:
+        status = "saved" if "已保存" in message else "rejected"
+    return {
+        "status": status,
+        "rel_path": rel_path,
+        "question_id": data.get("question_id"),
+        "message": message,
+    }
+
+
+async def _consume_agent_ingest(agent, text: str) -> dict:
+    result: dict | None = None
+    async for ev in agent.run(text, mode="force_write"):
+        parsed = _parse_sse(ev)
+        if not parsed:
+            continue
+        event_type, data = parsed
+        if event_type == "tool_result" and data.get("tool") == "write_kb":
+            result = _ingest_from_write_kb_result(data)
+    if result is None:
+        raise HTTPException(502, "录入失败: Agent 未调用 write_kb")
+    return result
+
+
+async def _consume_agent_ask(agent, query: str) -> dict:
+    text_parts: list[str] = []
+    sources: list[dict] = []
+    async for ev in agent.run(query, mode="no_write"):
+        parsed = _parse_sse(ev)
+        if not parsed:
+            continue
+        event_type, data = parsed
+        if event_type == "text_delta":
+            text_parts.append(data.get("delta", ""))
+        elif event_type == "done":
+            sources = data.get("sources") or []
+    attachments = [
+        s["path"]
+        for s in sources
+        if s.get("type") == "kb" and "/attachments/" in (s.get("path") or "")
+    ]
+    return {"text": "".join(text_parts), "sources": sources, "attachments": attachments}
+
+
 @router.post("/ingest")
 async def ingest(body: IngestBody, request: Request):
-    result = _c(request).organizer.ingest_text(body.text)
-    return result.__dict__
+    c = _c(request)
+    try:
+        return await _consume_agent_ingest(c.agent, body.text)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(502, f"录入失败: {e}") from e
 
 
 @router.post("/ask")
 async def ask(body: AskBody, request: Request):
-    ans = _c(request).retriever.answer(body.query)
-    return ans.__dict__
+    try:
+        return await _consume_agent_ask(_c(request).agent, body.query)
+    except Exception as e:
+        raise HTTPException(502, f"问答失败: {e}") from e
+
+
+@router.post("/chat")
+async def chat(body: ChatBody, request: Request):
+    c = _c(request)
+    if body.conversation_id:
+        try:
+            c.conversations.get(body.conversation_id)
+        except KeyError as e:
+            raise HTTPException(404, "对话不存在") from e
+
+    async def event_generator():
+        acc = _TimelineAccumulator()
+        assistant_ts = now_ts()
+        try:
+            async for ev in c.agent.run(body.text, mode="default"):
+                yield ev
+                _accumulate_timeline(acc, ev)
+            assistant_msg = {
+                "role": "assistant",
+                "ts": assistant_ts,
+                "timeline": acc.timeline,
+                "sources": acc.all_sources,
+            }
+            if body.conversation_id:
+                c.conversations.append_exchange(
+                    body.conversation_id,
+                    body.text,
+                    assistant_msg,
+                    user_ts=now_ts(),
+                )
+        except Exception as e:
+            yield error_event(str(e))
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
 @router.post("/upload")
@@ -101,3 +307,41 @@ async def questions(request: Request):
 async def resolve(qid: str, body: ResolveBody, request: Request):
     result = _c(request).organizer.resolve_pending(qid, body.choice)
     return result.__dict__
+
+
+@router.get("/conversations")
+async def list_conversations(request: Request):
+    return {"conversations": _c(request).conversations.list_all()}
+
+
+@router.post("/conversations")
+async def create_conversation(request: Request):
+    cid = _c(request).conversations.create()
+    return {"id": cid}
+
+
+@router.get("/conversations/{cid}")
+async def get_conversation(cid: str, request: Request):
+    try:
+        return _c(request).conversations.get(cid)
+    except KeyError as e:
+        raise HTTPException(404, "对话不存在") from e
+
+
+@router.post("/conversations/{cid}/messages")
+async def append_conversation_messages(
+    cid: str, body: AppendMessagesBody, request: Request
+):
+    try:
+        return _c(request).conversations.append_messages(cid, body.messages)
+    except KeyError as e:
+        raise HTTPException(404, "对话不存在") from e
+
+
+@router.delete("/conversations/{cid}")
+async def delete_conversation(cid: str, request: Request):
+    try:
+        _c(request).conversations.delete(cid)
+    except KeyError as e:
+        raise HTTPException(404, "对话不存在") from e
+    return {"ok": True}
