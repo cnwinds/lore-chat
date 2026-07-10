@@ -1,16 +1,39 @@
 from __future__ import annotations
 
 import hashlib
-from typing import Protocol, runtime_checkable
+import json
+from dataclasses import dataclass, field
+from typing import Any, Protocol, runtime_checkable
 
 from openai import OpenAI
 
 from app.config import Settings
 
 
+@dataclass
+class ToolCall:
+    id: str
+    name: str
+    arguments: dict[str, Any]
+
+
+@dataclass
+class ChatWithToolsResult:
+    content: str | None
+    tool_calls: list[ToolCall] = field(default_factory=list)
+
+
 @runtime_checkable
 class LLMClient(Protocol):
     def chat(self, messages: list[dict], *, big: bool = False, temperature: float = 0.2) -> str: ...
+    def chat_with_tools(
+        self,
+        messages: list[dict],
+        tools: list[dict],
+        *,
+        big: bool = True,
+        temperature: float = 0.2,
+    ) -> ChatWithToolsResult: ...
     def embed(self, texts: list[str]) -> list[list[float]]: ...
 
 
@@ -36,6 +59,33 @@ class OpenAILLMClient:
         resp = client.chat.completions.create(model=model, messages=messages, temperature=temperature)
         return resp.choices[0].message.content or ""
 
+    def chat_with_tools(
+        self,
+        messages: list[dict],
+        tools: list[dict],
+        *,
+        big: bool = True,
+        temperature: float = 0.2,
+    ) -> ChatWithToolsResult:
+        client = self._big if big else self._small
+        model = self.settings.big_model if big else self.settings.small_model
+        kwargs: dict[str, Any] = {"model": model, "messages": messages, "temperature": temperature}
+        if tools:
+            kwargs["tools"] = tools
+        resp = client.chat.completions.create(**kwargs)
+        msg = resp.choices[0].message
+        tool_calls: list[ToolCall] = []
+        if msg.tool_calls:
+            for tc in msg.tool_calls:
+                tool_calls.append(
+                    ToolCall(
+                        id=tc.id,
+                        name=tc.function.name,
+                        arguments=json.loads(tc.function.arguments or "{}"),
+                    )
+                )
+        return ChatWithToolsResult(content=msg.content, tool_calls=tool_calls)
+
     def embed(self, texts: list[str]) -> list[list[float]]:
         resp = self._embed.embeddings.create(model=self.settings.embed_model, input=texts)
         return [d.embedding for d in resp.data]
@@ -44,8 +94,14 @@ class OpenAILLMClient:
 class FakeLLMClient:
     """测试用：脚本化 chat 返回；embed 基于哈希产生确定性向量。"""
 
-    def __init__(self, chat_responses: list[str] | None = None, embed_dim: int = 16):
+    def __init__(
+        self,
+        chat_responses: list[str] | None = None,
+        tool_responses: list[dict] | None = None,
+        embed_dim: int = 16,
+    ):
         self.chat_responses = list(chat_responses or [])
+        self.tool_responses = list(tool_responses or [])
         self.embed_dim = embed_dim
         self.calls: list[dict] = []
         self._i = 0
@@ -57,6 +113,24 @@ class FakeLLMClient:
             self._i += 1
             return out
         return ""
+
+    def chat_with_tools(
+        self,
+        messages: list[dict],
+        tools: list[dict],
+        *,
+        big: bool = True,
+        temperature: float = 0.2,
+    ) -> ChatWithToolsResult:
+        self.calls.append({"messages": messages, "big": big, "tools": tools})
+        if self._i < len(self.tool_responses):
+            entry = self.tool_responses[self._i]
+            self._i += 1
+            return ChatWithToolsResult(
+                content=entry.get("content"),
+                tool_calls=list(entry.get("tool_calls") or []),
+            )
+        return ChatWithToolsResult(content="", tool_calls=[])
 
     def embed(self, texts: list[str]) -> list[list[float]]:
         vecs = []
