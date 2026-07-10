@@ -1,3 +1,29 @@
+import json
+
+
+def _parse_sse_events(text: str) -> list[tuple[str, dict]]:
+    events: list[tuple[str, dict]] = []
+    for block in text.split("\n\n"):
+        block = block.strip()
+        if not block:
+            continue
+        event_type = None
+        data = None
+        for line in block.split("\n"):
+            if line.startswith("event: "):
+                event_type = line[7:]
+            elif line.startswith("data: "):
+                data = json.loads(line[6:])
+        if event_type and data is not None:
+            events.append((event_type, data))
+    return events
+
+
+def _assert_sse_events_have_ts(events: list[tuple[str, dict]]) -> None:
+    for event_type, data in events:
+        assert "ts" in data, f"event {event_type} missing ts"
+
+
 def test_ingest_rejects_question(client):
     r = client.post("/api/ingest", json={"text": "windows终端怎么设置utf8编码"})
     assert r.status_code == 200
@@ -21,8 +47,13 @@ def test_chat_returns_sse_stream(client):
     r = client.post("/api/chat", json={"text": "docker 怎么用"})
     assert r.status_code == 200
     assert "text/event-stream" in r.headers.get("content-type", "")
-    assert "event: done" in r.text
-    assert '"ts"' in r.text
+    events = _parse_sse_events(r.text)
+    event_types = [t for t, _ in events]
+    assert "done" in event_types
+    _assert_sse_events_have_ts(events)
+    done_data = next(data for t, data in events if t == "done")
+    assert "total_duration_ms" in done_data
+    assert isinstance(done_data["total_duration_ms"], int)
 
 
 def test_chat_recall_via_sse(client):
@@ -30,8 +61,16 @@ def test_chat_recall_via_sse(client):
     r = client.post("/api/chat", json={"text": "docker 怎么用"})
     assert r.status_code == 200
     assert "text/event-stream" in r.headers.get("content-type", "")
-    assert "event: text_delta" in r.text
-    assert "event: done" in r.text
+    events = _parse_sse_events(r.text)
+    event_types = [t for t, _ in events]
+    assert "text_delta" in event_types
+    assert "done" in event_types
+    _assert_sse_events_have_ts(events)
+    tool_results = [data for t, data in events if t == "tool_result"]
+    assert tool_results, "expected tool_result events during recall"
+    for data in tool_results:
+        assert "duration_ms" in data
+        assert isinstance(data["duration_ms"], int)
 
 
 def test_tree_lists_docs(client):
@@ -94,6 +133,16 @@ def test_chat_saves_to_conversation(client):
     assert len(conv["messages"]) == 2
     assert conv["messages"][0]["role"] == "user"
     assert conv["messages"][0]["text"] == "docker 怎么用"
+    assert "ts" in conv["messages"][0]
     assert conv["messages"][1]["role"] == "assistant"
     assert "timeline" in conv["messages"][1]
+    assert "ts" in conv["messages"][1]
+    timeline = conv["messages"][1]["timeline"]
+    assert timeline, "assistant message should persist non-empty timeline"
+    assert any(b.get("type") == "tool" for b in timeline)
+    for block in timeline:
+        assert "ts" in block
+    tool_blocks = [b for b in timeline if b.get("type") == "tool" and b.get("status") == "done"]
+    assert tool_blocks
+    assert all("duration_ms" in b for b in tool_blocks)
     assert conv["title"] == "docker 怎么用"
