@@ -240,8 +240,6 @@ a:hover {
 }
 
 .doc-panel {
-  width: min(400px, 38vw);
-  min-width: 300px;
   border-left: 1px solid var(--border);
   background: var(--bg-surface);
   flex-shrink: 0;
@@ -249,6 +247,31 @@ a:hover {
   flex-direction: column;
   box-shadow: var(--shadow-panel);
   animation: slideInPanel 0.18s ease-out;
+  min-height: 0;
+}
+
+.doc-panel--narrow {
+  width: min(400px, 38vw);
+  min-width: 300px;
+}
+
+.doc-panel--wide {
+  width: min(720px, 58vw);
+  min-width: 480px;
+}
+
+/* Focus: doc takes remaining space after sidebar */
+.app-shell--doc-focus .doc-panel {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+  border-left: none;
+  box-shadow: none;
+  animation: none;
+}
+
+.app-shell--doc-focus .main-panel {
+  display: none;
 }
 
 @keyframes slideInPanel {
@@ -272,6 +295,69 @@ a:hover {
   overflow: hidden;
   font-size: var(--font-ui-sm);
   line-height: var(--leading-tight);
+}
+
+.sidebar--collapsed {
+  width: 40px;
+  min-width: 40px;
+}
+
+.sidebar--collapsed .sidebar-section,
+.sidebar--collapsed .sidebar-footer {
+  display: none;
+}
+
+.sidebar-expand-rail {
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px 0;
+  height: 100%;
+}
+
+.sidebar--collapsed .sidebar-expand-rail {
+  display: flex;
+}
+
+.sidebar-expand-btn {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.sidebar-expand-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+/* Focus mode: comfortable reading column + scrollable tables */
+.app-shell--doc-focus .doc-viewer-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.app-shell--doc-focus .doc-viewer-body > * {
+  width: 100%;
+  max-width: 760px;
+}
+
+.app-shell--doc-focus .doc-markdown,
+.doc-panel--wide .doc-markdown {
+  overflow-x: auto;
+}
+
+.app-shell--doc-focus .doc-markdown table,
+.doc-panel--wide .doc-markdown table {
+  width: max-content;
+  min-width: 100%;
 }
 
 .sidebar-section {
@@ -673,6 +759,39 @@ a:hover {
   color: var(--text-secondary);
   border-radius: var(--radius-sm);
   box-shadow: var(--shadow-sm);
+}
+
+.doc-viewer-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.doc-action-btn {
+  flex-shrink: 0;
+  height: 28px;
+  padding: 0 8px;
+  font-size: var(--font-ui-xs);
+  line-height: 1;
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.doc-action-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.doc-action-btn.is-active {
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
+  color: var(--accent);
 }
 
 .doc-viewer-title h2 {
