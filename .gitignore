@@ -23,3 +23,6 @@ Thumbs.db
 
 # Runtime / local control
 .lorechat/
+
+# Git worktrees
+.worktrees/
