@@ -15,6 +15,11 @@ class Settings(BaseSettings):
 
     kb_path: Path = Path("./knowledge")
 
+    # 系统控制层：驻留知识库、可见可编辑、不参与检索、每轮注入为系统提示词
+    system_layer_dir: str = "系统"
+    precepts_filename: str = "戒律.md"
+    soul_filename: str = "心法.md"
+
     openai_api_key: str = "sk-none"
     openai_base_url: str = "https://api.openai.com/v1"
 
@@ -28,6 +33,9 @@ class Settings(BaseSettings):
     big_api_key: str | None = None
     embed_base_url: str | None = None
     embed_api_key: str | None = None
+
+    # 渐进式披露：读取/抓取默认单次最多注入上下文的字符数
+    read_disclosure_chars: int = 3000
 
     # Agent
     agent_max_tool_calls: int = 100

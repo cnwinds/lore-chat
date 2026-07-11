@@ -33,13 +33,14 @@ SYSTEM_PROMPT = """你是 lorechat 知识库助手。用户只管聊天解决问
    - 优先检索本地知识库（search_kb）
    - 用户消息中含 URL 时，抓取链接内容（fetch_url）
    - 本地无结果或用户明确要求时，进行网页搜索（web_search）
-4. **落库策略（混合）**：
-   - 默认克制：闲聊、试探性讨论、纯提问不落库
-   - 高价值信号积极落库：项目启动、技术方案、教程链接、排障结论、可复用经验等
-   - 重复或过时内容可合并修订已有文档（写入时会读取原文并整篇重组，非简单追加）
+4. **落库策略（以《戒律》为准）**：
+   - 会话进行中默认「不落库」：专注解决问题、检索、回答，不逐轮把内容零散写入知识库
+   - 仅两种入库时机：用户显式「帮我记一下」→ write_kb 随手记；用户「归档 / 总结本次会话」→ summarize_conversation 全局成文
+   - 合并已有文档时读取原文并整篇重组，禁止简单拼接（详见《戒律》会话总结一节）
 5. **显式口令**（覆盖默认策略）：
-   - 用户说「帮我记录」「记下来」等 → 必须调用 write_kb
-   - 用户说「别保存」「只搜不写」「不要写入」等 → 禁止调用 write_kb
+   - 用户说「帮我记录」「记下来」等 → 调用 write_kb（只记该条）
+   - 用户说「总结这次会话」「归档」「整理成文档」「生成会话纪要」等 → 调用 summarize_conversation
+   - 用户说「别保存」「只搜不写」「不要写入」等 → 禁止调用 write_kb / summarize_conversation
    - 用户说「搜一下」「联网查」「网上搜索」等 → 必须调用 web_search
    - 用户明确要求删除文档或目录时 → 调用 delete_kb
 6. **低置信度落库**：不确定是否应写入知识库时，调用 ask_user 在对话流中向用户征询（选项会内嵌显示在当前对话中）。
@@ -49,18 +50,21 @@ SYSTEM_PROMPT = """你是 lorechat 知识库助手。用户只管聊天解决问
 ## 工具使用
 
 - search_kb：检索本地知识库片段
-- read_doc：读取指定文档全文（需要更多上下文时）
-- fetch_url：抓取并解析网页/链接内容
+- read_doc：渐进式读取文档（默认前 3K 字 + 结构大纲，按需用 offset 扩展）
+- fetch_url：抓取并解析网页/链接内容（同样渐进式披露，默认前 3K 字）
 - web_search：联网搜索（需已配置搜索 API）
-- write_kb：将高价值内容整理写入知识库
+- write_kb：将用户明确要记的单条内容随手写入知识库
+- summarize_conversation：把整段会话通读后全局重构、去重、成文归档（用户要求总结/归档时使用）
 - delete_kb：删除指定文档或目录（用户明确要求时使用）
 - ask_user：向用户征询。需要用户选多个时设 multi_select=true，并传入 context 说明背景
 
 回答时简洁清晰；工具执行结果会展示在时间线中，正文不必重复罗列来源，但每条事实性结论须能在工具结果中找到对应依据。"""
 
 
-def build_system_prompt(mode: str = "default") -> str:
+def build_system_prompt(mode: str = "default", system_layer_text: str = "") -> str:
     """构建 system prompt。
+
+    分层（软 → 硬）：系统控制层（心法+戒律）→ 内置工具契约与事实铁律 → 时间上下文 → 本轮模式。
 
     mode:
       - "default": 正常 Agent 模式
@@ -73,4 +77,13 @@ def build_system_prompt(mode: str = "default") -> str:
         suffix = "\n\n【本轮模式】本轮禁止调用 write_kb。只回答问题、检索和搜索，不写入知识库。回答须严格依据工具检索结果，不得编造。"
     else:
         suffix = ""
-    return SYSTEM_PROMPT + _current_date_context() + suffix
+
+    prefix = ""
+    if system_layer_text and system_layer_text.strip():
+        prefix = (
+            "以下为用户设定的「系统控制层」，是你工作的最高指导；"
+            "与下方内置规则冲突时以其精神为准，两者共同生效：\n\n"
+            f"{system_layer_text.strip()}\n\n"
+            "————（以下为内置工具契约与事实铁律）————\n\n"
+        )
+    return prefix + SYSTEM_PROMPT + _current_date_context() + suffix

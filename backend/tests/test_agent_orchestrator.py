@@ -149,3 +149,47 @@ async def test_orchestrator_parallel_batch(tmp_path):
     assert event_types.count("tool_start") == 2
     assert event_types.count("tool_result") == 2
     _assert_events_have_ts(events)
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_stream_does_not_block_event_loop(tmp_path):
+    """同步 LLM 流式迭代不得堵死事件循环（否则聊天中 /api/doc 会一直加载中）。"""
+    import asyncio
+    import time
+
+    from app.models.llm import ChatStreamChunk, ChatWithToolsResult
+
+    orchestrator = _make_orchestrator(
+        tmp_path,
+        tool_responses=[{"content": "ok", "tool_calls": []}],
+    )
+
+    class SlowStreamLLM(FakeLLMClient):
+        def stream_chat_with_tools(self, messages, tools, *, big=True, temperature=0.2):
+            self.calls.append({"messages": messages, "big": big, "tools": tools})
+            time.sleep(0.25)
+            yield ChatStreamChunk(text_delta="ok")
+            yield ChatStreamChunk(
+                result=ChatWithToolsResult(content="ok", tool_calls=[])
+            )
+
+    orchestrator.llm = SlowStreamLLM(tool_responses=[], embed_dim=8)
+
+    ticks = 0
+
+    async def ticker():
+        nonlocal ticks
+        while True:
+            await asyncio.sleep(0.05)
+            ticks += 1
+
+    task = asyncio.create_task(ticker())
+    try:
+        async for _ in orchestrator.run("ping"):
+            pass
+    finally:
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    assert ticks >= 3, f"event loop stalled during sync LLM stream (ticks={ticks})"

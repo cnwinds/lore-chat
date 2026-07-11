@@ -21,10 +21,23 @@ class Answer:
 
 
 class Retriever:
-    def __init__(self, vector: VectorIndex, fulltext: FullTextIndex, llm: LLMClient):
+    def __init__(
+        self,
+        vector: VectorIndex,
+        fulltext: FullTextIndex,
+        llm: LLMClient,
+        *,
+        excluded_prefixes: tuple[str, ...] = (),
+    ):
         self.vector = vector
         self.fulltext = fulltext
         self.llm = llm
+        # 命中来源以这些前缀开头的结果直接剔除（如系统控制层「系统/」，不参与检索）
+        self.excluded_prefixes = tuple(excluded_prefixes)
+
+    def _excluded(self, source: str) -> bool:
+        norm = (source or "").replace("\\", "/").lstrip("/")
+        return any(norm.startswith(p) for p in self.excluded_prefixes)
 
     def search(self, query: str, k: int = 5) -> list[Hit]:
         q_emb = self.llm.embed([query])[0]
@@ -35,6 +48,8 @@ class Retriever:
         # 按 doc_id 去重，保留每个 doc 的最高分片段
         best: dict[str, Hit] = {}
         for h in vec_hits + ft_hits:
+            if self._excluded(h.source):
+                continue
             cur = best.get(h.doc_id)
             if cur is None or h.score > cur.score:
                 best[h.doc_id] = h

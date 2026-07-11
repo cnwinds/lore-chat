@@ -61,7 +61,8 @@ export type SourceRef =
       url: string;
       title: string;
       snippet: string;
-    };
+    }
+  | { type: "conversation"; cid: string; excerpt?: string };
 
 function toolQueryFromInput(input: unknown): string | undefined {
   if (!input || typeof input !== "object" || !("query" in input)) return undefined;
@@ -183,7 +184,9 @@ export function dedupeSources(sources: SourceRef[]): SourceRef[] {
     const key =
       s.type === "kb"
         ? `kb:${s.path}`
-        : `${s.type}:${s.url}`;
+        : s.type === "conversation"
+          ? `conv:${s.cid}`
+          : `${s.type}:${s.url}`;
     if (!seen.has(key)) {
       seen.add(key);
       out.push(s);
@@ -498,5 +501,13 @@ export async function deleteConversation(id: string) {
   return apiFetch<{ ok: boolean }>(
     `/api/conversations/${encodeURIComponent(id)}`,
     { method: "DELETE" },
+  );
+}
+
+/** 把整段会话通读后全局重构、去重、成文归档到知识库。 */
+export async function summarizeConversation(id: string) {
+  return apiFetch<IngestResult>(
+    `/api/conversations/${encodeURIComponent(id)}/summarize`,
+    { method: "POST" },
   );
 }

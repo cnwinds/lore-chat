@@ -5,6 +5,7 @@ import json
 
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Request
 from fastapi.responses import StreamingResponse
+from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel
 
 from app.engine.agent.events import error_event, now_ts
@@ -185,6 +186,19 @@ async def _consume_agent_ingest(agent, text: str) -> dict:
     return result
 
 
+def _reindex_conversation(c, cid: str, conv: dict) -> None:
+    """未归档会话进全文索引，作为归档前的可检索兜底；已归档则移出索引。"""
+    try:
+        if conv.get("summarized"):
+            c.indexer.remove_conversation(cid)
+            return
+        text = c.conversations.conversation_text(conv)
+        c.indexer.index_conversation(cid, text)
+        c.conversations.clear_dirty(cid)
+    except Exception:
+        pass
+
+
 async def _consume_agent_ask(agent, query: str) -> dict:
     text_parts: list[str] = []
     sources: list[dict] = []
@@ -245,6 +259,7 @@ async def chat(body: ChatBody, request: Request):
                 mode="default",
                 active_doc_path=body.active_doc_path,
                 history=history,
+                conversation_id=body.conversation_id,
             ):
                 yield ev
                 _accumulate_timeline(acc, ev)
@@ -257,12 +272,13 @@ async def chat(body: ChatBody, request: Request):
             if acc.total_duration_ms is not None:
                 assistant_msg["total_duration_ms"] = acc.total_duration_ms
             if body.conversation_id:
-                c.conversations.append_exchange(
+                conv = c.conversations.append_exchange(
                     body.conversation_id,
                     body.text,
                     assistant_msg,
                     user_ts=now_ts(),
                 )
+                _reindex_conversation(c, body.conversation_id, conv)
         except Exception as e:
             yield error_event(str(e))
 
@@ -414,6 +430,31 @@ async def append_conversation_messages(
         return _c(request).conversations.append_messages(cid, body.messages)
     except KeyError as e:
         raise HTTPException(404, "对话不存在") from e
+
+
+@router.post("/conversations/{cid}/summarize")
+async def summarize_conversation(cid: str, request: Request):
+    c = _c(request)
+    try:
+        conv = c.conversations.get(cid)
+    except KeyError as e:
+        raise HTTPException(404, "对话不存在") from e
+    from app.engine.conversations import ConversationStore
+
+    transcript = ConversationStore.full_transcript(conv)
+    system_rules = c.system_layer.compose() if c.system_layer else ""
+    try:
+        result = await run_in_threadpool(
+            c.organizer.summarize_conversation,
+            transcript,
+            system_rules=system_rules,
+        )
+    except Exception as e:
+        raise HTTPException(502, f"归档失败: {e}") from e
+    if result.status == "saved" and result.rel_path:
+        c.conversations.mark_summarized(cid, result.rel_path)
+        c.indexer.remove_conversation(cid)
+    return result.__dict__
 
 
 @router.delete("/conversations/{cid}")

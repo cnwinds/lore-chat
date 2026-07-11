@@ -74,10 +74,11 @@ def _extend_sources(all_sources: list[dict], new_sources: list[dict]) -> None:
 
 
 class AgentOrchestrator:
-    def __init__(self, settings: Settings, llm: LLMClient, tools: ToolRegistry):
+    def __init__(self, settings: Settings, llm: LLMClient, tools: ToolRegistry, system_layer=None):
         self.settings = settings
         self.llm = llm
         self.tools = tools
+        self.system_layer = system_layer
 
     async def run(
         self,
@@ -86,14 +87,16 @@ class AgentOrchestrator:
         mode: str = "default",
         active_doc_path: str | None = None,
         history: list[dict] | None = None,
+        conversation_id: str | None = None,
     ) -> AsyncIterator[str]:
         if active_doc_path:
             user_text = (
                 f"{user_text}\n\n[用户当前正在查看文档：{active_doc_path}]"
             )
         start = time.monotonic()
+        system_layer_text = self.system_layer.compose() if self.system_layer else ""
         messages: list[dict] = [
-            {"role": "system", "content": build_system_prompt(mode)},
+            {"role": "system", "content": build_system_prompt(mode, system_layer_text)},
         ]
         if history:
             messages.extend(history)
@@ -103,10 +106,19 @@ class AgentOrchestrator:
 
         while tool_call_count < self.settings.agent_max_tool_calls:
             # 流式消费：文字增量边到边发；最终轮携带完整 result（含 tool_calls）。
+            # OpenAI SDK 为同步迭代器，必须放到线程里取 next，否则会堵死事件循环，
+            # 导致同进程内 /api/doc 等请求在聊天期间无法响应。
             result: ChatWithToolsResult | None = None
-            for chunk in self.llm.stream_chat_with_tools(
-                messages, TOOL_DEFINITIONS, big=True
-            ):
+            stream_iter = iter(
+                self.llm.stream_chat_with_tools(
+                    messages, TOOL_DEFINITIONS, big=True
+                )
+            )
+            sentinel = object()
+            while True:
+                chunk = await asyncio.to_thread(next, stream_iter, sentinel)
+                if chunk is sentinel:
+                    break
                 if chunk.text_delta:
                     yield text_delta(chunk.text_delta)
                 if chunk.result is not None:
@@ -124,7 +136,9 @@ class AgentOrchestrator:
                         and can_parallelize(names)
                     ):
                         async for ev, entry in self._run_parallel_batch(
-                            batch, active_doc_path=active_doc_path
+                            batch,
+                            active_doc_path=active_doc_path,
+                            conversation_id=conversation_id,
                         ):
                             yield ev
                             if entry is not None:
@@ -134,7 +148,9 @@ class AgentOrchestrator:
                         for tc in batch:
                             yield tool_start(tc.id, tc.name, TOOL_LABELS[tc.name], tc.arguments)
                             out, duration_ms = await self._execute_tool(
-                                tc, active_doc_path=active_doc_path
+                                tc,
+                                active_doc_path=active_doc_path,
+                                conversation_id=conversation_id,
                             )
                             yield _emit_tool_result(tc, out, duration_ms)
                             turn_outputs.append((tc, out, duration_ms))
@@ -177,12 +193,19 @@ class AgentOrchestrator:
         return batches
 
     async def _execute_tool(
-        self, tc: ToolCall, *, active_doc_path: str | None = None
+        self,
+        tc: ToolCall,
+        *,
+        active_doc_path: str | None = None,
+        conversation_id: str | None = None,
     ) -> tuple[dict, int]:
         t0 = time.monotonic()
         try:
             out = await self.tools.execute(
-                tc.name, tc.arguments, active_doc_path=active_doc_path
+                tc.name,
+                tc.arguments,
+                active_doc_path=active_doc_path,
+                conversation_id=conversation_id,
             )
         except Exception as e:
             out = {
@@ -198,6 +221,7 @@ class AgentOrchestrator:
         batch: list[ToolCall],
         *,
         active_doc_path: str | None = None,
+        conversation_id: str | None = None,
     ) -> AsyncIterator[tuple[str, tuple[ToolCall, dict, int] | None]]:
         batch_id = uuid.uuid4().hex[:8]
         batch_start = time.monotonic()
@@ -208,7 +232,9 @@ class AgentOrchestrator:
 
         async def run_one(tc: ToolCall) -> tuple[ToolCall, dict, int]:
             out, duration_ms = await self._execute_tool(
-                tc, active_doc_path=active_doc_path
+                tc,
+                active_doc_path=active_doc_path,
+                conversation_id=conversation_id,
             )
             return tc, out, duration_ms
 

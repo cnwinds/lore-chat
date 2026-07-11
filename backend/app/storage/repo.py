@@ -18,8 +18,12 @@ class Document:
 
 
 class KnowledgeRepo:
-    def __init__(self, root: str | Path):
+    def __init__(self, root: str | Path, *, protected_dirs: tuple[str, ...] = ()):
         self.root = Path(root)
+        # 额外保护目录（如系统控制层「系统」），禁止 delete_path 删除
+        self.protected_dirs = tuple(
+            d.replace("\\", "/").strip("/") for d in protected_dirs if d.strip()
+        )
         self.root.mkdir(parents=True, exist_ok=True)
         git_dir = self.root / ".git"
         if git_dir.exists():
@@ -94,7 +98,12 @@ class KnowledgeRepo:
 
     def _is_protected(self, rel_path: str) -> bool:
         norm = rel_path.replace("\\", "/").lstrip("/")
-        return norm == ".kb" or norm.startswith(".kb/") or norm.startswith(".git/")
+        if norm == ".kb" or norm.startswith(".kb/") or norm.startswith(".git/"):
+            return True
+        for d in self.protected_dirs:
+            if norm == d or norm.startswith(d + "/"):
+                return True
+        return False
 
     def delete_path(self, rel_path: str, *, commit_msg: str) -> list[str]:
         norm = rel_path.replace("\\", "/").rstrip("/")

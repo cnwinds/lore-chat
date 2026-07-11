@@ -10,6 +10,7 @@ import {
   createConversation,
   getConversation,
   appendConversationMessages,
+  summarizeConversation,
   titleFromText,
   type ChatMessage,
   type IngestResult,
@@ -101,6 +102,7 @@ export function Chat({
   const [msgs, setMsgs] = useState<ChatMessage[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [streaming, setStreaming] = useState(false);
+  const [archiving, setArchiving] = useState(false);
   const [liveElapsedMs, setLiveElapsedMs] = useState(0);
   const streamingStartRef = useRef<number | null>(null);
   const streamingAssistantIdxRef = useRef<number | null>(null);
@@ -290,6 +292,36 @@ export function Chat({
     await runAgentStream(text);
   }
 
+  async function archiveConversation() {
+    if (!conversationId || streaming || archiving) return;
+    if (!msgs.some((m) => m.role === "user")) return;
+    setArchiving(true);
+    try {
+      const result = await summarizeConversation(conversationId);
+      const text =
+        result.status === "saved" && result.rel_path
+          ? `已把本次会话归档为文档：${result.rel_path}`
+          : result.message || "归档完成";
+      setMsgs((m) => [
+        ...m,
+        { role: "assistant", text, ts: new Date().toISOString() },
+      ]);
+      if (result.rel_path) {
+        onKbChanged?.(result.rel_path);
+        onOpenDoc?.(result.rel_path);
+      }
+      onSidebarRefresh?.();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "归档失败";
+      setMsgs((m) => [
+        ...m,
+        { role: "assistant", text: `错误：${msg}`, ts: new Date().toISOString() },
+      ]);
+    } finally {
+      setArchiving(false);
+    }
+  }
+
   function handleQuestionResolved(
     blockId: string,
     result: IngestResult,
@@ -358,6 +390,10 @@ export function Chat({
   }
 
   function handleOpenSource(src: SourceRef) {
+    if (src.type === "conversation") {
+      // 未归档会话来源仅作展示，暂不跳转
+      return;
+    }
     if (src.type === "kb" && src.path) {
       if (onOpenDoc) {
         onOpenDoc(src.path, src.excerpt);
@@ -533,6 +569,14 @@ export function Chat({
           📎
           <input type="file" hidden onChange={onFile} disabled={streaming} />
         </label>
+        <button
+          className="chat-archive-btn"
+          onClick={archiveConversation}
+          disabled={streaming || archiving || !conversationId}
+          title="把整段会话通读后重构、去重，归档为一篇知识库文档"
+        >
+          {archiving ? "归档中…" : "归档会话"}
+        </button>
         <button onClick={send} disabled={streaming}>
           {streaming ? "处理中…" : "发送"}
         </button>

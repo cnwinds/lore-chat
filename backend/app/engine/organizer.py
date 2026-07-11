@@ -12,6 +12,15 @@ from app.index.indexer import Indexer
 from app.models.llm import LLMClient
 
 
+_DEFAULT_SUMMARY_RULES = (
+    "1. 总结对象是整段会话，先通读全部对话与依据再动笔。\n"
+    "2. 全局重构、禁止流水线拼接：按主题而非发言/来源顺序组织；跨轮去重合并；"
+    "禁止用 --- 堆叠多个一级标题，全篇只有一套自洽的标题层级。\n"
+    "3. 剥离对话痕迹（如「帮我记录」「用户说」），只留结论与事实。\n"
+    "4. 保留可核验性：事实、数据、版本、链接等须有出处，不臆造、不补全。"
+)
+
+
 @dataclass
 class PlacementDecision:
     action: str
@@ -84,6 +93,71 @@ class Organizer:
             question_id=None,
             message=f"已保存到 {decision.rel_path}",
         )
+
+    def summarize_conversation(
+        self,
+        transcript: str,
+        *,
+        hint_path: str | None = None,
+        system_rules: str = "",
+    ) -> IngestResult:
+        """把整段会话通读后全局重构成一篇文档并归档（非逐轮拼接）。"""
+        if not transcript.strip():
+            return IngestResult(
+                status="rejected",
+                rel_path=None,
+                question_id=None,
+                message="会话为空，无可总结内容。",
+            )
+        body = self._synthesize(transcript, system_rules)
+        summary = self._understand(body)
+        related = self.retriever.search(summary or body, k=5)
+        decision = self._normalize_decision(self._decide(body, summary, related), related)
+        decision = self._apply_hint_path(decision, hint_path)
+        # 归档果断落库，不因 ambiguous 打断用户
+        if decision.ambiguous:
+            decision = PlacementDecision(
+                action="new",
+                rel_path=decision.rel_path,
+                title=decision.title,
+                category=decision.category,
+                tags=decision.tags,
+                ambiguous=False,
+                reason=decision.reason or "会话归档",
+            )
+        self._apply(decision, body)
+        return IngestResult(
+            status="saved",
+            rel_path=decision.rel_path,
+            question_id=None,
+            message=f"已归档到 {decision.rel_path}",
+        )
+
+    def _synthesize(self, transcript: str, system_rules: str) -> str:
+        rules = system_rules.strip() or _DEFAULT_SUMMARY_RULES
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "你是知识库编辑，负责把一整段会话归档成一篇结构清晰、可长期查阅的文档。\n"
+                    "务必遵守下列规约（尤其是会话总结/归档部分）：\n\n" + rules
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    "以下是完整会话记录。请通读全部内容后，产出一篇归档文档的正文：\n"
+                    "- 按主题而非发言顺序组织，跨轮去重合并，冲突以更新信息为准\n"
+                    "- 剥离对话痕迹，只保留结论与事实，保留可核验的来源\n"
+                    "- 只输出正文 Markdown，不要 frontmatter，不要用代码围栏包裹全文\n\n"
+                    f"=== 会话记录 ===\n{transcript}"
+                ),
+            },
+        ]
+        body = self.llm.chat(messages, big=True).strip()
+        if not body.endswith("\n"):
+            body += "\n"
+        return body
 
     def resolve_pending(self, qid: str, choice: str) -> IngestResult:
         q = self.pending.get(qid)

@@ -87,6 +87,8 @@
   --shadow-md: 0 8px 24px rgba(15, 23, 42, 0.08);
   --shadow-panel: -2px 0 16px rgba(15, 23, 42, 0.04);
 
+  --chat-content-max-width: 820px;
+
   --scrollbar-track: transparent;
   --scrollbar-thumb: rgba(92, 99, 112, 0.28);
   --scrollbar-thumb-hover: rgba(91, 91, 214, 0.45);
@@ -734,6 +736,9 @@ a:hover {
   display: flex;
   flex-direction: column;
   width: 100%;
+  max-width: var(--chat-content-max-width);
+  margin-left: auto;
+  margin-right: auto;
   margin-top: auto;
   flex-shrink: 0;
 }
@@ -748,8 +753,8 @@ a:hover {
   align-items: center;
   gap: 10px;
   width: fit-content;
-  align-self: flex-start;
-  margin: 0 20px 6px;
+  max-width: var(--chat-content-max-width);
+  margin: 0 auto 6px;
   padding: 8px 12px;
   border-radius: var(--radius-md);
   border: 1px solid var(--accent-border);
@@ -884,7 +889,11 @@ a:hover {
 
 .chat-input-bar {
   display: flex;
-  padding: 10px 16px 14px;
+  width: 100%;
+  max-width: var(--chat-content-max-width);
+  margin-left: auto;
+  margin-right: auto;
+  padding: 10px 20px 14px;
   gap: 8px;
   align-items: flex-end;
   background: linear-gradient(to top, var(--bg-app) 75%, transparent);
@@ -935,6 +944,25 @@ a:hover {
 
 .chat-attach-btn:hover {
   opacity: 1;
+}
+
+.chat-archive-btn {
+  background: var(--bg-muted);
+  color: var(--text-base, inherit);
+  border: 1px solid var(--border-strong);
+  font-size: var(--text-sm);
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  flex-shrink: 0;
+}
+
+.chat-archive-btn:hover:not(:disabled) {
+  border-color: var(--accent-border);
+}
+
+.chat-archive-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 /* Timeline */

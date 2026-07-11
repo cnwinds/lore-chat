@@ -42,6 +42,10 @@ class ConversationStore:
             "created_at": stamp,
             "updated_at": stamp,
             "messages": [],
+            "summarized": False,
+            "summary_path": None,
+            "summarized_at": None,
+            "indexed_dirty": False,
         }
         self._write(data)
         return cid
@@ -84,6 +88,10 @@ class ConversationStore:
         conv["updated_at"] = _now()
         if conv["title"] == "新对话" and user_text.strip():
             conv["title"] = _title_from_text(user_text)
+        # 有新内容：需要重建检索索引；若此前已总结，则视为「脏」，重新可检索
+        conv["indexed_dirty"] = True
+        if conv.get("summarized"):
+            conv["summarized"] = False
         data[cid] = conv
         self._write(data)
         return conv
@@ -137,6 +145,83 @@ class ConversationStore:
             conv["updated_at"] = _now()
             data[cid] = conv
             self._write(data)
+
+    def mark_summarized(self, cid: str, summary_path: str) -> None:
+        data = self._read()
+        conv = data.get(cid)
+        if conv is None:
+            raise KeyError(cid)
+        conv["summarized"] = True
+        conv["summary_path"] = summary_path
+        conv["summarized_at"] = _now()
+        conv["indexed_dirty"] = False
+        conv["updated_at"] = _now()
+        data[cid] = conv
+        self._write(data)
+
+    def clear_dirty(self, cid: str) -> None:
+        data = self._read()
+        conv = data.get(cid)
+        if conv is None:
+            return
+        if conv.get("indexed_dirty"):
+            conv["indexed_dirty"] = False
+            data[cid] = conv
+            self._write(data)
+
+    @classmethod
+    def full_transcript(cls, conv: dict, *, max_chars: int = 60000) -> str:
+        """整段会话稿：用于归档总结（通读全文，不做轮次截断，仅总长兜底）。"""
+        lines: list[str] = []
+        for msg in conv.get("messages", []):
+            role = msg.get("role")
+            if role == "user":
+                text = (msg.get("text") or "").strip()
+                if text:
+                    lines.append(f"【用户】{text}")
+            elif role == "assistant":
+                text = cls._assistant_content(msg)
+                if text:
+                    lines.append(f"【助手】{text}")
+                for src in cls._iter_kb_web_sources(msg):
+                    lines.append(src)
+        text = "\n\n".join(lines)
+        if len(text) > max_chars:
+            text = text[-max_chars:]
+        return text
+
+    @classmethod
+    def conversation_text(cls, conv: dict, *, max_chars: int = 20000) -> str:
+        """会话可检索正文（喂给全文索引）：仅用户与助手文字，去掉工具噪声。"""
+        lines: list[str] = []
+        for msg in conv.get("messages", []):
+            role = msg.get("role")
+            if role == "user":
+                text = (msg.get("text") or "").strip()
+                if text:
+                    lines.append(text)
+            elif role == "assistant":
+                text = cls._assistant_content(msg)
+                if text:
+                    lines.append(text)
+        text = "\n\n".join(lines)
+        return text[:max_chars] if len(text) > max_chars else text
+
+    @staticmethod
+    def _iter_kb_web_sources(msg: dict) -> list[str]:
+        out: list[str] = []
+        for src in msg.get("sources") or []:
+            st = src.get("type")
+            if st == "web" or st == "search":
+                title = src.get("title") or src.get("url") or ""
+                snippet = (src.get("snippet") or "").strip()
+                if title:
+                    out.append(f"（来源：{title}）{snippet}".strip())
+            elif st == "kb":
+                path = src.get("path")
+                if path:
+                    out.append(f"（本地：{path}）")
+        return out
 
     @staticmethod
     def _assistant_content(msg: dict) -> str:

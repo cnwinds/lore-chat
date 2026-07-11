@@ -1,7 +1,14 @@
 from __future__ import annotations
 
+import asyncio
+
+from app.engine.conversations import ConversationStore
+from app.engine.disclosure import disclose, disclosure_summary
+
 READ_ONLY_TOOLS = frozenset({"search_kb", "read_doc", "fetch_url", "web_search"})
-WRITE_TOOLS = frozenset({"write_kb", "delete_kb", "ask_user"})
+WRITE_TOOLS = frozenset({"write_kb", "delete_kb", "ask_user", "summarize_conversation"})
+
+_DEFAULT_DISCLOSURE_CHARS = 3000
 
 
 def can_parallelize(tool_names: list[str]) -> bool:
@@ -14,6 +21,7 @@ TOOL_LABELS = {
     "fetch_url": "打开链接",
     "web_search": "搜索网页",
     "write_kb": "整理到知识库",
+    "summarize_conversation": "归档整段会话",
     "delete_kb": "删除知识库内容",
     "ask_user": "征询用户",
 }
@@ -38,11 +46,16 @@ TOOL_DEFINITIONS: list[dict] = [
         "type": "function",
         "function": {
             "name": "read_doc",
-            "description": "读取知识库中指定路径的文档全文",
+            "description": (
+                "按渐进式披露读取知识库文档：默认返回前 3000 字，并附结构大纲（各标题及字符位置）。"
+                "内容不足时，用 offset 跳到相关小节或翻页继续读取，不要盲目全量读取。"
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "path": {"type": "string", "description": "文档相对路径，如 技术/docker/常用命令.md"},
+                    "offset": {"type": "integer", "description": "从第几个字符开始读取，默认 0；可用返回的 next_offset 或大纲中的 @位置", "default": 0},
+                    "limit": {"type": "integer", "description": "本次最多读取字符数，默认 3000", "default": 3000},
                 },
                 "required": ["path"],
             },
@@ -52,11 +65,16 @@ TOOL_DEFINITIONS: list[dict] = [
         "type": "function",
         "function": {
             "name": "fetch_url",
-            "description": "抓取并解析网页内容，转为 Markdown",
+            "description": (
+                "抓取并解析网页为 Markdown，按渐进式披露返回：默认前 3000 字。"
+                "同一链接会缓存，需要更多时用 offset 继续，不会重复抓取。"
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "url": {"type": "string", "description": "要抓取的 HTTP/HTTPS 链接"},
+                    "offset": {"type": "integer", "description": "从第几个字符开始，默认 0；用返回的 next_offset 继续", "default": 0},
+                    "limit": {"type": "integer", "description": "本次最多返回字符数，默认 3000", "default": 3000},
                 },
                 "required": ["url"],
             },
@@ -96,6 +114,25 @@ TOOL_DEFINITIONS: list[dict] = [
                     },
                 },
                 "required": ["text"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "summarize_conversation",
+            "description": (
+                "把当前整段会话通读后全局重构、去重、成文，归档为一篇知识库文档。"
+                "用户要求「总结/归档本次会话/整理成文档/生成会话纪要」时调用。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "target_path": {
+                        "type": "string",
+                        "description": "可选，指定归并到的已有文档相对路径；不填则自动决定新建或并入相关文档",
+                    },
+                },
             },
         },
     },
@@ -155,29 +192,58 @@ TOOL_DEFINITIONS: list[dict] = [
 
 
 class ToolRegistry:
-    def __init__(self, retriever, repo, organizer, fetcher, web_search, pending):
+    def __init__(
+        self,
+        retriever,
+        repo,
+        organizer,
+        fetcher,
+        web_search,
+        pending,
+        conversations=None,
+        system_layer=None,
+        indexer=None,
+        disclosure_chars: int = _DEFAULT_DISCLOSURE_CHARS,
+    ):
         self.retriever = retriever
         self.repo = repo
         self.organizer = organizer
         self.fetcher = fetcher
         self.web_search = web_search
         self.pending = pending
+        self.conversations = conversations
+        self.system_layer = system_layer
+        self.indexer = indexer or getattr(organizer, "indexer", None)
+        self.disclosure_chars = disclosure_chars
+        self._fetch_cache: dict[str, object] = {}
 
     async def execute(
-        self, name: str, args: dict, *, active_doc_path: str | None = None
+        self,
+        name: str,
+        args: dict,
+        *,
+        active_doc_path: str | None = None,
+        conversation_id: str | None = None,
     ) -> dict:
+        # 含同步 LLM/嵌入的工具放到线程，避免堵死事件循环（聊天中无法打开文档）
         if name == "search_kb":
-            return self._search_kb(args)
+            return await asyncio.to_thread(self._search_kb, args)
         if name == "read_doc":
-            return self._read_doc(args)
+            return await asyncio.to_thread(self._read_doc, args)
         if name == "fetch_url":
             return await self._fetch_url(args)
         if name == "web_search":
             return await self._web_search(args)
         if name == "write_kb":
-            return self._write_kb(args, active_doc_path=active_doc_path)
+            return await asyncio.to_thread(
+                self._write_kb, args, active_doc_path=active_doc_path
+            )
+        if name == "summarize_conversation":
+            return await asyncio.to_thread(
+                self._summarize_conversation, args, conversation_id=conversation_id
+            )
         if name == "delete_kb":
-            return self._delete_kb(args)
+            return await asyncio.to_thread(self._delete_kb, args)
         if name == "ask_user":
             return self._ask_user(args)
         return {"summary": f"未知工具：{name}", "sources": [], "error": f"unknown tool: {name}"}
@@ -186,15 +252,19 @@ class ToolRegistry:
         query = args["query"]
         k = args.get("k", 5)
         hits = self.retriever.search(query, k=k)
-        sources = [
-            {"type": "kb", "path": h.source, "excerpt": h.chunk[:200]}
-            for h in hits
-        ]
+        sources = [self._hit_source(h) for h in hits]
         return {
             "summary": f"找到 {len(hits)} 条相关内容",
             "sources": sources,
             "hits": hits,
         }
+
+    @staticmethod
+    def _hit_source(h) -> dict:
+        # 会话来源（未归档会话的可检索兜底）标为 conversation，便于前端跳转
+        if isinstance(h.source, str) and h.source.startswith("conv:"):
+            return {"type": "conversation", "cid": h.source[5:], "excerpt": h.chunk[:200]}
+        return {"type": "kb", "path": h.source, "excerpt": h.chunk[:200]}
 
     def _read_doc(self, args: dict) -> dict:
         path = args["path"]
@@ -206,15 +276,31 @@ class ToolRegistry:
                 "sources": [],
                 "error": f"FileNotFoundError: {path}",
             }
-        return {
-            "summary": f"读取 {path}（{len(doc.body)} 字）",
+        offset = args.get("offset", 0)
+        limit = args.get("limit", self.disclosure_chars)
+        info = disclose(doc.body, offset=offset, limit=limit, with_outline=True)
+        out = {
+            "summary": disclosure_summary(f"读取 {path}", info),
             "sources": [{"type": "kb", "path": doc.rel_path}],
-            "body": doc.body,
+            "body": info["body"],
+            "total_chars": info["total_chars"],
+            "offset": info["offset"],
+            "returned_chars": info["returned_chars"],
+            "has_more": info["has_more"],
         }
+        if "next_offset" in info:
+            out["next_offset"] = info["next_offset"]
+        if "outline" in info:
+            out["outline"] = info["outline"]
+        return out
 
     async def _fetch_url(self, args: dict) -> dict:
         url = args["url"]
-        result = await self.fetcher.fetch(url)
+        result = self._fetch_cache.get(url)
+        if result is None:
+            result = await self.fetcher.fetch(url)
+            if not result.error:
+                self._fetch_cache[url] = result
         if result.error:
             return {
                 "summary": f"{url} — {result.error}",
@@ -229,11 +315,57 @@ class ToolRegistry:
                 "snippet": result.snippet,
             }
         ]
-        return {
-            "summary": result.title or result.url,
+        offset = args.get("offset", 0)
+        limit = args.get("limit", self.disclosure_chars)
+        info = disclose(result.markdown, offset=offset, limit=limit, with_outline=True)
+        label = result.title or result.url
+        out = {
+            "summary": disclosure_summary(label, info),
             "sources": sources,
-            "markdown": result.markdown,
+            "markdown": info["body"],
+            "total_chars": info["total_chars"],
+            "offset": info["offset"],
+            "returned_chars": info["returned_chars"],
+            "has_more": info["has_more"],
         }
+        if "next_offset" in info:
+            out["next_offset"] = info["next_offset"]
+        if "outline" in info:
+            out["outline"] = info["outline"]
+        return out
+
+    def _summarize_conversation(
+        self, args: dict, *, conversation_id: str | None = None
+    ) -> dict:
+        if not conversation_id or self.conversations is None:
+            return {
+                "summary": "当前不在具名会话中，无法归档整段会话。",
+                "sources": [],
+                "error": "no conversation context",
+            }
+        try:
+            conv = self.conversations.get(conversation_id)
+        except KeyError:
+            return {
+                "summary": "会话不存在，无法归档。",
+                "sources": [],
+                "error": f"conversation not found: {conversation_id}",
+            }
+        transcript = ConversationStore.full_transcript(conv)
+        system_rules = self.system_layer.compose() if self.system_layer else ""
+        result = self.organizer.summarize_conversation(
+            transcript,
+            hint_path=args.get("target_path"),
+            system_rules=system_rules,
+        )
+        sources = (
+            [{"type": "kb", "path": result.rel_path}] if result.rel_path else []
+        )
+        if result.status == "saved" and result.rel_path:
+            self.conversations.mark_summarized(conversation_id, result.rel_path)
+            if self.indexer is not None:
+                self.indexer.remove_conversation(conversation_id)
+        return {"summary": result.message, "sources": sources}
 
     async def _web_search(self, args: dict) -> dict:
         query = args["query"]

@@ -63,6 +63,26 @@ async def test_read_doc_not_found(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_read_doc_progressive_disclosure(tmp_path):
+    registry, repo, _ = _make_registry(tmp_path)
+    body = "# 大标题\n" + ("段落内容。" * 2000)  # 远超 3000 字
+    repo.write_doc("技术/long.md", {"title": "长文"}, body, commit_msg="seed")
+
+    first = await registry.execute("read_doc", {"path": "技术/long.md"})
+    assert first["returned_chars"] <= 3000
+    assert first["has_more"] is True
+    assert first["offset"] == 0
+    assert "outline" in first  # 首窗口附带结构大纲
+    assert first["next_offset"] == first["returned_chars"]
+
+    nxt = await registry.execute(
+        "read_doc", {"path": "技术/long.md", "offset": first["next_offset"], "limit": 500}
+    )
+    assert nxt["offset"] == first["next_offset"]
+    assert nxt["returned_chars"] <= 500
+
+
+@pytest.mark.asyncio
 async def test_delete_kb_doc(tmp_path):
     registry, repo, idx = _make_registry(tmp_path)
     repo.write_doc(
