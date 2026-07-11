@@ -66,6 +66,7 @@ export default function App() {
     setPreviewPath(null);
     setHighlightText(undefined);
     setDocFocus(false);
+    setSidebarCollapsed(false);
     // docWidth intentionally retained
   }
 
@@ -122,22 +123,21 @@ export default function App() {
   }
 
   useEffect(() => {
-    if (!previewPath) return;
+    if (!previewPath && !snippetSource) return;
     function onKeyDown(e: KeyboardEvent) {
       if (e.key !== "Escape") return;
       e.preventDefault();
-      if (docFocus) {
-        setDocFocus(false);
-        setSidebarCollapsed(false);
-      } else {
-        setPreviewPath(null);
-        setHighlightText(undefined);
-        setDocFocus(false);
+      if (snippetSource !== null) {
+        setSnippetSource(null);
+        return;
       }
+      if (!previewPath) return;
+      if (docFocus) exitDocFocus();
+      else closeDocPreview();
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [previewPath, docFocus]);
+  }, [previewPath, docFocus, snippetSource]);
 
   const chatProps = {
     conversationId: activeConversationId,
