@@ -2,12 +2,18 @@ import { useEffect, useRef, useState } from "react";
 import { getDoc, type DocContent } from "../api";
 import { MarkdownContent } from "./MarkdownContent";
 
+type DocWidth = "narrow" | "wide";
+
 type Props = {
   path: string;
   refreshKey?: number;
   highlightText?: string;
   mode?: "panel" | "page";
+  docWidth?: DocWidth;
+  docFocus?: boolean;
   onClose: () => void;
+  onToggleWidth?: () => void;
+  onToggleFocus?: () => void;
 };
 
 export function DocViewer({
@@ -15,7 +21,11 @@ export function DocViewer({
   refreshKey = 0,
   highlightText,
   mode = "panel",
+  docWidth = "narrow",
+  docFocus = false,
   onClose,
+  onToggleWidth,
+  onToggleFocus,
 }: Props) {
   const [doc, setDoc] = useState<DocContent | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -87,7 +97,11 @@ export function DocViewer({
     path;
 
   return (
-    <div className={`doc-viewer${mode === "panel" ? " doc-viewer-panel" : ""}`}>
+    <div
+      className={`doc-viewer${mode === "panel" ? " doc-viewer-panel" : ""}${
+        docFocus ? " doc-viewer-focus" : ""
+      }`}
+    >
       <header className="doc-viewer-header">
         {mode === "panel" ? (
           <button type="button" className="doc-close-btn" onClick={onClose} title="关闭">
@@ -102,6 +116,30 @@ export function DocViewer({
           <span className="doc-path">{path}</span>
           <h2>{title}</h2>
         </div>
+        {mode === "panel" && (
+          <div className="doc-viewer-actions">
+            {!docFocus && onToggleWidth && (
+              <button
+                type="button"
+                className={`doc-action-btn${docWidth === "wide" ? " is-active" : ""}`}
+                onClick={onToggleWidth}
+                title={docWidth === "wide" ? "收窄侧栏" : "加宽侧栏"}
+              >
+                {docWidth === "wide" ? "窄栏" : "宽栏"}
+              </button>
+            )}
+            {onToggleFocus && (
+              <button
+                type="button"
+                className={`doc-action-btn${docFocus ? " is-active" : ""}`}
+                onClick={onToggleFocus}
+                title={docFocus ? "退出专注" : "专注阅读"}
+              >
+                {docFocus ? "退出专注" : "专注"}
+              </button>
+            )}
+          </div>
+        )}
       </header>
       <div className="doc-viewer-body" ref={bodyRef}>
         {loading && <div className="doc-muted">加载中…</div>}
@@ -126,4 +164,3 @@ export function DocViewer({
     </div>
   );
 }
-
