@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   createConversation,
   listConversations,
@@ -8,6 +8,8 @@ import { Chat } from "./components/Chat";
 import { Sidebar } from "./components/Sidebar";
 import { DocViewer } from "./components/DocViewer";
 import { SearchSnippetModal } from "./components/SearchSnippetModal";
+
+type DocWidth = "narrow" | "wide";
 
 export default function App() {
   const [sidebarRefreshKey, setSidebarRefreshKey] = useState(0);
@@ -25,6 +27,9 @@ export default function App() {
   const [titleOverrides, setTitleOverrides] = useState<Record<string, string>>(
     {},
   );
+  const [docWidth, setDocWidth] = useState<DocWidth>("narrow");
+  const [docFocus, setDocFocus] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   function refreshSidebar() {
     setSidebarRefreshKey((k) => k + 1);
@@ -60,6 +65,27 @@ export default function App() {
   function closeDocPreview() {
     setPreviewPath(null);
     setHighlightText(undefined);
+    setDocFocus(false);
+    // docWidth intentionally retained
+  }
+
+  function enterDocFocus() {
+    setDocFocus(true);
+    setSidebarCollapsed(true);
+  }
+
+  function exitDocFocus() {
+    setDocFocus(false);
+    setSidebarCollapsed(false);
+  }
+
+  function toggleDocWidth() {
+    setDocWidth((w) => (w === "narrow" ? "wide" : "narrow"));
+  }
+
+  function toggleDocFocus() {
+    if (docFocus) exitDocFocus();
+    else enterDocFocus();
   }
 
   async function newChat() {
@@ -95,6 +121,24 @@ export default function App() {
     }
   }
 
+  useEffect(() => {
+    if (!previewPath) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      if (docFocus) {
+        setDocFocus(false);
+        setSidebarCollapsed(false);
+      } else {
+        setPreviewPath(null);
+        setHighlightText(undefined);
+        setDocFocus(false);
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [previewPath, docFocus]);
+
   const chatProps = {
     conversationId: activeConversationId,
     previewPath,
@@ -107,12 +151,20 @@ export default function App() {
   };
 
   return (
-    <div className="app-shell">
+    <div
+      className={`app-shell${docFocus && previewPath ? " app-shell--doc-focus" : ""}`}
+    >
       <Sidebar
         refreshKey={sidebarRefreshKey}
         selectedPath={previewPath}
         activeConversationId={activeConversationId}
         titleOverrides={titleOverrides}
+        collapsed={docFocus && previewPath ? sidebarCollapsed : false}
+        onToggleCollapsed={
+          docFocus && previewPath
+            ? () => setSidebarCollapsed((c) => !c)
+            : undefined
+        }
         onSelectFile={(path) => openDocPreview(path)}
         onNewChat={() => {
           void newChat();
@@ -135,13 +187,23 @@ export default function App() {
         <Chat {...chatProps} />
       </main>
       {previewPath && (
-        <aside className="doc-panel">
+        <aside
+          className={
+            docFocus
+              ? "doc-panel"
+              : `doc-panel doc-panel--${docWidth}`
+          }
+        >
           <DocViewer
             path={previewPath}
             refreshKey={docRefreshKey}
             highlightText={highlightText}
             mode="panel"
+            docWidth={docWidth}
+            docFocus={docFocus}
             onClose={closeDocPreview}
+            onToggleWidth={toggleDocWidth}
+            onToggleFocus={toggleDocFocus}
           />
         </aside>
       )}
