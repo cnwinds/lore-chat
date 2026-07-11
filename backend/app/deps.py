@@ -10,6 +10,7 @@ from app.index.fulltext import FullTextIndex
 from app.index.indexer import Indexer
 from app.engine.retriever import Retriever
 from app.engine.pending import PendingStore
+from app.engine.merge_sessions import MergeSessionStore
 from app.engine.conversations import ConversationStore
 from app.engine.organizer import Organizer
 from app.engine.agent.orchestrator import AgentOrchestrator
@@ -27,6 +28,7 @@ class Container:
     indexer: Indexer
     retriever: Retriever
     pending: PendingStore
+    merge_sessions: MergeSessionStore
     conversations: ConversationStore
     organizer: Organizer
     agent: AgentOrchestrator
@@ -50,6 +52,9 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
         vector, fulltext, llm, excluded_prefixes=(system_layer.prefix,)
     )
     pending = PendingStore(settings.kb_path / ".kb" / "pending.json")
+    merge_sessions = MergeSessionStore(
+        settings.kb_path / ".kb" / "merge_sessions.json"
+    )
     conversations = ConversationStore(
         settings.kb_path / ".kb" / "conversations.json"
     )
@@ -82,6 +87,7 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
         indexer=indexer,
         retriever=retriever,
         pending=pending,
+        merge_sessions=merge_sessions,
         conversations=conversations,
         organizer=organizer,
         agent=agent,

@@ -93,6 +93,8 @@ export type ChatMessage = {
 
 ---
 
+
+
 ## 文件结构
 
 ```
@@ -133,9 +135,12 @@ frontend/src/
 
 ---
 
+
+
 ## Task 1: Agent 配置项
 
 **Files:**
+
 - Modify: `backend/app/config.py`
 - Modify: `backend/.env.example`
 - Test: 无（下轮用）
@@ -187,9 +192,12 @@ git commit -m "feat: add agent and web search configuration"
 
 ---
 
+
+
 ## Task 2: LLM tool calling 扩展
 
 **Files:**
+
 - Modify: `backend/app/models/llm.py`
 - Test: `backend/tests/test_llm_tools.py`（新建）
 
@@ -303,9 +311,12 @@ git commit -m "feat: extend LLMClient with tool calling support"
 
 ---
 
+
+
 ## Task 3: WebFetcher（URL 抓取 + SSRF 防护）
 
 **Files:**
+
 - Create: `backend/app/engine/web/__init__.py`
 - Create: `backend/app/engine/web/fetcher.py`
 - Create: `backend/tests/test_fetcher.py`
@@ -449,9 +460,12 @@ git commit -m "feat: add WebFetcher with SSRF protection"
 
 ---
 
+
+
 ## Task 4: WebSearch 多提供商
 
 **Files:**
+
 - Create: `backend/app/engine/web/search.py`
 - Create: `backend/tests/test_web_search.py`
 
@@ -556,9 +570,12 @@ git commit -m "feat: add multi-provider WebSearch"
 
 ---
 
+
+
 ## Task 5: SSE 事件辅助模块
 
 **Files:**
+
 - Create: `backend/app/engine/agent/__init__.py`
 - Create: `backend/app/engine/agent/events.py`
 - Create: `backend/tests/test_agent_events.py`
@@ -631,9 +648,12 @@ def error_event(message):
 
 ---
 
+
+
 ## Task 6: Agent 工具注册与执行
 
 **Files:**
+
 - Create: `backend/app/engine/agent/prompts.py`
 - Create: `backend/app/engine/agent/tools.py`
 - Create: `backend/tests/test_agent_tools.py`
@@ -641,6 +661,7 @@ def error_event(message):
 - [ ] **Step 1: 写 prompts.py**
 
 将设计文档 §3 决策原则写入 `SYSTEM_PROMPT` 常量；提供 `build_system_prompt(mode: str)` 支持：
+
 - `"default"` — 正常 Agent
 - `"force_write"` — ingest 端点用，强制 write_kb
 - `"no_write"` — ask 端点用，禁止 write_kb
@@ -716,9 +737,12 @@ class ToolRegistry:
 
 ---
 
+
+
 ## Task 7: AgentOrchestrator 主循环
 
 **Files:**
+
 - Create: `backend/app/engine/agent/orchestrator.py`
 - Create: `backend/tests/test_agent_orchestrator.py`
 - Modify: `backend/app/deps.py`
@@ -815,9 +839,12 @@ def build_container(...):
 
 ---
 
+
+
 ## Task 8: API `/chat` 改 SSE
 
 **Files:**
+
 - Modify: `backend/app/api/routes.py`
 - Modify: `backend/tests/test_api.py`
 
@@ -877,9 +904,12 @@ async def ask(body: AskBody, request: Request):
 
 ---
 
+
+
 ## Task 9: 对话持久化升级
 
 **Files:**
+
 - Modify: `backend/app/engine/conversations.py`
 - Modify: `backend/tests/test_conversations.py`
 
@@ -913,9 +943,12 @@ def append_exchange(self, cid, user_text, assistant_msg, user_ts=None):
 
 ---
 
+
+
 ## Task 10: 前端 `chatStream` API
 
 **Files:**
+
 - Modify: `frontend/src/api.ts`
 
 - [ ] **Step 1: 添加类型和 chatStream 函数**
@@ -964,9 +997,12 @@ export async function* chatStream(
 
 ---
 
+
+
 ## Task 11: 前端时间线组件
 
 **Files:**
+
 - Create: `frontend/src/components/TimelineBlock.tsx`
 - Create: `frontend/src/components/SourceChip.tsx`
 - Create: `frontend/src/components/SearchSnippetModal.tsx`
@@ -975,6 +1011,7 @@ export async function* chatStream(
 - [ ] **Step 1: 实现 SourceChip**
 
 点击行为：
+
 - `kb` → `onOpenDoc(path, excerpt)`
 - `web` → `window.open(url)`
 - `search` → `onShowSnippet(source)`
@@ -997,9 +1034,12 @@ export async function* chatStream(
 
 ---
 
+
+
 ## Task 12: Chat.tsx 接入 SSE 时间线
 
 **Files:**
+
 - Modify: `frontend/src/components/Chat.tsx`
 - Modify: `frontend/src/App.tsx`
 
@@ -1060,9 +1100,12 @@ async function send() {
 
 ---
 
+
+
 ## Task 13: DocViewer 高亮
 
 **Files:**
+
 - Modify: `frontend/src/components/DocViewer.tsx`
 - Modify: `frontend/src/App.tsx`
 
@@ -1081,9 +1124,12 @@ const [highlightText, setHighlightText] = useState<string | undefined>();
 
 ---
 
+
+
 ## Task 14: 集成测试与文档收尾
 
 **Files:**
+
 - Modify: `backend/tests/test_api.py`
 - Modify: `backend/tests/conftest.py`
 - Modify: `README.md`
@@ -1124,26 +1170,32 @@ git commit -m "test: add agent SSE integration tests and update docs"
 
 ---
 
+
+
 ## Spec 覆盖自检
 
-| Spec 要求 | 对应 Task |
-|-----------|-----------|
-| 统一 Agent 替代 intent 分流 | Task 7, 8 |
-| 6 种工具 | Task 6 |
-| 有限并行 + 批次事件 | Task 7 |
-| 多搜索提供商 | Task 4 |
-| URL 抓取 + SSRF | Task 3 |
-| SSE 时间线 + ts + duration_ms | Task 5, 7, 8 |
-| 来源点击三分流 | Task 11, 12, 13 |
-| 对话 timeline 持久化 | Task 9 |
+
+| Spec 要求                     | 对应 Task                |
+| --------------------------- | ---------------------- |
+| 统一 Agent 替代 intent 分流       | Task 7, 8              |
+| 6 种工具                       | Task 6                 |
+| 有限并行 + 批次事件                 | Task 7                 |
+| 多搜索提供商                      | Task 4                 |
+| URL 抓取 + SSRF               | Task 3                 |
+| SSE 时间线 + ts + duration_ms  | Task 5, 7, 8           |
+| 来源点击三分流                     | Task 11, 12, 13        |
+| 对话 timeline 持久化             | Task 9                 |
 | 显式口令 force_write / no_write | Task 6 prompts, Task 8 |
-| 旧消息兼容 | Task 12 |
-| ingest/ask 保留 | Task 8 |
-| 验收标准 1-7 | Task 14 手动 + 自动测试 |
+| 旧消息兼容                       | Task 12                |
+| ingest/ask 保留               | Task 8                 |
+| 验收标准 1-7                    | Task 14 手动 + 自动测试      |
+
 
 无遗漏项。
 
 ---
+
+
 
 ## 建议实施顺序
 

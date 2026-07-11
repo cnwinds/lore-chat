@@ -3,9 +3,11 @@ import {
   getTree,
   listConversations,
   deleteConversation,
+  type MergeResult,
   type ConversationSummary,
 } from "../api";
 import { FileTree } from "./FileTree";
+import { MergeConfigModal } from "./MergeConfigModal";
 import { ThemeToggle } from "./ThemeToggle";
 
 type Props = {
@@ -20,6 +22,13 @@ type Props = {
   onNewChat: () => void;
   onSelectConversation: (id: string) => void;
   onDeleteConversation: (id: string) => void;
+  selectionMode?: boolean;
+  selectedPaths?: Set<string>;
+  onToggleSelectionMode?: () => void;
+  onToggleSelect?: (path: string, shiftKey?: boolean) => void;
+  onSelectFolderAll?: (paths: string[]) => void;
+  onMergeComplete?: (result: MergeResult) => void;
+  onDocsLoaded?: (paths: string[]) => void;
 };
 
 function formatTime(iso: string) {
@@ -47,12 +56,22 @@ export function Sidebar({
   onNewChat,
   onSelectConversation,
   onDeleteConversation,
+  selectionMode = false,
+  selectedPaths = new Set(),
+  onToggleSelectionMode,
+  onToggleSelect,
+  onSelectFolderAll,
+  onMergeComplete,
+  onDocsLoaded,
 }: Props) {
   const [docs, setDocs] = useState<string[]>([]);
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  const [showMergeModal, setShowMergeModal] = useState(false);
 
   async function refresh() {
-    setDocs((await getTree()).docs as string[]);
+    const nextDocs = (await getTree()).docs as string[];
+    setDocs(nextDocs);
+    onDocsLoaded?.(nextDocs);
     setConversations((await listConversations()).conversations);
   }
 
@@ -146,18 +165,54 @@ export function Sidebar({
                 <button type="button" className="sidebar-refresh" onClick={refresh} title="刷新">
                   ↻
                 </button>
+                <button
+                  type="button"
+                  className={`sidebar-multi-select-toggle${selectionMode ? " is-active" : ""}`}
+                  onClick={onToggleSelectionMode}
+                  title="多选模式"
+                >
+                  多选
+                </button>
               </div>
             </div>
             <FileTree
               paths={docs}
               selectedPath={selectedPath}
               onSelectFile={onSelectFile}
+              selectionMode={selectionMode}
+              selectedPaths={selectedPaths}
+              onToggleSelect={onToggleSelect}
+              onPreviewFile={onSelectFile}
+              onSelectFolderAll={onSelectFolderAll}
             />
+            {selectionMode && selectedPaths.size >= 1 && (
+              <div className="sidebar-selection-bar">
+                <span>已选 {selectedPaths.size} 篇</span>
+                <button
+                  type="button"
+                  className="sidebar-merge-btn"
+                  disabled={selectedPaths.size < 2}
+                  onClick={() => setShowMergeModal(true)}
+                >
+                  合并为文档
+                </button>
+              </div>
+            )}
           </section>
 
           <footer className="sidebar-footer">
             <ThemeToggle />
           </footer>
+          {showMergeModal && (
+            <MergeConfigModal
+              paths={[...selectedPaths]}
+              onClose={() => setShowMergeModal(false)}
+              onSubmit={(result) => {
+                setShowMergeModal(false);
+                onMergeComplete?.(result);
+              }}
+            />
+          )}
         </>
       )}
     </aside>

@@ -1,131 +1,141 @@
-# 多文档合并：侧栏多选 + 草稿确认 + 可选删除原文
+# 多文档合并：侧栏多选 + 直接成文 + 满意/不满意分流
 
 日期：2026-07-11  
-状态：待实现
+状态：已实现（v2）  
+实现计划：[2026-07-11-multi-doc-merge.md](../plans/2026-07-11-multi-doc-merge.md)
 
 ## 问题
 
-知识库中存在多篇主题重叠的文档（如「漫剧工具盘点」「行业全景分析」等），用户希望一次性选中多篇，由模型全局重构合并为一篇。当前文件树仅支持单选预览，无批量整理入口；合并结果也不应直接覆盖原文。
+知识库中存在多篇主题重叠的文档，用户希望一次性选中多篇，由模型全局重构合并为一篇。当前文件树仅支持单选预览，无批量整理入口。
 
 ## 目标
 
 1. 侧栏支持多选文档（≥2 篇），一键触发合并。
-2. **两阶段落库**：先生成**新文档草稿**供用户预览确认，确认后才正式写入知识库。
-3. 确认入库后，**征询用户是否删除源文档**（默认不删，用户自选）。
+2. 合并结果**直接写成知识库中的一篇新文档**（无独立草稿区、无二次「确认入库」）。
+3. 用户在预览区判断满意与否：
+   - **满意** → 保留新文档 → 征询是否删除源文档。
+   - **不满意** → 删除新文档，或**重新生成并覆盖**同一篇。
 4. 合并逻辑与现有会话归档一致：通读全文、按主题去重重组，禁止流水线拼接。
 
 ## 非目标
 
-- 不支持合并到已有文档（首版一律新建；避免误覆盖）。
-- 不做拖拽排序以外的复杂 diff 对比 UI。
-- 不自动删除源文档。
-- 不把合并任务塞入普通聊天流（独立动作，类似「沉淀」按钮）。
+- 不引入 `.kb/drafts/` 或任何「草稿」概念与 API。
+- 不支持合并到已有文档（首版一律新建）。
+- 不自动删除源文档或新文档。
+- 不把合并任务塞入普通聊天流。
 
 ## 决策记录
 
 | 项 | 决策 |
 |----|------|
-| 选文交互 | 侧栏「多选模式」开关 + 底部浮条 |
-| 合并结果 | 始终新建文档 |
-| 落库时机 | 草稿预览 → 用户确认 → 正式入库 |
-| 原文处理 | 入库后征询；多选勾选要删的源文档，默认全不删 |
-| 后端入口 | `Organizer.merge_documents` + `POST /api/docs/merge` |
-| 草稿存放 | `.kb/drafts/{merge_id}.md`（不进检索，树中不可见） |
+| 选文交互 | 侧栏「多选模式」+ 底部浮条 |
+| 合并结果 | 始终新建一篇正式文档，立即可在侧栏看到 |
+| 不满意处理 | 「删除此文」或「重新生成」（覆盖同一路径） |
+| 危险操作确认 | **仅当用户改过正文**时，「重新生成」「删除此文」才弹确认；未改则直接执行 |
+| 满意后 | 保留新文档 → 征询是否删除源文档（多选，默认不勾） |
+| 会话追踪 | `.kb/merge_sessions.json` 记录 pending 合并会话（非草稿文件） |
+| 改动检测 | 会话存 `generated_content_hash`；对比当前文件正文 hash 判断是否被改过 |
+| 后端入口 | `Organizer.merge_documents` + merge API |
 
 ## 用户流程
 
 ```
-多选 N 篇 → [合并为文档] → AI 生成草稿 → 右侧预览草稿
-    → [确认入库] → 写入正式路径 → 征询是否删除源文档
-    → 用户勾选 / 跳过 → 结束
+多选 N 篇 → [合并为文档] → AI 直接写入新文档 → 右侧预览
+    ├─ 满意 → [采用] → 征询是否删除源文档 → 结束
+    └─ 不满意 → [删除此文] 或 [重新生成]
+                    ├─ 删除此文：删新文档，原文不动，结束
+                    └─ 重新生成：覆盖新文档正文，继续预览判断
 ```
 
-### 阶段 0：多选
+### 阶段 0：多选（不变）
 
-- 知识库标题栏增加 **「多选」** 切换按钮。
-- 多选模式下：
-  - 单击文件行 → 勾选/取消（不打开预览）。
-  - 双击或行内 👁 → 仍可预览（不改变勾选状态）。
-  - `Shift+单击` → 同文件夹内连续范围选择。
-  - 文件夹右键（或行内菜单）→「全选此目录下文档」。
-- 选中 ≥2 篇时，侧栏底部浮条：
-
-  ```
-  已选 4 篇  [查看列表 ▾]  [合并为文档]
-  ```
-
-- `Esc` 或再次点「多选」→ 退出多选，清空选择。
-- 多选状态仅存于前端内存，刷新页面清空。
+- 知识库标题栏 **「多选」** 开关。
+- 多选模式：单击勾选；双击 / 👁 预览；`Shift+单击` 范围选择；文件夹「全选此目录」。
+- 选中 ≥2 篇时侧栏底部浮条：`已选 N 篇 · [合并为文档]`。
+- `Esc` 退出多选并清空选择。
 
 ### 阶段 1：发起合并
 
-点击「合并为文档」打开轻量配置面板（侧栏浮层或居中 Modal）：
+轻量配置面板：
 
 | 字段 | 说明 |
 |------|------|
-| 已选列表 | 可拖拽排序（影响 AI 阅读顺序，后端仍按主题重组） |
-| 补充说明 | 可选，如「保留各篇的数据表格」 |
-| 建议标题 | 可选；留空则由 AI 生成 |
+| 已选列表 | 可拖拽排序（影响 AI 阅读顺序） |
+| 补充说明 | 可选 |
+| 建议标题 | 可选；留空由 AI 生成 |
 
-确认后调用 `POST /api/docs/merge`，侧栏浮条显示「合并中…」。
+`POST /api/docs/merge` → 后端直接 `repo.write` 到正式路径，正常索引，侧栏立即可见。
 
-### 阶段 2：草稿预览
+### 阶段 2：预览 + 分流（核心）
 
-后端通读所选文档全文，调用 LLM 合并（规则同 `_DEFAULT_SUMMARY_RULES` + 多源文档场景），结果写入：
-
-```
-.kb/drafts/{merge_id}.md
-```
-
-响应含 `merge_id`、`draft_path`、`suggested_title`、`suggested_path`（正式入库建议路径）。
-
-前端：
-
-- 自动在右侧 DocViewer 打开草稿（`mode` 带 `draft` 标记）。
-- 标题栏显示 **「合并草稿」** 徽标。
-- 底部操作条（固定在 DocViewer 或浮于预览区）：
-
-  ```
-  [放弃]  [编辑后确认…]  [确认入库]
-  ```
-
-- **放弃**：删除草稿文件，关闭预览，回到多选（选择保留）。
-- **确认入库**：见阶段 3。
-- 草稿期间用户可在 DocViewer 内直接编辑正文（保存回草稿文件）。
-
-### 阶段 3：确认入库
-
-用户点「确认入库」→ `POST /api/docs/merge/{merge_id}/confirm`：
-
-- 请求体可选 `{ rel_path?, title? }` 覆盖建议路径/标题。
-- 将草稿移至正式知识库路径（`repo.write` + `indexer` 更新）。
-- 删除 `.kb/drafts/{merge_id}.md`。
-- 刷新侧栏；预览切换为正式文档。
-
-### 阶段 4：征询删除源文档
-
-入库成功后，在同一会话或独立确认卡片中展示 `PendingQuestion`（`multi_select: true`）：
-
-> 合并文档已保存到《{path}》。是否删除以下源文档？
-
-选项为源文档列表（checkbox，**默认全不勾选**）：
+自动打开新文档预览。DocViewer 底部显示 **合并审阅条**（仅当该文档有关联的 pending 合并会话时）：
 
 ```
-☐ 技术/AI内容创作/漫剧制作工具盘点.md
-☐ 技术/AI内容创作/AI漫剧行业全景分析.md
-☐ …
+正在审阅合并结果（源自 4 篇文档）
+[删除此文]  [重新生成]  [采用]
 ```
 
-底部：
+| 操作 | 行为 |
+|------|------|
+| **采用** | 标记合并会话 `accepted`；收起审阅条；进入阶段 3（征询删原文）；**无论是否改过正文均不弹确认** |
+| **重新生成** | 见下方「智能确认」；通过后同源同路径覆盖；刷新预览；更新 `generated_content_hash` |
+| **删除此文** | 见下方「智能确认」；通过后删新文档；会话 `rejected`；关闭预览；源文档不动 |
 
-- **删除所选**（已选 N 项）
-- **全部保留**（跳过，等价于不删）
+#### 智能确认（重新生成 / 删除此文）
 
-删除走现有 `delete_kb` / `repo.delete` 逻辑；禁止删除 `系统/` 等受保护路径。
+判断「用户是否改过正文」：`当前文件正文 hash ≠ merge_session.generated_content_hash`。
 
-若用户关闭面板未操作，源文档保持不动；待确认项可稍后从对话时间线或 `/api/questions` 处理。
+| 用户是否改过 | 重新生成 | 删除此文 |
+|--------------|----------|----------|
+| **未改** | 直接覆盖重生 | 直接删除 |
+| **已改** | 弹窗：「文档已修改，重新生成将覆盖你的编辑，是否继续？」 | 弹窗：「文档已修改，删除将丢失你的编辑，是否继续？」 |
+
+- 检测以后端 hash 为准（含用户在 IDE 里改文件的情况）。
+- 前端若在 DocViewer 内编辑，保存成功后同步更新本地 `userModified` 标记，**点击时先读本地标记**：已为 true 则立即弹窗，无需等 API；否则可再请求 `GET /api/docs/merge/{id}` 的 `user_modified` 兜底。
+- 每次合并或重新生成写入成功后，刷新 `generated_content_hash` 并将本地 `userModified` 置 false。
+
+用户关闭预览未点任何按钮 → 新文档**保留在知识库**；下次打开该文档时审阅条仍出现，直到采用或删除。
+
+用户可在审阅期间编辑并保存文档正文；保存后视为「已改」，后续重生/删除走确认流程。
+
+### 阶段 3：征询删除源文档
+
+点「采用」后展示 `PendingQuestion`（`multi_select: true`）：
+
+> 已保留合并文档《{path}》。是否删除以下源文档？
+
+源文档列表 checkbox，**默认全不勾选**：
+
+- **删除所选**
+- **全部保留**
+
+删除走 `delete_kb`；禁止删 `系统/` 等受保护路径。
 
 ## 后端设计
+
+### 合并会话（非草稿）
+
+`.kb/merge_sessions.json` 仅存元数据，不存正文：
+
+```json
+{
+  "id": "uuid",
+  "status": "pending_review | accepted | rejected",
+  "new_path": "技术/AI内容创作/漫剧行业合并.md",
+  "source_paths": ["...", "..."],
+  "instruction": "",
+  "order": ["...", "..."],
+  "generated_content_hash": "sha256:...",
+  "created_at": "...",
+  "updated_at": "..."
+}
+```
+
+`generated_content_hash`：最近一次合并/重新生成写入后，对**正文**（不含 frontmatter 或统一规范化后）计算的 SHA-256。用于 `user_modified` 判断。
+
+- `pending_review`：预览时显示审阅条。
+- `accepted`：已采用；若源文档征询未完成，仍可通过 `/api/questions` 处理。
+- `rejected`：用户删掉了新文档；会话归档，不再展示审阅条。
 
 ### `Organizer.merge_documents`
 
@@ -136,91 +146,93 @@ def merge_documents(
     *,
     instruction: str = "",
     order: list[str] | None = None,
-) -> MergeDraftResult:
+    target_path: str | None = None,  # regenerate 时传入，覆盖同路径
+) -> MergeResult:
 ```
 
-1. 校验：`len(source_paths) >= 2`；路径存在且为 `.md`；不可含 `系统/`。
-2. 按 `order` 或 `source_paths` 顺序 `repo.read` 全文。
-3. `_synthesize_merge(sources, instruction)` — LLM 全局重构（非拼接）。
-4. `_decide` 生成建议 `rel_path` / `title`（`action` 固定 `new`）。
-5. 写入 `.kb/drafts/{uuid}.md`，frontmatter 记录：
+1. 校验：`len(source_paths) >= 2`；路径存在；不可含 `系统/`。
+2. 读取源文档全文（按 `order`）。
+3. `_synthesize_merge` — LLM 全局重构。
+4. `_decide` 得 `rel_path` / `title`（`action=new`）；regenerate 时用已有 `target_path`。
+5. `repo.write` + `indexer.index_file` — **正式文档**。
+6. frontmatter 写入追溯字段（非草稿语义）：
 
    ```yaml
-   draft: true
-   merge_id: ...
-   sources: [path1, path2, ...]
-   created_at: ...
+   merged_from:
+     - 技术/AI内容创作/文档A.md
+     - 技术/AI内容创作/文档B.md
    ```
 
-6. 返回 `MergeDraftResult(merge_id, draft_path, body, suggested_path, suggested_title)`。
-
-### `_synthesize_merge` 提示词要点
-
-- 输入：多篇文档全文 + 用户补充说明。
-- 规则：与 `summarize_conversation` 相同——按主题组织、跨篇去重、冲突取新、剥离重复引言、禁止 `---` 堆叠多个一级标题。
-- 输出：纯 Markdown 正文。
+7. 新建或更新 `merge_sessions` 记录，`status=pending_review`，写入 `generated_content_hash`。
+8. 返回 `MergeResult(merge_id, rel_path, source_paths, user_modified: false)`。
 
 ### API
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/api/docs/merge` | body: `{ paths, instruction?, order? }` → 草稿 |
-| GET | `/api/docs/merge/{id}` | 读草稿元数据 + 正文 |
-| PUT | `/api/docs/merge/{id}` | 更新草稿正文（用户编辑后） |
-| POST | `/api/docs/merge/{id}/confirm` | 正式入库 → 创建删除征询 |
-| POST | `/api/docs/merge/{id}/discard` | 放弃草稿 |
-| POST | `/api/docs/merge/{id}/resolve-sources` | body: `{ delete_paths: string[] }` 删除所选源文档 |
+| POST | `/api/docs/merge` | 首次合并：`{ paths, instruction?, order?, title? }` |
+| POST | `/api/docs/merge/{id}/regenerate` | 同源、同路径覆盖重生 |
+| POST | `/api/docs/merge/{id}/accept` | 采用 → 创建删原文征询 |
+| POST | `/api/docs/merge/{id}/reject` | 删除新文档 + 会话 rejected |
+| GET | `/api/docs/merge/{id}` | 会话元数据 + `user_modified: bool`（供恢复审阅条与确认判断） |
+| GET | `/api/docs/merge/active?path=` | 按文档路径查 pending 会话 |
+| POST | `/api/docs/merge/{id}/resolve-sources` | `{ delete_paths: string[] }` 删除所选源文档 |
 
-`confirm` 成功后通过 `PendingStore` 创建征询项，`payload` 含 `merge_id`、`new_path`、`source_paths`。
+无 `confirm`、`discard`、`drafts` 相关端点。
 
-### 草稿与检索
+### 重新生成 vs 删除
 
-- `.kb/drafts/` 目录：`list_tree` 与 `getTree` 均排除，不出现在侧栏。
-- 草稿不写 FTS/向量索引。
-- 正式入库后走正常 `indexer.index_file`。
+- **重新生成**：`merge_documents(..., target_path=session.new_path)`，git commit message 如 `merge: regenerate 覆盖 {path}`。
+- **删除此文**：`repo.delete(session.new_path)` + `indexer.remove` + `status=rejected`。若用户之后又点合并，走全新 `POST /api/docs/merge`。
 
 ## 前端改动范围
 
 | 文件 | 改动 |
 |------|------|
-| `FileTree.tsx` | 多选模式：checkbox、shift 范围、双击预览 |
-| `Sidebar.tsx` | 多选开关、底部浮条、合并配置面板 |
-| `App.tsx` | `selectedPaths` 状态；草稿预览 path；与 `previewPath` 协调 |
-| `DocViewer.tsx` | 草稿模式 UI：徽标、确认/放弃条；支持编辑保存草稿 |
-| `api.ts` | merge 相关 API 封装 |
-| `PendingQuestion.tsx` | 复用多选（源文档删除场景） |
-| `index.css` | 多选行样式、浮条、草稿操作条 |
+| `FileTree.tsx` | 多选模式 |
+| `Sidebar.tsx` | 多选开关、浮条、合并配置 |
+| `App.tsx` | `selectionMode`、`selectedPaths`、`mergeReview` 会话状态 |
+| `DocViewer.tsx` | 合并审阅条：采用 / 重新生成 / 删除此文 |
+| `api.ts` | merge API |
+| `PendingQuestion.tsx` | 复用（删源文档） |
+| `index.css` | 多选、浮条、审阅条样式 |
 
 ## 状态模型（App 层）
 
 | 状态 | 类型 | 说明 |
 |------|------|------|
-| `selectionMode` | `boolean` | 是否处于多选模式 |
-| `selectedPaths` | `Set<string>` | 已选文档路径 |
-| `mergeDraftId` | `string \| null` | 当前合并草稿 ID |
-| `previewPath` | 已有 | 预览路径；草稿用 `.kb/drafts/...` 虚拟路径或 API 直读 |
+| `selectionMode` | `boolean` | 多选模式 |
+| `selectedPaths` | `Set<string>` | 已选路径 |
+| `mergeReview` | `{ mergeId, newPath, sourcePaths, userModified } \| null` | 待审阅合并；`userModified` 本地编辑或 API 同步 |
+
+页面加载时：若 `previewPath` 有关联 pending 会话（`GET /api/docs/merge/active?path=`），恢复审阅条。
 
 ## 错误处理
 
 | 场景 | 处理 |
 |------|------|
-| 少选（<2） | 「合并」按钮 disabled |
-| 某源文件不存在 | 合并前校验，报错并列出缺失项 |
-| LLM 失败 | 浮条提示，不创建草稿 |
-| 确认时草稿已删 | 404，提示重新合并 |
-| 删除时源文件已不存在 | 跳过并汇总提示 |
+| 少选（<2） | 「合并」disabled |
+| 源文件缺失 | 合并前校验报错 |
+| LLM 失败 | 不写文件、不建会话 |
+| 重新生成失败 | 保留旧版正文，提示错误 |
+| 删除新文档时会话已 accepted | 不允许删（或需二次确认「已采用，确定删除？」） |
+| 删源文档时部分不存在 | 跳过并汇总 |
 
 ## 验收
 
-1. 多选 4 篇同主题文档 → 合并 → 右侧出现草稿，结构清晰、无简单拼接痕迹。
-2. 草稿可编辑 → 确认入库 → 侧栏出现新文档，可检索。
-3. 源文档默认保留；征询中勾选 2 篇删除 → 仅删所选，其余保留。
-4. 放弃草稿 → 知识库无新文档、无草稿残留。
-5. 多选模式下单击不触发预览；双击可预览且不打乱勾选。
-6. `系统/` 下文档不可选入合并列表。
+1. 多选 4 篇 → 合并 → 侧栏立即出现新文档，右侧预览，结构为全局重构非拼接。
+2. **未改正文**时点「重新生成」→ 无弹窗，直接覆盖；点「删除此文」→ 无弹窗，直接删除。
+3. **改过正文**后点「重新生成」→ 弹覆盖确认；确认后才覆盖。
+4. **改过正文**后点「删除此文」→ 弹删除确认；确认后才删除。
+5. **采用** → 无论是否改过，均不弹确认；审阅条消失；征询删源。
+6. 未点采用就关掉预览 → 新文档仍在树中；再次打开仍见审阅条。
+7. `系统/` 文档不可参与合并。
 
-## 后续可选增强（不在首版）
+## 与 v1（草稿方案）差异
 
-- 合并完成后自动退出多选模式。
-- 聊天区同步展示源文档 chips（只读）。
-- 合并历史记录（changelog 条目）。
+| v1 草稿方案 | v2 当前方案 |
+|-------------|-------------|
+| `.kb/drafts/` 暂存 | 直接写正式路径 |
+| 确认入库 | 采用 / 删除 / 重新生成 |
+| 放弃草稿 | 删除此文 |
+| 两阶段落库 | 一次写入 + 事后取舍 |

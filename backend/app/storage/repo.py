@@ -105,6 +105,12 @@ class KnowledgeRepo:
                 return True
         return False
 
+    def is_protected(self, rel_path: str) -> bool:
+        return self._is_protected(rel_path)
+
+    def is_writable(self, rel_path: str) -> bool:
+        return not self._is_protected(rel_path)
+
     def delete_path(self, rel_path: str, *, commit_msg: str) -> list[str]:
         norm = rel_path.replace("\\", "/").rstrip("/")
         if self._is_protected(norm):

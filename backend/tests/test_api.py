@@ -100,6 +100,41 @@ def test_doc_endpoint(client):
     assert "body" in r.json()
 
 
+def test_put_doc_updates_body(client):
+    client.post("/api/ingest", json={"text": "原始内容"})
+    path = client.get("/api/tree").json()["docs"][0]
+    new_body = "更新后的正文\n"
+    r = client.put("/api/doc", json={"path": path, "body": new_body})
+    assert r.status_code == 200
+    data = r.json()
+    assert data["rel_path"] == path
+    assert data["body"] == new_body
+    assert "meta" in data
+
+    r2 = client.get("/api/doc", params={"path": path})
+    assert r2.status_code == 200
+    assert r2.json()["body"] == new_body
+
+
+def test_put_doc_not_found(client):
+    r = client.put("/api/doc", json={"path": "不存在/文档.md", "body": "x"})
+    assert r.status_code == 404
+
+
+def test_put_doc_protected(client):
+    r = client.put(
+        "/api/doc",
+        json={"path": "系统/戒律.md", "body": "篡改"},
+    )
+    assert r.status_code == 403
+
+    r2 = client.put(
+        "/api/doc",
+        json={"path": ".kb/foo.md", "body": "篡改"},
+    )
+    assert r2.status_code == 403
+
+
 def test_conversations_crud(client):
     r = client.post("/api/conversations")
     assert r.status_code == 200

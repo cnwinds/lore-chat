@@ -36,6 +36,22 @@ class AppendMessagesBody(BaseModel):
     messages: list[dict]
 
 
+class UpdateDocBody(BaseModel):
+    path: str
+    body: str
+
+
+class MergeBody(BaseModel):
+    paths: list[str]
+    instruction: str = ""
+    order: list[str] | None = None
+    title: str | None = None
+
+
+class ResolveMergeSourcesBody(BaseModel):
+    delete_paths: list[str]
+
+
 def _c(request: Request):
     return request.app.state.container
 
@@ -198,6 +214,18 @@ def _reindex_conversation(c, cid: str, conv: dict) -> None:
         pass
 
 
+def _merge_session_view(c, session: dict) -> dict:
+    user_modified = False
+    rel_path = session.get("new_path")
+    if rel_path:
+        try:
+            body = c.repo.read_doc(rel_path).body
+            user_modified = c.merge_sessions.user_modified(session["id"], body)
+        except (FileNotFoundError, KeyError):
+            user_modified = False
+    return {"session": session, "user_modified": user_modified}
+
+
 async def _consume_agent_ask(agent, query: str) -> dict:
     text_parts: list[str] = []
     sources: list[dict] = []
@@ -339,6 +367,100 @@ async def doc(path: str, request: Request):
     return {"rel_path": d.rel_path, "meta": d.meta, "body": d.body}
 
 
+@router.put("/doc")
+async def update_doc(body: UpdateDocBody, request: Request):
+    c = _c(request)
+    if not c.repo.is_writable(body.path):
+        raise HTTPException(403, "禁止编辑该路径")
+    try:
+        doc = c.repo.read_doc(body.path)
+    except FileNotFoundError:
+        raise HTTPException(404, "文档不存在")
+    c.repo.write_doc(body.path, doc.meta, body.body, commit_msg=f"edit: {body.path}")
+    c.indexer.reindex_doc(body.path, body.body)
+    c.repo.log_change(f"用户编辑 {body.path}")
+    d = c.repo.read_doc(body.path)
+    return {"rel_path": d.rel_path, "meta": d.meta, "body": d.body}
+
+
+@router.post("/docs/merge")
+async def merge_docs(body: MergeBody, request: Request):
+    c = _c(request)
+    result = c.organizer.merge_documents(
+        body.paths,
+        instruction=body.instruction,
+        order=body.order,
+        title_hint=body.title,
+        merge_sessions=c.merge_sessions,
+    )
+    return result.__dict__
+
+
+@router.get("/docs/merge/active")
+async def get_active_merge(path: str, request: Request):
+    c = _c(request)
+    session = c.merge_sessions.find_active_by_path(path)
+    if not session:
+        raise HTTPException(404, "未找到进行中的合并会话")
+    return _merge_session_view(c, session)
+
+
+@router.get("/docs/merge/{merge_id}")
+async def get_merge(merge_id: str, request: Request):
+    c = _c(request)
+    try:
+        session = c.merge_sessions.get(merge_id)
+    except KeyError as e:
+        raise HTTPException(404, "合并会话不存在") from e
+    return _merge_session_view(c, session)
+
+
+@router.post("/docs/merge/{merge_id}/regenerate")
+async def regenerate_merge(merge_id: str, request: Request):
+    c = _c(request)
+    try:
+        result = c.organizer.regenerate_merge(merge_id, merge_sessions=c.merge_sessions)
+    except KeyError as e:
+        raise HTTPException(404, "合并会话不存在") from e
+    return result.__dict__
+
+
+@router.post("/docs/merge/{merge_id}/accept")
+async def accept_merge(merge_id: str, request: Request):
+    c = _c(request)
+    try:
+        result = c.organizer.accept_merge(merge_id, merge_sessions=c.merge_sessions)
+    except KeyError as e:
+        raise HTTPException(404, "合并会话不存在") from e
+    return result.__dict__
+
+
+@router.post("/docs/merge/{merge_id}/reject")
+async def reject_merge(merge_id: str, request: Request):
+    c = _c(request)
+    try:
+        result = c.organizer.reject_merge(merge_id, merge_sessions=c.merge_sessions)
+    except KeyError as e:
+        raise HTTPException(404, "合并会话不存在") from e
+    return result.__dict__
+
+
+@router.post("/docs/merge/{merge_id}/resolve-sources")
+async def resolve_merge_sources(
+    merge_id: str, body: ResolveMergeSourcesBody, request: Request
+):
+    c = _c(request)
+    try:
+        result = c.organizer.resolve_merge_sources(
+            merge_id,
+            body.delete_paths,
+            merge_sessions=c.merge_sessions,
+        )
+    except KeyError as e:
+        raise HTTPException(404, "合并会话不存在") from e
+    return result.__dict__
+
+
 @router.get("/questions")
 async def questions(request: Request):
     return {"questions": _c(request).pending.list_open()}
@@ -375,7 +497,20 @@ async def resolve(qid: str, body: ResolveBody, request: Request):
     chosen_labels = [
         o["label"] for o in q.get("options", []) if o.get("id") in chosen_ids
     ]
-    if body.choices:
+    payload = q.get("payload", {})
+    if payload.get("kind") == "merge_sources":
+        if not body.choices:
+            raise HTTPException(400, "该问题请使用 choices 提交要删除的源文档")
+        merge_id = payload.get("merge_id")
+        if not merge_id:
+            raise HTTPException(400, "该问题缺少 merge_id")
+        c.pending.resolve_many(qid, body.choices)
+        result = c.organizer.resolve_merge_sources(
+            merge_id,
+            list(body.choices),
+            merge_sessions=c.merge_sessions,
+        )
+    elif body.choices:
         if _is_agent_question(q):
             result = c.organizer.resolve_agent_choices(
                 qid, body.choices, conversation_context=conversation_context

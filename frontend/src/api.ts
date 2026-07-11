@@ -458,6 +458,14 @@ export async function getDoc(path: string) {
   return apiFetch<DocContent>(`/api/doc?path=${encodeURIComponent(path)}`);
 }
 
+export async function saveDoc(path: string, body: string) {
+  return apiFetch<DocContent>("/api/doc", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path, body }),
+  });
+}
+
 export async function getQuestions() {
   return apiFetch<{ questions: Question[] }>("/api/questions");
 }
@@ -512,5 +520,122 @@ export async function summarizeConversation(id: string) {
   return apiFetch<IngestResult>(
     `/api/conversations/${encodeURIComponent(id)}/summarize`,
     { method: "POST" },
+  );
+}
+
+export type MergeSession = {
+  id: string;
+  status: "pending_review" | "accepted" | "rejected";
+  new_path: string;
+  source_paths: string[];
+  instruction?: string;
+  order?: string[];
+  user_modified: boolean;
+};
+
+export type MergeResult = {
+  status: string;
+  merge_id: string | null;
+  rel_path: string | null;
+  source_paths: string[];
+  user_modified: boolean;
+  question_id: string | null;
+  message: string;
+};
+
+type MergeSessionResponse = {
+  session: Omit<MergeSession, "user_modified">;
+  user_modified: boolean;
+};
+
+function toMergeSession(data: MergeSessionResponse): MergeSession {
+  return { ...data.session, user_modified: data.user_modified };
+}
+
+export async function mergeDocs({
+  paths,
+  instruction,
+  order,
+  title,
+}: {
+  paths: string[];
+  instruction?: string;
+  order?: string[];
+  title?: string;
+}): Promise<MergeResult> {
+  return apiFetch<MergeResult>("/api/docs/merge", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ paths, instruction, order, title }),
+  });
+}
+
+export async function getMergeSession(id: string): Promise<MergeSession> {
+  const data = await apiFetch<MergeSessionResponse>(
+    `/api/docs/merge/${encodeURIComponent(id)}`,
+  );
+  return toMergeSession(data);
+}
+
+export async function getActiveMerge(path: string): Promise<MergeSession | null> {
+  const r = await fetch(
+    `${BASE}/api/docs/merge/active?path=${encodeURIComponent(path)}`,
+  );
+  if (r.status === 404) return null;
+  if (!r.ok) {
+    let detail = r.statusText;
+    try {
+      const body = await r.json();
+      detail =
+        typeof body.detail === "string"
+          ? body.detail
+          : typeof body.message === "string"
+            ? body.message
+            : JSON.stringify(body);
+    } catch {
+      try {
+        detail = (await r.text()) || detail;
+      } catch {
+        /* ignore */
+      }
+    }
+    throw new Error(detail || `请求失败 (${r.status})`);
+  }
+  const data = (await r.json()) as MergeSessionResponse;
+  return toMergeSession(data);
+}
+
+export async function regenerateMerge(id: string): Promise<MergeResult> {
+  return apiFetch<MergeResult>(
+    `/api/docs/merge/${encodeURIComponent(id)}/regenerate`,
+    { method: "POST" },
+  );
+}
+
+export async function acceptMerge(id: string): Promise<MergeResult> {
+  return apiFetch<MergeResult>(
+    `/api/docs/merge/${encodeURIComponent(id)}/accept`,
+    { method: "POST" },
+  );
+}
+
+export async function rejectMerge(id: string): Promise<MergeResult> {
+  return apiFetch<MergeResult>(
+    `/api/docs/merge/${encodeURIComponent(id)}/reject`,
+    { method: "POST" },
+  );
+}
+
+export async function resolveMergeSources(
+  id: string,
+  deletePaths: string[],
+): Promise<MergeResult> {
+  return apiFetch<MergeResult>(
+    `/api/docs/merge/${encodeURIComponent(id)}/resolve-sources`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ delete_paths: deletePaths }),
+    },
   );
 }

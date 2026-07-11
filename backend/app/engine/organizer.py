@@ -4,8 +4,10 @@ import json
 import re
 from dataclasses import dataclass
 
+from app.engine.content_hash import body_hash
 from app.storage.repo import KnowledgeRepo
 from app.engine.intent import is_question_only
+from app.engine.merge_sessions import MergeSessionStore
 from app.engine.retriever import Retriever
 from app.engine.pending import PendingStore
 from app.index.indexer import Indexer
@@ -39,6 +41,17 @@ class IngestResult:
     question_id: str | None
     message: str
     continue_prompt: str | None = None
+
+
+@dataclass
+class MergeResult:
+    status: str
+    merge_id: str | None
+    rel_path: str | None
+    source_paths: list[str]
+    user_modified: bool
+    question_id: str | None
+    message: str
 
 
 class Organizer:
@@ -134,6 +147,296 @@ class Organizer:
             message=f"已归档到 {decision.rel_path}",
         )
 
+    def merge_documents(
+        self,
+        source_paths: list[str],
+        *,
+        instruction: str = "",
+        order: list[str] | None = None,
+        target_path: str | None = None,
+        title_hint: str | None = None,
+        merge_sessions: MergeSessionStore,
+        session_id: str | None = None,
+    ) -> MergeResult:
+        if len(source_paths) < 2:
+            return MergeResult(
+                status="rejected",
+                merge_id=None,
+                rel_path=None,
+                source_paths=list(source_paths),
+                user_modified=False,
+                question_id=None,
+                message="至少需要 2 篇文档才能合并。",
+            )
+
+        ordered = [p for p in (order or []) if p in source_paths]
+        for rel in source_paths:
+            if rel not in ordered:
+                ordered.append(rel)
+
+        sources: list[tuple[str, str]] = []
+        for rel in ordered:
+            if self.repo.is_protected(rel):
+                return MergeResult(
+                    status="rejected",
+                    merge_id=None,
+                    rel_path=None,
+                    source_paths=list(source_paths),
+                    user_modified=False,
+                    question_id=None,
+                    message=f"包含系统保护路径，拒绝合并：{rel}",
+                )
+            try:
+                doc = self.repo.read_doc(rel)
+            except FileNotFoundError:
+                return MergeResult(
+                    status="rejected",
+                    merge_id=None,
+                    rel_path=None,
+                    source_paths=list(source_paths),
+                    user_modified=False,
+                    question_id=None,
+                    message=f"文档不存在：{rel}",
+                )
+            sources.append((rel, doc.body))
+
+        merged_body = self._synthesize_merge(sources, instruction)
+        summary = self._understand(merged_body)
+        related = self.retriever.search(summary or merged_body, k=5)
+        decision = self._normalize_decision(
+            self._decide(merged_body, summary, related), related
+        )
+
+        if title_hint:
+            decision = PlacementDecision(
+                action=decision.action,
+                rel_path=decision.rel_path,
+                title=title_hint,
+                category=decision.category,
+                tags=decision.tags,
+                ambiguous=decision.ambiguous,
+                reason=decision.reason,
+            )
+        if target_path:
+            decision = PlacementDecision(
+                action="new",
+                rel_path=target_path,
+                title=decision.title,
+                category=decision.category,
+                tags=decision.tags,
+                ambiguous=False,
+                reason=decision.reason or f"按指定路径写入 {target_path}",
+            )
+        else:
+            decision = PlacementDecision(
+                action="new",
+                rel_path=decision.rel_path,
+                title=decision.title,
+                category=decision.category,
+                tags=decision.tags,
+                ambiguous=False,
+                reason=decision.reason,
+            )
+
+        self.repo.write_doc(
+            decision.rel_path,
+            meta={
+                "title": decision.title,
+                "tags": decision.tags,
+                "source": "merge",
+                "merged_from": list(source_paths),
+            },
+            body=merged_body,
+            commit_msg=f"merge: 生成合并文档 {decision.rel_path}",
+        )
+        doc = self.repo.read_doc(decision.rel_path)
+        self.indexer.reindex_doc(decision.rel_path, doc.body)
+        self.repo.log_change(
+            f"创建 {decision.rel_path}：{decision.reason or decision.title}",
+            commit_msg=f"chore: changelog for {decision.rel_path}",
+        )
+
+        generated_hash = body_hash(doc.body)
+        merge_id = session_id
+        user_modified = False
+        if merge_id:
+            try:
+                prev = merge_sessions.get(merge_id)
+            except KeyError:
+                merge_id = None
+            else:
+                prev_path = prev.get("new_path")
+                if prev_path:
+                    try:
+                        user_modified = merge_sessions.user_modified(
+                            merge_id, self.repo.read_doc(prev_path).body
+                        )
+                    except FileNotFoundError:
+                        user_modified = False
+                merge_sessions.update(
+                    merge_id,
+                    status="pending_review",
+                    new_path=decision.rel_path,
+                    source_paths=list(source_paths),
+                    instruction=instruction,
+                    order=ordered,
+                    generated_content_hash=generated_hash,
+                )
+        if not merge_id:
+            merge_id = merge_sessions.create(
+                new_path=decision.rel_path,
+                source_paths=list(source_paths),
+                instruction=instruction,
+                order=ordered,
+                generated_content_hash=generated_hash,
+            )
+
+        return MergeResult(
+            status="saved",
+            merge_id=merge_id,
+            rel_path=decision.rel_path,
+            source_paths=list(source_paths),
+            user_modified=user_modified,
+            question_id=None,
+            message=f"已合并保存到 {decision.rel_path}",
+        )
+
+    def regenerate_merge(
+        self, merge_id: str, *, merge_sessions: MergeSessionStore
+    ) -> MergeResult:
+        session = merge_sessions.get(merge_id)
+        if session.get("status") != "pending_review":
+            return MergeResult(
+                status="rejected",
+                merge_id=merge_id,
+                rel_path=session.get("new_path"),
+                source_paths=list(session.get("source_paths", [])),
+                user_modified=False,
+                question_id=None,
+                message="仅 pending_review 状态可重新生成。",
+            )
+        return self.merge_documents(
+            list(session.get("source_paths", [])),
+            instruction=session.get("instruction", ""),
+            order=session.get("order"),
+            target_path=session.get("new_path"),
+            merge_sessions=merge_sessions,
+            session_id=merge_id,
+        )
+
+    def reject_merge(self, merge_id: str, *, merge_sessions: MergeSessionStore) -> MergeResult:
+        session = merge_sessions.get(merge_id)
+        if session.get("status") != "pending_review":
+            return MergeResult(
+                status="rejected",
+                merge_id=merge_id,
+                rel_path=session.get("new_path"),
+                source_paths=list(session.get("source_paths", [])),
+                user_modified=False,
+                question_id=None,
+                message="仅 pending_review 状态可拒绝。",
+            )
+        rel_path = session.get("new_path")
+        if rel_path:
+            try:
+                self.repo.delete_path(rel_path, commit_msg=f"merge: 拒绝并删除 {rel_path}")
+            except (FileNotFoundError, ValueError):
+                pass
+            self.indexer.remove_doc(rel_path)
+        merge_sessions.update(merge_id, status="rejected")
+        return MergeResult(
+            status="rejected",
+            merge_id=merge_id,
+            rel_path=rel_path,
+            source_paths=list(session.get("source_paths", [])),
+            user_modified=False,
+            question_id=None,
+            message=f"已拒绝合并并删除文档 {rel_path}",
+        )
+
+    def accept_merge(self, merge_id: str, *, merge_sessions: MergeSessionStore) -> MergeResult:
+        session = merge_sessions.get(merge_id)
+        if session.get("status") != "pending_review":
+            return MergeResult(
+                status="rejected",
+                merge_id=merge_id,
+                rel_path=session.get("new_path"),
+                source_paths=list(session.get("source_paths", [])),
+                user_modified=False,
+                question_id=None,
+                message="仅 pending_review 状态可接受。",
+            )
+        new_path = session.get("new_path") or ""
+        source_paths = list(session.get("source_paths", []))
+        merge_sessions.update(merge_id, status="accepted")
+        qid = self.pending.create(
+            question=f"已保留合并文档《{new_path}》。是否删除以下源文档？",
+            options=[{"id": path, "label": path} for path in source_paths],
+            payload={
+                "kind": "merge_sources",
+                "merge_id": merge_id,
+                "new_path": new_path,
+                "source_paths": source_paths,
+            },
+            multi_select=True,
+        )
+        return MergeResult(
+            status="saved",
+            merge_id=merge_id,
+            rel_path=new_path,
+            source_paths=source_paths,
+            user_modified=False,
+            question_id=qid,
+            message="已接受合并文档，请选择是否删除源文档。",
+        )
+
+    def resolve_merge_sources(
+        self,
+        merge_id: str,
+        delete_paths: list[str],
+        *,
+        merge_sessions: MergeSessionStore,
+    ) -> MergeResult:
+        session = merge_sessions.get(merge_id)
+        source_paths = list(session.get("source_paths", []))
+        source_set = set(source_paths)
+        invalid = [path for path in delete_paths if path not in source_set]
+        if invalid:
+            return MergeResult(
+                status="rejected",
+                merge_id=merge_id,
+                rel_path=session.get("new_path"),
+                source_paths=source_paths,
+                user_modified=False,
+                question_id=None,
+                message=f"删除列表包含非源文档：{', '.join(invalid)}",
+            )
+
+        deleted: list[str] = []
+        for path in delete_paths:
+            if self.repo.is_protected(path):
+                continue
+            try:
+                self.repo.delete_path(path, commit_msg=f"merge: 删除源文档 {path}")
+            except (FileNotFoundError, ValueError):
+                continue
+            self.indexer.remove_doc(path)
+            deleted.append(path)
+
+        if deleted:
+            msg = f"已删除源文档：{', '.join(deleted)}"
+        else:
+            msg = "未删除任何源文档。"
+        return MergeResult(
+            status="saved",
+            merge_id=merge_id,
+            rel_path=session.get("new_path"),
+            source_paths=source_paths,
+            user_modified=False,
+            question_id=None,
+            message=msg,
+        )
+
     def _synthesize(self, transcript: str, system_rules: str) -> str:
         rules = system_rules.strip() or _DEFAULT_SUMMARY_RULES
         messages = [
@@ -152,6 +455,36 @@ class Organizer:
                     "- 剥离对话痕迹，只保留结论与事实，保留可核验的来源\n"
                     "- 只输出正文 Markdown，不要 frontmatter，不要用代码围栏包裹全文\n\n"
                     f"=== 会话记录 ===\n{transcript}"
+                ),
+            },
+        ]
+        body = self.llm.chat(messages, big=True).strip()
+        if not body.endswith("\n"):
+            body += "\n"
+        return body
+
+    def _synthesize_merge(self, sources: list[tuple[str, str]], instruction: str) -> str:
+        source_text = "\n\n".join(
+            f"=== 文档 {path} ===\n{body}" for path, body in sources
+        )
+        user_instruction = instruction.strip() or "在不遗漏关键信息的前提下去重合并。"
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "你是知识库编辑，负责把多篇文档合并成一篇可长期维护的 Markdown 文档。\n"
+                    "要求：\n"
+                    "1. 按主题重组内容，去重并消除冲突，优先保留更新且更完整的信息\n"
+                    "2. 只输出正文 Markdown，不要 frontmatter，不要使用代码围栏包裹全文\n"
+                    "3. 避免对话化语言，直接给出结构化知识内容"
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"合并要求：{user_instruction}\n\n"
+                    "请将以下文档合并成一篇：\n\n"
+                    f"{source_text}"
                 ),
             },
         ]
