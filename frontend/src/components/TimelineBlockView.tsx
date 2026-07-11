@@ -32,6 +32,10 @@ function toolOneLiner(block: Extract<TimelineBlock, { type: "tool" }>): string |
   if (block.status === "running") {
     return block.query || "执行中…";
   }
+  if (block.tool === "ask_user") {
+    if (block.choice_resolved) return `已选择：${block.choice_resolved}`;
+    return block.question || block.summary;
+  }
   if (block.tool === "fetch_url") {
     const web = block.sources?.find((s) => s.type === "web");
     if (web) return web.url;
@@ -44,6 +48,13 @@ function toolOneLiner(block: Extract<TimelineBlock, { type: "tool" }>): string |
   }
   return block.summary;
 }
+
+/**
+ * 记录用户对某个工具块的手动展开/折叠选择（按 block.id）。
+ * 流式更新与「回答完成」会让消息子树重挂载，组件内 useState 会被重置；
+ * 用模块级 Map 把用户的显式选择保留下来，避免展开后被重新计算的默认值收起。
+ */
+const toolBlockOpenOverride = new Map<string, boolean>();
 
 /** 并行组内各工具步耗时的最大值 */
 function maxParallelDuration(children: TimelineBlock[]): number | undefined {
@@ -77,12 +88,28 @@ function ToolBlockView({
     choiceLabel: string,
   ) => void;
 }) {
-  const needsChoice =
+  // 实时流式中默认展开（含已完成的工具步）；历史消息默认折叠。
+  // 未作答的征询始终展开，方便用户直接选择。
+  const isLive = liveElapsedMs !== undefined;
+  const pendingAsk =
     block.tool === "ask_user" &&
     block.status === "done" &&
-    !!block.question_id &&
-    !!block.options?.length;
-  const [open, setOpen] = useState(block.status === "running" || needsChoice);
+    !block.choice_resolved;
+  const defaultOpen = isLive || pendingAsk || block.status === "running";
+  // 用户显式点过则以其选择为准（跨重渲染/重挂载持久化），否则用默认值。
+  const [override, setOverride] = useState<boolean | null>(() =>
+    toolBlockOpenOverride.has(block.id)
+      ? toolBlockOpenOverride.get(block.id)!
+      : null,
+  );
+  const open = override ?? defaultOpen;
+
+  function toggleOpen() {
+    const next = !open;
+    toolBlockOpenOverride.set(block.id, next);
+    setOverride(next);
+  }
+
   const oneLiner = toolOneLiner(block);
   const displayMs =
     block.status === "running" && liveElapsedMs !== undefined
@@ -94,7 +121,7 @@ function ToolBlockView({
       <button
         type="button"
         className={`timeline-tool-header${open ? "" : " timeline-tool-header-collapsed"}`}
-        onClick={() => setOpen((v) => !v)}
+        onClick={toggleOpen}
         aria-expanded={open}
         title={!open && oneLiner ? `${block.label}  ${oneLiner}` : undefined}
       >

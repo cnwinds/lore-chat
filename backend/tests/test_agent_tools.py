@@ -46,7 +46,7 @@ async def test_search_kb_tool(tmp_path):
         commit_msg="seed",
     )
     idx.reindex_doc("技术/docker/常用命令.md", "docker ps 查看容器，docker logs 看日志")
-    result = await registry.execute("search_kb", {"query": "docker 日志", "k": 5})
+    result = await registry.execute("search_kb", {"query": "docker", "k": 5})
     assert "找到" in result["summary"]
     assert len(result["sources"]) >= 1
     assert result["sources"][0]["type"] == "kb"

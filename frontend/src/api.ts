@@ -211,6 +211,13 @@ export type ConversationSummary = {
   message_count: number;
 };
 
+/** 与后端 `_title_from_text` 对齐：取首行，最长 40 字。 */
+export function titleFromText(text: string): string {
+  const line = text.trim().split("\n")[0] ?? "";
+  if (line.length > 40) return `${line.slice(0, 40)}…`;
+  return line || "新对话";
+}
+
 export type Conversation = ConversationSummary & {
   messages: ChatMessage[];
 };

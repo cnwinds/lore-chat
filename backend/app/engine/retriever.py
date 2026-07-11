@@ -9,6 +9,9 @@ from app.models.llm import LLMClient
 
 _ATTACH_MARKER = "/attachments/"
 
+# 向量余弦相似度下限；低于此视为无关（小库中否则会把全部文档都当最近邻返回）
+MIN_VECTOR_SCORE = 0.45
+
 
 @dataclass
 class Answer:
@@ -25,7 +28,9 @@ class Retriever:
 
     def search(self, query: str, k: int = 5) -> list[Hit]:
         q_emb = self.llm.embed([query])[0]
-        vec_hits = self.vector.query(q_emb, k=k)
+        vec_hits = [
+            h for h in self.vector.query(q_emb, k=k) if h.score >= MIN_VECTOR_SCORE
+        ]
         ft_hits = self.fulltext.query(query, k=k)
         # 按 doc_id 去重，保留每个 doc 的最高分片段
         best: dict[str, Hit] = {}

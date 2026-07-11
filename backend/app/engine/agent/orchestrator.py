@@ -180,9 +180,16 @@ class AgentOrchestrator:
         self, tc: ToolCall, *, active_doc_path: str | None = None
     ) -> tuple[dict, int]:
         t0 = time.monotonic()
-        out = await self.tools.execute(
-            tc.name, tc.arguments, active_doc_path=active_doc_path
-        )
+        try:
+            out = await self.tools.execute(
+                tc.name, tc.arguments, active_doc_path=active_doc_path
+            )
+        except Exception as e:
+            out = {
+                "summary": f"工具执行失败：{e}",
+                "sources": [],
+                "error": str(e),
+            }
         duration_ms = int((time.monotonic() - t0) * 1000)
         return out, duration_ms
 

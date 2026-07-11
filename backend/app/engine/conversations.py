@@ -107,6 +107,37 @@ class ConversationStore:
         del data[cid]
         self._write(data)
 
+    def mark_question_resolved(
+        self, cid: str, question_id: str, choice_label: str
+    ) -> None:
+        """把某条 ask_user 征询块标记为已选择，持久化用户的选择（便于重载后展示）。"""
+        data = self._read()
+        conv = data.get(cid)
+        if conv is None:
+            return
+        changed = False
+
+        def patch(blocks: list) -> None:
+            nonlocal changed
+            for block in blocks:
+                if (
+                    block.get("type") == "tool"
+                    and block.get("tool") == "ask_user"
+                    and block.get("question_id") == question_id
+                ):
+                    block["choice_resolved"] = choice_label
+                    changed = True
+                elif block.get("type") == "parallel":
+                    patch(block.get("children", []))
+
+        for msg in conv.get("messages", []):
+            if msg.get("timeline"):
+                patch(msg["timeline"])
+        if changed:
+            conv["updated_at"] = _now()
+            data[cid] = conv
+            self._write(data)
+
     @staticmethod
     def _assistant_content(msg: dict) -> str:
         if msg.get("text"):

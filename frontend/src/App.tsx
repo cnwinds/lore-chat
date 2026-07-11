@@ -1,9 +1,13 @@
 import { useState } from "react";
+import {
+  createConversation,
+  listConversations,
+  type SourceRef,
+} from "./api";
 import { Chat } from "./components/Chat";
 import { Sidebar } from "./components/Sidebar";
 import { DocViewer } from "./components/DocViewer";
 import { SearchSnippetModal } from "./components/SearchSnippetModal";
-import type { SourceRef } from "./api";
 
 export default function App() {
   const [sidebarRefreshKey, setSidebarRefreshKey] = useState(0);
@@ -16,6 +20,10 @@ export default function App() {
   > | null>(null);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(
     null,
+  );
+  /** 首问乐观标题；服务端仍为「新对话」时优先展示，刷新后若已更新则自然让位 */
+  const [titleOverrides, setTitleOverrides] = useState<Record<string, string>>(
+    {},
   );
 
   function refreshSidebar() {
@@ -40,6 +48,10 @@ export default function App() {
     refreshSidebar();
   }
 
+  function handleFirstQuestionTitle(id: string, title: string) {
+    setTitleOverrides((prev) => ({ ...prev, [id]: title }));
+  }
+
   function openDocPreview(path: string, excerpt?: string) {
     setPreviewPath(path);
     setHighlightText(excerpt);
@@ -50,8 +62,23 @@ export default function App() {
     setHighlightText(undefined);
   }
 
-  function newChat() {
-    setActiveConversationId(null);
+  async function newChat() {
+    try {
+      const { conversations } = await listConversations();
+      const empty =
+        conversations.find(
+          (c) => c.id === activeConversationId && c.message_count === 0,
+        ) ?? conversations.find((c) => c.message_count === 0);
+      if (empty) {
+        setActiveConversationId(empty.id);
+        return;
+      }
+      const { id } = await createConversation();
+      setActiveConversationId(id);
+      refreshSidebar();
+    } catch {
+      setActiveConversationId(null);
+    }
   }
 
   function selectConversation(id: string) {
@@ -72,6 +99,7 @@ export default function App() {
     conversationId: activeConversationId,
     previewPath,
     onConversationCreated: handleConversationCreated,
+    onFirstQuestionTitle: handleFirstQuestionTitle,
     onSidebarRefresh: refreshSidebar,
     onKbChanged: refreshKb,
     onOpenSource: handleOpenSource,
@@ -84,13 +112,22 @@ export default function App() {
         refreshKey={sidebarRefreshKey}
         selectedPath={previewPath}
         activeConversationId={activeConversationId}
+        titleOverrides={titleOverrides}
         onSelectFile={(path) => openDocPreview(path)}
-        onNewChat={newChat}
+        onNewChat={() => {
+          void newChat();
+        }}
         onSelectConversation={selectConversation}
         onDeleteConversation={(id) => {
           if (activeConversationId === id) {
             setActiveConversationId(null);
           }
+          setTitleOverrides((prev) => {
+            if (!(id in prev)) return prev;
+            const next = { ...prev };
+            delete next[id];
+            return next;
+          });
           refreshSidebar();
         }}
       />

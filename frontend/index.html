@@ -11,6 +11,17 @@
       rel="stylesheet"
     />
     <title>对话式知识管家</title>
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem("kb-theme");
+          document.documentElement.dataset.theme =
+            t === "dark" ? "dark" : "light";
+        } catch (e) {
+          document.documentElement.dataset.theme = "light";
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

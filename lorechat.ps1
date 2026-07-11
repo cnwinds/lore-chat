@@ -51,7 +51,7 @@ function Get-SavedPids {
 
 # --- process / port utilities ---
 function Stop-Tree([int]$procId) {
-    if ($procId -gt 0) {
+    if ($procId -gt 0 -and (Get-Process -Id $procId -ErrorAction SilentlyContinue)) {
         & taskkill.exe /PID $procId /T /F 2>$null | Out-Null
     }
 }

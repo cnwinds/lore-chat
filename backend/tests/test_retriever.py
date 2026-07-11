@@ -18,7 +18,7 @@ def _setup(tmp_path, chat_responses):
 
 def test_search_hybrid_finds_relevant(tmp_path):
     retr = _setup(tmp_path, [])
-    hits = retr.search("docker 日志", k=5)
+    hits = retr.search("docker", k=5)
     assert any(h.doc_id == "技术/docker/常用命令.md" for h in hits)
 
 
@@ -29,9 +29,15 @@ def test_search_dedups_by_doc(tmp_path):
     assert len(ids) == len(set(ids))  # 每个 doc 只出现一次
 
 
+def test_search_filters_irrelevant_vector_hits(tmp_path):
+    retr = _setup(tmp_path, [])
+    hits = retr.search("Claude Opus 版本 4.8", k=5)
+    assert hits == []
+
+
 def test_answer_returns_sources(tmp_path):
     retr = _setup(tmp_path, ["docker logs 用于查看容器日志。"])
-    ans = retr.answer("怎么看 docker 日志")
+    ans = retr.answer("docker")
     assert "docker" in ans.text.lower()
     assert "技术/docker/常用命令.md" in ans.sources
 

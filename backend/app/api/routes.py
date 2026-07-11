@@ -356,6 +356,10 @@ async def resolve(qid: str, body: ResolveBody, request: Request):
             conversation_context = c.conversations.context_excerpt(conv)
         except KeyError as e:
             raise HTTPException(404, "对话不存在") from e
+    chosen_ids = body.choices or ([body.choice] if body.choice else [])
+    chosen_labels = [
+        o["label"] for o in q.get("options", []) if o.get("id") in chosen_ids
+    ]
     if body.choices:
         if _is_agent_question(q):
             result = c.organizer.resolve_agent_choices(
@@ -372,6 +376,14 @@ async def resolve(qid: str, body: ResolveBody, request: Request):
             result = c.organizer.resolve_pending(qid, body.choice)
     else:
         raise HTTPException(400, "请提供 choice 或 choices")
+
+    if body.conversation_id and chosen_labels:
+        try:
+            c.conversations.mark_question_resolved(
+                body.conversation_id, qid, "、".join(chosen_labels)
+            )
+        except Exception:
+            pass
     return result.__dict__
 
 

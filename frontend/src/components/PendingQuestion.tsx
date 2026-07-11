@@ -94,8 +94,26 @@ export function PendingQuestion({
   }
 
   if (localResolved) {
+    const chosen = new Set(localResolved.split("、"));
     return (
-      <div className="pending-resolved">✓ 已选择：{localResolved}</div>
+      <div className="pending-item pending-item-resolved">
+        <div className="pending-question-text">{question.question}</div>
+        <div className="pending-resolved-note">✓ 已选择：{localResolved}</div>
+        <div className="pending-options">
+          {question.options.map((o) => {
+            const isChosen = chosen.has(o.label);
+            return (
+              <div
+                key={o.id}
+                className={`pending-option-static${isChosen ? " selected" : ""}`}
+              >
+                <span className="pending-option-mark">{isChosen ? "●" : "○"}</span>
+                <span>{o.label}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
     );
   }
 

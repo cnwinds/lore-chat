@@ -10,6 +10,7 @@ import {
   createConversation,
   getConversation,
   appendConversationMessages,
+  titleFromText,
   type ChatMessage,
   type IngestResult,
   type SourceRef,
@@ -24,6 +25,8 @@ type Props = {
   conversationId: string | null;
   previewPath?: string | null;
   onConversationCreated?: (id: string) => void;
+  /** 发出该会话第一条用户问题时，用问题摘要更新侧边栏标题 */
+  onFirstQuestionTitle?: (id: string, title: string) => void;
   onSidebarRefresh?: () => void;
   onKbChanged?: (changedPath?: string) => void;
   onOpenSource?: (src: SourceRef) => void;
@@ -88,6 +91,7 @@ export function Chat({
   conversationId,
   previewPath,
   onConversationCreated,
+  onFirstQuestionTitle,
   onSidebarRefresh,
   onKbChanged,
   onOpenSource,
@@ -198,6 +202,7 @@ export function Chat({
   async function runAgentStream(apiText: string, userDisplayText?: string) {
     if (streaming) return;
     const display = userDisplayText ?? apiText;
+    const isFirstUserQuestion = !msgs.some((m) => m.role === "user");
     stickToBottomRef.current = true;
     setStreaming(true);
     streamingRef.current = true;
@@ -233,6 +238,9 @@ export function Chat({
 
     try {
       const cid = await ensureConversationId();
+      if (isFirstUserQuestion) {
+        onFirstQuestionTitle?.(cid, titleFromText(display));
+      }
       for await (const { event, data } of chatStream(apiText, cid, previewPath)) {
         if (event === "error") {
           const message = (data.message as string) || "请求失败";
@@ -255,9 +263,6 @@ export function Chat({
           return msg;
         });
 
-        if (event === "done") {
-          onSidebarRefresh?.();
-        }
         if (event === "tool_result") {
           if (data.tool === "write_kb") {
             onKbChanged?.(kbPathFromToolResult(data));
@@ -273,6 +278,8 @@ export function Chat({
       streamingRef.current = false;
       setStreaming(false);
       skipLoadRef.current = null;
+      // 流关闭后服务端才完成 append_exchange（含标题），此时再刷新侧边栏
+      onSidebarRefresh?.();
     }
   }
 
@@ -432,6 +439,9 @@ export function Chat({
       ));
     }
     if (m.text) {
+      if (m.role === "user") {
+        return <div className="chat-user-text">{m.text}</div>;
+      }
       return (
         <MarkdownContent className="markdown-body chat-markdown">
           {m.text}

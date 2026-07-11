@@ -1,5 +1,23 @@
 from __future__ import annotations
 
+from datetime import datetime
+
+_WEEKDAY_ZH = "一二三四五六日"
+
+
+def _current_date_context() -> str:
+    now = datetime.now().astimezone()
+    wd = _WEEKDAY_ZH[now.weekday()]
+    tz = now.tzname() or "本地时区"
+    return (
+        f"\n\n## 当前时间\n"
+        f"今天是 {now.year} 年 {now.month} 月 {now.day} 日（星期{wd}），"
+        f"当前时刻 {now.strftime('%H:%M')}（{tz}）。"
+        f"用户提及「最近」「本周」「今天」「过去一年」等相对时间时，以此为准；"
+        f"联网搜索新闻、版本、发布信息时，查询词中的年份与日期须与当前时间一致。"
+    )
+
+
 SYSTEM_PROMPT = """你是 lorechat 知识库助手。用户只管聊天解决问题，你在后台静默维护知识库。
 
 ## 核心原则
@@ -55,4 +73,4 @@ def build_system_prompt(mode: str = "default") -> str:
         suffix = "\n\n【本轮模式】本轮禁止调用 write_kb。只回答问题、检索和搜索，不写入知识库。回答须严格依据工具检索结果，不得编造。"
     else:
         suffix = ""
-    return SYSTEM_PROMPT + suffix
+    return SYSTEM_PROMPT + _current_date_context() + suffix
