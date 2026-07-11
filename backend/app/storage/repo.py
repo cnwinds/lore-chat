@@ -96,9 +96,14 @@ class KnowledgeRepo:
             raise FileNotFoundError(rel_path)
         return abs_p.read_bytes()
 
+    def _is_internal(self, rel_path: str) -> bool:
+        """`.kb/`、`.git/` 等内部路径，禁止读写与删除。"""
+        norm = rel_path.replace("\\", "/").lstrip("/")
+        return norm == ".kb" or norm.startswith(".kb/") or norm.startswith(".git/")
+
     def _is_protected(self, rel_path: str) -> bool:
         norm = rel_path.replace("\\", "/").lstrip("/")
-        if norm == ".kb" or norm.startswith(".kb/") or norm.startswith(".git/"):
+        if self._is_internal(norm):
             return True
         for d in self.protected_dirs:
             if norm == d or norm.startswith(d + "/"):
@@ -109,7 +114,7 @@ class KnowledgeRepo:
         return self._is_protected(rel_path)
 
     def is_writable(self, rel_path: str) -> bool:
-        return not self._is_protected(rel_path)
+        return not self._is_internal(rel_path)
 
     def delete_path(self, rel_path: str, *, commit_msg: str) -> list[str]:
         norm = rel_path.replace("\\", "/").rstrip("/")

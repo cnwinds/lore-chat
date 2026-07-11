@@ -2028,17 +2028,28 @@ a:hover {
 
 .doc-diff-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
   padding: 12px 16px;
   border-bottom: 1px solid var(--border);
 }
 
+.doc-diff-header-text {
+  min-width: 0;
+}
+
 .doc-diff-header h3 {
   margin: 0;
   font-size: var(--font-ui-md);
   font-weight: 600;
+}
+
+.doc-diff-hint {
+  margin: 4px 0 0;
+  font-size: var(--font-ui-sm);
+  color: var(--text-muted);
+  line-height: var(--leading-tight);
 }
 
 .doc-diff-close {

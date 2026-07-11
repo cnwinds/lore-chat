@@ -124,9 +124,10 @@ def test_put_doc_not_found(client):
 def test_put_doc_protected(client):
     r = client.put(
         "/api/doc",
-        json={"path": "系统/戒律.md", "body": "篡改"},
+        json={"path": "系统/戒律.md", "body": "用户修订\n"},
     )
-    assert r.status_code == 403
+    assert r.status_code == 200
+    assert r.json()["body"] == "用户修订\n"
 
     r2 = client.put(
         "/api/doc",

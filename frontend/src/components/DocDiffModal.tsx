@@ -1,27 +1,40 @@
 import { useEffect, useMemo } from "react";
 import { buildDocDiff } from "../utils/docDiff";
 
+export type DocDiffModalVariant = "view" | "confirm";
+
 type Props = {
   open: boolean;
+  variant?: DocDiffModalVariant;
+  /** confirm 模式下副标题 */
+  hint?: string;
   saved: string;
   current: string;
   onClose: () => void;
   onDiscard?: () => void;
   onSave?: () => void;
+  saveLabel?: string;
   saving?: boolean;
 };
 
 export function DocDiffModal({
   open,
+  variant = "view",
+  hint,
   saved,
   current,
   onClose,
   onDiscard,
   onSave,
+  saveLabel,
   saving = false,
 }: Props) {
   const lines = useMemo(() => buildDocDiff(saved, current), [saved, current]);
   const hasChanges = lines.some((l) => l.type !== "unchanged");
+  const isConfirm = variant === "confirm";
+  const title = isConfirm ? "未保存的修改" : "查看变更";
+  const primarySaveLabel = saveLabel ?? (isConfirm ? "保存并关闭" : "保存");
+  const dismissLabel = isConfirm ? "继续编辑" : "关闭";
 
   useEffect(() => {
     if (!open) return;
@@ -38,7 +51,11 @@ export function DocDiffModal({
   if (!open) return null;
 
   return (
-    <div className="doc-diff-overlay" role="presentation" onClick={onClose}>
+    <div
+      className="doc-diff-overlay"
+      role="presentation"
+      onClick={onClose}
+    >
       <div
         className="doc-diff-modal"
         role="dialog"
@@ -47,7 +64,10 @@ export function DocDiffModal({
         onClick={(e) => e.stopPropagation()}
       >
         <header className="doc-diff-header">
-          <h3 id="doc-diff-title">查看变更</h3>
+          <div className="doc-diff-header-text">
+            <h3 id="doc-diff-title">{title}</h3>
+            {isConfirm && hint && <p className="doc-diff-hint">{hint}</p>}
+          </div>
           <button type="button" className="doc-diff-close" onClick={onClose} aria-label="关闭">
             ×
           </button>
@@ -73,7 +93,7 @@ export function DocDiffModal({
         </div>
         <footer className="doc-diff-footer">
           <button type="button" className="doc-diff-btn" onClick={onClose}>
-            关闭
+            {dismissLabel}
           </button>
           {onDiscard && (
             <button
@@ -92,7 +112,7 @@ export function DocDiffModal({
               onClick={onSave}
               disabled={saving}
             >
-              {saving ? "保存中…" : "保存"}
+              {saving ? "保存中…" : primarySaveLabel}
             </button>
           )}
         </footer>

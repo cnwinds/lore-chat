@@ -53,6 +53,16 @@ export default function App() {
     questionId?: string;
   } | null>(null);
   const lastSelectedPathRef = useRef<string | null>(null);
+  const docCloseRef = useRef<(() => void) | null>(null);
+
+  function bindDocClose(handler: (() => void) | null) {
+    docCloseRef.current = handler;
+  }
+
+  function requestCloseDocPreview() {
+    if (docCloseRef.current) docCloseRef.current();
+    else closeDocPreview();
+  }
 
   function refreshSidebar() {
     setSidebarRefreshKey((k) => k + 1);
@@ -100,7 +110,7 @@ export default function App() {
     const wantPin = options?.pin;
 
     if (path === previewPath && !docPinned && wantPin !== true) {
-      closeDocPreview();
+      requestCloseDocPreview();
       return;
     }
 
@@ -180,12 +190,12 @@ export default function App() {
 
   function selectConversation(id: string) {
     setActiveConversationId(id);
-    closeDocPreview();
+    requestCloseDocPreview();
   }
 
   function openConversationFromDoc(id: string) {
     setActiveConversationId(id);
-    closeDocPreview();
+    requestCloseDocPreview();
   }
 
   function handleOpenSource(src: SourceRef) {
@@ -363,7 +373,7 @@ export default function App() {
       }
       if (!previewPath) return;
       if (docFocus) exitDocFocus();
-      else closeDocPreview();
+      else requestCloseDocPreview();
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
@@ -448,7 +458,7 @@ export default function App() {
               <div
                 className="doc-float-backdrop"
                 aria-hidden
-                onClick={closeDocPreview}
+                onClick={requestCloseDocPreview}
               />
             )}
             <div
@@ -464,6 +474,7 @@ export default function App() {
                 docWidth={docWidth}
                 docFocus={docFocus}
                 onClose={closeDocPreview}
+                onBindClose={bindDocClose}
                 onSaved={(p) => refreshKb(p)}
                 onNavigationBlocked={(stayPath) => setPreviewPath(stayPath)}
                 onPin={pinDocPreview}
@@ -498,6 +509,7 @@ export default function App() {
             docWidth={docWidth}
             docFocus={docFocus}
             onClose={closeDocPreview}
+            onBindClose={bindDocClose}
             onSaved={(p) => refreshKb(p)}
             onNavigationBlocked={(stayPath) => setPreviewPath(stayPath)}
             onUnpin={unpinDocPreview}

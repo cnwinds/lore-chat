@@ -42,6 +42,8 @@ type Props = {
   docWidth?: DocWidth;
   docFocus?: boolean;
   onClose: () => void;
+  /** 向父组件注册带 dirty 检查的关闭函数（用于点击浮层背景等外部关闭） */
+  onBindClose?: (close: (() => void) | null) => void;
   onSaved?: (path: string) => void;
   onNavigationBlocked?: (stayPath: string) => void;
   onCloseRequest?: () => boolean;
@@ -84,11 +86,12 @@ function isReadOnlyPath(path: string): boolean {
   return (
     norm.startsWith(".kb/") ||
     norm.startsWith(".git/") ||
-    norm.startsWith("系统/") ||
     norm === ".kb" ||
     norm === ".git"
   );
 }
+
+type UnsavedPrompt = "view" | "close" | "navigate" | "reload";
 
 export function DocViewer({
   path,
@@ -98,6 +101,7 @@ export function DocViewer({
   docWidth = "narrow",
   docFocus = false,
   onClose,
+  onBindClose,
   onSaved,
   onNavigationBlocked,
   onCloseRequest,
@@ -127,7 +131,7 @@ export function DocViewer({
     "reject" | "regenerate" | "accept" | null
   >(null);
   const [outlineOpen, setOutlineOpen] = useState(false);
-  const [diffOpen, setDiffOpen] = useState(false);
+  const [unsavedPrompt, setUnsavedPrompt] = useState<UnsavedPrompt | null>(null);
   const [previewRemountKey, setPreviewRemountKey] = useState(0);
   const bodyRef = useRef<HTMLDivElement>(null);
   const markdownSourceRef = useRef<HTMLTextAreaElement>(null);
@@ -135,6 +139,9 @@ export function DocViewer({
   const loadGenRef = useRef(0);
   const lastRefreshKeyRef = useRef(refreshKey);
   const userEditedRef = useRef(false);
+  const pendingNavRef = useRef<{ targetPath: string; gen: number } | null>(null);
+  const unsavedPromptRef = useRef<UnsavedPrompt | null>(null);
+  unsavedPromptRef.current = unsavedPrompt;
 
   const readOnly = isReadOnlyPath(path);
   const dirty = isDocMarkdownDirty(body, savedBody);
@@ -183,15 +190,10 @@ export function DocViewer({
     lastRefreshKeyRef.current = refreshKey;
 
     if (dirty && (pathChanged || refreshChanged)) {
-      const discard = window.confirm(
-        pathChanged
-          ? "当前文档有未保存的修改。放弃修改并打开新文档？"
-          : "当前文档有未保存的修改。放弃修改并重新加载？",
-      );
-      if (!discard) {
-        if (pathChanged) onNavigationBlocked?.(loadedPath);
-        return;
-      }
+      pendingNavRef.current = { targetPath: path, gen };
+      setUnsavedPrompt(pathChanged ? "navigate" : "reload");
+      if (pathChanged) onNavigationBlocked?.(loadedPath);
+      return;
     }
 
     void loadDoc(path, gen);
@@ -213,33 +215,133 @@ export function DocViewer({
 
   const handleSaveRef = useRef<() => Promise<void>>(async () => {});
 
-  const handleSave = useCallback(async () => {
-    if (!dirty || saving || readOnly || !doc) return;
+  const handleSave = useCallback(async (): Promise<boolean> => {
+    if (!dirty || saving || readOnly || !doc) return !dirty;
     setSaving(true);
     setSaveError(null);
     try {
       const saved = await saveDoc(path, body);
       setDoc(saved);
       setSavedBody(body);
-      setDiffOpen(false);
       onSaved?.(path);
+      return true;
     } catch (e) {
       setSaveError(e instanceof Error ? e.message : "保存失败");
+      return false;
     } finally {
       setSaving(false);
     }
   }, [body, dirty, doc, onSaved, path, readOnly, saving]);
 
-  handleSaveRef.current = handleSave;
+  handleSaveRef.current = async () => {
+    await handleSave();
+  };
 
-  const handleClose = () => {
-    if (dirty) {
-      const discard = window.confirm("当前文档有未保存的修改。确定关闭？");
-      if (!discard) return;
-    }
+  const finishClose = useCallback(() => {
     if (onCloseRequest && !onCloseRequest()) return;
     onClose();
-  };
+  }, [onClose, onCloseRequest]);
+
+  const applyDiscard = useCallback(() => {
+    userEditedRef.current = false;
+    setBody(savedBody);
+    setSelection({ start: savedBody.length, end: savedBody.length });
+    setSaveError(null);
+    setPreviewRemountKey((k) => k + 1);
+  }, [savedBody]);
+
+  const completePendingNavigation = useCallback(() => {
+    const pending = pendingNavRef.current;
+    pendingNavRef.current = null;
+    setUnsavedPrompt(null);
+    if (pending) void loadDoc(pending.targetPath, pending.gen);
+  }, [loadDoc]);
+
+  const cancelUnsavedPrompt = useCallback(() => {
+    pendingNavRef.current = null;
+    setUnsavedPrompt(null);
+  }, []);
+
+  const resolveUnsavedPromptAfterAction = useCallback(
+    (action: "discard" | "save") => {
+      const prompt = unsavedPromptRef.current;
+      if (!prompt || prompt === "view") return;
+
+      if (action === "discard") applyDiscard();
+
+      if (prompt === "close") {
+        pendingNavRef.current = null;
+        setUnsavedPrompt(null);
+        finishClose();
+        return;
+      }
+
+      if (prompt === "navigate" || prompt === "reload") {
+        completePendingNavigation();
+      }
+    },
+    [applyDiscard, completePendingNavigation, finishClose],
+  );
+
+  const handleConfirmDiscard = useCallback(() => {
+    resolveUnsavedPromptAfterAction("discard");
+  }, [resolveUnsavedPromptAfterAction]);
+
+  const handleConfirmSave = useCallback(async () => {
+    const prompt = unsavedPromptRef.current;
+    if (!prompt || prompt === "view") return;
+
+    const ok =
+      mergeReview && mergeEditing
+        ? await (async () => {
+            if (!mergeReview || saving || readOnly || !doc) return false;
+            setSaving(true);
+            setSaveError(null);
+            try {
+              await saveDoc(path, body);
+              onMergeReviewChange?.({ userModified: true });
+              onSaved?.(path);
+              const gen = ++loadGenRef.current;
+              await loadDoc(path, gen);
+              return true;
+            } catch (e) {
+              setSaveError(e instanceof Error ? e.message : "保存失败");
+              return false;
+            } finally {
+              setSaving(false);
+            }
+          })()
+        : await handleSave();
+
+    if (!ok) return;
+    resolveUnsavedPromptAfterAction("save");
+  }, [
+    body,
+    doc,
+    handleSave,
+    loadDoc,
+    mergeEditing,
+    mergeReview,
+    onMergeReviewChange,
+    onSaved,
+    path,
+    readOnly,
+    resolveUnsavedPromptAfterAction,
+    saving,
+  ]);
+
+  const handleClose = useCallback(() => {
+    if (dirty) {
+      setUnsavedPrompt("close");
+      return;
+    }
+    finishClose();
+  }, [dirty, finishClose]);
+
+  useEffect(() => {
+    onBindClose?.(handleClose);
+    return () => onBindClose?.(null);
+  }, [handleClose, onBindClose]);
 
   const handleEditModeChange = (mode: EditMode) => {
     setEditMode(mode);
@@ -273,13 +375,9 @@ export function DocViewer({
   const handleDiscard = useCallback(() => {
     if (!dirty || saving) return;
     if (!window.confirm("放弃未保存的修改？此操作不可撤销。")) return;
-    userEditedRef.current = false;
-    setBody(savedBody);
-    setSelection({ start: savedBody.length, end: savedBody.length });
-    setSaveError(null);
-    setDiffOpen(false);
-    setPreviewRemountKey((k) => k + 1);
-  }, [dirty, savedBody, saving]);
+    applyDiscard();
+    setUnsavedPrompt(null);
+  }, [applyDiscard, dirty, saving]);
 
   const handleOutlineJump = useCallback(
     (item: OutlineItem) => {
@@ -409,7 +507,7 @@ export function DocViewer({
             id: "view-diff",
             label: "查看变更",
             icon: "diff" as const,
-            onClick: () => setDiffOpen(true),
+            onClick: () => setUnsavedPrompt("view"),
           },
         ]
       : []),
@@ -521,7 +619,7 @@ export function DocViewer({
               {dirty && (
                 <DocIconBtn
                   label="查看变更"
-                  onClick={() => setDiffOpen(true)}
+                  onClick={() => setUnsavedPrompt("view")}
                   disabled={loading}
                 >
                   <DiffIcon />
@@ -676,22 +774,52 @@ export function DocViewer({
         </footer>
       )}
       <DocDiffModal
-        open={diffOpen}
+        open={unsavedPrompt !== null}
+        variant={unsavedPrompt === "view" ? "view" : "confirm"}
+        hint={
+          unsavedPrompt === "navigate"
+            ? "切换文档前请处理未保存的修改。"
+            : unsavedPrompt === "reload"
+              ? "重新加载将丢失未保存的修改。"
+              : unsavedPrompt === "close"
+                ? "关闭前请处理未保存的修改。"
+                : undefined
+        }
+        saveLabel={
+          unsavedPrompt === "navigate"
+            ? "保存并切换"
+            : unsavedPrompt === "reload"
+              ? "保存并重新加载"
+              : unsavedPrompt === "close"
+                ? "保存并关闭"
+                : undefined
+        }
         saved={savedBody}
         current={body}
         saving={saving}
-        onClose={() => setDiffOpen(false)}
+        onClose={() => {
+          if (unsavedPrompt === "view") setUnsavedPrompt(null);
+          else cancelUnsavedPrompt();
+        }}
         onDiscard={
           !readOnly
             ? () => {
-                handleDiscard();
+                if (unsavedPrompt === "view") handleDiscard();
+                else handleConfirmDiscard();
               }
             : undefined
         }
         onSave={
-          !readOnly && dirty
+          !readOnly &&
+          (unsavedPrompt === "view" ? dirty : unsavedPrompt !== null)
             ? () => {
-                void (mergeReview && mergeEditing ? handleMergeSave() : handleSave());
+                if (unsavedPrompt === "view") {
+                  void handleSave().then((ok) => {
+                    if (ok) setUnsavedPrompt(null);
+                  });
+                } else {
+                  void handleConfirmSave();
+                }
               }
             : undefined
         }
