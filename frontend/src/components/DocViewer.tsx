@@ -3,18 +3,41 @@ import { getDoc, type DocContent } from "../api";
 import { MarkdownContent } from "./MarkdownContent";
 
 type DocWidth = "narrow" | "wide";
+type DocMode = "panel" | "float" | "page";
 
 type Props = {
   path: string;
   refreshKey?: number;
   highlightText?: string;
-  mode?: "panel" | "page";
+  mode?: DocMode;
   docWidth?: DocWidth;
   docFocus?: boolean;
   onClose: () => void;
+  onPin?: () => void;
+  onUnpin?: () => void;
   onToggleWidth?: () => void;
   onToggleFocus?: () => void;
+  onOpenConversation?: (conversationId: string) => void;
 };
+
+function PinIcon({ filled = false }: { filled?: boolean }) {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill={filled ? "currentColor" : "none"}
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M12 17v5" />
+      <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v3.76z" />
+    </svg>
+  );
+}
 
 export function DocViewer({
   path,
@@ -24,8 +47,11 @@ export function DocViewer({
   docWidth = "narrow",
   docFocus = false,
   onClose,
+  onPin,
+  onUnpin,
   onToggleWidth,
   onToggleFocus,
+  onOpenConversation,
 }: Props) {
   const [doc, setDoc] = useState<DocContent | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -96,14 +122,19 @@ export function DocViewer({
     path.split("/").pop() ||
     path;
 
+  const conversationId =
+    typeof doc?.meta?.conversation_id === "string"
+      ? doc.meta.conversation_id
+      : null;
+
   return (
     <div
       className={`doc-viewer${mode === "panel" ? " doc-viewer-panel" : ""}${
-        docFocus ? " doc-viewer-focus" : ""
-      }`}
+        mode === "float" ? " doc-viewer-float" : ""
+      }${docFocus ? " doc-viewer-focus" : ""}`}
     >
       <header className="doc-viewer-header">
-        {mode === "panel" ? (
+        {mode === "panel" || mode === "float" ? (
           <button type="button" className="doc-close-btn" onClick={onClose} title="关闭">
             ×
           </button>
@@ -113,17 +144,37 @@ export function DocViewer({
           </button>
         )}
         <div className="doc-viewer-title">
-          <span className="doc-path">{path}</span>
+          {mode === "panel" && <span className="doc-path">{path}</span>}
           <h2>{title}</h2>
         </div>
-        {mode === "panel" && (
+        {(mode === "float" || mode === "panel") && (
           <div className="doc-viewer-actions">
+            {mode === "float" && onPin && (
+              <button
+                type="button"
+                className="doc-action-btn doc-pin-btn"
+                onClick={onPin}
+                title="固定到右侧栏"
+              >
+                <PinIcon />
+              </button>
+            )}
+            {mode === "panel" && onUnpin && (
+              <button
+                type="button"
+                className="doc-action-btn doc-pin-btn is-active"
+                onClick={onUnpin}
+                title="取消固定，回到浮窗预览"
+              >
+                <PinIcon filled />
+              </button>
+            )}
             {!docFocus && onToggleWidth && (
               <button
                 type="button"
                 className={`doc-action-btn${docWidth === "wide" ? " is-active" : ""}`}
                 onClick={onToggleWidth}
-                title={docWidth === "wide" ? "收窄侧栏" : "加宽侧栏"}
+                title={docWidth === "wide" ? "收窄阅读区" : "加宽阅读区"}
               >
                 {docWidth === "wide" ? "窄栏" : "宽栏"}
               </button>
@@ -146,9 +197,22 @@ export function DocViewer({
         {error && <div className="doc-error">错误：{error}</div>}
         {doc && (
           <>
+            {conversationId && onOpenConversation && (
+              <div className="doc-conversation-link">
+                <button
+                  type="button"
+                  className="doc-conversation-link-btn"
+                  onClick={() => onOpenConversation(conversationId)}
+                >
+                  查看原始会话
+                </button>
+              </div>
+            )}
             {doc.meta && Object.keys(doc.meta).length > 0 && (
               <div className="doc-meta">
-                {Object.entries(doc.meta).map(([k, v]) => (
+                {Object.entries(doc.meta)
+                  .filter(([k]) => k !== "conversation_id")
+                  .map(([k, v]) => (
                   <span key={k} className="doc-meta-tag">
                     {k}: {Array.isArray(v) ? v.join(", ") : String(v)}
                   </span>

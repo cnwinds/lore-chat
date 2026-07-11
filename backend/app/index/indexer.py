@@ -17,12 +17,19 @@ class Indexer:
         chunks = chunk_text(text)
         if not chunks:
             return
-        embeddings = self.llm.embed(chunks)
-        self.vector.add(doc_id, chunks, embeddings, source=doc_id)
+        try:
+            embeddings = self.llm.embed(chunks)
+            self.vector.add(doc_id, chunks, embeddings, source=doc_id)
+        except Exception:
+            # Chroma 异常时仍保证全文索引可用（归档/写入不应因此失败）
+            pass
         self.fulltext.add(doc_id, chunks, source=doc_id)
 
     def remove_doc(self, doc_id: str) -> None:
-        self.vector.delete(doc_id)
+        try:
+            self.vector.delete(doc_id)
+        except Exception:
+            pass
         self.fulltext.delete(doc_id)
 
     @staticmethod

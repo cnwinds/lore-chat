@@ -28,6 +28,7 @@ export default function App() {
     {},
   );
   const [docWidth, setDocWidth] = useState<DocWidth>("narrow");
+  const [docPinned, setDocPinned] = useState(false);
   const [docFocus, setDocFocus] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
@@ -57,14 +58,48 @@ export default function App() {
     setTitleOverrides((prev) => ({ ...prev, [id]: title }));
   }
 
-  function openDocPreview(path: string, excerpt?: string) {
+  function openDocPreview(
+    path: string,
+    excerpt?: string,
+    options?: { pin?: boolean },
+  ) {
+    const wantPin = options?.pin;
+
+    if (path === previewPath && !docPinned && wantPin !== true) {
+      closeDocPreview();
+      return;
+    }
+
     setPreviewPath(path);
     setHighlightText(excerpt);
+
+    if (wantPin === true) {
+      setDocPinned(true);
+    } else if (wantPin === false) {
+      setDocPinned(false);
+      setDocFocus(false);
+    } else if (!docPinned) {
+      setDocPinned(false);
+      setDocFocus(false);
+    }
+  }
+
+  function pinDocPreview() {
+    if (!previewPath) return;
+    setDocPinned(true);
+  }
+
+  function unpinDocPreview() {
+    if (!previewPath) return;
+    setDocPinned(false);
+    setDocFocus(false);
+    setSidebarCollapsed(false);
   }
 
   function closeDocPreview() {
     setPreviewPath(null);
     setHighlightText(undefined);
+    setDocPinned(false);
     setDocFocus(false);
     setSidebarCollapsed(false);
     // docWidth intentionally retained
@@ -110,6 +145,12 @@ export default function App() {
 
   function selectConversation(id: string) {
     setActiveConversationId(id);
+    closeDocPreview();
+  }
+
+  function openConversationFromDoc(id: string) {
+    setActiveConversationId(id);
+    closeDocPreview();
   }
 
   function handleOpenSource(src: SourceRef) {
@@ -137,7 +178,7 @@ export default function App() {
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [previewPath, docFocus, snippetSource]);
+  }, [previewPath, docFocus, docPinned, snippetSource]);
 
   const chatProps = {
     conversationId: activeConversationId,
@@ -150,9 +191,14 @@ export default function App() {
     onOpenDoc: openDocPreview,
   };
 
+  const floatFocus = docFocus && previewPath && !docPinned;
+  const panelFocus = docFocus && previewPath && docPinned;
+
   return (
     <div
-      className={`app-shell${docFocus && previewPath ? " app-shell--doc-focus" : ""}`}
+      className={`app-shell${panelFocus ? " app-shell--doc-focus" : ""}${
+        floatFocus ? " app-shell--doc-focus-float" : ""
+      }`}
     >
       <Sidebar
         refreshKey={sidebarRefreshKey}
@@ -183,10 +229,46 @@ export default function App() {
           refreshSidebar();
         }}
       />
-      <main className="main-panel">
+      <main
+        className={`main-panel${
+          previewPath && !docPinned && docWidth === "wide" && !docFocus
+            ? " main-panel--float-wide"
+            : ""
+        }`}
+      >
         <Chat {...chatProps} />
+        {previewPath && !docPinned && (
+          <>
+            {!docFocus && (
+              <div
+                className="doc-float-backdrop"
+                aria-hidden
+                onClick={closeDocPreview}
+              />
+            )}
+            <div
+              className="doc-float-panel"
+              onClick={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
+            >
+              <DocViewer
+                path={previewPath}
+                refreshKey={docRefreshKey}
+                highlightText={highlightText}
+                mode="float"
+                docWidth={docWidth}
+                docFocus={docFocus}
+                onClose={closeDocPreview}
+                onPin={pinDocPreview}
+                onToggleWidth={toggleDocWidth}
+                onToggleFocus={toggleDocFocus}
+                onOpenConversation={openConversationFromDoc}
+              />
+            </div>
+          </>
+        )}
       </main>
-      {previewPath && (
+      {previewPath && docPinned && (
         <aside
           className={
             docFocus
@@ -202,8 +284,10 @@ export default function App() {
             docWidth={docWidth}
             docFocus={docFocus}
             onClose={closeDocPreview}
+            onUnpin={unpinDocPreview}
             onToggleWidth={toggleDocWidth}
             onToggleFocus={toggleDocFocus}
+            onOpenConversation={openConversationFromDoc}
           />
         </aside>
       )}

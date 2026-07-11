@@ -66,6 +66,8 @@ class ConversationStore:
                     "created_at": conv["created_at"],
                     "updated_at": conv["updated_at"],
                     "message_count": len(conv.get("messages", [])),
+                    "summarized": bool(conv.get("summarized")),
+                    "summary_path": conv.get("summary_path"),
                 }
             )
         return sorted(items, key=lambda c: c["updated_at"], reverse=True)

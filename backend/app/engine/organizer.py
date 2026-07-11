@@ -100,6 +100,7 @@ class Organizer:
         *,
         hint_path: str | None = None,
         system_rules: str = "",
+        conversation_id: str | None = None,
     ) -> IngestResult:
         """把整段会话通读后全局重构成一篇文档并归档（非逐轮拼接）。"""
         if not transcript.strip():
@@ -125,7 +126,7 @@ class Organizer:
                 ambiguous=False,
                 reason=decision.reason or "会话归档",
             )
-        self._apply(decision, body)
+        self._apply(decision, body, conversation_id=conversation_id)
         return IngestResult(
             status="saved",
             rel_path=decision.rel_path,
@@ -387,7 +388,13 @@ class Organizer:
         except json.JSONDecodeError:
             return {}
 
-    def _apply(self, decision: PlacementDecision, content: str) -> None:
+    def _apply(
+        self,
+        decision: PlacementDecision,
+        content: str,
+        *,
+        conversation_id: str | None = None,
+    ) -> None:
         rel_path = decision.rel_path
         exists = False
         try:
@@ -402,6 +409,9 @@ class Organizer:
             if decision.tags:
                 existing_tags = doc.meta.get("tags") or []
                 merged_meta["tags"] = list(dict.fromkeys(existing_tags + decision.tags))
+            if conversation_id:
+                merged_meta["conversation_id"] = conversation_id
+                merged_meta["source"] = "conversation"
             body = self._reorganize(doc.body, content, decision.title)
             self.repo.write_doc(
                 rel_path,
@@ -411,9 +421,16 @@ class Organizer:
             )
             verb = "整理合并到"
         else:
+            meta: dict = {
+                "title": decision.title,
+                "tags": decision.tags,
+                "source": "conversation" if conversation_id else "chat",
+            }
+            if conversation_id:
+                meta["conversation_id"] = conversation_id
             self.repo.write_doc(
                 rel_path,
-                meta={"title": decision.title, "tags": decision.tags, "source": "chat"},
+                meta=meta,
                 body=f"{content}\n",
                 commit_msg=f"add: 新建 {rel_path}",
             )

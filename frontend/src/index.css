@@ -245,6 +245,79 @@ a:hover {
   display: flex;
   flex-direction: column;
   background: var(--bg-app);
+  position: relative;
+  --doc-float-width: clamp(300px, min(400px, 42vw), 440px);
+}
+
+.main-panel--float-wide {
+  --doc-float-width: clamp(480px, min(720px, 58vw), 680px);
+}
+
+/* Floating doc preview — docked to left edge of chat area */
+.doc-float-backdrop {
+  position: absolute;
+  left: var(--doc-float-width);
+  right: 0;
+  top: 0;
+  bottom: 0;
+  z-index: 20;
+  background: var(--backdrop);
+  cursor: default;
+  animation: fadeInBackdrop 0.15s ease-out;
+}
+
+.doc-float-panel {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  z-index: 30;
+  width: var(--doc-float-width);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-surface);
+  border-right: 1px solid var(--border);
+  box-shadow: var(--shadow-md);
+  animation: slideInFloat 0.2s ease-out;
+}
+
+@keyframes fadeInBackdrop {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideInFloat {
+  from {
+    transform: translateX(-12px);
+    opacity: 0.85;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.doc-viewer-float {
+  height: 100%;
+  border-radius: 0;
+}
+
+.doc-viewer-float .doc-viewer-header {
+  background: var(--bg-surface);
+}
+
+.doc-pin-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.doc-pin-btn.is-active {
+  padding: 0 7px;
 }
 
 .doc-panel {
@@ -280,6 +353,18 @@ a:hover {
 
 .app-shell--doc-focus .main-panel {
   display: none;
+}
+
+/* Float focus: hide chat, expand float to fill main area */
+.app-shell--doc-focus-float .chat-panel {
+  display: none;
+}
+
+.app-shell--doc-focus-float .doc-float-panel {
+  width: auto;
+  right: 0;
+  border-right: none;
+  box-shadow: none;
 }
 
 @keyframes slideInPanel {
@@ -346,23 +431,28 @@ a:hover {
 }
 
 /* Focus mode: comfortable reading column + scrollable tables */
-.app-shell--doc-focus .doc-viewer-body {
+.app-shell--doc-focus .doc-viewer-body,
+.app-shell--doc-focus-float .doc-viewer-body {
   display: flex;
   flex-direction: column;
   align-items: center;
 }
 
-.app-shell--doc-focus .doc-viewer-body > * {
+.app-shell--doc-focus .doc-viewer-body > *,
+.app-shell--doc-focus-float .doc-viewer-body > * {
   width: 100%;
   max-width: 760px;
 }
 
 .app-shell--doc-focus .doc-markdown,
-.doc-panel--wide .doc-markdown {
+.app-shell--doc-focus-float .doc-markdown,
+.doc-panel--wide .doc-markdown,
+.main-panel--float-wide .doc-markdown {
   overflow-x: auto;
 }
 
 .app-shell--doc-focus .doc-markdown table,
+.app-shell--doc-focus-float .doc-markdown table,
 .doc-panel--wide .doc-markdown table {
   width: max-content;
   min-width: 100%;
@@ -875,6 +965,28 @@ a:hover {
   color: var(--text-secondary);
 }
 
+.doc-conversation-link {
+  margin-bottom: 12px;
+}
+
+.doc-conversation-link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--bg-subtle);
+  color: var(--accent);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.doc-conversation-link-btn:hover {
+  background: var(--bg-muted);
+  border-color: var(--accent);
+}
+
 /* Chat */
 .chat-panel {
   display: flex;
@@ -1139,6 +1251,17 @@ a:hover {
   background: var(--bg-muted);
   color: var(--text-secondary);
   border-color: var(--border);
+}
+
+.chat-input-bar .chat-archive-btn--linked {
+  color: var(--accent);
+  border-color: var(--border);
+}
+
+.chat-input-bar .chat-archive-btn--linked:hover:not(:disabled) {
+  background: var(--bg-subtle);
+  color: var(--accent-hover, var(--accent));
+  border-color: var(--accent);
 }
 
 .chat-attach-btn {

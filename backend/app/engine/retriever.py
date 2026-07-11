@@ -40,11 +40,16 @@ class Retriever:
         return any(norm.startswith(p) for p in self.excluded_prefixes)
 
     def search(self, query: str, k: int = 5) -> list[Hit]:
-        q_emb = self.llm.embed([query])[0]
-        vec_hits = [
-            h for h in self.vector.query(q_emb, k=k) if h.score >= MIN_VECTOR_SCORE
-        ]
         ft_hits = self.fulltext.query(query, k=k)
+        vec_hits: list[Hit] = []
+        try:
+            q_emb = self.llm.embed([query])[0]
+            vec_hits = [
+                h for h in self.vector.query(q_emb, k=k) if h.score >= MIN_VECTOR_SCORE
+            ]
+        except Exception:
+            # Chroma/SQLite 跨线程或元数据异常时，全文检索仍可兜底
+            vec_hits = []
         # 按 doc_id 去重，保留每个 doc 的最高分片段
         best: dict[str, Hit] = {}
         for h in vec_hits + ft_hits:

@@ -5,7 +5,6 @@ import json
 
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel
 
 from app.engine.agent.events import error_event, now_ts
@@ -444,10 +443,11 @@ async def summarize_conversation(cid: str, request: Request):
     transcript = ConversationStore.full_transcript(conv)
     system_rules = c.system_layer.compose() if c.system_layer else ""
     try:
-        result = await run_in_threadpool(
-            c.organizer.summarize_conversation,
+        # 同步执行：内含 Chroma/SQLite 检索，不能放进 run_in_threadpool（会触发跨线程 DB 错误）
+        result = c.organizer.summarize_conversation(
             transcript,
             system_rules=system_rules,
+            conversation_id=cid,
         )
     except Exception as e:
         raise HTTPException(502, f"归档失败: {e}") from e

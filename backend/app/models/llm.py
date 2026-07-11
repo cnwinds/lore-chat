@@ -163,8 +163,18 @@ class OpenAILLMClient:
         )
 
     def embed(self, texts: list[str]) -> list[list[float]]:
-        resp = self._embed.embeddings.create(model=self.settings.embed_model, input=texts)
-        return [d.embedding for d in resp.data]
+        if not texts:
+            return []
+        # DashScope text-embedding 等接口单次 batch 上限通常为 10
+        batch_size = 10
+        out: list[list[float]] = []
+        for i in range(0, len(texts), batch_size):
+            batch = texts[i : i + batch_size]
+            resp = self._embed.embeddings.create(
+                model=self.settings.embed_model, input=batch
+            )
+            out.extend(d.embedding for d in resp.data)
+        return out
 
 
 class FakeLLMClient:

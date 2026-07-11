@@ -103,6 +103,8 @@ export function Chat({
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [streaming, setStreaming] = useState(false);
   const [archiving, setArchiving] = useState(false);
+  const [summarized, setSummarized] = useState(false);
+  const [summaryPath, setSummaryPath] = useState<string | null>(null);
   const [liveElapsedMs, setLiveElapsedMs] = useState(0);
   const streamingStartRef = useRef<number | null>(null);
   const streamingAssistantIdxRef = useRef<number | null>(null);
@@ -113,6 +115,11 @@ export function Chat({
   /** 本地刚创建的对话 ID，流式结束前跳过从服务端拉历史（避免 StrictMode 双次 effect 覆盖流式状态） */
   const skipLoadRef = useRef<string | null>(null);
   const streamingRef = useRef(false);
+  const conversationIdRef = useRef(conversationId);
+
+  useEffect(() => {
+    conversationIdRef.current = conversationId;
+  }, [conversationId]);
 
   function scrollMessagesToBottom() {
     const el = messagesContainerRef.current;
@@ -138,6 +145,8 @@ export function Chat({
   useEffect(() => {
     if (!conversationId) {
       setMsgs([]);
+      setSummarized(false);
+      setSummaryPath(null);
       return;
     }
     if (skipLoadRef.current === conversationId || streamingRef.current) {
@@ -147,10 +156,18 @@ export function Chat({
     setLoadingHistory(true);
     getConversation(conversationId)
       .then((conv) => {
-        if (!cancelled) setMsgs(conv.messages);
+        if (!cancelled) {
+          setMsgs(conv.messages);
+          setSummarized(!!conv.summarized);
+          setSummaryPath(conv.summary_path ?? null);
+        }
       })
       .catch(() => {
-        if (!cancelled) setMsgs([]);
+        if (!cancelled) {
+          setMsgs([]);
+          setSummarized(false);
+          setSummaryPath(null);
+        }
       })
       .finally(() => {
         if (!cancelled) setLoadingHistory(false);
@@ -282,6 +299,16 @@ export function Chat({
       skipLoadRef.current = null;
       // 流关闭后服务端才完成 append_exchange（含标题），此时再刷新侧边栏
       onSidebarRefresh?.();
+      const cid = conversationIdRef.current;
+      if (cid) {
+        getConversation(cid)
+          .then((conv) => {
+            if (conversationIdRef.current !== cid) return;
+            setSummarized(!!conv.summarized);
+            setSummaryPath(conv.summary_path ?? null);
+          })
+          .catch(() => {});
+      }
     }
   }
 
@@ -295,9 +322,16 @@ export function Chat({
   async function archiveConversation() {
     if (!conversationId || streaming || archiving) return;
     if (!msgs.some((m) => m.role === "user")) return;
+    const targetCid = conversationId;
     setArchiving(true);
     try {
-      const result = await summarizeConversation(conversationId);
+      const result = await summarizeConversation(targetCid);
+      // 沉淀耗时较长，用户可能已切到其他会话；只把结果写回发起沉淀的那条会话
+      if (conversationIdRef.current !== targetCid) {
+        onSidebarRefresh?.();
+        if (result.rel_path) onKbChanged?.(result.rel_path);
+        return;
+      }
       const text =
         result.status === "saved" && result.rel_path
           ? `已把本次会话归档为文档：${result.rel_path}`
@@ -307,11 +341,17 @@ export function Chat({
         { role: "assistant", text, ts: new Date().toISOString() },
       ]);
       if (result.rel_path) {
+        setSummarized(true);
+        setSummaryPath(result.rel_path);
         onKbChanged?.(result.rel_path);
         onOpenDoc?.(result.rel_path);
       }
       onSidebarRefresh?.();
     } catch (err) {
+      if (conversationIdRef.current !== targetCid) {
+        onSidebarRefresh?.();
+        return;
+      }
       const msg = err instanceof Error ? err.message : "归档失败";
       setMsgs((m) => [
         ...m,
@@ -582,12 +622,29 @@ export function Chat({
           </button>
           <button
             type="button"
-            className="chat-archive-btn"
-            onClick={archiveConversation}
-            disabled={streaming || archiving || !conversationId}
-            title="把整段会话通读后重构、去重，沉淀为一篇知识库文档"
+            className={`chat-archive-btn${summarized && summaryPath ? " chat-archive-btn--linked" : ""}`}
+            onClick={
+              summarized && summaryPath
+                ? () => onOpenDoc?.(summaryPath)
+                : archiveConversation
+            }
+            disabled={
+              streaming ||
+              archiving ||
+              !conversationId ||
+              (!summarized && !msgs.some((m) => m.role === "user"))
+            }
+            title={
+              summarized && summaryPath
+                ? `查看归档文档：${summaryPath}`
+                : "把整段会话通读后重构、去重，沉淀为一篇知识库文档"
+            }
           >
-            {archiving ? "沉淀中…" : "沉淀"}
+            {archiving
+              ? "沉淀中…"
+              : summarized && summaryPath
+                ? "查看文档"
+                : "沉淀"}
           </button>
         </div>
       </div>

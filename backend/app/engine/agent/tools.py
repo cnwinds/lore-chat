@@ -239,8 +239,8 @@ class ToolRegistry:
                 self._write_kb, args, active_doc_path=active_doc_path
             )
         if name == "summarize_conversation":
-            return await asyncio.to_thread(
-                self._summarize_conversation, args, conversation_id=conversation_id
+            return self._summarize_conversation(
+                args, conversation_id=conversation_id
             )
         if name == "delete_kb":
             return await asyncio.to_thread(self._delete_kb, args)
@@ -357,6 +357,7 @@ class ToolRegistry:
             transcript,
             hint_path=args.get("target_path"),
             system_rules=system_rules,
+            conversation_id=conversation_id,
         )
         sources = (
             [{"type": "kb", "path": result.rel_path}] if result.rel_path else []

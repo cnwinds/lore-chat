@@ -212,6 +212,8 @@ export type ConversationSummary = {
   created_at: string;
   updated_at: string;
   message_count: number;
+  summarized?: boolean;
+  summary_path?: string | null;
 };
 
 /** 与后端 `_title_from_text` 对齐：取首行，最长 40 字。 */
@@ -223,6 +225,7 @@ export function titleFromText(text: string): string {
 
 export type Conversation = ConversationSummary & {
   messages: ChatMessage[];
+  summarized_at?: string | null;
 };
 
 /** @deprecated Use chatStream() — /api/chat now returns SSE. */

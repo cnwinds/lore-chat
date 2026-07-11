@@ -115,6 +115,8 @@ async def test_summarize_conversation_tool_flow(tmp_path):
     assert conv["summary_path"] == "娱乐/漫剧工具盘点.md"
     doc = repo.read_doc("娱乐/漫剧工具盘点.md")
     assert "漫剧工具盘点" in doc.body
+    assert doc.meta.get("conversation_id") == cid
+    assert doc.meta.get("source") == "conversation"
     # 会话不再出现在全文检索中
     hits = registry.retriever.fulltext.query("小云雀", k=5)
     assert all(not h.source.startswith("conv:") for h in hits)
