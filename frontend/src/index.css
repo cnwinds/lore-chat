@@ -384,6 +384,12 @@ a:hover {
   margin: 0;
 }
 
+.sidebar-section-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .sidebar-chat-section {
   flex-shrink: 0;
   max-height: 36%;
@@ -794,12 +800,21 @@ a:hover {
   color: var(--accent);
 }
 
+.doc-viewer-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
 .doc-viewer-title h2 {
   margin: 0;
   font-size: var(--font-h2);
   font-weight: 600;
   line-height: var(--leading-tight);
   letter-spacing: -0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .doc-path {
@@ -807,7 +822,9 @@ a:hover {
   font-size: var(--text-xs);
   color: var(--text-muted);
   margin-bottom: 2px;
-  word-break: break-all;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .doc-viewer-body {
