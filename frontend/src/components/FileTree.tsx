@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   buildFileTree,
   collectFolderPaths,
+  isSystemLayerPath,
   type TreeNode,
 } from "../utils/fileTree";
 
@@ -64,6 +65,7 @@ function TreeItem({
   onSelectFile: (path: string) => void;
 }) {
   const pad = 8 + depth * 16;
+  const systemLayer = isSystemLayerPath(node.path);
 
   if (node.type === "folder") {
     const isOpen = expanded.has(node.path);
@@ -71,7 +73,7 @@ function TreeItem({
       <>
         <button
           type="button"
-          className="file-tree-row folder"
+          className={`file-tree-row folder${systemLayer ? " system-layer" : ""}`}
           style={{ paddingLeft: pad }}
           onClick={() => onToggleFolder(node.path)}
         >
@@ -99,7 +101,7 @@ function TreeItem({
   return (
     <button
       type="button"
-      className={`file-tree-row file${selected ? " selected" : ""}`}
+      className={`file-tree-row file${systemLayer ? " system-layer" : ""}${selected ? " selected" : ""}`}
       style={{ paddingLeft: pad + 18 }}
       onClick={() => onSelectFile(node.path)}
     >

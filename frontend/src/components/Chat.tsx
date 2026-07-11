@@ -542,13 +542,15 @@ export function Chat({
         </div>
       </div>
       {streaming && (
-        <div className="chat-streaming-bar">
-          <span className="chat-streaming-label">思考中…</span>
-          {liveElapsedMs > 0 && (
-            <span className="chat-streaming-duration">
-              用时 {formatDuration(liveElapsedMs)}
-            </span>
-          )}
+        <div className="chat-streaming-wrap">
+          <div className="chat-streaming-bar">
+            <span className="chat-streaming-label">思考中…</span>
+            {liveElapsedMs > 0 && (
+              <span className="chat-streaming-duration">
+                用时 {formatDuration(liveElapsedMs)}
+              </span>
+            )}
+          </div>
         </div>
       )}
       <div className="chat-input-bar">
@@ -569,17 +571,25 @@ export function Chat({
           📎
           <input type="file" hidden onChange={onFile} disabled={streaming} />
         </label>
-        <button
-          className="chat-archive-btn"
-          onClick={archiveConversation}
-          disabled={streaming || archiving || !conversationId}
-          title="把整段会话通读后重构、去重，归档为一篇知识库文档"
-        >
-          {archiving ? "归档中…" : "归档会话"}
-        </button>
-        <button onClick={send} disabled={streaming}>
-          {streaming ? "处理中…" : "发送"}
-        </button>
+        <div className="chat-input-actions">
+          <button
+            type="button"
+            className="chat-send-btn"
+            onClick={send}
+            disabled={streaming}
+          >
+            {streaming ? "处理中…" : "发送"}
+          </button>
+          <button
+            type="button"
+            className="chat-archive-btn"
+            onClick={archiveConversation}
+            disabled={streaming || archiving || !conversationId}
+            title="把整段会话通读后重构、去重，沉淀为一篇知识库文档"
+          >
+            {archiving ? "沉淀中…" : "沉淀"}
+          </button>
+        </div>
       </div>
     </div>
   );

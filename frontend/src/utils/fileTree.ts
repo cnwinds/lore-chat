@@ -1,3 +1,13 @@
+/** 系统控制层目录名，与 backend `system_layer_dir` 保持一致 */
+export const SYSTEM_LAYER_DIR = "系统";
+
+/** 系统层文件显示顺序：心法在上，戒律在下（与 backend SystemLayer.compose 一致） */
+const SYSTEM_LAYER_FILE_ORDER = ["心法.md", "戒律.md"];
+
+export function isSystemLayerPath(path: string): boolean {
+  return path === SYSTEM_LAYER_DIR || path.startsWith(`${SYSTEM_LAYER_DIR}/`);
+}
+
 export type FileNode = { type: "file"; name: string; path: string };
 export type FolderNode = {
   type: "folder";
@@ -33,14 +43,26 @@ export function buildFileTree(paths: string[]): TreeNode[] {
     }
   }
 
-  const sortNodes = (nodes: TreeNode[]): TreeNode[] =>
+  const sortNodes = (nodes: TreeNode[], parentPath = ""): TreeNode[] =>
     [...nodes]
       .sort((a, b) => {
+        if (parentPath === "") {
+          const aSystem = a.type === "folder" && a.name === SYSTEM_LAYER_DIR;
+          const bSystem = b.type === "folder" && b.name === SYSTEM_LAYER_DIR;
+          if (aSystem !== bSystem) return aSystem ? -1 : 1;
+        }
+        if (parentPath === SYSTEM_LAYER_DIR) {
+          const orderA = SYSTEM_LAYER_FILE_ORDER.indexOf(a.name);
+          const orderB = SYSTEM_LAYER_FILE_ORDER.indexOf(b.name);
+          const rankA = orderA === -1 ? SYSTEM_LAYER_FILE_ORDER.length : orderA;
+          const rankB = orderB === -1 ? SYSTEM_LAYER_FILE_ORDER.length : orderB;
+          if (rankA !== rankB) return rankA - rankB;
+        }
         if (a.type !== b.type) return a.type === "folder" ? -1 : 1;
         return a.name.localeCompare(b.name, "zh-CN");
       })
       .map((n) =>
-        n.type === "folder" ? { ...n, children: sortNodes(n.children) } : n,
+        n.type === "folder" ? { ...n, children: sortNodes(n.children, n.path) } : n,
       );
 
   return sortNodes(root.children);
