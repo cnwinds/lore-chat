@@ -9,6 +9,7 @@ import { Sidebar } from "./components/Sidebar";
 import { DocViewer } from "./components/DocViewer";
 import { SearchSnippetModal } from "./components/SearchSnippetModal";
 import { MergeSourceQuestion } from "./components/MergeSourceQuestion";
+import { DocPreviewProvider } from "./contexts/DocPreviewContext";
 import { useKbFileSelection } from "./hooks/app/useKbFileSelection";
 import { useMergeReviewSession } from "./hooks/app/useMergeReviewSession";
 import type { DocWidth } from "./types/doc";
@@ -245,7 +246,15 @@ export default function App() {
   const floatFocus = docFocus && previewPath && !docPinned;
   const panelFocus = docFocus && previewPath && docPinned;
 
+  const docPreviewContextValue = {
+    previewPath,
+    openDoc: openDocPreview,
+    closeDoc: closeDocPreview,
+    refreshKb,
+  };
+
   return (
+    <DocPreviewProvider value={docPreviewContextValue}>
     <div
       className={`app-shell${panelFocus ? " app-shell--doc-focus" : ""}${
         floatFocus ? " app-shell--doc-focus-float" : ""
@@ -389,5 +398,6 @@ export default function App() {
         onClose={() => setSnippetSource(null)}
       />
     </div>
+    </DocPreviewProvider>
   );
 }

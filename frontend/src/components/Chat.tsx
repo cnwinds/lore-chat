@@ -10,6 +10,7 @@ import {
   type IngestResult,
   type SourceRef,
 } from "../api";
+import { useDocPreview } from "../contexts/DocPreviewContext";
 import { markToolBlockResolved } from "../utils/chatMessage";
 import { ChatMessageList } from "./chat/ChatMessageList";
 import { ChatInputBar } from "./chat/ChatInputBar";
@@ -36,6 +37,12 @@ export function Chat({
   onOpenSource,
   onOpenDoc,
 }: Props) {
+  const docPreview = useDocPreview();
+  const resolvedPreviewPath =
+    previewPath !== undefined ? previewPath : docPreview.previewPath;
+  const resolvedOnOpenDoc = onOpenDoc ?? docPreview.openDoc;
+  const resolvedOnKbChanged = onKbChanged ?? docPreview.refreshKb;
+
   const [input, setInput] = useState("");
   const [archiving, setArchiving] = useState(false);
   const [webEnabled, setWebEnabled] = useState<boolean>(
@@ -64,7 +71,7 @@ export function Chat({
     ensureConversationId,
   } = useAgentStream({
     conversationId,
-    previewPath,
+    previewPath: resolvedPreviewPath,
     webEnabled,
     msgs,
     setMsgs,
@@ -77,7 +84,7 @@ export function Chat({
     onConversationCreated,
     onFirstQuestionTitle,
     onSidebarRefresh,
-    onKbChanged,
+    onKbChanged: resolvedOnKbChanged,
   });
   const { messagesContainerRef } = useChatScroll(
     [msgs, loadingHistory, streaming],
@@ -113,7 +120,7 @@ export function Chat({
       // 沉淀耗时较长，用户可能已切到其他会话；只把结果写回发起沉淀的那条会话
       if (conversationIdRef.current !== targetCid) {
         onSidebarRefresh?.();
-        if (result.rel_path) onKbChanged?.(result.rel_path);
+        if (result.rel_path) resolvedOnKbChanged(result.rel_path);
         return;
       }
       const text =
@@ -127,8 +134,8 @@ export function Chat({
       if (result.rel_path) {
         setSummarized(true);
         setSummaryPath(result.rel_path);
-        onKbChanged?.(result.rel_path);
-        onOpenDoc?.(result.rel_path);
+        resolvedOnKbChanged(result.rel_path);
+        resolvedOnOpenDoc(result.rel_path);
       }
       onSidebarRefresh?.();
     } catch (err) {
@@ -152,7 +159,7 @@ export function Chat({
     choiceLabel: string,
   ) {
     setMsgs((prev) => markToolBlockResolved(prev, blockId, choiceLabel));
-    onKbChanged?.(result.rel_path ?? undefined);
+    resolvedOnKbChanged(result.rel_path ?? undefined);
 
     if (result.status === "continue" && result.continue_prompt) {
       void runAgentStream(result.continue_prompt, choiceLabel);
@@ -168,7 +175,7 @@ export function Chat({
         },
       ]);
       if (result.rel_path) {
-        onOpenDoc?.(result.rel_path);
+        resolvedOnOpenDoc(result.rel_path);
       }
       return;
     }
@@ -197,7 +204,7 @@ export function Chat({
       const cid = await ensureConversationId();
       await appendConversationMessages(cid, [assistantMsg]);
       setMsgs((m) => [...m, assistantMsg]);
-      onKbChanged?.(r.attachment);
+      resolvedOnKbChanged(r.attachment);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "上传失败";
       setMsgs((m) => [...m, { role: "assistant", text: `错误：${msg}` }]);
@@ -212,10 +219,10 @@ export function Chat({
       return;
     }
     if (src.type === "kb" && src.path) {
-      if (onOpenDoc) {
+      if (onOpenDoc !== undefined) {
         onOpenDoc(src.path, src.excerpt);
       } else {
-        onOpenSource?.(src);
+        resolvedOnOpenDoc(src.path, src.excerpt);
       }
       return;
     }
@@ -236,7 +243,7 @@ export function Chat({
         streamingAssistantIdxRef={streamingAssistantIdxRef}
         messagesContainerRef={messagesContainerRef}
         messagesEndRef={messagesEndRef}
-        previewPath={previewPath}
+        previewPath={resolvedPreviewPath}
         conversationId={conversationId}
         onOpenSource={handleOpenSource}
         onQuestionResolved={handleQuestionResolved}
@@ -252,7 +259,7 @@ export function Chat({
         onSend={send}
         onArchive={archiveConversation}
         onViewArchive={() => {
-          if (summaryPath) onOpenDoc?.(summaryPath);
+          if (summaryPath) resolvedOnOpenDoc(summaryPath);
         }}
         summarized={summarized}
         summaryPath={summaryPath}
