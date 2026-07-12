@@ -14,8 +14,7 @@ import { DocViewer } from "./components/DocViewer";
 import { SearchSnippetModal } from "./components/SearchSnippetModal";
 import { MergeSourceQuestion } from "./components/MergeSourceQuestion";
 import { isSystemLayerPath } from "./utils/fileTree";
-
-type DocWidth = "narrow" | "wide";
+import type { DocWidth } from "./types/doc";
 
 export default function App() {
   const [sidebarRefreshKey, setSidebarRefreshKey] = useState(0);

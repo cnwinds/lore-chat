@@ -27,12 +27,9 @@ import {
   parseDocOutline,
   type OutlineItem,
 } from "../utils/docOutline";
-
-type DocWidth = "narrow" | "wide";
-type DocMode = "panel" | "float" | "page";
-type EditMode = "preview" | "markdown";
-
-const EDIT_MODE_KEY = "docEditMode";
+import type { DocMode, DocWidth, EditMode, UnsavedPrompt } from "../types/doc";
+import { isReadOnlyPath } from "../utils/docReadOnly";
+import { getStoredEditMode, setStoredEditMode } from "../utils/docStorage";
 
 type Props = {
   path: string;
@@ -62,36 +59,6 @@ type Props = {
   onMergeRegenerate?: () => void | Promise<void>;
   onMergeReject?: () => void | Promise<void>;
 };
-
-function getStoredEditMode(): EditMode {
-  try {
-    return sessionStorage.getItem(EDIT_MODE_KEY) === "markdown"
-      ? "markdown"
-      : "preview";
-  } catch {
-    return "preview";
-  }
-}
-
-function setStoredEditMode(mode: EditMode) {
-  try {
-    sessionStorage.setItem(EDIT_MODE_KEY, mode);
-  } catch {
-    /* ignore */
-  }
-}
-
-function isReadOnlyPath(path: string): boolean {
-  const norm = path.replace(/\\/g, "/");
-  return (
-    norm.startsWith(".kb/") ||
-    norm.startsWith(".git/") ||
-    norm === ".kb" ||
-    norm === ".git"
-  );
-}
-
-type UnsavedPrompt = "view" | "close" | "navigate" | "reload";
 
 export function DocViewer({
   path,
