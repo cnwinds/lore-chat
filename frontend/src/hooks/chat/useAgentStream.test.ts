@@ -143,6 +143,7 @@ describe("useAgentStream", () => {
   it("patches assistant text with an error message when the stream throws", async () => {
     vi.mocked(api.chatStream).mockImplementation(async function* () {
       throw new Error("boom");
+      yield { event: "done", data: {} };
     });
     const { setMsgs, getCurrent } = makeSetMsgs([]);
     const options = baseOptions({ setMsgs });

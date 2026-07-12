@@ -134,7 +134,6 @@ export function messageHasBody(m: ChatMessage, isLive: boolean): boolean {
 
 export function ChatMessageRow({
   message: m,
-  index: _index,
   isLiveStreaming,
   liveElapsedMs,
   previewPath,
