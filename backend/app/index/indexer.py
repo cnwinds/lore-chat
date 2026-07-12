@@ -3,6 +3,7 @@ from __future__ import annotations
 from app.index.vector import VectorIndex
 from app.index.fulltext import FullTextIndex
 from app.index.chunk import chunk_text
+from app.logging_config import get_logger
 from app.models.llm import LLMClient
 
 
@@ -22,14 +23,14 @@ class Indexer:
             self.vector.add(doc_id, chunks, embeddings, source=doc_id)
         except Exception:
             # Chroma 异常时仍保证全文索引可用（归档/写入不应因此失败）
-            pass
+            get_logger("indexer").warning("向量索引失败 doc_id=%s", doc_id, exc_info=True)
         self.fulltext.add(doc_id, chunks, source=doc_id)
 
     def remove_doc(self, doc_id: str) -> None:
         try:
             self.vector.delete(doc_id)
         except Exception:
-            pass
+            get_logger("indexer").warning("向量索引失败 doc_id=%s", doc_id, exc_info=True)
         self.fulltext.delete(doc_id)
 
     @staticmethod

@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from app.index.vector import VectorIndex
 from app.index.fulltext import FullTextIndex
 from app.index.types import Hit
+from app.logging_config import get_logger
 from app.models.llm import LLMClient
 
 _ATTACH_MARKER = "/attachments/"
@@ -49,6 +50,7 @@ class Retriever:
             ]
         except Exception:
             # Chroma/SQLite 跨线程或元数据异常时，全文检索仍可兜底
+            get_logger("retriever").warning("向量检索失败，回退全文", exc_info=True)
             vec_hits = []
         # 按 doc_id 去重，保留每个 doc 的最高分片段
         best: dict[str, Hit] = {}

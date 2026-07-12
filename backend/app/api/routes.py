@@ -8,6 +8,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from app.engine.agent.events import error_event, now_ts
+from app.logging_config import get_logger
 
 router = APIRouter(prefix="/api")
 
@@ -211,7 +212,7 @@ def _reindex_conversation(c, cid: str, conv: dict) -> None:
         c.indexer.index_conversation(cid, text)
         c.conversations.clear_dirty(cid)
     except Exception:
-        pass
+        get_logger("routes").warning("会话重索引失败 cid=%s", cid, exc_info=True)
 
 
 def _merge_session_view(c, session: dict) -> dict:
