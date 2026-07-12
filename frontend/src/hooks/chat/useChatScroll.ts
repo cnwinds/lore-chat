@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, type MutableRefObject } from "react";
 
 const SCROLL_BOTTOM_THRESHOLD = 80;
 
@@ -8,9 +8,13 @@ function isNearBottom(container: HTMLElement): boolean {
   return distance <= SCROLL_BOTTOM_THRESHOLD;
 }
 
-export function useChatScroll(deps: unknown[] = []) {
+export function useChatScroll(
+  deps: unknown[] = [],
+  externalStickToBottomRef?: MutableRefObject<boolean>,
+) {
   const messagesContainerRef = useRef<HTMLDivElement>(null);
-  const stickToBottomRef = useRef(true);
+  const internalStickToBottomRef = useRef(true);
+  const stickToBottomRef = externalStickToBottomRef ?? internalStickToBottomRef;
 
   function scrollMessagesToBottom() {
     const el = messagesContainerRef.current;

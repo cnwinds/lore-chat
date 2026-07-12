@@ -1,29 +1,20 @@
 import { useEffect, useRef, useState } from "react";
 import { useChatConversation } from "../hooks/chat/useChatConversation";
 import { useChatScroll } from "../hooks/chat/useChatScroll";
+import { useAgentStream } from "../hooks/chat/useAgentStream";
 import {
-  chatStream,
   computeCumulative,
   formatDuration,
   getMessageCopyText,
-  updateTimeline,
   uploadFile,
   downloadUrl,
-  createConversation,
-  getConversation,
   appendConversationMessages,
   summarizeConversation,
-  titleFromText,
-  KB_MUTATING_TOOLS,
   type ChatMessage,
   type IngestResult,
   type SourceRef,
 } from "../api";
-import {
-  formatMessageTs,
-  kbPathFromToolResult,
-  markToolBlockResolved,
-} from "../utils/chatMessage";
+import { formatMessageTs, markToolBlockResolved } from "../utils/chatMessage";
 import { MarkdownContent } from "./MarkdownContent";
 import { ChatSources } from "./ChatSources";
 import { CopyButton } from "./CopyButton";
@@ -55,14 +46,10 @@ export function Chat({
   onOpenDoc,
 }: Props) {
   const [input, setInput] = useState("");
-  const [streaming, setStreaming] = useState(false);
   const [archiving, setArchiving] = useState(false);
-  const [liveElapsedMs, setLiveElapsedMs] = useState(0);
   const [webEnabled, setWebEnabled] = useState<boolean>(
     () => localStorage.getItem("lorechat.webSearch") === "1",
   );
-  const streamingStartRef = useRef<number | null>(null);
-  const streamingAssistantIdxRef = useRef<number | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   /** 本地刚创建的对话 ID，流式结束前跳过从服务端拉历史（避免 StrictMode 双次 effect 覆盖流式状态） */
@@ -78,11 +65,34 @@ export function Chat({
     summaryPath,
     setSummaryPath,
   } = useChatConversation({ conversationId, skipLoadRef, streamingRef });
-  const { messagesContainerRef, stickToBottomRef } = useChatScroll([
-    msgs,
-    loadingHistory,
+  const stickToBottomRef = useRef(true);
+  const {
     streaming,
-  ]);
+    liveElapsedMs,
+    streamingAssistantIdxRef,
+    runAgentStream,
+    ensureConversationId,
+  } = useAgentStream({
+    conversationId,
+    previewPath,
+    webEnabled,
+    msgs,
+    setMsgs,
+    setSummarized,
+    setSummaryPath,
+    conversationIdRef,
+    skipLoadRef,
+    streamingRef,
+    stickToBottomRef,
+    onConversationCreated,
+    onFirstQuestionTitle,
+    onSidebarRefresh,
+    onKbChanged,
+  });
+  const { messagesContainerRef } = useChatScroll(
+    [msgs, loadingHistory, streaming],
+    stickToBottomRef,
+  );
 
   useEffect(() => {
     conversationIdRef.current = conversationId;
@@ -101,129 +111,12 @@ export function Chat({
     adjustInputHeight();
   }, [input]);
 
-  useEffect(() => {
-    streamingRef.current = streaming;
-    if (!streaming) {
-      streamingStartRef.current = null;
-      streamingAssistantIdxRef.current = null;
-      return;
-    }
-    const tick = () => {
-      if (streamingStartRef.current !== null) {
-        setLiveElapsedMs(Date.now() - streamingStartRef.current);
-      }
-    };
-    tick();
-    const id = window.setInterval(tick, 100);
-    return () => window.clearInterval(id);
-  }, [streaming]);
-
-  async function ensureConversationId(): Promise<string> {
-    if (conversationId) return conversationId;
-    const { id } = await createConversation();
-    skipLoadRef.current = id;
-    onConversationCreated?.(id);
-    return id;
-  }
-
   function toggleWebSearch() {
     setWebEnabled((prev) => {
       const next = !prev;
       localStorage.setItem("lorechat.webSearch", next ? "1" : "0");
       return next;
     });
-  }
-
-  async function runAgentStream(apiText: string, userDisplayText?: string) {
-    if (streaming) return;
-    const display = userDisplayText ?? apiText;
-    const isFirstUserQuestion = !msgs.some((m) => m.role === "user");
-    stickToBottomRef.current = true;
-    setStreaming(true);
-    streamingRef.current = true;
-    streamingStartRef.current = Date.now();
-    setLiveElapsedMs(0);
-
-    const assistantMsg: ChatMessage = {
-      role: "assistant",
-      ts: new Date().toISOString(),
-      timeline: [],
-      sources: [],
-    };
-    setMsgs((m) => {
-      const assistantIdx = m.length + 1;
-      streamingAssistantIdxRef.current = assistantIdx;
-      return [
-        ...m,
-        { role: "user", text: display, ts: new Date().toISOString() },
-        assistantMsg,
-      ];
-    });
-    // 流式期间助手消息始终是数组的最后一项；直接定位它，
-    // 避免依赖 setMsgs 更新器里异步写入的 ref（在“继续”流程下会读到过期值，
-    // 导致把 timeline 写进了 msgs[0] 这条用户消息，输出错位到右上角）。
-    const patchAssistant = (updater: (msg: ChatMessage) => ChatMessage) =>
-      setMsgs((prev) => {
-        if (prev.length === 0) return prev;
-        const idx = prev.length - 1;
-        const copy = [...prev];
-        copy[idx] = updater(copy[idx]);
-        return copy;
-      });
-
-    try {
-      const cid = await ensureConversationId();
-      if (isFirstUserQuestion) {
-        onFirstQuestionTitle?.(cid, titleFromText(display));
-      }
-      for await (const { event, data } of chatStream(apiText, cid, previewPath, webEnabled)) {
-        if (event === "error") {
-          const message = (data.message as string) || "请求失败";
-          patchAssistant((msg) => ({ ...msg, text: `错误：${message}` }));
-          break;
-        }
-
-        patchAssistant((prevMsg) => {
-          const msg = { ...prevMsg };
-          if (event !== "done") {
-            msg.timeline = updateTimeline(msg.timeline ?? [], event, data);
-          }
-          if (event === "done") {
-            msg.sources = (data.sources as SourceRef[]) || [];
-            if (data.total_duration_ms !== undefined) {
-              msg.total_duration_ms = data.total_duration_ms as number;
-            }
-            msg.ts = new Date().toISOString();
-          }
-          return msg;
-        });
-
-        if (event === "tool_result") {
-          if ((KB_MUTATING_TOOLS as readonly string[]).includes(data.tool as string)) {
-            onKbChanged?.(kbPathFromToolResult(data));
-          }
-        }
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "请求失败";
-      patchAssistant((prevMsg) => ({ ...prevMsg, text: `错误：${msg}` }));
-    } finally {
-      streamingRef.current = false;
-      setStreaming(false);
-      skipLoadRef.current = null;
-      // 流关闭后服务端才完成 append_exchange（含标题），此时再刷新侧边栏
-      onSidebarRefresh?.();
-      const cid = conversationIdRef.current;
-      if (cid) {
-        getConversation(cid)
-          .then((conv) => {
-            if (conversationIdRef.current !== cid) return;
-            setSummarized(!!conv.summarized);
-            setSummaryPath(conv.summary_path ?? null);
-          })
-          .catch(() => {});
-      }
-    }
   }
 
   async function send() {
