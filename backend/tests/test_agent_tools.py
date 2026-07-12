@@ -102,6 +102,15 @@ async def test_delete_kb_doc(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_write_kb_exposes_structured_status(tmp_path):
+    registry, repo, idx = _make_registry(tmp_path)
+    result = await registry.execute("write_kb", {"text": "docker ps 查看容器列表"})
+    assert result["status"] in {"saved", "question", "rejected"}
+    if result["status"] == "saved":
+        assert result["rel_path"]
+
+
+@pytest.mark.asyncio
 async def test_delete_kb_directory(tmp_path):
     registry, repo, idx = _make_registry(tmp_path)
     repo.write_doc(

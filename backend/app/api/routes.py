@@ -169,22 +169,19 @@ def _accumulate_timeline(
 
 
 def _ingest_from_write_kb_result(data: dict) -> dict:
-    message = data.get("summary", "")
-    sources = data.get("sources") or []
-    rel_path = sources[0]["path"] if sources and sources[0].get("path") else None
-    if "未写入" in message:
-        status = "rejected"
-    elif "需要你确认" in message:
-        status = "question"
-    elif rel_path:
-        status = "saved"
-    else:
-        status = "saved" if "已保存" in message else "rejected"
+    status = data.get("status")
+    rel_path = data.get("rel_path")
+    if not rel_path:
+        sources = data.get("sources") or []
+        rel_path = sources[0]["path"] if sources and sources[0].get("path") else None
+    if status is None:
+        # 兜底：老格式无结构化状态时按 rel_path 推断
+        status = "saved" if rel_path else "rejected"
     return {
         "status": status,
         "rel_path": rel_path,
         "question_id": data.get("question_id"),
-        "message": message,
+        "message": data.get("summary", ""),
     }
 
 

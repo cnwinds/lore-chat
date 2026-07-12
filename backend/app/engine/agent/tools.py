@@ -401,6 +401,8 @@ class ToolRegistry:
             "summary": result.message,
             "sources": sources,
             "ingest_result": result,
+            "status": result.status,
+            "rel_path": result.rel_path,
         }
         if result.question_id:
             out["question_id"] = result.question_id
