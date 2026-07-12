@@ -193,3 +193,36 @@ async def test_orchestrator_stream_does_not_block_event_loop(tmp_path):
             await task
 
     assert ticks >= 3, f"event loop stalled during sync LLM stream (ticks={ticks})"
+
+
+def _tool_names_from_defs(defs):
+    return {d["function"]["name"] for d in defs}
+
+
+@pytest.mark.asyncio
+async def test_run_web_disabled_excludes_web_search(tmp_path):
+    orchestrator = _make_orchestrator(
+        tmp_path,
+        tool_responses=[{"content": "ok", "tool_calls": []}],
+    )
+    async for _ in orchestrator.run("你好", web_enabled=False):
+        pass
+
+    tools = orchestrator.llm.calls[-1]["tools"]
+    names = _tool_names_from_defs(tools)
+    assert "web_search" not in names
+    assert "fetch_url" in names
+
+
+@pytest.mark.asyncio
+async def test_run_no_write_excludes_write_kb(tmp_path):
+    orchestrator = _make_orchestrator(
+        tmp_path,
+        tool_responses=[{"content": "ok", "tool_calls": []}],
+    )
+    async for _ in orchestrator.run("问题", mode="no_write", web_enabled=True):
+        pass
+
+    tools = orchestrator.llm.calls[-1]["tools"]
+    names = _tool_names_from_defs(tools)
+    assert "write_kb" not in names

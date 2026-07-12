@@ -1,7 +1,8 @@
 import pytest
 
 from app.config import Settings
-from app.engine.agent.tools import ToolRegistry, can_parallelize
+from app.engine.agent.prompts import MODE_DEFAULT, MODE_FORCE_WRITE, MODE_NO_WRITE
+from app.engine.agent.tools import ToolRegistry, can_parallelize, select_tools
 from app.engine.organizer import Organizer
 from app.engine.pending import PendingStore
 from app.engine.retriever import Retriever
@@ -236,4 +237,67 @@ async def test_edit_doc_edits_and_insert_mutually_exclusive(tmp_path):
     )
     assert result.get("error") == "INVALID"
     assert result.get("status") == "failed"
+
+
+@pytest.mark.asyncio
+async def test_edit_doc_insert_after_heading(tmp_path):
+    registry, repo, idx = _make_registry(tmp_path)
+    path = "技术/deploy.md"
+    body = "# 部署\n\n## 步骤\n原有\n"
+    repo.write_doc(path, {"title": "Deploy"}, body, commit_msg="seed")
+    idx.reindex_doc(path, body)
+    cid = "conv-insert-1"
+    await registry.execute("read_doc", {"path": path}, conversation_id=cid)
+    result = await registry.execute(
+        "edit_doc",
+        {
+            "path": path,
+            "insert": {"after_heading": "## 步骤", "content": "新增一行\n"},
+        },
+        conversation_id=cid,
+    )
+    assert result.get("status") == "saved"
+    assert "新增一行" in repo.read_doc(path).body
+    assert result.get("preview")
+
+
+@pytest.mark.asyncio
+async def test_edit_doc_insert_append(tmp_path):
+    registry, repo, _ = _make_registry(tmp_path)
+    path = "技术/note.md"
+    repo.write_doc(path, {"title": "Note"}, "base\n", commit_msg="seed")
+    cid = "conv-insert-2"
+    await registry.execute("read_doc", {"path": path}, conversation_id=cid)
+    result = await registry.execute(
+        "edit_doc",
+        {"path": path, "insert": {"content": "more\n"}},
+        conversation_id=cid,
+    )
+    assert result.get("status") == "saved"
+    assert repo.read_doc(path).body.endswith("more\n")
+
+
+def _tool_names(defs):
+    return {d["function"]["name"] for d in defs}
+
+
+def test_select_tools_web_disabled_drops_web_search():
+    names = _tool_names(select_tools(MODE_DEFAULT, web_enabled=False))
+    assert "web_search" not in names
+    assert "fetch_url" in names
+
+
+def test_select_tools_web_enabled_keeps_web_search():
+    names = _tool_names(select_tools(MODE_DEFAULT, web_enabled=True))
+    assert "web_search" in names
+
+
+def test_select_tools_no_write_drops_write_kb():
+    names = _tool_names(select_tools(MODE_NO_WRITE, web_enabled=True))
+    assert "write_kb" not in names
+
+
+def test_select_tools_force_write_keeps_write_kb():
+    names = _tool_names(select_tools(MODE_FORCE_WRITE, web_enabled=True))
+    assert "write_kb" in names
 

@@ -66,7 +66,11 @@ SYSTEM_PROMPT = """你是 lorechat 知识库助手。用户只管聊天解决问
 回答时简洁清晰；工具执行结果会展示在时间线中，正文不必重复罗列来源，但每条事实性结论须能在工具结果中找到对应依据。"""
 
 
-def build_system_prompt(mode: str = MODE_DEFAULT, system_layer_text: str = "") -> str:
+def build_system_prompt(
+    mode: str = MODE_DEFAULT,
+    system_layer_text: str = "",
+    web_enabled: bool = True,
+) -> str:
     """构建 system prompt。
 
     分层（软 → 硬）：系统控制层（心法+戒律）→ 内置工具契约与事实铁律 → 时间上下文 → 本轮模式。
@@ -82,6 +86,14 @@ def build_system_prompt(mode: str = MODE_DEFAULT, system_layer_text: str = "") -
         suffix = "\n\n【本轮模式】本轮禁止调用 write_kb。只回答问题、检索和搜索，不写入知识库。回答须严格依据工具检索结果，不得编造。"
     else:
         suffix = ""
+
+    if not web_enabled:
+        suffix += (
+            "\n\n【联网】本轮未开启联网搜索，你没有 web_search 工具。"
+            "可检索本地知识库、读取用户提供的链接（fetch_url）。"
+            "若本地知识库无相关依据，如实说明「本地未找到，可开启联网搜索后重试」，"
+            "禁止凭记忆补全或假装已联网。"
+        )
 
     prefix = ""
     if system_layer_text and system_layer_text.strip():

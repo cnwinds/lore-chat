@@ -107,6 +107,9 @@ export function Chat({
   const [summarized, setSummarized] = useState(false);
   const [summaryPath, setSummaryPath] = useState<string | null>(null);
   const [liveElapsedMs, setLiveElapsedMs] = useState(0);
+  const [webEnabled, setWebEnabled] = useState<boolean>(
+    () => localStorage.getItem("lorechat.webSearch") === "1",
+  );
   const streamingStartRef = useRef<number | null>(null);
   const streamingAssistantIdxRef = useRef<number | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -219,6 +222,14 @@ export function Chat({
     return id;
   }
 
+  function toggleWebSearch() {
+    setWebEnabled((prev) => {
+      const next = !prev;
+      localStorage.setItem("lorechat.webSearch", next ? "1" : "0");
+      return next;
+    });
+  }
+
   async function runAgentStream(apiText: string, userDisplayText?: string) {
     if (streaming) return;
     const display = userDisplayText ?? apiText;
@@ -261,7 +272,7 @@ export function Chat({
       if (isFirstUserQuestion) {
         onFirstQuestionTitle?.(cid, titleFromText(display));
       }
-      for await (const { event, data } of chatStream(apiText, cid, previewPath)) {
+      for await (const { event, data } of chatStream(apiText, cid, previewPath, webEnabled)) {
         if (event === "error") {
           const message = (data.message as string) || "请求失败";
           patchAssistant((msg) => ({ ...msg, text: `错误：${message}` }));
@@ -611,6 +622,20 @@ export function Chat({
           <input type="file" hidden onChange={onFile} disabled={streaming} />
         </label>
         <div className="chat-input-actions">
+          <button
+            type="button"
+            className={`chat-web-btn${webEnabled ? " chat-web-btn--on" : ""}`}
+            onClick={toggleWebSearch}
+            disabled={streaming}
+            title={
+              webEnabled
+                ? "联网搜索：开（本地优先，联网补充）"
+                : "联网搜索：关（仅本地知识库）"
+            }
+            aria-pressed={webEnabled}
+          >
+            🌐 联网
+          </button>
           <button
             type="button"
             className="chat-send-btn"

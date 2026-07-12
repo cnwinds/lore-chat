@@ -89,6 +89,10 @@ export type TimelineBlock =
       options?: QuestionOption[];
       multi_select?: boolean;
       choice_resolved?: string;
+      /** edit_doc 修改点上下文预览 */
+      preview?: string;
+      reindex_mode?: string;
+      applied?: number;
     }
   | {
       type: "parallel";
@@ -254,6 +258,7 @@ export async function* chatStream(
   text: string,
   conversationId?: string | null,
   activeDocPath?: string | null,
+  webEnabled = false,
 ): AsyncGenerator<ChatStreamEvent> {
   const r = await fetch(`${BASE}/api/chat`, {
     method: "POST",
@@ -265,6 +270,7 @@ export async function* chatStream(
       text,
       conversation_id: conversationId ?? undefined,
       active_doc_path: activeDocPath ?? undefined,
+      web_enabled: webEnabled,
     }),
   });
   if (!r.ok) {
@@ -402,6 +408,15 @@ export function updateTimeline(
         : {}),
       ...(data.multi_select !== undefined
         ? { multi_select: data.multi_select as boolean }
+        : {}),
+      ...(typeof data.preview === "string" && data.preview
+        ? { preview: data.preview as string }
+        : {}),
+      ...(typeof data.reindex_mode === "string" && data.reindex_mode
+        ? { reindex_mode: data.reindex_mode as string }
+        : {}),
+      ...(data.applied !== undefined
+        ? { applied: data.applied as number }
         : {}),
     }));
   }

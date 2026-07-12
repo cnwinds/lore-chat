@@ -56,6 +56,13 @@ def test_chat_returns_sse_stream(client):
     assert isinstance(done_data["total_duration_ms"], int)
 
 
+def test_chat_accepts_web_enabled_flag(client):
+    r = client.post("/api/chat", json={"text": "hello", "web_enabled": False})
+    assert r.status_code == 200
+    r2 = client.post("/api/chat", json={"text": "hello", "web_enabled": True})
+    assert r2.status_code == 200
+
+
 def test_chat_recall_via_sse(client):
     client.post("/api/ingest", json={"text": "docker ps 查看容器列表"})
     r = client.post("/api/chat", json={"text": "docker 怎么用"})

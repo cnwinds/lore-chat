@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import difflib
+import re
 from dataclasses import dataclass
+
+_HEADING_RE = re.compile(r"^(#{1,6})[ \t]+(.+?)[ \t]*$", re.MULTILINE)
 
 
 @dataclass
@@ -8,6 +12,13 @@ class Edit:
     old_string: str
     new_string: str
     replace_all: bool = False
+
+
+@dataclass
+class Insert:
+    content: str
+    after_heading: str | None = None
+    at_offset: int | None = None
 
 
 @dataclass
@@ -116,6 +127,9 @@ def _find_with_fallback(body: str, needle: str) -> list[tuple[int, int]]:
 
 
 def _fail_not_found(body: str, needle: str) -> PatchResult:
+    hint = _closest_substring_hint(body, needle) or _context_snippet(
+        body, 0, min(len(needle), len(body))
+    )
     return PatchResult(
         ok=False,
         body=None,
@@ -124,10 +138,30 @@ def _fail_not_found(body: str, needle: str) -> PatchResult:
         error=PatchError(
             code="NOT_FOUND",
             message="old_string 在文档中未找到",
-            hint=_context_snippet(body, 0, min(len(needle), len(body))),
+            hint=hint,
             suggestion="请用 read_doc 重新读取后复制精确文本",
         ),
     )
+
+
+def _closest_substring_hint(body: str, needle: str, *, window: int = 80) -> str | None:
+    """在正文中找与 needle 最接近的片段，供 NOT_FOUND 时提示模型。"""
+    if not needle or not body:
+        return None
+    nlen = min(len(needle), 200)
+    if nlen > len(body):
+        return _context_snippet(body, 0, len(body), radius=40)
+    best_ratio = 0.0
+    best_start = 0
+    step = max(1, nlen // 4)
+    for i in range(0, len(body) - nlen + 1, step):
+        ratio = difflib.SequenceMatcher(None, needle, body[i : i + nlen]).ratio()
+        if ratio > best_ratio:
+            best_ratio = ratio
+            best_start = i
+    if best_ratio < 0.35:
+        return None
+    return _context_snippet(body, best_start, nlen, radius=30)
 
 
 def _fail_ambiguous(body: str, needle: str, positions: list[int]) -> PatchResult:
@@ -245,4 +279,105 @@ def apply_edits(body: str, edits: list[Edit], *, max_patch_chars: int) -> PatchR
         preview=last_preview,
         affected_start=min(affected_starts) if affected_starts else None,
         affected_end=max(affected_ends) if affected_ends else None,
+    )
+
+
+def diff_affected_range(old: str, new: str) -> tuple[int | None, int | None]:
+    """计算两版正文之间在旧文坐标系下的最小覆盖区间。"""
+    if old == new:
+        return None, None
+    limit = min(len(old), len(new))
+    start = 0
+    while start < limit and old[start] == new[start]:
+        start += 1
+    end_old = len(old)
+    end_new = len(new)
+    while end_old > start and end_new > start and old[end_old - 1] == new[end_new - 1]:
+        end_old -= 1
+        end_new -= 1
+    return start, end_old
+
+
+def _heading_line_end(body: str, heading_match: re.Match[str]) -> int:
+    line_end = body.find("\n", heading_match.start())
+    if line_end < 0:
+        return len(body)
+    return line_end + 1
+
+
+def _find_heading_line(body: str, after_heading: str) -> re.Match[str] | None:
+    needle = after_heading.strip()
+    if not needle:
+        return None
+    for m in _HEADING_RE.finditer(body):
+        level = m.group(1)
+        title = m.group(2).strip()
+        line = m.group(0).strip()
+        candidates = {
+            line,
+            f"{level} {title}",
+            title,
+            needle.lstrip("#").strip(),
+        }
+        if needle in candidates or line == needle or f"{level} {title}" == needle:
+            return m
+    return None
+
+
+def apply_insert(body: str, insert: Insert, *, max_patch_chars: int) -> PatchResult:
+    content = insert.content
+    if not content:
+        return PatchResult(
+            ok=False,
+            body=None,
+            applied=0,
+            message="insert.content 不能为空",
+            error=PatchError(code="INVALID", message="insert.content 不能为空"),
+        )
+    if len(content) > max_patch_chars:
+        return PatchResult(
+            ok=False,
+            body=None,
+            applied=0,
+            message="insert.content 超出长度限制",
+            error=PatchError(code="TOO_LARGE", message="insert.content 超出长度限制"),
+        )
+
+    if insert.after_heading:
+        m = _find_heading_line(body, insert.after_heading)
+        if m is None:
+            return PatchResult(
+                ok=False,
+                body=None,
+                applied=0,
+                message=f"未找到标题：{insert.after_heading}",
+                error=PatchError(
+                    code="NOT_FOUND",
+                    message=f"未找到标题：{insert.after_heading}",
+                    suggestion="请用 read_doc 返回的大纲确认标题文本",
+                ),
+            )
+        pos = _heading_line_end(body, m)
+    elif insert.at_offset is not None:
+        try:
+            pos = int(insert.at_offset)
+        except (TypeError, ValueError):
+            pos = 0
+        pos = max(0, min(pos, len(body)))
+    else:
+        pos = len(body)
+        if body and not body.endswith("\n") and not content.startswith("\n"):
+            content = "\n" + content
+
+    new_body = body[:pos] + content + body[pos:]
+    preview = _context_snippet(new_body, pos, len(content), radius=60)
+    delta = len(content)
+    return PatchResult(
+        ok=True,
+        body=new_body,
+        applied=1,
+        message=f"已插入 {delta} 字",
+        preview=preview,
+        affected_start=pos,
+        affected_end=pos,
     )

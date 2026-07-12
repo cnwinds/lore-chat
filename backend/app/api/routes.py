@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 from app.engine.agent.events import error_event, now_ts
 from app.engine.agent.prompts import MODE_DEFAULT, MODE_FORCE_WRITE, MODE_NO_WRITE
+from app.engine.patch import diff_affected_range
 from app.logging_config import get_logger
 
 router = APIRouter(prefix="/api")
@@ -32,6 +33,7 @@ class ChatBody(BaseModel):
     text: str
     conversation_id: str | None = None
     active_doc_path: str | None = None
+    web_enabled: bool = False
 
 
 class AppendMessagesBody(BaseModel):
@@ -115,6 +117,9 @@ class _TimelineAccumulator:
                 if data.get("query"):
                     block["query"] = data["query"]
                 for key in ("question_id", "question", "options", "multi_select"):
+                    if data.get(key) is not None:
+                        block[key] = data[key]
+                for key in ("preview", "reindex_mode", "applied"):
                     if data.get(key) is not None:
                         block[key] = data[key]
                 self.all_sources.extend(block["sources"])
@@ -286,6 +291,7 @@ async def chat(body: ChatBody, request: Request):
                 active_doc_path=body.active_doc_path,
                 history=history,
                 conversation_id=body.conversation_id,
+                web_enabled=body.web_enabled,
             ):
                 yield ev
                 _accumulate_timeline(acc, ev)
@@ -375,8 +381,17 @@ async def update_doc(body: UpdateDocBody, request: Request):
         doc = c.repo.read_doc(body.path)
     except FileNotFoundError:
         raise HTTPException(404, "文档不存在")
+    old_body = doc.body
     c.repo.write_doc(body.path, doc.meta, body.body, commit_msg=f"edit: {body.path}")
-    c.indexer.reindex_doc(body.path, body.body)
+    if old_body != body.body:
+        affected_start, affected_end = diff_affected_range(old_body, body.body)
+        c.indexer.reindex_doc_after_edit(
+            body.path,
+            old_body,
+            body.body,
+            affected_start,
+            affected_end,
+        )
     c.repo.log_change(f"用户编辑 {body.path}")
     d = c.repo.read_doc(body.path)
     return {"rel_path": d.rel_path, "meta": d.meta, "body": d.body}

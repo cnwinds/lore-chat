@@ -4,7 +4,7 @@ import asyncio
 
 from app.engine.conversations import ConversationStore
 from app.engine.disclosure import disclose, disclosure_summary
-from app.engine.patch import Edit, apply_edits
+from app.engine.patch import Edit, Insert, apply_edits, apply_insert
 
 READ_ONLY_TOOLS = frozenset({"search_kb", "read_doc", "fetch_url", "web_search"})
 WRITE_TOOLS = frozenset({
@@ -257,6 +257,22 @@ TOOL_DEFINITIONS: list[dict] = [
         },
     },
 ]
+
+_MODE_NO_WRITE = "no_write"
+
+
+def select_tools(mode: str, web_enabled: bool) -> list[dict]:
+    """按 mode 与 web_enabled 硬门过滤下发给模型的工具集。
+
+    - web_enabled=False：移除 web_search（保留 fetch_url，贴链接=显式意图）。
+    - mode=no_write：移除 write_kb（此前仅靠 prompt 约束，此处收紧为硬门）。
+    """
+    excluded: set[str] = set()
+    if not web_enabled:
+        excluded.add("web_search")
+    if mode == _MODE_NO_WRITE:
+        excluded.add("write_kb")
+    return [d for d in TOOL_DEFINITIONS if d["function"]["name"] not in excluded]
 
 
 class ToolRegistry:
@@ -550,20 +566,8 @@ class ToolRegistry:
 
         if edits_raw and insert_raw:
             return self._edit_doc_error("INVALID", "edits 与 insert 不能同时使用")
-        if insert_raw:
-            return self._edit_doc_error(
-                "INVALID",
-                "insert 模式尚未实现（Phase 2）",
-                suggestion="请使用 edits 做局部替换，或用 old_string 含段末换行后 new_string 追加内容",
-            )
-        if not edits_raw:
-            return self._edit_doc_error("INVALID", "必须提供 edits")
-
-        if len(edits_raw) > self.edit_doc_max_edits:
-            return self._edit_doc_error(
-                "TOO_LARGE",
-                f"单次最多 {self.edit_doc_max_edits} 处 edits",
-            )
+        if not edits_raw and not insert_raw:
+            return self._edit_doc_error("INVALID", "必须提供 edits 或 insert")
 
         if not self.repo.is_writable(path):
             return self._edit_doc_error("PROTECTED", f"路径不可写：{path}")
@@ -577,17 +581,49 @@ class ToolRegistry:
             return self._edit_doc_error("NOT_FOUND", f"文档不存在：{path}")
 
         old_body = doc.body
-        edits = [
-            Edit(
-                old_string=e["old_string"],
-                new_string=e["new_string"],
-                replace_all=bool(e.get("replace_all", False)),
+
+        if insert_raw:
+            if not isinstance(insert_raw, dict):
+                return self._edit_doc_error("INVALID", "insert 参数格式无效")
+            insert = Insert(
+                content=insert_raw.get("content", ""),
+                after_heading=insert_raw.get("after_heading"),
+                at_offset=insert_raw.get("at_offset"),
             )
-            for e in edits_raw
-        ]
-        result = apply_edits(
-            old_body, edits, max_patch_chars=self.edit_doc_max_patch_chars
+            result = apply_insert(
+                old_body, insert, max_patch_chars=self.edit_doc_max_patch_chars
+            )
+        else:
+            if len(edits_raw) > self.edit_doc_max_edits:
+                return self._edit_doc_error(
+                    "TOO_LARGE",
+                    f"单次最多 {self.edit_doc_max_edits} 处 edits",
+                )
+            edits = [
+                Edit(
+                    old_string=e["old_string"],
+                    new_string=e["new_string"],
+                    replace_all=bool(e.get("replace_all", False)),
+                )
+                for e in edits_raw
+            ]
+            result = apply_edits(
+                old_body, edits, max_patch_chars=self.edit_doc_max_patch_chars
+            )
+
+        return self._finalize_edit_doc(
+            path, doc, old_body, result, conversation_id=conversation_id
         )
+
+    def _finalize_edit_doc(
+        self,
+        path: str,
+        doc,
+        old_body: str,
+        result,
+        *,
+        conversation_id: str | None = None,
+    ) -> dict:
         if not result.ok:
             err = result.error
             out = self._edit_doc_error(err.code, result.message)

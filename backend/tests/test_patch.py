@@ -1,6 +1,6 @@
 import pytest
 
-from app.engine.patch import Edit, PatchError, apply_edits
+from app.engine.patch import Edit, Insert, PatchError, apply_edits, apply_insert, diff_affected_range
 
 
 def test_apply_edits_single_replace():
@@ -97,3 +97,78 @@ def test_apply_edits_affected_range():
     assert result.ok is True
     assert result.affected_start == 4
     assert result.affected_end == 8
+
+
+def test_apply_insert_after_heading():
+    body = "# Title\n\n## 部署步骤\n原有内容\n"
+    result = apply_insert(
+        body,
+        Insert(content="新增段落\n", after_heading="## 部署步骤"),
+        max_patch_chars=8192,
+    )
+    assert result.ok is True
+    assert "新增段落" in result.body
+    assert result.body.index("新增段落") > body.index("## 部署步骤")
+    assert result.affected_start == body.index("原有内容")
+    assert result.affected_end == result.affected_start
+
+
+def test_apply_insert_at_offset():
+    body = "abcdef"
+    result = apply_insert(
+        body,
+        Insert(content="XY", at_offset=3),
+        max_patch_chars=8192,
+    )
+    assert result.ok is True
+    assert result.body == "abcXYdef"
+    assert result.affected_start == 3
+    assert result.affected_end == 3
+
+
+def test_apply_insert_append_default():
+    body = "line\n"
+    result = apply_insert(
+        body,
+        Insert(content="tail\n"),
+        max_patch_chars=8192,
+    )
+    assert result.ok is True
+    assert result.body == "line\ntail\n"
+    assert result.affected_start == len(body)
+    assert result.affected_end == len(body)
+
+
+def test_apply_insert_heading_not_found():
+    result = apply_insert(
+        "no headings\n",
+        Insert(content="x", after_heading="## Missing"),
+        max_patch_chars=8192,
+    )
+    assert result.ok is False
+    assert result.error.code == "NOT_FOUND"
+
+
+def test_apply_edits_not_found_has_hint():
+    body = "alpha beta gamma\n"
+    result = apply_edits(
+        body,
+        [Edit(old_string="alhpa", new_string="alpha")],
+        max_patch_chars=8192,
+    )
+    assert result.ok is False
+    assert result.error.hint
+    assert "alpha" in result.error.hint
+
+
+def test_diff_affected_range():
+    old = "aaa\nbbb\nccc\n"
+    new = "aaa\nBBB\nccc\n"
+    start, end = diff_affected_range(old, new)
+    assert start == 4
+    assert end == 7
+
+
+def test_diff_affected_range_unchanged():
+    text = "same\n"
+    assert diff_affected_range(text, text) == (None, None)

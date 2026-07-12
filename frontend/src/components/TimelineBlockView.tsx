@@ -46,6 +46,10 @@ function toolOneLiner(block: Extract<TimelineBlock, { type: "tool" }>): string |
   ) {
     return block.summary ? `${block.query} · ${block.summary}` : block.query;
   }
+  if (block.tool === "edit_doc" && block.summary) {
+    const mode = block.reindex_mode ? ` · ${block.reindex_mode}` : "";
+    return `${block.summary}${mode}`;
+  }
   return block.summary;
 }
 
@@ -104,6 +108,20 @@ function ToolBlockView({
       ? liveElapsedMs
       : block.duration_ms;
 
+  function handleOpenSource(src: SourceRef) {
+    if (
+      block.tool === "edit_doc" &&
+      block.preview &&
+      src.type === "kb" &&
+      src.path
+    ) {
+      const excerpt = block.preview.trim().slice(0, 120);
+      onOpenSource({ ...src, excerpt });
+      return;
+    }
+    onOpenSource(src);
+  }
+
   return (
     <div className={`timeline-tool timeline-tool-${block.status}`}>
       <button
@@ -142,7 +160,7 @@ function ToolBlockView({
               key={`${src.type}-${i}`}
               source={src}
               active={src.type === "kb" && previewPath === src.path}
-              onOpen={onOpenSource}
+              onOpen={handleOpenSource}
             />
           ))}
         </div>
@@ -155,12 +173,18 @@ function ToolBlockView({
         </div>
       )}
       {open && block.summary && (
-        (block.tool === "write_kb" || !block.sources?.length) &&
+        (block.tool === "write_kb" || block.tool === "edit_doc" || !block.sources?.length) &&
         block.tool !== "ask_user" && (
         <div className="timeline-tool-body">
           <div className="timeline-tool-summary">{block.summary}</div>
         </div>
         )
+      )}
+      {open && block.tool === "edit_doc" && block.preview && (
+        <div className="timeline-tool-body timeline-tool-patch-preview">
+          <div className="timeline-tool-patch-label">修改预览</div>
+          <pre className="timeline-tool-patch-text">{block.preview}</pre>
+        </div>
       )}
       {open &&
         block.tool === "ask_user" &&

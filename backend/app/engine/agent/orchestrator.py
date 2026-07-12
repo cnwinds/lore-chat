@@ -18,10 +18,10 @@ from app.engine.agent.events import (
 from app.engine.agent.prompts import MODE_DEFAULT, build_system_prompt
 from app.engine.agent.tools import (
     READ_ONLY_TOOLS,
-    TOOL_DEFINITIONS,
     TOOL_LABELS,
     ToolRegistry,
     can_parallelize,
+    select_tools,
 )
 from app.models.llm import ChatWithToolsResult, LLMClient, ToolCall
 
@@ -46,6 +46,10 @@ def _emit_tool_result(tc: ToolCall, out: dict, duration_ms: int) -> str:
         q = tc.arguments.get("query")
         if isinstance(q, str) and q.strip():
             extra["query"] = q.strip()
+    elif tc.name == "edit_doc":
+        for key in ("preview", "reindex_mode", "applied", "hint", "suggestion"):
+            if key in out:
+                extra[key] = out[key]
     return tool_result(
         tc.id,
         tc.name,
@@ -88,11 +92,15 @@ class AgentOrchestrator:
         active_doc_path: str | None = None,
         history: list[dict] | None = None,
         conversation_id: str | None = None,
+        web_enabled: bool = False,
     ) -> AsyncIterator[str]:
         start = time.monotonic()
         system_layer_text = self.system_layer.compose() if self.system_layer else ""
         messages: list[dict] = [
-            {"role": "system", "content": build_system_prompt(mode, system_layer_text)},
+            {
+                "role": "system",
+                "content": build_system_prompt(mode, system_layer_text, web_enabled),
+            },
         ]
         if active_doc_path:
             messages.append({
@@ -104,6 +112,7 @@ class AgentOrchestrator:
         messages.append({"role": "user", "content": user_text})
         all_sources: list[dict] = []
         tool_call_count = 0
+        tools_for_run = select_tools(mode, web_enabled)
 
         while tool_call_count < self.settings.agent_max_tool_calls:
             # 流式消费：文字增量边到边发；最终轮携带完整 result（含 tool_calls）。
@@ -112,7 +121,7 @@ class AgentOrchestrator:
             result: ChatWithToolsResult | None = None
             stream_iter = iter(
                 self.llm.stream_chat_with_tools(
-                    messages, TOOL_DEFINITIONS, big=True
+                    messages, tools_for_run, big=True
                 )
             )
             sentinel = object()
