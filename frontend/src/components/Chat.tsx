@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useChatConversation } from "../hooks/chat/useChatConversation";
 import { useChatScroll } from "../hooks/chat/useChatScroll";
 import {
   chatStream,
@@ -54,12 +55,8 @@ export function Chat({
   onOpenDoc,
 }: Props) {
   const [input, setInput] = useState("");
-  const [msgs, setMsgs] = useState<ChatMessage[]>([]);
-  const [loadingHistory, setLoadingHistory] = useState(false);
   const [streaming, setStreaming] = useState(false);
   const [archiving, setArchiving] = useState(false);
-  const [summarized, setSummarized] = useState(false);
-  const [summaryPath, setSummaryPath] = useState<string | null>(null);
   const [liveElapsedMs, setLiveElapsedMs] = useState(0);
   const [webEnabled, setWebEnabled] = useState<boolean>(
     () => localStorage.getItem("lorechat.webSearch") === "1",
@@ -72,6 +69,15 @@ export function Chat({
   const skipLoadRef = useRef<string | null>(null);
   const streamingRef = useRef(false);
   const conversationIdRef = useRef(conversationId);
+  const {
+    msgs,
+    setMsgs,
+    loadingHistory,
+    summarized,
+    setSummarized,
+    summaryPath,
+    setSummaryPath,
+  } = useChatConversation({ conversationId, skipLoadRef, streamingRef });
   const { messagesContainerRef, stickToBottomRef } = useChatScroll([
     msgs,
     loadingHistory,
@@ -94,41 +100,6 @@ export function Chat({
   useEffect(() => {
     adjustInputHeight();
   }, [input]);
-
-  useEffect(() => {
-    if (!conversationId) {
-      setMsgs([]);
-      setSummarized(false);
-      setSummaryPath(null);
-      return;
-    }
-    if (skipLoadRef.current === conversationId || streamingRef.current) {
-      return;
-    }
-    let cancelled = false;
-    setLoadingHistory(true);
-    getConversation(conversationId)
-      .then((conv) => {
-        if (!cancelled) {
-          setMsgs(conv.messages);
-          setSummarized(!!conv.summarized);
-          setSummaryPath(conv.summary_path ?? null);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setMsgs([]);
-          setSummarized(false);
-          setSummaryPath(null);
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoadingHistory(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [conversationId]);
 
   useEffect(() => {
     streamingRef.current = streaming;
