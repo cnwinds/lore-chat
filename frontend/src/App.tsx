@@ -82,6 +82,12 @@ export default function App() {
       return;
     }
 
+    const title = path.split("/").pop() ?? path;
+    if (!composer.paths.includes(path)) {
+      composer.addToTray(path, title);
+    }
+    composer.setPrimary(path);
+
     setPreviewPath(path);
     setHighlightText(excerpt);
 

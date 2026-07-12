@@ -163,13 +163,23 @@ class ConversationStore:
         user_text: str,
         assistant_msg: dict,
         user_ts: str | None = None,
+        *,
+        doc_context: list[str] | None = None,
+        primary_doc: str | None = None,
+        attachments: list[str] | None = None,
     ) -> dict:
         located = self._locate(cid)
         if located is None:
             raise KeyError(cid)
         _, conv = located
 
-        user_msg = {"role": "user", "text": user_text, "ts": user_ts or _now()}
+        user_msg: dict = {"role": "user", "text": user_text, "ts": user_ts or _now()}
+        if doc_context:
+            user_msg["doc_context"] = doc_context
+        if primary_doc:
+            user_msg["primary_doc"] = primary_doc
+        if attachments:
+            user_msg["attachments"] = attachments
         conv["messages"].append(user_msg)
         conv["messages"].append(assistant_msg)
         conv["updated_at"] = _now()

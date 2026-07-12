@@ -350,6 +350,9 @@ async def chat(body: ChatBody, request: Request):
                     body.text,
                     assistant_msg,
                     user_ts=now_ts(),
+                    doc_context=paths or None,
+                    primary_doc=primary,
+                    attachments=body.attachments or None,
                 )
                 _reindex_conversation(c, body.conversation_id, conv)
         except Exception as e:

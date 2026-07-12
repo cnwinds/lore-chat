@@ -286,10 +286,22 @@ export function Chat({
     });
   }
 
+  /** 托盘优先；托盘为空时回退到当前右侧预览文档 */
+  function resolveDocContext(): { paths: string[]; primary: string | null } {
+    if (docPaths.length > 0) {
+      return { paths: docPaths, primary: primaryDocPath };
+    }
+    if (previewPath) {
+      return { paths: [previewPath], primary: previewPath };
+    }
+    return { paths: [], primary: null };
+  }
+
   async function runAgentStream(
     apiText: string,
     userDisplayText?: string,
     userMeta?: Pick<ChatMessage, "attachments" | "doc_context" | "primary_doc">,
+    docCtx?: { paths: string[]; primary: string | null },
   ) {
     if (streaming) return;
     const display = userDisplayText ?? apiText;
@@ -343,10 +355,11 @@ export function Chat({
       if (isFirstUserQuestion) {
         onFirstQuestionTitle?.(cid, titleFromText(display));
       }
+      const ctx = docCtx ?? resolveDocContext();
       for await (const { event, data } of chatStream(apiText, {
         conversationId: cid,
-        activeDocPaths: docPaths,
-        primaryDocPath,
+        activeDocPaths: ctx.paths,
+        primaryDocPath: ctx.primary,
         webEnabled,
         attachments: userMeta?.attachments ?? [],
       })) {
@@ -426,11 +439,28 @@ export function Chat({
       }
     }
 
-    await runAgentStream(text, text, {
-      attachments: uploadedPaths.length ? uploadedPaths : undefined,
-      doc_context: docPaths.length ? docPaths : undefined,
-      primary_doc: primaryDocPath ?? undefined,
-    });
+    const ctx = resolveDocContext();
+    if (
+      ctx.paths.length === 0 &&
+      /这.*(几|两|\d+).*文档|合并|整合/.test(text)
+    ) {
+      setInput(text);
+      window.alert(
+        "请先在侧栏用 Ctrl+单击 将文档加入输入框上方的托盘，再发送。",
+      );
+      return;
+    }
+
+    await runAgentStream(
+      text,
+      text,
+      {
+        attachments: uploadedPaths.length ? uploadedPaths : undefined,
+        doc_context: ctx.paths.length ? ctx.paths : undefined,
+        primary_doc: ctx.primary ?? undefined,
+      },
+      ctx,
+    );
   }
 
   async function archiveConversation() {
