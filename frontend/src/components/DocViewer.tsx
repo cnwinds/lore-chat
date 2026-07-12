@@ -20,6 +20,10 @@ import {
   WidthNarrowIcon,
 } from "./DocToolbarIcons";
 import { useDocLoader } from "../hooks/doc/useDocLoader";
+import {
+  useDocDirtyPrompt,
+  type MergeReviewInfo,
+} from "../hooks/doc/useDocDirtyPrompt";
 import { useDocOutlineActive } from "../hooks/useDocOutlineActive";
 import { isDocMarkdownDirty } from "../utils/docMarkdown";
 import {
@@ -28,7 +32,7 @@ import {
   parseDocOutline,
   type OutlineItem,
 } from "../utils/docOutline";
-import type { DocMode, DocWidth, EditMode, UnsavedPrompt } from "../types/doc";
+import type { DocMode, DocWidth, EditMode } from "../types/doc";
 import { isReadOnlyPath } from "../utils/docReadOnly";
 import { getStoredEditMode, setStoredEditMode } from "../utils/docStorage";
 
@@ -50,11 +54,7 @@ type Props = {
   onToggleWidth?: () => void;
   onToggleFocus?: () => void;
   onOpenConversation?: (conversationId: string) => void;
-  mergeReview?: {
-    mergeId: string;
-    sourcePaths: string[];
-    userModified: boolean;
-  } | null;
+  mergeReview?: MergeReviewInfo | null;
   onMergeReviewChange?: (patch: Partial<{ userModified: boolean }>) => void;
   onMergeAccept?: () => void | Promise<void>;
   onMergeRegenerate?: () => void | Promise<void>;
@@ -93,7 +93,6 @@ export function DocViewer({
     "reject" | "regenerate" | "accept" | null
   >(null);
   const [outlineOpen, setOutlineOpen] = useState(false);
-  const [unsavedPrompt, setUnsavedPrompt] = useState<UnsavedPrompt | null>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
   const markdownSourceRef = useRef<HTMLTextAreaElement>(null);
   const mergeSourceRef = useRef<HTMLTextAreaElement>(null);
@@ -121,12 +120,47 @@ export function DocViewer({
     setSelection,
     setMergeEditing,
   });
-  const pendingNavRef = useRef<{ targetPath: string; gen: number } | null>(null);
-  const unsavedPromptRef = useRef<UnsavedPrompt | null>(null);
-  unsavedPromptRef.current = unsavedPrompt;
 
   const readOnly = isReadOnlyPath(path);
-  const dirty = isDocMarkdownDirty(body, savedBody);
+  const {
+    dirty,
+    unsavedPrompt,
+    setUnsavedPrompt,
+    handleSave,
+    handleConfirmSave,
+    handleConfirmDiscard,
+    handleClose,
+    handleDiscard,
+    cancelUnsavedPrompt,
+  } = useDocDirtyPrompt({
+    path,
+    refreshKey,
+    readOnly,
+    onClose,
+    onBindClose,
+    onCloseRequest,
+    onSaved,
+    onNavigationBlocked,
+    mergeReview,
+    mergeEditing,
+    onMergeReviewChange,
+    doc,
+    setDoc,
+    body,
+    setBody,
+    savedBody,
+    setSavedBody,
+    loadedPath,
+    loadDoc,
+    loadGenRef,
+    lastRefreshKeyRef,
+    userEditedRef,
+    bumpPreviewRemount,
+    setSelection,
+    saving,
+    setSaving,
+    setSaveError,
+  });
   const outlineItems = useMemo(() => parseDocOutline(body), [body]);
   const outlineInSource =
     (mergeReview !== null && mergeEditing) || editMode === "markdown";
@@ -140,164 +174,8 @@ export function DocViewer({
   });
 
   useEffect(() => {
-    const gen = ++loadGenRef.current;
-    const pathChanged = path !== loadedPath;
-    const refreshChanged = refreshKey !== lastRefreshKeyRef.current;
-    lastRefreshKeyRef.current = refreshKey;
-
-    if (dirty && (pathChanged || refreshChanged)) {
-      pendingNavRef.current = { targetPath: path, gen };
-      setUnsavedPrompt(pathChanged ? "navigate" : "reload");
-      if (pathChanged) onNavigationBlocked?.(loadedPath);
-      return;
-    }
-
-    void loadDoc(path, gen);
-  }, [path, refreshKey]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
     setOutlineOpen(false);
   }, [path, refreshKey]);
-
-  useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "s") return;
-      e.preventDefault();
-      void handleSaveRef.current();
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
-
-  const handleSaveRef = useRef<() => Promise<void>>(async () => {});
-
-  const handleSave = useCallback(async (): Promise<boolean> => {
-    if (!dirty || saving || readOnly || !doc) return !dirty;
-    setSaving(true);
-    setSaveError(null);
-    try {
-      const saved = await saveDoc(path, body);
-      setDoc(saved);
-      setSavedBody(body);
-      onSaved?.(path);
-      return true;
-    } catch (e) {
-      setSaveError(e instanceof Error ? e.message : "保存失败");
-      return false;
-    } finally {
-      setSaving(false);
-    }
-  }, [body, dirty, doc, onSaved, path, readOnly, saving]);
-
-  handleSaveRef.current = async () => {
-    await handleSave();
-  };
-
-  const finishClose = useCallback(() => {
-    if (onCloseRequest && !onCloseRequest()) return;
-    onClose();
-  }, [onClose, onCloseRequest]);
-
-  const applyDiscard = useCallback(() => {
-    userEditedRef.current = false;
-    setBody(savedBody);
-    setSelection({ start: savedBody.length, end: savedBody.length });
-    setSaveError(null);
-    bumpPreviewRemount();
-  }, [bumpPreviewRemount, savedBody]);
-
-  const completePendingNavigation = useCallback(() => {
-    const pending = pendingNavRef.current;
-    pendingNavRef.current = null;
-    setUnsavedPrompt(null);
-    if (pending) void loadDoc(pending.targetPath, pending.gen);
-  }, [loadDoc]);
-
-  const cancelUnsavedPrompt = useCallback(() => {
-    pendingNavRef.current = null;
-    setUnsavedPrompt(null);
-  }, []);
-
-  const resolveUnsavedPromptAfterAction = useCallback(
-    (action: "discard" | "save") => {
-      const prompt = unsavedPromptRef.current;
-      if (!prompt || prompt === "view") return;
-
-      if (action === "discard") applyDiscard();
-
-      if (prompt === "close") {
-        pendingNavRef.current = null;
-        setUnsavedPrompt(null);
-        finishClose();
-        return;
-      }
-
-      if (prompt === "navigate" || prompt === "reload") {
-        completePendingNavigation();
-      }
-    },
-    [applyDiscard, completePendingNavigation, finishClose],
-  );
-
-  const handleConfirmDiscard = useCallback(() => {
-    resolveUnsavedPromptAfterAction("discard");
-  }, [resolveUnsavedPromptAfterAction]);
-
-  const handleConfirmSave = useCallback(async () => {
-    const prompt = unsavedPromptRef.current;
-    if (!prompt || prompt === "view") return;
-
-    const ok =
-      mergeReview && mergeEditing
-        ? await (async () => {
-            if (!mergeReview || saving || readOnly || !doc) return false;
-            setSaving(true);
-            setSaveError(null);
-            try {
-              await saveDoc(path, body);
-              onMergeReviewChange?.({ userModified: true });
-              onSaved?.(path);
-              const gen = ++loadGenRef.current;
-              await loadDoc(path, gen);
-              return true;
-            } catch (e) {
-              setSaveError(e instanceof Error ? e.message : "保存失败");
-              return false;
-            } finally {
-              setSaving(false);
-            }
-          })()
-        : await handleSave();
-
-    if (!ok) return;
-    resolveUnsavedPromptAfterAction("save");
-  }, [
-    body,
-    doc,
-    handleSave,
-    loadDoc,
-    mergeEditing,
-    mergeReview,
-    onMergeReviewChange,
-    onSaved,
-    path,
-    readOnly,
-    resolveUnsavedPromptAfterAction,
-    saving,
-  ]);
-
-  const handleClose = useCallback(() => {
-    if (dirty) {
-      setUnsavedPrompt("close");
-      return;
-    }
-    finishClose();
-  }, [dirty, finishClose]);
-
-  useEffect(() => {
-    onBindClose?.(handleClose);
-    return () => onBindClose?.(null);
-  }, [handleClose, onBindClose]);
 
   const handleEditModeChange = (mode: EditMode) => {
     setEditMode(mode);
@@ -327,13 +205,6 @@ export function DocViewer({
   const handlePreviewUserEdit = useCallback(() => {
     userEditedRef.current = true;
   }, []);
-
-  const handleDiscard = useCallback(() => {
-    if (!dirty || saving) return;
-    if (!window.confirm("放弃未保存的修改？此操作不可撤销。")) return;
-    applyDiscard();
-    setUnsavedPrompt(null);
-  }, [applyDiscard, dirty, saving]);
 
   const handleOutlineJump = useCallback(
     (item: OutlineItem) => {
