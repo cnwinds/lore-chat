@@ -17,31 +17,21 @@ import { ChatInputBar } from "./chat/ChatInputBar";
 
 type Props = {
   conversationId: string | null;
-  previewPath?: string | null;
   onConversationCreated?: (id: string) => void;
   /** 发出该会话第一条用户问题时，用问题摘要更新侧边栏标题 */
   onFirstQuestionTitle?: (id: string, title: string) => void;
   onSidebarRefresh?: () => void;
-  onKbChanged?: (changedPath?: string) => void;
   onOpenSource?: (src: SourceRef) => void;
-  onOpenDoc?: (path: string, excerpt?: string) => void;
 };
 
 export function Chat({
   conversationId,
-  previewPath,
   onConversationCreated,
   onFirstQuestionTitle,
   onSidebarRefresh,
-  onKbChanged,
   onOpenSource,
-  onOpenDoc,
 }: Props) {
-  const docPreview = useDocPreview();
-  const resolvedPreviewPath =
-    previewPath !== undefined ? previewPath : docPreview.previewPath;
-  const resolvedOnOpenDoc = onOpenDoc ?? docPreview.openDoc;
-  const resolvedOnKbChanged = onKbChanged ?? docPreview.refreshKb;
+  const { previewPath, openDoc, refreshKb } = useDocPreview();
 
   const [input, setInput] = useState("");
   const [archiving, setArchiving] = useState(false);
@@ -71,7 +61,7 @@ export function Chat({
     ensureConversationId,
   } = useAgentStream({
     conversationId,
-    previewPath: resolvedPreviewPath,
+    previewPath,
     webEnabled,
     msgs,
     setMsgs,
@@ -84,7 +74,7 @@ export function Chat({
     onConversationCreated,
     onFirstQuestionTitle,
     onSidebarRefresh,
-    onKbChanged: resolvedOnKbChanged,
+    onKbChanged: refreshKb,
   });
   const { messagesContainerRef } = useChatScroll(
     [msgs, loadingHistory, streaming],
@@ -120,7 +110,7 @@ export function Chat({
       // 沉淀耗时较长，用户可能已切到其他会话；只把结果写回发起沉淀的那条会话
       if (conversationIdRef.current !== targetCid) {
         onSidebarRefresh?.();
-        if (result.rel_path) resolvedOnKbChanged(result.rel_path);
+        if (result.rel_path) refreshKb(result.rel_path);
         return;
       }
       const text =
@@ -134,8 +124,8 @@ export function Chat({
       if (result.rel_path) {
         setSummarized(true);
         setSummaryPath(result.rel_path);
-        resolvedOnKbChanged(result.rel_path);
-        resolvedOnOpenDoc(result.rel_path);
+        refreshKb(result.rel_path);
+        openDoc(result.rel_path);
       }
       onSidebarRefresh?.();
     } catch (err) {
@@ -159,7 +149,7 @@ export function Chat({
     choiceLabel: string,
   ) {
     setMsgs((prev) => markToolBlockResolved(prev, blockId, choiceLabel));
-    resolvedOnKbChanged(result.rel_path ?? undefined);
+    refreshKb(result.rel_path ?? undefined);
 
     if (result.status === "continue" && result.continue_prompt) {
       void runAgentStream(result.continue_prompt, choiceLabel);
@@ -175,7 +165,7 @@ export function Chat({
         },
       ]);
       if (result.rel_path) {
-        resolvedOnOpenDoc(result.rel_path);
+        openDoc(result.rel_path);
       }
       return;
     }
@@ -204,7 +194,7 @@ export function Chat({
       const cid = await ensureConversationId();
       await appendConversationMessages(cid, [assistantMsg]);
       setMsgs((m) => [...m, assistantMsg]);
-      resolvedOnKbChanged(r.attachment);
+      refreshKb(r.attachment);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "上传失败";
       setMsgs((m) => [...m, { role: "assistant", text: `错误：${msg}` }]);
@@ -219,11 +209,7 @@ export function Chat({
       return;
     }
     if (src.type === "kb" && src.path) {
-      if (onOpenDoc !== undefined) {
-        onOpenDoc(src.path, src.excerpt);
-      } else {
-        resolvedOnOpenDoc(src.path, src.excerpt);
-      }
+      openDoc(src.path, src.excerpt);
       return;
     }
     if (onOpenSource) {
@@ -243,7 +229,7 @@ export function Chat({
         streamingAssistantIdxRef={streamingAssistantIdxRef}
         messagesContainerRef={messagesContainerRef}
         messagesEndRef={messagesEndRef}
-        previewPath={resolvedPreviewPath}
+        previewPath={previewPath}
         conversationId={conversationId}
         onOpenSource={handleOpenSource}
         onQuestionResolved={handleQuestionResolved}
@@ -259,7 +245,7 @@ export function Chat({
         onSend={send}
         onArchive={archiveConversation}
         onViewArchive={() => {
-          if (summaryPath) resolvedOnOpenDoc(summaryPath);
+          if (summaryPath) openDoc(summaryPath);
         }}
         summarized={summarized}
         summaryPath={summaryPath}

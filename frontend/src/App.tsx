@@ -1,403 +1,132 @@
-import { useEffect, useRef, useState } from "react";
-import {
-  createConversation,
-  listConversations,
-  type SourceRef,
-} from "./api";
+import { useState } from "react";
+import { type SourceRef } from "./api";
 import { Chat } from "./components/Chat";
-import { Sidebar } from "./components/Sidebar";
-import { DocViewer } from "./components/DocViewer";
 import { SearchSnippetModal } from "./components/SearchSnippetModal";
 import { MergeSourceQuestion } from "./components/MergeSourceQuestion";
+import { AppShell } from "./components/app/AppShell";
+import { DocFloatLayer } from "./components/app/DocFloatLayer";
+import { DocPinnedPanel } from "./components/app/DocPinnedPanel";
 import { DocPreviewProvider } from "./contexts/DocPreviewContext";
+import { buildDocViewerHandlers } from "./hooks/app/buildDocViewerHandlers";
+import { useAppEscapeKey } from "./hooks/app/useAppEscapeKey";
+import { useConversationShell } from "./hooks/app/useConversationShell";
+import { useDocPreviewLayout } from "./hooks/app/useDocPreviewLayout";
 import { useKbFileSelection } from "./hooks/app/useKbFileSelection";
 import { useMergeReviewSession } from "./hooks/app/useMergeReviewSession";
-import type { DocWidth } from "./types/doc";
 
 export default function App() {
   const [sidebarRefreshKey, setSidebarRefreshKey] = useState(0);
-  const [docRefreshKey, setDocRefreshKey] = useState(0);
-  const [previewPath, setPreviewPath] = useState<string | null>(null);
-  const [highlightText, setHighlightText] = useState<string | undefined>();
   const [snippetSource, setSnippetSource] = useState<Extract<
     SourceRef,
     { type: "search" }
   > | null>(null);
-  const [activeConversationId, setActiveConversationId] = useState<string | null>(
-    null,
-  );
-  /** 首问乐观标题；服务端仍为「新对话」时优先展示，刷新后若已更新则自然让位 */
-  const [titleOverrides, setTitleOverrides] = useState<Record<string, string>>(
-    {},
-  );
-  const [docWidth, setDocWidth] = useState<DocWidth>("narrow");
-  const [docPinned, setDocPinned] = useState(false);
-  const [docFocus, setDocFocus] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const docCloseRef = useRef<(() => void) | null>(null);
-  const closeDocPreviewRef = useRef<(() => void) | null>(null);
 
-  const {
-    selectionMode,
-    setSelectionMode,
-    selectedPaths,
-    setDocs,
-    clearSelection,
-    toggleSelectionMode,
-    handleToggleSelect,
-    handleSelectFolderAll,
-  } = useKbFileSelection();
-
-  function bindDocClose(handler: (() => void) | null) {
-    docCloseRef.current = handler;
-  }
-
-  function requestCloseDocPreview() {
-    if (docCloseRef.current) docCloseRef.current();
-    else closeDocPreview();
-  }
-
-  function refreshSidebar() {
-    setSidebarRefreshKey((k) => k + 1);
-  }
-
-  /** 知识库内容变更：刷新目录树，并在需要时重载当前预览文档 */
-  function refreshKb(changedPath?: string) {
-    refreshSidebar();
-    if (
-      previewPath &&
-      (!changedPath ||
-        changedPath === previewPath ||
-        previewPath.startsWith(`${changedPath}/`))
-    ) {
-      setDocRefreshKey((k) => k + 1);
-    }
-  }
-
-  function handleConversationCreated(id: string) {
-    setActiveConversationId(id);
-    refreshSidebar();
-  }
-
-  function handleFirstQuestionTitle(id: string, title: string) {
-    setTitleOverrides((prev) => ({ ...prev, [id]: title }));
-  }
-
-  function openDocPreview(
-    path: string,
-    excerpt?: string,
-    options?: { pin?: boolean },
-  ) {
-    const wantPin = options?.pin;
-
-    if (path === previewPath && !docPinned && wantPin !== true) {
-      requestCloseDocPreview();
-      return;
-    }
-
-    setPreviewPath(path);
-    setHighlightText(excerpt);
-
-    if (wantPin === true) {
-      setDocPinned(true);
-    } else if (wantPin === false) {
-      setDocPinned(false);
-      setDocFocus(false);
-    } else if (!docPinned) {
-      setDocPinned(false);
-      setDocFocus(false);
-    }
-  }
-
-  function pinDocPreview() {
-    if (!previewPath) return;
-    setDocPinned(true);
-  }
-
-  function unpinDocPreview() {
-    if (!previewPath) return;
-    setDocPinned(false);
-    setDocFocus(false);
-    setSidebarCollapsed(false);
-  }
-
-  const {
-    mergeReview,
-    setMergeReview,
-    mergeSourceQuestion,
-    setMergeSourceQuestion,
-    activeMergeReview,
-    handleMergeAccept,
-    handleMergeRegenerate,
-    handleMergeReject,
-    handleMergeComplete,
-  } = useMergeReviewSession({
-    previewPath,
-    openDocPreview,
-    closeDocPreview: () => closeDocPreviewRef.current?.(),
-    refreshKb,
-    setDocRefreshKey,
-    setSelectionMode,
-    clearSelection,
+  const refreshSidebar = () => setSidebarRefreshKey((k) => k + 1);
+  const doc = useDocPreviewLayout(refreshSidebar);
+  const selection = useKbFileSelection();
+  const merge = useMergeReviewSession({
+    previewPath: doc.previewPath,
+    openDocPreview: doc.openDocPreview,
+    closeDocPreview: doc.closeDocPreview,
+    refreshKb: doc.refreshKb,
+    setDocRefreshKey: doc.setDocRefreshKey,
+    setSelectionMode: selection.setSelectionMode,
+    clearSelection: selection.clearSelection,
   });
+  const conversation = useConversationShell(
+    sidebarRefreshKey,
+    refreshSidebar,
+    doc,
+    selection,
+    merge,
+  );
 
-  function closeDocPreview() {
-    setPreviewPath(null);
-    setHighlightText(undefined);
-    setDocPinned(false);
-    setDocFocus(false);
-    setSidebarCollapsed(false);
-    setMergeReview(null);
-    // docWidth intentionally retained
-  }
-  closeDocPreviewRef.current = closeDocPreview;
-
-  function enterDocFocus() {
-    setDocFocus(true);
-    setSidebarCollapsed(true);
-  }
-
-  function exitDocFocus() {
-    setDocFocus(false);
-    setSidebarCollapsed(false);
-  }
-
-  function toggleDocWidth() {
-    setDocWidth((w) => (w === "narrow" ? "wide" : "narrow"));
-  }
-
-  function toggleDocFocus() {
-    if (docFocus) exitDocFocus();
-    else enterDocFocus();
-  }
-
-  async function newChat() {
-    try {
-      const { conversations } = await listConversations();
-      const empty =
-        conversations.find(
-          (c) => c.id === activeConversationId && c.message_count === 0,
-        ) ?? conversations.find((c) => c.message_count === 0);
-      if (empty) {
-        setActiveConversationId(empty.id);
-        return;
-      }
-      const { id } = await createConversation();
-      setActiveConversationId(id);
-      refreshSidebar();
-    } catch {
-      setActiveConversationId(null);
-    }
-  }
-
-  function selectConversation(id: string) {
-    setActiveConversationId(id);
-    requestCloseDocPreview();
-  }
-
-  function openConversationFromDoc(id: string) {
-    setActiveConversationId(id);
-    requestCloseDocPreview();
-  }
+  useAppEscapeKey(doc, selection, snippetSource, () => setSnippetSource(null));
 
   function handleOpenSource(src: SourceRef) {
-    if (src.type === "kb") {
-      openDocPreview(src.path, src.excerpt);
-    } else if (src.type === "web") {
-      window.open(src.url, "_blank", "noopener,noreferrer");
-    } else if (src.type === "search") {
-      setSnippetSource(src);
-    }
+    if (src.type === "kb") doc.openDocPreview(src.path, src.excerpt);
+    else if (src.type === "web") window.open(src.url, "_blank", "noopener,noreferrer");
+    else if (src.type === "search") setSnippetSource(src);
   }
 
-  useEffect(() => {
-    if (!previewPath && !snippetSource && !selectionMode) return;
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key !== "Escape") return;
-      e.preventDefault();
-      if (snippetSource !== null) {
-        setSnippetSource(null);
-        return;
-      }
-      if (selectionMode) {
-        setSelectionMode(false);
-        clearSelection();
-        return;
-      }
-      if (!previewPath) return;
-      if (docFocus) exitDocFocus();
-      else requestCloseDocPreview();
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [previewPath, docFocus, docPinned, snippetSource, selectionMode]);
-
-  const chatProps = {
-    conversationId: activeConversationId,
-    previewPath,
-    onConversationCreated: handleConversationCreated,
-    onFirstQuestionTitle: handleFirstQuestionTitle,
-    onSidebarRefresh: refreshSidebar,
-    onKbChanged: refreshKb,
-    onOpenSource: handleOpenSource,
-    onOpenDoc: openDocPreview,
-  };
-
-  const floatFocus = docFocus && previewPath && !docPinned;
-  const panelFocus = docFocus && previewPath && docPinned;
-
-  const docPreviewContextValue = {
-    previewPath,
-    openDoc: openDocPreview,
-    closeDoc: closeDocPreview,
-    refreshKb,
-  };
+  const docViewerHandlers = buildDocViewerHandlers(doc, merge, (id) => {
+    conversation.setActiveConversationId(id);
+    doc.requestCloseDocPreview();
+  });
 
   return (
-    <DocPreviewProvider value={docPreviewContextValue}>
-    <div
-      className={`app-shell${panelFocus ? " app-shell--doc-focus" : ""}${
-        floatFocus ? " app-shell--doc-focus-float" : ""
-      }`}
-      data-has-merge-review={mergeReview ? "1" : "0"}
-    >
-      <Sidebar
-        refreshKey={sidebarRefreshKey}
-        selectedPath={previewPath}
-        activeConversationId={activeConversationId}
-        titleOverrides={titleOverrides}
-        collapsed={docFocus && previewPath ? sidebarCollapsed : false}
-        onToggleCollapsed={
-          docFocus && previewPath
-            ? () => setSidebarCollapsed((c) => !c)
-            : undefined
+    <DocPreviewProvider value={doc.contextValue}>
+      <AppShell
+        panelFocus={Boolean(doc.panelFocus)}
+        floatFocus={Boolean(doc.floatFocus)}
+        hasMergeReview={merge.mergeReview !== null}
+        mainFloatWide={doc.mainFloatWide}
+        sidebarProps={conversation.sidebarProps}
+        chat={
+          <Chat
+            conversationId={conversation.activeConversationId}
+            onConversationCreated={(id) => {
+              conversation.setActiveConversationId(id);
+              refreshSidebar();
+            }}
+            onFirstQuestionTitle={(id, title) =>
+              conversation.setTitleOverrides((prev) => ({ ...prev, [id]: title }))
+            }
+            onSidebarRefresh={refreshSidebar}
+            onOpenSource={handleOpenSource}
+          />
         }
-        onSelectFile={(path) => openDocPreview(path)}
-        onNewChat={() => {
-          void newChat();
-        }}
-        onSelectConversation={selectConversation}
-        onDeleteConversation={(id) => {
-          if (activeConversationId === id) {
-            setActiveConversationId(null);
-          }
-          setTitleOverrides((prev) => {
-            if (!(id in prev)) return prev;
-            const next = { ...prev };
-            delete next[id];
-            return next;
-          });
-          refreshSidebar();
-        }}
-        selectionMode={selectionMode}
-        selectedPaths={selectedPaths}
-        onToggleSelectionMode={toggleSelectionMode}
-        onToggleSelect={handleToggleSelect}
-        onSelectFolderAll={handleSelectFolderAll}
-        onMergeComplete={handleMergeComplete}
-        onDocsLoaded={setDocs}
-      />
-      <main
-        className={`main-panel${
-          previewPath && !docPinned && docWidth === "wide" && !docFocus
-            ? " main-panel--float-wide"
-            : ""
-        }`}
-      >
-        <Chat {...chatProps} />
-        {previewPath && !docPinned && (
+        docFloat={
+          doc.showFloat ? (
+            <DocFloatLayer
+              path={doc.previewPath!}
+              refreshKey={doc.docRefreshKey}
+              highlightText={doc.highlightText}
+              docWidth={doc.docWidth}
+              docFocus={doc.docFocus}
+              showBackdrop={!doc.docFocus}
+              onRequestClose={doc.requestCloseDocPreview}
+              onPin={doc.pinDocPreview}
+              {...docViewerHandlers}
+            />
+          ) : null
+        }
+        docPinned={
+          doc.showPinned ? (
+            <DocPinnedPanel
+              path={doc.previewPath!}
+              refreshKey={doc.docRefreshKey}
+              highlightText={doc.highlightText}
+              docWidth={doc.docWidth}
+              docFocus={doc.docFocus}
+              onUnpin={doc.unpinDocPreview}
+              {...docViewerHandlers}
+            />
+          ) : null
+        }
+        modals={
           <>
-            {!docFocus && (
-              <div
-                className="doc-float-backdrop"
-                aria-hidden
-                onClick={requestCloseDocPreview}
+            {merge.mergeSourceQuestion && (
+              <MergeSourceQuestion
+                mergeId={merge.mergeSourceQuestion.mergeId}
+                newPath={merge.mergeSourceQuestion.newPath}
+                sourcePaths={merge.mergeSourceQuestion.sourcePaths}
+                onDone={() => {
+                  if (doc.previewPath === merge.mergeSourceQuestion!.newPath) {
+                    doc.setDocRefreshKey((k) => k + 1);
+                  }
+                  merge.setMergeSourceQuestion(null);
+                  doc.refreshKb();
+                }}
               />
             )}
-            <div
-              className="doc-float-panel"
-              onClick={(e) => e.stopPropagation()}
-              onMouseDown={(e) => e.stopPropagation()}
-            >
-              <DocViewer
-                path={previewPath}
-                refreshKey={docRefreshKey}
-                highlightText={highlightText}
-                mode="float"
-                docWidth={docWidth}
-                docFocus={docFocus}
-                onClose={closeDocPreview}
-                onBindClose={bindDocClose}
-                onSaved={(p) => refreshKb(p)}
-                onNavigationBlocked={(stayPath) => setPreviewPath(stayPath)}
-                onPin={pinDocPreview}
-                onToggleWidth={toggleDocWidth}
-                onToggleFocus={toggleDocFocus}
-                onOpenConversation={openConversationFromDoc}
-                mergeReview={activeMergeReview}
-                onMergeReviewChange={(patch) =>
-                  setMergeReview((prev) => (prev ? { ...prev, ...patch } : prev))
-                }
-                onMergeAccept={handleMergeAccept}
-                onMergeRegenerate={handleMergeRegenerate}
-                onMergeReject={handleMergeReject}
-              />
-            </div>
+            <SearchSnippetModal
+              source={snippetSource}
+              onClose={() => setSnippetSource(null)}
+            />
           </>
-        )}
-      </main>
-      {previewPath && docPinned && (
-        <aside
-          className={
-            docFocus
-              ? "doc-panel"
-              : `doc-panel doc-panel--${docWidth}`
-          }
-        >
-          <DocViewer
-            path={previewPath}
-            refreshKey={docRefreshKey}
-            highlightText={highlightText}
-            mode="panel"
-            docWidth={docWidth}
-            docFocus={docFocus}
-            onClose={closeDocPreview}
-            onBindClose={bindDocClose}
-            onSaved={(p) => refreshKb(p)}
-            onNavigationBlocked={(stayPath) => setPreviewPath(stayPath)}
-            onUnpin={unpinDocPreview}
-            onToggleWidth={toggleDocWidth}
-            onToggleFocus={toggleDocFocus}
-            onOpenConversation={openConversationFromDoc}
-            mergeReview={activeMergeReview}
-            onMergeReviewChange={(patch) =>
-              setMergeReview((prev) => (prev ? { ...prev, ...patch } : prev))
-            }
-            onMergeAccept={handleMergeAccept}
-            onMergeRegenerate={handleMergeRegenerate}
-            onMergeReject={handleMergeReject}
-          />
-        </aside>
-      )}
-      {mergeSourceQuestion && (
-        <MergeSourceQuestion
-          mergeId={mergeSourceQuestion.mergeId}
-          newPath={mergeSourceQuestion.newPath}
-          sourcePaths={mergeSourceQuestion.sourcePaths}
-          onDone={() => {
-            if (previewPath === mergeSourceQuestion.newPath) {
-              setDocRefreshKey((k) => k + 1);
-            }
-            setMergeSourceQuestion(null);
-            refreshKb();
-          }}
-        />
-      )}
-      <SearchSnippetModal
-        source={snippetSource}
-        onClose={() => setSnippetSource(null)}
+        }
       />
-    </div>
     </DocPreviewProvider>
   );
 }
