@@ -325,7 +325,7 @@ async def upload(
         data,
         commit_msg=f"add attachment {file.filename}",
     )
-    abs_path = c.repo._abs(rel)
+    abs_path = c.repo.abs_path(rel)
     from app.index.extract import extract_text
 
     text = extract_text(abs_path)

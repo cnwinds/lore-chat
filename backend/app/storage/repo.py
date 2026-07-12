@@ -43,6 +43,9 @@ class KnowledgeRepo:
             raise ValueError(f"路径越界: {rel_path}")
         return p
 
+    def abs_path(self, rel_path: str) -> Path:
+        return self._abs(rel_path)
+
     def _commit(self, rel_paths: list[str], msg: str) -> None:
         self.repo.index.add(rel_paths)
         self.repo.index.commit(msg)

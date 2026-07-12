@@ -89,15 +89,16 @@ class AgentOrchestrator:
         history: list[dict] | None = None,
         conversation_id: str | None = None,
     ) -> AsyncIterator[str]:
-        if active_doc_path:
-            user_text = (
-                f"{user_text}\n\n[用户当前正在查看文档：{active_doc_path}]"
-            )
         start = time.monotonic()
         system_layer_text = self.system_layer.compose() if self.system_layer else ""
         messages: list[dict] = [
             {"role": "system", "content": build_system_prompt(mode, system_layer_text)},
         ]
+        if active_doc_path:
+            messages.append({
+                "role": "system",
+                "content": f"[上下文] 用户当前正在查看文档：{active_doc_path}",
+            })
         if history:
             messages.extend(history)
         messages.append({"role": "user", "content": user_text})
