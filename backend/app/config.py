@@ -53,6 +53,12 @@ class Settings(BaseSettings):
     brave_search_api_key: str | None = None
     search_provider_order: str = "tavily,serper,brave"
 
+    # edit_doc 局部编辑
+    edit_doc_max_edits: int = 10
+    edit_doc_max_patch_chars: int = 8192
+    edit_doc_require_read: bool = True
+    reindex_full_threshold: int = 4000
+
 
 def get_settings() -> "Settings":
     return Settings()
