@@ -92,6 +92,7 @@ frontend/src/
     edit_doc_max_edits: int = 10
     edit_doc_max_patch_chars: int = 8192
     edit_doc_require_read: bool = True
+    reindex_full_threshold: int = 4000
 ```
 
 - [ ] **Step 2: 更新 `.env.example`**
@@ -101,6 +102,7 @@ frontend/src/
 EDIT_DOC_MAX_EDITS=10
 EDIT_DOC_MAX_PATCH_CHARS=8192
 EDIT_DOC_REQUIRE_READ=true
+REINDEX_FULL_THRESHOLD=4000
 ```
 
 - [ ] **Step 3: 扩展 `test_config.py`**
@@ -111,6 +113,7 @@ EDIT_DOC_REQUIRE_READ=true
     assert s.edit_doc_max_edits == 10
     assert s.edit_doc_max_patch_chars == 8192
     assert s.edit_doc_require_read is True
+    assert s.reindex_full_threshold == 4000
 ```
 
 - [ ] **Step 4: 运行测试**
@@ -541,6 +544,51 @@ git commit -m "feat: patch engine newline fallback and multi-edit support"
 
 ---
 
+## Task 3.5: 增量重索引（向量 tail + FTS 全量）
+
+**Files:**
+- Modify: `backend/app/index/chunk.py`
+- Modify: `backend/app/index/vector.py`
+- Modify: `backend/app/index/indexer.py`
+- Modify: `backend/app/deps.py`（Indexer 传入 `reindex_full_threshold`）
+- Test: `backend/tests/test_indexer.py`
+
+- [ ] **Step 1: `chunk.py` 新增 `chunk_starts`**
+
+与 `chunk_text(size=800, overlap=100)` 使用相同步长逻辑，返回每个 chunk 在原文中的起始偏移列表。
+
+- [ ] **Step 2: `vector.py` 新增 `delete_ids(ids: list[str])`**
+
+按 id 列表删除（Chroma collection.delete(ids=...)），空列表 no-op。
+
+- [ ] **Step 3: `indexer.py` 实现 `reindex_doc_after_edit`**
+
+按设计文档 §6.5.1：
+- 回退条件 → `reindex_doc` 返回 `"full"`
+- 否则计算 `first_idx`，`delete_ids` tail，`embed` tail chunks，FTS 全量重建
+- 返回 `"partial"`
+
+构造函数增加 `reindex_full_threshold: int = 4000`。
+
+- [ ] **Step 4: 写测试 `test_indexer.py`**
+
+- 大文档中间小编辑 → embed 调用次数 < 全量 chunk 数（用 FakeLLMClient 计数）
+- 小文档 → `"full"` 路径
+- 编辑后 search 能命中新内容
+
+- [ ] **Step 5: pytest tests/test_indexer.py -q**
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add backend/app/index/chunk.py backend/app/index/vector.py backend/app/index/indexer.py backend/app/deps.py backend/tests/test_indexer.py
+git commit -m "feat: partial vector reindex after doc edit"
+```
+
+**Task 2–3 补充：** `apply_edits` 成功时必须设置 `affected_start`/`affected_end`（合并所有 edit 在原文中的最小覆盖区间；每步 apply 前在 current 上定位，映射回初始 body 坐标或在一开始 body 上预先找齐所有 spans 再顺序替换）。
+
+---
+
 ## Task 4: ToolRegistry — edit_doc 与 read guard
 
 **Files:**
@@ -883,26 +931,24 @@ git commit -m "feat: add edit_doc tool with read guard"
 - edit_doc：对已有文档做局部修改（替换）。修改前必须先 read_doc；old_string 须从 read_doc 返回值精确复制。小范围修改优先于 write_kb
 ```
 
-在「核心原则」第 7 条附近补充：
+在「核心原则」**替换原 §7**（不再一律 write_kb+target_path）：
 
 ```markdown
-7. **局部编辑**：用户要求修改已有文档的某段内容时，用 edit_doc，禁止用 write_kb 触发整篇重组。全新内容随手记仍用 write_kb。
+7. **当前查看的文档**：用户正在查看某文档时，改字/改段/删段 → edit_doc（path 用该文档）；需与全文语义融合的新段落 → write_kb + target_path；全新随手记 → write_kb。
 ```
 
-（原第 7、8 条序号顺延。）
+（原第 8 条序号顺延。）
 
-- [ ] **Step 2: 在 `system_layer.py` 的 `_PRECEPTS_BODY` 末尾（「六、系统控制层自身」之后）追加**
+- [ ] **Step 2: 在 `system_layer.py` 的 `_PRECEPTS_BODY` 末尾仅追加 2 条策略**
 
 ```markdown
 
-## 七、文档编辑策略
-1. 修改已有文档的局部内容 → 必须用 edit_doc，禁止 write_kb 触发整篇重组。
-2. 编辑前必须 read_doc 定位；old_string 从 read_doc 返回值精确复制。
-3. 追加段落：用 edits（old_string 含段末换行，new_string 追加内容）；insert 模式后续提供。
-4. 全新主题 / 随手记 → write_kb；整段会话归档 → summarize_conversation。
-5. 一次 edit_doc 可含多处 edits，每处 old_string 默认必须唯一。
-6. 编辑 系统/ 下文件前确认已 read_doc，改动应最小化。
+## 七、文档编辑
+1. 已有文档的小范围修改不得触发整篇重组（用局部编辑通道，不用随手记合并通道）。
+2. 修改 系统/ 下文件前应已确认当前内容，改动应最小化。
 ```
+
+**不要**在《戒律》中写 old_string、edits 等 API 细节。
 
 - [ ] **Step 3: 运行相关测试**
 
@@ -921,41 +967,34 @@ git commit -m "docs: prompt and precepts for edit_doc surgical edits"
 
 ---
 
-## Task 6: 前端时间线 — edit_doc 刷新侧栏
+## Task 6: 前端 — `KB_MUTATING_TOOLS` 加入 edit_doc
 
 **Files:**
-- Modify: `frontend/src/components/Chat.tsx`
+- Modify: `frontend/src/api.ts`
 
-- [ ] **Step 1: 在 `tool_result` 处理分支扩展**
+architecture-fixes F1 已集中 `KB_MUTATING_TOOLS` 与 `Chat.tsx` 集合判定，**只需**在 `KB_MUTATING_TOOLS` 数组中加入 `"edit_doc"`。
 
-找到：
-
-```typescript
-          if (data.tool === "write_kb") {
-            onKbChanged?.(kbPathFromToolResult(data));
-          } else if (data.tool === "delete_kb") {
-            onKbChanged?.();
-```
-
-改为：
+- [ ] **Step 1: 修改 `api.ts`**
 
 ```typescript
-          if (data.tool === "write_kb" || data.tool === "edit_doc") {
-            onKbChanged?.(kbPathFromToolResult(data));
-          } else if (data.tool === "delete_kb") {
-            onKbChanged?.();
+export const KB_MUTATING_TOOLS = [
+  "write_kb",
+  "delete_kb",
+  "summarize_conversation",
+  "edit_doc",
+] as const;
 ```
 
-- [ ] **Step 2: 手动验证（可选）**
-
-启动前后端，对话中让 Agent `read_doc` 后 `edit_doc`，确认侧栏文档树刷新。
+- [ ] **Step 2: `cd frontend && npm run build`**
 
 - [ ] **Step 3: Commit**
 
 ```bash
-git add frontend/src/components/Chat.tsx
+git add frontend/src/api.ts
 git commit -m "feat: refresh sidebar after edit_doc tool result"
 ```
+
+**Task 4 补充：** `_edit_doc` 成功写入后调用 `indexer.reindex_doc_after_edit(...)` 而非 `reindex_doc`；tool result 含 `status`、`reindex_mode`（partial/full）。
 
 ---
 
@@ -1010,7 +1049,8 @@ git commit -m "docs: mark partial-doc-edit spec as planned"
 | §6.2 匹配 Pass 1–2 | Task 2–3 |
 | §6.3 唯一性 / replace_all | Task 2 |
 | §6.4 read guard | Task 4 |
-| §6.5 写入流程 | Task 4 |
+| §6.5.1 增量重索引 | Task 3.5 |
+| §6.5 写入流程 | Task 4 + 3.5 |
 | §6.6 系统目录可编辑 | Task 4 测试 |
 | §7 WRITE_TOOLS | Task 4 |
 | §8 错误反馈 | Task 2–4 |
