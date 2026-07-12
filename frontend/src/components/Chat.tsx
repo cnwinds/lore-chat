@@ -1,4 +1,5 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useChatScroll } from "../hooks/chat/useChatScroll";
 import {
   chatStream,
   computeCumulative,
@@ -16,7 +17,6 @@ import {
   type ChatMessage,
   type IngestResult,
   type SourceRef,
-  type TimelineBlock,
 } from "../api";
 import {
   formatMessageTs,
@@ -42,13 +42,6 @@ type Props = {
 
 const INPUT_MIN_HEIGHT = 34;
 const INPUT_MAX_HEIGHT = 160;
-const SCROLL_BOTTOM_THRESHOLD = 80;
-
-function isNearBottom(container: HTMLElement): boolean {
-  const distance =
-    container.scrollHeight - container.scrollTop - container.clientHeight;
-  return distance <= SCROLL_BOTTOM_THRESHOLD;
-}
 
 export function Chat({
   conversationId,
@@ -74,25 +67,20 @@ export function Chat({
   const streamingStartRef = useRef<number | null>(null);
   const streamingAssistantIdxRef = useRef<number | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const stickToBottomRef = useRef(true);
   /** 本地刚创建的对话 ID，流式结束前跳过从服务端拉历史（避免 StrictMode 双次 effect 覆盖流式状态） */
   const skipLoadRef = useRef<string | null>(null);
   const streamingRef = useRef(false);
   const conversationIdRef = useRef(conversationId);
+  const { messagesContainerRef, stickToBottomRef } = useChatScroll([
+    msgs,
+    loadingHistory,
+    streaming,
+  ]);
 
   useEffect(() => {
     conversationIdRef.current = conversationId;
   }, [conversationId]);
-
-  function scrollMessagesToBottom() {
-    const el = messagesContainerRef.current;
-    if (!el) return;
-    requestAnimationFrame(() => {
-      el.scrollTop = el.scrollHeight;
-    });
-  }
 
   function adjustInputHeight() {
     const el = textareaRef.current;
@@ -141,22 +129,6 @@ export function Chat({
       cancelled = true;
     };
   }, [conversationId]);
-
-  useEffect(() => {
-    const el = messagesContainerRef.current;
-    if (!el) return;
-    const handleScroll = () => {
-      stickToBottomRef.current = isNearBottom(el);
-    };
-    el.addEventListener("scroll", handleScroll, { passive: true });
-    return () => el.removeEventListener("scroll", handleScroll);
-  }, []);
-
-  useLayoutEffect(() => {
-    if (stickToBottomRef.current) {
-      scrollMessagesToBottom();
-    }
-  }, [msgs, loadingHistory, streaming]);
 
   useEffect(() => {
     streamingRef.current = streaming;

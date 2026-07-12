@@ -23,7 +23,14 @@ describe("markToolBlockResolved", () => {
       {
         role: "assistant",
         timeline: [
-          { type: "tool", id: "t1", tool: "ask_user", status: "pending" },
+          {
+            type: "tool",
+            id: "t1",
+            tool: "ask_user",
+            label: "提问",
+            ts: "2026-07-12T14:30:00.000Z",
+            status: "running",
+          },
         ],
       },
     ];
