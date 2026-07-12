@@ -203,8 +203,17 @@ export const TOOL_LABELS: Record<string, string> = {
   fetch_url: "打开链接",
   web_search: "搜索网页",
   write_kb: "整理到知识库",
+  summarize_conversation: "归档整段会话",
+  delete_kb: "删除知识库内容",
   ask_user: "征询用户",
 };
+
+// 会改动知识库、需要刷新侧栏的工具
+export const KB_MUTATING_TOOLS = [
+  "write_kb",
+  "delete_kb",
+  "summarize_conversation",
+] as const;
 
 export type ConversationSummary = {
   id: string;

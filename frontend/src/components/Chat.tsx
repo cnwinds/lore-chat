@@ -12,6 +12,7 @@ import {
   appendConversationMessages,
   summarizeConversation,
   titleFromText,
+  KB_MUTATING_TOOLS,
   type ChatMessage,
   type IngestResult,
   type SourceRef,
@@ -283,10 +284,8 @@ export function Chat({
         });
 
         if (event === "tool_result") {
-          if (data.tool === "write_kb") {
+          if ((KB_MUTATING_TOOLS as readonly string[]).includes(data.tool as string)) {
             onKbChanged?.(kbPathFromToolResult(data));
-          } else if (data.tool === "delete_kb") {
-            onKbChanged?.();
           }
         }
       }
