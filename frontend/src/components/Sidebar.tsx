@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   getTree,
   listConversations,
@@ -6,6 +6,7 @@ import {
   type MergeResult,
   type ConversationSummary,
 } from "../api";
+import { groupConversationsByTime } from "../utils/conversationGroups";
 import { FileTree } from "./FileTree";
 import { MergeConfigModal } from "./MergeConfigModal";
 import { ThemeToggle } from "./ThemeToggle";
@@ -67,6 +68,10 @@ export function Sidebar({
   const [docs, setDocs] = useState<string[]>([]);
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [showMergeModal, setShowMergeModal] = useState(false);
+  const conversationGroups = useMemo(
+    () => groupConversationsByTime(conversations),
+    [conversations],
+  );
 
   async function refresh() {
     const nextDocs = (await getTree()).docs as string[];
@@ -112,39 +117,44 @@ export function Sidebar({
               {conversations.length === 0 && (
                 <div className="conversation-empty">暂无历史对话</div>
               )}
-              {conversations.map((c) => {
-                const active = activeConversationId === c.id;
-                const title =
-                  c.title === "新对话" && titleOverrides[c.id]
-                    ? titleOverrides[c.id]
-                    : c.title;
-                return (
-                  <div
-                    key={c.id}
-                    className={`conversation-item${active ? " active" : ""}`}
-                  >
-                    <button
-                      type="button"
-                      className="conversation-select"
-                      onClick={() => onSelectConversation(c.id)}
-                    >
-                      <span className="conversation-title">{title}</span>
-                      <span className="conversation-meta">
-                        {formatTime(c.updated_at)}
-                        {c.message_count > 0 ? ` · ${c.message_count} 条` : ""}
-                      </span>
-                    </button>
-                    <button
-                      type="button"
-                      className="conversation-delete"
-                      title="删除对话"
-                      onClick={(e) => handleDeleteConversation(e, c.id)}
-                    >
-                      ×
-                    </button>
-                  </div>
-                );
-              })}
+              {conversationGroups.map((group) => (
+                <div key={group.label} className="conversation-group">
+                  <div className="conversation-group-label">{group.label}</div>
+                  {group.items.map((c) => {
+                    const active = activeConversationId === c.id;
+                    const title =
+                      c.title === "新对话" && titleOverrides[c.id]
+                        ? titleOverrides[c.id]
+                        : c.title;
+                    return (
+                      <div
+                        key={c.id}
+                        className={`conversation-item${active ? " active" : ""}`}
+                      >
+                        <button
+                          type="button"
+                          className="conversation-select"
+                          onClick={() => onSelectConversation(c.id)}
+                        >
+                          <span className="conversation-title">{title}</span>
+                          <span className="conversation-meta">
+                            {formatTime(c.updated_at)}
+                            {c.message_count > 0 ? ` · ${c.message_count} 条` : ""}
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          className="conversation-delete"
+                          title="删除对话"
+                          onClick={(e) => handleDeleteConversation(e, c.id)}
+                        >
+                          ×
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
             </div>
           </section>
 

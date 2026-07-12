@@ -1,8 +1,12 @@
 from app.engine.conversations import ConversationStore
 
 
+def _store(tmp_path):
+    return ConversationStore(tmp_path / "conversations")
+
+
 def test_create_and_get(tmp_path):
-    store = ConversationStore(tmp_path / "conversations.json")
+    store = _store(tmp_path)
     cid = store.create()
     conv = store.get(cid)
     assert conv["id"] == cid
@@ -11,7 +15,7 @@ def test_create_and_get(tmp_path):
 
 
 def test_list_all_sorted_by_updated(tmp_path):
-    store = ConversationStore(tmp_path / "conversations.json")
+    store = _store(tmp_path)
     cid1 = store.create()
     cid2 = store.create()
     store.append_exchange(cid1, "第一条", {"role": "assistant", "text": "回复"})
@@ -22,7 +26,7 @@ def test_list_all_sorted_by_updated(tmp_path):
 
 
 def test_append_exchange_sets_title(tmp_path):
-    store = ConversationStore(tmp_path / "conversations.json")
+    store = _store(tmp_path)
     cid = store.create()
     store.append_exchange(
         cid,
@@ -37,7 +41,7 @@ def test_append_exchange_sets_title(tmp_path):
 
 
 def test_append_messages(tmp_path):
-    store = ConversationStore(tmp_path / "conversations.json")
+    store = _store(tmp_path)
     cid = store.create()
     store.append_messages(
         cid, [{"role": "assistant", "text": "已保存文件", "intent": "remember"}]
@@ -47,7 +51,7 @@ def test_append_messages(tmp_path):
 
 
 def test_delete(tmp_path):
-    store = ConversationStore(tmp_path / "conversations.json")
+    store = _store(tmp_path)
     cid = store.create()
     store.delete(cid)
     try:
@@ -58,7 +62,7 @@ def test_delete(tmp_path):
 
 
 def test_append_exchange_stores_timeline_and_ts(tmp_path):
-    store = ConversationStore(tmp_path / "c.json")
+    store = _store(tmp_path)
     cid = store.create()
     assistant = {
         "role": "assistant",
@@ -81,16 +85,49 @@ def test_append_exchange_stores_timeline_and_ts(tmp_path):
 
 
 def test_persistence_across_instances(tmp_path):
-    path = tmp_path / "conversations.json"
-    store = ConversationStore(path)
+    store = _store(tmp_path)
     cid = store.create()
     store.append_exchange(cid, "hi", {"role": "assistant", "text": "hello"})
-    store2 = ConversationStore(path)
+    store2 = _store(tmp_path)
     assert len(store2.get(cid)["messages"]) == 2
 
 
+def test_migrate_legacy_single_file(tmp_path):
+    import json
+
+    legacy = tmp_path / "conversations.json"
+    legacy.write_text(
+        json.dumps(
+            {
+                "abc123": {
+                    "id": "abc123",
+                    "title": "旧会话",
+                    "created_at": "2026-07-10T10:00:00",
+                    "updated_at": "2026-07-10T11:00:00",
+                    "messages": [
+                        {"role": "user", "text": "hi", "ts": "2026-07-10T10:00:00"}
+                    ],
+                    "summarized": False,
+                    "summary_path": None,
+                    "summarized_at": None,
+                    "indexed_dirty": False,
+                }
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    store = ConversationStore(legacy)
+    conv = store.get("abc123")
+    assert conv["title"] == "旧会话"
+    assert not legacy.exists()
+    assert (tmp_path / "conversations.json.bak").exists()
+    assert (tmp_path / "conversations" / "index.json").exists()
+    assert (tmp_path / "conversations" / "2026-07-10.json").exists()
+
+
 def test_llm_history_from_timeline(tmp_path):
-    store = ConversationStore(tmp_path / "c.json")
+    store = _store(tmp_path)
     cid = store.create()
     store.append_exchange(
         cid,
@@ -118,7 +155,7 @@ def test_llm_history_from_timeline(tmp_path):
 
 
 def test_llm_history_truncates_by_turns(tmp_path):
-    store = ConversationStore(tmp_path / "c.json")
+    store = _store(tmp_path)
     cid = store.create()
     for i in range(3):
         store.append_exchange(

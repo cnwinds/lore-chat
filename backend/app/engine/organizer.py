@@ -80,7 +80,12 @@ class Organizer:
             )
 
         summary = self._understand(content)
-        related = self.retriever.search(summary or content, k=5)
+        search_query = (
+            f"{summary.strip()}\n{content.strip()}".strip()
+            if summary.strip()
+            else content
+        )
+        related = self.retriever.search(search_query, k=5)
         decision = self._normalize_decision(self._decide(content, summary, related), related)
         decision = self._apply_hint_path(decision, hint_path)
 

@@ -41,7 +41,7 @@ def _make(tmp_path, chat_responses):
     retr = Retriever(vi, fi, llm, excluded_prefixes=("系统/",))
     pending = PendingStore(tmp_path / "knowledge" / ".kb" / "pending.json")
     org = Organizer(repo=repo, retriever=retr, indexer=idx, pending=pending, llm=llm)
-    conversations = ConversationStore(tmp_path / "knowledge" / ".kb" / "conversations.json")
+    conversations = ConversationStore(tmp_path / "knowledge" / ".kb" / "conversations")
     system_layer = SystemLayer(repo)
     settings = Settings(kb_path=tmp_path / "knowledge")
     registry = ToolRegistry(
@@ -59,7 +59,7 @@ def _make(tmp_path, chat_responses):
 
 
 def test_conversation_tracks_summary_state(tmp_path):
-    store = ConversationStore(tmp_path / "conv.json")
+    store = ConversationStore(tmp_path / "conv")
     cid = store.create()
     conv = store.get(cid)
     assert conv["summarized"] is False
@@ -82,7 +82,7 @@ def test_conversation_tracks_summary_state(tmp_path):
 
 
 def test_full_transcript_includes_both_roles(tmp_path):
-    store = ConversationStore(tmp_path / "conv.json")
+    store = ConversationStore(tmp_path / "conv")
     cid = store.create()
     store.append_exchange(cid, "有哪些漫剧工具", {"role": "assistant", "text": "剪映、小云雀"})
     transcript = ConversationStore.full_transcript(store.get(cid))
