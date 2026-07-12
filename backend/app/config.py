@@ -38,11 +38,14 @@ class Settings(BaseSettings):
     read_disclosure_chars: int = 3000
 
     # Agent
-    agent_max_tool_calls: int = 100
+    agent_max_tool_calls: int = 25
     agent_parallel_tools: bool = True
     agent_max_parallel: int = 4
     fetch_url_timeout: int = 15
     fetch_url_max_bytes: int = 102400
+
+    # 向量检索余弦相似度下限
+    min_vector_score: float = 0.45
 
     # Web search（配哪个用哪个）
     tavily_api_key: str | None = None

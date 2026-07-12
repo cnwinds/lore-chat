@@ -15,7 +15,7 @@ from app.engine.agent.events import (
     tool_result,
     tool_start,
 )
-from app.engine.agent.prompts import build_system_prompt
+from app.engine.agent.prompts import MODE_DEFAULT, build_system_prompt
 from app.engine.agent.tools import (
     READ_ONLY_TOOLS,
     TOOL_DEFINITIONS,
@@ -84,7 +84,7 @@ class AgentOrchestrator:
         self,
         user_text: str,
         *,
-        mode: str = "default",
+        mode: str = MODE_DEFAULT,
         active_doc_path: str | None = None,
         history: list[dict] | None = None,
         conversation_id: str | None = None,

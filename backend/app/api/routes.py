@@ -8,6 +8,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from app.engine.agent.events import error_event, now_ts
+from app.engine.agent.prompts import MODE_DEFAULT, MODE_FORCE_WRITE, MODE_NO_WRITE
 from app.logging_config import get_logger
 
 router = APIRouter(prefix="/api")
@@ -187,7 +188,7 @@ def _ingest_from_write_kb_result(data: dict) -> dict:
 
 async def _consume_agent_ingest(agent, text: str) -> dict:
     result: dict | None = None
-    async for ev in agent.run(text, mode="force_write"):
+    async for ev in agent.run(text, mode=MODE_FORCE_WRITE):
         parsed = _parse_sse(ev)
         if not parsed:
             continue
@@ -227,7 +228,7 @@ def _merge_session_view(c, session: dict) -> dict:
 async def _consume_agent_ask(agent, query: str) -> dict:
     text_parts: list[str] = []
     sources: list[dict] = []
-    async for ev in agent.run(query, mode="no_write"):
+    async for ev in agent.run(query, mode=MODE_NO_WRITE):
         parsed = _parse_sse(ev)
         if not parsed:
             continue
@@ -281,7 +282,7 @@ async def chat(body: ChatBody, request: Request):
         try:
             async for ev in c.agent.run(
                 body.text,
-                mode="default",
+                mode=MODE_DEFAULT,
                 active_doc_path=body.active_doc_path,
                 history=history,
                 conversation_id=body.conversation_id,

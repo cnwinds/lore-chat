@@ -29,12 +29,14 @@ class Retriever:
         llm: LLMClient,
         *,
         excluded_prefixes: tuple[str, ...] = (),
+        min_score: float = MIN_VECTOR_SCORE,
     ):
         self.vector = vector
         self.fulltext = fulltext
         self.llm = llm
         # 命中来源以这些前缀开头的结果直接剔除（如系统控制层「系统/」，不参与检索）
         self.excluded_prefixes = tuple(excluded_prefixes)
+        self.min_score = min_score
 
     def _excluded(self, source: str) -> bool:
         norm = (source or "").replace("\\", "/").lstrip("/")
@@ -46,7 +48,7 @@ class Retriever:
         try:
             q_emb = self.llm.embed([query])[0]
             vec_hits = [
-                h for h in self.vector.query(q_emb, k=k) if h.score >= MIN_VECTOR_SCORE
+                h for h in self.vector.query(q_emb, k=k) if h.score >= self.min_score
             ]
         except Exception:
             # Chroma/SQLite 跨线程或元数据异常时，全文检索仍可兜底

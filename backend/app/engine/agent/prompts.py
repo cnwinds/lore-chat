@@ -2,6 +2,10 @@ from __future__ import annotations
 
 from datetime import datetime
 
+MODE_DEFAULT = "default"
+MODE_FORCE_WRITE = "force_write"
+MODE_NO_WRITE = "no_write"
+
 _WEEKDAY_ZH = "一二三四五六日"
 
 
@@ -61,7 +65,7 @@ SYSTEM_PROMPT = """你是 lorechat 知识库助手。用户只管聊天解决问
 回答时简洁清晰；工具执行结果会展示在时间线中，正文不必重复罗列来源，但每条事实性结论须能在工具结果中找到对应依据。"""
 
 
-def build_system_prompt(mode: str = "default", system_layer_text: str = "") -> str:
+def build_system_prompt(mode: str = MODE_DEFAULT, system_layer_text: str = "") -> str:
     """构建 system prompt。
 
     分层（软 → 硬）：系统控制层（心法+戒律）→ 内置工具契约与事实铁律 → 时间上下文 → 本轮模式。
@@ -71,9 +75,9 @@ def build_system_prompt(mode: str = "default", system_layer_text: str = "") -> s
       - "force_write": 必须调用 write_kb（ingest 端点）
       - "no_write": 禁止调用 write_kb（ask 端点）
     """
-    if mode == "force_write":
+    if mode == MODE_FORCE_WRITE:
         suffix = "\n\n【本轮模式】用户要求录入资料。你必须调用 write_kb 将内容写入知识库，可同时检索或抓取链接辅助整理。"
-    elif mode == "no_write":
+    elif mode == MODE_NO_WRITE:
         suffix = "\n\n【本轮模式】本轮禁止调用 write_kb。只回答问题、检索和搜索，不写入知识库。回答须严格依据工具检索结果，不得编造。"
     else:
         suffix = ""

@@ -49,14 +49,18 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
     fulltext = FullTextIndex(index_dir / "fts.db")
     indexer = Indexer(vector, fulltext, llm)
     retriever = Retriever(
-        vector, fulltext, llm, excluded_prefixes=(system_layer.prefix,)
+        vector,
+        fulltext,
+        llm,
+        excluded_prefixes=(system_layer.prefix,),
+        min_score=settings.min_vector_score,
     )
     pending = PendingStore(settings.kb_path / ".kb" / "pending.json")
     merge_sessions = MergeSessionStore(
         settings.kb_path / ".kb" / "merge_sessions.json"
     )
     conversations = ConversationStore(
-        settings.kb_path / ".kb" / "conversations.json"
+        settings.kb_path / ".kb" / "conversations"
     )
     organizer = Organizer(
         repo=repo,

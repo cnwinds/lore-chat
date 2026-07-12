@@ -13,3 +13,5 @@ def test_settings_defaults(tmp_path, monkeypatch):
     assert s.big_model == "gpt-4o"
     assert s.embed_model == "text-embedding-3-small"
     assert str(s.kb_path).endswith("knowledge")
+    assert s.agent_max_tool_calls == 25
+    assert s.min_vector_score == 0.45
