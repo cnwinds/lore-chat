@@ -14,7 +14,7 @@ from app.models.llm import FakeLLMClient
 from app.storage.repo import KnowledgeRepo
 
 
-def _make_registry(tmp_path, chat_responses=None):
+def _make_registry(tmp_path, chat_responses=None, **settings_kw):
     repo = KnowledgeRepo(tmp_path / "knowledge")
     vi = VectorIndex(tmp_path / "vec")
     fi = FullTextIndex(tmp_path / "fts.db")
@@ -22,11 +22,22 @@ def _make_registry(tmp_path, chat_responses=None):
     idx = Indexer(vi, fi, llm)
     retr = Retriever(vi, fi, llm)
     pending = PendingStore(tmp_path / "knowledge" / ".kb" / "pending.json")
-    settings = Settings(kb_path=tmp_path / "knowledge")
+    settings = Settings(kb_path=tmp_path / "knowledge", **settings_kw)
     org = Organizer(repo=repo, retriever=retr, indexer=idx, pending=pending, llm=llm)
     fetcher = WebFetcher()
     web_search = WebSearch(settings)
-    registry = ToolRegistry(retr, repo, org, fetcher, web_search, pending)
+    registry = ToolRegistry(
+        retr,
+        repo,
+        org,
+        fetcher,
+        web_search,
+        pending,
+        indexer=idx,
+        edit_doc_max_edits=settings.edit_doc_max_edits,
+        edit_doc_max_patch_chars=settings.edit_doc_max_patch_chars,
+        edit_doc_require_read=settings.edit_doc_require_read,
+    )
     return registry, repo, idx
 
 
@@ -34,6 +45,7 @@ def test_can_parallelize_read_only():
     assert can_parallelize(["search_kb", "fetch_url"]) is True
     assert can_parallelize(["search_kb", "write_kb"]) is False
     assert can_parallelize(["search_kb", "delete_kb"]) is False
+    assert can_parallelize(["search_kb", "edit_doc"]) is False
 
 
 @pytest.mark.asyncio
@@ -123,4 +135,105 @@ async def test_delete_kb_directory(tmp_path):
     result = await registry.execute("delete_kb", {"path": "projects/mini-app/"})
     assert "已删除" in result["summary"]
     assert not (repo.root / "projects" / "mini-app").exists()
+
+
+@pytest.mark.asyncio
+async def test_edit_doc_requires_read_first(tmp_path):
+    registry, repo, _ = _make_registry(tmp_path)
+    repo.write_doc("技术/foo.md", {"title": "Foo"}, "hello world\n", commit_msg="seed")
+    cid = "conv-1"
+    result = await registry.execute(
+        "edit_doc",
+        {"path": "技术/foo.md", "edits": [{"old_string": "world", "new_string": "earth"}]},
+        conversation_id=cid,
+    )
+    assert result.get("error") == "NOT_READ"
+    assert result.get("status") == "failed"
+    assert "read_doc" in (result.get("suggestion") or "")
+
+
+@pytest.mark.asyncio
+async def test_edit_doc_after_read(tmp_path):
+    registry, repo, idx = _make_registry(tmp_path)
+    path = "技术/foo.md"
+    repo.write_doc(path, {"title": "Foo"}, "hello world\n", commit_msg="seed")
+    idx.reindex_doc(path, "hello world\n")
+    cid = "conv-2"
+    await registry.execute("read_doc", {"path": path}, conversation_id=cid)
+    result = await registry.execute(
+        "edit_doc",
+        {"path": path, "edits": [{"old_string": "world", "new_string": "earth"}]},
+        conversation_id=cid,
+    )
+    assert "已" in result["summary"]
+    assert result.get("error") is None
+    assert result.get("status") == "saved"
+    assert result.get("reindex_mode") in {"partial", "full"}
+    assert repo.read_doc(path).body == "hello earth\n"
+
+
+@pytest.mark.asyncio
+async def test_edit_doc_protected_path(tmp_path):
+    registry, repo, _ = _make_registry(tmp_path)
+    cid = "conv-3"
+    result = await registry.execute(
+        "edit_doc",
+        {"path": ".kb/pending.json", "edits": [{"old_string": "x", "new_string": "y"}]},
+        conversation_id=cid,
+    )
+    assert result.get("error") == "PROTECTED"
+    assert result.get("status") == "failed"
+
+
+@pytest.mark.asyncio
+async def test_edit_doc_system_precepts_allowed(tmp_path):
+    registry, repo, idx = _make_registry(
+        tmp_path,
+        system_layer_dir="系统",
+    )
+    from app.engine.agent.system_layer import SystemLayer
+
+    sl = SystemLayer(repo, dir_name="系统")
+    sl.ensure_seeded()
+    path = "系统/戒律.md"
+    cid = "conv-4"
+    await registry.execute("read_doc", {"path": path}, conversation_id=cid)
+    original = repo.read_doc(path).body
+    marker = "## 一、落库"
+    result = await registry.execute(
+        "edit_doc",
+        {
+            "path": path,
+            "edits": [
+                {
+                    "old_string": marker,
+                    "new_string": marker,
+                }
+            ],
+        },
+        conversation_id=cid,
+    )
+    assert result.get("error") is None
+    assert result.get("status") == "saved"
+    assert repo.read_doc(path).body == original
+
+
+@pytest.mark.asyncio
+async def test_edit_doc_edits_and_insert_mutually_exclusive(tmp_path):
+    registry, repo, _ = _make_registry(tmp_path)
+    path = "技术/foo.md"
+    repo.write_doc(path, {"title": "Foo"}, "body\n", commit_msg="seed")
+    cid = "conv-5"
+    await registry.execute("read_doc", {"path": path}, conversation_id=cid)
+    result = await registry.execute(
+        "edit_doc",
+        {
+            "path": path,
+            "edits": [{"old_string": "body", "new_string": "BODY"}],
+            "insert": {"content": "extra\n"},
+        },
+        conversation_id=cid,
+    )
+    assert result.get("error") == "INVALID"
+    assert result.get("status") == "failed"
 

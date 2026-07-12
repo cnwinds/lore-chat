@@ -4,9 +4,12 @@ import asyncio
 
 from app.engine.conversations import ConversationStore
 from app.engine.disclosure import disclose, disclosure_summary
+from app.engine.patch import Edit, apply_edits
 
 READ_ONLY_TOOLS = frozenset({"search_kb", "read_doc", "fetch_url", "web_search"})
-WRITE_TOOLS = frozenset({"write_kb", "delete_kb", "ask_user", "summarize_conversation"})
+WRITE_TOOLS = frozenset({
+    "write_kb", "delete_kb", "ask_user", "summarize_conversation", "edit_doc",
+})
 
 _DEFAULT_DISCLOSURE_CHARS = 3000
 
@@ -24,6 +27,7 @@ TOOL_LABELS = {
     "summarize_conversation": "归档整段会话",
     "delete_kb": "删除知识库内容",
     "ask_user": "征询用户",
+    "edit_doc": "局部编辑文档",
 }
 
 TOOL_DEFINITIONS: list[dict] = [
@@ -120,6 +124,70 @@ TOOL_DEFINITIONS: list[dict] = [
     {
         "type": "function",
         "function": {
+            "name": "edit_doc",
+            "description": (
+                "对已有知识库文档做局部修改（替换或插入）。"
+                "修改前必须先 read_doc 读取目标区域；old_string 必须从 read_doc 返回内容中精确复制。"
+                "小范围修改优先于 write_kb。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "文档相对路径，如 技术/docker/常用命令.md",
+                    },
+                    "edits": {
+                        "type": "array",
+                        "description": "按顺序应用的多处替换（同一文件原子提交）",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "old_string": {
+                                    "type": "string",
+                                    "description": "要被替换的原文（精确匹配，含换行）",
+                                },
+                                "new_string": {
+                                    "type": "string",
+                                    "description": "替换后的内容；删除内容时传空字符串",
+                                },
+                                "replace_all": {
+                                    "type": "boolean",
+                                    "description": "为 true 时替换所有匹配项，默认 false",
+                                    "default": False,
+                                },
+                            },
+                            "required": ["old_string", "new_string"],
+                        },
+                        "minItems": 1,
+                    },
+                    "insert": {
+                        "type": "object",
+                        "description": "在指定位置插入内容（不删除原文）。与 edits 互斥。",
+                        "properties": {
+                            "after_heading": {
+                                "type": "string",
+                                "description": "在此 Markdown 标题行之后插入，如 '## 部署步骤'",
+                            },
+                            "at_offset": {
+                                "type": "integer",
+                                "description": "或在此字符偏移处插入（来自 read_doc 大纲 @位置）",
+                            },
+                            "content": {
+                                "type": "string",
+                                "description": "要插入的 Markdown 正文",
+                            },
+                        },
+                        "required": ["content"],
+                    },
+                },
+                "required": ["path"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "summarize_conversation",
             "description": (
                 "把当前整段会话通读后全局重构、去重、成文，归档为一篇知识库文档。"
@@ -204,6 +272,9 @@ class ToolRegistry:
         system_layer=None,
         indexer=None,
         disclosure_chars: int = _DEFAULT_DISCLOSURE_CHARS,
+        edit_doc_max_edits: int = 10,
+        edit_doc_max_patch_chars: int = 8192,
+        edit_doc_require_read: bool = True,
     ):
         self.retriever = retriever
         self.repo = repo
@@ -215,6 +286,10 @@ class ToolRegistry:
         self.system_layer = system_layer
         self.indexer = indexer or getattr(organizer, "indexer", None)
         self.disclosure_chars = disclosure_chars
+        self.edit_doc_max_edits = edit_doc_max_edits
+        self.edit_doc_max_patch_chars = edit_doc_max_patch_chars
+        self.edit_doc_require_read = edit_doc_require_read
+        self._read_guard: dict[str, set[str]] = {}
         self._fetch_cache: dict[str, object] = {}
 
     async def execute(
@@ -229,7 +304,9 @@ class ToolRegistry:
         if name == "search_kb":
             return await asyncio.to_thread(self._search_kb, args)
         if name == "read_doc":
-            return await asyncio.to_thread(self._read_doc, args)
+            return await asyncio.to_thread(
+                self._read_doc, args, conversation_id=conversation_id
+            )
         if name == "fetch_url":
             return await self._fetch_url(args)
         if name == "web_search":
@@ -237,6 +314,10 @@ class ToolRegistry:
         if name == "write_kb":
             return await asyncio.to_thread(
                 self._write_kb, args, active_doc_path=active_doc_path
+            )
+        if name == "edit_doc":
+            return await asyncio.to_thread(
+                self._edit_doc, args, conversation_id=conversation_id
             )
         if name == "summarize_conversation":
             return self._summarize_conversation(
@@ -247,6 +328,30 @@ class ToolRegistry:
         if name == "ask_user":
             return self._ask_user(args)
         return {"summary": f"未知工具：{name}", "sources": [], "error": f"unknown tool: {name}"}
+
+    def _mark_read(self, conversation_id: str | None, path: str) -> None:
+        if not conversation_id:
+            return
+        self._read_guard.setdefault(conversation_id, set()).add(path)
+
+    def _is_read(self, conversation_id: str | None, path: str) -> bool:
+        if not self.edit_doc_require_read:
+            return True
+        if not conversation_id:
+            return False
+        return path in self._read_guard.get(conversation_id, set())
+
+    def _edit_doc_error(self, code: str, message: str, **extra) -> dict:
+        out = {
+            "summary": message,
+            "sources": [],
+            "status": "failed",
+            "error": code,
+            **extra,
+        }
+        if code == "NOT_READ":
+            out["suggestion"] = "请先调用 read_doc 读取该文档后再 edit_doc"
+        return out
 
     def _search_kb(self, args: dict) -> dict:
         query = args["query"]
@@ -266,7 +371,7 @@ class ToolRegistry:
             return {"type": "conversation", "cid": h.source[5:], "excerpt": h.chunk[:200]}
         return {"type": "kb", "path": h.source, "excerpt": h.chunk[:200]}
 
-    def _read_doc(self, args: dict) -> dict:
+    def _read_doc(self, args: dict, *, conversation_id: str | None = None) -> dict:
         path = args["path"]
         try:
             doc = self.repo.read_doc(path)
@@ -292,6 +397,7 @@ class ToolRegistry:
             out["next_offset"] = info["next_offset"]
         if "outline" in info:
             out["outline"] = info["outline"]
+        self._mark_read(conversation_id, path)
         return out
 
     async def _fetch_url(self, args: dict) -> dict:
@@ -435,6 +541,88 @@ class ToolRegistry:
             "summary": f"已删除 {path}（{len(deleted)} 个文件）",
             "sources": [],
             "deleted_paths": deleted,
+        }
+
+    def _edit_doc(self, args: dict, *, conversation_id: str | None = None) -> dict:
+        path = args["path"]
+        edits_raw = args.get("edits")
+        insert_raw = args.get("insert")
+
+        if edits_raw and insert_raw:
+            return self._edit_doc_error("INVALID", "edits 与 insert 不能同时使用")
+        if insert_raw:
+            return self._edit_doc_error(
+                "INVALID",
+                "insert 模式尚未实现（Phase 2）",
+                suggestion="请使用 edits 做局部替换，或用 old_string 含段末换行后 new_string 追加内容",
+            )
+        if not edits_raw:
+            return self._edit_doc_error("INVALID", "必须提供 edits")
+
+        if len(edits_raw) > self.edit_doc_max_edits:
+            return self._edit_doc_error(
+                "TOO_LARGE",
+                f"单次最多 {self.edit_doc_max_edits} 处 edits",
+            )
+
+        if not self.repo.is_writable(path):
+            return self._edit_doc_error("PROTECTED", f"路径不可写：{path}")
+
+        if not self._is_read(conversation_id, path):
+            return self._edit_doc_error("NOT_READ", f"请先 read_doc 再编辑：{path}")
+
+        try:
+            doc = self.repo.read_doc(path)
+        except FileNotFoundError:
+            return self._edit_doc_error("NOT_FOUND", f"文档不存在：{path}")
+
+        old_body = doc.body
+        edits = [
+            Edit(
+                old_string=e["old_string"],
+                new_string=e["new_string"],
+                replace_all=bool(e.get("replace_all", False)),
+            )
+            for e in edits_raw
+        ]
+        result = apply_edits(
+            old_body, edits, max_patch_chars=self.edit_doc_max_patch_chars
+        )
+        if not result.ok:
+            err = result.error
+            out = self._edit_doc_error(err.code, result.message)
+            if err.hint:
+                out["hint"] = err.hint
+            if err.occurrences:
+                out["occurrences"] = err.occurrences
+            if err.suggestion:
+                out["suggestion"] = err.suggestion
+            return out
+
+        self.repo.write_doc(
+            path, doc.meta, result.body, commit_msg=f"edit: {path}"
+        )
+        reindex_mode = "full"
+        if self.indexer is not None:
+            reindex_mode = self.indexer.reindex_doc_after_edit(
+                path,
+                old_body,
+                result.body,
+                result.affected_start,
+                result.affected_end,
+            )
+        self.repo.log_change(
+            f"Agent 局部编辑 {path}", commit_msg=f"chore: changelog edit {path}"
+        )
+        self._mark_read(conversation_id, path)
+
+        return {
+            "summary": f"已在 {path} {result.message}",
+            "sources": [{"type": "kb", "path": path}],
+            "status": "saved",
+            "applied": result.applied,
+            "preview": result.preview,
+            "reindex_mode": reindex_mode,
         }
 
     def _ask_user(self, args: dict) -> dict:
