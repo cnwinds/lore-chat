@@ -51,6 +51,70 @@ def _find_exact(body: str, needle: str) -> list[int]:
     return out
 
 
+def _normalize_newlines(s: str) -> str:
+    return s.replace("\r\n", "\n").replace("\r", "\n")
+
+
+def _build_norm_index_map(body: str) -> tuple[str, list[int]]:
+    """归一化换行并记录 norm 下标 → 原文起始下标。"""
+    norm_chars: list[str] = []
+    norm_to_orig: list[int] = []
+    i = 0
+    while i < len(body):
+        if body.startswith("\r\n", i):
+            norm_chars.append("\n")
+            norm_to_orig.append(i)
+            i += 2
+        elif body[i] == "\r":
+            norm_chars.append("\n")
+            norm_to_orig.append(i)
+            i += 1
+        else:
+            norm_chars.append(body[i])
+            norm_to_orig.append(i)
+            i += 1
+    return "".join(norm_chars), norm_to_orig
+
+
+def _orig_span_for_norm_match(
+    body: str, norm_body: str, norm_to_orig: list[int], norm_start: int, norm_needle: str
+) -> tuple[int, int] | None:
+    """将归一化匹配映射回原文 [start, end) 跨度。"""
+    norm_end = norm_start + len(norm_needle)
+    if norm_end > len(norm_body):
+        return None
+    orig_start = norm_to_orig[norm_start]
+    for orig_end in range(orig_start + 1, len(body) + 1):
+        if _normalize_newlines(body[orig_start:orig_end]) == norm_needle:
+            return orig_start, orig_end
+    return None
+
+
+def _find_with_fallback(body: str, needle: str) -> list[tuple[int, int]]:
+    """返回原文中的 (start, end) 跨度列表。"""
+    exact = _find_exact(body, needle)
+    if exact:
+        n = len(needle)
+        return [(pos, pos + n) for pos in exact]
+
+    norm_body, norm_to_orig = _build_norm_index_map(body)
+    norm_needle = _normalize_newlines(needle)
+    if not norm_needle:
+        return []
+
+    spans: list[tuple[int, int]] = []
+    i = 0
+    while True:
+        j = norm_body.find(norm_needle, i)
+        if j < 0:
+            break
+        mapped = _orig_span_for_norm_match(body, norm_body, norm_to_orig, j, norm_needle)
+        if mapped:
+            spans.append(mapped)
+        i = j + 1
+    return spans
+
+
 def _fail_not_found(body: str, needle: str) -> PatchResult:
     return PatchResult(
         ok=False,
@@ -139,16 +203,15 @@ def apply_edits(body: str, edits: list[Edit], *, max_patch_chars: int) -> PatchR
                 ),
             )
 
-        positions = _find_exact(current, edit.old_string)
-        if not positions:
+        spans = _find_with_fallback(current, edit.old_string)
+        if not spans:
             return _fail_not_found(current, edit.old_string)
 
-        if len(positions) > 1 and not edit.replace_all:
+        if len(spans) > 1 and not edit.replace_all:
+            positions = [s[0] for s in spans]
             return _fail_ambiguous(current, edit.old_string, positions)
 
         if edit.replace_all:
-            n = len(edit.old_string)
-            spans = [(pos, pos + n) for pos in positions]
             for start, end in reversed(spans):
                 orig_start = _current_to_original(start, mutations)
                 orig_end = _current_to_original(end, mutations)
@@ -160,16 +223,15 @@ def apply_edits(body: str, edits: list[Edit], *, max_patch_chars: int) -> PatchR
                 current, spans[0][0], spans[0][1] - spans[0][0], len(edit.new_string)
             )
         else:
-            pos = positions[0]
-            end = pos + len(edit.old_string)
-            orig_start = _current_to_original(pos, mutations)
+            start, end = spans[0]
+            orig_start = _current_to_original(start, mutations)
             orig_end = _current_to_original(end, mutations)
             affected_starts.append(orig_start)
             affected_ends.append(orig_end)
             mutations.append((orig_start, orig_end, len(edit.new_string)))
-            current = current[:pos] + edit.new_string + current[end:]
+            current = current[:start] + edit.new_string + current[end:]
             last_preview = _make_preview(
-                current, pos, end - pos, len(edit.new_string)
+                current, start, end - start, len(edit.new_string)
             )
         applied += 1
 
