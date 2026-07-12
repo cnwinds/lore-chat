@@ -49,13 +49,6 @@ function toolOneLiner(block: Extract<TimelineBlock, { type: "tool" }>): string |
   return block.summary;
 }
 
-/**
- * 记录用户对某个工具块的手动展开/折叠选择（按 block.id）。
- * 流式更新与「回答完成」会让消息子树重挂载，组件内 useState 会被重置；
- * 用模块级 Map 把用户的显式选择保留下来，避免展开后被重新计算的默认值收起。
- */
-const toolBlockOpenOverride = new Map<string, boolean>();
-
 /** 并行组内各工具步耗时的最大值 */
 function maxParallelDuration(children: TimelineBlock[]): number | undefined {
   let max: number | undefined;
@@ -96,18 +89,13 @@ function ToolBlockView({
     block.status === "done" &&
     !block.choice_resolved;
   const defaultOpen = isLive || pendingAsk || block.status === "running";
-  // 用户显式点过则以其选择为准（跨重渲染/重挂载持久化），否则用默认值。
-  const [override, setOverride] = useState<boolean | null>(() =>
-    toolBlockOpenOverride.has(block.id)
-      ? toolBlockOpenOverride.get(block.id)!
-      : null,
-  );
+  // 用户显式点过则以其选择为准，否则用默认值。
+  // 展开状态用组件内 state 维护，随组件卸载自动回收（不跨会话泄漏）。
+  const [override, setOverride] = useState<boolean | null>(null);
   const open = override ?? defaultOpen;
 
   function toggleOpen() {
-    const next = !open;
-    toolBlockOpenOverride.set(block.id, next);
-    setOverride(next);
+    setOverride(!open);
   }
 
   const oneLiner = toolOneLiner(block);
