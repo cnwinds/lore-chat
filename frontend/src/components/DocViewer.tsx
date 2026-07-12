@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { getMergeSession, saveDoc } from "../api";
+import { saveDoc } from "../api";
 import { DocDiffModal } from "./DocDiffModal";
 import { DocLivePreview, type DocSelection } from "./DocLivePreview";
 import { DocMarkdownSource } from "./DocMarkdownSource";
@@ -19,11 +19,13 @@ import {
   WidthExpandIcon,
   WidthNarrowIcon,
 } from "./DocToolbarIcons";
+import { DocMergeReviewBar } from "./doc/DocMergeReviewBar";
 import { useDocLoader } from "../hooks/doc/useDocLoader";
 import {
   useDocDirtyPrompt,
   type MergeReviewInfo,
 } from "../hooks/doc/useDocDirtyPrompt";
+import { useDocHighlight } from "../hooks/doc/useDocHighlight";
 import { useDocOutlineActive } from "../hooks/useDocOutlineActive";
 import { isDocMarkdownDirty } from "../utils/docMarkdown";
 import {
@@ -89,9 +91,6 @@ export function DocViewer({
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [mergeEditing, setMergeEditing] = useState(false);
-  const [mergeBusyAction, setMergeBusyAction] = useState<
-    "reject" | "regenerate" | "accept" | null
-  >(null);
   const [outlineOpen, setOutlineOpen] = useState(false);
   const bodyRef = useRef<HTMLDivElement>(null);
   const markdownSourceRef = useRef<HTMLTextAreaElement>(null);
@@ -185,9 +184,18 @@ export function DocViewer({
   useEffect(() => {
     if (!mergeReview) {
       setMergeEditing(false);
-      setMergeBusyAction(null);
     }
   }, [mergeReview]);
+
+  useDocHighlight({
+    bodyRef,
+    highlightText,
+    loading,
+    doc,
+    editMode,
+    path,
+    body,
+  });
 
   const handleBodyChange = (nextBody: string, nextSelection?: DocSelection) => {
     userEditedRef.current = true;
@@ -248,74 +256,6 @@ export function DocViewer({
     readOnly,
     saving,
   ]);
-
-  const ensureMergeActionConfirmed = useCallback(
-    async (action: "regenerate" | "reject") => {
-      if (!mergeReview) return false;
-      const message =
-        action === "regenerate"
-          ? "你已修改当前合并结果。重新生成会覆盖这些修改，确定继续吗？"
-          : "你已修改当前合并结果。删除此文会丢失这些修改，确定继续吗？";
-      if (mergeReview.userModified) return window.confirm(message);
-      try {
-        const session = await getMergeSession(mergeReview.mergeId);
-        if (session.user_modified) return window.confirm(message);
-      } catch {
-        return window.confirm("无法确认当前是否已修改，仍要继续吗？");
-      }
-      return true;
-    },
-    [mergeReview],
-  );
-
-  const runMergeAction = useCallback(
-    async (action: "reject" | "regenerate" | "accept", fn?: () => void | Promise<void>) => {
-      if (!fn || mergeBusyAction) return;
-      setMergeBusyAction(action);
-      try {
-        await Promise.resolve(fn());
-      } finally {
-        setMergeBusyAction(null);
-      }
-    },
-    [mergeBusyAction],
-  );
-
-  useEffect(() => {
-    if (!highlightText || loading || !doc || !bodyRef.current) return;
-
-    const container = bodyRef.current.querySelector(".doc-markdown");
-    if (!container) return;
-
-    const prev = container.querySelector(".highlight");
-    prev?.classList.remove("highlight");
-
-    const needle = highlightText.trim().slice(0, 120);
-    if (!needle) return;
-
-    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
-    let node: Text | null = walker.nextNode() as Text | null;
-    while (node) {
-      const idx = node.textContent?.indexOf(needle) ?? -1;
-      if (idx >= 0) {
-        const range = document.createRange();
-        range.setStart(node, idx);
-        range.setEnd(node, idx + needle.length);
-        const mark = document.createElement("mark");
-        mark.className = "highlight";
-        try {
-          range.surroundContents(mark);
-          mark.scrollIntoView({ behavior: "smooth", block: "center" });
-        } catch {
-          mark.textContent = needle;
-          node.parentNode?.insertBefore(mark, node);
-          mark.scrollIntoView({ behavior: "smooth", block: "center" });
-        }
-        break;
-      }
-      node = walker.nextNode() as Text | null;
-    }
-  }, [highlightText, loading, doc, path, body, editMode]);
 
   const title =
     (doc?.meta?.title as string | undefined) ||
@@ -562,43 +502,12 @@ export function DocViewer({
         )}
       </div>
       {mergeReview && (
-        <footer className="doc-merge-review-bar">
-          <span>正在审阅合并结果（源自 {mergeReview.sourcePaths.length} 篇）</span>
-          <div className="doc-merge-review-actions">
-            <button
-              type="button"
-              onClick={() =>
-                void (async () => {
-                  if (!(await ensureMergeActionConfirmed("reject"))) return;
-                  await runMergeAction("reject", onMergeReject);
-                })()
-              }
-              disabled={mergeBusyAction !== null}
-            >
-              删除此文
-            </button>
-            <button
-              type="button"
-              onClick={() =>
-                void (async () => {
-                  if (!(await ensureMergeActionConfirmed("regenerate"))) return;
-                  await runMergeAction("regenerate", onMergeRegenerate);
-                })()
-              }
-              disabled={mergeBusyAction !== null}
-            >
-              重新生成
-            </button>
-            <button
-              type="button"
-              className="doc-merge-review-accept"
-              onClick={() => void runMergeAction("accept", onMergeAccept)}
-              disabled={mergeBusyAction !== null}
-            >
-              采用
-            </button>
-          </div>
-        </footer>
+        <DocMergeReviewBar
+          mergeReview={mergeReview}
+          onMergeAccept={onMergeAccept}
+          onMergeRegenerate={onMergeRegenerate}
+          onMergeReject={onMergeReject}
+        />
       )}
       <DocDiffModal
         open={unsavedPrompt !== null}
