@@ -15,8 +15,6 @@
 .\lorechat.bat dev      # 开发模式（热更新，改代码自动生效）
 ```
 
-> **注意**：请使用 `lorechat.bat`，不要直接运行 `.\lorechat.ps1`（可能受系统脚本执行策略限制）。
-
 - 前端：http://localhost:5173
 - 后端：http://localhost:8000
 - 在 `backend\.env` 中填入 `OPENAI_API_KEY`

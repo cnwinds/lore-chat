@@ -1,5 +1,5 @@
 $files = @(
-    (Join-Path $PSScriptRoot "lorechat.ps1")
+    (Join-Path (Split-Path $PSScriptRoot -Parent) "lorechat.bat")
     (Join-Path $PSScriptRoot "env-setup.ps1")
 )
 foreach ($f in $files) {
