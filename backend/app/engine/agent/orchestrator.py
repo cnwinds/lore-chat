@@ -90,6 +90,8 @@ class AgentOrchestrator:
         *,
         mode: str = MODE_DEFAULT,
         active_doc_path: str | None = None,
+        active_doc_paths: list[str] | None = None,
+        primary_doc_path: str | None = None,
         history: list[dict] | None = None,
         conversation_id: str | None = None,
         web_enabled: bool = False,
@@ -102,10 +104,19 @@ class AgentOrchestrator:
                 "content": build_system_prompt(mode, system_layer_text, web_enabled),
             },
         ]
-        if active_doc_path:
+        paths = list(active_doc_paths or [])
+        primary = primary_doc_path or active_doc_path
+        if active_doc_path and active_doc_path not in paths:
+            if not paths:
+                paths = [active_doc_path]
+        if paths:
+            lines = []
+            for p in paths:
+                suffix = "（主文档，默认编辑目标）" if p == primary else "（参考上下文）"
+                lines.append(f"- {p}{suffix}")
             messages.append({
                 "role": "system",
-                "content": f"[上下文] 用户当前正在查看文档：{active_doc_path}",
+                "content": "[上下文] 用户当前文档托盘：\n" + "\n".join(lines),
             })
         if history:
             messages.extend(history)
@@ -113,6 +124,7 @@ class AgentOrchestrator:
         all_sources: list[dict] = []
         tool_call_count = 0
         tools_for_run = select_tools(mode, web_enabled)
+        tool_active_doc_path = primary
 
         while tool_call_count < self.settings.agent_max_tool_calls:
             # 流式消费：文字增量边到边发；最终轮携带完整 result（含 tool_calls）。
@@ -147,7 +159,7 @@ class AgentOrchestrator:
                     ):
                         async for ev, entry in self._run_parallel_batch(
                             batch,
-                            active_doc_path=active_doc_path,
+                            active_doc_path=tool_active_doc_path,
                             conversation_id=conversation_id,
                         ):
                             yield ev
@@ -159,7 +171,7 @@ class AgentOrchestrator:
                             yield tool_start(tc.id, tc.name, TOOL_LABELS[tc.name], tc.arguments)
                             out, duration_ms = await self._execute_tool(
                                 tc,
-                                active_doc_path=active_doc_path,
+                                active_doc_path=tool_active_doc_path,
                                 conversation_id=conversation_id,
                             )
                             yield _emit_tool_result(tc, out, duration_ms)

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { getDoc, getMergeSession, saveDoc, type DocContent } from "../api";
+import { getDoc, saveDoc, type DocContent } from "../api";
 import { DocDiffModal } from "./DocDiffModal";
 import { DocLivePreview, type DocSelection } from "./DocLivePreview";
 import { DocMarkdownSource } from "./DocMarkdownSource";
@@ -52,15 +52,6 @@ type Props = {
   onToggleWidth?: () => void;
   onToggleFocus?: () => void;
   onOpenConversation?: (conversationId: string) => void;
-  mergeReview?: {
-    mergeId: string;
-    sourcePaths: string[];
-    userModified: boolean;
-  } | null;
-  onMergeReviewChange?: (patch: Partial<{ userModified: boolean }>) => void;
-  onMergeAccept?: () => void | Promise<void>;
-  onMergeRegenerate?: () => void | Promise<void>;
-  onMergeReject?: () => void | Promise<void>;
 };
 
 function getStoredEditMode(): EditMode {
@@ -110,11 +101,6 @@ export function DocViewer({
   onToggleWidth,
   onToggleFocus,
   onOpenConversation,
-  mergeReview = null,
-  onMergeReviewChange,
-  onMergeAccept,
-  onMergeRegenerate,
-  onMergeReject,
 }: Props) {
   const [doc, setDoc] = useState<DocContent | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -126,16 +112,11 @@ export function DocViewer({
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [loadedPath, setLoadedPath] = useState(path);
-  const [mergeEditing, setMergeEditing] = useState(false);
-  const [mergeBusyAction, setMergeBusyAction] = useState<
-    "reject" | "regenerate" | "accept" | null
-  >(null);
   const [outlineOpen, setOutlineOpen] = useState(false);
   const [unsavedPrompt, setUnsavedPrompt] = useState<UnsavedPrompt | null>(null);
   const [previewRemountKey, setPreviewRemountKey] = useState(0);
   const bodyRef = useRef<HTMLDivElement>(null);
   const markdownSourceRef = useRef<HTMLTextAreaElement>(null);
-  const mergeSourceRef = useRef<HTMLTextAreaElement>(null);
   const loadGenRef = useRef(0);
   const lastRefreshKeyRef = useRef(refreshKey);
   const userEditedRef = useRef(false);
@@ -146,14 +127,12 @@ export function DocViewer({
   const readOnly = isReadOnlyPath(path);
   const dirty = isDocMarkdownDirty(body, savedBody);
   const outlineItems = useMemo(() => parseDocOutline(body), [body]);
-  const outlineInSource =
-    (mergeReview !== null && mergeEditing) || editMode === "markdown";
+  const outlineInSource = editMode === "markdown";
   const outlineActiveIndex = useDocOutlineActive({
     items: outlineItems,
     inSource: outlineInSource,
     scrollRootRef: bodyRef,
     sourceRef: markdownSourceRef,
-    mergeSourceRef: mergeSourceRef,
     enabled: Boolean(doc) && !loading,
   });
 
@@ -169,7 +148,6 @@ export function DocViewer({
       setSavedBody(d.body);
       setSelection({ start: d.body.length, end: d.body.length });
       setLoadedPath(targetPath);
-      setMergeEditing(false);
       userEditedRef.current = false;
       setPreviewRemountKey((k) => k + 1);
     } catch (e) {
@@ -291,44 +269,10 @@ export function DocViewer({
     const prompt = unsavedPromptRef.current;
     if (!prompt || prompt === "view") return;
 
-    const ok =
-      mergeReview && mergeEditing
-        ? await (async () => {
-            if (!mergeReview || saving || readOnly || !doc) return false;
-            setSaving(true);
-            setSaveError(null);
-            try {
-              await saveDoc(path, body);
-              onMergeReviewChange?.({ userModified: true });
-              onSaved?.(path);
-              const gen = ++loadGenRef.current;
-              await loadDoc(path, gen);
-              return true;
-            } catch (e) {
-              setSaveError(e instanceof Error ? e.message : "保存失败");
-              return false;
-            } finally {
-              setSaving(false);
-            }
-          })()
-        : await handleSave();
-
+    const ok = await handleSave();
     if (!ok) return;
     resolveUnsavedPromptAfterAction("save");
-  }, [
-    body,
-    doc,
-    handleSave,
-    loadDoc,
-    mergeEditing,
-    mergeReview,
-    onMergeReviewChange,
-    onSaved,
-    path,
-    readOnly,
-    resolveUnsavedPromptAfterAction,
-    saving,
-  ]);
+  }, [handleSave, resolveUnsavedPromptAfterAction]);
 
   const handleClose = useCallback(() => {
     if (dirty) {
@@ -347,13 +291,6 @@ export function DocViewer({
     setEditMode(mode);
     setStoredEditMode(mode);
   };
-
-  useEffect(() => {
-    if (!mergeReview) {
-      setMergeEditing(false);
-      setMergeBusyAction(null);
-    }
-  }, [mergeReview]);
 
   const handleBodyChange = (nextBody: string, nextSelection?: DocSelection) => {
     userEditedRef.current = true;
@@ -381,77 +318,13 @@ export function DocViewer({
 
   const handleOutlineJump = useCallback(
     (item: OutlineItem) => {
-      const inSource =
-        (mergeReview && mergeEditing) || editMode === "markdown";
-      if (inSource) {
-        const ta = mergeReview && mergeEditing
-          ? mergeSourceRef.current
-          : markdownSourceRef.current;
-        jumpToOutlineInSource(ta, item.line);
+      if (editMode === "markdown") {
+        jumpToOutlineInSource(markdownSourceRef.current, item.line);
       } else {
         jumpToOutlineInPreview(bodyRef.current, item);
       }
     },
-    [editMode, mergeEditing, mergeReview],
-  );
-
-  const handleMergeSave = useCallback(async () => {
-    if (!mergeReview || saving || readOnly || !doc) return;
-    setSaving(true);
-    setSaveError(null);
-    try {
-      await saveDoc(path, body);
-      onMergeReviewChange?.({ userModified: true });
-      onSaved?.(path);
-      const gen = ++loadGenRef.current;
-      await loadDoc(path, gen);
-    } catch (e) {
-      setSaveError(e instanceof Error ? e.message : "保存失败");
-    } finally {
-      setSaving(false);
-    }
-  }, [
-    body,
-    doc,
-    loadDoc,
-    mergeReview,
-    onMergeReviewChange,
-    onSaved,
-    path,
-    readOnly,
-    saving,
-  ]);
-
-  const ensureMergeActionConfirmed = useCallback(
-    async (action: "regenerate" | "reject") => {
-      if (!mergeReview) return false;
-      const message =
-        action === "regenerate"
-          ? "你已修改当前合并结果。重新生成会覆盖这些修改，确定继续吗？"
-          : "你已修改当前合并结果。删除此文会丢失这些修改，确定继续吗？";
-      if (mergeReview.userModified) return window.confirm(message);
-      try {
-        const session = await getMergeSession(mergeReview.mergeId);
-        if (session.user_modified) return window.confirm(message);
-      } catch {
-        return window.confirm("无法确认当前是否已修改，仍要继续吗？");
-      }
-      return true;
-    },
-    [mergeReview],
-  );
-
-  const runMergeAction = useCallback(
-    async (action: "reject" | "regenerate" | "accept", fn?: () => void | Promise<void>) => {
-      if (!fn || mergeBusyAction) return;
-      setMergeBusyAction(action);
-      try {
-        await Promise.resolve(fn());
-      } finally {
-        setMergeBusyAction(null);
-      }
-    },
-    [mergeBusyAction],
+    [editMode],
   );
 
   useEffect(() => {
@@ -511,17 +384,6 @@ export function DocViewer({
           },
         ]
       : []),
-    ...(mergeReview
-      ? [
-          {
-            id: "merge-edit",
-            label: mergeEditing ? "结束手工编辑" : "手工编辑合并结果",
-            icon: "edit" as const,
-            active: mergeEditing,
-            onClick: () => setMergeEditing((v) => !v),
-          },
-        ]
-      : []),
     ...(conversationId && onOpenConversation
       ? [
           {
@@ -535,9 +397,7 @@ export function DocViewer({
   ];
 
   const showLayoutActions = mode === "float" || mode === "panel";
-  const canSave =
-    !readOnly &&
-    (mergeReview && mergeEditing ? !saving && !loading : dirty && !saving && !loading);
+  const canSave = !readOnly && dirty && !saving && !loading;
 
   return (
     <div
@@ -580,7 +440,7 @@ export function DocViewer({
               label="预览模式"
               active={editMode === "preview"}
               onClick={() => handleEditModeChange("preview")}
-              disabled={loading || mergeEditing}
+              disabled={loading}
             >
               <PreviewIcon />
             </DocIconBtn>
@@ -589,7 +449,7 @@ export function DocViewer({
               label="Markdown 源码"
               active={editMode === "markdown"}
               onClick={() => handleEditModeChange("markdown")}
-              disabled={loading || mergeEditing}
+              disabled={loading}
             >
               <MarkdownIcon />
             </DocIconBtn>
@@ -608,11 +468,9 @@ export function DocViewer({
               <DocIconBtn
                 label={saving ? "保存中…" : "保存 (Ctrl+S)"}
                 active={dirty}
-                muted={!dirty && !(mergeReview && mergeEditing)}
+                muted={!dirty}
                 disabled={!canSave}
-                onClick={() =>
-                  void (mergeReview && mergeEditing ? handleMergeSave() : handleSave())
-                }
+                onClick={() => void handleSave()}
               >
                 <SaveIcon />
               </DocIconBtn>
@@ -704,15 +562,7 @@ export function DocViewer({
                 <DocMetaPopover meta={doc.meta} />
               </div>
             )}
-            {mergeReview && mergeEditing ? (
-              <textarea
-                ref={mergeSourceRef}
-                className="doc-markdown-source"
-                value={body}
-                onChange={(e) => handleBodyChange(e.target.value)}
-                readOnly={readOnly}
-              />
-            ) : editMode === "preview" ? (
+            {editMode === "preview" ? (
               <DocLivePreview
                 key={`${loadedPath}#${refreshKey}#${previewRemountKey}`}
                 initialBody={body}
@@ -734,45 +584,6 @@ export function DocViewer({
           </>
         )}
       </div>
-      {mergeReview && (
-        <footer className="doc-merge-review-bar">
-          <span>正在审阅合并结果（源自 {mergeReview.sourcePaths.length} 篇）</span>
-          <div className="doc-merge-review-actions">
-            <button
-              type="button"
-              onClick={() =>
-                void (async () => {
-                  if (!(await ensureMergeActionConfirmed("reject"))) return;
-                  await runMergeAction("reject", onMergeReject);
-                })()
-              }
-              disabled={mergeBusyAction !== null}
-            >
-              删除此文
-            </button>
-            <button
-              type="button"
-              onClick={() =>
-                void (async () => {
-                  if (!(await ensureMergeActionConfirmed("regenerate"))) return;
-                  await runMergeAction("regenerate", onMergeRegenerate);
-                })()
-              }
-              disabled={mergeBusyAction !== null}
-            >
-              重新生成
-            </button>
-            <button
-              type="button"
-              className="doc-merge-review-accept"
-              onClick={() => void runMergeAction("accept", onMergeAccept)}
-              disabled={mergeBusyAction !== null}
-            >
-              采用
-            </button>
-          </div>
-        </footer>
-      )}
       <DocDiffModal
         open={unsavedPrompt !== null}
         variant={unsavedPrompt === "view" ? "view" : "confirm"}

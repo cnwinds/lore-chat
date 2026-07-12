@@ -6,27 +6,15 @@ import {
   type TreeNode,
 } from "../utils/fileTree";
 
+type SelectMods = { ctrlKey?: boolean; metaKey?: boolean; shiftKey?: boolean };
+
 type Props = {
   paths: string[];
   selectedPath: string | null;
-  onSelectFile: (path: string) => void;
-  selectionMode?: boolean;
-  selectedPaths?: Set<string>;
-  onToggleSelect?: (path: string, shiftKey?: boolean) => void;
-  onPreviewFile?: (path: string) => void;
-  onSelectFolderAll?: (paths: string[]) => void;
+  onSelectFile: (path: string, mods?: SelectMods) => void;
 };
 
-export function FileTree({
-  paths,
-  selectedPath,
-  onSelectFile,
-  selectionMode = false,
-  selectedPaths = new Set(),
-  onToggleSelect,
-  onPreviewFile,
-  onSelectFolderAll,
-}: Props) {
+export function FileTree({ paths, selectedPath, onSelectFile }: Props) {
   const tree = useMemo(() => buildFileTree(paths), [paths]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
@@ -55,13 +43,8 @@ export function FileTree({
           depth={0}
           expanded={expanded}
           selectedPath={selectedPath}
-          selectionMode={selectionMode}
-          selectedPaths={selectedPaths}
           onToggleFolder={toggleFolder}
           onSelectFile={onSelectFile}
-          onToggleSelect={onToggleSelect}
-          onPreviewFile={onPreviewFile}
-          onSelectFolderAll={onSelectFolderAll}
         />
       ))}
     </div>
@@ -73,32 +56,21 @@ function TreeItem({
   depth,
   expanded,
   selectedPath,
-  selectionMode,
-  selectedPaths,
   onToggleFolder,
   onSelectFile,
-  onToggleSelect,
-  onPreviewFile,
-  onSelectFolderAll,
 }: {
   node: TreeNode;
   depth: number;
   expanded: Set<string>;
   selectedPath: string | null;
-  selectionMode: boolean;
-  selectedPaths: Set<string>;
   onToggleFolder: (path: string) => void;
-  onSelectFile: (path: string) => void;
-  onToggleSelect?: (path: string, shiftKey?: boolean) => void;
-  onPreviewFile?: (path: string) => void;
-  onSelectFolderAll?: (paths: string[]) => void;
+  onSelectFile: (path: string, mods?: SelectMods) => void;
 }) {
   const pad = 8 + depth * 16;
   const systemLayer = isSystemLayerPath(node.path);
 
   if (node.type === "folder") {
     const isOpen = expanded.has(node.path);
-    const selectablePaths = selectionMode ? collectSelectableMdFiles(node.children) : [];
     return (
       <>
         <div
@@ -109,18 +81,6 @@ function TreeItem({
           <span className="file-tree-chevron">{isOpen ? "▼" : "▶"}</span>
           <span className="file-tree-icon">{isOpen ? "📂" : "📁"}</span>
           <span className="file-tree-label">{node.name}</span>
-          {selectionMode && selectablePaths.length > 0 && onSelectFolderAll && (
-            <button
-              type="button"
-              className="file-tree-folder-all-btn"
-              onClick={(e) => {
-                e.stopPropagation();
-                onSelectFolderAll(selectablePaths);
-              }}
-            >
-              全选
-            </button>
-          )}
         </div>
         {isOpen &&
           node.children.map((child) => (
@@ -130,13 +90,8 @@ function TreeItem({
               depth={depth + 1}
               expanded={expanded}
               selectedPath={selectedPath}
-              selectionMode={selectionMode}
-              selectedPaths={selectedPaths}
               onToggleFolder={onToggleFolder}
               onSelectFile={onSelectFile}
-              onToggleSelect={onToggleSelect}
-              onPreviewFile={onPreviewFile}
-              onSelectFolderAll={onSelectFolderAll}
             />
           ))}
       </>
@@ -144,72 +99,22 @@ function TreeItem({
   }
 
   const selected = selectedPath === node.path;
-  const checked = selectedPaths.has(node.path);
-  const disabledSelect = systemLayer;
-
-  if (selectionMode) {
-    return (
-      <div
-        className={`file-tree-row file${systemLayer ? " system-layer" : ""}${checked ? " checked" : ""}`}
-        style={{ paddingLeft: pad + 18 }}
-        onClick={(e) => {
-          if (disabledSelect || !onToggleSelect) return;
-          onToggleSelect(node.path, e.shiftKey);
-        }}
-        onDoubleClick={() => onPreviewFile?.(node.path)}
-      >
-        <input
-          type="checkbox"
-          checked={checked}
-          disabled={disabledSelect}
-          readOnly
-          onClick={(e) => {
-            e.stopPropagation();
-            onToggleSelect?.(node.path, e.shiftKey);
-          }}
-        />
-        <span className="file-tree-icon">📄</span>
-        <span className="file-tree-label">{node.name}</span>
-        {onPreviewFile && (
-          <button
-            type="button"
-            className="file-tree-preview-btn"
-            title="预览文档"
-            onClick={(e) => {
-              e.stopPropagation();
-              onPreviewFile(node.path);
-            }}
-          >
-            👁
-          </button>
-        )}
-      </div>
-    );
-  }
 
   return (
     <button
       type="button"
       className={`file-tree-row file${systemLayer ? " system-layer" : ""}${selected ? " selected" : ""}`}
       style={{ paddingLeft: pad + 18 }}
-      onClick={() => onSelectFile(node.path)}
+      onClick={(e) =>
+        onSelectFile(node.path, {
+          ctrlKey: e.ctrlKey,
+          metaKey: e.metaKey,
+          shiftKey: e.shiftKey,
+        })
+      }
     >
       <span className="file-tree-icon">📄</span>
       <span className="file-tree-label">{node.name}</span>
     </button>
   );
-}
-
-function collectSelectableMdFiles(nodes: TreeNode[]): string[] {
-  const out: string[] = [];
-  for (const node of nodes) {
-    if (node.type === "folder") {
-      out.push(...collectSelectableMdFiles(node.children));
-      continue;
-    }
-    if (!node.path.endsWith(".md")) continue;
-    if (isSystemLayerPath(node.path)) continue;
-    out.push(node.path);
-  }
-  return out;
 }

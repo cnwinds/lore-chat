@@ -576,7 +576,7 @@ git commit -m "fix: scope timeline block open-state to component, drop leaking m
 | 前端 `DocViewer`/`Chat`/`App` God Component 拆分 | 无测试、体量大、风险高，需独立重构计划 |
 | 前后端时间线状态机双实现合并 | 需先定义共享 schema，跨端改动大 |
 | `edit_doc` 全量重索引 → 增量重索引 | 属 partial-doc-edit Phase 2 |
-| `/ingest`、`/ask` 端点重构 | 涉及产品行为取舍，需单独确认 |
+| `/ingest`、`/ask` 端点重构 | **保留**为测试/脚本同步 API；产品用 `/chat`。见 [2026-07-12-ingest-ask-api-design.md](../specs/2026-07-12-ingest-ask-api-design.md) |
 
 ---
 

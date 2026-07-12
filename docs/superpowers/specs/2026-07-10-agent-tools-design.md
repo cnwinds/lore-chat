@@ -273,10 +273,12 @@ type AssistantMessage = {
 
 | 端点 | 处理 |
 |------|------|
-| `POST /api/chat` | **改为 SSE 流式**（主入口） |
-| `POST /api/ingest` | 保留；内部转调 Agent，system prompt 强制 `write_kb` |
-| `POST /api/ask` | 保留；内部转调 Agent，禁止 `write_kb` |
+| `POST /api/chat` | **改为 SSE 流式**（产品主入口） |
+| `POST /api/ingest` | 保留；内部转调 Agent `force_write`；**测试/脚本灌库** |
+| `POST /api/ask` | 保留；内部转调 Agent `no_write`；**测试/脚本只读问答** |
 | `intent.py` | 废弃；逻辑并入 Agent system prompt |
+
+**2026-07-12 补充：** 产品 UI 已仅用 `/chat`；ingest/ask 定位为机器同步 API（确定性 + 效率）。详见 [2026-07-12-ingest-ask-api-design.md](./2026-07-12-ingest-ask-api-design.md)。
 
 ## 10. 配置汇总
 

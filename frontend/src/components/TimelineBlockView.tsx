@@ -85,14 +85,20 @@ function ToolBlockView({
     choiceLabel: string,
   ) => void;
 }) {
-  // 实时流式中默认展开（含已完成的工具步）；历史消息默认折叠。
+  // 检索/搜索/打开链接默认折叠；其余工具在流式或执行中默认展开。
   // 未作答的征询始终展开，方便用户直接选择。
   const isLive = liveElapsedMs !== undefined;
   const pendingAsk =
     block.tool === "ask_user" &&
     block.status === "done" &&
     !block.choice_resolved;
-  const defaultOpen = isLive || pendingAsk || block.status === "running";
+  const collapsedByDefault =
+    block.tool === "search_kb" ||
+    block.tool === "web_search" ||
+    block.tool === "fetch_url";
+  const defaultOpen =
+    !collapsedByDefault &&
+    (isLive || pendingAsk || block.status === "running");
   // 用户显式点过则以其选择为准，否则用默认值。
   // 展开状态用组件内 state 维护，随组件卸载自动回收（不跨会话泄漏）。
   const [override, setOverride] = useState<boolean | null>(null);

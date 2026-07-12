@@ -215,6 +215,27 @@ async def test_run_web_disabled_excludes_web_search(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_run_injects_multi_doc_context(tmp_path):
+    orchestrator = _make_orchestrator(
+        tmp_path,
+        tool_responses=[{"content": "ok", "tool_calls": []}],
+    )
+    async for _ in orchestrator.run(
+        "合并",
+        active_doc_paths=["a.md", "b.md"],
+        primary_doc_path="a.md",
+    ):
+        pass
+    messages = orchestrator.llm.calls[-1]["messages"]
+    system_contents = "\n".join(
+        m["content"] for m in messages if m["role"] == "system"
+    )
+    assert "a.md" in system_contents
+    assert "b.md" in system_contents
+    assert "主文档" in system_contents or "默认编辑" in system_contents
+
+
+@pytest.mark.asyncio
 async def test_run_no_write_excludes_write_kb(tmp_path):
     orchestrator = _make_orchestrator(
         tmp_path,

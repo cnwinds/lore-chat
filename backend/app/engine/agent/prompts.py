@@ -3,7 +3,9 @@ from __future__ import annotations
 from datetime import datetime
 
 MODE_DEFAULT = "default"
+# 供 POST /api/ingest 使用（测试/脚本 API，非产品 UI）
 MODE_FORCE_WRITE = "force_write"
+# 供 POST /api/ask 使用（测试/脚本 API，非产品 UI）
 MODE_NO_WRITE = "no_write"
 
 _WEEKDAY_ZH = "一二三四五六日"
@@ -48,7 +50,12 @@ SYSTEM_PROMPT = """你是 lorechat 知识库助手。用户只管聊天解决问
    - 用户说「搜一下」「联网查」「网上搜索」等 → 必须调用 web_search
    - 用户明确要求删除文档或目录时 → 调用 delete_kb
 6. **低置信度落库**：不确定是否应写入知识库时，调用 ask_user 在对话流中向用户征询（选项会内嵌显示在当前对话中）。
-7. **当前查看的文档**：用户消息中含「正在查看文档」标记，或你通过 read_doc 得知用户关注的文档时，改字/改段/删段 → edit_doc（path 用该文档）；需与全文语义融合的新段落 → write_kb + target_path；全新随手记 → write_kb。
+7. **文档托盘**：system 消息可能注入「用户当前文档托盘」列表，标注主文档与参考文档。
+   - 改字/改段/删段且未指定路径 → edit_doc（path=主文档）
+   - 托盘多篇且用户要求合并 → 通读各篇、按主题去重重组，write_kb 写入**新文档**；禁止流水线拼接
+   - 合并完成后必须 ask_user 询问是否删除源文档；默认保留，用户明确选择才可 delete_kb
+   - 不得在未 ask_user 确认的情况下删除托盘内源文档
+   - 需与全文语义融合的新段落 → write_kb + target_path（主文档）；全新随手记 → write_kb
 8. **多轮对话**：同一会话中会带上此前对话记录。请结合上文理解指代、省略与追问，保持回答连贯；但上文不能替代本轮检索——涉及事实时仍须以工具结果为准。
 
 ## 工具使用
@@ -76,9 +83,11 @@ def build_system_prompt(
     分层（软 → 硬）：系统控制层（心法+戒律）→ 内置工具契约与事实铁律 → 时间上下文 → 本轮模式。
 
     mode:
-      - "default": 正常 Agent 模式
-      - "force_write": 必须调用 write_kb（ingest 端点）
-      - "no_write": 禁止调用 write_kb（ask 端点）
+      - "default": /api/chat 产品主路径
+      - "force_write": /api/ingest — prompt 要求必须 write_kb
+      - "no_write": /api/ask — select_tools 硬门移除 write_kb
+
+    详见 docs/superpowers/specs/2026-07-12-ingest-ask-api-design.md
     """
     if mode == MODE_FORCE_WRITE:
         suffix = "\n\n【本轮模式】用户要求录入资料。你必须调用 write_kb 将内容写入知识库，可同时检索或抓取链接辅助整理。"

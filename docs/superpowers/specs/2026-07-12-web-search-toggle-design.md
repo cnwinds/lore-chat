@@ -34,7 +34,7 @@ stream_iter = iter(self.llm.stream_chat_with_tools(messages, TOOL_DEFINITIONS, b
 
 ## 3. 非目标
 
-- **不动 `/ingest`、`/ask` 端点的去留**：本次只把"联网"抽象为正交能力；端点重构留待后续单独决策（届时耦合已解除）。
+- **不动 `/ingest`、`/ask` 的去留**：保留为测试/脚本 API；产品 UI 仅用 `/chat`。见 [ingest-ask-api-design](../specs/2026-07-12-ingest-ask-api-design.md)。
 - **不做联网结果与本地结果的复杂排序/打分融合**：沿用现有 prompt 的"先本地、后联网补充"精神，不引入新的融合算法。
 - **不改 `fetch_url` 语义**：贴链接=显式意图，始终允许，不受开关影响。
 - 不做三态（关/自动/强制）；采用布尔开关，消除"自动"的模糊性。
@@ -120,7 +120,7 @@ stream_iter = iter(self.llm.stream_chat_with_tools(messages, TOOL_DEFINITIONS, b
 
 "联网"显式化后，端点关系变为 `mode × web_enabled × 响应形态`，耦合解除：
 
-- `/ask` ≈ `/chat`（`no_write` + web 用户选 + 同步）→ 后续可评估废弃或定位为"机器同步 API"。
-- `/ingest` 纯文本可直连 organizer；含 URL 时才需 Agent（`fetch_url`）→ 可干净拆快路径。
+- `/ask` ≈ `/chat`（`no_write` + 同步 JSON）→ 保留为测试/脚本 API，产品用 `/chat`。
+- `/ingest` 经 Agent `force_write`；纯文本未来可直连 organizer 快路径（可选优化，非删除）。
 
 这些留待独立的端点重构计划，本 spec 只负责解除耦合。

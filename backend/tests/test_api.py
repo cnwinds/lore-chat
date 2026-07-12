@@ -1,3 +1,9 @@
+"""HTTP API 集成测试。
+
+灌库与只读问答优先使用同步机器 API（/api/ingest、/api/ask），
+结果确定、无需解析 SSE。产品行为测 /api/chat。见
+docs/superpowers/specs/2026-07-12-ingest-ask-api-design.md
+"""
 import json
 
 
@@ -61,6 +67,31 @@ def test_chat_accepts_web_enabled_flag(client):
     assert r.status_code == 200
     r2 = client.post("/api/chat", json={"text": "hello", "web_enabled": True})
     assert r2.status_code == 200
+
+
+def test_chat_rejects_primary_not_in_active_paths(client):
+    r = client.post(
+        "/api/chat",
+        json={
+            "text": "hi",
+            "active_doc_paths": ["a.md"],
+            "primary_doc_path": "b.md",
+        },
+    )
+    assert r.status_code == 400
+
+
+def test_chat_accepts_multi_doc_context(client):
+    r = client.post(
+        "/api/chat",
+        json={
+            "text": "合并",
+            "active_doc_paths": ["a.md", "b.md"],
+            "primary_doc_path": "a.md",
+            "web_enabled": False,
+        },
+    )
+    assert r.status_code == 200
 
 
 def test_chat_recall_via_sse(client):

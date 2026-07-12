@@ -9,7 +9,6 @@ import {
   downloadUrl,
   createConversation,
   getConversation,
-  appendConversationMessages,
   summarizeConversation,
   titleFromText,
   KB_MUTATING_TOOLS,
@@ -22,6 +21,11 @@ import { MarkdownContent } from "./MarkdownContent";
 import { ChatSources } from "./ChatSources";
 import { CopyButton } from "./CopyButton";
 import { TimelineBlockView } from "./TimelineBlockView";
+import { ComposerTray } from "./ComposerTray";
+import { ComposerToolbar } from "./ComposerToolbar";
+import type { PendingFile } from "../types/composer";
+
+type ComposerDocItem = { path: string; title: string };
 
 type Props = {
   conversationId: string | null;
@@ -33,6 +37,11 @@ type Props = {
   onKbChanged?: (changedPath?: string) => void;
   onOpenSource?: (src: SourceRef) => void;
   onOpenDoc?: (path: string, excerpt?: string) => void;
+  docTrayItems?: ComposerDocItem[];
+  primaryDocPath?: string | null;
+  docPaths?: string[];
+  onTraySetPrimary?: (path: string) => void;
+  onTrayRemove?: (path: string) => void;
 };
 
 function kbPathFromToolResult(data: Record<string, unknown>): string | undefined {
@@ -49,6 +58,46 @@ function isNearBottom(container: HTMLElement): boolean {
   const distance =
     container.scrollHeight - container.scrollTop - container.clientHeight;
   return distance <= SCROLL_BOTTOM_THRESHOLD;
+}
+
+function basename(path: string): string {
+  return path.split("/").pop() || path;
+}
+
+function renderUserMessageChips(m: ChatMessage) {
+  const hasDocs = (m.doc_context?.length ?? 0) > 0;
+  const hasFiles = (m.attachments?.length ?? 0) > 0;
+  if (!hasDocs && !hasFiles) return null;
+
+  return (
+    <div className="chat-user-chips">
+      {m.doc_context?.map((path) => (
+        <span
+          key={path}
+          className={`chat-user-doc-chip${path === m.primary_doc ? " chat-user-doc-chip--primary" : ""}`}
+          title={path}
+        >
+          {path === m.primary_doc && (
+            <span className="chat-user-doc-chip-bar" aria-hidden />
+          )}
+          <span className="chat-user-doc-chip-title">{basename(path)}</span>
+        </span>
+      ))}
+      {m.attachments?.map((path) => (
+        <a
+          key={path}
+          className="chat-user-file-chip"
+          href={downloadUrl(path)}
+          title={path}
+        >
+          <span className="chat-user-file-icon" aria-hidden>
+            📄
+          </span>
+          <span className="chat-user-file-name">{basename(path)}</span>
+        </a>
+      ))}
+    </div>
+  );
 }
 
 function formatMessageTs(ts: string): string {
@@ -98,6 +147,11 @@ export function Chat({
   onKbChanged,
   onOpenSource,
   onOpenDoc,
+  docTrayItems = [],
+  primaryDocPath = null,
+  docPaths = [],
+  onTraySetPrimary = () => {},
+  onTrayRemove = () => {},
 }: Props) {
   const [input, setInput] = useState("");
   const [msgs, setMsgs] = useState<ChatMessage[]>([]);
@@ -110,9 +164,11 @@ export function Chat({
   const [webEnabled, setWebEnabled] = useState<boolean>(
     () => localStorage.getItem("lorechat.webSearch") === "1",
   );
+  const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
   const streamingStartRef = useRef<number | null>(null);
   const streamingAssistantIdxRef = useRef<number | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
@@ -230,7 +286,11 @@ export function Chat({
     });
   }
 
-  async function runAgentStream(apiText: string, userDisplayText?: string) {
+  async function runAgentStream(
+    apiText: string,
+    userDisplayText?: string,
+    userMeta?: Pick<ChatMessage, "attachments" | "doc_context" | "primary_doc">,
+  ) {
     if (streaming) return;
     const display = userDisplayText ?? apiText;
     const isFirstUserQuestion = !msgs.some((m) => m.role === "user");
@@ -251,7 +311,18 @@ export function Chat({
       streamingAssistantIdxRef.current = assistantIdx;
       return [
         ...m,
-        { role: "user", text: display, ts: new Date().toISOString() },
+        {
+          role: "user",
+          text: display,
+          ts: new Date().toISOString(),
+          ...(userMeta?.attachments?.length
+            ? { attachments: userMeta.attachments }
+            : {}),
+          ...(userMeta?.doc_context?.length
+            ? { doc_context: userMeta.doc_context }
+            : {}),
+          ...(userMeta?.primary_doc ? { primary_doc: userMeta.primary_doc } : {}),
+        },
         assistantMsg,
       ];
     });
@@ -272,7 +343,13 @@ export function Chat({
       if (isFirstUserQuestion) {
         onFirstQuestionTitle?.(cid, titleFromText(display));
       }
-      for await (const { event, data } of chatStream(apiText, cid, previewPath, webEnabled)) {
+      for await (const { event, data } of chatStream(apiText, {
+        conversationId: cid,
+        activeDocPaths: docPaths,
+        primaryDocPath,
+        webEnabled,
+        attachments: userMeta?.attachments ?? [],
+      })) {
         if (event === "error") {
           const message = (data.message as string) || "请求失败";
           patchAssistant((msg) => ({ ...msg, text: `错误：${message}` }));
@@ -326,7 +403,34 @@ export function Chat({
     if (!input.trim() || streaming) return;
     const text = input;
     setInput("");
-    await runAgentStream(text);
+
+    const filesToUpload = [...pendingFiles];
+    const uploadedPaths: string[] = [];
+
+    if (filesToUpload.length > 0) {
+      setPendingFiles([]);
+      try {
+        for (const pf of filesToUpload) {
+          const r = await uploadFile(pf.file, "未分类");
+          uploadedPaths.push(r.attachment);
+          onKbChanged?.(r.attachment);
+        }
+      } catch (err) {
+        setPendingFiles(filesToUpload);
+        const msg = err instanceof Error ? err.message : "上传失败";
+        setMsgs((m) => [
+          ...m,
+          { role: "assistant", text: `错误：${msg}`, ts: new Date().toISOString() },
+        ]);
+        return;
+      }
+    }
+
+    await runAgentStream(text, text, {
+      attachments: uploadedPaths.length ? uploadedPaths : undefined,
+      doc_context: docPaths.length ? docPaths : undefined,
+      primary_doc: primaryDocPath ?? undefined,
+    });
   }
 
   async function archiveConversation() {
@@ -410,26 +514,26 @@ export function Chat({
     }
   }
 
-  async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
+  function onFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
     if (!f) return;
-    try {
-      const r = await uploadFile(f, "未分类");
-      const assistantMsg: ChatMessage = {
-        role: "assistant",
-        intent: "remember",
-        text: `已保存文件：${r.attachment}`,
-      };
-      const cid = await ensureConversationId();
-      await appendConversationMessages(cid, [assistantMsg]);
-      setMsgs((m) => [...m, assistantMsg]);
-      onKbChanged?.(r.attachment);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "上传失败";
-      setMsgs((m) => [...m, { role: "assistant", text: `错误：${msg}` }]);
-    } finally {
-      e.target.value = "";
-    }
+    const id =
+      typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : String(Date.now());
+    setPendingFiles((prev) => [
+      ...prev,
+      { id, file: f, name: f.name, size: f.size },
+    ]);
+    e.target.value = "";
+  }
+
+  function removePendingFile(id: string) {
+    setPendingFiles((prev) => prev.filter((f) => f.id !== id));
+  }
+
+  function onAttachClick() {
+    fileInputRef.current?.click();
   }
 
   function onInputKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -526,13 +630,21 @@ export function Chat({
     }
     if (m.text) {
       if (m.role === "user") {
-        return <div className="chat-user-text">{m.text}</div>;
+        return (
+          <>
+            {renderUserMessageChips(m)}
+            <div className="chat-user-text">{m.text}</div>
+          </>
+        );
       }
       return (
         <MarkdownContent className="markdown-body chat-markdown">
           {m.text}
         </MarkdownContent>
       );
+    }
+    if (m.role === "user") {
+      return renderUserMessageChips(m);
     }
     return null;
   }
@@ -543,6 +655,7 @@ export function Chat({
     if (m.text) return true;
     if (m.sources?.length) return true;
     if (m.attachments?.length) return true;
+    if (m.doc_context?.length) return true;
     if (isLive) return false;
     return !!(m.ts || getMessageDuration(m) || getMessageCopyText(m));
   }
@@ -577,10 +690,10 @@ export function Chat({
                   onOpen={handleOpenSource}
                 />
               )}
-              {m.attachments &&
-                m.attachments.map((a) => (
+              {m.role !== "user" &&
+                m.attachments?.map((a) => (
                   <div key={a}>
-                    <a href={downloadUrl(a)}>下载附件：{a.split("/").pop()}</a>
+                    <a href={downloadUrl(a)}>下载附件：{basename(a)}</a>
                   </div>
                 ))}
               {renderMessageMeta(m, isLiveStreaming)}
@@ -603,74 +716,48 @@ export function Chat({
           </div>
         </div>
       )}
-      <div className="chat-input-bar">
-        <textarea
-          ref={textareaRef}
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={onInputKeyDown}
-          rows={1}
-          placeholder="输入问题或记录内容…（Ctrl+Enter 发送）"
-          disabled={streaming}
-          style={{
-            minHeight: INPUT_MIN_HEIGHT,
-            maxHeight: INPUT_MAX_HEIGHT,
-          }}
+      <div className="chat-composer-wrap">
+      <div className="composer-card">
+        <ComposerTray
+          items={docTrayItems}
+          primaryPath={primaryDocPath}
+          pendingFiles={pendingFiles}
+          onSetPrimary={onTraySetPrimary}
+          onRemoveDoc={onTrayRemove}
+          onRemoveFile={removePendingFile}
         />
-        <label className="chat-attach-btn" title="上传附件">
-          📎
-          <input type="file" hidden onChange={onFile} disabled={streaming} />
-        </label>
-        <div className="chat-input-actions">
-          <button
-            type="button"
-            className={`chat-web-btn${webEnabled ? " chat-web-btn--on" : ""}`}
-            onClick={toggleWebSearch}
+        <div className="composer-input">
+          <textarea
+            ref={textareaRef}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={onInputKeyDown}
+            rows={1}
+            placeholder="输入问题或记录内容…（Ctrl+Enter 发送）"
             disabled={streaming}
-            title={
-              webEnabled
-                ? "联网搜索：开（本地优先，联网补充）"
-                : "联网搜索：关（仅本地知识库）"
-            }
-            aria-pressed={webEnabled}
-          >
-            🌐 联网
-          </button>
-          <button
-            type="button"
-            className="chat-send-btn"
-            onClick={send}
-            disabled={streaming}
-          >
-            {streaming ? "处理中…" : "发送"}
-          </button>
-          <button
-            type="button"
-            className={`chat-archive-btn${summarized && summaryPath ? " chat-archive-btn--linked" : ""}`}
-            onClick={
-              summarized && summaryPath
-                ? () => onOpenDoc?.(summaryPath)
-                : archiveConversation
-            }
-            disabled={
-              streaming ||
-              archiving ||
-              !conversationId ||
-              (!summarized && !msgs.some((m) => m.role === "user"))
-            }
-            title={
-              summarized && summaryPath
-                ? `查看归档文档：${summaryPath}`
-                : "把整段会话通读后重构、去重，沉淀为一篇知识库文档"
-            }
-          >
-            {archiving
-              ? "沉淀中…"
-              : summarized && summaryPath
-                ? "查看文档"
-                : "沉淀"}
-          </button>
+            style={{
+              minHeight: INPUT_MIN_HEIGHT,
+              maxHeight: INPUT_MAX_HEIGHT,
+            }}
+          />
         </div>
+        <ComposerToolbar
+          webEnabled={webEnabled}
+          onToggleWeb={toggleWebSearch}
+          streaming={streaming}
+          archiving={archiving}
+          conversationId={conversationId}
+          summarized={summarized}
+          summaryPath={summaryPath}
+          canArchive={msgs.some((m) => m.role === "user")}
+          onArchive={archiveConversation}
+          onOpenSummary={onOpenDoc}
+          onAttachClick={onAttachClick}
+          onSend={send}
+          fileInputRef={fileInputRef}
+          onFileChange={onFileChange}
+        />
+      </div>
       </div>
     </div>
   );

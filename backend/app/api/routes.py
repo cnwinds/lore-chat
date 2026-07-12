@@ -32,8 +32,24 @@ class ResolveBody(BaseModel):
 class ChatBody(BaseModel):
     text: str
     conversation_id: str | None = None
-    active_doc_path: str | None = None
+    active_doc_path: str | None = None  # backward compat
+    active_doc_paths: list[str] = []
+    primary_doc_path: str | None = None
     web_enabled: bool = False
+    attachments: list[str] = []
+
+
+def _normalize_chat_docs(body: ChatBody) -> tuple[list[str], str | None]:
+    paths = list(body.active_doc_paths)
+    primary = body.primary_doc_path
+    if body.active_doc_path:
+        if not paths:
+            paths = [body.active_doc_path]
+        if primary is None:
+            primary = body.active_doc_path
+    if primary is not None and primary not in paths:
+        raise HTTPException(400, "primary_doc_path 必须在 active_doc_paths 内")
+    return paths, primary
 
 
 class AppendMessagesBody(BaseModel):
@@ -174,7 +190,18 @@ def _accumulate_timeline(
         acc.accumulate(parsed[0], parsed[1])
 
 
+# ---------------------------------------------------------------------------
+# 同步机器 API：/ingest、/ask
+#
+# 产品 UI 使用 POST /api/chat（SSE）；本区端点保留给测试、脚本与集成调用：
+#   - 结果更确定（force_write / no_write 硬模式）
+#   - 同步 JSON，无需解析 SSE
+# 详见 docs/superpowers/specs/2026-07-12-ingest-ask-api-design.md
+# ---------------------------------------------------------------------------
+
+
 def _ingest_from_write_kb_result(data: dict) -> dict:
+    """将 write_kb 的 tool_result 转为 IngestResult 兼容的 JSON。"""
     status = data.get("status")
     rel_path = data.get("rel_path")
     if not rel_path:
@@ -192,6 +219,10 @@ def _ingest_from_write_kb_result(data: dict) -> dict:
 
 
 async def _consume_agent_ingest(agent, text: str) -> dict:
+    """消费 Agent 一轮 force_write，返回首个 write_kb 的结构化结果。
+
+    未调用 write_kb 时由路由层抛 502。不传 conversation_id / web_enabled。
+    """
     result: dict | None = None
     async for ev in agent.run(text, mode=MODE_FORCE_WRITE):
         parsed = _parse_sse(ev)
@@ -231,6 +262,10 @@ def _merge_session_view(c, session: dict) -> dict:
 
 
 async def _consume_agent_ask(agent, query: str) -> dict:
+    """消费 Agent 一轮 no_write，拼接正文并返回 sources。
+
+    write_kb 已被 select_tools 硬门移除。不传 conversation_id / web_enabled。
+    """
     text_parts: list[str] = []
     sources: list[dict] = []
     async for ev in agent.run(query, mode=MODE_NO_WRITE):
@@ -252,6 +287,7 @@ async def _consume_agent_ask(agent, query: str) -> dict:
 
 @router.post("/ingest")
 async def ingest(body: IngestBody, request: Request):
+    """强制落库（测试/脚本 API）。产品聊天请用 POST /api/chat。"""
     c = _c(request)
     try:
         return await _consume_agent_ingest(c.agent, body.text)
@@ -263,6 +299,7 @@ async def ingest(body: IngestBody, request: Request):
 
 @router.post("/ask")
 async def ask(body: AskBody, request: Request):
+    """只读问答（测试/脚本 API）。产品聊天请用 POST /api/chat。"""
     try:
         return await _consume_agent_ask(_c(request).agent, body.query)
     except Exception as e:
@@ -271,7 +308,9 @@ async def ask(body: AskBody, request: Request):
 
 @router.post("/chat")
 async def chat(body: ChatBody, request: Request):
+    """产品主入口：SSE 流式 Agent，会话持久化与时间线。"""
     c = _c(request)
+    paths, primary = _normalize_chat_docs(body)
     if body.conversation_id:
         try:
             c.conversations.get(body.conversation_id)
@@ -288,7 +327,9 @@ async def chat(body: ChatBody, request: Request):
             async for ev in c.agent.run(
                 body.text,
                 mode=MODE_DEFAULT,
-                active_doc_path=body.active_doc_path,
+                active_doc_path=primary,
+                active_doc_paths=paths,
+                primary_doc_path=primary,
                 history=history,
                 conversation_id=body.conversation_id,
                 web_enabled=body.web_enabled,

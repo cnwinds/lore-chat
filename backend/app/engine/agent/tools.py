@@ -265,7 +265,11 @@ def select_tools(mode: str, web_enabled: bool) -> list[dict]:
     """按 mode 与 web_enabled 硬门过滤下发给模型的工具集。
 
     - web_enabled=False：移除 web_search（保留 fetch_url，贴链接=显式意图）。
-    - mode=no_write：移除 write_kb（此前仅靠 prompt 约束，此处收紧为硬门）。
+    - mode=no_write：移除 write_kb（/api/ask；此前仅靠 prompt 约束，此处收紧为硬门）。
+    - mode=force_write：保留 write_kb（/api/ingest 依赖 prompt 强制调用）。
+
+    /api/chat 使用 mode=default。ingest/ask 为测试与脚本同步 API，见
+    docs/superpowers/specs/2026-07-12-ingest-ask-api-design.md
     """
     excluded: set[str] = set()
     if not web_enabled:

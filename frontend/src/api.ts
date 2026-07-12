@@ -42,6 +42,7 @@ export type IngestResult = {
 };
 
 export type ChatRecallResult = {
+  /** /api/ask 同步响应形状；产品 UI 使用 chatStream，不经此类型 */
   intent: "recall";
   text: string;
   sources: string[];
@@ -110,6 +111,8 @@ export type ChatMessage = {
   timeline?: TimelineBlock[];
   sources?: SourceRef[];
   attachments?: string[];
+  doc_context?: string[];
+  primary_doc?: string;
   intent?: "recall" | "remember";
   /** 本轮回复总耗时（毫秒），来自 SSE done 事件 */
   total_duration_ms?: number;
@@ -242,7 +245,7 @@ export type Conversation = ConversationSummary & {
   summarized_at?: string | null;
 };
 
-/** @deprecated Use chatStream() — /api/chat now returns SSE. */
+/** @deprecated Use {@link chatStream} — /api/chat returns SSE; product UI only. */
 export async function chat(text: string, conversationId?: string | null) {
   return apiFetch<ChatResult>("/api/chat", {
     method: "POST",
@@ -254,12 +257,25 @@ export async function chat(text: string, conversationId?: string | null) {
   });
 }
 
+export type ChatStreamOptions = {
+  conversationId?: string | null;
+  activeDocPaths?: string[];
+  primaryDocPath?: string | null;
+  webEnabled?: boolean;
+  attachments?: string[];
+};
+
 export async function* chatStream(
   text: string,
-  conversationId?: string | null,
-  activeDocPath?: string | null,
-  webEnabled = false,
+  options: ChatStreamOptions = {},
 ): AsyncGenerator<ChatStreamEvent> {
+  const {
+    conversationId,
+    activeDocPaths = [],
+    primaryDocPath,
+    webEnabled = false,
+    attachments = [],
+  } = options;
   const r = await fetch(`${BASE}/api/chat`, {
     method: "POST",
     headers: {
@@ -269,8 +285,10 @@ export async function* chatStream(
     body: JSON.stringify({
       text,
       conversation_id: conversationId ?? undefined,
-      active_doc_path: activeDocPath ?? undefined,
+      active_doc_paths: activeDocPaths.length ? activeDocPaths : undefined,
+      primary_doc_path: primaryDocPath ?? undefined,
       web_enabled: webEnabled,
+      attachments: attachments.length ? attachments : undefined,
     }),
   });
   if (!r.ok) {
@@ -463,6 +481,11 @@ export function updateTimeline(
   return timeline;
 }
 
+/**
+ * 强制落库（测试 / 脚本 API）。
+ * 产品 UI 请用 {@link chatStream}；同步 JSON，语义等价于 Agent 必须 write_kb。
+ * @see docs/superpowers/specs/2026-07-12-ingest-ask-api-design.md
+ */
 export async function ingest(text: string) {
   return apiFetch<IngestResult>("/api/ingest", {
     method: "POST",
@@ -471,6 +494,11 @@ export async function ingest(text: string) {
   });
 }
 
+/**
+ * 只读问答（测试 / 脚本 API）。
+ * 产品 UI 请用 {@link chatStream}；硬门禁止 write_kb，返回最终正文与 sources。
+ * @see docs/superpowers/specs/2026-07-12-ingest-ask-api-design.md
+ */
 export async function ask(query: string) {
   return apiFetch<{ text: string; sources: string[]; attachments: string[] }>(
     "/api/ask",
