@@ -213,6 +213,7 @@ export const KB_MUTATING_TOOLS = [
   "write_kb",
   "delete_kb",
   "summarize_conversation",
+  "edit_doc",
 ] as const;
 
 export type ConversationSummary = {
