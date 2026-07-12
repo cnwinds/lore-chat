@@ -1,25 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { saveDoc } from "../api";
 import { DocDiffModal } from "./DocDiffModal";
-import { DocLivePreview, type DocSelection } from "./DocLivePreview";
-import { DocMarkdownSource } from "./DocMarkdownSource";
-import { DocMetaPopover } from "./DocMetaPopover";
-import { DocOutlineMenu } from "./DocOutlineMenu";
-import { DocOverflowMenu } from "./DocOverflowMenu";
-import {
-  DocIconBtn,
-  DiffIcon,
-  DiscardIcon,
-  FocusEnterIcon,
-  FocusExitIcon,
-  MarkdownIcon,
-  PinIcon,
-  PreviewIcon,
-  SaveIcon,
-  WidthExpandIcon,
-  WidthNarrowIcon,
-} from "./DocToolbarIcons";
+import { type DocSelection } from "./DocLivePreview";
 import { DocMergeReviewBar } from "./doc/DocMergeReviewBar";
+import { DocViewerBody } from "./doc/DocViewerBody";
+import { DocViewerHeader } from "./doc/DocViewerHeader";
 import { useDocLoader } from "../hooks/doc/useDocLoader";
 import {
   useDocDirtyPrompt,
@@ -257,250 +242,66 @@ export function DocViewer({
     saving,
   ]);
 
-  const title =
-    (doc?.meta?.title as string | undefined) ||
-    path.split("/").pop() ||
-    path;
-
-  const conversationId =
-    typeof doc?.meta?.conversation_id === "string"
-      ? doc.meta.conversation_id
-      : null;
-
-  const overflowItems = [
-    ...(dirty && !readOnly
-      ? [
-          {
-            id: "view-diff",
-            label: "查看变更",
-            icon: "diff" as const,
-            onClick: () => setUnsavedPrompt("view"),
-          },
-        ]
-      : []),
-    ...(mergeReview
-      ? [
-          {
-            id: "merge-edit",
-            label: mergeEditing ? "结束手工编辑" : "手工编辑合并结果",
-            icon: "edit" as const,
-            active: mergeEditing,
-            onClick: () => setMergeEditing((v) => !v),
-          },
-        ]
-      : []),
-    ...(conversationId && onOpenConversation
-      ? [
-          {
-            id: "conversation",
-            label: "查看原始会话",
-            icon: "chat" as const,
-            onClick: () => onOpenConversation(conversationId),
-          },
-        ]
-      : []),
-  ];
-
-  const showLayoutActions = mode === "float" || mode === "panel";
-  const canSave =
-    !readOnly &&
-    (mergeReview && mergeEditing ? !saving && !loading : dirty && !saving && !loading);
-
   return (
     <div
       className={`doc-viewer${mode === "panel" ? " doc-viewer-panel" : ""}${
         mode === "float" ? " doc-viewer-float" : ""
       }${docFocus ? " doc-viewer-focus" : ""}`}
     >
-      <header className="doc-viewer-header">
-        {mode === "panel" || mode === "float" ? (
-          <button
-            type="button"
-            className="doc-close-btn"
-            onClick={handleClose}
-            title="关闭"
-          >
-            ×
-          </button>
-        ) : (
-          <button type="button" className="doc-back-btn" onClick={handleClose}>
-            ← 对话
-          </button>
-        )}
-        <div className="doc-viewer-title">
-          {mode === "panel" && <span className="doc-path">{path}</span>}
-          <h2>
-            {title}
-            {dirty && (
-              <span
-                className="doc-dirty-dot"
-                title="有未保存的修改"
-                aria-label="有未保存的修改"
-              />
-            )}
-          </h2>
-        </div>
-        <div className="doc-viewer-toolbar">
-          <div className="doc-mode-toggle" role="group" aria-label="编辑模式">
-            <DocIconBtn
-              className="doc-mode-toggle-btn"
-              label="预览模式"
-              active={editMode === "preview"}
-              onClick={() => handleEditModeChange("preview")}
-              disabled={loading || mergeEditing}
-            >
-              <PreviewIcon />
-            </DocIconBtn>
-            <DocIconBtn
-              className="doc-mode-toggle-btn"
-              label="Markdown 源码"
-              active={editMode === "markdown"}
-              onClick={() => handleEditModeChange("markdown")}
-              disabled={loading || mergeEditing}
-            >
-              <MarkdownIcon />
-            </DocIconBtn>
-          </div>
-          {!readOnly && (
-            <>
-              {dirty && (
-                <DocIconBtn
-                  label="放弃未保存的修改"
-                  onClick={() => void handleDiscard()}
-                  disabled={saving || loading}
-                >
-                  <DiscardIcon />
-                </DocIconBtn>
-              )}
-              <DocIconBtn
-                label={saving ? "保存中…" : "保存 (Ctrl+S)"}
-                active={dirty}
-                muted={!dirty && !(mergeReview && mergeEditing)}
-                disabled={!canSave}
-                onClick={() =>
-                  void (mergeReview && mergeEditing ? handleMergeSave() : handleSave())
-                }
-              >
-                <SaveIcon />
-              </DocIconBtn>
-              {dirty && (
-                <DocIconBtn
-                  label="查看变更"
-                  onClick={() => setUnsavedPrompt("view")}
-                  disabled={loading}
-                >
-                  <DiffIcon />
-                </DocIconBtn>
-              )}
-            </>
-          )}
-          {showLayoutActions && (
-            <>
-              <span className="doc-toolbar-divider" aria-hidden />
-              {doc && (
-                <DocOutlineMenu
-                  open={outlineOpen}
-                  onToggle={() => setOutlineOpen((v) => !v)}
-                  onClose={() => setOutlineOpen(false)}
-                  items={outlineItems}
-                  activeIndex={outlineActiveIndex}
-                  onJump={handleOutlineJump}
-                  disabled={loading}
-                />
-              )}
-              {!docFocus && onToggleWidth && (
-                <DocIconBtn
-                  label={docWidth === "wide" ? "收窄阅读区" : "加宽阅读区"}
-                  active={docWidth === "wide"}
-                  onClick={onToggleWidth}
-                >
-                  {docWidth === "wide" ? <WidthNarrowIcon /> : <WidthExpandIcon />}
-                </DocIconBtn>
-              )}
-              {onToggleFocus && (
-                <DocIconBtn
-                  label={docFocus ? "退出专注" : "专注阅读"}
-                  active={docFocus}
-                  onClick={onToggleFocus}
-                >
-                  {docFocus ? <FocusExitIcon /> : <FocusEnterIcon />}
-                </DocIconBtn>
-              )}
-              <DocOverflowMenu items={overflowItems} disabled={loading} />
-              {mode === "float" && onPin && (
-                <DocIconBtn label="固定到右侧栏" onClick={onPin}>
-                  <PinIcon />
-                </DocIconBtn>
-              )}
-              {mode === "panel" && onUnpin && (
-                <DocIconBtn label="取消固定，回到浮窗预览" active onClick={onUnpin}>
-                  <PinIcon filled />
-                </DocIconBtn>
-              )}
-            </>
-          )}
-          {mode === "page" && doc && (
-            <>
-              <span className="doc-toolbar-divider" aria-hidden />
-              <DocOutlineMenu
-                open={outlineOpen}
-                onToggle={() => setOutlineOpen((v) => !v)}
-                onClose={() => setOutlineOpen(false)}
-                items={outlineItems}
-                activeIndex={outlineActiveIndex}
-                onJump={handleOutlineJump}
-                disabled={loading}
-              />
-              <DocOverflowMenu items={overflowItems} disabled={loading} />
-            </>
-          )}
-        </div>
-      </header>
-      <div className="doc-viewer-body" ref={bodyRef}>
-        {loading && <div className="doc-muted">加载中…</div>}
-        {error && <div className="doc-error">错误：{error}</div>}
-        {saveError && <div className="doc-save-error">保存失败：{saveError}</div>}
-        {readOnly && doc && (
-          <div className="doc-muted doc-readonly-hint">此文档为只读，无法编辑。</div>
-        )}
-        {doc && (
-          <>
-            {doc.meta &&
-              Object.keys(doc.meta).some((k) => k !== "conversation_id") && (
-              <div className="doc-meta-bar">
-                <DocMetaPopover meta={doc.meta} />
-              </div>
-            )}
-            {mergeReview && mergeEditing ? (
-              <textarea
-                ref={mergeSourceRef}
-                className="doc-markdown-source"
-                value={body}
-                onChange={(e) => handleBodyChange(e.target.value)}
-                readOnly={readOnly}
-              />
-            ) : editMode === "preview" ? (
-              <DocLivePreview
-                key={`${loadedPath}#${refreshKey}#${previewRemountKey}`}
-                initialBody={body}
-                onChange={(b) => handleBodyChange(b)}
-                onStable={handlePreviewStable}
-                onUserEdit={handlePreviewUserEdit}
-                readOnly={readOnly}
-              />
-            ) : (
-              <DocMarkdownSource
-                ref={markdownSourceRef}
-                body={body}
-                onChange={handleBodyChange}
-                readOnly={readOnly}
-                selection={selection}
-                onSelectionChange={setSelection}
-              />
-            )}
-          </>
-        )}
-      </div>
+      <DocViewerHeader
+        mode={mode}
+        path={path}
+        doc={doc}
+        dirty={dirty}
+        onClose={handleClose}
+        editMode={editMode}
+        onEditModeChange={handleEditModeChange}
+        loading={loading}
+        mergeEditing={mergeEditing}
+        readOnly={readOnly}
+        saving={saving}
+        mergeReview={mergeReview}
+        onDiscard={handleDiscard}
+        onSave={handleSave}
+        onMergeSave={handleMergeSave}
+        onViewDiff={() => setUnsavedPrompt("view")}
+        outlineOpen={outlineOpen}
+        onOutlineToggle={() => setOutlineOpen((v) => !v)}
+        onOutlineClose={() => setOutlineOpen(false)}
+        outlineItems={outlineItems}
+        outlineActiveIndex={outlineActiveIndex}
+        onOutlineJump={handleOutlineJump}
+        docWidth={docWidth}
+        docFocus={docFocus}
+        onToggleWidth={onToggleWidth}
+        onToggleFocus={onToggleFocus}
+        onPin={onPin}
+        onUnpin={onUnpin}
+        onOpenConversation={onOpenConversation}
+        onMergeEditingToggle={() => setMergeEditing((v) => !v)}
+      />
+      <DocViewerBody
+        bodyRef={bodyRef}
+        loading={loading}
+        error={error}
+        saveError={saveError}
+        readOnly={readOnly}
+        doc={doc}
+        mergeReview={mergeReview}
+        mergeEditing={mergeEditing}
+        mergeSourceRef={mergeSourceRef}
+        editMode={editMode}
+        body={body}
+        onBodyChange={handleBodyChange}
+        loadedPath={loadedPath}
+        refreshKey={refreshKey}
+        previewRemountKey={previewRemountKey}
+        onPreviewStable={handlePreviewStable}
+        onPreviewUserEdit={handlePreviewUserEdit}
+        markdownSourceRef={markdownSourceRef}
+        selection={selection}
+        onSelectionChange={setSelection}
+      />
       {mergeReview && (
         <DocMergeReviewBar
           mergeReview={mergeReview}
