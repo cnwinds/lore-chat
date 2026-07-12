@@ -18,6 +18,11 @@ import {
   type SourceRef,
   type TimelineBlock,
 } from "../api";
+import {
+  formatMessageTs,
+  kbPathFromToolResult,
+  markToolBlockResolved,
+} from "../utils/chatMessage";
 import { MarkdownContent } from "./MarkdownContent";
 import { ChatSources } from "./ChatSources";
 import { CopyButton } from "./CopyButton";
@@ -35,12 +40,6 @@ type Props = {
   onOpenDoc?: (path: string, excerpt?: string) => void;
 };
 
-function kbPathFromToolResult(data: Record<string, unknown>): string | undefined {
-  const sources = data.sources as SourceRef[] | undefined;
-  const kb = sources?.find((s) => s.type === "kb");
-  return kb?.path;
-}
-
 const INPUT_MIN_HEIGHT = 34;
 const INPUT_MAX_HEIGHT = 160;
 const SCROLL_BOTTOM_THRESHOLD = 80;
@@ -49,44 +48,6 @@ function isNearBottom(container: HTMLElement): boolean {
   const distance =
     container.scrollHeight - container.scrollTop - container.clientHeight;
   return distance <= SCROLL_BOTTOM_THRESHOLD;
-}
-
-function formatMessageTs(ts: string): string {
-  try {
-    const d = new Date(ts);
-    if (Number.isNaN(d.getTime())) return "";
-    return d.toLocaleTimeString("zh-CN", {
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    });
-  } catch {
-    return "";
-  }
-}
-
-function markToolBlockResolved(
-  messages: ChatMessage[],
-  blockId: string,
-  choiceLabel: string,
-): ChatMessage[] {
-  function patchBlock(block: TimelineBlock): TimelineBlock {
-    if (block.type === "tool" && block.id === blockId) {
-      return { ...block, choice_resolved: choiceLabel };
-    }
-    if (block.type === "parallel") {
-      return {
-        ...block,
-        children: block.children.map(patchBlock),
-      };
-    }
-    return block;
-  }
-  return messages.map((msg) =>
-    msg.timeline
-      ? { ...msg, timeline: msg.timeline.map(patchBlock) }
-      : msg,
-  );
 }
 
 export function Chat({
