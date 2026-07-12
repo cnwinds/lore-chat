@@ -275,9 +275,33 @@ export async function* chatStream(
     }
     throw new Error(detail || `请求失败 (${r.status})`);
   }
-  const reader = r.body!.getReader();
+  if (!r.body) {
+    throw new Error("响应缺少可读流");
+  }
+  const reader = r.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
+
+  function parseEventBlock(part: string): ChatStreamEvent | undefined {
+    if (!part.trim()) return undefined;
+    const lines = part.split("\n");
+    const eventLine = lines.find((l) => l.startsWith("event: "));
+    const dataLine = lines.find((l) => l.startsWith("data: "));
+    if (!eventLine || !dataLine) {
+      console.warn("跳过无法识别的 SSE 事件块", part);
+      return undefined;
+    }
+    try {
+      return {
+        event: eventLine.slice(7).trim(),
+        data: JSON.parse(dataLine.slice(6)) as Record<string, unknown>,
+      };
+    } catch (err) {
+      console.warn("跳过无法解析的 SSE 事件", err, dataLine);
+      return undefined;
+    }
+  }
+
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
@@ -285,17 +309,16 @@ export async function* chatStream(
     const parts = buffer.split("\n\n");
     buffer = parts.pop() ?? "";
     for (const part of parts) {
-      if (!part.trim()) continue;
-      const lines = part.split("\n");
-      const eventLine = lines.find((l) => l.startsWith("event: "));
-      const dataLine = lines.find((l) => l.startsWith("data: "));
-      if (eventLine && dataLine) {
-        yield {
-          event: eventLine.slice(7).trim(),
-          data: JSON.parse(dataLine.slice(6)) as Record<string, unknown>,
-        };
-      }
+      const evt = parseEventBlock(part);
+      if (evt) yield evt;
     }
+  }
+
+  // flush 尾部残留（末尾未以空行结束的完整事件块）
+  buffer += decoder.decode();
+  if (buffer.trim()) {
+    const evt = parseEventBlock(buffer);
+    if (evt) yield evt;
   }
 }
 
