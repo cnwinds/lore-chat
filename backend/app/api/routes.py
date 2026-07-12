@@ -465,15 +465,13 @@ async def questions(request: Request):
 
 
 def _is_agent_question(q: dict) -> bool:
-    if q.get("payload", {}).get("kind") == "agent":
-        return True
-    if q.get("multi_select"):
-        return True
-    question = q.get("question", "")
-    if "可多选" in question or "多选" in question:
-        return True
     payload = q.get("payload", {})
-    # ask_user 创建的征询（无 organizer 的 decision/content）
+    kind = payload.get("kind")
+    if kind == "agent":
+        return True
+    if kind == "merge_sources":
+        return False
+    # organizer 歧义确认问题带 decision/content，走 resolve_pending
     return not payload.get("decision") and not payload.get("content")
 
 
