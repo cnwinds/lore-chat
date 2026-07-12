@@ -33,15 +33,22 @@ class VectorIndex:
         embeddings: list[list[float]],
         *,
         source: str,
+        start_index: int = 0,
     ) -> None:
         if not chunks:
             return
-        ids = [f"{doc_id}::{i}" for i in range(len(chunks))]
+        ids = [f"{doc_id}::{i}" for i in range(start_index, start_index + len(chunks))]
         metadatas = [{"doc_id": doc_id, "source": source} for _ in chunks]
         with self._lock:
             self._collection().add(
                 ids=ids, documents=chunks, embeddings=embeddings, metadatas=metadatas
             )
+
+    def delete_ids(self, ids: list[str]) -> None:
+        if not ids:
+            return
+        with self._lock:
+            self._collection().delete(ids=ids)
 
     def delete(self, doc_id: str) -> None:
         with self._lock:

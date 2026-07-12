@@ -47,7 +47,9 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
     index_dir = settings.kb_path / ".kb" / "index"
     vector = VectorIndex(index_dir / "vec")
     fulltext = FullTextIndex(index_dir / "fts.db")
-    indexer = Indexer(vector, fulltext, llm)
+    indexer = Indexer(
+        vector, fulltext, llm, reindex_full_threshold=settings.reindex_full_threshold
+    )
     retriever = Retriever(
         vector,
         fulltext,
