@@ -1,24 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { getDoc, saveDoc, type DocContent } from "../api";
+import { saveDoc } from "../api";
 import { DocDiffModal } from "./DocDiffModal";
-import { DocLivePreview, type DocSelection } from "./DocLivePreview";
-import { DocMarkdownSource } from "./DocMarkdownSource";
-import { DocMetaPopover } from "./DocMetaPopover";
-import { DocOutlineMenu } from "./DocOutlineMenu";
-import { DocOverflowMenu } from "./DocOverflowMenu";
+import { type DocSelection } from "./DocLivePreview";
+import { DocMergeReviewBar } from "./doc/DocMergeReviewBar";
+import { DocViewerBody } from "./doc/DocViewerBody";
+import { DocViewerHeader } from "./doc/DocViewerHeader";
+import { useDocLoader } from "../hooks/doc/useDocLoader";
 import {
-  DocIconBtn,
-  DiffIcon,
-  DiscardIcon,
-  FocusEnterIcon,
-  FocusExitIcon,
-  MarkdownIcon,
-  PinIcon,
-  PreviewIcon,
-  SaveIcon,
-  WidthExpandIcon,
-  WidthNarrowIcon,
-} from "./DocToolbarIcons";
+  useDocDirtyPrompt,
+  type MergeReviewInfo,
+} from "../hooks/doc/useDocDirtyPrompt";
+import { useDocHighlight } from "../hooks/doc/useDocHighlight";
 import { useDocOutlineActive } from "../hooks/useDocOutlineActive";
 import { isDocMarkdownDirty } from "../utils/docMarkdown";
 import {
@@ -27,12 +19,9 @@ import {
   parseDocOutline,
   type OutlineItem,
 } from "../utils/docOutline";
-
-type DocWidth = "narrow" | "wide";
-type DocMode = "panel" | "float" | "page";
-type EditMode = "preview" | "markdown";
-
-const EDIT_MODE_KEY = "docEditMode";
+import type { DocMode, DocWidth, EditMode } from "../types/doc";
+import { isReadOnlyPath } from "../utils/docReadOnly";
+import { getStoredEditMode, setStoredEditMode } from "../utils/docStorage";
 
 type Props = {
   path: string;
@@ -52,37 +41,12 @@ type Props = {
   onToggleWidth?: () => void;
   onToggleFocus?: () => void;
   onOpenConversation?: (conversationId: string) => void;
+  mergeReview?: MergeReviewInfo | null;
+  onMergeReviewChange?: (patch: Partial<{ userModified: boolean }>) => void;
+  onMergeAccept?: () => void | Promise<void>;
+  onMergeRegenerate?: () => void | Promise<void>;
+  onMergeReject?: () => void | Promise<void>;
 };
-
-function getStoredEditMode(): EditMode {
-  try {
-    return sessionStorage.getItem(EDIT_MODE_KEY) === "markdown"
-      ? "markdown"
-      : "preview";
-  } catch {
-    return "preview";
-  }
-}
-
-function setStoredEditMode(mode: EditMode) {
-  try {
-    sessionStorage.setItem(EDIT_MODE_KEY, mode);
-  } catch {
-    /* ignore */
-  }
-}
-
-function isReadOnlyPath(path: string): boolean {
-  const norm = path.replace(/\\/g, "/");
-  return (
-    norm.startsWith(".kb/") ||
-    norm.startsWith(".git/") ||
-    norm === ".kb" ||
-    norm === ".git"
-  );
-}
-
-type UnsavedPrompt = "view" | "close" | "navigate" | "reload";
 
 export function DocViewer({
   path,
@@ -101,196 +65,122 @@ export function DocViewer({
   onToggleWidth,
   onToggleFocus,
   onOpenConversation,
+  mergeReview = null,
+  onMergeReviewChange,
+  onMergeAccept,
+  onMergeRegenerate,
+  onMergeReject,
 }: Props) {
-  const [doc, setDoc] = useState<DocContent | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
   const [editMode, setEditMode] = useState<EditMode>(getStoredEditMode);
-  const [body, setBody] = useState("");
-  const [savedBody, setSavedBody] = useState("");
   const [selection, setSelection] = useState<DocSelection>({ start: 0, end: 0 });
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [loadedPath, setLoadedPath] = useState(path);
+  const [mergeEditing, setMergeEditing] = useState(false);
   const [outlineOpen, setOutlineOpen] = useState(false);
-  const [unsavedPrompt, setUnsavedPrompt] = useState<UnsavedPrompt | null>(null);
-  const [previewRemountKey, setPreviewRemountKey] = useState(0);
   const bodyRef = useRef<HTMLDivElement>(null);
   const markdownSourceRef = useRef<HTMLTextAreaElement>(null);
-  const loadGenRef = useRef(0);
-  const lastRefreshKeyRef = useRef(refreshKey);
-  const userEditedRef = useRef(false);
-  const pendingNavRef = useRef<{ targetPath: string; gen: number } | null>(null);
-  const unsavedPromptRef = useRef<UnsavedPrompt | null>(null);
-  unsavedPromptRef.current = unsavedPrompt;
+  const mergeSourceRef = useRef<HTMLTextAreaElement>(null);
+
+  const {
+    doc,
+    setDoc,
+    body,
+    setBody,
+    savedBody,
+    setSavedBody,
+    loading,
+    error,
+    loadedPath,
+    loadDoc,
+    loadGenRef,
+    lastRefreshKeyRef,
+    userEditedRef,
+    previewRemountKey,
+    bumpPreviewRemount,
+  } = useDocLoader({
+    path,
+    refreshKey,
+    setSaveError,
+    setSelection,
+    setMergeEditing,
+  });
 
   const readOnly = isReadOnlyPath(path);
-  const dirty = isDocMarkdownDirty(body, savedBody);
+  const {
+    dirty,
+    unsavedPrompt,
+    setUnsavedPrompt,
+    handleSave,
+    handleConfirmSave,
+    handleConfirmDiscard,
+    handleClose,
+    handleDiscard,
+    cancelUnsavedPrompt,
+  } = useDocDirtyPrompt({
+    path,
+    refreshKey,
+    readOnly,
+    onClose,
+    onBindClose,
+    onCloseRequest,
+    onSaved,
+    onNavigationBlocked,
+    mergeReview,
+    mergeEditing,
+    onMergeReviewChange,
+    doc,
+    setDoc,
+    body,
+    setBody,
+    savedBody,
+    setSavedBody,
+    loadedPath,
+    loadDoc,
+    loadGenRef,
+    lastRefreshKeyRef,
+    userEditedRef,
+    bumpPreviewRemount,
+    setSelection,
+    saving,
+    setSaving,
+    setSaveError,
+  });
   const outlineItems = useMemo(() => parseDocOutline(body), [body]);
-  const outlineInSource = editMode === "markdown";
+  const outlineInSource =
+    (mergeReview !== null && mergeEditing) || editMode === "markdown";
   const outlineActiveIndex = useDocOutlineActive({
     items: outlineItems,
     inSource: outlineInSource,
     scrollRootRef: bodyRef,
     sourceRef: markdownSourceRef,
+    mergeSourceRef: mergeSourceRef,
     enabled: Boolean(doc) && !loading,
   });
-
-  const loadDoc = useCallback(async (targetPath: string, gen: number) => {
-    setLoading(true);
-    setError(null);
-    setSaveError(null);
-    try {
-      const d = await getDoc(targetPath);
-      if (gen !== loadGenRef.current) return;
-      setDoc(d);
-      setBody(d.body);
-      setSavedBody(d.body);
-      setSelection({ start: d.body.length, end: d.body.length });
-      setLoadedPath(targetPath);
-      userEditedRef.current = false;
-      setPreviewRemountKey((k) => k + 1);
-    } catch (e) {
-      if (gen !== loadGenRef.current) return;
-      setDoc(null);
-      setBody("");
-      setSavedBody("");
-      setError(e instanceof Error ? e.message : "加载失败");
-    } finally {
-      if (gen === loadGenRef.current) setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    const gen = ++loadGenRef.current;
-    const pathChanged = path !== loadedPath;
-    const refreshChanged = refreshKey !== lastRefreshKeyRef.current;
-    lastRefreshKeyRef.current = refreshKey;
-
-    if (dirty && (pathChanged || refreshChanged)) {
-      pendingNavRef.current = { targetPath: path, gen };
-      setUnsavedPrompt(pathChanged ? "navigate" : "reload");
-      if (pathChanged) onNavigationBlocked?.(loadedPath);
-      return;
-    }
-
-    void loadDoc(path, gen);
-  }, [path, refreshKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     setOutlineOpen(false);
   }, [path, refreshKey]);
 
-  useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "s") return;
-      e.preventDefault();
-      void handleSaveRef.current();
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
-
-  const handleSaveRef = useRef<() => Promise<void>>(async () => {});
-
-  const handleSave = useCallback(async (): Promise<boolean> => {
-    if (!dirty || saving || readOnly || !doc) return !dirty;
-    setSaving(true);
-    setSaveError(null);
-    try {
-      const saved = await saveDoc(path, body);
-      setDoc(saved);
-      setSavedBody(body);
-      onSaved?.(path);
-      return true;
-    } catch (e) {
-      setSaveError(e instanceof Error ? e.message : "保存失败");
-      return false;
-    } finally {
-      setSaving(false);
-    }
-  }, [body, dirty, doc, onSaved, path, readOnly, saving]);
-
-  handleSaveRef.current = async () => {
-    await handleSave();
-  };
-
-  const finishClose = useCallback(() => {
-    if (onCloseRequest && !onCloseRequest()) return;
-    onClose();
-  }, [onClose, onCloseRequest]);
-
-  const applyDiscard = useCallback(() => {
-    userEditedRef.current = false;
-    setBody(savedBody);
-    setSelection({ start: savedBody.length, end: savedBody.length });
-    setSaveError(null);
-    setPreviewRemountKey((k) => k + 1);
-  }, [savedBody]);
-
-  const completePendingNavigation = useCallback(() => {
-    const pending = pendingNavRef.current;
-    pendingNavRef.current = null;
-    setUnsavedPrompt(null);
-    if (pending) void loadDoc(pending.targetPath, pending.gen);
-  }, [loadDoc]);
-
-  const cancelUnsavedPrompt = useCallback(() => {
-    pendingNavRef.current = null;
-    setUnsavedPrompt(null);
-  }, []);
-
-  const resolveUnsavedPromptAfterAction = useCallback(
-    (action: "discard" | "save") => {
-      const prompt = unsavedPromptRef.current;
-      if (!prompt || prompt === "view") return;
-
-      if (action === "discard") applyDiscard();
-
-      if (prompt === "close") {
-        pendingNavRef.current = null;
-        setUnsavedPrompt(null);
-        finishClose();
-        return;
-      }
-
-      if (prompt === "navigate" || prompt === "reload") {
-        completePendingNavigation();
-      }
-    },
-    [applyDiscard, completePendingNavigation, finishClose],
-  );
-
-  const handleConfirmDiscard = useCallback(() => {
-    resolveUnsavedPromptAfterAction("discard");
-  }, [resolveUnsavedPromptAfterAction]);
-
-  const handleConfirmSave = useCallback(async () => {
-    const prompt = unsavedPromptRef.current;
-    if (!prompt || prompt === "view") return;
-
-    const ok = await handleSave();
-    if (!ok) return;
-    resolveUnsavedPromptAfterAction("save");
-  }, [handleSave, resolveUnsavedPromptAfterAction]);
-
-  const handleClose = useCallback(() => {
-    if (dirty) {
-      setUnsavedPrompt("close");
-      return;
-    }
-    finishClose();
-  }, [dirty, finishClose]);
-
-  useEffect(() => {
-    onBindClose?.(handleClose);
-    return () => onBindClose?.(null);
-  }, [handleClose, onBindClose]);
-
   const handleEditModeChange = (mode: EditMode) => {
     setEditMode(mode);
     setStoredEditMode(mode);
   };
+
+  useEffect(() => {
+    if (!mergeReview) {
+      setMergeEditing(false);
+    }
+  }, [mergeReview]);
+
+  useDocHighlight({
+    bodyRef,
+    highlightText,
+    loading,
+    doc,
+    editMode,
+    path,
+    body,
+  });
 
   const handleBodyChange = (nextBody: string, nextSelection?: DocSelection) => {
     userEditedRef.current = true;
@@ -309,95 +199,48 @@ export function DocViewer({
     userEditedRef.current = true;
   }, []);
 
-  const handleDiscard = useCallback(() => {
-    if (!dirty || saving) return;
-    if (!window.confirm("放弃未保存的修改？此操作不可撤销。")) return;
-    applyDiscard();
-    setUnsavedPrompt(null);
-  }, [applyDiscard, dirty, saving]);
-
   const handleOutlineJump = useCallback(
     (item: OutlineItem) => {
-      if (editMode === "markdown") {
-        jumpToOutlineInSource(markdownSourceRef.current, item.line);
+      const inSource =
+        (mergeReview && mergeEditing) || editMode === "markdown";
+      if (inSource) {
+        const ta = mergeReview && mergeEditing
+          ? mergeSourceRef.current
+          : markdownSourceRef.current;
+        jumpToOutlineInSource(ta, item.line);
       } else {
         jumpToOutlineInPreview(bodyRef.current, item);
       }
     },
-    [editMode],
+    [editMode, mergeEditing, mergeReview],
   );
 
-  useEffect(() => {
-    if (!highlightText || loading || !doc || !bodyRef.current) return;
-
-    const container = bodyRef.current.querySelector(".doc-markdown");
-    if (!container) return;
-
-    const prev = container.querySelector(".highlight");
-    prev?.classList.remove("highlight");
-
-    const needle = highlightText.trim().slice(0, 120);
-    if (!needle) return;
-
-    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
-    let node: Text | null = walker.nextNode() as Text | null;
-    while (node) {
-      const idx = node.textContent?.indexOf(needle) ?? -1;
-      if (idx >= 0) {
-        const range = document.createRange();
-        range.setStart(node, idx);
-        range.setEnd(node, idx + needle.length);
-        const mark = document.createElement("mark");
-        mark.className = "highlight";
-        try {
-          range.surroundContents(mark);
-          mark.scrollIntoView({ behavior: "smooth", block: "center" });
-        } catch {
-          mark.textContent = needle;
-          node.parentNode?.insertBefore(mark, node);
-          mark.scrollIntoView({ behavior: "smooth", block: "center" });
-        }
-        break;
-      }
-      node = walker.nextNode() as Text | null;
+  const handleMergeSave = useCallback(async () => {
+    if (!mergeReview || saving || readOnly || !doc) return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await saveDoc(path, body);
+      onMergeReviewChange?.({ userModified: true });
+      onSaved?.(path);
+      const gen = ++loadGenRef.current;
+      await loadDoc(path, gen);
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : "保存失败");
+    } finally {
+      setSaving(false);
     }
-  }, [highlightText, loading, doc, path, body, editMode]);
-
-  const title =
-    (doc?.meta?.title as string | undefined) ||
-    path.split("/").pop() ||
-    path;
-
-  const conversationId =
-    typeof doc?.meta?.conversation_id === "string"
-      ? doc.meta.conversation_id
-      : null;
-
-  const overflowItems = [
-    ...(dirty && !readOnly
-      ? [
-          {
-            id: "view-diff",
-            label: "查看变更",
-            icon: "diff" as const,
-            onClick: () => setUnsavedPrompt("view"),
-          },
-        ]
-      : []),
-    ...(conversationId && onOpenConversation
-      ? [
-          {
-            id: "conversation",
-            label: "查看原始会话",
-            icon: "chat" as const,
-            onClick: () => onOpenConversation(conversationId),
-          },
-        ]
-      : []),
-  ];
-
-  const showLayoutActions = mode === "float" || mode === "panel";
-  const canSave = !readOnly && dirty && !saving && !loading;
+  }, [
+    body,
+    doc,
+    loadDoc,
+    mergeReview,
+    onMergeReviewChange,
+    onSaved,
+    path,
+    readOnly,
+    saving,
+  ]);
 
   return (
     <div
@@ -405,185 +248,68 @@ export function DocViewer({
         mode === "float" ? " doc-viewer-float" : ""
       }${docFocus ? " doc-viewer-focus" : ""}`}
     >
-      <header className="doc-viewer-header">
-        {mode === "panel" || mode === "float" ? (
-          <button
-            type="button"
-            className="doc-close-btn"
-            onClick={handleClose}
-            title="关闭"
-          >
-            ×
-          </button>
-        ) : (
-          <button type="button" className="doc-back-btn" onClick={handleClose}>
-            ← 对话
-          </button>
-        )}
-        <div className="doc-viewer-title">
-          {mode === "panel" && <span className="doc-path">{path}</span>}
-          <h2>
-            {title}
-            {dirty && (
-              <span
-                className="doc-dirty-dot"
-                title="有未保存的修改"
-                aria-label="有未保存的修改"
-              />
-            )}
-          </h2>
-        </div>
-        <div className="doc-viewer-toolbar">
-          <div className="doc-mode-toggle" role="group" aria-label="编辑模式">
-            <DocIconBtn
-              className="doc-mode-toggle-btn"
-              label="预览模式"
-              active={editMode === "preview"}
-              onClick={() => handleEditModeChange("preview")}
-              disabled={loading}
-            >
-              <PreviewIcon />
-            </DocIconBtn>
-            <DocIconBtn
-              className="doc-mode-toggle-btn"
-              label="Markdown 源码"
-              active={editMode === "markdown"}
-              onClick={() => handleEditModeChange("markdown")}
-              disabled={loading}
-            >
-              <MarkdownIcon />
-            </DocIconBtn>
-          </div>
-          {!readOnly && (
-            <>
-              {dirty && (
-                <DocIconBtn
-                  label="放弃未保存的修改"
-                  onClick={() => void handleDiscard()}
-                  disabled={saving || loading}
-                >
-                  <DiscardIcon />
-                </DocIconBtn>
-              )}
-              <DocIconBtn
-                label={saving ? "保存中…" : "保存 (Ctrl+S)"}
-                active={dirty}
-                muted={!dirty}
-                disabled={!canSave}
-                onClick={() => void handleSave()}
-              >
-                <SaveIcon />
-              </DocIconBtn>
-              {dirty && (
-                <DocIconBtn
-                  label="查看变更"
-                  onClick={() => setUnsavedPrompt("view")}
-                  disabled={loading}
-                >
-                  <DiffIcon />
-                </DocIconBtn>
-              )}
-            </>
-          )}
-          {showLayoutActions && (
-            <>
-              <span className="doc-toolbar-divider" aria-hidden />
-              {doc && (
-                <DocOutlineMenu
-                  open={outlineOpen}
-                  onToggle={() => setOutlineOpen((v) => !v)}
-                  onClose={() => setOutlineOpen(false)}
-                  items={outlineItems}
-                  activeIndex={outlineActiveIndex}
-                  onJump={handleOutlineJump}
-                  disabled={loading}
-                />
-              )}
-              {!docFocus && onToggleWidth && (
-                <DocIconBtn
-                  label={docWidth === "wide" ? "收窄阅读区" : "加宽阅读区"}
-                  active={docWidth === "wide"}
-                  onClick={onToggleWidth}
-                >
-                  {docWidth === "wide" ? <WidthNarrowIcon /> : <WidthExpandIcon />}
-                </DocIconBtn>
-              )}
-              {onToggleFocus && (
-                <DocIconBtn
-                  label={docFocus ? "退出专注" : "专注阅读"}
-                  active={docFocus}
-                  onClick={onToggleFocus}
-                >
-                  {docFocus ? <FocusExitIcon /> : <FocusEnterIcon />}
-                </DocIconBtn>
-              )}
-              <DocOverflowMenu items={overflowItems} disabled={loading} />
-              {mode === "float" && onPin && (
-                <DocIconBtn label="固定到右侧栏" onClick={onPin}>
-                  <PinIcon />
-                </DocIconBtn>
-              )}
-              {mode === "panel" && onUnpin && (
-                <DocIconBtn label="取消固定，回到浮窗预览" active onClick={onUnpin}>
-                  <PinIcon filled />
-                </DocIconBtn>
-              )}
-            </>
-          )}
-          {mode === "page" && doc && (
-            <>
-              <span className="doc-toolbar-divider" aria-hidden />
-              <DocOutlineMenu
-                open={outlineOpen}
-                onToggle={() => setOutlineOpen((v) => !v)}
-                onClose={() => setOutlineOpen(false)}
-                items={outlineItems}
-                activeIndex={outlineActiveIndex}
-                onJump={handleOutlineJump}
-                disabled={loading}
-              />
-              <DocOverflowMenu items={overflowItems} disabled={loading} />
-            </>
-          )}
-        </div>
-      </header>
-      <div className="doc-viewer-body" ref={bodyRef}>
-        {loading && <div className="doc-muted">加载中…</div>}
-        {error && <div className="doc-error">错误：{error}</div>}
-        {saveError && <div className="doc-save-error">保存失败：{saveError}</div>}
-        {readOnly && doc && (
-          <div className="doc-muted doc-readonly-hint">此文档为只读，无法编辑。</div>
-        )}
-        {doc && (
-          <>
-            {doc.meta &&
-              Object.keys(doc.meta).some((k) => k !== "conversation_id") && (
-              <div className="doc-meta-bar">
-                <DocMetaPopover meta={doc.meta} />
-              </div>
-            )}
-            {editMode === "preview" ? (
-              <DocLivePreview
-                key={`${loadedPath}#${refreshKey}#${previewRemountKey}`}
-                initialBody={body}
-                onChange={(b) => handleBodyChange(b)}
-                onStable={handlePreviewStable}
-                onUserEdit={handlePreviewUserEdit}
-                readOnly={readOnly}
-              />
-            ) : (
-              <DocMarkdownSource
-                ref={markdownSourceRef}
-                body={body}
-                onChange={handleBodyChange}
-                readOnly={readOnly}
-                selection={selection}
-                onSelectionChange={setSelection}
-              />
-            )}
-          </>
-        )}
-      </div>
+      <DocViewerHeader
+        mode={mode}
+        path={path}
+        doc={doc}
+        dirty={dirty}
+        onClose={handleClose}
+        editMode={editMode}
+        onEditModeChange={handleEditModeChange}
+        loading={loading}
+        mergeEditing={mergeEditing}
+        readOnly={readOnly}
+        saving={saving}
+        mergeReview={mergeReview}
+        onDiscard={handleDiscard}
+        onSave={handleSave}
+        onMergeSave={handleMergeSave}
+        onViewDiff={() => setUnsavedPrompt("view")}
+        outlineOpen={outlineOpen}
+        onOutlineToggle={() => setOutlineOpen((v) => !v)}
+        onOutlineClose={() => setOutlineOpen(false)}
+        outlineItems={outlineItems}
+        outlineActiveIndex={outlineActiveIndex}
+        onOutlineJump={handleOutlineJump}
+        docWidth={docWidth}
+        docFocus={docFocus}
+        onToggleWidth={onToggleWidth}
+        onToggleFocus={onToggleFocus}
+        onPin={onPin}
+        onUnpin={onUnpin}
+        onOpenConversation={onOpenConversation}
+        onMergeEditingToggle={() => setMergeEditing((v) => !v)}
+      />
+      <DocViewerBody
+        bodyRef={bodyRef}
+        loading={loading}
+        error={error}
+        saveError={saveError}
+        readOnly={readOnly}
+        doc={doc}
+        mergeReview={mergeReview}
+        mergeEditing={mergeEditing}
+        mergeSourceRef={mergeSourceRef}
+        editMode={editMode}
+        body={body}
+        onBodyChange={handleBodyChange}
+        loadedPath={loadedPath}
+        refreshKey={refreshKey}
+        previewRemountKey={previewRemountKey}
+        onPreviewStable={handlePreviewStable}
+        onPreviewUserEdit={handlePreviewUserEdit}
+        markdownSourceRef={markdownSourceRef}
+        selection={selection}
+        onSelectionChange={setSelection}
+      />
+      {mergeReview && (
+        <DocMergeReviewBar
+          mergeReview={mergeReview}
+          onMergeAccept={onMergeAccept}
+          onMergeRegenerate={onMergeRegenerate}
+          onMergeReject={onMergeReject}
+        />
+      )}
       <DocDiffModal
         open={unsavedPrompt !== null}
         variant={unsavedPrompt === "view" ? "view" : "confirm"}

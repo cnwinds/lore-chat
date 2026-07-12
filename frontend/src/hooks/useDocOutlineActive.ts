@@ -10,6 +10,7 @@ type Options = {
   inSource: boolean;
   scrollRootRef: RefObject<HTMLElement | null>;
   sourceRef: RefObject<HTMLTextAreaElement | null>;
+  mergeSourceRef: RefObject<HTMLTextAreaElement | null>;
   enabled: boolean;
 };
 
@@ -18,6 +19,7 @@ export function useDocOutlineActive({
   inSource,
   scrollRootRef,
   sourceRef,
+  mergeSourceRef,
   enabled,
 }: Options): number {
   const [activeIndex, setActiveIndex] = useState(-1);
@@ -31,7 +33,9 @@ export function useDocOutlineActive({
     let raf = 0;
     const measure = () => {
       const scrollRoot = scrollRootRef.current;
-      const textarea = inSource ? sourceRef.current : null;
+      const textarea = inSource
+        ? mergeSourceRef.current ?? sourceRef.current
+        : null;
       const next = inSource
         ? getSourceOutlineActiveIndex(textarea, items)
         : getPreviewOutlineActiveIndex(scrollRoot);
@@ -46,7 +50,9 @@ export function useDocOutlineActive({
     measure();
 
     const scrollRoot = scrollRootRef.current;
-    const textarea = inSource ? sourceRef.current : null;
+    const textarea = inSource
+      ? mergeSourceRef.current ?? sourceRef.current
+      : null;
 
     scrollRoot?.addEventListener("scroll", onScroll, { passive: true });
     textarea?.addEventListener("scroll", onScroll, { passive: true });
@@ -70,7 +76,14 @@ export function useDocOutlineActive({
       ro?.disconnect();
       mo?.disconnect();
     };
-  }, [enabled, inSource, items, scrollRootRef, sourceRef]);
+  }, [
+    enabled,
+    inSource,
+    items,
+    mergeSourceRef,
+    scrollRootRef,
+    sourceRef,
+  ]);
 
   return activeIndex;
 }

@@ -1,0 +1,213 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { renderHook, act } from "@testing-library/react";
+import { useAgentStream } from "./useAgentStream";
+import * as api from "../../api";
+import type { ChatMessage } from "../../api";
+
+vi.mock("../../api", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("../../api")>();
+  return {
+    ...mod,
+    chatStream: vi.fn(),
+    createConversation: vi.fn().mockResolvedValue({ id: "new-cid" }),
+    getConversation: vi.fn().mockResolvedValue({
+      id: "cid-1",
+      title: "t",
+      created_at: "",
+      updated_at: "",
+      message_count: 0,
+      summarized: false,
+      summary_path: null,
+      messages: [],
+    }),
+  };
+});
+
+function makeSetMsgs(initial: ChatMessage[]) {
+  let current = initial;
+  const setMsgs = vi.fn(
+    (updater: ChatMessage[] | ((prev: ChatMessage[]) => ChatMessage[])) => {
+      current =
+        typeof updater === "function"
+          ? (updater as (prev: ChatMessage[]) => ChatMessage[])(current)
+          : updater;
+      return current;
+    },
+  );
+  return { setMsgs, getCurrent: () => current };
+}
+
+function baseOptions(overrides: Partial<Parameters<typeof useAgentStream>[0]> = {}) {
+  const { setMsgs } = makeSetMsgs([]);
+  return {
+    conversationId: "cid-1",
+    previewPath: null,
+    webEnabled: false,
+    docPaths: [] as string[],
+    primaryDocPath: null,
+    msgs: [] as ChatMessage[],
+    setMsgs,
+    setSummarized: vi.fn(),
+    setSummaryPath: vi.fn(),
+    conversationIdRef: { current: "cid-1" },
+    skipLoadRef: { current: null },
+    streamingRef: { current: false },
+    stickToBottomRef: { current: true },
+    onSidebarRefresh: vi.fn(),
+    onKbChanged: vi.fn(),
+    onFirstQuestionTitle: vi.fn(),
+    onConversationCreated: vi.fn(),
+    ...overrides,
+  };
+}
+
+describe("useAgentStream", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(api.createConversation).mockResolvedValue({ id: "new-cid" });
+    vi.mocked(api.chatStream).mockImplementation(async function* () {
+      yield { event: "done", data: { sources: [] } };
+    });
+  });
+
+  it("sets streaming false after completion and clears skipLoadRef/streamingRef", async () => {
+    const options = baseOptions();
+    const { result } = renderHook(() => useAgentStream(options));
+
+    await act(async () => {
+      await result.current.runAgentStream("hello");
+    });
+
+    expect(result.current.streaming).toBe(false);
+    expect(options.streamingRef.current).toBe(false);
+    expect(options.skipLoadRef.current).toBeNull();
+  });
+
+  it("appends user + assistant messages and patches the LAST message with timeline/sources on done", async () => {
+    vi.mocked(api.chatStream).mockImplementation(async function* () {
+      yield {
+        event: "tool_start",
+        data: { id: "t1", tool: "search_kb", ts: "2026-01-01T00:00:00.000Z" },
+      };
+      yield {
+        event: "done",
+        data: { sources: [{ type: "kb", path: "a.md" }], total_duration_ms: 42 },
+      };
+    });
+    const { setMsgs, getCurrent } = makeSetMsgs([]);
+    const options = baseOptions({ setMsgs });
+    const { result } = renderHook(() => useAgentStream(options));
+
+    await act(async () => {
+      await result.current.runAgentStream("hi there");
+    });
+
+    const msgs = getCurrent();
+    expect(msgs).toHaveLength(2);
+    expect(msgs[0]).toMatchObject({ role: "user", text: "hi there" });
+    // patchAssistant must always target the LAST array element, never msgs[0]
+    const assistant = msgs[msgs.length - 1];
+    expect(assistant.role).toBe("assistant");
+    expect(assistant.timeline?.[0]).toMatchObject({ tool: "search_kb" });
+    expect(assistant.sources).toEqual([{ type: "kb", path: "a.md" }]);
+    expect(assistant.total_duration_ms).toBe(42);
+  });
+
+  it("uses userDisplayText for the user bubble while sending apiText to chatStream (continue flow)", async () => {
+    const { setMsgs, getCurrent } = makeSetMsgs([
+      { role: "user", text: "prior question" },
+      { role: "assistant", text: "prior answer" },
+    ]);
+    const options = baseOptions({
+      setMsgs,
+      msgs: [
+        { role: "user", text: "prior question" },
+        { role: "assistant", text: "prior answer" },
+      ],
+    });
+    const { result } = renderHook(() => useAgentStream(options));
+
+    await act(async () => {
+      await result.current.runAgentStream("continue_prompt_text", "选项 A");
+    });
+
+    expect(vi.mocked(api.chatStream)).toHaveBeenCalledWith(
+      "continue_prompt_text",
+      expect.objectContaining({
+        conversationId: "cid-1",
+        webEnabled: false,
+      }),
+    );
+    const msgs = getCurrent();
+    // the new user bubble (not the last one, since assistant is appended after) must show the display text
+    expect(msgs[2]).toMatchObject({ role: "user", text: "选项 A" });
+  });
+
+  it("patches assistant text with an error message when the stream throws", async () => {
+    vi.mocked(api.chatStream).mockImplementation(async function* () {
+      throw new Error("boom");
+      yield { event: "done", data: {} };
+    });
+    const { setMsgs, getCurrent } = makeSetMsgs([]);
+    const options = baseOptions({ setMsgs });
+    const { result } = renderHook(() => useAgentStream(options));
+
+    await act(async () => {
+      await result.current.runAgentStream("hello");
+    });
+
+    const msgs = getCurrent();
+    const assistant = msgs[msgs.length - 1];
+    expect(assistant.text).toBe("错误：boom");
+    expect(result.current.streaming).toBe(false);
+  });
+
+  it("ensureConversationId creates a conversation and marks skipLoadRef when none exists", async () => {
+    const options = baseOptions({
+      conversationId: null,
+      onConversationCreated: vi.fn(),
+    });
+    const { result } = renderHook(() => useAgentStream(options));
+
+    let cid: string | undefined;
+    await act(async () => {
+      cid = await result.current.ensureConversationId();
+    });
+
+    expect(cid).toBe("new-cid");
+    expect(options.skipLoadRef.current).toBe("new-cid");
+    expect(options.onConversationCreated).toHaveBeenCalledWith("new-cid");
+  });
+
+  it("ignores concurrent runAgentStream calls while already streaming", async () => {
+    let resolveStream: (() => void) | undefined;
+    vi.mocked(api.chatStream).mockImplementation(async function* () {
+      await new Promise<void>((resolve) => {
+        resolveStream = resolve;
+      });
+      yield { event: "done", data: { sources: [] } };
+    });
+    const options = baseOptions();
+    const { result } = renderHook(() => useAgentStream(options));
+
+    let firstCall!: Promise<void>;
+    await act(async () => {
+      firstCall = result.current.runAgentStream("first");
+      // let the setStreaming(true) update flush so result.current reflects it
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(result.current.streaming).toBe(true);
+
+    await act(async () => {
+      await result.current.runAgentStream("second");
+    });
+    expect(vi.mocked(api.chatStream)).toHaveBeenCalledTimes(1);
+
+    resolveStream?.();
+    await act(async () => {
+      await firstCall;
+    });
+    expect(result.current.streaming).toBe(false);
+  });
+});
