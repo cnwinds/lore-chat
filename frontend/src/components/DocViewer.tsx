@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { getDoc, getMergeSession, saveDoc, type DocContent } from "../api";
+import { getMergeSession, saveDoc } from "../api";
 import { DocDiffModal } from "./DocDiffModal";
 import { DocLivePreview, type DocSelection } from "./DocLivePreview";
 import { DocMarkdownSource } from "./DocMarkdownSource";
@@ -19,6 +19,7 @@ import {
   WidthExpandIcon,
   WidthNarrowIcon,
 } from "./DocToolbarIcons";
+import { useDocLoader } from "../hooks/doc/useDocLoader";
 import { useDocOutlineActive } from "../hooks/useDocOutlineActive";
 import { isDocMarkdownDirty } from "../utils/docMarkdown";
 import {
@@ -83,29 +84,43 @@ export function DocViewer({
   onMergeRegenerate,
   onMergeReject,
 }: Props) {
-  const [doc, setDoc] = useState<DocContent | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
   const [editMode, setEditMode] = useState<EditMode>(getStoredEditMode);
-  const [body, setBody] = useState("");
-  const [savedBody, setSavedBody] = useState("");
   const [selection, setSelection] = useState<DocSelection>({ start: 0, end: 0 });
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [loadedPath, setLoadedPath] = useState(path);
   const [mergeEditing, setMergeEditing] = useState(false);
   const [mergeBusyAction, setMergeBusyAction] = useState<
     "reject" | "regenerate" | "accept" | null
   >(null);
   const [outlineOpen, setOutlineOpen] = useState(false);
   const [unsavedPrompt, setUnsavedPrompt] = useState<UnsavedPrompt | null>(null);
-  const [previewRemountKey, setPreviewRemountKey] = useState(0);
   const bodyRef = useRef<HTMLDivElement>(null);
   const markdownSourceRef = useRef<HTMLTextAreaElement>(null);
   const mergeSourceRef = useRef<HTMLTextAreaElement>(null);
-  const loadGenRef = useRef(0);
-  const lastRefreshKeyRef = useRef(refreshKey);
-  const userEditedRef = useRef(false);
+
+  const {
+    doc,
+    setDoc,
+    body,
+    setBody,
+    savedBody,
+    setSavedBody,
+    loading,
+    error,
+    loadedPath,
+    loadDoc,
+    loadGenRef,
+    lastRefreshKeyRef,
+    userEditedRef,
+    previewRemountKey,
+    bumpPreviewRemount,
+  } = useDocLoader({
+    path,
+    refreshKey,
+    setSaveError,
+    setSelection,
+    setMergeEditing,
+  });
   const pendingNavRef = useRef<{ targetPath: string; gen: number } | null>(null);
   const unsavedPromptRef = useRef<UnsavedPrompt | null>(null);
   unsavedPromptRef.current = unsavedPrompt;
@@ -123,32 +138,6 @@ export function DocViewer({
     mergeSourceRef: mergeSourceRef,
     enabled: Boolean(doc) && !loading,
   });
-
-  const loadDoc = useCallback(async (targetPath: string, gen: number) => {
-    setLoading(true);
-    setError(null);
-    setSaveError(null);
-    try {
-      const d = await getDoc(targetPath);
-      if (gen !== loadGenRef.current) return;
-      setDoc(d);
-      setBody(d.body);
-      setSavedBody(d.body);
-      setSelection({ start: d.body.length, end: d.body.length });
-      setLoadedPath(targetPath);
-      setMergeEditing(false);
-      userEditedRef.current = false;
-      setPreviewRemountKey((k) => k + 1);
-    } catch (e) {
-      if (gen !== loadGenRef.current) return;
-      setDoc(null);
-      setBody("");
-      setSavedBody("");
-      setError(e instanceof Error ? e.message : "加载失败");
-    } finally {
-      if (gen === loadGenRef.current) setLoading(false);
-    }
-  }, []);
 
   useEffect(() => {
     const gen = ++loadGenRef.current;
@@ -214,8 +203,8 @@ export function DocViewer({
     setBody(savedBody);
     setSelection({ start: savedBody.length, end: savedBody.length });
     setSaveError(null);
-    setPreviewRemountKey((k) => k + 1);
-  }, [savedBody]);
+    bumpPreviewRemount();
+  }, [bumpPreviewRemount, savedBody]);
 
   const completePendingNavigation = useCallback(() => {
     const pending = pendingNavRef.current;
