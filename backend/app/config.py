@@ -59,6 +59,9 @@ class Settings(BaseSettings):
     edit_doc_require_read: bool = True
     reindex_full_threshold: int = 4000
 
+    conversation_chunk_chars: int = 1000
+    conversation_chunk_overlap_chars: int = 150
+
 
 def get_settings() -> "Settings":
     return Settings()
