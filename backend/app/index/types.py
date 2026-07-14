@@ -7,3 +7,8 @@ class Hit:
     chunk: str
     score: float
     source: str
+    # 会话消息级命中（ConversationFTS 桥接）才会填充；KB 命中保持 None。
+    message_id: str | None = None
+    start_char: int | None = None
+    end_char: int | None = None
+    offset_version: str | None = None

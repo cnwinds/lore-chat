@@ -65,6 +65,12 @@ def _source_key(source: dict) -> str:
     st = source.get("type")
     if st == "kb":
         return f"kb:{source.get('path')}"
+    if st == "conversation":
+        # 消息级命中需带 message_id + 字符区间，避免 1A 简单去重把不同片段吞掉
+        return (
+            f"conversation:{source.get('cid')}:{source.get('message_id')}:"
+            f"{source.get('start_char')}:{source.get('end_char')}"
+        )
     return f"{st}:{source.get('url')}"
 
 

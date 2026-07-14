@@ -386,9 +386,15 @@ class ToolRegistry:
 
     @staticmethod
     def _hit_source(h) -> dict:
-        # 会话来源（未归档会话的可检索兜底）标为 conversation，便于前端跳转
+        # 会话来源（未归档/已归档会话消息均可命中）标为 conversation，便于前端跳转
         if isinstance(h.source, str) and h.source.startswith("conv:"):
-            return {"type": "conversation", "cid": h.source[5:], "excerpt": h.chunk[:200]}
+            out: dict = {"type": "conversation", "cid": h.source[5:], "excerpt": h.chunk[:240]}
+            if h.message_id is not None:
+                out["message_id"] = h.message_id
+                out["start_char"] = h.start_char
+                out["end_char"] = h.end_char
+                out["offset_version"] = h.offset_version or "unicode-codepoint-v1"
+            return out
         return {"type": "kb", "path": h.source, "excerpt": h.chunk[:200]}
 
     def _read_doc(self, args: dict, *, conversation_id: str | None = None) -> dict:

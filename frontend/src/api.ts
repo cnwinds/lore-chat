@@ -63,7 +63,16 @@ export type SourceRef =
       title: string;
       snippet: string;
     }
-  | { type: "conversation"; cid: string; excerpt?: string };
+  | {
+      type: "conversation";
+      cid: string;
+      excerpt?: string;
+      /** 消息级命中（ConversationFTS 桥接）才有；旧的整段会话兜底命中没有 */
+      message_id?: string;
+      start_char?: number;
+      end_char?: number;
+      offset_version?: string;
+    };
 
 function toolQueryFromInput(input: unknown): string | undefined {
   if (!input || typeof input !== "object" || !("query" in input)) return undefined;
@@ -192,7 +201,7 @@ export function dedupeSources(sources: SourceRef[]): SourceRef[] {
       s.type === "kb"
         ? `kb:${s.path}`
         : s.type === "conversation"
-          ? `conv:${s.cid}`
+          ? `conversation:${s.cid}:${s.message_id}:${s.start_char}:${s.end_char}`
           : `${s.type}:${s.url}`;
     if (!seen.has(key)) {
       seen.add(key);

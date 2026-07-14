@@ -57,12 +57,14 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
     indexer = Indexer(
         vector, fulltext, llm, reindex_full_threshold=settings.reindex_full_threshold
     )
+    conversation_fts = ConversationFTS(index_dir / "conversation_fts.db")
     retriever = Retriever(
         vector,
         fulltext,
         llm,
         excluded_prefixes=(system_layer.prefix,),
         min_score=settings.min_vector_score,
+        conversation_fts=conversation_fts,
     )
     pending = PendingStore(settings.kb_path / ".kb" / "pending.json")
     merge_sessions = MergeSessionStore(
@@ -71,7 +73,6 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
     conversations = ConversationStore(
         settings.kb_path / ".kb" / "conversations"
     )
-    conversation_fts = ConversationFTS(index_dir / "conversation_fts.db")
     derivation_worker = DerivationWorker(
         conversations,
         conversation_fts,

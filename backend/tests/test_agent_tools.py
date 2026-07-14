@@ -8,20 +8,22 @@ from app.engine.pending import PendingStore
 from app.engine.retriever import Retriever
 from app.engine.web.fetcher import WebFetcher
 from app.engine.web.search import WebSearch
+from app.index.conversation_fts import ConversationFTS
 from app.index.fulltext import FullTextIndex
 from app.index.indexer import Indexer
+from app.index.message_chunk import MessageChunk
 from app.index.vector import VectorIndex
 from app.models.llm import FakeLLMClient
 from app.storage.repo import KnowledgeRepo
 
 
-def _make_registry(tmp_path, chat_responses=None, **settings_kw):
+def _make_registry(tmp_path, chat_responses=None, conversation_fts=None, **settings_kw):
     repo = KnowledgeRepo(tmp_path / "knowledge")
     vi = VectorIndex(tmp_path / "vec")
     fi = FullTextIndex(tmp_path / "fts.db")
     llm = FakeLLMClient(chat_responses=chat_responses or [], embed_dim=8)
     idx = Indexer(vi, fi, llm)
-    retr = Retriever(vi, fi, llm)
+    retr = Retriever(vi, fi, llm, conversation_fts=conversation_fts)
     pending = PendingStore(tmp_path / "knowledge" / ".kb" / "pending.json")
     settings = Settings(kb_path=tmp_path / "knowledge", **settings_kw)
     org = Organizer(repo=repo, retriever=retr, indexer=idx, pending=pending, llm=llm)
@@ -65,6 +67,30 @@ async def test_search_kb_tool(tmp_path):
     assert result["sources"][0]["type"] == "kb"
     assert result["sources"][0]["path"] == "技术/docker/常用命令.md"
     assert "excerpt" in result["sources"][0]
+
+
+@pytest.mark.asyncio
+async def test_search_kb_returns_conversation_source_with_message_fields(tmp_path):
+    cfts = ConversationFTS(tmp_path / "conversation_fts.db")
+    cfts.upsert_message_chunks(
+        conversation_id="c1",
+        message_id="m1",
+        role="user",
+        ts="2026-07-14T10:00:00",
+        conversation_title="测试会话",
+        chunks=[MessageChunk(0, 0, 4, "漫剧工具")],
+    )
+    registry, _repo, _idx = _make_registry(tmp_path, conversation_fts=cfts)
+    result = await registry.execute("search_kb", {"query": "漫剧工具", "k": 5})
+    conv_sources = [s for s in result["sources"] if s["type"] == "conversation"]
+    assert conv_sources, result["sources"]
+    src = conv_sources[0]
+    assert src["cid"] == "c1"
+    assert src["message_id"] == "m1"
+    assert src["start_char"] == 0
+    assert src["end_char"] == 4
+    assert src["offset_version"] == "unicode-codepoint-v1"
+    assert "excerpt" in src
 
 
 @pytest.mark.asyncio

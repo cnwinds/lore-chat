@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from app.index.conversation_fts import ConversationFTS
 from app.index.vector import VectorIndex
 from app.index.fulltext import FullTextIndex
 from app.index.types import Hit
@@ -30,6 +31,7 @@ class Retriever:
         *,
         excluded_prefixes: tuple[str, ...] = (),
         min_score: float = MIN_VECTOR_SCORE,
+        conversation_fts: ConversationFTS | None = None,
     ):
         self.vector = vector
         self.fulltext = fulltext
@@ -37,10 +39,25 @@ class Retriever:
         # 命中来源以这些前缀开头的结果直接剔除（如系统控制层「系统/」，不参与检索）
         self.excluded_prefixes = tuple(excluded_prefixes)
         self.min_score = min_score
+        # 可选：消息级会话 FTS 桥接（1A 无需可省略，未归档/已归档会话消息均可命中）
+        self.conversation_fts = conversation_fts
 
     def _excluded(self, source: str) -> bool:
         norm = (source or "").replace("\\", "/").lstrip("/")
         return any(norm.startswith(p) for p in self.excluded_prefixes)
+
+    @staticmethod
+    def _conversation_hit(ch) -> Hit:
+        return Hit(
+            doc_id=ch.chunk_id,
+            chunk=ch.text,
+            score=ch.score,
+            source=f"conv:{ch.conversation_id}",
+            message_id=ch.message_id,
+            start_char=ch.start_char,
+            end_char=ch.end_char,
+            offset_version=ch.offset_version,
+        )
 
     def search(self, query: str, k: int = 5) -> list[Hit]:
         ft_hits = self.fulltext.query(query, k=k)
@@ -62,7 +79,21 @@ class Retriever:
             cur = best.get(h.doc_id)
             if cur is None or h.score > cur.score:
                 best[h.doc_id] = h
-        merged = sorted(best.values(), key=lambda h: h.score, reverse=True)
+        kb_hits = list(best.values())
+
+        conv_hits: list[Hit] = []
+        if self.conversation_fts is not None:
+            try:
+                conv_hits = [
+                    self._conversation_hit(ch)
+                    for ch in self.conversation_fts.query(query, k=k)
+                ]
+            except Exception:
+                get_logger("retriever").warning("会话消息检索失败", exc_info=True)
+                conv_hits = []
+
+        # 1A：不做 RRF/cursor，KB 结果与会话消息结果按 score 简单合并排序截断。
+        merged = sorted(kb_hits + conv_hits, key=lambda h: h.score, reverse=True)
         return merged[:k]
 
     def answer(self, query: str, k: int = 5) -> Answer:
