@@ -94,6 +94,16 @@ def test_delete_missing_conversation_raises_keyerror(tmp_path):
         store.delete("does-not-exist")
 
 
+def test_delete_missing_conversation_does_not_write_ledger(tmp_path):
+    store = _store(tmp_path)
+    ledger_path = tmp_path / ".kb" / "migrations" / "conversation-deletions.jsonl"
+
+    with pytest.raises(KeyError):
+        store.delete("does-not-exist")
+
+    assert not ledger_path.exists()
+
+
 def test_delete_appends_ledger_entry_per_conversation(tmp_path):
     store = _store(tmp_path)
     cid1 = store.create()

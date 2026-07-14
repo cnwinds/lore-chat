@@ -375,13 +375,18 @@ class ConversationStore:
     ) -> None:
         """删除会话事务顺序（spec §16）：
 
-        1. 先追加并 fsync 删除凭据（跨版本 JSONL ledger）——即使后续步骤崩溃，
-           回填/审计也能从 ledger 得知该会话已被判定删除。
+        0. 先校验会话存在，缺失的 cid 直接抛出 KeyError，不写入任何凭据——
+           避免为不存在的会话产生幽灵 ledger 记录。
+        1. 存在性确认后，追加并 fsync 删除凭据（跨版本 JSONL ledger）——即使后续
+           步骤崩溃，回填/审计也能从 ledger 得知该会话已被判定删除。
         2. 在同一 SQLite 事务内取消该会话尚未完成的 outbox 派生任务。
         3. 删除消息/turns/摘要关系/会话行本身。
         4. 通知 `ConversationFTS` 清理消息级 FTS（`conversation_chunks_v2`）。
         5. 通知旧版文档级 `Indexer` 清理遗留的 `conv:{cid}` FTS 记录。
         """
+        with self._lock:
+            self._conversation_row(cid)
+
         deletion_id = _new_id()
         deleted_at = _now()
         options = {"delete_summary": delete_summary}
