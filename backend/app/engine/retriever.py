@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import base64
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
+from app.engine.provenance import conversation_ids_from_meta, group_provenance, merge_adjacent_conversation_hits
 from app.engine.rrf import reciprocal_rank_fusion
 from app.index.conversation_fts import ConversationFTS
 from app.index.conversation_vector import ConversationVector
@@ -27,6 +28,7 @@ class SearchPage:
     next_cursor: str | None
     index_revision: int
     cursor_expired: bool = False
+    provenance_groups: list[dict] = field(default_factory=list)
 
 
 @dataclass
@@ -60,6 +62,7 @@ class Retriever:
         index_revision: IndexRevision | None = None,
         rrf_k: int = 60,
         lane_candidate_k: int = 20,
+        repo=None,
     ):
         self.vector = vector
         self.fulltext = fulltext
@@ -71,6 +74,7 @@ class Retriever:
         self.index_revision = index_revision
         self.rrf_k = rrf_k
         self.lane_candidate_k = lane_candidate_k
+        self.repo = repo
 
     def _excluded(self, source: str) -> bool:
         norm = (source or "").replace("\\", "/").lstrip("/")
@@ -147,6 +151,7 @@ class Retriever:
                 q_emb, k=lane_k, conversation_id=conversation_id
             )
             hits = [self._conversation_hit(ch) for ch in raw]
+            hits = [h for h in hits if h.score >= self.min_score]
         except Exception:
             get_logger("retriever").warning("会话向量检索失败", exc_info=True)
             return [], {}
@@ -221,6 +226,23 @@ class Retriever:
         fused = reciprocal_rank_fusion(lanes, k=self.rrf_k)
         page_ids = [doc_id for doc_id, _ in fused[offset : offset + k]]
         page_hits = [hit_map[doc_id] for doc_id in page_ids if doc_id in hit_map]
+        page_hits = merge_adjacent_conversation_hits(page_hits)
+
+        doc_conversation_ids: dict[str, list[str]] = {}
+        if self.repo:
+            for h in page_hits:
+                if h.source.startswith("conv:"):
+                    continue
+                if h.source in doc_conversation_ids:
+                    continue
+                try:
+                    doc = self.repo.read_doc(h.source)
+                    ids = conversation_ids_from_meta(doc.meta)
+                    if ids:
+                        doc_conversation_ids[h.source] = ids
+                except FileNotFoundError:
+                    pass
+        provenance_groups = group_provenance(page_hits, doc_conversation_ids=doc_conversation_ids)
 
         next_offset = offset + k
         has_more = next_offset < len(fused)
@@ -233,6 +255,7 @@ class Retriever:
             has_more=has_more,
             next_cursor=next_cursor,
             index_revision=rev,
+            provenance_groups=provenance_groups,
         )
 
     def answer(self, query: str, k: int = 5) -> Answer:

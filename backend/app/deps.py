@@ -75,6 +75,7 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
         index_revision=index_revision,
         rrf_k=settings.rrf_k,
         lane_candidate_k=settings.lane_candidate_k,
+        repo=repo,
     )
     pending = PendingStore(settings.kb_path / ".kb" / "pending.json")
     merge_sessions = MergeSessionStore(

@@ -439,6 +439,8 @@ class ToolRegistry:
             out["next_cursor"] = page.next_cursor
         if page.cursor_expired:
             out["cursor_expired"] = True
+        if page.provenance_groups:
+            out["provenance_groups"] = page.provenance_groups
         return out
 
     @staticmethod
