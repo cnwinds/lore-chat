@@ -82,11 +82,18 @@ class AgentOrchestrator:
         web_enabled: bool = False,
     ) -> AsyncIterator[str]:
         start = time.monotonic()
-        system_layer_text = self.system_layer.compose() if self.system_layer else ""
+        system_layer_text = (
+            self.system_layer.compose_rules() if self.system_layer else ""
+        )
+        user_memory = (
+            self.system_layer.memory_context() if self.system_layer else ""
+        )
         messages: list[dict] = [
             {
                 "role": "system",
-                "content": build_system_prompt(mode, system_layer_text, web_enabled),
+                "content": build_system_prompt(
+                    mode, system_layer_text, web_enabled, user_memory
+                ),
             },
         ]
         paths = list(active_doc_paths or [])

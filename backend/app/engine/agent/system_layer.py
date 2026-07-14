@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from app.engine.memory.constants import MEMORY_DOC_REL
 from app.storage.repo import KnowledgeRepo
 
 _PRECEPTS_BODY = """# 戒律 · 行为规约
@@ -96,11 +97,15 @@ class SystemLayer:
         dir_name: str = "系统",
         precepts_filename: str = "戒律.md",
         soul_filename: str = "心法.md",
+        memory_rel: str = MEMORY_DOC_REL,
+        memory_service=None,
     ) -> None:
         self.repo = repo
         self.dir_name = dir_name.strip("/")
         self.precepts_rel = f"{self.dir_name}/{precepts_filename}"
         self.soul_rel = f"{self.dir_name}/{soul_filename}"
+        self.memory_rel = memory_rel
+        self.memory_service = memory_service
         self._cache: dict[str, tuple[float, str]] = {}
         self.ensure_seeded()
 
@@ -150,5 +155,37 @@ class SystemLayer:
 
     def compose(self) -> str:
         """拼出注入用文本：心法（处世哲学）在前，戒律（硬规约）在后。"""
+        return self.compose_rules()
+
+    def compose_rules(self) -> str:
         parts = [t for t in (self._body(self.soul_rel), self._body(self.precepts_rel)) if t]
         return "\n\n".join(parts)
+
+    def memory_context(self) -> str:
+        if not self.memory_service:
+            return ""
+        if not self.memory_service.store.list_confirmed():
+            return ""
+        from app.engine.memory.renderer import MemoryRenderer
+
+        renderer = MemoryRenderer(self.repo, memory_rel=self.memory_rel)
+        try:
+            doc = self.repo.read_doc(self.memory_rel)
+            abs_p = self.repo.abs_path(self.memory_rel)
+            state = self.memory_service.store.get_render_state()
+            if abs_p.exists() and state.get("file_mtime") != abs_p.stat().st_mtime:
+                parsed = renderer.parse(doc.body)
+                if parsed["valid"]:
+                    self.memory_service.import_manual_document(doc.meta, doc.body)
+                    doc = self.repo.read_doc(self.memory_rel)
+            body = doc.body.strip()
+            parsed = renderer.parse(body)
+            if not parsed["valid"]:
+                snap = state.get("valid_snapshot_body")
+                return (snap or "").strip()
+            if not parsed["items"]:
+                return ""
+            return body
+        except FileNotFoundError:
+            renderer.ensure_seed()
+            return ""
