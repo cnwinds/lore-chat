@@ -164,9 +164,20 @@ class ConversationStore:
         if legacy_single.exists():
             self._migrate_legacy_single_file(legacy_single)
 
+        if (self.dir / "index.json").exists() and not self._json_shards_migrated():
+            from .conversation_migrate import migrate_json_shards
+
+            migrate_json_shards(self.dir)
+
     # ------------------------------------------------------------------
     # 内部辅助
     # ------------------------------------------------------------------
+
+    def _json_shards_migrated(self) -> bool:
+        row = self.conn.execute(
+            "SELECT value FROM migration_meta WHERE key = 'json_shards_v1'"
+        ).fetchone()
+        return row is not None
 
     def _next_seq(self, cid: str) -> int:
         row = self.conn.execute(
