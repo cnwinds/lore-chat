@@ -2,14 +2,18 @@ from __future__ import annotations
 
 import asyncio
 
-from app.engine.conversation_context import read_conversation_context
+from app.engine.memory.constants import MEMORY_DOC_REL
 from app.engine.conversations import ConversationStore
 from app.engine.disclosure import disclose, disclosure_summary
 from app.engine.patch import Edit, Insert, apply_edits, apply_insert
 
-READ_ONLY_TOOLS = frozenset({"search_kb", "read_doc", "read_conversation_context", "fetch_url", "web_search"})
+READ_ONLY_TOOLS = frozenset({
+    "search_kb", "read_doc", "read_conversation_context", "fetch_url", "web_search",
+    "recall_memory",
+})
 WRITE_TOOLS = frozenset({
     "write_kb", "delete_kb", "ask_user", "summarize_conversation", "edit_doc",
+    "manage_memory",
 })
 
 _DEFAULT_DISCLOSURE_CHARS = 3000
@@ -30,6 +34,8 @@ TOOL_LABELS = {
     "delete_kb": "删除知识库内容",
     "ask_user": "征询用户",
     "edit_doc": "局部编辑文档",
+    "manage_memory": "管理长期用户记忆",
+    "recall_memory": "回忆已确认的用户画像",
 }
 
 TOOL_DEFINITIONS: list[dict] = [
@@ -256,6 +262,47 @@ TOOL_DEFINITIONS: list[dict] = [
     {
         "type": "function",
         "function": {
+            "name": "manage_memory",
+            "description": "记住、更正或遗忘关于用户自身的长期画像事实（不是话题知识）",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["remember", "correct", "forget"],
+                    },
+                    "statement": {"type": "string", "description": "要记住/定位的事实描述"},
+                    "fact_id": {"type": "string", "description": "correct/forget 时优先使用"},
+                    "replacement": {"type": "string", "description": "correct 时的新内容"},
+                    "clear_tombstone": {
+                        "type": "boolean",
+                        "description": "重新记住已遗忘事实时设为 true",
+                        "default": False,
+                    },
+                },
+                "required": ["action", "statement"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "recall_memory",
+            "description": "查询已确认的用户长期记忆画像，可选返回来源解释",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "检索关键词或自然语言问题"},
+                    "include_sources": {"type": "boolean", "default": False},
+                    "limit": {"type": "integer", "default": 10},
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "ask_user",
             "description": "向用户提出选择题，等待用户确认后再继续",
             "parameters": {
@@ -308,6 +355,7 @@ def select_tools(mode: str, web_enabled: bool) -> list[dict]:
         excluded.add("web_search")
     if mode == _MODE_NO_WRITE:
         excluded.add("write_kb")
+        excluded.add("manage_memory")
     return [d for d in TOOL_DEFINITIONS if d["function"]["name"] not in excluded]
 
 
@@ -328,6 +376,7 @@ class ToolRegistry:
         edit_doc_max_patch_chars: int = 8192,
         edit_doc_require_read: bool = True,
         conversation_context_max_chars: int = 12000,
+        memory_service=None,
     ):
         self.retriever = retriever
         self.repo = repo
@@ -343,6 +392,7 @@ class ToolRegistry:
         self.edit_doc_max_patch_chars = edit_doc_max_patch_chars
         self.edit_doc_require_read = edit_doc_require_read
         self.conversation_context_max_chars = conversation_context_max_chars
+        self.memory_service = memory_service
         self._read_guard: dict[str, set[str]] = {}
         self._fetch_cache: dict[str, object] = {}
 
@@ -383,6 +433,12 @@ class ToolRegistry:
             return await asyncio.to_thread(self._delete_kb, args)
         if name == "ask_user":
             return self._ask_user(args)
+        if name == "manage_memory":
+            return await asyncio.to_thread(
+                self._manage_memory, args, conversation_id=conversation_id
+            )
+        if name == "recall_memory":
+            return await asyncio.to_thread(self._recall_memory, args)
         return {"summary": f"未知工具：{name}", "sources": [], "error": f"unknown tool: {name}"}
 
     def _mark_read(self, conversation_id: str | None, path: str) -> None:
@@ -732,6 +788,11 @@ class ToolRegistry:
                 out["suggestion"] = err.suggestion
             return out
 
+        if path.replace("\\", "/") == MEMORY_DOC_REL and self.memory_service:
+            out = self._finalize_memory_edit(path, doc, result)
+            self._mark_read(conversation_id, path)
+            return out
+
         self.repo.write_doc(
             path, doc.meta, result.body, commit_msg=f"edit: {path}"
         )
@@ -756,6 +817,78 @@ class ToolRegistry:
             "applied": result.applied,
             "preview": result.preview,
             "reindex_mode": reindex_mode,
+        }
+
+    def _finalize_memory_edit(self, path: str, doc, result) -> dict:
+        sync = self.memory_service.import_manual_document(doc.meta, result.body)
+        if not sync.get("ok"):
+            return {
+                "summary": sync.get("message", "记忆同步失败"),
+                "sources": [{"type": "kb", "path": path}],
+                "status": "failed",
+                "error": sync.get("error"),
+            }
+        self.repo.write_doc(
+            path, doc.meta, result.body, commit_msg=f"edit memory: {path}"
+        )
+        if self.indexer is not None:
+            try:
+                self.indexer.remove_doc(path)
+            except Exception:
+                pass
+        return {
+            "summary": f"已更新 {path} 并同步记忆库",
+            "sources": [{"type": "kb", "path": path}],
+            "status": "saved",
+            "reindex_mode": "skipped_memory",
+        }
+
+    def _manage_memory(self, args: dict, *, conversation_id: str | None = None) -> dict:
+        if not self.memory_service:
+            return {"summary": "记忆服务未配置", "sources": [], "ok": False, "error": "not_configured"}
+        action = args.get("action")
+        statement = args.get("statement", "")
+        if action == "remember":
+            out = self.memory_service.remember(statement, origin="explicit_remember")
+            if out.get("ok"):
+                self.memory_service.render_to_file()
+            return {
+                "summary": out.get("message", ""),
+                "sources": [{"type": "kb", "path": MEMORY_DOC_REL}],
+                **out,
+            }
+        if action == "forget":
+            out = self.memory_service.forget(fact_id=args.get("fact_id"), statement=statement)
+            if out.get("ok"):
+                self.memory_service.render_to_file()
+            return {"summary": out.get("message", ""), "sources": [], **out}
+        if action == "correct":
+            out = self.memory_service.correct(
+                fact_id=args.get("fact_id"),
+                statement=statement,
+                replacement=args.get("replacement", ""),
+            )
+            if out.get("ok"):
+                self.memory_service.render_to_file()
+            return {
+                "summary": out.get("message", ""),
+                "sources": [{"type": "kb", "path": MEMORY_DOC_REL}],
+                **out,
+            }
+        return {"summary": f"未知 action: {action}", "sources": [], "ok": False, "error": "invalid_action"}
+
+    def _recall_memory(self, args: dict) -> dict:
+        if not self.memory_service:
+            return {"summary": "记忆服务未配置", "sources": [], "facts": [], "count": 0}
+        out = self.memory_service.recall(
+            args.get("query", ""),
+            include_sources=bool(args.get("include_sources", False)),
+            limit=int(args.get("limit", 10)),
+        )
+        return {
+            "summary": f"找到 {out['count']} 条已确认记忆",
+            "sources": [],
+            **out,
         }
 
     def _ask_user(self, args: dict) -> dict:
