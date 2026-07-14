@@ -360,6 +360,71 @@ class MemoryStore:
             )
             conn.commit()
 
+    def mark_superseded(self, fact_id: str, *, supersedes_id: str | None = None) -> None:
+        now = _now()
+        with self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE memory_facts SET status = 'superseded', supersedes_id = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (supersedes_id, now, fact_id),
+            )
+            conn.commit()
+
+    def count_evidence(self, fact_id: str) -> int:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) AS n FROM memory_evidence WHERE fact_id = ?",
+                (fact_id,),
+            ).fetchone()
+            return int(row["n"]) if row else 0
+
+    def count_distinct_conversation_evidence(self, fact_id: str) -> int:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT COUNT(DISTINCT conversation_id) AS n
+                FROM memory_evidence WHERE fact_id = ?
+                """,
+                (fact_id,),
+            ).fetchone()
+            return int(row["n"]) if row else 0
+
+    def find_confirmed_by_slot(self, slot_key: str) -> list[dict]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM memory_facts
+                WHERE owner_key = ? AND slot_key = ? AND status = 'confirmed'
+                """,
+                (self.owner_key, slot_key),
+            ).fetchall()
+            return [_row_to_fact(r) for r in rows]
+
+    def find_by_slot_and_hash(self, slot_key: str, normalized_value_hash: str) -> dict | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT * FROM memory_facts
+                WHERE owner_key = ? AND slot_key = ? AND normalized_value_hash = ?
+                """,
+                (self.owner_key, slot_key, normalized_value_hash),
+            ).fetchone()
+            return _row_to_fact(row) if row else None
+
+    def list_candidates(self) -> list[dict]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM memory_facts
+                WHERE owner_key = ? AND status = 'candidate'
+                ORDER BY updated_at DESC
+                """,
+                (self.owner_key,),
+            ).fetchall()
+            return [_row_to_fact(r) for r in rows]
+
     def search_confirmed(self, query: str, *, limit: int = 10) -> list[dict]:
         q = (query or "").strip().lower()
         facts = self.list_confirmed()
