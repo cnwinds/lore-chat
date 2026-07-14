@@ -720,8 +720,11 @@ async def summarize_conversation(cid: str, request: Request):
 
 @router.delete("/conversations/{cid}")
 async def delete_conversation(cid: str, request: Request):
+    c = _c(request)
     try:
-        _c(request).conversations.delete(cid)
+        c.conversations.delete(
+            cid, conversation_fts=c.conversation_fts, indexer=c.indexer
+        )
     except KeyError as e:
         raise HTTPException(404, "对话不存在") from e
     return {"ok": True}

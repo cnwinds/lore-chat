@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import threading
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Protocol
 
 MAX_OUTBOX_ATTEMPTS = 5
 
@@ -39,6 +41,14 @@ def _dumps(value) -> str | None:
     if value is None:
         return None
     return json.dumps(value, ensure_ascii=False)
+
+
+class _ConversationFTSLike(Protocol):
+    def delete_conversation(self, conversation_id: str) -> None: ...
+
+
+class _IndexerLike(Protocol):
+    def remove_conversation(self, cid: str) -> None: ...
 
 
 class TurnInProgress(Exception):
@@ -334,26 +344,87 @@ class ConversationStore:
                 )
         return sorted(items, key=lambda c: c["updated_at"], reverse=True)
 
-    def delete(self, cid: str) -> None:
+    def _default_deletion_ledger_path(self) -> Path:
+        return self.dir.parent / "migrations" / "conversation-deletions.jsonl"
+
+    @staticmethod
+    def _append_deletion_ledger(
+        path: Path, cid: str, deletion_id: str, deleted_at: str, options: dict
+    ) -> None:
+        """跨版本留存的删除凭据：追加 JSONL 行并 fsync，供历史回填/审计恢复使用。"""
+        path.parent.mkdir(parents=True, exist_ok=True)
+        entry = {
+            "conversation_id": cid,
+            "deletion_id": deletion_id,
+            "deleted_at": deleted_at,
+            "options": options,
+        }
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+            f.flush()
+            os.fsync(f.fileno())
+
+    def delete(
+        self,
+        cid: str,
+        *,
+        conversation_fts: "_ConversationFTSLike | None" = None,
+        indexer: "_IndexerLike | None" = None,
+        ledger_path: str | Path | None = None,
+        delete_summary: bool = True,
+    ) -> None:
+        """删除会话事务顺序（spec §16）：
+
+        1. 先追加并 fsync 删除凭据（跨版本 JSONL ledger）——即使后续步骤崩溃，
+           回填/审计也能从 ledger 得知该会话已被判定删除。
+        2. 在同一 SQLite 事务内取消该会话尚未完成的 outbox 派生任务。
+        3. 删除消息/turns/摘要关系/会话行本身。
+        4. 通知 `ConversationFTS` 清理消息级 FTS（`conversation_chunks_v2`）。
+        5. 通知旧版文档级 `Indexer` 清理遗留的 `conv:{cid}` FTS 记录。
+        """
+        deletion_id = _new_id()
+        deleted_at = _now()
+        options = {"delete_summary": delete_summary}
+        ledger_file = Path(ledger_path) if ledger_path else self._default_deletion_ledger_path()
+        self._append_deletion_ledger(ledger_file, cid, deletion_id, deleted_at, options)
+
         with self._lock:
             self._conversation_row(cid)
             self.conn.execute(
                 """
-                DELETE FROM derivation_outbox WHERE turn_id IN (
-                    SELECT id FROM turns WHERE conversation_id = ?
-                ) OR source_message_id IN (
-                    SELECT id FROM messages WHERE conversation_id = ?
-                )
+                INSERT INTO conversation_deletion_ledger(
+                    conversation_id, deletion_id, deleted_at, options_json
+                ) VALUES (?, ?, ?, ?)
                 """,
-                (cid, cid),
+                (cid, deletion_id, deleted_at, _dumps(options)),
+            )
+            self.conn.execute(
+                """
+                UPDATE derivation_outbox
+                SET status = 'cancelled', updated_at = ?
+                WHERE status IN ('pending', 'running')
+                  AND (
+                        turn_id IN (SELECT id FROM turns WHERE conversation_id = ?)
+                        OR source_message_id IN (
+                            SELECT id FROM messages WHERE conversation_id = ?
+                        )
+                  )
+                """,
+                (deleted_at, cid, cid),
             )
             self.conn.execute("DELETE FROM turns WHERE conversation_id = ?", (cid,))
-            self.conn.execute(
-                "DELETE FROM conversation_summaries WHERE conversation_id = ?", (cid,)
-            )
+            if delete_summary:
+                self.conn.execute(
+                    "DELETE FROM conversation_summaries WHERE conversation_id = ?", (cid,)
+                )
             self.conn.execute("DELETE FROM messages WHERE conversation_id = ?", (cid,))
             self.conn.execute("DELETE FROM conversations WHERE id = ?", (cid,))
             self.conn.commit()
+
+        if conversation_fts is not None:
+            conversation_fts.delete_conversation(cid)
+        if indexer is not None:
+            indexer.remove_conversation(cid)
 
     # ------------------------------------------------------------------
     # Turn-based 持久化
