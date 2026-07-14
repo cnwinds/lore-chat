@@ -587,6 +587,26 @@ export async function getConversation(id: string) {
   return apiFetch<Conversation>(`/api/conversations/${encodeURIComponent(id)}`);
 }
 
+export type ConversationSystemEvent = {
+  id: string;
+  event_type: string;
+  payload: Record<string, unknown>;
+  created_at: string;
+};
+
+export async function getConversationEvents(
+  conversationId: string,
+  options?: { afterEventId?: string | null; limit?: number },
+) {
+  const params = new URLSearchParams();
+  if (options?.afterEventId) params.set("after_event_id", options.afterEventId);
+  if (options?.limit !== undefined) params.set("limit", String(options.limit));
+  const qs = params.toString();
+  return apiFetch<{ events: ConversationSystemEvent[] }>(
+    `/api/conversations/${encodeURIComponent(conversationId)}/events${qs ? `?${qs}` : ""}`,
+  );
+}
+
 export async function appendConversationMessages(
   id: string,
   messages: ChatMessage[],

@@ -1343,6 +1343,35 @@ a:hover {
   margin-bottom: 0;
 }
 
+.chat-memory-notice {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 8px 16px 0;
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--system-layer-soft);
+  color: var(--system-layer);
+  font-size: var(--text-xs);
+  line-height: 1.4;
+}
+
+.chat-memory-notice-dismiss {
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 2px;
+  opacity: 0.7;
+}
+
+.chat-memory-notice-dismiss:hover {
+  opacity: 1;
+}
+
 .chat-user-doc-chip {
   display: inline-flex;
   align-items: center;

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useChatConversation } from "../hooks/chat/useChatConversation";
 import { useChatScroll } from "../hooks/chat/useChatScroll";
 import { useAgentStream } from "../hooks/chat/useAgentStream";
+import { useConversationMemoryEvents } from "../hooks/chat/useConversationMemoryEvents";
 import type { JumpTarget } from "../hooks/chat/useConversationJump";
 import {
   uploadFile,
@@ -111,6 +112,8 @@ export function Chat({
     [msgs, loadingHistory, streaming],
     stickToBottomRef,
   );
+  const { notice: memoryNotice, dismissNotice: dismissMemoryNotice } =
+    useConversationMemoryEvents(conversationId);
 
   useEffect(() => {
     conversationIdRef.current = conversationId;
@@ -313,6 +316,19 @@ export function Chat({
 
   return (
     <div className="chat-panel">
+      {memoryNotice && (
+        <div className="chat-memory-notice" role="status">
+          <span>{memoryNotice.label}</span>
+          <button
+            type="button"
+            className="chat-memory-notice-dismiss"
+            onClick={dismissMemoryNotice}
+            aria-label="关闭"
+          >
+            ×
+          </button>
+        </div>
+      )}
       <ChatMessageList
         msgs={msgs}
         loadingHistory={loadingHistory}
