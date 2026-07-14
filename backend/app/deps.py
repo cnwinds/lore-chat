@@ -17,6 +17,8 @@ from app.engine.merge_sessions import MergeSessionStore
 from app.engine.conversations import ConversationStore
 from app.engine.derivation_worker import DerivationWorker
 from app.engine.memory_worker import MemoryWorker
+from app.engine.memory_maintenance import MemoryMaintenanceJob
+from app.engine.memory.decay import DecayConfig
 from app.engine.organizer import Organizer
 from app.engine.agent.orchestrator import AgentOrchestrator
 from app.engine.agent.system_layer import SystemLayer
@@ -44,6 +46,7 @@ class Container:
     index_revision: IndexRevision
     derivation_worker: DerivationWorker
     memory_worker: MemoryWorker
+    memory_maintenance: MemoryMaintenanceJob
     organizer: Organizer
     agent: AgentOrchestrator
     system_layer: SystemLayer
@@ -110,6 +113,14 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
         overlap=settings.conversation_chunk_overlap_chars,
     )
     memory_worker = MemoryWorker(conversations, memory_service)
+    decay_config = DecayConfig(
+        stale_days_goal_project=settings.memory_decay_stale_days,
+        decay_days_inferred=settings.memory_decay_inferred_days,
+        decay_days_candidate=settings.memory_decay_candidate_days,
+    )
+    memory_maintenance = MemoryMaintenanceJob(
+        memory_store, conversations, config=decay_config
+    )
     organizer = Organizer(
         repo=repo,
         retriever=retriever,
@@ -157,6 +168,7 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
         index_revision=index_revision,
         derivation_worker=derivation_worker,
         memory_worker=memory_worker,
+        memory_maintenance=memory_maintenance,
         organizer=organizer,
         agent=agent,
         system_layer=system_layer,

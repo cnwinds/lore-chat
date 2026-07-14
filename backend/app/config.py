@@ -67,6 +67,11 @@ class Settings(BaseSettings):
     rrf_k: int = 60
     lane_candidate_k: int = 20
 
+    memory_decay_stale_days: int = 90
+    memory_decay_inferred_days: int = 180
+    memory_decay_candidate_days: int = 180
+    memory_maintenance_interval_hours: int = 24
+
 
 def get_settings() -> "Settings":
     return Settings()

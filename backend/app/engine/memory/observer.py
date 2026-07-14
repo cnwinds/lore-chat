@@ -106,6 +106,17 @@ class MemoryObserver:
             )
         elif existing and existing["status"] == "confirmed":
             fact = existing
+        elif existing and existing["status"] == "stale":
+            fact = self.store.upsert_fact(
+                slot_key=slot,
+                category=cand.category,
+                statement=cand.statement,
+                normalized_value_hash=vhash,
+                origin=existing.get("origin", cand.origin),
+                confidence=max(float(existing["confidence"]), cand.confidence),
+                sensitivity=sensitivity,
+                status="confirmed",
+            )
         else:
             fact = self.store.upsert_fact(
                 slot_key=slot,

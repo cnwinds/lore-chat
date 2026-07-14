@@ -17,6 +17,7 @@ from app.api.routes import router
 _PLACEHOLDER_API_KEYS = frozenset({"", "sk-none", "sk-your-key"})
 _DERIVATION_WORKER_INTERVAL_SECONDS = 0.5
 _DERIVATION_WORKER_BATCH_SIZE = 20
+_MEMORY_MAINTENANCE_INTERVAL_SECONDS = 24 * 3600
 
 
 def _under_pytest() -> bool:
@@ -39,6 +40,7 @@ def create_app(settings: Settings | None = None, llm: LLMClient | None = None) -
 
         stop_event = threading.Event()
         worker_thread: threading.Thread | None = None
+        maintenance_thread: threading.Thread | None = None
         if not _under_pytest():
             worker = app.state.container.derivation_worker
 
@@ -58,12 +60,31 @@ def create_app(settings: Settings | None = None, llm: LLMClient | None = None) -
             )
             worker_thread.start()
 
+            maintenance = app.state.container.memory_maintenance
+
+            def _run_memory_maintenance() -> None:
+                while not stop_event.is_set():
+                    try:
+                        maintenance.run()
+                    except Exception:
+                        logging.getLogger("uvicorn.error").exception(
+                            "memory maintenance 执行失败"
+                        )
+                    stop_event.wait(_MEMORY_MAINTENANCE_INTERVAL_SECONDS)
+
+            maintenance_thread = threading.Thread(
+                target=_run_memory_maintenance, name="memory-maintenance", daemon=True
+            )
+            maintenance_thread.start()
+
         try:
             yield
         finally:
             stop_event.set()
             if worker_thread is not None:
                 worker_thread.join(timeout=2)
+            if maintenance_thread is not None:
+                maintenance_thread.join(timeout=2)
 
     app = FastAPI(title="Lore Chat", lifespan=lifespan)
 
