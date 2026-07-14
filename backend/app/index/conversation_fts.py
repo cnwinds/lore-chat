@@ -105,6 +105,18 @@ class ConversationFTS:
             )
             self.conn.commit()
 
+    def covered_ranges(self, conversation_id: str, message_id: str) -> list[tuple[int, int]]:
+        """已入库的 (start_char, end_char) 区间，供回填任务判断某条消息是否已完整覆盖。"""
+        with self._lock:
+            rows = self.conn.execute(
+                """
+                SELECT start_char, end_char FROM conversation_chunks_v2
+                WHERE conversation_id = ? AND message_id = ?
+                """,
+                (conversation_id, message_id),
+            ).fetchall()
+        return [(int(r[0]), int(r[1])) for r in rows]
+
     def query(self, text: str, k: int = 5) -> list[ConversationHit]:
         text = text.strip()
         if not text:
