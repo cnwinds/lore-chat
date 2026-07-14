@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+import base64
+import json
 from dataclasses import dataclass
 
+from app.engine.rrf import reciprocal_rank_fusion
 from app.index.conversation_fts import ConversationFTS
+from app.index.conversation_vector import ConversationVector
+from app.index.revision import IndexRevision
 from app.index.vector import VectorIndex
 from app.index.fulltext import FullTextIndex
 from app.index.types import Hit
@@ -16,10 +21,29 @@ MIN_VECTOR_SCORE = 0.45
 
 
 @dataclass
+class SearchPage:
+    hits: list[Hit]
+    has_more: bool
+    next_cursor: str | None
+    index_revision: int
+    cursor_expired: bool = False
+
+
+@dataclass
 class Answer:
     text: str
     sources: list[str]
     attachments: list[str]
+
+
+def _make_cursor(query: str, filters: dict, rev: int, offset: int) -> str:
+    payload = {"q": query, "f": filters, "rev": rev, "off": offset}
+    raw = json.dumps(payload, sort_keys=True).encode()
+    return base64.urlsafe_b64encode(raw).decode()
+
+
+def _parse_cursor(cursor: str) -> dict:
+    return json.loads(base64.urlsafe_b64decode(cursor.encode()))
 
 
 class Retriever:
@@ -32,15 +56,21 @@ class Retriever:
         excluded_prefixes: tuple[str, ...] = (),
         min_score: float = MIN_VECTOR_SCORE,
         conversation_fts: ConversationFTS | None = None,
+        conversation_vector: ConversationVector | None = None,
+        index_revision: IndexRevision | None = None,
+        rrf_k: int = 60,
+        lane_candidate_k: int = 20,
     ):
         self.vector = vector
         self.fulltext = fulltext
         self.llm = llm
-        # 命中来源以这些前缀开头的结果直接剔除（如系统控制层「系统/」，不参与检索）
         self.excluded_prefixes = tuple(excluded_prefixes)
         self.min_score = min_score
-        # 可选：消息级会话 FTS 桥接（1A 无需可省略，未归档/已归档会话消息均可命中）
         self.conversation_fts = conversation_fts
+        self.conversation_vector = conversation_vector
+        self.index_revision = index_revision
+        self.rrf_k = rrf_k
+        self.lane_candidate_k = lane_candidate_k
 
     def _excluded(self, source: str) -> bool:
         norm = (source or "").replace("\\", "/").lstrip("/")
@@ -59,45 +89,155 @@ class Retriever:
             offset_version=ch.offset_version,
         )
 
-    def search(self, query: str, k: int = 5) -> list[Hit]:
-        ft_hits = self.fulltext.query(query, k=k)
-        vec_hits: list[Hit] = []
+    @staticmethod
+    def _dedup_hits(hits: list[Hit]) -> list[Hit]:
+        best: dict[str, Hit] = {}
+        for h in hits:
+            if h.doc_id in best and best[h.doc_id].score >= h.score:
+                continue
+            best[h.doc_id] = h
+        return list(best.values())
+
+    def _kb_fts_lane(self, query: str, lane_k: int) -> tuple[list[str], dict[str, Hit]]:
+        hits = [h for h in self.fulltext.query(query, k=lane_k) if not self._excluded(h.source)]
+        hits = self._dedup_hits(hits)
+        hits.sort(key=lambda h: h.score, reverse=True)
+        hit_map = {h.doc_id: h for h in hits}
+        return [h.doc_id for h in hits], hit_map
+
+    def _kb_vector_lane(self, query: str, lane_k: int) -> tuple[list[str], dict[str, Hit]]:
         try:
             q_emb = self.llm.embed([query])[0]
-            vec_hits = [
-                h for h in self.vector.query(q_emb, k=k) if h.score >= self.min_score
+            hits = [
+                h for h in self.vector.query(q_emb, k=lane_k) if h.score >= self.min_score
             ]
+            hits = [h for h in hits if not self._excluded(h.source)]
+            hits = self._dedup_hits(hits)
+            hits.sort(key=lambda h: h.score, reverse=True)
         except Exception:
-            # Chroma/SQLite 跨线程或元数据异常时，全文检索仍可兜底
-            get_logger("retriever").warning("向量检索失败，回退全文", exc_info=True)
-            vec_hits = []
-        # 按 doc_id 去重，保留每个 doc 的最高分片段
-        best: dict[str, Hit] = {}
-        for h in vec_hits + ft_hits:
-            if self._excluded(h.source):
-                continue
-            cur = best.get(h.doc_id)
-            if cur is None or h.score > cur.score:
-                best[h.doc_id] = h
-        kb_hits = list(best.values())
+            get_logger("retriever").warning("知识库向量检索失败", exc_info=True)
+            return [], {}
+        hit_map = {h.doc_id: h for h in hits}
+        return [h.doc_id for h in hits], hit_map
 
-        conv_hits: list[Hit] = []
-        if self.conversation_fts is not None:
+    def _conv_fts_lane(
+        self, query: str, lane_k: int, *, conversation_id: str | None
+    ) -> tuple[list[str], dict[str, Hit]]:
+        if self.conversation_fts is None:
+            return [], {}
+        try:
+            raw = self.conversation_fts.query(
+                query, k=lane_k, conversation_id=conversation_id
+            )
+            hits = [self._conversation_hit(ch) for ch in raw]
+        except Exception:
+            get_logger("retriever").warning("会话 FTS 检索失败", exc_info=True)
+            return [], {}
+        hit_map = {h.doc_id: h for h in hits}
+        return [h.doc_id for h in hits], hit_map
+
+    def _conv_vector_lane(
+        self, query: str, lane_k: int, *, conversation_id: str | None
+    ) -> tuple[list[str], dict[str, Hit]]:
+        if self.conversation_vector is None:
+            return [], {}
+        try:
+            q_emb = self.llm.embed([query])[0]
+            raw = self.conversation_vector.query(
+                q_emb, k=lane_k, conversation_id=conversation_id
+            )
+            hits = [self._conversation_hit(ch) for ch in raw]
+        except Exception:
+            get_logger("retriever").warning("会话向量检索失败", exc_info=True)
+            return [], {}
+        hit_map = {h.doc_id: h for h in hits}
+        return [h.doc_id for h in hits], hit_map
+
+    def search(
+        self,
+        query: str,
+        k: int = 5,
+        *,
+        scope: str = "all",
+        conversation_id: str | None = None,
+        cursor: str | None = None,
+    ) -> SearchPage:
+        rev = self.index_revision.get() if self.index_revision else 0
+        offset = 0
+        filters = {"scope": scope, "conversation_id": conversation_id}
+
+        if cursor:
             try:
-                conv_hits = [
-                    self._conversation_hit(ch)
-                    for ch in self.conversation_fts.query(query, k=k)
-                ]
-            except Exception:
-                get_logger("retriever").warning("会话消息检索失败", exc_info=True)
-                conv_hits = []
+                parsed = _parse_cursor(cursor)
+                if int(parsed.get("rev", -1)) != rev:
+                    return SearchPage(
+                        hits=[],
+                        has_more=False,
+                        next_cursor=None,
+                        index_revision=rev,
+                        cursor_expired=True,
+                    )
+                query = parsed.get("q", query)
+                filters = parsed.get("f", filters)
+                scope = filters.get("scope", scope)
+                conversation_id = filters.get("conversation_id", conversation_id)
+                offset = int(parsed.get("off", 0))
+            except (json.JSONDecodeError, ValueError, TypeError):
+                return SearchPage(
+                    hits=[],
+                    has_more=False,
+                    next_cursor=None,
+                    index_revision=rev,
+                    cursor_expired=True,
+                )
 
-        # 1A：不做 RRF/cursor，KB 结果与会话消息结果按 score 简单合并排序截断。
-        merged = sorted(kb_hits + conv_hits, key=lambda h: h.score, reverse=True)
-        return merged[:k]
+        lane_k = max(self.lane_candidate_k, k * 4)
+        lanes: list[list[str]] = []
+        hit_map: dict[str, Hit] = {}
+
+        use_kb = scope in ("all", "knowledge")
+        use_conv = scope in ("all", "conversations")
+
+        if use_kb:
+            ids, m = self._kb_fts_lane(query, lane_k)
+            if ids:
+                lanes.append(ids)
+                hit_map.update(m)
+            ids, m = self._kb_vector_lane(query, lane_k)
+            if ids:
+                lanes.append(ids)
+                hit_map.update(m)
+
+        if use_conv:
+            ids, m = self._conv_fts_lane(query, lane_k, conversation_id=conversation_id)
+            if ids:
+                lanes.append(ids)
+                hit_map.update(m)
+            ids, m = self._conv_vector_lane(query, lane_k, conversation_id=conversation_id)
+            if ids:
+                lanes.append(ids)
+                hit_map.update(m)
+
+        fused = reciprocal_rank_fusion(lanes, k=self.rrf_k)
+        page_ids = [doc_id for doc_id, _ in fused[offset : offset + k]]
+        page_hits = [hit_map[doc_id] for doc_id in page_ids if doc_id in hit_map]
+
+        next_offset = offset + k
+        has_more = next_offset < len(fused)
+        next_cursor = (
+            _make_cursor(query, filters, rev, next_offset) if has_more else None
+        )
+
+        return SearchPage(
+            hits=page_hits,
+            has_more=has_more,
+            next_cursor=next_cursor,
+            index_revision=rev,
+        )
 
     def answer(self, query: str, k: int = 5) -> Answer:
-        hits = self.search(query, k=k)
+        page = self.search(query, k=k)
+        hits = page.hits
         if not hits:
             return Answer(text="我没有找到相关内容。", sources=[], attachments=[])
         context = "\n\n".join(f"[来源: {h.source}]\n{h.chunk}" for h in hits)

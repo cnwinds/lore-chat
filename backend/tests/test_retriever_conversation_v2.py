@@ -26,7 +26,7 @@ def test_retriever_includes_conversation_message_hits(tmp_path):
     )
     retr = Retriever(vi, fi, llm, conversation_fts=cfts)
 
-    hits = retr.search("漫剧", k=5)
+    hits = retr.search("漫剧", k=5).hits
 
     assert hits
     hit = next(h for h in hits if h.message_id == "m1")
@@ -40,7 +40,7 @@ def test_retriever_without_conversation_fts_has_no_message_hits(tmp_path):
     vi, fi, _cfts, llm = _setup(tmp_path)
     retr = Retriever(vi, fi, llm)
 
-    hits = retr.search("漫剧", k=5)
+    hits = retr.search("漫剧", k=5).hits
 
     assert hits == []
 
@@ -61,10 +61,8 @@ def test_retriever_merges_kb_and_conversation_hits_sorted_by_score(tmp_path):
     )
     retr = Retriever(vi, fi, llm, conversation_fts=cfts)
 
-    hits = retr.search("漫剧工具", k=10)
+    hits = retr.search("漫剧工具", k=10).hits
 
     sources = {(h.doc_id, h.message_id) for h in hits}
     assert ("技术/漫剧.md", None) in sources
     assert any(h.message_id == "m1" for h in hits)
-    scores = [h.score for h in hits]
-    assert scores == sorted(scores, reverse=True)

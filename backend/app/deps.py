@@ -71,6 +71,10 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
         excluded_prefixes=(system_layer.prefix,),
         min_score=settings.min_vector_score,
         conversation_fts=conversation_fts,
+        conversation_vector=conversation_vector,
+        index_revision=index_revision,
+        rrf_k=settings.rrf_k,
+        lane_candidate_k=settings.lane_candidate_k,
     )
     pending = PendingStore(settings.kb_path / ".kb" / "pending.json")
     merge_sessions = MergeSessionStore(

@@ -117,22 +117,26 @@ class ConversationFTS:
             ).fetchall()
         return [(int(r[0]), int(r[1])) for r in rows]
 
-    def query(self, text: str, k: int = 5) -> list[ConversationHit]:
+    def query(
+        self, text: str, k: int = 5, *, conversation_id: str | None = None
+    ) -> list[ConversationHit]:
         text = text.strip()
         if not text:
             return []
         match = prepare_fts_query(text)
+        cid_filter = " AND conversation_id = ?" if conversation_id else ""
+        params_suffix: tuple = (conversation_id,) if conversation_id else ()
         with self._lock:
             try:
                 rows = self.conn.execute(
-                    """
+                    f"""
                     SELECT chunk_id, conversation_id, message_id, role,
                            start_char, end_char, body, bm25(conversation_chunks_v2) AS rank
                     FROM conversation_chunks_v2
-                    WHERE conversation_chunks_v2 MATCH ?
+                    WHERE conversation_chunks_v2 MATCH ?{cid_filter}
                     ORDER BY rank LIMIT ?
                     """,
-                    (match, k),
+                    (match, *params_suffix, k),
                 ).fetchall()
             except sqlite3.OperationalError:
                 rows = []
@@ -140,14 +144,14 @@ class ConversationFTS:
             if not rows and len(list(text)) < 3:
                 escaped = text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
                 rows = self.conn.execute(
-                    """
+                    f"""
                     SELECT chunk_id, conversation_id, message_id, role,
                            start_char, end_char, body, 0.0 AS rank
                     FROM conversation_chunks_v2
-                    WHERE body LIKE ? ESCAPE '\\'
+                    WHERE body LIKE ? ESCAPE '\\'{cid_filter}
                     LIMIT ?
                     """,
-                    (f"%{escaped}%", k),
+                    (f"%{escaped}%", *params_suffix, k),
                 ).fetchall()
         return [
             ConversationHit(

@@ -53,7 +53,7 @@ def test_retriever_excludes_system_prefix(tmp_path):
     retr = Retriever(vi, fi, llm, excluded_prefixes=("系统/",))
     idx.reindex_doc("系统/戒律.md", "默认不落库，渐进式披露读取资料")
     idx.reindex_doc("技术/note.md", "默认不落库，渐进式披露读取资料")
-    hits = retr.search("渐进式披露", k=5)
+    hits = retr.search("渐进式披露", k=5).hits
     sources = {h.source for h in hits}
     assert "系统/戒律.md" not in sources
 

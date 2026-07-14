@@ -85,7 +85,7 @@ class Organizer:
             if summary.strip()
             else content
         )
-        related = self.retriever.search(search_query, k=5)
+        related = self.retriever.search(search_query, k=5).hits
         decision = self._normalize_decision(self._decide(content, summary, related), related)
         decision = self._apply_hint_path(decision, hint_path)
 
@@ -131,7 +131,7 @@ class Organizer:
             )
         body = self._synthesize(transcript, system_rules)
         summary = self._understand(body)
-        related = self.retriever.search(summary or body, k=5)
+        related = self.retriever.search(summary or body, k=5).hits
         decision = self._normalize_decision(self._decide(body, summary, related), related)
         decision = self._apply_hint_path(decision, hint_path)
         # 归档果断落库，不因 ambiguous 打断用户
@@ -208,7 +208,7 @@ class Organizer:
 
         merged_body = self._synthesize_merge(sources, instruction)
         summary = self._understand(merged_body)
-        related = self.retriever.search(summary or merged_body, k=5)
+        related = self.retriever.search(summary or merged_body, k=5).hits
         decision = self._normalize_decision(
             self._decide(merged_body, summary, related), related
         )
