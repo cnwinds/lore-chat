@@ -573,6 +573,7 @@ class ToolRegistry:
         system_rules = self.system_layer.compose() if self.system_layer else ""
         result = self.organizer.summarize_conversation(
             transcript,
+            conv=conv,
             hint_path=args.get("target_path"),
             system_rules=system_rules,
             conversation_id=conversation_id,

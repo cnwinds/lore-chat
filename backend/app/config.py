@@ -62,6 +62,7 @@ class Settings(BaseSettings):
     conversation_chunk_chars: int = 1000
     conversation_chunk_overlap_chars: int = 150
     conversation_context_max_chars: int = 12000
+    summarize_segment_chars: int = 28000
 
     rrf_k: int = 60
     lane_candidate_k: int = 20

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable
 import os
 import sqlite3
 import threading
@@ -1047,6 +1048,50 @@ class ConversationStore:
     # ------------------------------------------------------------------
     # 文本视图：供归档总结 / 全文索引 / LLM 历史使用
     # ------------------------------------------------------------------
+
+    @classmethod
+    def _message_transcript_line(cls, msg: dict) -> str:
+        role = msg.get("role")
+        if role == "user":
+            text = (msg.get("text") or "").strip()
+            return f"【用户】{text}" if text else ""
+        if role == "assistant":
+            parts: list[str] = []
+            text = cls._assistant_content(msg)
+            if text:
+                parts.append(f"【助手】{text}")
+            parts.extend(cls._iter_kb_web_sources(msg))
+            return "\n".join(parts)
+        return ""
+
+    @classmethod
+    def iter_transcript_segments(cls, conv: dict, *, max_chars: int) -> Iterable[dict]:
+        batch: list[dict] = []
+        used = 0
+        for msg in conv.get("messages", []):
+            if msg.get("role") not in ("user", "assistant"):
+                continue
+            piece = cls._message_transcript_line(msg)
+            if not piece:
+                continue
+            plen = len(piece)
+            if batch and used + plen > max_chars:
+                yield {
+                    "messages": batch,
+                    "first_message_id": batch[0]["id"],
+                    "last_message_id": batch[-1]["id"],
+                    "text": "\n\n".join(cls._message_transcript_line(m) for m in batch),
+                }
+                batch, used = [], 0
+            batch.append(msg)
+            used += plen + 2
+        if batch:
+            yield {
+                "messages": batch,
+                "first_message_id": batch[0]["id"],
+                "last_message_id": batch[-1]["id"],
+                "text": "\n\n".join(cls._message_transcript_line(m) for m in batch),
+            }
 
     @classmethod
     def full_transcript(cls, conv: dict, *, max_chars: int = 60000) -> str:

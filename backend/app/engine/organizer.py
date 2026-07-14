@@ -2,8 +2,12 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 
+from app.config import Settings
+
+from app.engine.conversations import ConversationStore
 from app.engine.content_hash import body_hash
 from app.storage.repo import KnowledgeRepo
 from app.engine.intent import is_question_only
@@ -63,12 +67,14 @@ class Organizer:
         indexer: Indexer,
         pending: PendingStore,
         llm: LLMClient,
+        settings: Settings | None = None,
     ):
         self.repo = repo
         self.retriever = retriever
         self.indexer = indexer
         self.pending = pending
         self.llm = llm
+        self.settings = settings or Settings()
 
     def ingest_text(self, content: str, *, hint_path: str | None = None) -> IngestResult:
         if is_question_only(content):
@@ -117,6 +123,7 @@ class Organizer:
         self,
         transcript: str,
         *,
+        conv: dict | None = None,
         hint_path: str | None = None,
         system_rules: str = "",
         conversation_id: str | None = None,
@@ -129,7 +136,20 @@ class Organizer:
                 question_id=None,
                 message="会话为空，无可总结内容。",
             )
-        body = self._synthesize(transcript, system_rules)
+        if conv is None:
+            conv = {"messages": []}
+        if len(transcript) <= self.settings.summarize_segment_chars:
+            body = self._synthesize(transcript, system_rules)
+        else:
+            segments = list(
+                ConversationStore.iter_transcript_segments(
+                    conv, max_chars=self.settings.summarize_segment_chars
+                )
+            )
+            partials = [
+                self._synthesize_segment(seg["text"], system_rules, seg) for seg in segments
+            ]
+            body = self._synthesize_merge_segments(partials, system_rules)
         summary = self._understand(body)
         related = self.retriever.search(summary or body, k=5).hits
         decision = self._normalize_decision(self._decide(body, summary, related), related)
@@ -459,6 +479,59 @@ class Organizer:
                     "以下是完整会话记录。请严格按上述规约通读全文后产出归档文档正文；"
                     "只输出正文 Markdown，不要 frontmatter，不要用代码围栏包裹全文。\n\n"
                     f"=== 会话记录 ===\n{transcript}"
+                ),
+            },
+        ]
+        body = self.llm.chat(messages, big=True).strip()
+        if not body.endswith("\n"):
+            body += "\n"
+        return body
+
+    def _synthesize_segment(self, segment_text: str, system_rules: str, seg: dict) -> str:
+        rules = system_rules.strip() or _DEFAULT_SUMMARY_RULES
+        first_id = seg.get("first_message_id", "")
+        last_id = seg.get("last_message_id", "")
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "你是知识库编辑，负责把会话片段归档成结构化摘要。\n"
+                    "务必遵守下列规约：\n\n" + rules
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"以下是会话片段（消息 {first_id} 至 {last_id}）。"
+                    "请产出该片段的摘要 Markdown，只输出正文，不要 frontmatter。\n\n"
+                    f"=== 片段 ===\n{segment_text}"
+                ),
+            },
+        ]
+        body = self.llm.chat(messages, big=True).strip()
+        if not body.endswith("\n"):
+            body += "\n"
+        return body
+
+    def _synthesize_merge_segments(self, partials: list[str], system_rules: str) -> str:
+        rules = system_rules.strip() or _DEFAULT_SUMMARY_RULES
+        merged_input = "\n\n".join(
+            f"=== 段摘要 {i + 1} ===\n{p}" for i, p in enumerate(partials)
+        )
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "你是知识库编辑，负责把多段会话摘要归并为一篇完整归档文档。\n"
+                    "务必遵守下列规约：\n\n" + rules
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    "以下是按时间顺序的各段摘要。请全局重构、去重合并为终稿 Markdown；"
+                    "只输出正文，不要 frontmatter。\n\n"
+                    f"{merged_input}"
                 ),
             },
         ]

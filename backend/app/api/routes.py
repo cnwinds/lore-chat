@@ -703,6 +703,7 @@ async def summarize_conversation(cid: str, request: Request):
         # 同步执行：内含 Chroma/SQLite 检索，不能放进 run_in_threadpool（会触发跨线程 DB 错误）
         result = c.organizer.summarize_conversation(
             transcript,
+            conv=conv,
             system_rules=system_rules,
             conversation_id=cid,
         )
