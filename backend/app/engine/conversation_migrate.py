@@ -72,7 +72,17 @@ def _load_shard(root: Path, date: str, cache: dict[str, dict]) -> dict:
     return cache[date]
 
 
+def _conversation_exists(conn: sqlite3.Connection, cid: str) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM conversations WHERE id = ? LIMIT 1", (cid,)
+    ).fetchone()
+    return row is not None
+
+
 def _migrate_conversation(conn: sqlite3.Connection, cid: str, conv: dict) -> int:
+    if _conversation_exists(conn, cid):
+        return 0
+
     created_at = conv.get("created_at") or _now()
     updated_at = conv.get("updated_at") or created_at
     conn.execute(
@@ -204,8 +214,8 @@ def migrate_json_shards(root: str | Path) -> dict:
     """把 `root` 下的 `index.json` + 日期分片 JSON 迁移进同目录的 `conversations.db`。
 
     幂等：若 `migration_meta` 已记录 `json_shards_v1` 完成，直接返回统计，不重新扫描
-    JSON 文件、不重新插入数据（消息 ID 本身也是内容确定性哈希，重复运行不会产生
-    重复行）。
+    JSON 文件、不重新插入数据。若 meta 缺失但会话行已存在，同样跳过该会话的插入
+    （消息 ID 为内容确定性哈希，摘要与 outbox 通过会话存在性守卫避免重复）。
     """
     root = Path(root)
     root.mkdir(parents=True, exist_ok=True)
