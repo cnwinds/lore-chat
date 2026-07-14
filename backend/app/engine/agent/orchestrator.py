@@ -23,6 +23,7 @@ from app.engine.agent.tools import (
     can_parallelize,
     select_tools,
 )
+from app.engine.source_key import extend_sources
 from app.models.llm import ChatWithToolsResult, LLMClient, ToolCall
 
 _LIMIT_MSG = "（已达工具调用上限，以上为目前能给出的结论。）"
@@ -59,28 +60,6 @@ def _emit_tool_result(tc: ToolCall, out: dict, duration_ms: int) -> str:
         content=_tool_result_content(tc.name, out),
         **extra,
     )
-
-
-def _source_key(source: dict) -> str:
-    st = source.get("type")
-    if st == "kb":
-        return f"kb:{source.get('path')}"
-    if st == "conversation":
-        # 消息级命中需带 message_id + 字符区间，避免 1A 简单去重把不同片段吞掉
-        return (
-            f"conversation:{source.get('cid')}:{source.get('message_id')}:"
-            f"{source.get('start_char')}:{source.get('end_char')}"
-        )
-    return f"{st}:{source.get('url')}"
-
-
-def _extend_sources(all_sources: list[dict], new_sources: list[dict]) -> None:
-    seen = {_source_key(s) for s in all_sources}
-    for s in new_sources:
-        key = _source_key(s)
-        if key not in seen:
-            all_sources.append(s)
-            seen.add(key)
 
 
 class AgentOrchestrator:
@@ -171,7 +150,7 @@ class AgentOrchestrator:
                             yield ev
                             if entry is not None:
                                 turn_outputs.append(entry)
-                                _extend_sources(all_sources, entry[1].get("sources", []))
+                                extend_sources(all_sources, entry[1].get("sources", []))
                     else:
                         for tc in batch:
                             yield tool_start(tc.id, tc.name, TOOL_LABELS[tc.name], tc.arguments)
@@ -182,7 +161,7 @@ class AgentOrchestrator:
                             )
                             yield _emit_tool_result(tc, out, duration_ms)
                             turn_outputs.append((tc, out, duration_ms))
-                            _extend_sources(all_sources, out.get("sources", []))
+                            extend_sources(all_sources, out.get("sources", []))
 
                 self._append_tool_turn(messages, result, turn_outputs)
                 tool_call_count += len(result.tool_calls)

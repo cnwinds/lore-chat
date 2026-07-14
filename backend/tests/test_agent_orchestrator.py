@@ -3,7 +3,8 @@ import json
 import pytest
 
 from app.config import Settings
-from app.engine.agent.orchestrator import AgentOrchestrator, _extend_sources, _source_key
+from app.engine.agent.orchestrator import AgentOrchestrator
+from app.engine.source_key import extend_sources, source_dedupe_key
 from app.engine.agent.tools import ToolRegistry
 from app.engine.organizer import Organizer
 from app.engine.pending import PendingStore
@@ -55,14 +56,14 @@ def test_source_key_conversation_includes_message_and_char_range():
     a = {"type": "conversation", "cid": "c1", "message_id": "m1", "start_char": 0, "end_char": 4}
     b = {"type": "conversation", "cid": "c1", "message_id": "m2", "start_char": 0, "end_char": 4}
     c = {"type": "conversation", "cid": "c1", "message_id": "m1", "start_char": 4, "end_char": 8}
-    assert _source_key(a) != _source_key(b)
-    assert _source_key(a) != _source_key(c)
-    assert _source_key(a) == _source_key(dict(a))
+    assert source_dedupe_key(a) != source_dedupe_key(b)
+    assert source_dedupe_key(a) != source_dedupe_key(c)
+    assert source_dedupe_key(a) == source_dedupe_key(dict(a))
 
 
 def test_extend_sources_keeps_distinct_conversation_hits():
     all_sources: list[dict] = []
-    _extend_sources(
+    extend_sources(
         all_sources,
         [
             {"type": "conversation", "cid": "c1", "message_id": "m1", "start_char": 0, "end_char": 4},
@@ -71,7 +72,7 @@ def test_extend_sources_keeps_distinct_conversation_hits():
     )
     assert len(all_sources) == 2
     # 重复的同一片段命中会被去重
-    _extend_sources(
+    extend_sources(
         all_sources,
         [{"type": "conversation", "cid": "c1", "message_id": "m1", "start_char": 0, "end_char": 4}],
     )

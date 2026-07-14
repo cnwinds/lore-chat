@@ -10,6 +10,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from app.engine.agent.events import done, error_event, text_delta
+from app.engine.source_key import extend_sources
 from app.engine.agent.prompts import MODE_DEFAULT, MODE_FORCE_WRITE, MODE_NO_WRITE
 from app.engine.conversations import TurnInProgress
 from app.engine.patch import diff_affected_range
@@ -142,7 +143,7 @@ class _TimelineAccumulator:
                 for key in ("preview", "reindex_mode", "applied"):
                     if data.get(key) is not None:
                         block[key] = data[key]
-                self.all_sources.extend(block["sources"])
+                extend_sources(self.all_sources, block.get("sources") or [])
 
         elif event_type == "parallel_batch_start":
             block = {
@@ -177,12 +178,7 @@ class _TimelineAccumulator:
                 self._text_block["content"] += delta
 
         elif event_type == "done":
-            seen = {json.dumps(s, sort_keys=True) for s in self.all_sources}
-            for source in data.get("sources") or []:
-                key = json.dumps(source, sort_keys=True)
-                if key not in seen:
-                    self.all_sources.append(source)
-                    seen.add(key)
+            extend_sources(self.all_sources, data.get("sources") or [])
             if data.get("total_duration_ms") is not None:
                 self.total_duration_ms = data["total_duration_ms"]
 
