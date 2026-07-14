@@ -227,6 +227,21 @@ class MemoryStore:
             )
             conn.commit()
 
+    def clear_tombstone(self, *, slot_key: str, normalized_value_hash: str) -> bool:
+        now = _now()
+        with self._connect() as conn:
+            cur = conn.execute(
+                """
+                UPDATE memory_tombstones
+                SET cleared_at = ?
+                WHERE owner_key = ? AND slot_key = ? AND blocked_value_hash = ?
+                  AND cleared_at IS NULL
+                """,
+                (now, self.owner_key, slot_key, normalized_value_hash),
+            )
+            conn.commit()
+            return cur.rowcount > 0
+
     def has_tombstone(self, *, slot_key: str, normalized_value_hash: str | None = None) -> bool:
         with self._connect() as conn:
             if normalized_value_hash:

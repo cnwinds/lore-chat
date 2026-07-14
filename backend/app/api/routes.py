@@ -494,9 +494,13 @@ async def update_doc(body: UpdateDocBody, request: Request):
     old_body = doc.body
     norm_path = body.path.replace("\\", "/")
     if norm_path == "系统/记忆.md":
+        sync = c.memory_service.import_manual_document(doc.meta, body.body, dry_run=True)
+        if not sync.get("ok"):
+            raise HTTPException(400, sync.get("message", "记忆同步失败"))
         c.repo.write_doc(body.path, doc.meta, body.body, commit_msg=f"edit: {body.path}")
         sync = c.memory_service.import_manual_document(doc.meta, body.body)
         if not sync.get("ok"):
+            c.repo.write_doc(body.path, doc.meta, old_body, commit_msg=f"rollback: {body.path}")
             raise HTTPException(400, sync.get("message", "记忆同步失败"))
         try:
             c.indexer.remove_doc(body.path)

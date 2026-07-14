@@ -849,7 +849,11 @@ class ToolRegistry:
         action = args.get("action")
         statement = args.get("statement", "")
         if action == "remember":
-            out = self.memory_service.remember(statement, origin="explicit_remember")
+            out = self.memory_service.remember(
+                statement,
+                origin="explicit_remember",
+                clear_tombstone=bool(args.get("clear_tombstone", False)),
+            )
             if out.get("ok"):
                 self.memory_service.render_to_file()
             return {

@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 
 from app.engine.memory.constants import MEMORY_DOC_REL
 from app.engine.memory.normalize import infer_category, normalize_slot_key, value_hash
+from app.engine.memory.policy import infer_sensitivity
 from app.engine.memory.store import MemoryStore
 from app.engine.secrets import scan_secrets
 from app.storage.repo import KnowledgeRepo
@@ -49,6 +50,7 @@ class MemoryService:
         message_id: str | None = None,
         start_char: int | None = None,
         end_char: int | None = None,
+        clear_tombstone: bool = False,
     ) -> dict:
         text = (statement or "").strip()
         if not text:
@@ -63,11 +65,15 @@ class MemoryService:
         slot = normalize_slot_key(category, text)
         vhash = value_hash(text)
         if self.store.has_tombstone(slot_key=slot, normalized_value_hash=vhash):
-            return {
-                "ok": False,
-                "error": "tombstoned",
-                "message": "该记忆已被用户遗忘，需显式重新记住",
-            }
+            if clear_tombstone:
+                self.store.clear_tombstone(slot_key=slot, normalized_value_hash=vhash)
+            else:
+                return {
+                    "ok": False,
+                    "error": "tombstoned",
+                    "message": "该记忆已被用户遗忘，需显式重新记住",
+                }
+        sensitivity = infer_sensitivity(text)
         fact = self.store.upsert_fact(
             slot_key=slot,
             category=category,
@@ -75,7 +81,7 @@ class MemoryService:
             normalized_value_hash=vhash,
             origin=origin,
             confidence=1.0,
-            sensitivity="normal",
+            sensitivity=sensitivity,
         )
         if conversation_id and message_id and start_char is not None and end_char is not None:
             msg_text = text
@@ -150,16 +156,16 @@ class MemoryService:
                 "origin": f["origin"],
             }
             if include_sources:
-                item["sources"] = self._explain_sources(f["id"])
+                item["sources"] = self._explain_sources(f["id"], sensitivity=f.get("sensitivity", "normal"))
             out_facts.append(item)
         return {"facts": out_facts, "count": len(out_facts)}
 
-    def _explain_sources(self, fact_id: str) -> list[dict]:
+    def _explain_sources(self, fact_id: str, *, sensitivity: str = "normal") -> list[dict]:
         sources: list[dict] = []
         for ev in self.store.list_evidence(fact_id):
             quote = None
             available = False
-            if self.conversations:
+            if sensitivity != "sensitive" and self.conversations:
                 msg = self.conversations.get_message(ev["message_id"])
                 if msg:
                     text = msg.get("text") or ""
@@ -214,13 +220,18 @@ class MemoryService:
                 pass
         return body
 
-    def import_manual_document(self, meta: dict, body: str) -> dict:
+    def import_manual_document(self, meta: dict, body: str, *, dry_run: bool = False) -> dict:
         from app.engine.memory.renderer import MemoryRenderer
 
         renderer = MemoryRenderer(self.repo, memory_rel=self.memory_rel, max_chars=self.memory_max_chars)
         parsed = renderer.parse(body)
         if not parsed["valid"]:
             return {"ok": False, "error": "invalid_structure", "message": parsed.get("error", "结构校验失败")}
+        tombstone_err = self._check_import_tombstones(parsed["items"])
+        if tombstone_err:
+            return tombstone_err
+        if dry_run:
+            return {"ok": True, "message": "校验通过"}
         state = self.store.get_render_state()
         prev_ids = set(renderer.loads_rendered_ids(state.get("rendered_fact_ids_json") or "[]"))
         current_ids = {item["fact_id"] for item in parsed["items"] if item.get("fact_id")}
@@ -232,14 +243,19 @@ class MemoryService:
             stmt = item["statement"]
             cat = item["category"]
             slot = normalize_slot_key(cat, stmt)
+            vhash = value_hash(stmt)
+            if scan_secrets(stmt):
+                return {"ok": False, "error": "secret_rejected", "message": "手动编辑含密钥，已拒绝"}
+            sensitivity = infer_sensitivity(stmt)
             if item.get("fact_id"):
                 self.store.upsert_fact(
                     slot_key=slot,
                     category=cat,
                     statement=stmt,
-                    normalized_value_hash=value_hash(stmt),
+                    normalized_value_hash=vhash,
                     origin="manual",
                     fact_id=item["fact_id"],
+                    sensitivity=sensitivity,
                 )
             else:
                 self.remember(stmt, origin="manual")
@@ -259,6 +275,20 @@ class MemoryService:
             except Exception:
                 pass
         return {"ok": True, "message": "手动编辑已同步"}
+
+    def _check_import_tombstones(self, items: list[dict]) -> dict | None:
+        for item in items:
+            stmt = item["statement"]
+            cat = infer_category(stmt)
+            slot = normalize_slot_key(cat, stmt)
+            vhash = value_hash(stmt)
+            if self.store.has_tombstone(slot_key=slot, normalized_value_hash=vhash):
+                return {
+                    "ok": False,
+                    "error": "tombstoned",
+                    "message": "该记忆已被遗忘，无法通过编辑复活",
+                }
+        return None
 
 
 def _extract_rendered_ids(body: str) -> set[str]:

@@ -104,6 +104,8 @@ class MemoryRenderer:
     def parse(self, body: str) -> dict:
         if "# 记忆 · 关于用户" not in body:
             return {"valid": False, "error": "missing title", "items": []}
+        if "```" in body:
+            return {"valid": False, "error": "code_block_forbidden", "items": []}
         items: list[dict] = []
         current_category = "preference"
         section_to_cat = {v: k for k, v in SECTION_BY_CATEGORY.items()}
