@@ -168,6 +168,34 @@ def test_duplicate_client_message_id_while_running_raises(tmp_path):
         assert e.__class__.__name__ == "TurnInProgress"
 
 
+def test_begin_turn_blocks_different_client_message_id_while_running(tmp_path):
+    """spec §6.1：单个会话同一时间只允许一个 active turn。"""
+    store = _store(tmp_path)
+    cid = store.create()
+    turn1 = store.begin_turn(
+        cid, user_text="a", client_message_id="cli-1", observation_allowed=False
+    )
+    try:
+        store.begin_turn(
+            cid, user_text="b", client_message_id="cli-2", observation_allowed=False
+        )
+        assert False, "expected TurnInProgress"
+    except Exception as e:
+        assert e.__class__.__name__ == "TurnInProgress"
+        assert e.turn_id == turn1["turn_id"]
+
+    store.finalize_turn(
+        cid,
+        turn_id=turn1["turn_id"],
+        assistant={"text": "回复a", "timeline": [], "sources": [], "status": "complete"},
+    )
+    turn2 = store.begin_turn(
+        cid, user_text="b", client_message_id="cli-2", observation_allowed=False
+    )
+    assert turn2["status"] == "running"
+    assert turn2["turn_id"] != turn1["turn_id"]
+
+
 def test_llm_history_from_timeline(tmp_path):
     store = _store(tmp_path)
     cid = store.create()

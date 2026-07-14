@@ -401,6 +401,16 @@ class ConversationStore:
                         )
                 return result
 
+            # 单个会话同一时间只允许一个 active turn（spec §6.1）：不同
+            # client_message_id 但会话已有 running turn 时，拒绝开启新 turn。
+            if conv_row["active_turn_id"]:
+                active_turn = self.conn.execute(
+                    "SELECT * FROM turns WHERE id = ?",
+                    (conv_row["active_turn_id"],),
+                ).fetchone()
+                if active_turn is not None and active_turn["status"] == "running":
+                    raise TurnInProgress(active_turn["id"])
+
             now = user_ts or _now()
             msg_id = _new_id()
             seq = self._next_seq(cid)
