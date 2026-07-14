@@ -1237,6 +1237,19 @@ a:hover {
   flex-shrink: 0;
 }
 
+.message-range-highlight {
+  background: rgba(255, 214, 102, 0.55);
+  padding: 0 1px;
+  border-radius: 2px;
+}
+
+.chat-message-jump-flash {
+  outline: 2px solid rgba(255, 214, 102, 0.85);
+  outline-offset: 2px;
+  border-radius: 6px;
+  transition: outline-color 0.3s ease;
+}
+
 .chat-streaming-wrap {
   display: flex;
   justify-content: flex-start;

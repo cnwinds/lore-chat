@@ -114,6 +114,7 @@ export type TimelineBlock =
   | { type: "text"; ts: string; content: string };
 
 export type ChatMessage = {
+  id?: string;
   role: "user" | "assistant";
   ts?: string;
   text?: string;

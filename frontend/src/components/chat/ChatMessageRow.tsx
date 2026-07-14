@@ -12,6 +12,8 @@ import { MarkdownContent } from "../MarkdownContent";
 import { ChatSources } from "../ChatSources";
 import { CopyButton } from "../CopyButton";
 import { TimelineBlockView } from "../TimelineBlockView";
+import { MessageRangeHighlight } from "./MessageRangeHighlight";
+import { useEffect, useRef, useState } from "react";
 
 export type ChatMessageRowProps = {
   message: ChatMessage;
@@ -120,6 +122,7 @@ function renderMessageContent(
     result: IngestResult,
     choiceLabel: string,
   ) => void,
+  highlightRange: { start: number; end: number } | null,
 ) {
   if (m.timeline && m.timeline.length > 0) {
     const cumulative = computeCumulative(m.timeline);
@@ -144,7 +147,29 @@ function renderMessageContent(
   }
   if (m.text) {
     if (m.role === "user") {
+      if (highlightRange) {
+        return (
+          <div className="chat-user-text">
+            <MessageRangeHighlight
+              text={m.text}
+              start={highlightRange.start}
+              end={highlightRange.end}
+            />
+          </div>
+        );
+      }
       return <div className="chat-user-text">{m.text}</div>;
+    }
+    if (highlightRange) {
+      return (
+        <div className="chat-markdown">
+          <MessageRangeHighlight
+            text={m.text}
+            start={highlightRange.start}
+            end={highlightRange.end}
+          />
+        </div>
+      );
     }
     return (
       <MarkdownContent className="markdown-body chat-markdown">
@@ -175,9 +200,30 @@ export function ChatMessageRow({
   onOpenSource,
   onQuestionResolved,
 }: ChatMessageRowProps) {
+  const rowRef = useRef<HTMLDivElement>(null);
+  const [highlightRange, setHighlightRange] = useState<{
+    start: number;
+    end: number;
+  } | null>(null);
+
+  useEffect(() => {
+    const el = rowRef.current;
+    if (!el) return;
+    const onHighlight = (ev: Event) => {
+      const detail = (ev as CustomEvent<{ start: number; end: number }>).detail;
+      if (!detail) return;
+      setHighlightRange(detail);
+      window.setTimeout(() => setHighlightRange(null), 3000);
+    };
+    el.addEventListener("highlight-range", onHighlight);
+    return () => el.removeEventListener("highlight-range", onHighlight);
+  }, []);
+
   return (
     <div
+      ref={rowRef}
       className={`chat-row ${m.role === "user" ? "chat-row-user" : "chat-row-assistant"}`}
+      {...(m.id ? { "data-message-id": m.id } : {})}
     >
       <div className={`chat-bubble chat-bubble-${m.role}`}>
         {m.role === "user" && renderUserMessageChips(m)}
@@ -189,6 +235,7 @@ export function ChatMessageRow({
           conversationId,
           onOpenSource,
           onQuestionResolved,
+          highlightRange,
         )}
         {m.sources && m.sources.length > 0 && (
           <ChatSources
