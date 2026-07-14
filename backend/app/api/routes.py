@@ -492,16 +492,27 @@ async def update_doc(body: UpdateDocBody, request: Request):
     except FileNotFoundError:
         raise HTTPException(404, "文档不存在")
     old_body = doc.body
-    c.repo.write_doc(body.path, doc.meta, body.body, commit_msg=f"edit: {body.path}")
-    if old_body != body.body:
-        affected_start, affected_end = diff_affected_range(old_body, body.body)
-        c.indexer.reindex_doc_after_edit(
-            body.path,
-            old_body,
-            body.body,
-            affected_start,
-            affected_end,
-        )
+    norm_path = body.path.replace("\\", "/")
+    if norm_path == "系统/记忆.md":
+        c.repo.write_doc(body.path, doc.meta, body.body, commit_msg=f"edit: {body.path}")
+        sync = c.memory_service.import_manual_document(doc.meta, body.body)
+        if not sync.get("ok"):
+            raise HTTPException(400, sync.get("message", "记忆同步失败"))
+        try:
+            c.indexer.remove_doc(body.path)
+        except Exception:
+            pass
+    else:
+        c.repo.write_doc(body.path, doc.meta, body.body, commit_msg=f"edit: {body.path}")
+        if old_body != body.body:
+            affected_start, affected_end = diff_affected_range(old_body, body.body)
+            c.indexer.reindex_doc_after_edit(
+                body.path,
+                old_body,
+                body.body,
+                affected_start,
+                affected_end,
+            )
     c.repo.log_change(f"用户编辑 {body.path}")
     d = c.repo.read_doc(body.path)
     return {"rel_path": d.rel_path, "meta": d.meta, "body": d.body}

@@ -20,6 +20,8 @@ from app.engine.organizer import Organizer
 from app.engine.agent.orchestrator import AgentOrchestrator
 from app.engine.agent.system_layer import SystemLayer
 from app.engine.agent.tools import ToolRegistry
+from app.engine.memory.service import MemoryService
+from app.engine.memory.store import MemoryStore
 from app.engine.web.fetcher import WebFetcher
 from app.engine.web.search import WebSearch
 from app.engine.workspace import ensure_workspace_id
@@ -43,17 +45,29 @@ class Container:
     organizer: Organizer
     agent: AgentOrchestrator
     system_layer: SystemLayer
+    memory_service: MemoryService
 
 
 def build_container(settings: Settings, llm: LLMClient | None = None) -> Container:
     workspace_id = ensure_workspace_id(settings.kb_path)
     llm = llm or OpenAILLMClient(settings)
     repo = KnowledgeRepo(settings.kb_path, protected_dirs=(settings.system_layer_dir,))
+    memory_store = MemoryStore(
+        settings.kb_path / ".kb" / "memory" / "memory.db",
+        owner_key=workspace_id,
+    )
+    memory_service = MemoryService(
+        memory_store,
+        repo,
+        conversations=None,
+        indexer=None,
+    )
     system_layer = SystemLayer(
         repo,
         dir_name=settings.system_layer_dir,
         precepts_filename=settings.precepts_filename,
         soul_filename=settings.soul_filename,
+        memory_service=memory_service,
     )
     index_dir = settings.kb_path / ".kb" / "index"
     vector = VectorIndex(index_dir / "vec")
@@ -100,6 +114,11 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
         pending=pending,
         llm=llm,
     )
+    memory_service.conversations = conversations
+    memory_service.indexer = indexer
+    from app.engine.memory.renderer import MemoryRenderer
+
+    MemoryRenderer(repo).ensure_seed()
     fetcher = WebFetcher(settings.fetch_url_timeout, settings.fetch_url_max_bytes)
     web_search = WebSearch(settings)
     tool_registry = ToolRegistry(
@@ -117,6 +136,7 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
         edit_doc_max_patch_chars=settings.edit_doc_max_patch_chars,
         edit_doc_require_read=settings.edit_doc_require_read,
         conversation_context_max_chars=settings.conversation_context_max_chars,
+        memory_service=memory_service,
     )
     agent = AgentOrchestrator(settings, llm, tool_registry, system_layer=system_layer)
     return Container(
@@ -136,4 +156,5 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
         organizer=organizer,
         agent=agent,
         system_layer=system_layer,
+        memory_service=memory_service,
     )
