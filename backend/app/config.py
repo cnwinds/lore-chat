@@ -62,6 +62,9 @@ class Settings(BaseSettings):
     conversation_chunk_chars: int = 1000
     conversation_chunk_overlap_chars: int = 150
 
+    rrf_k: int = 60
+    lane_candidate_k: int = 20
+
 
 def get_settings() -> "Settings":
     return Settings()

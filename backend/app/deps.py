@@ -8,6 +8,8 @@ from app.storage.repo import KnowledgeRepo
 from app.index.vector import VectorIndex
 from app.index.fulltext import FullTextIndex
 from app.index.conversation_fts import ConversationFTS
+from app.index.conversation_vector import ConversationVector
+from app.index.revision import IndexRevision
 from app.index.indexer import Indexer
 from app.engine.retriever import Retriever
 from app.engine.pending import PendingStore
@@ -35,6 +37,8 @@ class Container:
     merge_sessions: MergeSessionStore
     conversations: ConversationStore
     conversation_fts: ConversationFTS
+    conversation_vector: ConversationVector
+    index_revision: IndexRevision
     derivation_worker: DerivationWorker
     organizer: Organizer
     agent: AgentOrchestrator
@@ -58,6 +62,8 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
         vector, fulltext, llm, reindex_full_threshold=settings.reindex_full_threshold
     )
     conversation_fts = ConversationFTS(index_dir / "conversation_fts.db")
+    conversation_vector = ConversationVector(index_dir / "vec")
+    index_revision = IndexRevision(index_dir / "revision.txt")
     retriever = Retriever(
         vector,
         fulltext,
@@ -76,6 +82,9 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
     derivation_worker = DerivationWorker(
         conversations,
         conversation_fts,
+        conversation_vector=conversation_vector,
+        llm=llm,
+        index_revision=index_revision,
         chunk_chars=settings.conversation_chunk_chars,
         overlap=settings.conversation_chunk_overlap_chars,
     )
@@ -115,6 +124,8 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
         merge_sessions=merge_sessions,
         conversations=conversations,
         conversation_fts=conversation_fts,
+        conversation_vector=conversation_vector,
+        index_revision=index_revision,
         derivation_worker=derivation_worker,
         organizer=organizer,
         agent=agent,
