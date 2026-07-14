@@ -10,6 +10,7 @@ import {
 import { MarkdownContent } from "./MarkdownContent";
 import { PendingQuestion } from "./PendingQuestion";
 import { SourceChip } from "./SourceChip";
+import { MessageRangeHighlight } from "./chat/MessageRangeHighlight";
 
 type Props = {
   block: TimelineBlock;
@@ -25,6 +26,7 @@ type Props = {
     result: IngestResult,
     choiceLabel: string,
   ) => void;
+  textHighlight?: { start: number; end: number };
 };
 
 /** 折叠时单行摘要：工具类型 + 关键结果 */
@@ -228,6 +230,7 @@ export function TimelineBlockView({
   previewPath,
   conversationId,
   onQuestionResolved,
+  textHighlight,
 }: Props) {
   if (block.type === "tool") {
     return (
@@ -269,6 +272,7 @@ export function TimelineBlockView({
             previewPath={previewPath}
             conversationId={conversationId}
             onQuestionResolved={onQuestionResolved}
+            textHighlight={textHighlight}
           />
         ))}
       </div>
@@ -277,9 +281,19 @@ export function TimelineBlockView({
 
   return (
     <div className="timeline-text">
-      <MarkdownContent className="markdown-body chat-markdown">
-        {block.content}
-      </MarkdownContent>
+      {textHighlight ? (
+        <div className="chat-markdown">
+          <MessageRangeHighlight
+            text={block.content}
+            start={textHighlight.start}
+            end={textHighlight.end}
+          />
+        </div>
+      ) : (
+        <MarkdownContent className="markdown-body chat-markdown">
+          {block.content}
+        </MarkdownContent>
+      )}
     </div>
   );
 }

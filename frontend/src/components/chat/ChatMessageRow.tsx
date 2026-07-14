@@ -14,6 +14,12 @@ import { CopyButton } from "../CopyButton";
 import { TimelineBlockView } from "../TimelineBlockView";
 import { MessageRangeHighlight } from "./MessageRangeHighlight";
 import { useEffect, useRef, useState } from "react";
+import {
+  collectTimelineTextSpans,
+  isHighlightOffsetVersion,
+  mapGlobalRangeToTimelineHighlights,
+} from "../../utils/unicodeHighlight";
+import type { HighlightRangeDetail } from "../../hooks/chat/useConversationJump";
 
 export type ChatMessageRowProps = {
   message: ChatMessage;
@@ -126,24 +132,38 @@ function renderMessageContent(
 ) {
   if (m.timeline && m.timeline.length > 0) {
     const cumulative = computeCumulative(m.timeline);
-    return m.timeline.map((block, i) => (
-      <TimelineBlockView
-        key={
-          block.type === "tool"
-            ? block.id
-            : block.type === "parallel"
-              ? block.batch_id
-              : `text-${i}`
-        }
-        block={block}
-        cumulative={cumulative}
-        liveElapsedMs={isLive ? liveElapsedMs : undefined}
-        onOpenSource={onOpenSource}
-        previewPath={previewPath}
-        conversationId={conversationId}
-        onQuestionResolved={onQuestionResolved}
-      />
-    ));
+    const textSpans = collectTimelineTextSpans(m.timeline);
+    const shouldMapOntoTimeline =
+      !highlightRange || textSpans.length > 0;
+    if (shouldMapOntoTimeline) {
+      const blockHighlights =
+        highlightRange && textSpans.length > 0
+          ? mapGlobalRangeToTimelineHighlights(
+              m.timeline,
+              highlightRange.start,
+              highlightRange.end,
+            )
+          : null;
+      return m.timeline.map((block, i) => (
+        <TimelineBlockView
+          key={
+            block.type === "tool"
+              ? block.id
+              : block.type === "parallel"
+                ? block.batch_id
+                : `text-${i}`
+          }
+          block={block}
+          cumulative={cumulative}
+          liveElapsedMs={isLive ? liveElapsedMs : undefined}
+          onOpenSource={onOpenSource}
+          previewPath={previewPath}
+          conversationId={conversationId}
+          onQuestionResolved={onQuestionResolved}
+          textHighlight={blockHighlights?.get(i)}
+        />
+      ));
+    }
   }
   if (m.text) {
     if (m.role === "user") {
@@ -210,9 +230,10 @@ export function ChatMessageRow({
     const el = rowRef.current;
     if (!el) return;
     const onHighlight = (ev: Event) => {
-      const detail = (ev as CustomEvent<{ start: number; end: number }>).detail;
+      const detail = (ev as CustomEvent<HighlightRangeDetail>).detail;
       if (!detail) return;
-      setHighlightRange(detail);
+      if (!isHighlightOffsetVersion(detail.offsetVersion)) return;
+      setHighlightRange({ start: detail.start, end: detail.end });
       window.setTimeout(() => setHighlightRange(null), 3000);
     };
     el.addEventListener("highlight-range", onHighlight);

@@ -78,7 +78,11 @@ export function useChatConversation({
         : undefined;
 
     const frame = requestAnimationFrame(() => {
-      const ok = scrollToMessageHighlight(target.messageId, range);
+      const ok = scrollToMessageHighlight(
+        target.messageId,
+        range,
+        target.offsetVersion,
+      );
       if (ok) {
         pendingJumpRef.current = null;
         onJumpHandled?.();

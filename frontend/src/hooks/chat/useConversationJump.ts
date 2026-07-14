@@ -6,9 +6,16 @@ export type JumpTarget = {
   offsetVersion?: string;
 };
 
+export type HighlightRangeDetail = {
+  start: number;
+  end: number;
+  offsetVersion?: string;
+};
+
 export function scrollToMessageHighlight(
   messageId: string,
   range?: { start: number; end: number },
+  offsetVersion?: string,
 ): boolean {
   const el = document.querySelector(`[data-message-id="${messageId}"]`);
   if (!el) return false;
@@ -17,8 +24,8 @@ export function scrollToMessageHighlight(
   window.setTimeout(() => el.classList.remove("chat-message-jump-flash"), 3000);
   if (range) {
     el.dispatchEvent(
-      new CustomEvent("highlight-range", {
-        detail: range,
+      new CustomEvent<HighlightRangeDetail>("highlight-range", {
+        detail: { ...range, offsetVersion },
         bubbles: true,
       }),
     );
