@@ -149,6 +149,19 @@ CREATE TABLE IF NOT EXISTS derivation_outbox (
 CREATE INDEX IF NOT EXISTS idx_derivation_outbox_status
     ON derivation_outbox(kind, status);
 
+CREATE UNIQUE INDEX IF NOT EXISTS ux_derivation_outbox_kind_msg_rev
+    ON derivation_outbox(kind, source_message_id, source_revision);
+
+CREATE TABLE IF NOT EXISTS conversation_system_events (
+    id TEXT PRIMARY KEY,
+    conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    event_type TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_conversation_system_events_cid
+    ON conversation_system_events(conversation_id, created_at);
+
 CREATE TABLE IF NOT EXISTS conversation_deletion_ledger (
     conversation_id TEXT NOT NULL,
     deletion_id TEXT NOT NULL,
@@ -223,6 +236,30 @@ class ConversationStore:
                 """,
                 (kind, message_id, turn_id, now, now, now),
             )
+
+    def _enqueue_observe_memory(self, message_id: str, turn_id: str) -> None:
+        now = _now()
+        self.conn.execute(
+            """
+            INSERT INTO derivation_outbox(
+                kind, source_message_id, source_revision, turn_id,
+                status, attempts, next_run_at, created_at, updated_at
+            ) VALUES ('observe_memory', ?, 1, ?, 'blocked', 0, ?, ?, ?)
+            """,
+            (message_id, turn_id, now, now, now),
+        )
+
+    def _activate_observe_jobs(self, turn_id: str, *, observation_allowed: bool) -> None:
+        status = "pending" if observation_allowed else "cancelled"
+        now = _now()
+        self.conn.execute(
+            """
+            UPDATE derivation_outbox
+            SET status = ?, updated_at = ?, next_run_at = ?
+            WHERE turn_id = ? AND kind = 'observe_memory' AND status = 'blocked'
+            """,
+            (status, now, now, turn_id),
+        )
 
     @staticmethod
     def _message_row_to_dict(row: sqlite3.Row) -> dict:
@@ -574,6 +611,7 @@ class ConversationStore:
             )
 
             self._enqueue_index_jobs(msg_id, turn_id)
+            self._enqueue_observe_memory(msg_id, turn_id)
             self._mark_dirty_and_stale(cid)
 
             title = conv_row["title"]
@@ -662,6 +700,9 @@ class ConversationStore:
 
             turn_status = "complete" if status == "complete" else "interrupted"
             finalized_at = _now()
+            self._activate_observe_jobs(
+                turn_id, observation_allowed=bool(turn["observation_allowed"])
+            )
             self.conn.execute(
                 """
                 UPDATE turns SET assistant_message_id = ?, status = ?, finalized_at = ?
@@ -875,20 +916,42 @@ class ConversationStore:
         """认领待处理（或租约已过期）的 outbox 任务，标记为 running 并返回。"""
         with self._lock:
             now = _now()
-            rows = self.conn.execute(
-                """
-                SELECT * FROM derivation_outbox
-                WHERE kind = ?
-                  AND (
-                        status = 'pending'
-                        OR (status = 'running' AND (locked_until IS NULL OR locked_until <= ?))
-                  )
-                  AND (next_run_at IS NULL OR next_run_at <= ?)
-                ORDER BY id ASC
-                LIMIT ?
-                """,
-                (kind, now, now, limit),
-            ).fetchall()
+            if kind == "observe_memory":
+                rows = self.conn.execute(
+                    """
+                    SELECT * FROM derivation_outbox
+                    WHERE kind = 'observe_memory'
+                      AND (
+                            (status = 'pending' AND turn_id IN (
+                                SELECT id FROM turns WHERE finalized_at IS NOT NULL
+                            ))
+                            OR (status = 'running' AND (
+                                locked_until IS NULL OR locked_until <= ?
+                            ))
+                      )
+                      AND (next_run_at IS NULL OR next_run_at <= ?)
+                    ORDER BY id ASC
+                    LIMIT ?
+                    """,
+                    (now, now, limit),
+                ).fetchall()
+            else:
+                rows = self.conn.execute(
+                    """
+                    SELECT * FROM derivation_outbox
+                    WHERE kind = ?
+                      AND (
+                            status = 'pending'
+                            OR (status = 'running' AND (
+                                locked_until IS NULL OR locked_until <= ?
+                            ))
+                      )
+                      AND (next_run_at IS NULL OR next_run_at <= ?)
+                    ORDER BY id ASC
+                    LIMIT ?
+                    """,
+                    (kind, now, now, limit),
+                ).fetchall()
             if not rows:
                 return []
             locked_until = _future(lease_seconds)
@@ -946,6 +1009,82 @@ class ConversationStore:
                 (attempts, status, next_run_at, error, _now(), job_id),
             )
             self.conn.commit()
+
+    def list_outbox(
+        self,
+        *,
+        kind: str | None = None,
+        message_id: str | None = None,
+    ) -> list[dict]:
+        with self._lock:
+            clauses = ["1=1"]
+            params: list = []
+            if kind:
+                clauses.append("kind = ?")
+                params.append(kind)
+            if message_id:
+                clauses.append("source_message_id = ?")
+                params.append(message_id)
+            rows = self.conn.execute(
+                f"SELECT * FROM derivation_outbox WHERE {' AND '.join(clauses)} ORDER BY id",
+                params,
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    def append_system_event(self, conversation_id: str, event_type: str, payload: dict) -> dict:
+        event_id = _new_id()
+        created_at = _now()
+        with self._lock:
+            self.conn.execute(
+                """
+                INSERT INTO conversation_system_events(
+                    id, conversation_id, event_type, payload_json, created_at
+                ) VALUES (?, ?, ?, ?, ?)
+                """,
+                (event_id, conversation_id, event_type, _dumps(payload), created_at),
+            )
+            self.conn.commit()
+        return {"id": event_id, "event_type": event_type, "payload": payload, "created_at": created_at}
+
+    def list_system_events(
+        self, conversation_id: str, *, after_event_id: str | None = None, limit: int = 50
+    ) -> list[dict]:
+        with self._lock:
+            if after_event_id:
+                anchor = self.conn.execute(
+                    "SELECT created_at FROM conversation_system_events WHERE id = ?",
+                    (after_event_id,),
+                ).fetchone()
+                if anchor is None:
+                    return []
+                rows = self.conn.execute(
+                    """
+                    SELECT * FROM conversation_system_events
+                    WHERE conversation_id = ? AND created_at > ?
+                    ORDER BY created_at ASC LIMIT ?
+                    """,
+                    (conversation_id, anchor["created_at"], limit),
+                ).fetchall()
+            else:
+                rows = self.conn.execute(
+                    """
+                    SELECT * FROM conversation_system_events
+                    WHERE conversation_id = ?
+                    ORDER BY created_at ASC LIMIT ?
+                    """,
+                    (conversation_id, limit),
+                ).fetchall()
+            out = []
+            for row in rows:
+                out.append(
+                    {
+                        "id": row["id"],
+                        "event_type": row["event_type"],
+                        "payload": _loads(row["payload_json"], {}),
+                        "created_at": row["created_at"],
+                    }
+                )
+            return out
 
     def get_message(self, message_id: str) -> dict | None:
         """加载消息及所属会话标题，供派生索引使用。"""
