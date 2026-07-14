@@ -41,6 +41,8 @@
 | 通知 | `memory_decayed` system_event，含 `fact_id`/`old_status`/`new_status` |
 | 恢复 | 新 evidence 命中 `stale` fact → 恢复 `confirmed` |
 | 调度 | lifespan 每 24h 一次；`MemoryMaintenanceJob.run()` 可单测 |
+| 阈值调参 | 默认 90/180 天通过 `Settings.memory_decay_*_days` 配置；不在无生产指标时做 usage 驱动自动调参 |
+| usage 自动调参 | **延后**：待上线后有真实 observation / decay / recall 指标与运维反馈，再评估按类别动态阈值；本阶段不引入假遥测或启发式自调 |
 
 ---
 
