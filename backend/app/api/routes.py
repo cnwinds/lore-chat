@@ -41,6 +41,7 @@ class ChatBody(BaseModel):
     primary_doc_path: str | None = None
     web_enabled: bool = False
     attachments: list[str] = []
+    observation_allowed: bool = True
 
 
 def _normalize_chat_docs(body: ChatBody) -> tuple[list[str], str | None]:
@@ -407,7 +408,7 @@ async def chat(body: ChatBody, request: Request):
             cid,
             user_text=body.text,
             client_message_id=client_message_id,
-            observation_allowed=False,
+            observation_allowed=body.observation_allowed,
             doc_context=paths or None,
             primary_doc=primary,
             attachments=body.attachments or None,
@@ -683,6 +684,24 @@ async def list_conversations(request: Request):
 async def create_conversation(request: Request):
     cid = _c(request).conversations.create()
     return {"id": cid}
+
+
+@router.get("/conversations/{cid}/events")
+async def list_conversation_events(
+    cid: str,
+    request: Request,
+    after_event_id: str | None = None,
+    limit: int = 50,
+):
+    c = _c(request)
+    try:
+        c.conversations.get(cid)
+    except KeyError as e:
+        raise HTTPException(404, "对话不存在") from e
+    events = c.conversations.list_system_events(
+        cid, after_event_id=after_event_id, limit=limit
+    )
+    return {"events": events}
 
 
 @router.get("/conversations/{cid}")

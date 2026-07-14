@@ -1052,7 +1052,7 @@ class ConversationStore:
         with self._lock:
             if after_event_id:
                 anchor = self.conn.execute(
-                    "SELECT created_at FROM conversation_system_events WHERE id = ?",
+                    "SELECT rowid FROM conversation_system_events WHERE id = ?",
                     (after_event_id,),
                 ).fetchone()
                 if anchor is None:
@@ -1060,10 +1060,10 @@ class ConversationStore:
                 rows = self.conn.execute(
                     """
                     SELECT * FROM conversation_system_events
-                    WHERE conversation_id = ? AND created_at > ?
-                    ORDER BY created_at ASC LIMIT ?
+                    WHERE conversation_id = ? AND rowid > ?
+                    ORDER BY rowid ASC LIMIT ?
                     """,
-                    (conversation_id, anchor["created_at"], limit),
+                    (conversation_id, anchor["rowid"], limit),
                 ).fetchall()
             else:
                 rows = self.conn.execute(
