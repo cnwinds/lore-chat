@@ -425,6 +425,35 @@ class MemoryStore:
             ).fetchall()
             return [_row_to_fact(r) for r in rows]
 
+    def set_status(self, fact_id: str, status: str) -> None:
+        now = _now()
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE memory_facts SET status = ?, updated_at = ? WHERE id = ?",
+                (status, now, fact_id),
+            )
+            conn.commit()
+
+    def set_last_seen_at(self, fact_id: str, ts: str) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE memory_facts SET last_seen_at = ?, updated_at = ? WHERE id = ?",
+                (ts, ts, fact_id),
+            )
+            conn.commit()
+
+    def list_active_facts(self) -> list[dict]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM memory_facts
+                WHERE owner_key = ? AND status IN ('confirmed', 'candidate', 'stale')
+                ORDER BY updated_at DESC
+                """,
+                (self.owner_key,),
+            ).fetchall()
+            return [_row_to_fact(r) for r in rows]
+
     def search_confirmed(self, query: str, *, limit: int = 10) -> list[dict]:
         q = (query or "").strip().lower()
         facts = self.list_confirmed()
