@@ -7,11 +7,13 @@ from app.models.llm import LLMClient, OpenAILLMClient
 from app.storage.repo import KnowledgeRepo
 from app.index.vector import VectorIndex
 from app.index.fulltext import FullTextIndex
+from app.index.conversation_fts import ConversationFTS
 from app.index.indexer import Indexer
 from app.engine.retriever import Retriever
 from app.engine.pending import PendingStore
 from app.engine.merge_sessions import MergeSessionStore
 from app.engine.conversations import ConversationStore
+from app.engine.derivation_worker import DerivationWorker
 from app.engine.organizer import Organizer
 from app.engine.agent.orchestrator import AgentOrchestrator
 from app.engine.agent.system_layer import SystemLayer
@@ -32,6 +34,8 @@ class Container:
     pending: PendingStore
     merge_sessions: MergeSessionStore
     conversations: ConversationStore
+    conversation_fts: ConversationFTS
+    derivation_worker: DerivationWorker
     organizer: Organizer
     agent: AgentOrchestrator
     system_layer: SystemLayer
@@ -66,6 +70,13 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
     )
     conversations = ConversationStore(
         settings.kb_path / ".kb" / "conversations"
+    )
+    conversation_fts = ConversationFTS(index_dir / "conversation_fts.db")
+    derivation_worker = DerivationWorker(
+        conversations,
+        conversation_fts,
+        chunk_chars=settings.conversation_chunk_chars,
+        overlap=settings.conversation_chunk_overlap_chars,
     )
     organizer = Organizer(
         repo=repo,
@@ -102,6 +113,8 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
         pending=pending,
         merge_sessions=merge_sessions,
         conversations=conversations,
+        conversation_fts=conversation_fts,
+        derivation_worker=derivation_worker,
         organizer=organizer,
         agent=agent,
         system_layer=system_layer,

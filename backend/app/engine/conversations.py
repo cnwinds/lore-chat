@@ -4,12 +4,18 @@ import json
 import sqlite3
 import threading
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
+
+MAX_OUTBOX_ATTEMPTS = 5
 
 
 def _now() -> str:
     return datetime.now().isoformat(timespec="seconds")
+
+
+def _future(seconds: float) -> str:
+    return (datetime.now() + timedelta(seconds=seconds)).isoformat(timespec="seconds")
 
 
 def _title_from_text(text: str) -> str:
@@ -692,6 +698,106 @@ class ConversationStore:
                     "UPDATE conversations SET indexed_dirty = 0 WHERE id = ?", (cid,)
                 )
                 self.conn.commit()
+
+    # ------------------------------------------------------------------
+    # derivation_outbox：派生任务队列（index_fts 等）
+    # ------------------------------------------------------------------
+
+    def claim_outbox(
+        self, kind: str, limit: int = 10, lease_seconds: int = 60
+    ) -> list[dict]:
+        """认领待处理（或租约已过期）的 outbox 任务，标记为 running 并返回。"""
+        with self._lock:
+            now = _now()
+            rows = self.conn.execute(
+                """
+                SELECT * FROM derivation_outbox
+                WHERE kind = ?
+                  AND (
+                        status = 'pending'
+                        OR (status = 'running' AND (locked_until IS NULL OR locked_until <= ?))
+                  )
+                  AND (next_run_at IS NULL OR next_run_at <= ?)
+                ORDER BY id ASC
+                LIMIT ?
+                """,
+                (kind, now, now, limit),
+            ).fetchall()
+            if not rows:
+                return []
+            locked_until = _future(lease_seconds)
+            jobs: list[dict] = []
+            for row in rows:
+                self.conn.execute(
+                    """
+                    UPDATE derivation_outbox
+                    SET status = 'running', locked_until = ?, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (locked_until, now, row["id"]),
+                )
+                job = dict(row)
+                job["status"] = "running"
+                job["locked_until"] = locked_until
+                jobs.append(job)
+            self.conn.commit()
+            return jobs
+
+    def complete_outbox(self, job_id: int) -> None:
+        with self._lock:
+            self.conn.execute(
+                """
+                UPDATE derivation_outbox
+                SET status = 'done', locked_until = NULL, updated_at = ?
+                WHERE id = ?
+                """,
+                (_now(), job_id),
+            )
+            self.conn.commit()
+
+    def fail_outbox(self, job_id: int, error: str, backoff: float = 1.0) -> None:
+        """失败重试：指数退避（backoff * 2^(attempts-1)），超过最大次数后置为 dead。"""
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT attempts FROM derivation_outbox WHERE id = ?", (job_id,)
+            ).fetchone()
+            if row is None:
+                return
+            attempts = int(row["attempts"]) + 1
+            if attempts >= MAX_OUTBOX_ATTEMPTS:
+                status = "dead"
+                next_run_at = None
+            else:
+                status = "pending"
+                next_run_at = _future(backoff * (2 ** (attempts - 1)))
+            self.conn.execute(
+                """
+                UPDATE derivation_outbox
+                SET attempts = ?, status = ?, next_run_at = ?, last_error = ?,
+                    locked_until = NULL, updated_at = ?
+                WHERE id = ?
+                """,
+                (attempts, status, next_run_at, error, _now(), job_id),
+            )
+            self.conn.commit()
+
+    def get_message(self, message_id: str) -> dict | None:
+        """加载消息及所属会话标题，供派生索引使用。"""
+        with self._lock:
+            row = self.conn.execute(
+                """
+                SELECT m.*, c.title AS conversation_title
+                FROM messages m JOIN conversations c ON c.id = m.conversation_id
+                WHERE m.id = ?
+                """,
+                (message_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            msg = self._message_row_to_dict(row)
+            msg["conversation_id"] = row["conversation_id"]
+            msg["conversation_title"] = row["conversation_title"]
+            return msg
 
     # ------------------------------------------------------------------
     # 迁移：旧版单文件 conversations.json → SQLite（一次性、幂等）

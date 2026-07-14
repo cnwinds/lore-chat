@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+import sys
+import threading
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -13,6 +15,12 @@ from app.deps import build_container
 from app.api.routes import router
 
 _PLACEHOLDER_API_KEYS = frozenset({"", "sk-none", "sk-your-key"})
+_DERIVATION_WORKER_INTERVAL_SECONDS = 0.5
+_DERIVATION_WORKER_BATCH_SIZE = 20
+
+
+def _under_pytest() -> bool:
+    return "pytest" in sys.modules
 
 
 def create_app(settings: Settings | None = None, llm: LLMClient | None = None) -> FastAPI:
@@ -28,7 +36,33 @@ def create_app(settings: Settings | None = None, llm: LLMClient | None = None) -
                 "OPENAI_API_KEY 未配置（仍为占位符）。录入与问答将失败，请编辑 backend/.env"
             )
         app.state.container = build_container(_settings, llm=_llm)
-        yield
+
+        stop_event = threading.Event()
+        worker_thread: threading.Thread | None = None
+        if not _under_pytest():
+            worker = app.state.container.derivation_worker
+
+            def _run_derivation_worker() -> None:
+                while not stop_event.is_set():
+                    try:
+                        worker.drain(_DERIVATION_WORKER_BATCH_SIZE)
+                    except Exception:
+                        logging.getLogger("uvicorn.error").exception(
+                            "derivation worker 执行失败"
+                        )
+                    stop_event.wait(_DERIVATION_WORKER_INTERVAL_SECONDS)
+
+            worker_thread = threading.Thread(
+                target=_run_derivation_worker, name="derivation-worker", daemon=True
+            )
+            worker_thread.start()
+
+        try:
+            yield
+        finally:
+            stop_event.set()
+            if worker_thread is not None:
+                worker_thread.join(timeout=2)
 
     app = FastAPI(title="Lore Chat", lifespan=lifespan)
 
