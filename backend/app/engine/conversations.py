@@ -47,6 +47,14 @@ class _ConversationFTSLike(Protocol):
     def delete_conversation(self, conversation_id: str) -> None: ...
 
 
+class _ConversationVectorLike(Protocol):
+    def delete_conversation(self, conversation_id: str) -> None: ...
+
+
+class _IndexRevisionLike(Protocol):
+    def bump(self) -> int: ...
+
+
 class _IndexerLike(Protocol):
     def remove_conversation(self, cid: str) -> None: ...
 
@@ -202,17 +210,18 @@ class ConversationStore:
         ).fetchone()
         return int(row["n"])
 
-    def _enqueue_index_fts(self, message_id: str, turn_id: str | None) -> None:
+    def _enqueue_index_jobs(self, message_id: str, turn_id: str | None) -> None:
         now = _now()
-        self.conn.execute(
-            """
-            INSERT INTO derivation_outbox(
-                kind, source_message_id, source_revision, turn_id,
-                status, attempts, next_run_at, created_at, updated_at
-            ) VALUES ('index_fts', ?, 1, ?, 'pending', 0, ?, ?, ?)
-            """,
-            (message_id, turn_id, now, now, now),
-        )
+        for kind in ("index_fts", "index_vector"):
+            self.conn.execute(
+                """
+                INSERT INTO derivation_outbox(
+                    kind, source_message_id, source_revision, turn_id,
+                    status, attempts, next_run_at, created_at, updated_at
+                ) VALUES (?, ?, 1, ?, 'pending', 0, ?, ?, ?)
+                """,
+                (kind, message_id, turn_id, now, now, now),
+            )
 
     @staticmethod
     def _message_row_to_dict(row: sqlite3.Row) -> dict:
@@ -369,7 +378,9 @@ class ConversationStore:
         cid: str,
         *,
         conversation_fts: "_ConversationFTSLike | None" = None,
+        conversation_vector: "_ConversationVectorLike | None" = None,
         indexer: "_IndexerLike | None" = None,
+        index_revision: "_IndexRevisionLike | None" = None,
         ledger_path: str | Path | None = None,
         delete_summary: bool = True,
     ) -> None:
@@ -426,8 +437,15 @@ class ConversationStore:
             self.conn.execute("DELETE FROM conversations WHERE id = ?", (cid,))
             self.conn.commit()
 
+        index_cleared = False
         if conversation_fts is not None:
             conversation_fts.delete_conversation(cid)
+            index_cleared = True
+        if conversation_vector is not None:
+            conversation_vector.delete_conversation(cid)
+            index_cleared = True
+        if index_revision is not None and index_cleared:
+            index_revision.bump()
         if indexer is not None:
             indexer.remove_conversation(cid)
 
@@ -523,7 +541,7 @@ class ConversationStore:
                 (turn_id, cid, client_message_id, msg_id, int(observation_allowed), started_at),
             )
 
-            self._enqueue_index_fts(msg_id, turn_id)
+            self._enqueue_index_jobs(msg_id, turn_id)
             self._mark_dirty_and_stale(cid)
 
             title = conv_row["title"]
@@ -604,7 +622,7 @@ class ConversationStore:
                         assistant.get("total_duration_ms"),
                     ),
                 )
-                self._enqueue_index_fts(assistant_msg_id, turn_id)
+                self._enqueue_index_jobs(assistant_msg_id, turn_id)
                 msg_row = self.conn.execute(
                     "SELECT * FROM messages WHERE id = ?", (assistant_msg_id,)
                 ).fetchone()

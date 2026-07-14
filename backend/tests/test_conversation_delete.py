@@ -5,6 +5,9 @@ import pytest
 from app.engine.conversations import ConversationStore
 from app.engine.derivation_worker import DerivationWorker
 from app.index.conversation_fts import ConversationFTS
+from app.index.conversation_vector import ConversationVector
+from app.index.message_chunk import MessageChunk
+from app.index.revision import IndexRevision
 
 
 def _store(tmp_path):
@@ -58,6 +61,28 @@ def test_delete_conversation_removes_fts_and_writes_ledger(tmp_path):
 
     with pytest.raises(KeyError):
         store.get(cid)
+
+
+def test_delete_conversation_removes_vector_and_bumps_revision(tmp_path):
+    store = _store(tmp_path)
+    vec = ConversationVector(tmp_path / ".kb" / "index" / "vec")
+    rev = IndexRevision(tmp_path / ".kb" / "index" / "revision.txt")
+    cid = store.create()
+    vec.upsert_message_chunks(
+        conversation_id=cid,
+        message_id="m1",
+        role="user",
+        ts="t",
+        conversation_title="",
+        chunks=[MessageChunk(0, 0, 6, "漫剧剪辑工具")],
+        embeddings=[[0.3] * 8],
+    )
+    assert vec.query([0.3] * 8, k=5)
+
+    store.delete(cid, conversation_vector=vec, index_revision=rev)
+
+    assert vec.query([0.3] * 8, k=5) == []
+    assert rev.get() == 1
 
 
 def test_delete_cancels_pending_outbox_jobs(tmp_path):
