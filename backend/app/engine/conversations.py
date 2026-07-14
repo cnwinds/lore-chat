@@ -310,6 +310,7 @@ class ConversationStore:
     def _conv_to_dict(self, row: sqlite3.Row) -> dict:
         cid = row["id"]
         summarized, summary_path, summarized_at = self._summary_state(cid)
+        summaries = self._list_summaries_unlocked(cid)
         return {
             "id": cid,
             "title": row["title"],
@@ -317,6 +318,7 @@ class ConversationStore:
             "updated_at": row["updated_at"],
             "active_turn_id": row["active_turn_id"],
             "messages": self._load_messages(cid),
+            "summaries": summaries,
             "summarized": summarized,
             "summary_path": summary_path,
             "summarized_at": summarized_at,
@@ -825,15 +827,14 @@ class ConversationStore:
             )
             self.conn.commit()
 
-    def list_summaries(self, cid: str) -> list[dict]:
-        with self._lock:
-            rows = self.conn.execute(
-                """
-                SELECT * FROM conversation_summaries
-                WHERE conversation_id = ? ORDER BY revision ASC
-                """,
-                (cid,),
-            ).fetchall()
+    def _list_summaries_unlocked(self, cid: str) -> list[dict]:
+        rows = self.conn.execute(
+            """
+            SELECT * FROM conversation_summaries
+            WHERE conversation_id = ? ORDER BY revision ASC
+            """,
+            (cid,),
+        ).fetchall()
         return [
             {
                 "conversation_id": r["conversation_id"],
@@ -845,6 +846,11 @@ class ConversationStore:
             }
             for r in rows
         ]
+
+    def list_summaries(self, cid: str) -> list[dict]:
+        with self._lock:
+            self._conversation_row(cid)
+            return self._list_summaries_unlocked(cid)
 
     def clear_dirty(self, cid: str) -> None:
         with self._lock:

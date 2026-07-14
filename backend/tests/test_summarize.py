@@ -128,7 +128,7 @@ async def test_summarize_conversation_tool_flow(tmp_path, monkeypatch):
     assert conv["summary_path"] == "娱乐/漫剧工具盘点.md"
     doc = repo.read_doc("娱乐/漫剧工具盘点.md")
     assert "漫剧工具盘点" in doc.body
-    assert doc.meta.get("conversation_id") == cid
+    assert doc.meta.get("conversation_ids") == [cid]
     assert doc.meta.get("source") == "conversation"
 
     # 归档不应清空原会话消息的全文索引，也不应调用 remove_conversation
