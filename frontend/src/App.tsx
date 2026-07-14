@@ -11,6 +11,7 @@ import { useAppEscapeKey } from "./hooks/app/useAppEscapeKey";
 import { useConversationShell } from "./hooks/app/useConversationShell";
 import { useDocPreviewLayout } from "./hooks/app/useDocPreviewLayout";
 import { useComposerDocState } from "./hooks/useComposerDocState";
+import type { JumpTarget } from "./hooks/chat/useConversationJump";
 
 export default function App() {
   const [sidebarRefreshKey, setSidebarRefreshKey] = useState(0);
@@ -75,6 +76,14 @@ export default function App() {
 
   useAppEscapeKey(doc, snippetSource, () => setSnippetSource(null));
 
+  function handleJumpToConversation(target: JumpTarget) {
+    if (conversation.activeConversationId !== target.conversationId) {
+      conversation.setActiveConversationId(target.conversationId);
+    }
+    conversation.requestJump(target);
+    doc.requestCloseDocPreview();
+  }
+
   function handleOpenSource(src: SourceRef) {
     if (src.type === "kb") openDocWithComposer(src.path, src.excerpt);
     else if (src.type === "web") {
@@ -109,6 +118,9 @@ export default function App() {
             }
             onSidebarRefresh={refreshSidebar}
             onOpenSource={handleOpenSource}
+            onJumpToConversation={handleJumpToConversation}
+            pendingJump={conversation.pendingJump}
+            onJumpHandled={conversation.clearPendingJump}
             docTrayItems={composer.items}
             primaryDocPath={composer.primaryPath}
             docPaths={composer.paths}

@@ -6,6 +6,7 @@ import {
 import { Sidebar } from "../../components/Sidebar";
 import type { ComponentProps } from "react";
 import type { useDocPreviewLayout } from "./useDocPreviewLayout";
+import type { JumpTarget } from "../chat/useConversationJump";
 
 type DocPreview = ReturnType<typeof useDocPreviewLayout>;
 
@@ -32,6 +33,15 @@ export function useConversationShell({
   const [titleOverrides, setTitleOverrides] = useState<Record<string, string>>(
     {},
   );
+  const [pendingJump, setPendingJump] = useState<JumpTarget | null>(null);
+
+  function requestJump(target: JumpTarget) {
+    setPendingJump(target);
+  }
+
+  function clearPendingJump() {
+    setPendingJump(null);
+  }
 
   async function newChat() {
     try {
@@ -93,5 +103,8 @@ export function useConversationShell({
     setTitleOverrides,
     sidebarProps,
     selectConversation,
+    pendingJump,
+    requestJump,
+    clearPendingJump,
   };
 }

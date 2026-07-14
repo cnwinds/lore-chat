@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useChatConversation } from "../hooks/chat/useChatConversation";
 import { useChatScroll } from "../hooks/chat/useChatScroll";
 import { useAgentStream } from "../hooks/chat/useAgentStream";
+import type { JumpTarget } from "../hooks/chat/useConversationJump";
 import {
   uploadFile,
   summarizeConversation,
@@ -26,6 +27,9 @@ type Props = {
   onFirstQuestionTitle?: (id: string, title: string) => void;
   onSidebarRefresh?: () => void;
   onOpenSource?: (src: SourceRef) => void;
+  onJumpToConversation?: (target: JumpTarget) => void;
+  pendingJump?: JumpTarget | null;
+  onJumpHandled?: () => void;
   docTrayItems?: ComposerDocItem[];
   primaryDocPath?: string | null;
   docPaths?: string[];
@@ -39,6 +43,9 @@ export function Chat({
   onFirstQuestionTitle,
   onSidebarRefresh,
   onOpenSource,
+  onJumpToConversation,
+  pendingJump = null,
+  onJumpHandled,
   docTrayItems = [],
   primaryDocPath = null,
   docPaths = [],
@@ -67,7 +74,13 @@ export function Chat({
     setSummarized,
     summaryPath,
     setSummaryPath,
-  } = useChatConversation({ conversationId, skipLoadRef, streamingRef });
+  } = useChatConversation({
+    conversationId,
+    skipLoadRef,
+    streamingRef,
+    pendingJump,
+    onJumpHandled,
+  });
   const stickToBottomRef = useRef(true);
   const {
     streaming,
@@ -277,7 +290,16 @@ export function Chat({
   }
 
   function handleOpenSource(src: SourceRef) {
-    if (src.type === "conversation") return;
+    if (src.type === "conversation" && src.message_id) {
+      onJumpToConversation?.({
+        conversationId: src.cid,
+        messageId: src.message_id,
+        startChar: src.start_char,
+        endChar: src.end_char,
+        offsetVersion: src.offset_version,
+      });
+      return;
+    }
     if (src.type === "kb" && src.path) {
       openDoc(src.path, src.excerpt);
       return;
