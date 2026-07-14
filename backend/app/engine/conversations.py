@@ -257,6 +257,35 @@ class ConversationStore:
         ).fetchall()
         return [self._message_row_to_dict(r) for r in rows]
 
+    def get_message_window(
+        self,
+        cid: str,
+        message_id: str,
+        *,
+        before_messages: int = 0,
+        after_messages: int = 0,
+    ) -> list[dict]:
+        with self._lock:
+            self._conversation_row(cid)
+            anchor = self.conn.execute(
+                "SELECT seq FROM messages WHERE id = ? AND conversation_id = ?",
+                (message_id, cid),
+            ).fetchone()
+            if anchor is None:
+                raise KeyError(message_id)
+            seq = int(anchor["seq"])
+            rows = self.conn.execute(
+                """
+                SELECT * FROM messages
+                WHERE conversation_id = ?
+                  AND seq BETWEEN ? AND ?
+                  AND role IN ('user', 'assistant')
+                ORDER BY seq ASC
+                """,
+                (cid, seq - before_messages, seq + after_messages),
+            ).fetchall()
+        return [self._message_row_to_dict(r) for r in rows]
+
     def _summary_state(self, cid: str) -> tuple[bool, str | None, str | None]:
         row = self.conn.execute(
             """

@@ -115,6 +115,7 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
         edit_doc_max_edits=settings.edit_doc_max_edits,
         edit_doc_max_patch_chars=settings.edit_doc_max_patch_chars,
         edit_doc_require_read=settings.edit_doc_require_read,
+        conversation_context_max_chars=settings.conversation_context_max_chars,
     )
     agent = AgentOrchestrator(settings, llm, tool_registry, system_layer=system_layer)
     return Container(

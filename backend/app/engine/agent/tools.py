@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import asyncio
 
+from app.engine.conversation_context import read_conversation_context
 from app.engine.conversations import ConversationStore
 from app.engine.disclosure import disclose, disclosure_summary
 from app.engine.patch import Edit, Insert, apply_edits, apply_insert
 
-READ_ONLY_TOOLS = frozenset({"search_kb", "read_doc", "fetch_url", "web_search"})
+READ_ONLY_TOOLS = frozenset({"search_kb", "read_doc", "read_conversation_context", "fetch_url", "web_search"})
 WRITE_TOOLS = frozenset({
     "write_kb", "delete_kb", "ask_user", "summarize_conversation", "edit_doc",
 })
@@ -21,6 +22,7 @@ def can_parallelize(tool_names: list[str]) -> bool:
 TOOL_LABELS = {
     "search_kb": "检索本地知识库",
     "read_doc": "读取文档",
+    "read_conversation_context": "读取会话邻近消息",
     "fetch_url": "打开链接",
     "web_search": "搜索网页",
     "write_kb": "整理到知识库",
@@ -75,6 +77,23 @@ TOOL_DEFINITIONS: list[dict] = [
                     "limit": {"type": "integer", "description": "本次最多读取字符数，默认 3000", "default": 3000},
                 },
                 "required": ["path"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "read_conversation_context",
+            "description": "读取某条会话消息及其前后若干条邻近消息（用于核验检索命中、展开上下文）。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "conversation_id": {"type": "string"},
+                    "message_id": {"type": "string"},
+                    "before_messages": {"type": "integer", "minimum": 0, "maximum": 10, "default": 2},
+                    "after_messages": {"type": "integer", "minimum": 0, "maximum": 10, "default": 2},
+                },
+                "required": ["conversation_id", "message_id"],
             },
         },
     },
@@ -308,6 +327,7 @@ class ToolRegistry:
         edit_doc_max_edits: int = 10,
         edit_doc_max_patch_chars: int = 8192,
         edit_doc_require_read: bool = True,
+        conversation_context_max_chars: int = 12000,
     ):
         self.retriever = retriever
         self.repo = repo
@@ -322,6 +342,7 @@ class ToolRegistry:
         self.edit_doc_max_edits = edit_doc_max_edits
         self.edit_doc_max_patch_chars = edit_doc_max_patch_chars
         self.edit_doc_require_read = edit_doc_require_read
+        self.conversation_context_max_chars = conversation_context_max_chars
         self._read_guard: dict[str, set[str]] = {}
         self._fetch_cache: dict[str, object] = {}
 
@@ -340,6 +361,8 @@ class ToolRegistry:
             return await asyncio.to_thread(
                 self._read_doc, args, conversation_id=conversation_id
             )
+        if name == "read_conversation_context":
+            return await asyncio.to_thread(self._read_conversation_context, args)
         if name == "fetch_url":
             return await self._fetch_url(args)
         if name == "web_search":
@@ -459,6 +482,33 @@ class ToolRegistry:
             out["outline"] = info["outline"]
         self._mark_read(conversation_id, path)
         return out
+
+    def _read_conversation_context(self, args: dict) -> dict:
+        if not self.conversations:
+            return {
+                "summary": "会话存储未配置",
+                "messages": [],
+                "anchor": {"message_id": args.get("message_id")},
+                "truncated": False,
+                "error": "not_configured",
+            }
+        try:
+            return read_conversation_context(
+                self.conversations,
+                conversation_id=args["conversation_id"],
+                message_id=args["message_id"],
+                before_messages=args.get("before_messages", 2),
+                after_messages=args.get("after_messages", 2),
+                max_chars=self.conversation_context_max_chars,
+            )
+        except KeyError:
+            return {
+                "summary": "消息或会话不存在",
+                "messages": [],
+                "anchor": {"message_id": args.get("message_id")},
+                "truncated": False,
+                "error": "not_found",
+            }
 
     async def _fetch_url(self, args: dict) -> dict:
         url = args["url"]
