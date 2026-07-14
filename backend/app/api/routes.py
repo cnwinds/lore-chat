@@ -713,8 +713,8 @@ async def summarize_conversation(cid: str, request: Request):
     except Exception as e:
         raise HTTPException(502, f"归档失败: {e}") from e
     if result.status == "saved" and result.rel_path:
+        # 归档后仍保留原始消息的全文索引，不清空会话消息级 FTS。
         c.conversations.mark_summarized(cid, result.rel_path)
-        c.indexer.remove_conversation(cid)
     return result.__dict__
 
 

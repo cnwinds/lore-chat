@@ -489,9 +489,9 @@ class ToolRegistry:
             [{"type": "kb", "path": result.rel_path}] if result.rel_path else []
         )
         if result.status == "saved" and result.rel_path:
+            # 归档后仍保留原始消息的全文索引（会话消息级 FTS），
+            # 便于历史检索；仅文档级摘要落库，不清空 conversation_chunks_v2。
             self.conversations.mark_summarized(conversation_id, result.rel_path)
-            if self.indexer is not None:
-                self.indexer.remove_conversation(conversation_id)
         return {"summary": result.message, "sources": sources}
 
     async def _web_search(self, args: dict) -> dict:
