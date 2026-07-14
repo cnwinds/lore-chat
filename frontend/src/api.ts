@@ -263,6 +263,8 @@ export type ChatStreamOptions = {
   primaryDocPath?: string | null;
   webEnabled?: boolean;
   attachments?: string[];
+  /** 幂等重试键：同一 (conversation_id, clientMessageId) 重复发送不会重跑 Agent。 */
+  clientMessageId?: string;
 };
 
 export async function* chatStream(
@@ -275,6 +277,7 @@ export async function* chatStream(
     primaryDocPath,
     webEnabled = false,
     attachments = [],
+    clientMessageId,
   } = options;
   const r = await fetch(`${BASE}/api/chat`, {
     method: "POST",
@@ -285,6 +288,7 @@ export async function* chatStream(
     body: JSON.stringify({
       text,
       conversation_id: conversationId ?? undefined,
+      client_message_id: clientMessageId ?? undefined,
       active_doc_paths: activeDocPaths.length ? activeDocPaths : undefined,
       primary_doc_path: primaryDocPath ?? undefined,
       web_enabled: webEnabled,

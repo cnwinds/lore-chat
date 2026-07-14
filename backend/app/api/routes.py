@@ -1,16 +1,18 @@
 from __future__ import annotations
 
+import asyncio
 import io
 import json
+import uuid
 
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from app.engine.agent.events import error_event, now_ts
+from app.engine.agent.events import done, error_event, text_delta
 from app.engine.agent.prompts import MODE_DEFAULT, MODE_FORCE_WRITE, MODE_NO_WRITE
+from app.engine.conversations import TurnInProgress
 from app.engine.patch import diff_affected_range
-from app.logging_config import get_logger
 
 router = APIRouter(prefix="/api")
 
@@ -32,6 +34,7 @@ class ResolveBody(BaseModel):
 class ChatBody(BaseModel):
     text: str
     conversation_id: str | None = None
+    client_message_id: str | None = None
     active_doc_path: str | None = None  # backward compat
     active_doc_paths: list[str] = []
     primary_doc_path: str | None = None
@@ -95,6 +98,7 @@ class _TimelineAccumulator:
         self.timeline: list[dict] = []
         self.all_sources: list[dict] = []
         self.total_duration_ms: int | None = None
+        self.assistant_text: str = ""
         self._tools: dict[str, dict] = {}
         self._parallel: dict[str, dict] = {}
         self._active_parallel: str | None = None
@@ -161,6 +165,7 @@ class _TimelineAccumulator:
 
         elif event_type == "text_delta":
             delta = data.get("delta", "")
+            self.assistant_text += delta
             if self._text_block is None:
                 self._text_block = {
                     "type": "text",
@@ -180,14 +185,6 @@ class _TimelineAccumulator:
                     seen.add(key)
             if data.get("total_duration_ms") is not None:
                 self.total_duration_ms = data["total_duration_ms"]
-
-
-def _accumulate_timeline(
-    acc: _TimelineAccumulator, ev: str
-) -> None:
-    parsed = _parse_sse(ev)
-    if parsed:
-        acc.accumulate(parsed[0], parsed[1])
 
 
 # ---------------------------------------------------------------------------
@@ -234,19 +231,6 @@ async def _consume_agent_ingest(agent, text: str) -> dict:
     if result is None:
         raise HTTPException(502, "录入失败: Agent 未调用 write_kb")
     return result
-
-
-def _reindex_conversation(c, cid: str, conv: dict) -> None:
-    """未归档会话进全文索引，作为归档前的可检索兜底；已归档则移出索引。"""
-    try:
-        if conv.get("summarized"):
-            c.indexer.remove_conversation(cid)
-            return
-        text = c.conversations.conversation_text(conv)
-        c.indexer.index_conversation(cid, text)
-        c.conversations.clear_dirty(cid)
-    except Exception:
-        get_logger("routes").warning("会话重索引失败 cid=%s", cid, exc_info=True)
 
 
 def _merge_session_view(c, session: dict) -> dict:
@@ -306,9 +290,103 @@ async def ask(body: AskBody, request: Request):
         raise HTTPException(502, f"问答失败: {e}") from e
 
 
+async def _chat_stream_no_persist(c, body: ChatBody, paths: list[str], primary: str | None):
+    """无 conversation_id：不持久化，纯流式转发（沿用旧行为）。"""
+    try:
+        async for ev in c.agent.run(
+            body.text,
+            mode=MODE_DEFAULT,
+            active_doc_path=primary,
+            active_doc_paths=paths,
+            primary_doc_path=primary,
+            history=None,
+            conversation_id=None,
+            web_enabled=body.web_enabled,
+        ):
+            yield ev
+    except Exception as e:
+        yield error_event(str(e))
+
+
+async def _chat_replay(turn: dict):
+    """turn 已 complete/interrupted：从已存 timeline 重放，不再次运行 Agent。"""
+    assistant = turn.get("assistant_message") or {}
+    for block in assistant.get("timeline") or []:
+        if block.get("type") == "text" and block.get("content"):
+            yield text_delta(block["content"])
+    yield done(assistant.get("sources") or [], assistant.get("total_duration_ms") or 0)
+
+
+async def _chat_stream_and_persist(
+    c,
+    body: ChatBody,
+    cid: str,
+    turn: dict,
+    history: list[dict],
+    paths: list[str],
+    primary: str | None,
+):
+    acc = _TimelineAccumulator()
+    assistant_saved = False
+
+    def _finalize(status: str, error: str | None = None) -> None:
+        nonlocal assistant_saved
+        if assistant_saved:
+            return
+        assistant: dict = {
+            "text": acc.assistant_text,
+            "timeline": acc.timeline,
+            "sources": acc.all_sources,
+            "total_duration_ms": acc.total_duration_ms,
+            "status": status,
+        }
+        if error is not None:
+            assistant["error"] = error
+        c.conversations.finalize_turn(cid, turn_id=turn["turn_id"], assistant=assistant)
+        assistant_saved = True
+
+    try:
+        async for ev in c.agent.run(
+            body.text,
+            mode=MODE_DEFAULT,
+            active_doc_path=primary,
+            active_doc_paths=paths,
+            primary_doc_path=primary,
+            history=history,
+            conversation_id=cid,
+            web_enabled=body.web_enabled,
+        ):
+            parsed = _parse_sse(ev)
+            if parsed:
+                acc.accumulate(*parsed)
+                if parsed[0] == "done":
+                    # 拦截最终 done：先落库再把事件转发给客户端。
+                    _finalize("complete")
+            yield ev
+    except asyncio.CancelledError:
+        def _finalize_partial() -> None:
+            if acc.timeline or acc.assistant_text:
+                _finalize("interrupted")
+
+        await asyncio.shield(asyncio.to_thread(_finalize_partial))
+        raise
+    except Exception as e:
+        _finalize("interrupted", error=str(e))
+        yield error_event(str(e))
+    finally:
+        if not assistant_saved and (acc.timeline or acc.assistant_text):
+            _finalize("interrupted")
+
+
 @router.post("/chat")
 async def chat(body: ChatBody, request: Request):
-    """产品主入口：SSE 流式 Agent，会话持久化与时间线。"""
+    """产品主入口：SSE 流式 Agent，会话持久化与时间线。
+
+    有 conversation_id 时，在返回 StreamingResponse 之前完成 begin_turn：
+    - TurnInProgress → 409（不会已经发出 200 响应头）
+    - turn 已 complete/interrupted（重复 client_message_id 重试）→ 重放，不再跑 Agent
+    - 否则流式运行 Agent，并在收到 done 前 finalize_turn 落库
+    """
     c = _c(request)
     paths, primary = _normalize_chat_docs(body)
     if body.conversation_id:
@@ -317,48 +395,40 @@ async def chat(body: ChatBody, request: Request):
         except KeyError as e:
             raise HTTPException(404, "对话不存在") from e
 
-    async def event_generator():
-        acc = _TimelineAccumulator()
-        assistant_ts = now_ts()
-        history: list[dict] = []
-        if body.conversation_id:
-            history = c.conversations.llm_history(c.conversations.get(body.conversation_id))
-        try:
-            async for ev in c.agent.run(
-                body.text,
-                mode=MODE_DEFAULT,
-                active_doc_path=primary,
-                active_doc_paths=paths,
-                primary_doc_path=primary,
-                history=history,
-                conversation_id=body.conversation_id,
-                web_enabled=body.web_enabled,
-            ):
-                yield ev
-                _accumulate_timeline(acc, ev)
-            assistant_msg: dict = {
-                "role": "assistant",
-                "ts": assistant_ts,
-                "timeline": acc.timeline,
-                "sources": acc.all_sources,
-            }
-            if acc.total_duration_ms is not None:
-                assistant_msg["total_duration_ms"] = acc.total_duration_ms
-            if body.conversation_id:
-                conv = c.conversations.append_exchange(
-                    body.conversation_id,
-                    body.text,
-                    assistant_msg,
-                    user_ts=now_ts(),
-                    doc_context=paths or None,
-                    primary_doc=primary,
-                    attachments=body.attachments or None,
-                )
-                _reindex_conversation(c, body.conversation_id, conv)
-        except Exception as e:
-            yield error_event(str(e))
+    if not body.conversation_id:
+        return StreamingResponse(
+            _chat_stream_no_persist(c, body, paths, primary),
+            media_type="text/event-stream",
+        )
 
-    return StreamingResponse(event_generator(), media_type="text/event-stream")
+    cid = body.conversation_id
+    # 必须在 begin_turn 之前快照历史：begin_turn 会写入本轮用户消息，
+    # 传给 Agent 的 history 不应包含这条尚未回复的新消息。
+    history = c.conversations.llm_history(c.conversations.get(cid))
+    client_message_id = body.client_message_id or uuid.uuid4().hex
+    try:
+        turn = c.conversations.begin_turn(
+            cid,
+            user_text=body.text,
+            client_message_id=client_message_id,
+            observation_allowed=False,
+            doc_context=paths or None,
+            primary_doc=primary,
+            attachments=body.attachments or None,
+        )
+    except TurnInProgress as e:
+        raise HTTPException(
+            409,
+            detail={"code": "turn_in_progress", "retry_after_ms": e.retry_after_ms},
+        )
+
+    if turn.get("status", "running") != "running":
+        return StreamingResponse(_chat_replay(turn), media_type="text/event-stream")
+
+    return StreamingResponse(
+        _chat_stream_and_persist(c, body, cid, turn, history, paths, primary),
+        media_type="text/event-stream",
+    )
 
 
 @router.post("/upload")

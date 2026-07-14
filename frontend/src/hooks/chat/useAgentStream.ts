@@ -159,12 +159,14 @@ export function useAgentStream({
         onFirstQuestionTitle?.(cid, titleFromText(display));
       }
       const ctx = docCtx ?? resolveDocContext();
+      const clientMessageId = crypto.randomUUID();
       for await (const { event, data } of chatStream(apiText, {
         conversationId: cid,
         activeDocPaths: ctx.paths,
         primaryDocPath: ctx.primary,
         webEnabled,
         attachments: userMeta?.attachments ?? [],
+        clientMessageId,
       })) {
         if (event === "error") {
           const message = (data.message as string) || "请求失败";

@@ -385,10 +385,21 @@ class ConversationStore:
                     "SELECT * FROM messages WHERE id = ?",
                     (existing["user_message_id"],),
                 ).fetchone()
-                return {
+                result: dict = {
                     "turn_id": existing["id"],
+                    "status": existing["status"],
                     "user_message": self._message_row_to_dict(user_row),
                 }
+                if existing["assistant_message_id"]:
+                    assistant_row = self.conn.execute(
+                        "SELECT * FROM messages WHERE id = ?",
+                        (existing["assistant_message_id"],),
+                    ).fetchone()
+                    if assistant_row is not None:
+                        result["assistant_message"] = self._message_row_to_dict(
+                            assistant_row
+                        )
+                return result
 
             now = user_ts or _now()
             msg_id = _new_id()
@@ -445,7 +456,11 @@ class ConversationStore:
             msg_row = self.conn.execute(
                 "SELECT * FROM messages WHERE id = ?", (msg_id,)
             ).fetchone()
-            return {"turn_id": turn_id, "user_message": self._message_row_to_dict(msg_row)}
+            return {
+                "turn_id": turn_id,
+                "status": "running",
+                "user_message": self._message_row_to_dict(msg_row),
+            }
 
     def finalize_turn(self, cid: str, turn_id: str, assistant: dict) -> dict | None:
         with self._lock:
@@ -456,6 +471,17 @@ class ConversationStore:
             ).fetchone()
             if turn is None:
                 raise KeyError(turn_id)
+
+            if turn["status"] != "running":
+                # 幂等：已 finalize 过的 turn 不再插入第二条助手消息。
+                if turn["assistant_message_id"]:
+                    msg_row = self.conn.execute(
+                        "SELECT * FROM messages WHERE id = ?",
+                        (turn["assistant_message_id"],),
+                    ).fetchone()
+                    if msg_row is not None:
+                        return self._message_row_to_dict(msg_row)
+                return None
 
             status = assistant.get("status") or "complete"
             has_content = bool(

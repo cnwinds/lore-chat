@@ -196,6 +196,111 @@ def test_llm_history_from_timeline(tmp_path):
     ]
 
 
+def test_begin_turn_new_turn_has_running_status(tmp_path):
+    store = _store(tmp_path)
+    cid = store.create()
+    turn = store.begin_turn(
+        cid, user_text="你好", client_message_id="cli-1", observation_allowed=False
+    )
+    assert turn["status"] == "running"
+
+
+def test_begin_turn_replay_after_complete(tmp_path):
+    store = _store(tmp_path)
+    cid = store.create()
+    turn = store.begin_turn(
+        cid, user_text="你好", client_message_id="cli-1", observation_allowed=False
+    )
+    store.finalize_turn(
+        cid,
+        turn_id=turn["turn_id"],
+        assistant={"text": "你好呀", "timeline": [], "sources": [], "status": "complete"},
+    )
+    replay = store.begin_turn(
+        cid, user_text="你好", client_message_id="cli-1", observation_allowed=False
+    )
+    assert replay["turn_id"] == turn["turn_id"]
+    assert replay["status"] == "complete"
+    assert replay["user_message"]["id"] == turn["user_message"]["id"]
+    assert replay["assistant_message"]["text"] == "你好呀"
+
+
+def test_begin_turn_replay_after_interrupted(tmp_path):
+    store = _store(tmp_path)
+    cid = store.create()
+    turn = store.begin_turn(
+        cid, user_text="你好", client_message_id="cli-1", observation_allowed=False
+    )
+    store.finalize_turn(
+        cid,
+        turn_id=turn["turn_id"],
+        assistant={"text": "部分回复", "timeline": [], "sources": [], "status": "interrupted"},
+    )
+    replay = store.begin_turn(
+        cid, user_text="你好", client_message_id="cli-1", observation_allowed=False
+    )
+    assert replay["status"] == "interrupted"
+    assert replay["assistant_message"]["text"] == "部分回复"
+
+
+def test_begin_turn_replay_after_complete_without_assistant_content(tmp_path):
+    """finalize 时若 assistant 无任何内容（无 text/timeline/sources/error），
+    不会创建助手消息；重放时 replay 应无 assistant_message 键。"""
+    store = _store(tmp_path)
+    cid = store.create()
+    turn = store.begin_turn(
+        cid, user_text="你好", client_message_id="cli-1", observation_allowed=False
+    )
+    store.finalize_turn(
+        cid, turn_id=turn["turn_id"], assistant={"status": "interrupted"}
+    )
+    replay = store.begin_turn(
+        cid, user_text="你好", client_message_id="cli-1", observation_allowed=False
+    )
+    assert replay["status"] == "interrupted"
+    assert "assistant_message" not in replay
+
+
+def test_finalize_turn_idempotent_does_not_duplicate_assistant(tmp_path):
+    store = _store(tmp_path)
+    cid = store.create()
+    turn = store.begin_turn(
+        cid, user_text="你好", client_message_id="cli-1", observation_allowed=False
+    )
+    first = store.finalize_turn(
+        cid,
+        turn_id=turn["turn_id"],
+        assistant={"text": "第一次", "timeline": [], "sources": [], "status": "complete"},
+    )
+    second = store.finalize_turn(
+        cid,
+        turn_id=turn["turn_id"],
+        assistant={"text": "第二次（应被忽略）", "timeline": [], "sources": [], "status": "complete"},
+    )
+    assert second is not None
+    assert second["id"] == first["id"]
+    assert second["text"] == "第一次"
+    conv = store.get(cid)
+    assert len(conv["messages"]) == 2
+
+
+def test_finalize_turn_idempotent_returns_none_without_assistant_message(tmp_path):
+    store = _store(tmp_path)
+    cid = store.create()
+    turn = store.begin_turn(
+        cid, user_text="你好", client_message_id="cli-1", observation_allowed=False
+    )
+    store.finalize_turn(cid, turn_id=turn["turn_id"], assistant={"status": "interrupted"})
+    result = store.finalize_turn(
+        cid,
+        turn_id=turn["turn_id"],
+        assistant={"text": "不应被写入", "status": "complete"},
+    )
+    assert result is None
+    conv = store.get(cid)
+    assert len(conv["messages"]) == 1
+
+
 def test_llm_history_truncates_by_turns(tmp_path):
     store = _store(tmp_path)
     cid = store.create()
