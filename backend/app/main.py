@@ -46,6 +46,7 @@ def create_app(settings: Settings | None = None, llm: LLMClient | None = None) -
                 while not stop_event.is_set():
                     try:
                         worker.drain(_DERIVATION_WORKER_BATCH_SIZE)
+                        app.state.container.memory_worker.drain(_DERIVATION_WORKER_BATCH_SIZE)
                     except Exception:
                         logging.getLogger("uvicorn.error").exception(
                             "derivation worker 执行失败"

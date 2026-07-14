@@ -16,6 +16,7 @@ from app.engine.pending import PendingStore
 from app.engine.merge_sessions import MergeSessionStore
 from app.engine.conversations import ConversationStore
 from app.engine.derivation_worker import DerivationWorker
+from app.engine.memory_worker import MemoryWorker
 from app.engine.organizer import Organizer
 from app.engine.agent.orchestrator import AgentOrchestrator
 from app.engine.agent.system_layer import SystemLayer
@@ -42,6 +43,7 @@ class Container:
     conversation_vector: ConversationVector
     index_revision: IndexRevision
     derivation_worker: DerivationWorker
+    memory_worker: MemoryWorker
     organizer: Organizer
     agent: AgentOrchestrator
     system_layer: SystemLayer
@@ -107,6 +109,7 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
         chunk_chars=settings.conversation_chunk_chars,
         overlap=settings.conversation_chunk_overlap_chars,
     )
+    memory_worker = MemoryWorker(conversations, memory_service)
     organizer = Organizer(
         repo=repo,
         retriever=retriever,
@@ -153,6 +156,7 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
         conversation_vector=conversation_vector,
         index_revision=index_revision,
         derivation_worker=derivation_worker,
+        memory_worker=memory_worker,
         organizer=organizer,
         agent=agent,
         system_layer=system_layer,
