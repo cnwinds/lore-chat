@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import sqlite3
+import threading
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -10,16 +12,6 @@ def _now() -> str:
     return datetime.now().isoformat(timespec="seconds")
 
 
-def _today() -> str:
-    return datetime.now().strftime("%Y-%m-%d")
-
-
-def _date_from_iso(iso: str) -> str:
-    if not iso:
-        return _today()
-    return iso[:10]
-
-
 def _title_from_text(text: str) -> str:
     line = text.strip().split("\n")[0]
     if len(line) > 40:
@@ -27,135 +19,483 @@ def _title_from_text(text: str) -> str:
     return line or "新对话"
 
 
+def _new_id() -> str:
+    return uuid.uuid4().hex
+
+
+def _loads(raw: str | None, default):
+    if not raw:
+        return default
+    return json.loads(raw)
+
+
+def _dumps(value) -> str | None:
+    if value is None:
+        return None
+    return json.dumps(value, ensure_ascii=False)
+
+
+class TurnInProgress(Exception):
+    """本会话已存在一个 running turn，同一 client_message_id 不应再次触发 Agent。"""
+
+    def __init__(self, turn_id: str, retry_after_ms: int = 1000):
+        super().__init__(f"turn {turn_id} in progress")
+        self.turn_id = turn_id
+        self.retry_after_ms = retry_after_ms
+
+
+_SCHEMA = """
+CREATE TABLE IF NOT EXISTS conversations (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    active_turn_id TEXT,
+    indexed_dirty INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS messages (
+    id TEXT PRIMARY KEY,
+    conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    seq INTEGER NOT NULL,
+    role TEXT NOT NULL,
+    text TEXT NOT NULL DEFAULT '',
+    ts TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'complete',
+    client_message_id TEXT,
+    in_reply_to_message_id TEXT REFERENCES messages(id) ON DELETE SET NULL,
+    timeline_json TEXT,
+    sources_json TEXT,
+    total_duration_ms INTEGER,
+    doc_context_json TEXT,
+    attachments_json TEXT,
+    primary_doc TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_messages_conversation_seq
+    ON messages(conversation_id, seq);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_messages_in_reply_to
+    ON messages(in_reply_to_message_id)
+    WHERE in_reply_to_message_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS turns (
+    id TEXT PRIMARY KEY,
+    conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    client_message_id TEXT NOT NULL,
+    user_message_id TEXT NOT NULL,
+    assistant_message_id TEXT,
+    status TEXT NOT NULL DEFAULT 'running',
+    observation_allowed INTEGER NOT NULL DEFAULT 0,
+    locked_by TEXT,
+    locked_until TEXT,
+    started_at TEXT NOT NULL,
+    finalized_at TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_turns_conversation_client_msg
+    ON turns(conversation_id, client_message_id);
+
+CREATE TABLE IF NOT EXISTS conversation_summaries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    doc_path TEXT NOT NULL,
+    revision INTEGER NOT NULL DEFAULT 1,
+    covered_through_message_id TEXT,
+    status TEXT NOT NULL DEFAULT 'current',
+    is_primary INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_conversation_summaries_cid
+    ON conversation_summaries(conversation_id);
+
+CREATE TABLE IF NOT EXISTS derivation_outbox (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind TEXT NOT NULL,
+    source_message_id TEXT NOT NULL,
+    source_revision INTEGER NOT NULL DEFAULT 1,
+    turn_id TEXT,
+    status TEXT NOT NULL DEFAULT 'pending',
+    attempts INTEGER NOT NULL DEFAULT 0,
+    next_run_at TEXT,
+    locked_by TEXT,
+    locked_until TEXT,
+    last_error TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_derivation_outbox_status
+    ON derivation_outbox(kind, status);
+
+CREATE TABLE IF NOT EXISTS conversation_deletion_ledger (
+    conversation_id TEXT NOT NULL,
+    deletion_id TEXT NOT NULL,
+    deleted_at TEXT NOT NULL,
+    options_json TEXT
+);
+
+CREATE TABLE IF NOT EXISTS migration_meta (
+    key TEXT PRIMARY KEY,
+    value TEXT
+);
+"""
+
+
 class ConversationStore:
-    """按创建日期分片存储会话，避免单文件过大。"""
+    """会话规范存储：SQLite（`conversations.db`），消息级持久化 + turn 状态机。"""
 
     def __init__(self, path: str | Path):
         raw = Path(path)
         if raw.suffix == ".json":
             self.dir = raw.parent / "conversations"
-            legacy = raw
+            legacy_single = raw
         else:
             self.dir = raw
-            legacy = self.dir.parent / "conversations.json"
+            legacy_single = self.dir.parent / "conversations.json"
         self.dir.mkdir(parents=True, exist_ok=True)
-        if legacy.exists() and not self._index_path.exists():
-            self._migrate_legacy(legacy)
-        if not self._index_path.exists():
-            self._write_index({})
 
-    @property
-    def _index_path(self) -> Path:
-        return self.dir / "index.json"
+        self.db_path = self.dir / "conversations.db"
+        self._lock = threading.Lock()
+        self.conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
+        self.conn.row_factory = sqlite3.Row
+        with self._lock:
+            self.conn.execute("PRAGMA journal_mode=WAL")
+            self.conn.execute("PRAGMA foreign_keys=ON")
+            self.conn.executescript(_SCHEMA)
+            self.conn.commit()
 
-    def _shard_path(self, date: str) -> Path:
-        return self.dir / f"{date}.json"
+        if legacy_single.exists():
+            self._migrate_legacy_single_file(legacy_single)
 
-    def _read_index(self) -> dict[str, str]:
-        return json.loads(self._index_path.read_text(encoding="utf-8"))
+    # ------------------------------------------------------------------
+    # 内部辅助
+    # ------------------------------------------------------------------
 
-    def _write_index(self, data: dict[str, str]) -> None:
-        self._index_path.write_text(
-            json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+    def _next_seq(self, cid: str) -> int:
+        row = self.conn.execute(
+            "SELECT COALESCE(MAX(seq), 0) + 1 AS n FROM messages WHERE conversation_id = ?",
+            (cid,),
+        ).fetchone()
+        return int(row["n"])
+
+    def _enqueue_index_fts(self, message_id: str, turn_id: str | None) -> None:
+        now = _now()
+        self.conn.execute(
+            """
+            INSERT INTO derivation_outbox(
+                kind, source_message_id, source_revision, turn_id,
+                status, attempts, next_run_at, created_at, updated_at
+            ) VALUES ('index_fts', ?, 1, ?, 'pending', 0, ?, ?, ?)
+            """,
+            (message_id, turn_id, now, now, now),
         )
 
-    def _read_shard(self, date: str) -> dict:
-        path = self._shard_path(date)
-        if not path.exists():
-            return {}
-        return json.loads(path.read_text(encoding="utf-8"))
+    @staticmethod
+    def _message_row_to_dict(row: sqlite3.Row) -> dict:
+        msg: dict = {
+            "id": row["id"],
+            "role": row["role"],
+            "text": row["text"] or "",
+            "ts": row["ts"],
+            "status": row["status"],
+        }
+        if row["client_message_id"]:
+            msg["client_message_id"] = row["client_message_id"]
+        if row["in_reply_to_message_id"]:
+            msg["in_reply_to_message_id"] = row["in_reply_to_message_id"]
+        if row["timeline_json"] is not None:
+            msg["timeline"] = _loads(row["timeline_json"], [])
+        if row["sources_json"] is not None:
+            msg["sources"] = _loads(row["sources_json"], [])
+        if row["total_duration_ms"] is not None:
+            msg["total_duration_ms"] = row["total_duration_ms"]
+        if row["doc_context_json"] is not None:
+            msg["doc_context"] = _loads(row["doc_context_json"], [])
+        if row["attachments_json"] is not None:
+            msg["attachments"] = _loads(row["attachments_json"], [])
+        if row["primary_doc"]:
+            msg["primary_doc"] = row["primary_doc"]
+        return msg
 
-    def _write_shard(self, date: str, data: dict) -> None:
-        self._shard_path(date).write_text(
-            json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+    def _load_messages(self, cid: str) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT * FROM messages WHERE conversation_id = ? ORDER BY seq ASC",
+            (cid,),
+        ).fetchall()
+        return [self._message_row_to_dict(r) for r in rows]
+
+    def _summary_state(self, cid: str) -> tuple[bool, str | None, str | None]:
+        row = self.conn.execute(
+            """
+            SELECT doc_path, created_at FROM conversation_summaries
+            WHERE conversation_id = ? AND status = 'current' AND is_primary = 1
+            ORDER BY revision DESC LIMIT 1
+            """,
+            (cid,),
+        ).fetchone()
+        if row is None:
+            return False, None, None
+        return True, row["doc_path"], row["created_at"]
+
+    def _conversation_row(self, cid: str) -> sqlite3.Row:
+        row = self.conn.execute(
+            "SELECT * FROM conversations WHERE id = ?", (cid,)
+        ).fetchone()
+        if row is None:
+            raise KeyError(cid)
+        return row
+
+    def _conv_to_dict(self, row: sqlite3.Row) -> dict:
+        cid = row["id"]
+        summarized, summary_path, summarized_at = self._summary_state(cid)
+        return {
+            "id": cid,
+            "title": row["title"],
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+            "active_turn_id": row["active_turn_id"],
+            "messages": self._load_messages(cid),
+            "summarized": summarized,
+            "summary_path": summary_path,
+            "summarized_at": summarized_at,
+            "indexed_dirty": bool(row["indexed_dirty"]),
+        }
+
+    def _mark_dirty_and_stale(self, cid: str) -> None:
+        self.conn.execute(
+            "UPDATE conversations SET indexed_dirty = 1 WHERE id = ?", (cid,)
+        )
+        self.conn.execute(
+            """
+            UPDATE conversation_summaries SET status = 'stale'
+            WHERE conversation_id = ? AND status = 'current'
+            """,
+            (cid,),
         )
 
-    def _migrate_legacy(self, legacy_path: Path) -> None:
-        data = json.loads(legacy_path.read_text(encoding="utf-8"))
-        index: dict[str, str] = {}
-        shards: dict[str, dict] = {}
-        for cid, conv in data.items():
-            date = _date_from_iso(conv.get("created_at", ""))
-            index[cid] = date
-            shards.setdefault(date, {})[cid] = conv
-        for date, shard in shards.items():
-            self._write_shard(date, shard)
-        self._write_index(index)
-        legacy_path.rename(legacy_path.with_suffix(".json.bak"))
-
-    def _locate(self, cid: str) -> tuple[str, dict] | None:
-        index = self._read_index()
-        date = index.get(cid)
-        if not date:
-            return None
-        shard = self._read_shard(date)
-        conv = shard.get(cid)
-        if conv is None:
-            return None
-        return date, conv
-
-    def _save(self, cid: str, conv: dict) -> None:
-        index = self._read_index()
-        date = index.get(cid)
-        if not date:
-            date = _date_from_iso(conv.get("created_at", ""))
-            index[cid] = date
-            self._write_index(index)
-        shard = self._read_shard(date)
-        shard[cid] = conv
-        self._write_shard(date, shard)
+    # ------------------------------------------------------------------
+    # CRUD
+    # ------------------------------------------------------------------
 
     def create(self, title: str | None = None) -> str:
         cid = uuid.uuid4().hex[:12]
         stamp = _now()
-        date = _today()
-        conv = {
-            "id": cid,
-            "title": title or "新对话",
-            "created_at": stamp,
-            "updated_at": stamp,
-            "messages": [],
-            "summarized": False,
-            "summary_path": None,
-            "summarized_at": None,
-            "indexed_dirty": False,
-        }
-        index = self._read_index()
-        index[cid] = date
-        self._write_index(index)
-        shard = self._read_shard(date)
-        shard[cid] = conv
-        self._write_shard(date, shard)
+        with self._lock:
+            self.conn.execute(
+                """
+                INSERT INTO conversations(id, title, created_at, updated_at, active_turn_id, indexed_dirty)
+                VALUES (?, ?, ?, ?, NULL, 0)
+                """,
+                (cid, title or "新对话", stamp, stamp),
+            )
+            self.conn.commit()
         return cid
 
     def get(self, cid: str) -> dict:
-        located = self._locate(cid)
-        if located is None:
-            raise KeyError(cid)
-        return located[1]
+        with self._lock:
+            row = self._conversation_row(cid)
+            return self._conv_to_dict(row)
 
     def list_all(self) -> list[dict]:
-        index = self._read_index()
-        shards_cache: dict[str, dict] = {}
-        items: list[dict] = []
-        for cid, date in index.items():
-            if date not in shards_cache:
-                shards_cache[date] = self._read_shard(date)
-            conv = shards_cache[date].get(cid)
-            if conv is None:
-                continue
-            items.append(
-                {
-                    "id": conv["id"],
-                    "title": conv["title"],
-                    "created_at": conv["created_at"],
-                    "updated_at": conv["updated_at"],
-                    "message_count": len(conv.get("messages", [])),
-                    "summarized": bool(conv.get("summarized")),
-                    "summary_path": conv.get("summary_path"),
-                }
-            )
+        with self._lock:
+            rows = self.conn.execute("SELECT * FROM conversations").fetchall()
+            items = []
+            for row in rows:
+                cid = row["id"]
+                count = self.conn.execute(
+                    "SELECT COUNT(*) AS n FROM messages WHERE conversation_id = ?",
+                    (cid,),
+                ).fetchone()["n"]
+                summarized, summary_path, _ = self._summary_state(cid)
+                items.append(
+                    {
+                        "id": cid,
+                        "title": row["title"],
+                        "created_at": row["created_at"],
+                        "updated_at": row["updated_at"],
+                        "message_count": int(count),
+                        "summarized": summarized,
+                        "summary_path": summary_path,
+                    }
+                )
         return sorted(items, key=lambda c: c["updated_at"], reverse=True)
+
+    def delete(self, cid: str) -> None:
+        with self._lock:
+            self._conversation_row(cid)
+            self.conn.execute(
+                """
+                DELETE FROM derivation_outbox WHERE turn_id IN (
+                    SELECT id FROM turns WHERE conversation_id = ?
+                ) OR source_message_id IN (
+                    SELECT id FROM messages WHERE conversation_id = ?
+                )
+                """,
+                (cid, cid),
+            )
+            self.conn.execute("DELETE FROM turns WHERE conversation_id = ?", (cid,))
+            self.conn.execute(
+                "DELETE FROM conversation_summaries WHERE conversation_id = ?", (cid,)
+            )
+            self.conn.execute("DELETE FROM messages WHERE conversation_id = ?", (cid,))
+            self.conn.execute("DELETE FROM conversations WHERE id = ?", (cid,))
+            self.conn.commit()
+
+    # ------------------------------------------------------------------
+    # Turn-based 持久化
+    # ------------------------------------------------------------------
+
+    def begin_turn(
+        self,
+        cid: str,
+        user_text: str,
+        client_message_id: str,
+        observation_allowed: bool = False,
+        *,
+        user_ts: str | None = None,
+        doc_context: list[str] | None = None,
+        primary_doc: str | None = None,
+        attachments: list[str] | None = None,
+    ) -> dict:
+        with self._lock:
+            conv_row = self._conversation_row(cid)
+
+            existing = self.conn.execute(
+                "SELECT * FROM turns WHERE conversation_id = ? AND client_message_id = ?",
+                (cid, client_message_id),
+            ).fetchone()
+            if existing is not None:
+                if existing["status"] == "running":
+                    raise TurnInProgress(existing["id"])
+                user_row = self.conn.execute(
+                    "SELECT * FROM messages WHERE id = ?",
+                    (existing["user_message_id"],),
+                ).fetchone()
+                return {
+                    "turn_id": existing["id"],
+                    "user_message": self._message_row_to_dict(user_row),
+                }
+
+            now = user_ts or _now()
+            msg_id = _new_id()
+            seq = self._next_seq(cid)
+            self.conn.execute(
+                """
+                INSERT INTO messages(
+                    id, conversation_id, seq, role, text, ts, status,
+                    client_message_id, doc_context_json, attachments_json, primary_doc
+                ) VALUES (?, ?, ?, 'user', ?, ?, 'complete', ?, ?, ?, ?)
+                """,
+                (
+                    msg_id,
+                    cid,
+                    seq,
+                    user_text,
+                    now,
+                    client_message_id,
+                    _dumps(doc_context),
+                    _dumps(attachments),
+                    primary_doc,
+                ),
+            )
+
+            turn_id = _new_id()
+            started_at = _now()
+            self.conn.execute(
+                """
+                INSERT INTO turns(
+                    id, conversation_id, client_message_id, user_message_id,
+                    assistant_message_id, status, observation_allowed,
+                    started_at
+                ) VALUES (?, ?, ?, ?, NULL, 'running', ?, ?)
+                """,
+                (turn_id, cid, client_message_id, msg_id, int(observation_allowed), started_at),
+            )
+
+            self._enqueue_index_fts(msg_id, turn_id)
+            self._mark_dirty_and_stale(cid)
+
+            title = conv_row["title"]
+            if title == "新对话" and user_text.strip():
+                self.conn.execute(
+                    "UPDATE conversations SET title = ? WHERE id = ?",
+                    (_title_from_text(user_text), cid),
+                )
+
+            self.conn.execute(
+                "UPDATE conversations SET active_turn_id = ?, updated_at = ? WHERE id = ?",
+                (turn_id, started_at, cid),
+            )
+            self.conn.commit()
+
+            msg_row = self.conn.execute(
+                "SELECT * FROM messages WHERE id = ?", (msg_id,)
+            ).fetchone()
+            return {"turn_id": turn_id, "user_message": self._message_row_to_dict(msg_row)}
+
+    def finalize_turn(self, cid: str, turn_id: str, assistant: dict) -> dict | None:
+        with self._lock:
+            self._conversation_row(cid)
+            turn = self.conn.execute(
+                "SELECT * FROM turns WHERE id = ? AND conversation_id = ?",
+                (turn_id, cid),
+            ).fetchone()
+            if turn is None:
+                raise KeyError(turn_id)
+
+            status = assistant.get("status") or "complete"
+            has_content = bool(
+                assistant.get("text")
+                or assistant.get("timeline")
+                or assistant.get("sources")
+                or assistant.get("error")
+            )
+
+            assistant_msg_id = None
+            result: dict | None = None
+            if has_content:
+                assistant_msg_id = _new_id()
+                seq = self._next_seq(cid)
+                now = assistant.get("ts") or _now()
+                self.conn.execute(
+                    """
+                    INSERT INTO messages(
+                        id, conversation_id, seq, role, text, ts, status,
+                        in_reply_to_message_id, timeline_json, sources_json,
+                        total_duration_ms
+                    ) VALUES (?, ?, ?, 'assistant', ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        assistant_msg_id,
+                        cid,
+                        seq,
+                        assistant.get("text") or "",
+                        now,
+                        status,
+                        turn["user_message_id"],
+                        _dumps(assistant.get("timeline", [])),
+                        _dumps(assistant.get("sources", [])),
+                        assistant.get("total_duration_ms"),
+                    ),
+                )
+                self._enqueue_index_fts(assistant_msg_id, turn_id)
+                msg_row = self.conn.execute(
+                    "SELECT * FROM messages WHERE id = ?", (assistant_msg_id,)
+                ).fetchone()
+                result = self._message_row_to_dict(msg_row)
+
+            turn_status = "complete" if status == "complete" else "interrupted"
+            finalized_at = _now()
+            self.conn.execute(
+                """
+                UPDATE turns SET assistant_message_id = ?, status = ?, finalized_at = ?
+                WHERE id = ?
+                """,
+                (assistant_msg_id, turn_status, finalized_at, turn_id),
+            )
+            self.conn.execute(
+                "UPDATE conversations SET active_turn_id = NULL, updated_at = ? WHERE id = ?",
+                (finalized_at, cid),
+            )
+            self.conn.commit()
+            return result
 
     def append_exchange(
         self,
@@ -168,102 +508,263 @@ class ConversationStore:
         primary_doc: str | None = None,
         attachments: list[str] | None = None,
     ) -> dict:
-        located = self._locate(cid)
-        if located is None:
-            raise KeyError(cid)
-        _, conv = located
-
-        user_msg: dict = {"role": "user", "text": user_text, "ts": user_ts or _now()}
-        if doc_context:
-            user_msg["doc_context"] = doc_context
-        if primary_doc:
-            user_msg["primary_doc"] = primary_doc
-        if attachments:
-            user_msg["attachments"] = attachments
-        conv["messages"].append(user_msg)
-        conv["messages"].append(assistant_msg)
-        conv["updated_at"] = _now()
-        if conv["title"] == "新对话" and user_text.strip():
-            conv["title"] = _title_from_text(user_text)
-        conv["indexed_dirty"] = True
-        if conv.get("summarized"):
-            conv["summarized"] = False
-        self._save(cid, conv)
-        return conv
+        client_message_id = _new_id()
+        turn = self.begin_turn(
+            cid,
+            user_text,
+            client_message_id,
+            observation_allowed=False,
+            user_ts=user_ts,
+            doc_context=doc_context,
+            primary_doc=primary_doc,
+            attachments=attachments,
+        )
+        assistant = dict(assistant_msg)
+        assistant.setdefault("status", "complete")
+        self.finalize_turn(cid, turn_id=turn["turn_id"], assistant=assistant)
+        return self.get(cid)
 
     def append_messages(self, cid: str, messages: list[dict]) -> dict:
-        located = self._locate(cid)
-        if located is None:
-            raise KeyError(cid)
-        _, conv = located
-
-        conv["messages"].extend(messages)
-        conv["updated_at"] = _now()
-        self._save(cid, conv)
-        return conv
-
-    def delete(self, cid: str) -> None:
-        located = self._locate(cid)
-        if located is None:
-            raise KeyError(cid)
-        date, _ = located
-        index = self._read_index()
-        del index[cid]
-        self._write_index(index)
-        shard = self._read_shard(date)
-        del shard[cid]
-        self._write_shard(date, shard)
+        with self._lock:
+            self._conversation_row(cid)
+            now = _now()
+            for m in messages:
+                seq = self._next_seq(cid)
+                self.conn.execute(
+                    """
+                    INSERT INTO messages(
+                        id, conversation_id, seq, role, text, ts, status,
+                        timeline_json, sources_json, total_duration_ms
+                    ) VALUES (?, ?, ?, ?, ?, ?, 'complete', ?, ?, ?)
+                    """,
+                    (
+                        _new_id(),
+                        cid,
+                        seq,
+                        m.get("role", "assistant"),
+                        m.get("text", ""),
+                        m.get("ts") or now,
+                        _dumps(m.get("timeline")) if "timeline" in m else None,
+                        _dumps(m.get("sources")) if "sources" in m else None,
+                        m.get("total_duration_ms"),
+                    ),
+                )
+            self.conn.execute(
+                "UPDATE conversations SET updated_at = ? WHERE id = ?", (now, cid)
+            )
+            self.conn.commit()
+            return self._conv_to_dict(self._conversation_row(cid))
 
     def mark_question_resolved(
         self, cid: str, question_id: str, choice_label: str
     ) -> None:
         """把某条 ask_user 征询块标记为已选择，持久化用户的选择（便于重载后展示）。"""
-        located = self._locate(cid)
-        if located is None:
-            return
-        _, conv = located
-        changed = False
+        with self._lock:
+            try:
+                self._conversation_row(cid)
+            except KeyError:
+                return
+            rows = self.conn.execute(
+                """
+                SELECT id, timeline_json FROM messages
+                WHERE conversation_id = ? AND timeline_json IS NOT NULL
+                """,
+                (cid,),
+            ).fetchall()
+            changed = False
 
-        def patch(blocks: list) -> None:
-            nonlocal changed
-            for block in blocks:
-                if (
-                    block.get("type") == "tool"
-                    and block.get("tool") == "ask_user"
-                    and block.get("question_id") == question_id
-                ):
-                    block["choice_resolved"] = choice_label
+            def patch(blocks: list) -> bool:
+                local_changed = False
+                for block in blocks:
+                    if (
+                        block.get("type") == "tool"
+                        and block.get("tool") == "ask_user"
+                        and block.get("question_id") == question_id
+                    ):
+                        block["choice_resolved"] = choice_label
+                        local_changed = True
+                    elif block.get("type") == "parallel":
+                        if patch(block.get("children", [])):
+                            local_changed = True
+                return local_changed
+
+            for row in rows:
+                timeline = _loads(row["timeline_json"], [])
+                if patch(timeline):
                     changed = True
-                elif block.get("type") == "parallel":
-                    patch(block.get("children", []))
-
-        for msg in conv.get("messages", []):
-            if msg.get("timeline"):
-                patch(msg["timeline"])
-        if changed:
-            conv["updated_at"] = _now()
-            self._save(cid, conv)
+                    self.conn.execute(
+                        "UPDATE messages SET timeline_json = ? WHERE id = ?",
+                        (_dumps(timeline), row["id"]),
+                    )
+            if changed:
+                self.conn.execute(
+                    "UPDATE conversations SET updated_at = ? WHERE id = ?",
+                    (_now(), cid),
+                )
+                self.conn.commit()
 
     def mark_summarized(self, cid: str, summary_path: str) -> None:
-        located = self._locate(cid)
-        if located is None:
-            raise KeyError(cid)
-        _, conv = located
-        conv["summarized"] = True
-        conv["summary_path"] = summary_path
-        conv["summarized_at"] = _now()
-        conv["indexed_dirty"] = False
-        conv["updated_at"] = _now()
-        self._save(cid, conv)
+        with self._lock:
+            self._conversation_row(cid)
+            self.conn.execute(
+                """
+                UPDATE conversation_summaries SET is_primary = 0
+                WHERE conversation_id = ? AND is_primary = 1
+                """,
+                (cid,),
+            )
+            last_msg = self.conn.execute(
+                """
+                SELECT id FROM messages WHERE conversation_id = ?
+                ORDER BY seq DESC LIMIT 1
+                """,
+                (cid,),
+            ).fetchone()
+            max_rev = self.conn.execute(
+                """
+                SELECT COALESCE(MAX(revision), 0) AS n FROM conversation_summaries
+                WHERE conversation_id = ? AND doc_path = ?
+                """,
+                (cid, summary_path),
+            ).fetchone()["n"]
+            self.conn.execute(
+                """
+                INSERT INTO conversation_summaries(
+                    conversation_id, doc_path, revision, covered_through_message_id,
+                    status, is_primary, created_at
+                ) VALUES (?, ?, ?, ?, 'current', 1, ?)
+                """,
+                (
+                    cid,
+                    summary_path,
+                    int(max_rev) + 1,
+                    last_msg["id"] if last_msg else None,
+                    _now(),
+                ),
+            )
+            now = _now()
+            self.conn.execute(
+                "UPDATE conversations SET indexed_dirty = 0, updated_at = ? WHERE id = ?",
+                (now, cid),
+            )
+            self.conn.commit()
+
+    def list_summaries(self, cid: str) -> list[dict]:
+        with self._lock:
+            rows = self.conn.execute(
+                """
+                SELECT * FROM conversation_summaries
+                WHERE conversation_id = ? ORDER BY revision ASC
+                """,
+                (cid,),
+            ).fetchall()
+        return [
+            {
+                "conversation_id": r["conversation_id"],
+                "doc_path": r["doc_path"],
+                "revision": r["revision"],
+                "covered_through_message_id": r["covered_through_message_id"],
+                "status": r["status"],
+                "is_primary": bool(r["is_primary"]),
+            }
+            for r in rows
+        ]
 
     def clear_dirty(self, cid: str) -> None:
-        located = self._locate(cid)
-        if located is None:
-            return
-        _, conv = located
-        if conv.get("indexed_dirty"):
-            conv["indexed_dirty"] = False
-            self._save(cid, conv)
+        with self._lock:
+            try:
+                row = self._conversation_row(cid)
+            except KeyError:
+                return
+            if row["indexed_dirty"]:
+                self.conn.execute(
+                    "UPDATE conversations SET indexed_dirty = 0 WHERE id = ?", (cid,)
+                )
+                self.conn.commit()
+
+    # ------------------------------------------------------------------
+    # 迁移：旧版单文件 conversations.json → SQLite（一次性、幂等）
+    # ------------------------------------------------------------------
+
+    def _migrate_legacy_single_file(self, legacy_path: Path) -> None:
+        data = json.loads(legacy_path.read_text(encoding="utf-8"))
+        with self._lock:
+            already = self.conn.execute(
+                "SELECT value FROM migration_meta WHERE key = 'legacy_single_file'"
+            ).fetchone()
+            if already is None:
+                for cid, conv in data.items():
+                    created_at = conv.get("created_at") or _now()
+                    updated_at = conv.get("updated_at") or created_at
+                    self.conn.execute(
+                        """
+                        INSERT OR IGNORE INTO conversations(
+                            id, title, created_at, updated_at, active_turn_id, indexed_dirty
+                        ) VALUES (?, ?, ?, ?, NULL, ?)
+                        """,
+                        (
+                            cid,
+                            conv.get("title") or "新对话",
+                            created_at,
+                            updated_at,
+                            int(bool(conv.get("indexed_dirty"))),
+                        ),
+                    )
+                    last_user_msg_id = None
+                    for seq, msg in enumerate(conv.get("messages", []), start=1):
+                        role = msg.get("role", "user")
+                        msg_id = _new_id()
+                        ts = msg.get("ts") or created_at
+                        in_reply_to = None
+                        if role == "assistant" and last_user_msg_id:
+                            in_reply_to = last_user_msg_id
+                        self.conn.execute(
+                            """
+                            INSERT INTO messages(
+                                id, conversation_id, seq, role, text, ts, status,
+                                in_reply_to_message_id, timeline_json, sources_json,
+                                total_duration_ms, doc_context_json, attachments_json,
+                                primary_doc
+                            ) VALUES (?, ?, ?, ?, ?, ?, 'complete', ?, ?, ?, ?, ?, ?, ?)
+                            """,
+                            (
+                                msg_id,
+                                cid,
+                                seq,
+                                role,
+                                msg.get("text", ""),
+                                ts,
+                                in_reply_to,
+                                _dumps(msg.get("timeline")) if "timeline" in msg else None,
+                                _dumps(msg.get("sources")) if "sources" in msg else None,
+                                msg.get("total_duration_ms"),
+                                _dumps(msg.get("doc_context")) if "doc_context" in msg else None,
+                                _dumps(msg.get("attachments")) if "attachments" in msg else None,
+                                msg.get("primary_doc"),
+                            ),
+                        )
+                        if role == "user":
+                            last_user_msg_id = msg_id
+                    if conv.get("summarized") and conv.get("summary_path"):
+                        self.conn.execute(
+                            """
+                            INSERT INTO conversation_summaries(
+                                conversation_id, doc_path, revision, covered_through_message_id,
+                                status, is_primary, created_at
+                            ) VALUES (?, ?, 1, NULL, 'current', 1, ?)
+                            """,
+                            (cid, conv["summary_path"], conv.get("summarized_at") or _now()),
+                        )
+            self.conn.execute(
+                "INSERT OR REPLACE INTO migration_meta(key, value) VALUES ('legacy_single_file', ?)",
+                (_now(),),
+            )
+            self.conn.commit()
+        legacy_path.rename(legacy_path.with_suffix(".json.bak"))
+
+    # ------------------------------------------------------------------
+    # 文本视图：供归档总结 / 全文索引 / LLM 历史使用
+    # ------------------------------------------------------------------
 
     @classmethod
     def full_transcript(cls, conv: dict, *, max_chars: int = 60000) -> str:

@@ -120,10 +120,52 @@ def test_migrate_legacy_single_file(tmp_path):
     store = ConversationStore(legacy)
     conv = store.get("abc123")
     assert conv["title"] == "旧会话"
+    assert conv["messages"][0]["text"] == "hi"
     assert not legacy.exists()
     assert (tmp_path / "conversations.json.bak").exists()
-    assert (tmp_path / "conversations" / "index.json").exists()
-    assert (tmp_path / "conversations" / "2026-07-10.json").exists()
+    assert (tmp_path / "conversations" / "conversations.db").exists()
+
+    # 迁移落到 SQLite 后，重新打开 store 仍能读到同一份数据（不再依赖 JSON 分片）。
+    store2 = ConversationStore(tmp_path / "conversations")
+    assert store2.get("abc123")["title"] == "旧会话"
+
+
+def test_begin_and_finalize_turn_assigns_message_ids(tmp_path):
+    store = _store(tmp_path)
+    cid = store.create()
+    turn = store.begin_turn(
+        cid,
+        user_text="你好",
+        client_message_id="cli-1",
+        observation_allowed=False,
+    )
+    assert turn["user_message"]["id"]
+    assert turn["user_message"]["role"] == "user"
+    store.finalize_turn(
+        cid,
+        turn_id=turn["turn_id"],
+        assistant={
+            "text": "你好呀",
+            "timeline": [{"type": "text", "content": "你好呀", "ts": "t"}],
+            "sources": [],
+            "status": "complete",
+        },
+    )
+    conv = store.get(cid)
+    assert len(conv["messages"]) == 2
+    assert conv["messages"][0]["id"]
+    assert conv["messages"][1]["in_reply_to_message_id"] == conv["messages"][0]["id"]
+
+
+def test_duplicate_client_message_id_while_running_raises(tmp_path):
+    store = _store(tmp_path)
+    cid = store.create()
+    store.begin_turn(cid, user_text="a", client_message_id="cli-1", observation_allowed=False)
+    try:
+        store.begin_turn(cid, user_text="a", client_message_id="cli-1", observation_allowed=False)
+        assert False, "expected TurnInProgress"
+    except Exception as e:
+        assert e.__class__.__name__ == "TurnInProgress"
 
 
 def test_llm_history_from_timeline(tmp_path):
