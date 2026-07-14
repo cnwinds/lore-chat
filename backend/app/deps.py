@@ -18,11 +18,13 @@ from app.engine.agent.system_layer import SystemLayer
 from app.engine.agent.tools import ToolRegistry
 from app.engine.web.fetcher import WebFetcher
 from app.engine.web.search import WebSearch
+from app.engine.workspace import ensure_workspace_id
 
 
 @dataclass
 class Container:
     settings: Settings
+    workspace_id: str
     llm: LLMClient
     repo: KnowledgeRepo
     indexer: Indexer
@@ -36,6 +38,7 @@ class Container:
 
 
 def build_container(settings: Settings, llm: LLMClient | None = None) -> Container:
+    workspace_id = ensure_workspace_id(settings.kb_path)
     llm = llm or OpenAILLMClient(settings)
     repo = KnowledgeRepo(settings.kb_path, protected_dirs=(settings.system_layer_dir,))
     system_layer = SystemLayer(
@@ -91,6 +94,7 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
     agent = AgentOrchestrator(settings, llm, tool_registry, system_layer=system_layer)
     return Container(
         settings=settings,
+        workspace_id=workspace_id,
         llm=llm,
         repo=repo,
         indexer=indexer,
