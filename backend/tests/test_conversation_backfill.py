@@ -1,8 +1,13 @@
 import json
 
-from app.engine.conversation_backfill import backfill_conversation_fts
+from app.engine.conversation_backfill import (
+    backfill_conversation_fts,
+    backfill_conversation_vectors,
+)
 from app.engine.conversations import ConversationStore
 from app.index.conversation_fts import ConversationFTS
+from app.index.conversation_vector import ConversationVector
+from app.models.llm import FakeLLMClient
 
 
 def _store(tmp_path):
@@ -140,3 +145,76 @@ def test_backfill_leaves_already_covered_messages_untouched(tmp_path):
     stats2 = backfill_conversation_fts(store, fts, deletion_ledger_path=None)
     assert stats2["indexed"] == 0
     assert fts.covered_ranges(cid, user_message_id) == ranges_after_first
+
+
+def test_backfill_vectors_indexes_messages_and_is_idempotent(tmp_path):
+    store = _store(tmp_path)
+    vec = ConversationVector(tmp_path / ".kb" / "index" / "vec")
+    llm = FakeLLMClient(embed_dim=8)
+    cid = store.create()
+    _create_turn(
+        store,
+        cid,
+        user_text="漫剧剪辑工具有哪些",
+        assistant_text="剪映和小云雀",
+    )
+
+    stats1 = backfill_conversation_vectors(store, vec, llm, deletion_ledger_path=None)
+    assert stats1["indexed"] >= 2
+    hits = vec.query(llm.embed(["漫剧"])[0], k=5)
+    assert hits
+
+    stats2 = backfill_conversation_vectors(store, vec, llm, deletion_ledger_path=None)
+    assert stats2["indexed"] == 0
+    assert vec.query(llm.embed(["剪映"])[0], k=5)
+
+
+def test_backfill_vectors_resumes_from_checkpoint(tmp_path):
+    store = _store(tmp_path)
+    vec = ConversationVector(tmp_path / ".kb" / "index" / "vec")
+    llm = FakeLLMClient(embed_dim=8)
+    cid1 = store.create()
+    cid2 = store.create()
+    _create_turn(
+        store,
+        cid1,
+        user_text="第一条漫剧消息",
+        assistant_text="第一条回复",
+        client_message_id="a",
+    )
+    _create_turn(
+        store,
+        cid2,
+        user_text="第二条小云雀消息",
+        assistant_text="第二条回复",
+        client_message_id="b",
+    )
+
+    all_ids: list[str] = []
+    for summary in store.list_all():
+        conv = store.get(summary["id"])
+        for msg in conv.get("messages", []):
+            if msg.get("role") in ("user", "assistant"):
+                all_ids.append(msg["id"])
+    all_ids.sort()
+    assert len(all_ids) >= 4
+    resume_after = all_ids[1]
+
+    checkpoint = tmp_path / "vector.checkpoint.json"
+    checkpoint.write_text(
+        json.dumps({"last_message_id": resume_after, "indexed": 2}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    stats = backfill_conversation_vectors(
+        store,
+        vec,
+        llm,
+        deletion_ledger_path=None,
+        checkpoint_path=checkpoint,
+        batch_size=1,
+    )
+    assert stats["indexed"] == len(all_ids) - 2
+    assert vec.query(llm.embed(["小云雀"])[0], k=5)
+    saved = json.loads(checkpoint.read_text(encoding="utf-8"))
+    assert saved["indexed"] == len(all_ids)
