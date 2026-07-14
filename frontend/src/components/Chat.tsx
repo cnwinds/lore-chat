@@ -352,37 +352,41 @@ export function Chat({
             onRemoveDoc={onTrayRemove ?? (() => {})}
             onRemoveFile={removePendingFile}
           />
-          <div className="composer-input">
-            <textarea
-              ref={textareaRef}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={onInputKeyDown}
-              rows={1}
-              placeholder="输入问题或记录内容…（Ctrl+Enter 发送）"
-              disabled={streaming}
-              style={{
-                minHeight: INPUT_MIN_HEIGHT,
-                maxHeight: INPUT_MAX_HEIGHT,
-              }}
+          <div className="composer-body">
+            <div className="composer-input">
+              <textarea
+                ref={textareaRef}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={onInputKeyDown}
+                rows={1}
+                placeholder="输入消息…"
+                disabled={streaming}
+                title="Ctrl+Enter 发送"
+                style={{
+                  minHeight: INPUT_MIN_HEIGHT,
+                  maxHeight: INPUT_MAX_HEIGHT,
+                }}
+              />
+            </div>
+            <ComposerToolbar
+              webEnabled={webEnabled}
+              onToggleWeb={toggleWebSearch}
+              streaming={streaming}
+              canSend={!!input.trim() || pendingFiles.length > 0}
+              archiving={archiving}
+              conversationId={conversationId}
+              summarized={summarized}
+              summaryPath={summaryPath}
+              canArchive={msgs.some((m) => m.role === "user")}
+              onArchive={archiveConversation}
+              onOpenSummary={(path) => openDoc(path)}
+              onAttachClick={() => fileInputRef.current?.click()}
+              onSend={send}
+              fileInputRef={fileInputRef}
+              onFileChange={onFile}
             />
           </div>
-          <ComposerToolbar
-            webEnabled={webEnabled}
-            onToggleWeb={toggleWebSearch}
-            streaming={streaming}
-            archiving={archiving}
-            conversationId={conversationId}
-            summarized={summarized}
-            summaryPath={summaryPath}
-            canArchive={msgs.some((m) => m.role === "user")}
-            onArchive={archiveConversation}
-            onOpenSummary={(path) => openDoc(path)}
-            onAttachClick={() => fileInputRef.current?.click()}
-            onSend={send}
-            fileInputRef={fileInputRef}
-            onFileChange={onFile}
-          />
         </div>
       </div>
     </div>

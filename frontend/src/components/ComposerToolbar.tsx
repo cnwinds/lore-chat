@@ -4,6 +4,7 @@ type Props = {
   webEnabled: boolean;
   onToggleWeb: () => void;
   streaming: boolean;
+  canSend: boolean;
   archiving: boolean;
   conversationId: string | null;
   summarized: boolean;
@@ -34,10 +35,63 @@ function GlobeIcon() {
   );
 }
 
+function PlusIcon() {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      aria-hidden
+    >
+      <path d="M12 5v14M5 12h14" />
+    </svg>
+  );
+}
+
+function SendIcon() {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M12 19V5M5 12l7-7 7 7" />
+    </svg>
+  );
+}
+
+function SpinnerIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      aria-hidden
+      className="composer-spinner"
+    >
+      <path d="M12 2a10 10 0 0 1 10 10" />
+    </svg>
+  );
+}
+
 export function ComposerToolbar({
   webEnabled,
   onToggleWeb,
   streaming,
+  canSend,
   archiving,
   conversationId,
   summarized,
@@ -84,10 +138,10 @@ export function ComposerToolbar({
           className="composer-icon-btn composer-attach-btn"
           onClick={onAttachClick}
           disabled={streaming}
-          title="上传附件"
-          aria-label="上传附件"
+          title="添加附件"
+          aria-label="添加附件"
         >
-          📎
+          <PlusIcon />
         </button>
         <input
           ref={fileInputRef}
@@ -124,11 +178,19 @@ export function ComposerToolbar({
         </button>
         <button
           type="button"
-          className="composer-send-btn"
+          className={`composer-send-btn${
+            streaming
+              ? " composer-send-btn--busy"
+              : canSend
+                ? " composer-send-btn--ready"
+                : ""
+          }`}
           onClick={onSend}
-          disabled={streaming}
+          disabled={streaming || !canSend}
+          title={streaming ? "处理中…" : "发送 (Ctrl+Enter)"}
+          aria-label={streaming ? "处理中" : "发送"}
         >
-          {streaming ? "处理中…" : "发送"}
+          {streaming ? <SpinnerIcon /> : <SendIcon />}
         </button>
       </div>
     </div>

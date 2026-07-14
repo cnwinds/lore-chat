@@ -4,7 +4,6 @@ import type { MergeReviewInfo } from "../../hooks/doc/useDocDirtyPrompt";
 import type { EditMode } from "../../types/doc";
 import { DocLivePreview, type DocSelection } from "../DocLivePreview";
 import { DocMarkdownSource } from "../DocMarkdownSource";
-import { DocMetaPopover } from "../DocMetaPopover";
 
 type Props = {
   bodyRef: RefObject<HTMLDivElement | null>;
@@ -61,12 +60,6 @@ export function DocViewerBody({
       )}
       {doc && (
         <>
-          {doc.meta &&
-            Object.keys(doc.meta).some((k) => k !== "conversation_id") && (
-            <div className="doc-meta-bar">
-              <DocMetaPopover meta={doc.meta} />
-            </div>
-          )}
           {mergeReview && mergeEditing ? (
             <textarea
               ref={mergeSourceRef}

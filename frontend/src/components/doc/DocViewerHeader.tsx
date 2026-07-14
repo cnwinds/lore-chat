@@ -1,6 +1,7 @@
 import type { DocContent } from "../../api";
 import type { MergeReviewInfo } from "../../hooks/doc/useDocDirtyPrompt";
 import type { DocMode, DocWidth, EditMode } from "../../types/doc";
+import { DocMetaPopover } from "../DocMetaPopover";
 import { DocOutlineMenu } from "../DocOutlineMenu";
 import { DocOverflowMenu, type OverflowItem } from "../DocOverflowMenu";
 import {
@@ -162,6 +163,7 @@ export function DocViewerHeader({
         </h2>
       </div>
       <div className="doc-viewer-toolbar">
+        {doc?.meta && <DocMetaPopover meta={doc.meta} />}
         <div className="doc-mode-toggle" role="group" aria-label="编辑模式">
           <DocIconBtn
             className="doc-mode-toggle-btn"

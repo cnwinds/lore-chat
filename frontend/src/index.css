@@ -450,9 +450,7 @@ a:hover {
   align-items: stretch;
 }
 
-.app-shell--doc-focus .doc-viewer-body > .doc-meta-bar,
 .app-shell--doc-focus .doc-viewer-body > .doc-conversation-link,
-.app-shell--doc-focus-float .doc-viewer-body > .doc-meta-bar,
 .app-shell--doc-focus-float .doc-viewer-body > .doc-conversation-link {
   width: 100%;
   max-width: 760px;
@@ -1077,10 +1075,6 @@ a:hover {
   flex-direction: column;
   min-height: 0;
   position: relative;
-}
-
-.doc-meta-bar {
-  margin-bottom: 10px;
 }
 
 .doc-meta-anchor,
@@ -2878,28 +2872,37 @@ a:hover {
   width: 100%;
   max-width: var(--chat-content-max-width);
   margin: 0 auto;
-  padding: 0 20px 14px;
+  padding: 0 20px 18px;
   box-sizing: border-box;
 }
 
 .composer-card {
   width: 100%;
   border: 1px solid var(--border-strong);
-  border-radius: var(--radius-lg);
+  border-radius: 18px;
   background: var(--bg-surface);
   box-shadow: var(--shadow-sm);
   overflow: hidden;
+}
+
+.composer-body {
+  padding: 12px 14px 10px;
 }
 
 .composer-input textarea {
   width: 100%;
   border: none;
   box-shadow: none;
-  padding: 9px 11px;
+  padding: 0 2px 10px;
   resize: none;
-  line-height: 1.5;
-  font-size: var(--text-base);
+  line-height: 1.55;
+  font-size: var(--text-md);
   background: transparent;
+  color: var(--text);
+}
+
+.composer-input textarea::placeholder {
+  color: var(--text-muted);
 }
 
 .composer-input textarea:focus {
@@ -2911,8 +2914,11 @@ a:hover {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  padding: 8px 10px;
-  border-bottom: 1px solid var(--border);
+  padding: 10px 12px 0;
+}
+
+.composer-tray:not(:empty) + .composer-body {
+  padding-top: 8px;
 }
 
 .composer-doc-chip {
@@ -3036,8 +3042,8 @@ a:hover {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 6px 8px;
-  border-top: 1px solid var(--border);
+  gap: 8px;
+  padding: 0;
 }
 
 .composer-toolbar-left,
@@ -3048,18 +3054,17 @@ a:hover {
 }
 
 .composer-icon-btn {
-  width: 32px;
-  height: 32px;
+  width: 34px;
+  height: 34px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: var(--radius-sm);
-  border: 1px solid transparent;
+  border-radius: 10px;
+  border: none;
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
   padding: 0;
-  font-size: 14px;
   line-height: 1;
   box-sizing: border-box;
   flex-shrink: 0;
@@ -3068,30 +3073,73 @@ a:hover {
 .composer-icon-btn:hover:not(:disabled) {
   background: var(--bg-muted);
   color: var(--text-secondary);
-  border-color: var(--border);
 }
 
 .composer-icon-btn:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: not-allowed;
 }
 
 .composer-web-btn--on {
   color: var(--accent);
   background: var(--accent-soft);
-  border-color: var(--accent-border);
 }
 
 .composer-web-btn--on:hover:not(:disabled) {
   color: var(--accent);
   background: var(--accent-soft);
-  border-color: var(--accent-border);
 }
 
 .composer-send-btn {
-  height: 32px;
-  padding: 0 16px;
-  border-radius: var(--radius-md);
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: 10px;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: var(--bg-muted);
+  color: var(--text-muted);
+  border: none;
+  cursor: not-allowed;
+}
+
+.composer-send-btn--ready {
+  background: var(--text);
+  color: var(--bg-surface);
+  cursor: pointer;
+}
+
+.composer-send-btn--ready:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.composer-send-btn--busy {
+  background: var(--bg-muted);
+  color: var(--text-secondary);
+  cursor: wait;
+}
+
+.composer-send-btn:disabled {
+  cursor: not-allowed;
+}
+
+.composer-spinner {
+  animation: composer-spin 0.8s linear infinite;
+}
+
+@keyframes composer-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.composer-archive-btn {
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 999px;
   font-size: var(--text-sm);
   line-height: 1;
   box-sizing: border-box;
@@ -3099,59 +3147,31 @@ a:hover {
   align-items: center;
   justify-content: center;
   white-space: nowrap;
-  background: var(--accent);
-  color: var(--text-on-accent);
-  border: 1px solid var(--accent);
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.composer-send-btn:hover:not(:disabled) {
-  background: var(--accent-hover);
-  border-color: var(--accent-hover);
-}
-
-.composer-send-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.composer-archive-btn {
-  height: 32px;
-  padding: 0 8px;
-  border-radius: var(--radius-md);
-  font-size: var(--text-xs);
-  line-height: 1;
-  box-sizing: border-box;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  white-space: nowrap;
   background: transparent;
-  color: var(--text-muted);
-  border: 1px solid transparent;
-  font-weight: 400;
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  font-weight: 500;
   cursor: pointer;
 }
 
 .composer-archive-btn:hover:not(:disabled) {
   background: var(--bg-muted);
-  color: var(--text-secondary);
-  border-color: var(--border);
+  color: var(--text);
+  border-color: var(--border-strong);
 }
 
 .composer-archive-btn--linked {
   color: var(--accent);
-  border-color: var(--border);
+  border-color: var(--accent-border);
 }
 
 .composer-archive-btn--linked:hover:not(:disabled) {
-  background: var(--bg-subtle);
-  color: var(--accent-hover, var(--accent));
-  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: var(--accent-border);
 }
 
 .composer-archive-btn:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: default;
 }
