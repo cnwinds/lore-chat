@@ -1,0 +1,81 @@
+<h2>第二大脑：三层记忆总架构</h2>
+<p class="subtitle">原始经历永不被摘要替代；推断先隔离观察；稳定认知才进入每轮常驻画像。</p>
+
+<div class="mockup">
+  <div class="mockup-header">写入与晋升路径</div>
+  <div class="mockup-body">
+    <div style="display:grid;grid-template-columns:1fr 56px 1.15fr 56px 1fr;gap:12px;align-items:stretch">
+      <div class="card">
+        <div class="card-body">
+          <div class="label">第一层 · 情景记忆</div>
+          <h3>原始对话</h3>
+          <p>消息按 ID、时间和会话永久保存，是不可丢失的事实源。</p>
+          <ul>
+            <li>全文分块索引</li>
+            <li>向量语义索引</li>
+            <li>可回到原消息与上下文</li>
+            <li>归档后仍可检索</li>
+          </ul>
+        </div>
+      </div>
+
+      <div style="display:flex;align-items:center;justify-content:center;font-size:26px">→</div>
+
+      <div class="card">
+        <div class="card-body">
+          <div class="label">第二层 · 观察与判断</div>
+          <h3>记忆引擎</h3>
+          <p>从对话提取“关于用户”的候选观察，先核验再晋升。</p>
+          <ul>
+            <li>来源与证据计数</li>
+            <li>置信度与敏感分级</li>
+            <li>冲突、覆盖、降级、过期</li>
+            <li>用户删除形成防复活记录</li>
+          </ul>
+        </div>
+      </div>
+
+      <div style="display:flex;align-items:center;justify-content:center;font-size:26px">→</div>
+
+      <div class="card">
+        <div class="card-body">
+          <div class="label">第三层 · 语义记忆</div>
+          <h3>系统/记忆.md</h3>
+          <p>只保留稳定、耐久、可用于个性化回答的核心画像。</p>
+          <ul>
+            <li>每轮作为背景注入</li>
+            <li>不是命令，不覆盖本轮证据</li>
+            <li>用户可直接编辑</li>
+            <li>控制长度，避免挤占上下文</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top:24px">
+  <div class="label">回答时的读取路径</div>
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-top:10px">
+    <div class="option">
+      <div class="content"><h3>我知道你是谁</h3><p>从记忆.md 取得稳定偏好、目标与约束。</p></div>
+    </div>
+    <div class="option">
+      <div class="content"><h3>我记得聊过什么</h3><p>从原始对话索引召回关键词或语义相关片段。</p></div>
+    </div>
+    <div class="option">
+      <div class="content"><h3>我能给出依据</h3><p>每条回忆携带会话、消息、时间和上下文定位。</p></div>
+    </div>
+  </div>
+</div>
+
+<div class="options" style="margin-top:24px">
+  <div class="option" data-choice="architecture-approved" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content"><h3>架构方向正确</h3><p>继续细化记忆内容、晋升规则和数据流。</p></div>
+  </div>
+  <div class="option" data-choice="architecture-revise" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content"><h3>架构需要调整</h3><p>在对话中告诉我希望改变哪一层。</p></div>
+  </div>
+</div>

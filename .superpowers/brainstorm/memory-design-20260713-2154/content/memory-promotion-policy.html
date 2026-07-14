@@ -1,0 +1,81 @@
+<h2>记忆内容与晋升规则</h2>
+<p class="subtitle">模型可以形成观察，但只有通过明确规则的事实，才能影响以后每一次回答。</p>
+
+<div class="mockup">
+  <div class="mockup-header">一条用户认知的生命周期</div>
+  <div class="mockup-body">
+    <div style="display:grid;grid-template-columns:1fr 44px 1fr 44px 1fr 44px 1fr;gap:10px;align-items:center">
+      <div class="card"><div class="card-body">
+        <div class="label">提取</div>
+        <h3>观察</h3>
+        <p>记录候选事实、来源消息、时间、敏感级别与提取理由。</p>
+      </div></div>
+      <div style="text-align:center;font-size:24px">→</div>
+      <div class="card"><div class="card-body">
+        <div class="label">隔离</div>
+        <h3>候选</h3>
+        <p>推断暂不注入回答；等待跨会话的独立证据或用户确认。</p>
+      </div></div>
+      <div style="text-align:center;font-size:24px">→</div>
+      <div class="card"><div class="card-body">
+        <div class="label">晋升</div>
+        <h3>已确认</h3>
+        <p>明确自述可直接确认；推断至少需两个不同会话的一致证据。</p>
+      </div></div>
+      <div style="text-align:center;font-size:24px">→</div>
+      <div class="card"><div class="card-body">
+        <div class="label">常驻</div>
+        <h3>记忆.md</h3>
+        <p>渲染为简洁画像，每轮注入，但始终服从本轮的新证据。</p>
+      </div></div>
+    </div>
+  </div>
+</div>
+
+<div class="split" style="margin-top:22px">
+  <div class="section">
+    <div class="label">可以进入核心画像</div>
+    <h3>耐久且关于用户本人</h3>
+    <ul>
+      <li>身份与稳定背景</li>
+      <li>回答偏好与协作风格</li>
+      <li>长期目标、长期项目与职责</li>
+      <li>持续使用的技术环境与约束</li>
+      <li>反复表现出的稳定习惯</li>
+    </ul>
+  </div>
+  <div class="section">
+    <div class="label">不能进入核心画像</div>
+    <h3>短期、外部或高风险信息</h3>
+    <ul>
+      <li>一次性任务与临时情绪</li>
+      <li>用户提到的他人画像</li>
+      <li>未经重复验证的性格推断</li>
+      <li>密码、密钥、令牌：永不保存</li>
+      <li>健康、财务、精确住址：仅明确要求才保存</li>
+    </ul>
+  </div>
+</div>
+
+<div class="mockup" style="margin-top:22px">
+  <div class="mockup-header">纠错、遗忘与用户控制</div>
+  <div class="mockup-body">
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px">
+      <div><h3>冲突</h3><p>新事实不与旧事实并列；旧事实标记为被替代，并退出画像。</p></div>
+      <div><h3>衰减</h3><p>仅推断和活跃项目会随时间降置信度；手动确认与明确事实不自动删除。</p></div>
+      <div><h3>手动修改</h3><p>用户编辑即最高优先级确认；删除会留下内部“勿复活”记录。</p></div>
+      <div><h3>可解释</h3><p>每条记忆都能追溯到原会话消息；画像文件保持简洁，不塞入证据正文。</p></div>
+    </div>
+  </div>
+</div>
+
+<div class="options" style="margin-top:24px">
+  <div class="option" data-choice="policy-approved" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content"><h3>规则正确</h3><p>继续设计完整检索与回答数据流。</p></div>
+  </div>
+  <div class="option" data-choice="policy-revise" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content"><h3>需要调整</h3><p>请在对话中指出哪类内容或哪条晋升规则不合适。</p></div>
+  </div>
+</div>

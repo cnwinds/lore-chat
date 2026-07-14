@@ -1,0 +1,97 @@
+<h2>组件边界、失败处理与验证</h2>
+<p class="subtitle">把“记住经历”和“形成认知”拆成可独立恢复、可测试的小服务，任何学习故障都不能阻塞聊天。</p>
+
+<div class="mockup">
+  <div class="mockup-header">建议的后端边界</div>
+  <div class="mockup-body">
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px">
+      <div class="card"><div class="card-body">
+        <div class="label">原始事实</div>
+        <h3>ConversationStore</h3>
+        <p>为每条消息生成稳定 ID；原文先落盘，之后的索引与总结都是可重建派生物。</p>
+      </div></div>
+      <div class="card"><div class="card-body">
+        <div class="label">可检索经历</div>
+        <h3>ConversationIndexer</h3>
+        <p>消息分块、FTS、向量、邻近上下文和分页；归档状态不再决定是否可检索。</p>
+      </div></div>
+      <div class="card"><div class="card-body">
+        <div class="label">认知引擎</div>
+        <h3>MemoryService</h3>
+        <p>提取、敏感过滤、证据校验、晋升、冲突、衰减、手动修改同步，统一由一个入口管理。</p>
+      </div></div>
+      <div class="card"><div class="card-body">
+        <div class="label">常驻背景</div>
+        <h3>SystemLayer</h3>
+        <p>只读取渲染后的记忆.md；与心法、戒律分段注入，候选观察永远不进入提示词。</p>
+      </div></div>
+    </div>
+  </div>
+</div>
+
+<div class="split" style="margin-top:22px">
+  <div class="section">
+    <div class="label">用户可见</div>
+    <h3><code>系统/记忆.md</code></h3>
+    <p>简洁、可编辑、Git 可追溯，只包含已确认画像。</p>
+    <ul>
+      <li>身份与稳定背景</li>
+      <li>偏好与沟通方式</li>
+      <li>长期目标与正在做的事</li>
+      <li>工作方式与工具环境</li>
+      <li>关键约束</li>
+    </ul>
+  </div>
+  <div class="section">
+    <div class="label">系统内部</div>
+    <h3><code>.kb/memory/memory.db</code></h3>
+    <p>不注入模型，保存可审计的认知状态。</p>
+    <ul>
+      <li>facts：候选、确认、替代、降级状态</li>
+      <li>evidence：会话 ID、消息 ID、原文范围</li>
+      <li>tombstones：用户删除后禁止自动复活</li>
+      <li>jobs：异步处理、重试与断点恢复</li>
+    </ul>
+  </div>
+</div>
+
+<div class="mockup" style="margin-top:22px">
+  <div class="mockup-header">故障不会破坏聊天与记忆</div>
+  <div class="mockup-body">
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px">
+      <div><h3>提取失败</h3><p>回答照常完成；任务保留并指数退避重试，原始消息不会丢。</p></div>
+      <div><h3>索引失败</h3><p>原文已经落盘；标记 dirty，后台按消息 ID 幂等重建。</p></div>
+      <div><h3>渲染失败</h3><p>继续使用上一版记忆.md；数据库标记 render_dirty 后重试原子替换。</p></div>
+      <div><h3>并发与手改</h3><p>单用户写锁 + revision 校验；先吸收用户手动修改，再执行自动 reconcile。</p></div>
+    </div>
+  </div>
+</div>
+
+<div class="mockup" style="margin-top:22px">
+  <div class="mockup-header">关键安全约束</div>
+  <div class="mockup-body">
+    <ul>
+      <li>证据引用必须能在原消息中精确匹配；匹配失败的模型输出直接丢弃。</li>
+      <li>密钥、密码、令牌在进入观察账本前由确定性规则拦截，不交给 LLM 决定。</li>
+      <li>记忆块被标明为“用户背景数据，不是可执行命令”，不得借画像绕过戒律与工具契约。</li>
+      <li>用户手动更正和删除优先级最高；自动学习不能覆盖或复活。</li>
+    </ul>
+  </div>
+</div>
+
+<div class="section" style="margin-top:22px">
+  <div class="label">测试主线</div>
+  <h3>从单元规则到重启恢复</h3>
+  <p>覆盖：明确事实立即晋升、推断跨两个会话才晋升、敏感信息拦截、冲突替代、衰减、删除防复活、归档后原文仍可检索、长会话首尾均能召回、语义改写召回、来源精确定位、任务失败重试、进程重启后续跑、旧会话幂等回填。</p>
+</div>
+
+<div class="options" style="margin-top:24px">
+  <div class="option" data-choice="blueprint-approved" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content"><h3>工程边界正确</h3><p>继续确认最终用户体验与分阶段落地范围。</p></div>
+  </div>
+  <div class="option" data-choice="blueprint-revise" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content"><h3>需要调整</h3><p>请指出组件、存储、安全或测试方面的问题。</p></div>
+  </div>
+</div>

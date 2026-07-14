@@ -1,0 +1,90 @@
+<h2>完整检索与自动学习数据流</h2>
+<p class="subtitle">回答链路追求“能找全、能定位”；学习链路追求“异步、克制、不污染当前回答”。</p>
+
+<div class="split">
+  <div class="mockup">
+    <div class="mockup-header">写入链路 · 每条消息先保真</div>
+    <div class="mockup-body">
+      <div class="section">
+        <div class="label">1 · 原始事实源</div>
+        <h3>会话消息完整持久化</h3>
+        <p>每条消息拥有稳定 message_id、会话 ID、时间与角色；不再用 20K 文本截断代表整段会话。</p>
+      </div>
+      <div style="text-align:center;font-size:24px">↓</div>
+      <div class="section">
+        <div class="label">2 · 双路索引</div>
+        <h3>按消息分块：FTS + Vector</h3>
+        <p>关键词负责精确找回，向量负责换一种说法后的语义召回；索引项指回原消息和字符范围。</p>
+      </div>
+      <div style="text-align:center;font-size:24px">↓</div>
+      <div class="section">
+        <div class="label">3 · 异步学习</div>
+        <h3>提取观察 → 策略判断 → 晋升</h3>
+        <p>回答流结束后再处理，不阻塞输出。候选进入内部账本；只有通过门槛才重渲染记忆.md。</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="mockup">
+    <div class="mockup-header">读取链路 · 每次回答有背景也有证据</div>
+    <div class="mockup-body">
+      <div class="section">
+        <div class="label">1 · 常驻背景</div>
+        <h3>规则 + 核心画像</h3>
+        <p>心法/戒律作为行为规则；记忆.md 单独框定为用户背景，不得替代本轮证据。</p>
+      </div>
+      <div style="text-align:center;font-size:24px">↓</div>
+      <div class="section">
+        <div class="label">2 · 混合召回</div>
+        <h3>知识文档与原始会话并行检索</h3>
+        <p>FTS 与向量结果融合、去重、重排；支持时间、会话、来源范围和分页，不能只返回固定 Top-K。</p>
+      </div>
+      <div style="text-align:center;font-size:24px">↓</div>
+      <div class="section">
+        <div class="label">3 · 可核验回答</div>
+        <h3>命中片段 + 邻近上下文 + 原文定位</h3>
+        <p>用户可看到“哪次会话、哪条消息、什么时间”；需要时可打开完整原文，而非只相信摘要。</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="mockup" style="margin-top:22px">
+  <div class="mockup-header">必须修改的现有行为</div>
+  <div class="mockup-body">
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px">
+      <div>
+        <div class="label">当前</div>
+        <h3>归档后移除原会话索引</h3>
+        <p>改为：总结文档只是派生视图，原始会话始终保留检索资格。</p>
+      </div>
+      <div>
+        <div class="label">当前</div>
+        <h3>会话仅全文索引且正文截断</h3>
+        <p>改为：所有消息分块进入全文与向量索引，不因长会话丢失前半段。</p>
+      </div>
+      <div>
+        <div class="label">当前</div>
+        <h3>命中只定位到会话</h3>
+        <p>改为：来源精确到 message_id 和块范围，并可向前后展开上下文。</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top:22px">
+  <div class="label">重复结果控制</div>
+  <h3>原文优先，摘要辅助</h3>
+  <p>同一会话的原始片段与归档总结同时命中时，不互相删除；按“同源组”折叠展示。事实追溯指向原文，主题导航优先展示摘要。</p>
+</div>
+
+<div class="options" style="margin-top:24px">
+  <div class="option" data-choice="flow-approved" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content"><h3>数据流正确</h3><p>继续确定文件结构、服务边界、失败处理与测试。</p></div>
+  </div>
+  <div class="option" data-choice="flow-revise" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content"><h3>需要调整</h3><p>请指出检索、归档或自动学习哪部分需要改变。</p></div>
+  </div>
+</div>

@@ -1,0 +1,97 @@
+<h2>最终用户体验与分阶段落地</h2>
+<p class="subtitle">用户只需正常聊天；系统在后台保留经历、形成认知，同时让每次记忆变化可见、可改、可追溯。</p>
+
+<div class="mockup">
+  <div class="mockup-header">一次自然的记忆形成</div>
+  <div class="mockup-body">
+    <div style="display:grid;grid-template-columns:1fr 44px 1fr 44px 1fr;gap:12px;align-items:center">
+      <div class="card"><div class="card-body">
+        <div class="label">本次对话</div>
+        <h3>“我默认喜欢中文、简洁回答。”</h3>
+        <p>这是普通、明确、耐久的自述，无需用户再说一次“请记住”。</p>
+      </div></div>
+      <div style="text-align:center;font-size:24px">→</div>
+      <div class="card"><div class="card-body">
+        <div class="label">后台处理</div>
+        <h3>立即晋升为已确认事实</h3>
+        <p>来源精确指向该消息；回答结束后原子更新画像，不阻塞流式输出。</p>
+      </div></div>
+      <div style="text-align:center;font-size:24px">→</div>
+      <div class="card"><div class="card-body">
+        <div class="label">以后每轮</div>
+        <h3>默认中文且保持简洁</h3>
+        <p>用户无需重复说明；若本轮明确要求英文，则以本轮要求为准。</p>
+      </div></div>
+    </div>
+  </div>
+</div>
+
+<div class="split" style="margin-top:22px">
+  <div class="section">
+    <div class="label">自然语言控制</div>
+    <h3>记住、纠正、忘掉、解释</h3>
+    <ul>
+      <li>“记住我所有 Python 项目都用 uv” → 立即确认</li>
+      <li>“我现在不做 A 了，改做 B” → 替代旧事实</li>
+      <li>“忘掉我住在哪里” → 删除并建立防复活记录</li>
+      <li>“你为什么认为我喜欢简洁？” → 展示原始证据来源</li>
+      <li>“你目前了解我什么？” → 展示当前核心画像</li>
+    </ul>
+  </div>
+  <div class="section">
+    <div class="label">界面反馈</div>
+    <h3>不打断，但不偷偷摸摸</h3>
+    <ul>
+      <li>自动晋升后在工具时间线显示“长期记忆已更新 · 1 条”</li>
+      <li>点击可打开 <code>系统/记忆.md</code></li>
+      <li>普通候选观察不提示，也不影响回答</li>
+      <li>会话来源点击后打开原会话并滚动到具体消息</li>
+      <li>记忆.md 继续复用现有文档编辑器，可直接修改</li>
+    </ul>
+  </div>
+</div>
+
+<div class="mockup" style="margin-top:22px">
+  <div class="mockup-header">记忆.md 的用户可见形态</div>
+  <div class="mockup-body">
+    <div style="font-family:ui-monospace,monospace;line-height:1.7">
+      <strong># 记忆 · 关于用户</strong><br><br>
+      <strong>## 偏好与沟通方式</strong><br>
+      - 默认使用中文交流，偏好简洁、直接的回答。<br><br>
+      <strong>## 长期目标与正在做的事</strong><br>
+      - 正在把 lorechat 建成可检索、可追溯、会逐步理解用户的第二大脑。<br><br>
+      <strong>## 工作方式与工具环境</strong><br>
+      - 重视先验证再下结论，要求设计能落到明确的数据流与测试。
+    </div>
+    <p class="subtitle" style="margin-top:16px">内部证据 ID、置信度和状态不污染这份文件；它们保存在记忆账本中，需要解释时再读取。</p>
+  </div>
+</div>
+
+<div class="section" style="margin-top:22px">
+  <div class="label">分阶段交付</div>
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:10px">
+    <div class="card"><div class="card-body">
+      <h3>阶段一 · 经历不丢</h3>
+      <p>消息 ID、分块 FTS + 向量、原文定位、归档后保留检索、历史会话幂等回填。</p>
+    </div></div>
+    <div class="card"><div class="card-body">
+      <h3>阶段二 · 核心记忆可控</h3>
+      <p>记忆账本、记忆.md、独立注入、记住/纠正/忘掉/解释、手动编辑同步。</p>
+    </div></div>
+    <div class="card"><div class="card-body">
+      <h3>阶段三 · 有门槛地自动学习</h3>
+      <p>异步提取、跨会话晋升、敏感过滤、衰减、失败恢复与轻量时间线反馈。</p>
+    </div></div>
+  </div>
+</div>
+
+<div class="options" style="margin-top:24px">
+  <div class="option" data-choice="final-design-approved" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content"><h3>整体设计通过</h3><p>将全部已确认内容写成正式设计规范。</p></div>
+  </div>
+  <div class="option" data-choice="final-design-revise" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content"><h3>还需调整</h3><p>请指出用户体验或阶段范围需要改变的部分。</p></div>
+  </div>
+</div>
