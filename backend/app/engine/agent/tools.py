@@ -41,6 +41,19 @@ TOOL_DEFINITIONS: list[dict] = [
                 "properties": {
                     "query": {"type": "string", "description": "检索关键词或问题"},
                     "k": {"type": "integer", "description": "返回条数，默认 5", "default": 5},
+                    "scope": {
+                        "type": "string",
+                        "enum": ["all", "knowledge", "conversations"],
+                        "description": "检索范围：全部 / 仅知识库 / 仅会话",
+                    },
+                    "conversation_id": {
+                        "type": "string",
+                        "description": "限定在某个会话内检索（scope=conversations 时有效）",
+                    },
+                    "cursor": {
+                        "type": "string",
+                        "description": "分页游标，用于续取上一页未返回的结果",
+                    },
                 },
                 "required": ["query"],
             },
@@ -376,13 +389,34 @@ class ToolRegistry:
     def _search_kb(self, args: dict) -> dict:
         query = args["query"]
         k = args.get("k", 5)
-        hits = self.retriever.search(query, k=k)
+        scope = args.get("scope", "all")
+        conversation_id = args.get("conversation_id")
+        cursor = args.get("cursor")
+        page = self.retriever.search(
+            query,
+            k=k,
+            scope=scope,
+            conversation_id=conversation_id,
+            cursor=cursor,
+        )
+        hits = page.hits
         sources = [self._hit_source(h) for h in hits]
-        return {
-            "summary": f"找到 {len(hits)} 条相关内容",
+        if page.cursor_expired:
+            summary = "检索游标已过期（索引已更新），请重新发起检索"
+        else:
+            summary = f"找到 {len(hits)} 条相关内容"
+        out = {
+            "summary": summary,
             "sources": sources,
             "hits": hits,
+            "has_more": page.has_more,
+            "index_revision": page.index_revision,
         }
+        if page.next_cursor:
+            out["next_cursor"] = page.next_cursor
+        if page.cursor_expired:
+            out["cursor_expired"] = True
+        return out
 
     @staticmethod
     def _hit_source(h) -> dict:

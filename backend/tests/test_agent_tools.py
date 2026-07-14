@@ -12,6 +12,7 @@ from app.index.conversation_fts import ConversationFTS
 from app.index.fulltext import FullTextIndex
 from app.index.indexer import Indexer
 from app.index.message_chunk import MessageChunk
+from app.index.revision import IndexRevision
 from app.index.vector import VectorIndex
 from app.models.llm import FakeLLMClient
 from app.storage.repo import KnowledgeRepo
@@ -23,7 +24,8 @@ def _make_registry(tmp_path, chat_responses=None, conversation_fts=None, **setti
     fi = FullTextIndex(tmp_path / "fts.db")
     llm = FakeLLMClient(chat_responses=chat_responses or [], embed_dim=8)
     idx = Indexer(vi, fi, llm)
-    retr = Retriever(vi, fi, llm, conversation_fts=conversation_fts)
+    rev = IndexRevision(tmp_path / "revision.txt")
+    retr = Retriever(vi, fi, llm, conversation_fts=conversation_fts, index_revision=rev)
     pending = PendingStore(tmp_path / "knowledge" / ".kb" / "pending.json")
     settings = Settings(kb_path=tmp_path / "knowledge", **settings_kw)
     org = Organizer(repo=repo, retriever=retr, indexer=idx, pending=pending, llm=llm)
@@ -91,6 +93,38 @@ async def test_search_kb_returns_conversation_source_with_message_fields(tmp_pat
     assert src["end_char"] == 4
     assert src["offset_version"] == "unicode-codepoint-v1"
     assert "excerpt" in src
+
+
+@pytest.mark.asyncio
+async def test_search_kb_scope_conversations(tmp_path):
+    cfts = ConversationFTS(tmp_path / "conversation_fts.db")
+    cfts.upsert_message_chunks(
+        conversation_id="c1",
+        message_id="m1",
+        role="user",
+        ts="t",
+        conversation_title="",
+        chunks=[MessageChunk(0, 0, 4, "漫剧工具")],
+    )
+    registry, repo, idx = _make_registry(tmp_path, conversation_fts=cfts)
+    repo.write_doc("技术/漫剧.md", {"title": "漫剧"}, "漫剧工具文档", commit_msg="seed")
+    idx.reindex_doc("技术/漫剧.md", "漫剧工具文档")
+
+    result = await registry.execute(
+        "search_kb", {"query": "漫剧", "k": 5, "scope": "conversations"}
+    )
+    assert all(s["type"] == "conversation" for s in result["sources"])
+
+
+@pytest.mark.asyncio
+async def test_search_kb_reports_cursor_expired(tmp_path):
+    from app.engine.retriever import _make_cursor
+
+    registry, _, _ = _make_registry(tmp_path)
+    stale = _make_cursor("q", {"scope": "all", "conversation_id": None}, 999, 0)
+    result = await registry.execute("search_kb", {"query": "q", "k": 1, "cursor": stale})
+    assert result.get("cursor_expired") is True
+    assert "过期" in result["summary"]
 
 
 @pytest.mark.asyncio
