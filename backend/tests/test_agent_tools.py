@@ -8,6 +8,7 @@ from app.engine.pending import PendingStore
 from app.engine.retriever import Retriever
 from app.engine.web.fetcher import WebFetcher
 from app.engine.web.search import WebSearch
+from app.engine.conversations import ConversationStore
 from app.index.conversation_fts import ConversationFTS
 from app.index.fulltext import FullTextIndex
 from app.index.indexer import Indexer
@@ -18,7 +19,7 @@ from app.models.llm import FakeLLMClient
 from app.storage.repo import KnowledgeRepo
 
 
-def _make_registry(tmp_path, chat_responses=None, conversation_fts=None, **settings_kw):
+def _make_registry(tmp_path, chat_responses=None, conversation_fts=None, conversations=None, **settings_kw):
     repo = KnowledgeRepo(tmp_path / "knowledge")
     vi = VectorIndex(tmp_path / "vec")
     fi = FullTextIndex(tmp_path / "fts.db")
@@ -39,6 +40,7 @@ def _make_registry(tmp_path, chat_responses=None, conversation_fts=None, **setti
         web_search,
         pending,
         indexer=idx,
+        conversations=conversations,
         edit_doc_max_edits=settings.edit_doc_max_edits,
         edit_doc_max_patch_chars=settings.edit_doc_max_patch_chars,
         edit_doc_require_read=settings.edit_doc_require_read,
@@ -162,6 +164,42 @@ async def test_search_kb_explicit_conversation_id_searches_within_session(tmp_pa
     conv_sources = [s for s in result["sources"] if s["type"] == "conversation"]
     assert len(conv_sources) == 1
     assert conv_sources[0]["cid"] == "current"
+
+
+@pytest.mark.asyncio
+async def test_read_conversation_context_tool(tmp_path):
+    store = ConversationStore(tmp_path / "knowledge" / ".kb" / "conversations")
+    cid = store.create()
+    turn = store.begin_turn(
+        cid,
+        user_text="cursor key 借出记录",
+        client_message_id="ctx-1",
+        observation_allowed=False,
+    )
+    store.finalize_turn(
+        cid,
+        turn_id=turn["turn_id"],
+        assistant={
+            "text": "已记录借出",
+            "timeline": [],
+            "sources": [],
+            "status": "complete",
+        },
+    )
+    message_id = store.get(cid)["messages"][0]["id"]
+    registry, _repo, _idx = _make_registry(tmp_path, conversations=store)
+    result = await registry.execute(
+        "read_conversation_context",
+        {
+            "conversation_id": cid,
+            "message_id": message_id,
+            "before_messages": 0,
+            "after_messages": 1,
+        },
+    )
+    assert "messages" in result
+    assert len(result["messages"]) >= 1
+    assert "cursor key" in result["messages"][0]["text"]
 
 
 @pytest.mark.asyncio
