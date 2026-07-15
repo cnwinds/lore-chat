@@ -17,7 +17,30 @@ def test_write_and_read_doc(repo):
     doc = repo.read_doc("技术/docker/常用命令.md")
     assert isinstance(doc, Document)
     assert doc.meta["title"] == "常用命令"
+    assert "created" in doc.meta
+    assert "updated" in doc.meta
     assert "docker ps" in doc.body
+
+
+def test_write_doc_preserves_created_on_update(repo):
+    repo.write_doc("a.md", {"title": "A"}, "v1\n", commit_msg="c1")
+    created = repo.read_doc("a.md").meta["created"]
+    repo.write_doc("a.md", {"title": "A"}, "v2\n", commit_msg="c2")
+    doc = repo.read_doc("a.md")
+    assert doc.meta["created"] == created
+    assert doc.meta["updated"] >= created
+
+
+def test_read_backfills_created_from_updated(repo):
+    from app.storage import frontmatter
+
+    path = repo.root / "legacy.md"
+    path.write_text(
+        frontmatter.dump({"title": "L", "updated": "2026-01-01T00:00:00"}, "body\n"),
+        encoding="utf-8",
+    )
+    doc = repo.read_doc("legacy.md")
+    assert doc.meta["created"] == "2026-01-01T00:00:00"
 
 
 def test_write_creates_git_commit(repo):

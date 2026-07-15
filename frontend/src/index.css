@@ -1059,9 +1059,9 @@ a:hover {
 
 .doc-path {
   display: block;
-  font-size: var(--text-xs);
-  color: var(--text-muted);
-  margin-bottom: 2px;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  line-height: var(--leading-tight);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

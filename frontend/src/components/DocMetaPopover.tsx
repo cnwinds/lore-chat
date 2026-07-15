@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { DocIconBtn, InfoIcon } from "./DocToolbarIcons";
+import { formatMetaEntries } from "../utils/docMeta";
 
 type Props = {
   meta: Record<string, unknown>;
@@ -9,7 +10,7 @@ export function DocMetaPopover({ meta }: Props) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
-  const entries = Object.entries(meta).filter(([k]) => k !== "conversation_id");
+  const entries = formatMetaEntries(meta);
 
   useEffect(() => {
     if (!open) return;
@@ -47,10 +48,10 @@ export function DocMetaPopover({ meta }: Props) {
       {open && (
         <div className="doc-meta-popover" role="dialog" aria-label="文档信息">
           <dl className="doc-meta-list">
-            {entries.map(([k, v]) => (
-              <div key={k} className="doc-meta-row">
-                <dt>{k}</dt>
-                <dd>{Array.isArray(v) ? v.join(", ") : String(v)}</dd>
+            {entries.map((entry) => (
+              <div key={entry.key} className="doc-meta-row">
+                <dt>{entry.label}</dt>
+                <dd>{entry.value}</dd>
               </div>
             ))}
           </dl>

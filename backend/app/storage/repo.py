@@ -55,15 +55,49 @@ class KnowledgeRepo:
         if not abs_p.exists():
             raise FileNotFoundError(rel_path)
         meta, body = frontmatter.parse(abs_p.read_text(encoding="utf-8"))
+        meta = self._normalize_meta(meta, rel_path)
         return Document(rel_path=rel_path, meta=meta, body=body)
+
+    def _first_commit_time(self, rel_path: str) -> str | None:
+        try:
+            commits = list(
+                self.repo.iter_commits(paths=rel_path, max_count=1, reverse=True)
+            )
+            if commits:
+                return (
+                    commits[0]
+                    .committed_datetime.replace(tzinfo=None)
+                    .isoformat(timespec="seconds")
+                )
+        except Exception:
+            return None
+        return None
+
+    def _normalize_meta(self, meta: dict, rel_path: str) -> dict:
+        if meta.get("created"):
+            return meta
+        created = meta.get("updated") or self._first_commit_time(rel_path)
+        if created:
+            return {**meta, "created": created}
+        return meta
 
     def write_doc(
         self, rel_path: str, meta: dict, body: str, *, commit_msg: str
     ) -> None:
         abs_p = self._abs(rel_path)
         abs_p.parent.mkdir(parents=True, exist_ok=True)
-        meta = {"updated": datetime.now().isoformat(timespec="seconds"), **meta}
-        abs_p.write_text(frontmatter.dump(meta, body), encoding="utf-8")
+        now = datetime.now().isoformat(timespec="seconds")
+        if abs_p.exists():
+            existing_meta, _ = frontmatter.parse(abs_p.read_text(encoding="utf-8"))
+            created = (
+                existing_meta.get("created")
+                or existing_meta.get("updated")
+                or now
+            )
+        else:
+            created = meta.get("created") or now
+        out_meta = {**meta, "created": created, "updated": now}
+        abs_p.write_text(frontmatter.dump(out_meta, body), encoding="utf-8")
         self._commit([rel_path], commit_msg)
 
     def append_doc(self, rel_path: str, extra_body: str, *, commit_msg: str) -> None:

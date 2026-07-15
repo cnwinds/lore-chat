@@ -84,11 +84,6 @@ export function DocViewerHeader({
   onOpenConversation,
   onMergeEditingToggle,
 }: Props) {
-  const title =
-    (doc?.meta?.title as string | undefined) ||
-    path.split("/").pop() ||
-    path;
-
   const conversationId =
     typeof doc?.meta?.conversation_id === "string"
       ? doc.meta.conversation_id
@@ -150,9 +145,8 @@ export function DocViewerHeader({
         </button>
       )}
       <div className="doc-viewer-title">
-        {mode === "panel" && <span className="doc-path">{path}</span>}
-        <h2>
-          {title}
+        <span className="doc-path" title={path}>
+          {path}
           {dirty && (
             <span
               className="doc-dirty-dot"
@@ -160,7 +154,7 @@ export function DocViewerHeader({
               aria-label="有未保存的修改"
             />
           )}
-        </h2>
+        </span>
       </div>
       <div className="doc-viewer-toolbar">
         {doc?.meta && <DocMetaPopover meta={doc.meta} />}
