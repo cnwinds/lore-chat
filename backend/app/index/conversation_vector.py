@@ -4,7 +4,7 @@ import threading
 from dataclasses import dataclass
 from pathlib import Path
 
-import chromadb
+from app.index.chroma_client import make_persistent_client
 
 from app.index.message_chunk import MessageChunk
 
@@ -39,7 +39,7 @@ class ConversationVector:
     def _collection(self):
         col = getattr(self._local, "col", None)
         if col is None:
-            client = chromadb.PersistentClient(path=self._path)
+            client = make_persistent_client(self._path)
             col = client.get_or_create_collection(
                 name=self.COLLECTION, metadata={"hnsw:space": "cosine"}
             )

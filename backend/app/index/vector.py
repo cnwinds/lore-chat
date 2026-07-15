@@ -3,7 +3,7 @@ from __future__ import annotations
 import threading
 from pathlib import Path
 
-import chromadb
+from app.index.chroma_client import make_persistent_client
 
 from app.index.types import Hit
 
@@ -19,7 +19,7 @@ class VectorIndex:
     def _collection(self):
         col = getattr(self._local, "col", None)
         if col is None:
-            client = chromadb.PersistentClient(path=self._path)
+            client = make_persistent_client(self._path)
             col = client.get_or_create_collection(
                 name="kbs", metadata={"hnsw:space": "cosine"}
             )
