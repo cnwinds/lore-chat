@@ -184,7 +184,6 @@ export function useDocPreviewLayout(refreshSidebar: () => void) {
     setFloatPath,
     floatHighlight,
     floatWidth,
-    floatFocus,
     floatRefreshKey,
     pinnedPath,
     setPinnedPath,

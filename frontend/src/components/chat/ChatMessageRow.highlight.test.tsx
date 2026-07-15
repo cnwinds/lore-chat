@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { act, render, screen, waitFor, cleanup } from "@testing-library/react";
+import { act, render, waitFor, cleanup } from "@testing-library/react";
 import { ChatMessageRow } from "./ChatMessageRow";
 import type { ChatMessage } from "../../api";
 

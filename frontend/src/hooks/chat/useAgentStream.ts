@@ -42,7 +42,7 @@ type UseAgentStreamOptions = {
 
 export function useAgentStream({
   conversationId,
-  previewPath,
+  previewPath: _previewPath,
   webEnabled,
   docPaths,
   primaryDocPath,
