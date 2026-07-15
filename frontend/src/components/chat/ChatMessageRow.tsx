@@ -7,6 +7,7 @@ import {
   type IngestResult,
   type SourceRef,
 } from "../../api";
+import { DocChip, FileChip } from "../ComposerTray";
 import { formatMessageTs } from "../../utils/chatMessage";
 import { MarkdownContent } from "../MarkdownContent";
 import { ChatSources } from "../ChatSources";
@@ -47,23 +48,15 @@ function renderUserMessageChips(m: ChatMessage) {
   return (
     <div className="chat-user-chips">
       {m.doc_context?.map((path) => (
-        <span
+        <DocChip
           key={path}
-          className={`chat-user-doc-chip${path === m.primary_doc ? " chat-user-doc-chip--primary" : ""}`}
-          title={path}
-        >
-          {path === m.primary_doc && (
-            <span className="chat-user-doc-chip-star" aria-hidden>
-              ★
-            </span>
-          )}
-          {basename(path)}
-        </span>
+          title={basename(path)}
+          tooltip={path}
+          primary={path === m.primary_doc}
+        />
       ))}
       {m.attachments?.map((a) => (
-        <span key={a} className="chat-user-file-chip" title={a}>
-          📄 {basename(a)}
-        </span>
+        <FileChip key={a} name={basename(a)} tooltip={a} />
       ))}
     </div>
   );

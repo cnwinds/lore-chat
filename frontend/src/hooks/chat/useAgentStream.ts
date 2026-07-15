@@ -83,13 +83,7 @@ export function useAgentStream({
   }, [streaming]);
 
   function resolveDocContext(): DocContext {
-    if (docPaths.length > 0) {
-      return { paths: docPaths, primary: primaryDocPath };
-    }
-    if (previewPath) {
-      return { paths: [previewPath], primary: previewPath };
-    }
-    return { paths: [], primary: null };
+    return { paths: docPaths, primary: primaryDocPath };
   }
 
   async function ensureConversationId(): Promise<string> {
@@ -153,6 +147,7 @@ export function useAgentStream({
         return copy;
       });
 
+    let streamFailed = false;
     try {
       const cid = await ensureConversationId();
       if (isFirstUserQuestion) {
@@ -171,6 +166,7 @@ export function useAgentStream({
         if (event === "error") {
           const message = (data.message as string) || "请求失败";
           patchAssistant((msg) => ({ ...msg, text: `错误：${message}` }));
+          streamFailed = true;
           break;
         }
 
@@ -200,6 +196,7 @@ export function useAgentStream({
         }
       }
     } catch (err) {
+      streamFailed = true;
       const msg = err instanceof Error ? err.message : "请求失败";
       patchAssistant((prevMsg) => ({ ...prevMsg, text: `错误：${msg}` }));
     } finally {
@@ -208,10 +205,11 @@ export function useAgentStream({
       skipLoadRef.current = null;
       onSidebarRefresh?.();
       const cid = conversationIdRef.current;
-      if (cid) {
+      if (cid && !streamFailed) {
         getConversation(cid)
           .then((conv) => {
             if (conversationIdRef.current !== cid) return;
+            setMsgs(conv.messages);
             setSummarized(!!conv.summarized);
             setSummaryPath(conv.summary_path ?? null);
           })

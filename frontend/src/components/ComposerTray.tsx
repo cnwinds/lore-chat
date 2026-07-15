@@ -16,6 +16,73 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }
 
+type DocChipProps = {
+  title: string;
+  tooltip?: string;
+  primary?: boolean;
+  onClick?: () => void;
+  onRemove?: () => void;
+};
+
+export function DocChip({ title, tooltip, primary, onClick, onRemove }: DocChipProps) {
+  return (
+    <div
+      className={`composer-doc-chip${primary ? " composer-doc-chip--primary" : ""}`}
+      onClick={onClick}
+      role={onClick ? "button" : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      title={tooltip ?? title}
+    >
+      <span className="composer-doc-chip-bar" aria-hidden />
+      <span className="composer-doc-chip-title">{title}</span>
+      {onRemove && (
+        <button
+          type="button"
+          className="composer-chip-close"
+          onClick={(e) => {
+            e.stopPropagation();
+            onRemove();
+          }}
+          aria-label="移除"
+        >
+          ×
+        </button>
+      )}
+    </div>
+  );
+}
+
+type FileChipProps = {
+  name: string;
+  tooltip?: string;
+  size?: number;
+  onRemove?: () => void;
+};
+
+export function FileChip({ name, tooltip, size, onRemove }: FileChipProps) {
+  return (
+    <div className="composer-file-chip" title={tooltip ?? name}>
+      <span className="composer-file-icon" aria-hidden>
+        📄
+      </span>
+      <span className="composer-file-name">{name}</span>
+      {size !== undefined && (
+        <span className="composer-file-size">{formatSize(size)}</span>
+      )}
+      {onRemove && (
+        <button
+          type="button"
+          className="composer-chip-close"
+          onClick={onRemove}
+          aria-label="移除"
+        >
+          ×
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function ComposerTray({
   items,
   primaryPath,
@@ -29,45 +96,21 @@ export function ComposerTray({
   return (
     <div className="composer-tray">
       {items.map((item) => (
-        <div
+        <DocChip
           key={item.path}
-          className={`composer-doc-chip${item.path === primaryPath ? " composer-doc-chip--primary" : ""}`}
-          onClick={() => onSetPrimary(item.path)}
-          role="button"
-          tabIndex={0}
           title={item.title}
-        >
-          <span className="composer-doc-chip-bar" aria-hidden />
-          <span className="composer-doc-chip-title">{item.title}</span>
-          <button
-            type="button"
-            className="composer-chip-close"
-            onClick={(e) => {
-              e.stopPropagation();
-              onRemoveDoc(item.path);
-            }}
-            aria-label="移除"
-          >
-            ×
-          </button>
-        </div>
+          primary={item.path === primaryPath}
+          onClick={() => onSetPrimary(item.path)}
+          onRemove={() => onRemoveDoc(item.path)}
+        />
       ))}
       {pendingFiles.map((f) => (
-        <div key={f.id} className="composer-file-chip" title={f.name}>
-          <span className="composer-file-icon" aria-hidden>
-            📄
-          </span>
-          <span className="composer-file-name">{f.name}</span>
-          <span className="composer-file-size">{formatSize(f.size)}</span>
-          <button
-            type="button"
-            className="composer-chip-close"
-            onClick={() => onRemoveFile(f.id)}
-            aria-label="移除"
-          >
-            ×
-          </button>
-        </div>
+        <FileChip
+          key={f.id}
+          name={f.name}
+          size={f.size}
+          onRemove={() => onRemoveFile(f.id)}
+        />
       ))}
     </div>
   );

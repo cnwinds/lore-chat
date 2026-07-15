@@ -1,23 +1,40 @@
 import type { useDocPreviewLayout } from "./useDocPreviewLayout";
 
 type DocPreview = ReturnType<typeof useDocPreviewLayout>;
+type DocPane = "float" | "pinned";
 
 export function buildDocViewerHandlers(
   doc: DocPreview,
+  pane: DocPane,
   onOpenConversation: (id: string) => void,
 ) {
-  return {
-    onClose: doc.contextValue.closeDoc,
-    onBindClose: doc.bindDocClose,
+  const shared = {
     onSaved: doc.refreshKb,
-    onNavigationBlocked: (stayPath: string) => doc.setPreviewPath(stayPath),
-    onToggleWidth: doc.toggleDocWidth,
-    onToggleFocus: doc.toggleDocFocus,
     onOpenConversation,
     mergeReview: null,
     onMergeReviewChange: () => {},
     onMergeAccept: async () => {},
     onMergeRegenerate: async () => {},
     onMergeReject: async () => {},
+  };
+
+  if (pane === "float") {
+    return {
+      ...shared,
+      onClose: doc.closeFloatPreview,
+      onBindClose: doc.bindFloatClose,
+      onNavigationBlocked: (stayPath: string) => doc.setFloatPath(stayPath),
+      onToggleWidth: doc.toggleFloatWidth,
+      onToggleFocus: doc.toggleFloatFocus,
+    };
+  }
+
+  return {
+    ...shared,
+    onClose: doc.closePinnedPreview,
+    onBindClose: doc.bindPinnedClose,
+    onNavigationBlocked: (stayPath: string) => doc.setPinnedPath(stayPath),
+    onToggleWidth: doc.togglePinnedWidth,
+    onToggleFocus: doc.togglePinnedFocus,
   };
 }

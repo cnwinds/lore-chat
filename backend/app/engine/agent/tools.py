@@ -56,7 +56,7 @@ TOOL_DEFINITIONS: list[dict] = [
                     },
                     "conversation_id": {
                         "type": "string",
-                        "description": "限定在某个会话内检索（scope=conversations 时有效）",
+                        "description": "限定在某个会话内检索（scope=conversations 时有效）；显式传入时覆盖默认的「排除当前会话」",
                     },
                     "cursor": {
                         "type": "string",
@@ -406,7 +406,9 @@ class ToolRegistry:
     ) -> dict:
         # 含同步 LLM/嵌入的工具放到线程，避免堵死事件循环（聊天中无法打开文档）
         if name == "search_kb":
-            return await asyncio.to_thread(self._search_kb, args)
+            return await asyncio.to_thread(
+                self._search_kb, args, conversation_id=conversation_id
+            )
         if name == "read_doc":
             return await asyncio.to_thread(
                 self._read_doc, args, conversation_id=conversation_id
@@ -465,17 +467,19 @@ class ToolRegistry:
             out["suggestion"] = "请先调用 read_doc 读取该文档后再 edit_doc"
         return out
 
-    def _search_kb(self, args: dict) -> dict:
+    def _search_kb(self, args: dict, *, conversation_id: str | None = None) -> dict:
         query = args["query"]
         k = args.get("k", 5)
         scope = args.get("scope", "all")
-        conversation_id = args.get("conversation_id")
+        explicit_cid = args.get("conversation_id")
+        exclude_cid = None if explicit_cid else conversation_id
         cursor = args.get("cursor")
         page = self.retriever.search(
             query,
             k=k,
             scope=scope,
-            conversation_id=conversation_id,
+            conversation_id=explicit_cid,
+            exclude_conversation_id=exclude_cid,
             cursor=cursor,
         )
         hits = page.hits
@@ -509,6 +513,12 @@ class ToolRegistry:
                 out["start_char"] = h.start_char
                 out["end_char"] = h.end_char
                 out["offset_version"] = h.offset_version or "unicode-codepoint-v1"
+            if h.role:
+                out["role"] = h.role
+            if h.ts:
+                out["ts"] = h.ts
+            if h.conversation_title:
+                out["conversation_title"] = h.conversation_title
             return out
         return {"type": "kb", "path": h.source, "excerpt": h.chunk[:200]}
 

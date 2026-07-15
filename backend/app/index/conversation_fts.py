@@ -19,6 +19,8 @@ class ConversationHit:
     end_char: int
     text: str
     score: float
+    ts: str = ""
+    conversation_title: str = ""
     offset_version: str = "unicode-codepoint-v1"
 
 
@@ -117,21 +119,41 @@ class ConversationFTS:
             ).fetchall()
         return [(int(r[0]), int(r[1])) for r in rows]
 
+    @staticmethod
+    def _conversation_filter(
+        *,
+        conversation_id: str | None,
+        exclude_conversation_id: str | None,
+    ) -> tuple[str, tuple]:
+        if conversation_id:
+            return " AND conversation_id = ?", (conversation_id,)
+        if exclude_conversation_id:
+            return " AND conversation_id != ?", (exclude_conversation_id,)
+        return "", ()
+
     def query(
-        self, text: str, k: int = 5, *, conversation_id: str | None = None
+        self,
+        text: str,
+        k: int = 5,
+        *,
+        conversation_id: str | None = None,
+        exclude_conversation_id: str | None = None,
     ) -> list[ConversationHit]:
         text = text.strip()
         if not text:
             return []
         match = prepare_fts_query(text)
-        cid_filter = " AND conversation_id = ?" if conversation_id else ""
-        params_suffix: tuple = (conversation_id,) if conversation_id else ()
+        cid_filter, params_suffix = self._conversation_filter(
+            conversation_id=conversation_id,
+            exclude_conversation_id=exclude_conversation_id,
+        )
         with self._lock:
             try:
                 rows = self.conn.execute(
                     f"""
                     SELECT chunk_id, conversation_id, message_id, role,
-                           start_char, end_char, body, bm25(conversation_chunks_v2) AS rank
+                           start_char, end_char, ts, conversation_title, body,
+                           bm25(conversation_chunks_v2) AS rank
                     FROM conversation_chunks_v2
                     WHERE conversation_chunks_v2 MATCH ?{cid_filter}
                     ORDER BY rank LIMIT ?
@@ -146,7 +168,8 @@ class ConversationFTS:
                 rows = self.conn.execute(
                     f"""
                     SELECT chunk_id, conversation_id, message_id, role,
-                           start_char, end_char, body, 0.0 AS rank
+                           start_char, end_char, ts, conversation_title, body,
+                           0.0 AS rank
                     FROM conversation_chunks_v2
                     WHERE body LIKE ? ESCAPE '\\'{cid_filter}
                     LIMIT ?
@@ -161,8 +184,10 @@ class ConversationFTS:
                 role=r[3],
                 start_char=int(r[4]),
                 end_char=int(r[5]),
-                text=r[6],
-                score=-float(r[7]),
+                ts=r[6] or "",
+                conversation_title=r[7] or "",
+                text=r[8],
+                score=-float(r[9]),
             )
             for r in rows
         ]

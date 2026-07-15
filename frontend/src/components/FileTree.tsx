@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   buildFileTree,
-  collectFolderPaths,
+  collectDefaultExpandedFolderPaths,
   isSystemLayerPath,
   type TreeNode,
 } from "../utils/fileTree";
@@ -20,7 +20,7 @@ export function FileTree({ paths, selectedPath, onSelectFile }: Props) {
 
   useEffect(() => {
     if (tree.length > 0) {
-      setExpanded(new Set(collectFolderPaths(tree)));
+      setExpanded(new Set(collectDefaultExpandedFolderPaths(tree)));
     }
   }, [tree]);
 

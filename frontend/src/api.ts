@@ -72,6 +72,9 @@ export type SourceRef =
       start_char?: number;
       end_char?: number;
       offset_version?: string;
+      ts?: string;
+      role?: string;
+      conversation_title?: string;
     };
 
 function toolQueryFromInput(input: unknown): string | undefined {

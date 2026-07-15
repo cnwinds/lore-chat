@@ -64,17 +64,20 @@ export function useConversationShell({
 
   function selectConversation(id: string) {
     setActiveConversationId(id);
-    doc.requestCloseDocPreview();
+    doc.closeAllPreviews();
   }
 
   const sidebarProps: ComponentProps<typeof Sidebar> = {
     refreshKey: sidebarRefreshKey,
-    selectedPath: composerPrimaryPath ?? doc.previewPath,
+    selectedPath: composerPrimaryPath,
     activeConversationId,
     titleOverrides,
-    collapsed: doc.docFocus && doc.previewPath ? doc.sidebarCollapsed : false,
+    collapsed:
+      (doc.floatFocus || doc.pinnedFocus) && (doc.floatPath || doc.pinnedPath)
+        ? doc.sidebarCollapsed
+        : false,
     onToggleCollapsed:
-      doc.docFocus && doc.previewPath
+      (doc.floatFocus || doc.pinnedFocus) && (doc.floatPath || doc.pinnedPath)
         ? () => doc.setSidebarCollapsed((c) => !c)
         : undefined,
     onSelectFile,

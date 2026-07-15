@@ -1,45 +1,85 @@
 import { useRef, useState } from "react";
 import type { DocWidth } from "../../types/doc";
+import {
+  getStoredFloatWidth,
+  getStoredPanelWidth,
+  setStoredFloatWidth,
+  setStoredPanelWidth,
+} from "../../utils/docStorage";
+
+function pathTouchesChanged(path: string | null, changedPath?: string): boolean {
+  return Boolean(
+    path &&
+      (!changedPath || changedPath === path || path.startsWith(`${changedPath}/`)),
+  );
+}
 
 export function useDocPreviewLayout(refreshSidebar: () => void) {
-  const [docRefreshKey, setDocRefreshKey] = useState(0);
-  const [previewPath, setPreviewPath] = useState<string | null>(null);
-  const [highlightText, setHighlightText] = useState<string | undefined>();
-  const [docWidth, setDocWidth] = useState<DocWidth>("narrow");
-  const [docPinned, setDocPinned] = useState(false);
-  const [docFocus, setDocFocus] = useState(false);
+  const [floatPath, setFloatPath] = useState<string | null>(null);
+  const [floatHighlight, setFloatHighlight] = useState<string | undefined>();
+  const [floatWidth, setFloatWidth] = useState<DocWidth>(() => getStoredFloatWidth());
+  const [floatFocus, setFloatFocus] = useState(false);
+  const [floatRefreshKey, setFloatRefreshKey] = useState(0);
+
+  const [pinnedPath, setPinnedPath] = useState<string | null>(null);
+  const [pinnedHighlight, setPinnedHighlight] = useState<string | undefined>();
+  const [pinnedWidth, setPinnedWidth] = useState<DocWidth>(() => getStoredPanelWidth());
+  const [pinnedFocus, setPinnedFocus] = useState(false);
+  const [pinnedRefreshKey, setPinnedRefreshKey] = useState(0);
+
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const docCloseRef = useRef<(() => void) | null>(null);
-  const closeDocPreviewRef = useRef<(() => void) | null>(null);
+  const floatCloseRef = useRef<(() => void) | null>(null);
+  const pinnedCloseRef = useRef<(() => void) | null>(null);
 
-  function bindDocClose(handler: (() => void) | null) {
-    docCloseRef.current = handler;
+  function bindFloatClose(handler: (() => void) | null) {
+    floatCloseRef.current = handler;
   }
 
-  function closeDocPreview() {
-    setPreviewPath(null);
-    setHighlightText(undefined);
-    setDocPinned(false);
-    setDocFocus(false);
+  function bindPinnedClose(handler: (() => void) | null) {
+    pinnedCloseRef.current = handler;
+  }
+
+  function closeFloatPreview() {
+    setFloatPath(null);
+    setFloatHighlight(undefined);
+    setFloatFocus(false);
+    if (!pinnedFocus) setSidebarCollapsed(false);
+  }
+
+  function closePinnedPreview() {
+    setPinnedPath(null);
+    setPinnedHighlight(undefined);
+    setPinnedFocus(false);
+    if (!floatFocus) setSidebarCollapsed(false);
+  }
+
+  function closeAllPreviews() {
+    setFloatPath(null);
+    setFloatHighlight(undefined);
+    setFloatFocus(false);
+    setPinnedPath(null);
+    setPinnedHighlight(undefined);
+    setPinnedFocus(false);
     setSidebarCollapsed(false);
-    // docWidth intentionally retained
   }
-  closeDocPreviewRef.current = closeDocPreview;
 
-  function requestCloseDocPreview() {
-    if (docCloseRef.current) docCloseRef.current();
-    else closeDocPreview();
+  function requestCloseFloatPreview() {
+    if (floatCloseRef.current) floatCloseRef.current();
+    else closeFloatPreview();
+  }
+
+  function requestClosePinnedPreview() {
+    if (pinnedCloseRef.current) pinnedCloseRef.current();
+    else closePinnedPreview();
   }
 
   function refreshKb(changedPath?: string) {
     refreshSidebar();
-    if (
-      previewPath &&
-      (!changedPath ||
-        changedPath === previewPath ||
-        previewPath.startsWith(`${changedPath}/`))
-    ) {
-      setDocRefreshKey((k) => k + 1);
+    if (pathTouchesChanged(floatPath, changedPath)) {
+      setFloatRefreshKey((k) => k + 1);
+    }
+    if (pathTouchesChanged(pinnedPath, changedPath)) {
+      setPinnedRefreshKey((k) => k + 1);
     }
   }
 
@@ -48,96 +88,140 @@ export function useDocPreviewLayout(refreshSidebar: () => void) {
     excerpt?: string,
     options?: { pin?: boolean },
   ) {
-    const wantPin = options?.pin;
+    const wantPin = options?.pin ?? false;
 
-    if (path === previewPath && !docPinned && wantPin !== true) {
-      requestCloseDocPreview();
+    if (wantPin) {
+      setPinnedPath(path);
+      setPinnedHighlight(excerpt);
+      setPinnedWidth(getStoredPanelWidth());
       return;
     }
 
-    setPreviewPath(path);
-    setHighlightText(excerpt);
-
-    if (wantPin === true) {
-      setDocPinned(true);
-    } else if (wantPin === false) {
-      setDocPinned(false);
-      setDocFocus(false);
-    } else if (!docPinned) {
-      setDocPinned(false);
-      setDocFocus(false);
+    if (path === floatPath) {
+      requestCloseFloatPreview();
+      return;
     }
+
+    setFloatPath(path);
+    setFloatHighlight(excerpt);
+    setFloatFocus(false);
+    setFloatWidth(getStoredFloatWidth());
   }
 
   function pinDocPreview() {
-    if (!previewPath) return;
-    setDocPinned(true);
+    if (!floatPath) return;
+    setPinnedPath(floatPath);
+    setPinnedHighlight(floatHighlight);
+    setPinnedWidth(getStoredPanelWidth());
+    closeFloatPreview();
   }
 
   function unpinDocPreview() {
-    if (!previewPath) return;
-    setDocPinned(false);
-    setDocFocus(false);
-    setSidebarCollapsed(false);
+    if (!pinnedPath) return;
+    setFloatPath(pinnedPath);
+    setFloatHighlight(pinnedHighlight);
+    setFloatFocus(false);
+    setFloatWidth(getStoredFloatWidth());
+    closePinnedPreview();
   }
 
-  function enterDocFocus() {
-    setDocFocus(true);
+  function enterFloatFocus() {
+    setFloatFocus(true);
     setSidebarCollapsed(true);
   }
 
-  function exitDocFocus() {
-    setDocFocus(false);
-    setSidebarCollapsed(false);
+  function exitFloatFocus() {
+    setFloatFocus(false);
+    if (!pinnedFocus) setSidebarCollapsed(false);
   }
 
-  function toggleDocWidth() {
-    setDocWidth((w) => (w === "narrow" ? "wide" : "narrow"));
+  function enterPinnedFocus() {
+    setPinnedFocus(true);
+    setSidebarCollapsed(true);
   }
 
-  function toggleDocFocus() {
-    if (docFocus) exitDocFocus();
-    else enterDocFocus();
+  function exitPinnedFocus() {
+    setPinnedFocus(false);
+    if (!floatFocus) setSidebarCollapsed(false);
   }
 
-  const floatFocus = docFocus && previewPath && !docPinned;
-  const panelFocus = docFocus && previewPath && docPinned;
-  const showFloat = Boolean(previewPath && !docPinned);
-  const showPinned = Boolean(previewPath && docPinned);
+  function toggleFloatWidth() {
+    setFloatWidth((w) => {
+      const next = w === "narrow" ? "wide" : "narrow";
+      setStoredFloatWidth(next);
+      return next;
+    });
+  }
+
+  function togglePinnedWidth() {
+    setPinnedWidth((w) => {
+      const next = w === "narrow" ? "wide" : "narrow";
+      setStoredPanelWidth(next);
+      return next;
+    });
+  }
+
+  function toggleFloatFocus() {
+    if (floatFocus) exitFloatFocus();
+    else enterFloatFocus();
+  }
+
+  function togglePinnedFocus() {
+    if (pinnedFocus) exitPinnedFocus();
+    else enterPinnedFocus();
+  }
+
+  const showFloat = Boolean(floatPath);
+  const showPinned = Boolean(pinnedPath);
+  const panelFocus = Boolean(pinnedFocus && pinnedPath);
+  const floatFocusActive = Boolean(floatFocus && floatPath);
   const mainFloatWide = Boolean(
-    previewPath && !docPinned && docWidth === "wide" && !docFocus,
+    floatPath && floatWidth === "wide" && !floatFocus,
   );
 
   return {
-    previewPath,
-    setPreviewPath,
-    highlightText,
-    docRefreshKey,
-    setDocRefreshKey,
-    docWidth,
-    docPinned,
-    docFocus,
+    floatPath,
+    setFloatPath,
+    floatHighlight,
+    floatWidth,
+    floatFocus,
+    floatRefreshKey,
+    pinnedPath,
+    setPinnedPath,
+    pinnedHighlight,
+    pinnedWidth,
+    pinnedFocus,
+    pinnedRefreshKey,
+    /** 聊天来源高亮用右侧栏文档 */
+    previewPath: pinnedPath,
     sidebarCollapsed,
     setSidebarCollapsed,
-    bindDocClose,
-    requestCloseDocPreview,
+    bindFloatClose,
+    bindPinnedClose,
+    requestCloseFloatPreview,
+    requestClosePinnedPreview,
+    closeFloatPreview,
+    closePinnedPreview,
+    closeAllPreviews,
     refreshKb,
     openDocPreview,
     pinDocPreview,
     unpinDocPreview,
-    closeDocPreview: () => closeDocPreviewRef.current?.(),
-    toggleDocWidth,
-    toggleDocFocus,
-    exitDocFocus,
-    floatFocus,
+    toggleFloatWidth,
+    togglePinnedWidth,
+    toggleFloatFocus,
+    togglePinnedFocus,
+    exitFloatFocus,
+    exitPinnedFocus,
     panelFocus,
+    floatFocus: floatFocusActive,
     showFloat,
     showPinned,
     mainFloatWide,
     contextValue: {
-      previewPath,
+      previewPath: pinnedPath,
       openDoc: openDocPreview,
-      closeDoc: closeDocPreview,
+      closeDoc: closePinnedPreview,
       refreshKb,
     },
   };

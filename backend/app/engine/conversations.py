@@ -462,7 +462,8 @@ class ConversationStore:
         2. 在同一 SQLite 事务内取消该会话尚未完成的 outbox 派生任务。
         3. 删除消息/turns/摘要关系/会话行本身。
         4. 通知 `ConversationFTS` 清理消息级 FTS（`conversation_chunks_v2`）。
-        5. 通知旧版文档级 `Indexer` 清理遗留的 `conv:{cid}` FTS 记录。
+        5. 通知 `ConversationVector` 清理消息级向量索引。
+        6. 通知旧版文档级 `Indexer` 清理遗留的 `conv:{cid}` FTS 记录。
         """
         with self._lock:
             self._conversation_row(cid)
@@ -511,7 +512,14 @@ class ConversationStore:
             conversation_fts.delete_conversation(cid)
             index_cleared = True
         if conversation_vector is not None:
-            conversation_vector.delete_conversation(cid)
+            try:
+                conversation_vector.delete_conversation(cid)
+            except Exception:
+                from app.logging_config import get_logger
+
+                get_logger("conversations").warning(
+                    "会话向量索引清理失败 conversation_id=%s", cid, exc_info=True
+                )
             index_cleared = True
         if index_revision is not None and index_cleared:
             index_revision.bump()

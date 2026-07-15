@@ -13,6 +13,11 @@ export function ChatSources({ sources, previewPath, onOpen }: Props) {
   const items = dedupeSources(sources);
   if (items.length === 0) return null;
 
+  const hasConversation = items.some((s) => s.type === "conversation");
+  const hasKb = items.some((s) => s.type === "kb");
+  const sectionTitle =
+    hasConversation && !hasKb ? "参考会话" : hasConversation ? "参考来源" : "参考文档";
+
   return (
     <div className="chat-sources">
       <button
@@ -21,7 +26,7 @@ export function ChatSources({ sources, previewPath, onOpen }: Props) {
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
       >
-        <span className="chat-sources-title">参考文档</span>
+        <span className="chat-sources-title">{sectionTitle}</span>
         <span className="chat-sources-count">{items.length} 项</span>
         <span className="chat-sources-chevron" aria-hidden>
           {open ? "▾" : "▸"}

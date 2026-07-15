@@ -754,7 +754,11 @@ async def delete_conversation(cid: str, request: Request):
     c = _c(request)
     try:
         c.conversations.delete(
-            cid, conversation_fts=c.conversation_fts, indexer=c.indexer
+            cid,
+            conversation_fts=c.conversation_fts,
+            conversation_vector=c.conversation_vector,
+            indexer=c.indexer,
+            index_revision=c.index_revision,
         )
     except KeyError as e:
         raise HTTPException(404, "对话不存在") from e

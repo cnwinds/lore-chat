@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { type SourceRef } from "./api";
 import { Chat } from "./components/Chat";
 import { SearchSnippetModal } from "./components/SearchSnippetModal";
@@ -23,18 +23,46 @@ export default function App() {
   const refreshSidebar = () => setSidebarRefreshKey((k) => k + 1);
   const doc = useDocPreviewLayout(refreshSidebar);
   const composer = useComposerDocState();
+  const pinAddedTrayRef = useRef<string | null>(null);
+
+  function addDocToComposer(path: string) {
+    const title = path.split("/").pop() ?? path;
+    if (!composer.paths.includes(path)) {
+      composer.addToTray(path, title);
+    }
+    composer.setPrimary(path);
+  }
 
   function openDocWithComposer(
     path: string,
     excerpt?: string,
     options?: { pin?: boolean },
   ) {
-    const title = path.split("/").pop() ?? path;
-    if (!composer.paths.includes(path)) {
-      composer.addToTray(path, title);
-    }
-    composer.setPrimary(path);
+    addDocToComposer(path);
     doc.openDocPreview(path, excerpt, options);
+  }
+
+  function handlePinDoc() {
+    const path = doc.floatPath;
+    if (!path) return;
+    const wasInTray = composer.paths.includes(path);
+    if (!wasInTray) {
+      pinAddedTrayRef.current = path;
+      addDocToComposer(path);
+    } else {
+      pinAddedTrayRef.current = null;
+      composer.setPrimary(path);
+    }
+    doc.pinDocPreview();
+  }
+
+  function handleUnpinDoc() {
+    const path = doc.pinnedPath;
+    if (path && pinAddedTrayRef.current === path) {
+      composer.removeFromTray(path);
+      pinAddedTrayRef.current = null;
+    }
+    doc.unpinDocPreview();
   }
 
   function handleSelectFile(
@@ -45,8 +73,7 @@ export default function App() {
     if (mods?.ctrlKey || mods?.metaKey || mods?.shiftKey) {
       composer.addToTray(path, title);
     } else {
-      composer.replaceTray(path, title);
-      openDocWithComposer(path, undefined, { pin: true });
+      doc.openDocPreview(path, undefined, { pin: false });
     }
   }
 
@@ -61,8 +88,8 @@ export default function App() {
         ? composer.primaryPath
         : (composer.items.find((i) => i.path !== path)?.path ?? null);
     composer.removeFromTray(path);
-    if (doc.previewPath === path && nextPrimary === null) {
-      doc.contextValue.closeDoc();
+    if (doc.pinnedPath === path && nextPrimary === null) {
+      doc.closePinnedPreview();
     }
   }
 
@@ -81,11 +108,11 @@ export default function App() {
       conversation.setActiveConversationId(target.conversationId);
     }
     conversation.requestJump(target);
-    doc.requestCloseDocPreview();
+    doc.closeAllPreviews();
   }
 
   function handleOpenSource(src: SourceRef) {
-    if (src.type === "kb") openDocWithComposer(src.path, src.excerpt);
+    if (src.type === "kb") openDocWithComposer(src.path, src.excerpt, { pin: true });
     else if (src.type === "web") {
       window.open(src.url, "_blank", "noopener,noreferrer");
     } else if (src.type === "search") {
@@ -93,9 +120,13 @@ export default function App() {
     }
   }
 
-  const docViewerHandlers = buildDocViewerHandlers(doc, (id) => {
+  const floatDocHandlers = buildDocViewerHandlers(doc, "float", (id) => {
     conversation.setActiveConversationId(id);
-    doc.requestCloseDocPreview();
+    doc.closeAllPreviews();
+  });
+  const pinnedDocHandlers = buildDocViewerHandlers(doc, "pinned", (id) => {
+    conversation.setActiveConversationId(id);
+    doc.closeAllPreviews();
   });
 
   return (
@@ -131,28 +162,28 @@ export default function App() {
         docFloat={
           doc.showFloat ? (
             <DocFloatLayer
-              path={doc.previewPath!}
-              refreshKey={doc.docRefreshKey}
-              highlightText={doc.highlightText}
-              docWidth={doc.docWidth}
-              docFocus={doc.docFocus}
-              showBackdrop={!doc.docFocus}
-              onRequestClose={doc.requestCloseDocPreview}
-              onPin={doc.pinDocPreview}
-              {...docViewerHandlers}
+              path={doc.floatPath!}
+              refreshKey={doc.floatRefreshKey}
+              highlightText={doc.floatHighlight}
+              docWidth={doc.floatWidth}
+              docFocus={doc.floatFocus}
+              showBackdrop={!doc.floatFocus}
+              onRequestClose={doc.requestCloseFloatPreview}
+              onPin={handlePinDoc}
+              {...floatDocHandlers}
             />
           ) : null
         }
         docPinned={
           doc.showPinned ? (
             <DocPinnedPanel
-              path={doc.previewPath!}
-              refreshKey={doc.docRefreshKey}
-              highlightText={doc.highlightText}
-              docWidth={doc.docWidth}
-              docFocus={doc.docFocus}
-              onUnpin={doc.unpinDocPreview}
-              {...docViewerHandlers}
+              path={doc.pinnedPath!}
+              refreshKey={doc.pinnedRefreshKey}
+              highlightText={doc.pinnedHighlight}
+              docWidth={doc.pinnedWidth}
+              docFocus={doc.pinnedFocus}
+              onUnpin={handleUnpinDoc}
+              {...pinnedDocHandlers}
             />
           ) : null
         }

@@ -94,6 +94,35 @@ describe("useAgentStream", () => {
         data: { sources: [{ type: "kb", path: "a.md" }], total_duration_ms: 42 },
       };
     });
+    vi.mocked(api.getConversation).mockResolvedValue({
+      id: "cid-1",
+      title: "t",
+      created_at: "",
+      updated_at: "",
+      message_count: 2,
+      summarized: false,
+      summary_path: null,
+      messages: [
+        { id: "u1", role: "user", text: "hi there", ts: "2026-01-01T00:00:00.000Z" },
+        {
+          id: "a1",
+          role: "assistant",
+          ts: "2026-01-01T00:00:00.000Z",
+          timeline: [
+            {
+              type: "tool",
+              id: "t1",
+              tool: "search_kb",
+              label: "检索本地知识库",
+              ts: "2026-01-01T00:00:00.000Z",
+              status: "running",
+            },
+          ],
+          sources: [{ type: "kb", path: "a.md" }],
+          total_duration_ms: 42,
+        },
+      ],
+    });
     const { setMsgs, getCurrent } = makeSetMsgs([]);
     const options = baseOptions({ setMsgs });
     const { result } = renderHook(() => useAgentStream(options));
@@ -114,6 +143,21 @@ describe("useAgentStream", () => {
   });
 
   it("uses userDisplayText for the user bubble while sending apiText to chatStream (continue flow)", async () => {
+    vi.mocked(api.getConversation).mockResolvedValue({
+      id: "cid-1",
+      title: "t",
+      created_at: "",
+      updated_at: "",
+      message_count: 4,
+      summarized: false,
+      summary_path: null,
+      messages: [
+        { id: "u0", role: "user", text: "prior question", ts: "2026-01-01T00:00:00.000Z" },
+        { id: "a0", role: "assistant", text: "prior answer", ts: "2026-01-01T00:00:00.000Z" },
+        { id: "u1", role: "user", text: "选项 A", ts: "2026-01-01T00:00:01.000Z" },
+        { id: "a1", role: "assistant", ts: "2026-01-01T00:00:01.000Z", timeline: [], sources: [] },
+      ],
+    });
     const { setMsgs, getCurrent } = makeSetMsgs([
       { role: "user", text: "prior question" },
       { role: "assistant", text: "prior answer" },

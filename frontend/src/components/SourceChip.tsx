@@ -6,19 +6,47 @@ type Props = {
   onOpen: (src: SourceRef) => void;
 };
 
+function formatConvTs(ts?: string): string | null {
+  if (!ts) return null;
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return ts.slice(0, 10) || null;
+  return d.toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" });
+}
+
+function conversationExcerptPreview(excerpt?: string): string {
+  if (!excerpt) return "";
+  return excerpt.replace(/\s+/g, " ").trim().slice(0, 28);
+}
+
 function linkLabel(src: SourceRef): string {
   if (src.type === "kb") {
     return src.path.split("/").pop() || src.path;
   }
   if (src.type === "conversation") {
-    return `会话记录 ${src.cid.slice(0, 6)}`;
+    const when = formatConvTs(src.ts);
+    const title = src.conversation_title?.trim();
+    const excerpt = conversationExcerptPreview(src.excerpt);
+    if (title && excerpt) {
+      return `${when ? `${when} · ` : ""}${title}：${excerpt}`;
+    }
+    if (title) return when ? `${when} · ${title}` : title;
+    if (excerpt) return when ? `${when} · ${excerpt}` : excerpt;
+    return `会话 ${src.cid.slice(0, 6)}`;
   }
   return src.title || src.url;
 }
 
 function linkTitle(src: SourceRef): string {
   if (src.type === "kb") return src.path;
-  if (src.type === "conversation") return "未归档会话（可检索的临时记录）";
+  if (src.type === "conversation") {
+    const parts = [
+      src.conversation_title?.trim(),
+      formatConvTs(src.ts) ?? undefined,
+      src.role === "user" ? "用户" : src.role === "assistant" ? "助手" : src.role,
+      src.excerpt?.trim(),
+    ].filter(Boolean);
+    return parts.join(" · ") || "历史会话（点击跳转到原文）";
+  }
   return src.url;
 }
 

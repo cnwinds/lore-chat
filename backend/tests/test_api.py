@@ -192,6 +192,41 @@ def test_conversations_crud(client):
     assert client.get(f"/api/conversations/{cid}").status_code == 404
 
 
+def test_delete_conversation_clears_fts_and_vector_indexes(client):
+    container = client.app.state.container
+    store = container.conversations
+    fts = container.conversation_fts
+    vec = container.conversation_vector
+    llm = container.llm
+
+    cid = store.create()
+    turn = store.begin_turn(
+        cid,
+        user_text="人脑结构测试",
+        client_message_id="del-index-1",
+        observation_allowed=False,
+    )
+    store.finalize_turn(
+        cid,
+        turn_id=turn["turn_id"],
+        assistant={
+            "text": "关于人脑结构的回答",
+            "timeline": [{"type": "text", "content": "关于人脑结构的回答"}],
+            "sources": [],
+            "status": "complete",
+        },
+    )
+    assert container.derivation_worker.drain(max_jobs=10) >= 2
+    assert fts.query("人脑", k=5)
+    assert vec.query(llm.embed(["人脑"])[0], k=5)
+
+    r = client.delete(f"/api/conversations/{cid}")
+    assert r.status_code == 200
+
+    assert fts.query("人脑", k=5) == []
+    assert vec.query(llm.embed(["人脑"])[0], k=5) == []
+
+
 def test_chat_saves_to_conversation(client):
     r = client.post("/api/conversations")
     cid = r.json()["id"]

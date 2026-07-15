@@ -78,3 +78,8 @@ export function collectFolderPaths(nodes: TreeNode[]): string[] {
   }
   return paths;
 }
+
+/** 默认展开的文件夹路径（系统控制层目录保持折叠） */
+export function collectDefaultExpandedFolderPaths(nodes: TreeNode[]): string[] {
+  return collectFolderPaths(nodes).filter((p) => p !== SYSTEM_LAYER_DIR);
+}

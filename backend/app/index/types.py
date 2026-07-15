@@ -12,3 +12,6 @@ class Hit:
     start_char: int | None = None
     end_char: int | None = None
     offset_version: str | None = None
+    role: str | None = None
+    ts: str | None = None
+    conversation_title: str | None = None

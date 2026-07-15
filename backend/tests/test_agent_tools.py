@@ -92,7 +92,76 @@ async def test_search_kb_returns_conversation_source_with_message_fields(tmp_pat
     assert src["start_char"] == 0
     assert src["end_char"] == 4
     assert src["offset_version"] == "unicode-codepoint-v1"
+    assert src["role"] == "user"
+    assert src["ts"] == "2026-07-14T10:00:00"
+    assert src["conversation_title"] == "测试会话"
     assert "excerpt" in src
+
+
+@pytest.mark.asyncio
+async def test_search_kb_excludes_active_conversation_by_default(tmp_path):
+    cfts = ConversationFTS(tmp_path / "conversation_fts.db")
+    cfts.upsert_message_chunks(
+        conversation_id="current",
+        message_id="m-current",
+        role="user",
+        ts="2026-07-14T12:00:00",
+        conversation_title="当前会话",
+        chunks=[MessageChunk(0, 0, 4, "人脑结构")],
+    )
+    cfts.upsert_message_chunks(
+        conversation_id="past",
+        message_id="m-past",
+        role="user",
+        ts="2026-07-10T10:00:00",
+        conversation_title="历史会话",
+        chunks=[MessageChunk(0, 0, 4, "人脑结构")],
+    )
+    registry, _repo, _idx = _make_registry(tmp_path, conversation_fts=cfts)
+    result = await registry.execute(
+        "search_kb",
+        {"query": "人脑结构", "k": 5, "scope": "conversations"},
+        conversation_id="current",
+    )
+    conv_sources = [s for s in result["sources"] if s["type"] == "conversation"]
+    assert len(conv_sources) == 1
+    assert conv_sources[0]["cid"] == "past"
+    assert conv_sources[0]["conversation_title"] == "历史会话"
+
+
+@pytest.mark.asyncio
+async def test_search_kb_explicit_conversation_id_searches_within_session(tmp_path):
+    cfts = ConversationFTS(tmp_path / "conversation_fts.db")
+    cfts.upsert_message_chunks(
+        conversation_id="current",
+        message_id="m-current",
+        role="user",
+        ts="2026-07-14T12:00:00",
+        conversation_title="当前会话",
+        chunks=[MessageChunk(0, 0, 4, "人脑结构")],
+    )
+    cfts.upsert_message_chunks(
+        conversation_id="past",
+        message_id="m-past",
+        role="user",
+        ts="2026-07-10T10:00:00",
+        conversation_title="历史会话",
+        chunks=[MessageChunk(0, 0, 4, "人脑结构")],
+    )
+    registry, _repo, _idx = _make_registry(tmp_path, conversation_fts=cfts)
+    result = await registry.execute(
+        "search_kb",
+        {
+            "query": "人脑结构",
+            "k": 5,
+            "scope": "conversations",
+            "conversation_id": "current",
+        },
+        conversation_id="current",
+    )
+    conv_sources = [s for s in result["sources"] if s["type"] == "conversation"]
+    assert len(conv_sources) == 1
+    assert conv_sources[0]["cid"] == "current"
 
 
 @pytest.mark.asyncio

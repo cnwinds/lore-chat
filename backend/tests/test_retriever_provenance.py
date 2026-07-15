@@ -70,13 +70,15 @@ def test_conv_vector_lane_respects_min_score(tmp_path, monkeypatch):
         embeddings=[[1.0] * 8],
     )
 
-    def fake_query(embedding, k=5, *, conversation_id=None):
+    def fake_query(embedding, k=5, *, conversation_id=None, exclude_conversation_id=None):
         return [
             ConversationVectorHit("a", "c1", "low", "user", 0, 4, "低分", 0.1),
             ConversationVectorHit("b", "c1", "high", "user", 0, 4, "高分", 0.95),
         ]
 
     monkeypatch.setattr(cv, "query", fake_query)
-    ids, hit_map = retr._conv_vector_lane("q", 5, conversation_id="c1")
+    ids, hit_map = retr._conv_vector_lane(
+        "q", 5, conversation_id="c1", exclude_conversation_id=None
+    )
     assert ids == ["b"]
     assert "a" not in hit_map

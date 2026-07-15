@@ -19,6 +19,8 @@ class ConversationVectorHit:
     end_char: int
     text: str
     score: float
+    ts: str = ""
+    conversation_title: str = ""
     offset_version: str = "unicode-codepoint-v1"
 
 
@@ -94,10 +96,30 @@ class ConversationVector:
                 )
             col.add(ids=ids, documents=docs, embeddings=embeddings, metadatas=metas)
 
+    @staticmethod
+    def _conversation_where(
+        *,
+        conversation_id: str | None,
+        exclude_conversation_id: str | None,
+    ) -> dict | None:
+        if conversation_id:
+            return {"conversation_id": conversation_id}
+        if exclude_conversation_id:
+            return {"conversation_id": {"$ne": exclude_conversation_id}}
+        return None
+
     def query(
-        self, embedding: list[float], k: int = 5, *, conversation_id: str | None = None
+        self,
+        embedding: list[float],
+        k: int = 5,
+        *,
+        conversation_id: str | None = None,
+        exclude_conversation_id: str | None = None,
     ) -> list[ConversationVectorHit]:
-        where = {"conversation_id": conversation_id} if conversation_id else None
+        where = self._conversation_where(
+            conversation_id=conversation_id,
+            exclude_conversation_id=exclude_conversation_id,
+        )
         with self._lock:
             kwargs: dict = {"query_embeddings": [embedding], "n_results": max(k, 1)}
             if where:
@@ -119,6 +141,8 @@ class ConversationVector:
                     role=meta.get("role") or "",
                     start_char=int(meta["start_char"]),
                     end_char=int(meta["end_char"]),
+                    ts=meta.get("ts") or "",
+                    conversation_title=meta.get("conversation_title") or "",
                     text=doc or "",
                     score=1.0 - float(dist),
                 )

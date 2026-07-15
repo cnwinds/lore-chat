@@ -91,6 +91,9 @@ class Retriever:
             start_char=ch.start_char,
             end_char=ch.end_char,
             offset_version=ch.offset_version,
+            role=ch.role or None,
+            ts=ch.ts or None,
+            conversation_title=ch.conversation_title or None,
         )
 
     @staticmethod
@@ -125,13 +128,21 @@ class Retriever:
         return [h.doc_id for h in hits], hit_map
 
     def _conv_fts_lane(
-        self, query: str, lane_k: int, *, conversation_id: str | None
+        self,
+        query: str,
+        lane_k: int,
+        *,
+        conversation_id: str | None,
+        exclude_conversation_id: str | None,
     ) -> tuple[list[str], dict[str, Hit]]:
         if self.conversation_fts is None:
             return [], {}
         try:
             raw = self.conversation_fts.query(
-                query, k=lane_k, conversation_id=conversation_id
+                query,
+                k=lane_k,
+                conversation_id=conversation_id,
+                exclude_conversation_id=exclude_conversation_id,
             )
             hits = [self._conversation_hit(ch) for ch in raw]
         except Exception:
@@ -141,14 +152,22 @@ class Retriever:
         return [h.doc_id for h in hits], hit_map
 
     def _conv_vector_lane(
-        self, query: str, lane_k: int, *, conversation_id: str | None
+        self,
+        query: str,
+        lane_k: int,
+        *,
+        conversation_id: str | None,
+        exclude_conversation_id: str | None,
     ) -> tuple[list[str], dict[str, Hit]]:
         if self.conversation_vector is None:
             return [], {}
         try:
             q_emb = self.llm.embed([query])[0]
             raw = self.conversation_vector.query(
-                q_emb, k=lane_k, conversation_id=conversation_id
+                q_emb,
+                k=lane_k,
+                conversation_id=conversation_id,
+                exclude_conversation_id=exclude_conversation_id,
             )
             hits = [self._conversation_hit(ch) for ch in raw]
             hits = [h for h in hits if h.score >= self.min_score]
@@ -165,11 +184,16 @@ class Retriever:
         *,
         scope: str = "all",
         conversation_id: str | None = None,
+        exclude_conversation_id: str | None = None,
         cursor: str | None = None,
     ) -> SearchPage:
         rev = self.index_revision.get() if self.index_revision else 0
         offset = 0
-        filters = {"scope": scope, "conversation_id": conversation_id}
+        filters = {
+            "scope": scope,
+            "conversation_id": conversation_id,
+            "exclude_conversation_id": exclude_conversation_id,
+        }
 
         if cursor:
             try:
@@ -186,6 +210,9 @@ class Retriever:
                 filters = parsed.get("f", filters)
                 scope = filters.get("scope", scope)
                 conversation_id = filters.get("conversation_id", conversation_id)
+                exclude_conversation_id = filters.get(
+                    "exclude_conversation_id", exclude_conversation_id
+                )
                 offset = int(parsed.get("off", 0))
             except (json.JSONDecodeError, ValueError, TypeError):
                 return SearchPage(
@@ -214,11 +241,21 @@ class Retriever:
                 hit_map.update(m)
 
         if use_conv:
-            ids, m = self._conv_fts_lane(query, lane_k, conversation_id=conversation_id)
+            ids, m = self._conv_fts_lane(
+                query,
+                lane_k,
+                conversation_id=conversation_id,
+                exclude_conversation_id=exclude_conversation_id,
+            )
             if ids:
                 lanes.append(ids)
                 hit_map.update(m)
-            ids, m = self._conv_vector_lane(query, lane_k, conversation_id=conversation_id)
+            ids, m = self._conv_vector_lane(
+                query,
+                lane_k,
+                conversation_id=conversation_id,
+                exclude_conversation_id=exclude_conversation_id,
+            )
             if ids:
                 lanes.append(ids)
                 hit_map.update(m)

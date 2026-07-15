@@ -214,7 +214,7 @@ export function Chat({
         setSummarized(true);
         setSummaryPath(result.rel_path);
         refreshKb(result.rel_path);
-        openDoc(result.rel_path);
+        openDoc(result.rel_path, undefined, { pin: true });
       }
       onSidebarRefresh?.();
     } catch (err) {
@@ -254,7 +254,7 @@ export function Chat({
         },
       ]);
       if (result.rel_path) {
-        openDoc(result.rel_path);
+        openDoc(result.rel_path, undefined, { pin: true });
       }
       return;
     }
@@ -304,7 +304,7 @@ export function Chat({
       return;
     }
     if (src.type === "kb" && src.path) {
-      openDoc(src.path, src.excerpt);
+      openDoc(src.path, src.excerpt, { pin: true });
       return;
     }
     if (onOpenSource) {
@@ -380,7 +380,7 @@ export function Chat({
               summaryPath={summaryPath}
               canArchive={msgs.some((m) => m.role === "user")}
               onArchive={archiveConversation}
-              onOpenSummary={(path) => openDoc(path)}
+              onOpenSummary={(path) => openDoc(path, undefined, { pin: true })}
               onAttachClick={() => fileInputRef.current?.click()}
               onSend={send}
               fileInputRef={fileInputRef}

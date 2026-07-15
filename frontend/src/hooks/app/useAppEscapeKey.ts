@@ -10,7 +10,8 @@ export function useAppEscapeKey(
   onCloseSnippet: () => void,
 ) {
   useEffect(() => {
-    if (!doc.previewPath && !snippetSource) return;
+    const hasPreview = Boolean(doc.floatPath || doc.pinnedPath);
+    if (!hasPreview && !snippetSource) return;
     function onKeyDown(e: KeyboardEvent) {
       if (e.key !== "Escape") return;
       e.preventDefault();
@@ -18,11 +19,29 @@ export function useAppEscapeKey(
         onCloseSnippet();
         return;
       }
-      if (!doc.previewPath) return;
-      if (doc.docFocus) doc.exitDocFocus();
-      else doc.requestCloseDocPreview();
+      if (doc.floatFocus) {
+        doc.exitFloatFocus();
+        return;
+      }
+      if (doc.pinnedFocus) {
+        doc.exitPinnedFocus();
+        return;
+      }
+      if (doc.floatPath) {
+        doc.requestCloseFloatPreview();
+        return;
+      }
+      if (doc.pinnedPath) {
+        doc.requestClosePinnedPreview();
+      }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [doc.previewPath, doc.docFocus, doc.docPinned, snippetSource]);
+  }, [
+    doc.floatPath,
+    doc.pinnedPath,
+    doc.floatFocus,
+    doc.pinnedFocus,
+    snippetSource,
+  ]);
 }

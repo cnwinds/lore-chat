@@ -268,8 +268,35 @@ def backfill_conversation_fts(
     }
 
 
+def purge_deleted_conversation_indexes(
+    *,
+    ledger_path: str | Path,
+    conversation_fts: ConversationFTS,
+    conversation_vector: ConversationVector | None = None,
+    indexer=None,
+    index_revision=None,
+) -> dict:
+    """按 deletion ledger 清理已删会话在 FTS/向量/遗留索引中的残留 chunk。"""
+    deleted = _load_deleted_cids(ledger_path)
+    if not deleted:
+        return {"deleted_cids": 0, "purged": 0}
+    for cid in deleted:
+        conversation_fts.delete_conversation(cid)
+        if conversation_vector is not None:
+            try:
+                conversation_vector.delete_conversation(cid)
+            except Exception:
+                pass
+        if indexer is not None:
+            indexer.remove_conversation(cid)
+    if index_revision is not None:
+        index_revision.bump()
+    return {"deleted_cids": len(deleted), "purged": len(deleted)}
+
+
 def main() -> None:
     from app.config import get_settings
+    from app.index.revision import IndexRevision
     from app.models.llm import OpenAILLMClient
 
     parser = argparse.ArgumentParser(description="回填会话消息级 FTS 或向量索引")
@@ -277,6 +304,11 @@ def main() -> None:
         "--vectors",
         action="store_true",
         help="回填 ConversationVector（默认仅 FTS）",
+    )
+    parser.add_argument(
+        "--purge-deleted",
+        action="store_true",
+        help="按 deletion ledger 清理已删会话的 FTS/向量/遗留索引残留",
     )
     parser.add_argument(
         "--checkpoint",
@@ -294,6 +326,26 @@ def main() -> None:
     store = ConversationStore(conversations_dir)
     chunk_chars = settings.conversation_chunk_chars
     overlap = settings.conversation_chunk_overlap_chars
+    index_revision = IndexRevision(index_dir / "revision.txt")
+
+    if args.purge_deleted:
+        from app.index.fulltext import FullTextIndex
+        from app.index.indexer import Indexer
+        from app.index.vector import VectorIndex
+
+        fts = ConversationFTS(index_dir / "conversation_fts.db")
+        vector = ConversationVector(index_dir / "vec")
+        llm = OpenAILLMClient(settings)
+        indexer = Indexer(VectorIndex(index_dir / "vec"), FullTextIndex(index_dir / "fts.db"), llm)
+        stats = purge_deleted_conversation_indexes(
+            ledger_path=ledger_path,
+            conversation_fts=fts,
+            conversation_vector=vector,
+            indexer=indexer,
+            index_revision=index_revision,
+        )
+        print(json.dumps(stats, ensure_ascii=False))
+        return
 
     if args.vectors:
         checkpoint_path = (
