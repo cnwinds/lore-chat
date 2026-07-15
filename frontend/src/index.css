@@ -1589,6 +1589,115 @@ a:hover {
   color: var(--text);
 }
 
+.timeline-think {
+  margin: 4px 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  overflow: hidden;
+}
+
+.timeline-think-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.timeline-think-header:hover {
+  background: var(--bg-elevated);
+}
+
+.timeline-think-header-collapsed {
+  opacity: 0.92;
+}
+
+.timeline-think-label {
+  flex-shrink: 0;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.timeline-think-oneline {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.timeline-think-chevron {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.timeline-think-body {
+  padding: 10px 12px;
+  border-top: 1px solid var(--border);
+}
+
+/* 思考正文：灰色弱化，与 timeline-text / chat-markdown 正文区分层级 */
+.timeline-think-body .markdown-body,
+.timeline-think-body .timeline-think-markdown {
+  font-size: var(--text-sm);
+  line-height: var(--leading-content);
+  color: var(--text-muted);
+}
+
+.timeline-think-body .markdown-body p {
+  margin: 0;
+}
+
+.timeline-think-body .markdown-body p + p {
+  margin-top: 0.45em;
+}
+
+.timeline-think-body .markdown-body > :last-child {
+  margin-bottom: 0;
+}
+
+.timeline-think-body .markdown-body :where(
+  p,
+  li,
+  blockquote,
+  td,
+  th,
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6,
+  strong,
+  em
+) {
+  color: var(--text-muted);
+}
+
+.timeline-think-body .markdown-body a {
+  color: var(--text-secondary);
+}
+
+.timeline-think-body .markdown-body code {
+  color: var(--text-secondary);
+  background: var(--bg-elevated);
+}
+
+.timeline-think-markdown {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  line-height: var(--leading-content);
+}
+
 /* Source links */
 .source-link {
   display: inline-flex;

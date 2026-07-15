@@ -9,11 +9,14 @@ from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from app.engine.agent.events import done, error_event, text_delta
+from app.engine.agent.events import done, error_event, text_delta, think_delta
 from app.engine.source_key import extend_sources
 from app.engine.agent.prompts import MODE_DEFAULT, MODE_FORCE_WRITE, MODE_NO_WRITE
 from app.engine.conversations import TurnInProgress
 from app.engine.patch import diff_affected_range
+from app.logging_config import get_logger
+
+_log = get_logger("chat")
 
 router = APIRouter(prefix="/api")
 
@@ -105,6 +108,7 @@ class _TimelineAccumulator:
         self._parallel: dict[str, dict] = {}
         self._active_parallel: str | None = None
         self._text_block: dict | None = None
+        self._think_block: dict | None = None
 
     def accumulate(self, event_type: str, data: dict) -> None:
         if event_type == "tool_start":
@@ -125,6 +129,7 @@ class _TimelineAccumulator:
             else:
                 self.timeline.append(block)
             self._text_block = None
+            self._think_block = None
 
         elif event_type == "tool_result":
             block = self._tools.get(data["id"])
@@ -157,6 +162,7 @@ class _TimelineAccumulator:
             self.timeline.append(block)
             self._active_parallel = data["batch_id"]
             self._text_block = None
+            self._think_block = None
 
         elif event_type == "parallel_batch_end":
             block = self._parallel.get(data["batch_id"])
@@ -164,6 +170,18 @@ class _TimelineAccumulator:
                 block["duration_ms"] = data["duration_ms"]
             if self._active_parallel == data["batch_id"]:
                 self._active_parallel = None
+
+        elif event_type == "think_delta":
+            delta = data.get("delta", "")
+            if self._think_block is None:
+                self._think_block = {
+                    "type": "think",
+                    "ts": data["ts"],
+                    "content": delta,
+                }
+                self.timeline.append(self._think_block)
+            else:
+                self._think_block["content"] += delta
 
         elif event_type == "text_delta":
             delta = data.get("delta", "")
@@ -309,7 +327,9 @@ async def _chat_replay(turn: dict):
     """turn 已 complete/interrupted：从已存 timeline 重放，不再次运行 Agent。"""
     assistant = turn.get("assistant_message") or {}
     for block in assistant.get("timeline") or []:
-        if block.get("type") == "text" and block.get("content"):
+        if block.get("type") == "think" and block.get("content"):
+            yield think_delta(block["content"])
+        elif block.get("type") == "text" and block.get("content"):
             yield text_delta(block["content"])
     yield done(assistant.get("sources") or [], assistant.get("total_duration_ms") or 0)
 
@@ -339,6 +359,20 @@ async def _chat_stream_and_persist(
         }
         if error is not None:
             assistant["error"] = error
+        has_content = bool(
+            assistant.get("text")
+            or assistant.get("timeline")
+            or assistant.get("sources")
+            or assistant.get("error")
+        )
+        if status == "complete" and not has_content:
+            _log.warning(
+                "chat empty assistant cid=%s turn_id=%s timeline_blocks=%d text_len=%d",
+                cid,
+                turn["turn_id"],
+                len(acc.timeline),
+                len(acc.assistant_text),
+            )
         c.conversations.finalize_turn(cid, turn_id=turn["turn_id"], assistant=assistant)
         assistant_saved = True
 
@@ -373,6 +407,12 @@ async def _chat_stream_and_persist(
     finally:
         if not assistant_saved and (acc.timeline or acc.assistant_text):
             _finalize("interrupted")
+        elif not assistant_saved:
+            _log.warning(
+                "chat stream closed without persisting assistant cid=%s turn_id=%s",
+                cid,
+                turn["turn_id"],
+            )
 
 
 @router.post("/chat")

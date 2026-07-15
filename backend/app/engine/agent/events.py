@@ -42,6 +42,9 @@ def parallel_batch_end(batch_id, duration_ms):
 def text_delta(delta):
     return sse_event("text_delta", {"delta": delta})
 
+def think_delta(delta):
+    return sse_event("think_delta", {"delta": delta})
+
 def done(sources, total_duration_ms):
     return sse_event("done", {"sources": sources, "total_duration_ms": total_duration_ms})
 

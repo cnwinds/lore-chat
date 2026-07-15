@@ -16,6 +16,7 @@ type Props = {
   block: TimelineBlock;
   cumulative: CumulativeInfo;
   liveElapsedMs?: number;
+  isLive?: boolean;
   inParallel?: boolean;
   durationBold?: boolean;
   previewPath?: string | null;
@@ -220,10 +221,49 @@ function ToolBlockView({
   );
 }
 
+function ThinkBlockView({
+  block,
+  isLive,
+}: {
+  block: Extract<TimelineBlock, { type: "think" }>;
+  isLive?: boolean;
+}) {
+  const [open, setOpen] = useState(!!isLive);
+  const preview =
+    block.content.length > 120
+      ? `${block.content.slice(0, 120).trim()}…`
+      : block.content.trim();
+
+  return (
+    <div className="timeline-think">
+      <button
+        type="button"
+        className={`timeline-think-header${open ? "" : " timeline-think-header-collapsed"}`}
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+      >
+        <span className="timeline-think-label">思考过程</span>
+        {!open && preview ? (
+          <span className="timeline-think-oneline">{preview}</span>
+        ) : null}
+        <span className="timeline-think-chevron">{open ? "▾" : "▸"}</span>
+      </button>
+      {open ? (
+        <div className="timeline-think-body">
+          <MarkdownContent className="markdown-body chat-markdown timeline-think-markdown">
+            {block.content}
+          </MarkdownContent>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function TimelineBlockView({
   block,
   cumulative,
   liveElapsedMs,
+  isLive,
   inParallel,
   durationBold,
   onOpenSource,
@@ -257,7 +297,9 @@ export function TimelineBlockView({
                 ? child.id
                 : child.type === "parallel"
                   ? child.batch_id
-                  : `text-${i}`
+                  : child.type === "think"
+                    ? `think-${i}`
+                    : `text-${i}`
             }
             block={child}
             cumulative={cumulative}
@@ -277,6 +319,10 @@ export function TimelineBlockView({
         ))}
       </div>
     );
+  }
+
+  if (block.type === "think") {
+    return <ThinkBlockView block={block} isLive={isLive} />;
   }
 
   return (

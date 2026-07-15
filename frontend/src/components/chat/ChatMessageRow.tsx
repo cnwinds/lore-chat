@@ -144,11 +144,14 @@ function renderMessageContent(
               ? block.id
               : block.type === "parallel"
                 ? block.batch_id
-                : `text-${i}`
+                : block.type === "think"
+                  ? `think-${i}`
+                  : `text-${i}`
           }
           block={block}
           cumulative={cumulative}
           liveElapsedMs={isLive ? liveElapsedMs : undefined}
+          isLive={isLive}
           onOpenSource={onOpenSource}
           previewPath={previewPath}
           conversationId={conversationId}

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import time
+import uuid
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
@@ -9,6 +11,9 @@ from typing import Any, Protocol, runtime_checkable
 from openai import OpenAI
 
 from app.config import Settings
+from app.logging_config import get_logger
+
+_log = get_logger("llm")
 
 
 @dataclass
@@ -26,9 +31,10 @@ class ChatWithToolsResult:
 
 @dataclass
 class ChatStreamChunk:
-    """流式增量：text_delta 为逐块文字；final 轮携带完整 result（含 tool_calls）。"""
+    """流式增量：text_delta / think_delta 为逐块文字；final 轮携带完整 result（含 tool_calls）。"""
 
     text_delta: str | None = None
+    think_delta: str | None = None
     result: ChatWithToolsResult | None = None
 
 
@@ -52,6 +58,13 @@ class LLMClient(Protocol):
         temperature: float = 0.2,
     ) -> Iterator[ChatStreamChunk]: ...
     def embed(self, texts: list[str]) -> list[list[float]]: ...
+
+
+def _delta_reasoning(delta: Any) -> str | None:
+    rc = getattr(delta, "reasoning_content", None)
+    if isinstance(rc, str) and rc:
+        return rc
+    return None
 
 
 class OpenAILLMClient:
@@ -113,6 +126,7 @@ class OpenAILLMClient:
     ) -> Iterator[ChatStreamChunk]:
         client = self._big if big else self._small
         model = self.settings.big_model if big else self.settings.small_model
+        stream_id = uuid.uuid4().hex[:8]
         kwargs: dict[str, Any] = {
             "model": model,
             "messages": messages,
@@ -121,29 +135,75 @@ class OpenAILLMClient:
         }
         if tools:
             kwargs["tools"] = tools
-        stream = client.chat.completions.create(**kwargs)
 
+        _log.info(
+            "llm stream start id=%s model=%s big=%s messages=%d tools=%d",
+            stream_id,
+            model,
+            big,
+            len(messages),
+            len(tools),
+        )
+        t0 = time.monotonic()
+        chunk_count = 0
+        content_chars = 0
+        think_chars = 0
+        tool_delta_count = 0
+        finish_reason: str | None = None
         content_parts: list[str] = []
-        # 按 index 跨块累积 tool_calls（OpenAI 流式把 name/arguments 分片发送）
+        think_parts: list[str] = []
         tc_acc: dict[int, dict[str, Any]] = {}
-        for chunk in stream:
-            if not chunk.choices:
-                continue
-            delta = chunk.choices[0].delta
-            if delta.content:
-                content_parts.append(delta.content)
-                yield ChatStreamChunk(text_delta=delta.content)
-            for tcd in delta.tool_calls or []:
-                slot = tc_acc.setdefault(
-                    tcd.index, {"id": None, "name": None, "arguments": ""}
-                )
-                if tcd.id:
-                    slot["id"] = tcd.id
-                if tcd.function:
-                    if tcd.function.name:
-                        slot["name"] = tcd.function.name
-                    if tcd.function.arguments:
-                        slot["arguments"] += tcd.function.arguments
+
+        try:
+            stream = client.chat.completions.create(**kwargs)
+            for chunk in stream:
+                chunk_count += 1
+                if not chunk.choices:
+                    continue
+                choice = chunk.choices[0]
+                if choice.finish_reason:
+                    finish_reason = choice.finish_reason
+                delta = choice.delta
+                reasoning = _delta_reasoning(delta)
+                if reasoning:
+                    think_parts.append(reasoning)
+                    think_chars += len(reasoning)
+                    yield ChatStreamChunk(think_delta=reasoning)
+                if delta.content:
+                    content_parts.append(delta.content)
+                    content_chars += len(delta.content)
+                    yield ChatStreamChunk(text_delta=delta.content)
+                for tcd in delta.tool_calls or []:
+                    tool_delta_count += 1
+                    slot = tc_acc.setdefault(
+                        tcd.index, {"id": None, "name": None, "arguments": ""}
+                    )
+                    if tcd.id:
+                        slot["id"] = tcd.id
+                    if tcd.function:
+                        if tcd.function.name:
+                            slot["name"] = tcd.function.name
+                        if tcd.function.arguments:
+                            slot["arguments"] += tcd.function.arguments
+        except BaseException as e:
+            elapsed_ms = int((time.monotonic() - t0) * 1000)
+            _log.error(
+                "llm stream error id=%s model=%s ms=%d chunks=%d content_chars=%d "
+                "think_chars=%d tool_deltas=%d partial_tc_slots=%d err=%s",
+                stream_id,
+                model,
+                elapsed_ms,
+                chunk_count,
+                content_chars,
+                think_chars,
+                tool_delta_count,
+                len(tc_acc),
+                e,
+                exc_info=True,
+            )
+            raise
+
+        elapsed_ms = int((time.monotonic() - t0) * 1000)
 
         tool_calls: list[ToolCall] = []
         for idx in sorted(tc_acc):
@@ -157,7 +217,55 @@ class OpenAILLMClient:
             tool_calls.append(
                 ToolCall(id=slot["id"] or f"call_{idx}", name=slot["name"], arguments=args)
             )
+
+        partial_tc = sum(1 for s in tc_acc.values() if not s.get("name"))
+        tool_names = [tc.name for tc in tool_calls]
         content = "".join(content_parts) or None
+        think_text = "".join(think_parts) or None
+
+        _log.info(
+            "llm stream end id=%s model=%s ms=%d chunks=%d content_chars=%d think_chars=%d "
+            "tool_deltas=%d tool_calls=%d tool_names=%s finish_reason=%s partial_tc_slots=%d",
+            stream_id,
+            model,
+            elapsed_ms,
+            chunk_count,
+            content_chars,
+            think_chars,
+            tool_delta_count,
+            len(tool_calls),
+            tool_names,
+            finish_reason,
+            partial_tc,
+        )
+        if think_text and _log.isEnabledFor(10):  # DEBUG: 完整思考摘要
+            preview = think_text[:500] + ("…" if len(think_text) > 500 else "")
+            _log.debug("llm stream id=%s think_preview=%r", stream_id, preview)
+        if content and _log.isEnabledFor(10):
+            preview = (content or "")[:500] + ("…" if len(content or "") > 500 else "")
+            _log.debug("llm stream id=%s content_preview=%r", stream_id, preview)
+
+        if tc_acc and not tool_calls:
+            _log.warning(
+                "llm stream id=%s model=%s truncated tool_calls slots=%s",
+                stream_id,
+                model,
+                {k: {"id": v["id"], "name": v["name"], "args_len": len(v["arguments"] or "")} for k, v in tc_acc.items()},
+            )
+        if not content and not tool_calls and think_chars > 0:
+            _log.warning(
+                "llm stream id=%s model=%s think-only round (no content/tool_calls)",
+                stream_id,
+                model,
+            )
+        if not content and not tool_calls and think_chars == 0:
+            _log.warning(
+                "llm stream id=%s model=%s completely empty result finish_reason=%s",
+                stream_id,
+                model,
+                finish_reason,
+            )
+
         yield ChatStreamChunk(
             result=ChatWithToolsResult(content=content, tool_calls=tool_calls)
         )

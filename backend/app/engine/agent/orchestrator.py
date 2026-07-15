@@ -12,6 +12,7 @@ from app.engine.agent.events import (
     parallel_batch_end,
     parallel_batch_start,
     text_delta,
+    think_delta,
     tool_result,
     tool_start,
 )
@@ -24,7 +25,10 @@ from app.engine.agent.tools import (
     select_tools,
 )
 from app.engine.source_key import extend_sources
+from app.logging_config import get_logger
 from app.models.llm import ChatWithToolsResult, LLMClient, ToolCall
+
+_log = get_logger("agent")
 
 _LIMIT_MSG = "（已达工具调用上限，以上为目前能给出的结论。）"
 _NON_SERIALIZABLE_KEYS = frozenset({"hits", "ingest_result"})
@@ -133,12 +137,21 @@ class AgentOrchestrator:
                 chunk = await asyncio.to_thread(next, stream_iter, sentinel)
                 if chunk is sentinel:
                     break
+                if chunk.think_delta:
+                    yield think_delta(chunk.think_delta)
                 if chunk.text_delta:
                     yield text_delta(chunk.text_delta)
                 if chunk.result is not None:
                     result = chunk.result
             if result is None:
+                _log.warning("agent llm round ended without final result")
                 break
+            if not result.content and not result.tool_calls:
+                _log.warning(
+                    "agent llm round empty content=%r tool_calls=0 messages=%d",
+                    result.content,
+                    len(messages),
+                )
             if result.tool_calls:
                 turn_outputs: list[tuple[ToolCall, dict, int]] = []
                 batches = self._split_batches(result.tool_calls)

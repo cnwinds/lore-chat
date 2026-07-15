@@ -114,7 +114,8 @@ export type TimelineBlock =
       children: TimelineBlock[];
       duration_ms?: number;
     }
-  | { type: "text"; ts: string; content: string };
+  | { type: "text"; ts: string; content: string }
+  | { type: "think"; ts: string; content: string };
 
 export type ChatMessage = {
   id?: string;
@@ -478,6 +479,21 @@ export function updateTimeline(
           }
         : block,
     );
+  }
+
+  if (event === "think_delta") {
+    const delta = (data.delta as string) || "";
+    const last = timeline[timeline.length - 1];
+    if (last?.type === "think") {
+      return [
+        ...timeline.slice(0, -1),
+        { ...last, content: last.content + delta },
+      ];
+    }
+    return [
+      ...timeline,
+      { type: "think", ts: data.ts as string, content: delta },
+    ];
   }
 
   if (event === "text_delta") {
