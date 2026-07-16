@@ -84,6 +84,99 @@ export function changePassword(old_password: string, new_password: string) {
   });
 }
 
+export async function downloadExport() {
+  const r = await fetch(`${BASE}/api/admin/export`, { credentials: "include" });
+  if (!r.ok) {
+    let detail = r.statusText;
+    try {
+      const body = await r.json();
+      detail =
+        typeof body.detail === "string"
+          ? body.detail
+          : typeof body.message === "string"
+            ? body.message
+            : JSON.stringify(body);
+    } catch {
+      try {
+        detail = (await r.text()) || detail;
+      } catch {
+        /* ignore */
+      }
+    }
+    const err = new Error(detail || `导出失败 (${r.status})`) as ApiError;
+    err.status = r.status;
+    if (r.status === 401) {
+      window.dispatchEvent(new CustomEvent("auth:unauthorized"));
+    }
+    throw err;
+  }
+  const blob = await r.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "lorechat-kb.zip";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+export type ImportKbResult = {
+  ok: boolean;
+  message: string;
+  backup_path?: string;
+};
+
+export async function importKb(
+  file: File,
+  mode: "empty_only" | "overwrite",
+): Promise<ImportKbResult> {
+  const fd = new FormData();
+  fd.append("file", file);
+  fd.append("mode", mode);
+  const r = await fetch(`${BASE}/api/admin/import`, {
+    method: "POST",
+    credentials: "include",
+    body: fd,
+  });
+  if (!r.ok) {
+    let detail = "导入失败";
+    try {
+      const body = await r.json();
+      const d = body.detail;
+      if (typeof d === "string") {
+        detail = d;
+      } else if (d && typeof d === "object" && typeof d.detail === "string") {
+        detail = d.detail;
+      } else if (typeof body.message === "string") {
+        detail = body.message;
+      }
+    } catch {
+      try {
+        detail = (await r.text()) || detail;
+      } catch {
+        /* ignore */
+      }
+    }
+    const err = new Error(detail || `导入失败 (${r.status})`) as ApiError;
+    err.status = r.status;
+    if (r.status === 401) {
+      window.dispatchEvent(new CustomEvent("auth:unauthorized"));
+    }
+    throw err;
+  }
+  return r.json() as Promise<ImportKbResult>;
+}
+
+export type ReindexResult = {
+  ok: boolean;
+  docs_indexed: number;
+  conversations_fts: number;
+  conversations_vector: number;
+};
+
+export function reindexKb() {
+  return apiFetch<ReindexResult>("/api/admin/reindex", { method: "POST" });
+}
+
 export type QuestionOption = { id: string; label: string };
 export type Question = {
   id: string;

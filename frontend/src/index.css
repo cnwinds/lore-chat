@@ -1155,6 +1155,41 @@ a:hover {
   cursor: not-allowed;
 }
 
+.settings-save-btn--secondary {
+  background: transparent;
+  color: var(--text);
+  border-color: var(--border);
+}
+
+.settings-save-btn--secondary:hover:not(:disabled) {
+  background: var(--bg-muted);
+  border-color: var(--border);
+}
+
+.settings-backup-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.settings-backup-import {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.settings-radio-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.settings-field input[type="file"] {
+  width: 100%;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
 /* Doc viewer */
 .doc-viewer {
   display: flex;

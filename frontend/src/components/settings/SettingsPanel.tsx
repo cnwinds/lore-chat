@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { changePassword, getSettings, putSettings } from "../../api";
+import {
+  changePassword,
+  downloadExport,
+  getSettings,
+  importKb,
+  putSettings,
+  reindexKb,
+} from "../../api";
 
 type Props = {
   open: boolean;
@@ -78,6 +85,12 @@ export function SettingsPanel({ open, onClose }: Props) {
   const [pwdMsg, setPwdMsg] = useState<string | null>(null);
   const [pwdError, setPwdError] = useState<string | null>(null);
 
+  const [backupBusy, setBackupBusy] = useState(false);
+  const [backupMsg, setBackupMsg] = useState<string | null>(null);
+  const [backupError, setBackupError] = useState<string | null>(null);
+  const [importMode, setImportMode] = useState<"empty_only" | "overwrite">("empty_only");
+  const [importFile, setImportFile] = useState<File | null>(null);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -124,6 +137,10 @@ export function SettingsPanel({ open, onClose }: Props) {
       setConfirmPassword("");
       setPwdMsg(null);
       setPwdError(null);
+      setBackupMsg(null);
+      setBackupError(null);
+      setImportFile(null);
+      setImportMode("empty_only");
     }
   }, [open, load]);
 
@@ -198,6 +215,67 @@ export function SettingsPanel({ open, onClose }: Props) {
       setPwdError(err instanceof Error ? err.message : "修改密码失败");
     } finally {
       setPwdSaving(false);
+    }
+  }
+
+  async function handleExport() {
+    setBackupBusy(true);
+    setBackupError(null);
+    setBackupMsg(null);
+    try {
+      await downloadExport();
+      setBackupMsg("知识库已导出");
+    } catch (err) {
+      setBackupError(err instanceof Error ? err.message : "导出失败");
+    } finally {
+      setBackupBusy(false);
+    }
+  }
+
+  async function handleImport() {
+    if (!importFile) {
+      setBackupError("请选择要导入的 zip 文件");
+      return;
+    }
+    if (importMode === "overwrite") {
+      const ok = window.confirm(
+        "将先自动备份现有知识库，再覆盖。确定？",
+      );
+      if (!ok) return;
+    }
+
+    setBackupBusy(true);
+    setBackupError(null);
+    setBackupMsg(null);
+    try {
+      const result = await importKb(importFile, importMode);
+      const msg =
+        result.backup_path != null
+          ? `${result.message}（备份：${result.backup_path}）`
+          : result.message;
+      setBackupMsg(msg);
+      setImportFile(null);
+      await load();
+    } catch (err) {
+      setBackupError(err instanceof Error ? err.message : "导入失败");
+    } finally {
+      setBackupBusy(false);
+    }
+  }
+
+  async function handleReindex() {
+    setBackupBusy(true);
+    setBackupError(null);
+    setBackupMsg(null);
+    try {
+      const result = await reindexKb();
+      setBackupMsg(
+        `索引已重建：文档 ${result.docs_indexed}，会话 FTS ${result.conversations_fts}，会话向量 ${result.conversations_vector}`,
+      );
+    } catch (err) {
+      setBackupError(err instanceof Error ? err.message : "重建索引失败");
+    } finally {
+      setBackupBusy(false);
     }
   }
 
@@ -411,6 +489,81 @@ export function SettingsPanel({ open, onClose }: Props) {
                     <span>知识库路径（只读）</span>
                     <input value={kbPath} readOnly className="settings-readonly" />
                   </label>
+
+                  {backupError ? (
+                    <p className="settings-panel-error">{backupError}</p>
+                  ) : null}
+                  {backupMsg ? (
+                    <p className="settings-panel-success">{backupMsg}</p>
+                  ) : null}
+
+                  <div className="settings-backup-actions">
+                    <button
+                      type="button"
+                      className="settings-save-btn"
+                      onClick={() => void handleExport()}
+                      disabled={backupBusy || saving}
+                    >
+                      {backupBusy ? "处理中…" : "导出知识库"}
+                    </button>
+                  </div>
+
+                  <div className="settings-backup-import">
+                    <label className="settings-field">
+                      <span>导入 zip 包</span>
+                      <input
+                        type="file"
+                        accept=".zip,application/zip"
+                        disabled={backupBusy || saving}
+                        onChange={(e) =>
+                          setImportFile(e.target.files?.[0] ?? null)
+                        }
+                      />
+                    </label>
+                    <div className="settings-radio-group" role="radiogroup" aria-label="导入模式">
+                      <label className="settings-field settings-field--checkbox">
+                        <input
+                          type="radio"
+                          name="import-mode"
+                          value="empty_only"
+                          checked={importMode === "empty_only"}
+                          onChange={() => setImportMode("empty_only")}
+                          disabled={backupBusy || saving}
+                        />
+                        <span>仅空库导入</span>
+                      </label>
+                      <label className="settings-field settings-field--checkbox">
+                        <input
+                          type="radio"
+                          name="import-mode"
+                          value="overwrite"
+                          checked={importMode === "overwrite"}
+                          onChange={() => setImportMode("overwrite")}
+                          disabled={backupBusy || saving}
+                        />
+                        <span>覆盖导入（先自动备份）</span>
+                      </label>
+                    </div>
+                    <button
+                      type="button"
+                      className="settings-save-btn"
+                      onClick={() => void handleImport()}
+                      disabled={backupBusy || saving || !importFile}
+                    >
+                      {backupBusy ? "导入中…" : "导入知识库"}
+                    </button>
+                  </div>
+
+                  <div className="settings-backup-actions">
+                    <button
+                      type="button"
+                      className="settings-save-btn settings-save-btn--secondary"
+                      onClick={() => void handleReindex()}
+                      disabled={backupBusy || saving}
+                    >
+                      {backupBusy ? "重建中…" : "重建索引"}
+                    </button>
+                  </div>
                 </section>
 
                 <footer className="settings-form-footer">

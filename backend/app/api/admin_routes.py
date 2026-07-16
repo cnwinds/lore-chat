@@ -9,6 +9,7 @@ from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from app.backup.export_kb import build_export_zip
 from app.backup.import_kb import ImportResult, import_kb
 from app.backup.lock import MaintenanceActiveError
+from app.backup.reindex import reindex_all
 from app.deps import apply_settings, dispose_container, remount_container
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -125,3 +126,16 @@ async def import_kb_api(
         lock.release()
         if tmp_path is not None and tmp_path.exists():
             tmp_path.unlink()
+
+
+@router.post("/reindex")
+def reindex_api(request: Request) -> dict[str, Any]:
+    lock = request.app.state.maintenance_lock
+    try:
+        lock.acquire("reindex")
+    except MaintenanceActiveError as exc:
+        raise _maintenance_http(exc) from exc
+    try:
+        return reindex_all(request.app.state.container)
+    finally:
+        lock.release()

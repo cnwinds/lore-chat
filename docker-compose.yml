@@ -8,8 +8,10 @@ services:
       - .env
     environment:
       KB_PATH: /data/knowledge
+      BACKUP_DIR: /data/backups
     volumes:
       - knowledge-data:/data/knowledge
+      - backup-data:/data/backups
     restart: unless-stopped
     networks:
       - lorechat
@@ -37,6 +39,8 @@ services:
 volumes:
   knowledge-data:
     name: lorechat-knowledge
+  backup-data:
+    name: lorechat-backups
 
 networks:
   lorechat:

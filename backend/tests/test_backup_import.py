@@ -206,6 +206,10 @@ def test_write_routes_blocked_during_maintenance(client, tmp_path):
             )
         assert r.status_code == 503
         assert r.json()["code"] == "maintenance"
+
+        r = client.post("/api/admin/reindex")
+        assert r.status_code == 503
+        assert r.json()["code"] == "maintenance"
     finally:
         client.app.state.maintenance_lock.release()
 

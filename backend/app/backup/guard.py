@@ -12,6 +12,7 @@ MAINTENANCE_WRITE_ROUTES = frozenset(
         ("POST", "/api/upload"),
         ("POST", "/api/admin/import"),
         ("GET", "/api/admin/export"),
+        ("POST", "/api/admin/reindex"),
     }
 )
 
