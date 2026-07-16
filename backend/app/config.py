@@ -15,6 +15,9 @@ class Settings(BaseSettings):
 
     kb_path: Path = Path("./knowledge")
 
+    # CORS：逗号分隔的允许来源列表，本地 Vite 开发默认 5173
+    cors_origins: str = "http://localhost:5173"
+
     # 系统控制层：驻留知识库、可见可编辑、不参与检索、每轮注入为系统提示词
     system_layer_dir: str = "系统"
     precepts_filename: str = "戒律.md"

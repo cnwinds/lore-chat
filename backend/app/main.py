@@ -9,6 +9,9 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.auth import AuthStore, SessionStore
+from app.auth.middleware import AuthMiddleware
+from app.auth.routes import router as auth_router
 from app.config import Settings, get_settings
 from app.models.llm import LLMClient
 from app.deps import build_container
@@ -87,18 +90,32 @@ def create_app(settings: Settings | None = None, llm: LLMClient | None = None) -
                 maintenance_thread.join(timeout=2)
 
     app = FastAPI(title="Lore Chat", lifespan=lifespan)
+    app.state.auth_store = AuthStore(_settings.kb_path)
+    app.state.session_store = SessionStore(_settings.kb_path)
 
     @app.exception_handler(Exception)
     async def unhandled_exception_handler(request: Request, exc: Exception):
         # 返回 JSON 错误，避免浏览器把 500 误报为 CORS 问题
         return JSONResponse(status_code=500, content={"detail": str(exc)})
 
+    @app.get("/api/health")
+    def health():
+        return {"status": "ok"}
+
+    cors_origins = [
+        origin.strip()
+        for origin in _settings.cors_origins.split(",")
+        if origin.strip()
+    ]
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=cors_origins,
+        allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    app.add_middleware(AuthMiddleware)
+    app.include_router(auth_router)
     app.include_router(router)
     return app
 
