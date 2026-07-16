@@ -64,6 +64,26 @@ export function logout() {
   return apiFetch<{ ok: boolean }>("/api/auth/logout", { method: "POST" });
 }
 
+export function getSettings() {
+  return apiFetch<Record<string, unknown>>("/api/admin/settings");
+}
+
+export function putSettings(patch: Record<string, unknown>) {
+  return apiFetch<Record<string, unknown>>("/api/admin/settings", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+}
+
+export function changePassword(old_password: string, new_password: string) {
+  return apiFetch<{ ok: boolean }>("/api/auth/change-password", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ old_password, new_password }),
+  });
+}
+
 export type QuestionOption = { id: string; label: string };
 export type Question = {
   id: string;

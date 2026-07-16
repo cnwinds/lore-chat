@@ -19,6 +19,7 @@ type Props = {
   titleOverrides?: Record<string, string>;
   collapsed?: boolean;
   onToggleCollapsed?: () => void;
+  onOpenSettings?: () => void;
   onSelectFile: (path: string, mods?: SelectMods) => void;
   onNewChat: () => void;
   onSelectConversation: (id: string) => void;
@@ -47,6 +48,7 @@ export function Sidebar({
   titleOverrides = {},
   collapsed = false,
   onToggleCollapsed,
+  onOpenSettings,
   onSelectFile,
   onNewChat,
   onSelectConversation,
@@ -169,7 +171,22 @@ export function Sidebar({
           </section>
 
           <footer className="sidebar-footer">
-            <ThemeToggle />
+            <div className="sidebar-footer-actions">
+              <ThemeToggle />
+              {onOpenSettings ? (
+                <button
+                  type="button"
+                  className="sidebar-settings-btn"
+                  onClick={onOpenSettings}
+                  title="系统设置"
+                >
+                  <span className="sidebar-settings-icon" aria-hidden>
+                    ⚙
+                  </span>
+                  <span className="sidebar-settings-label">设置</span>
+                </button>
+              ) : null}
+            </div>
           </footer>
         </>
       )}

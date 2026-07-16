@@ -4,6 +4,7 @@ import { LoginPage } from "./components/auth/LoginPage";
 import { SetupPage } from "./components/auth/SetupPage";
 import { Chat } from "./components/Chat";
 import { SearchSnippetModal } from "./components/SearchSnippetModal";
+import { SettingsPanel } from "./components/settings/SettingsPanel";
 import { AppShell } from "./components/app/AppShell";
 import { DocFloatLayer } from "./components/app/DocFloatLayer";
 import { DocPinnedPanel } from "./components/app/DocPinnedPanel";
@@ -44,6 +45,7 @@ export default function App() {
 
 function AppMain() {
   const [sidebarRefreshKey, setSidebarRefreshKey] = useState(0);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [snippetSource, setSnippetSource] = useState<Extract<
     SourceRef,
     { type: "search" }
@@ -165,7 +167,10 @@ function AppMain() {
         floatFocus={Boolean(doc.floatFocus)}
         hasMergeReview={false}
         mainFloatWide={doc.mainFloatWide}
-        sidebarProps={conversation.sidebarProps}
+        sidebarProps={{
+          ...conversation.sidebarProps,
+          onOpenSettings: () => setSettingsOpen(true),
+        }}
         chat={
           <Chat
             conversationId={conversation.activeConversationId}
@@ -217,10 +222,13 @@ function AppMain() {
           ) : null
         }
         modals={
-          <SearchSnippetModal
-            source={snippetSource}
-            onClose={() => setSnippetSource(null)}
-          />
+          <>
+            <SearchSnippetModal
+              source={snippetSource}
+              onClose={() => setSnippetSource(null)}
+            />
+            <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+          </>
         }
       />
     </DocPreviewProvider>
