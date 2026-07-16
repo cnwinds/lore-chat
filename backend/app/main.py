@@ -15,7 +15,9 @@ from app.auth.routes import router as auth_router
 from app.config import Settings, get_settings
 from app.models.llm import LLMClient
 from app.deps import build_container
+from app.api.admin_routes import router as admin_router
 from app.api.routes import router
+from app.settings_store import SettingsStore
 
 _PLACEHOLDER_API_KEYS = frozenset({"", "sk-none", "sk-your-key"})
 _DERIVATION_WORKER_INTERVAL_SECONDS = 0.5
@@ -28,18 +30,18 @@ def _under_pytest() -> bool:
 
 
 def create_app(settings: Settings | None = None, llm: LLMClient | None = None) -> FastAPI:
-    settings = settings or get_settings()
-    _settings = settings
+    base_settings = settings or get_settings()
     _llm = llm
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        key = _settings.openai_api_key.strip()
+        effective = app.state.settings_store.get()
+        key = effective.openai_api_key.strip()
         if key in _PLACEHOLDER_API_KEYS:
             logging.getLogger("uvicorn.error").warning(
                 "OPENAI_API_KEY 未配置（仍为占位符）。录入与问答将失败，请编辑 backend/.env"
             )
-        app.state.container = build_container(_settings, llm=_llm)
+        app.state.container = build_container(effective, llm=_llm)
 
         stop_event = threading.Event()
         worker_thread: threading.Thread | None = None
@@ -90,8 +92,9 @@ def create_app(settings: Settings | None = None, llm: LLMClient | None = None) -
                 maintenance_thread.join(timeout=2)
 
     app = FastAPI(title="Lore Chat", lifespan=lifespan)
-    app.state.auth_store = AuthStore(_settings.kb_path)
-    app.state.session_store = SessionStore(_settings.kb_path)
+    app.state.settings_store = SettingsStore(base_settings.kb_path, base_settings)
+    app.state.auth_store = AuthStore(base_settings.kb_path)
+    app.state.session_store = SessionStore(base_settings.kb_path)
 
     @app.exception_handler(Exception)
     async def unhandled_exception_handler(request: Request, exc: Exception):
@@ -104,7 +107,7 @@ def create_app(settings: Settings | None = None, llm: LLMClient | None = None) -
 
     cors_origins = [
         origin.strip()
-        for origin in _settings.cors_origins.split(",")
+        for origin in base_settings.cors_origins.split(",")
         if origin.strip()
     ]
     app.add_middleware(
@@ -116,6 +119,7 @@ def create_app(settings: Settings | None = None, llm: LLMClient | None = None) -
     )
     app.add_middleware(AuthMiddleware)
     app.include_router(auth_router)
+    app.include_router(admin_router)
     app.include_router(router)
     return app
 

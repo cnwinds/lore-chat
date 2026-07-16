@@ -174,3 +174,21 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
         system_layer=system_layer,
         memory_service=memory_service,
     )
+
+
+def apply_settings(
+    container: Container, settings: Settings, llm: LLMClient | None = None
+) -> None:
+    container.settings = settings
+    new_llm = llm or OpenAILLMClient(settings)
+    container.llm = new_llm
+    container.indexer.llm = new_llm
+    container.retriever.llm = new_llm
+    container.organizer.llm = new_llm
+    container.derivation_worker.llm = new_llm
+    container.agent.settings = settings
+    container.agent.llm = new_llm
+    container.agent.tools.web_search = WebSearch(settings)
+    container.agent.tools.fetcher = WebFetcher(
+        settings.fetch_url_timeout, settings.fetch_url_max_bytes
+    )
