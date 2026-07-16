@@ -89,11 +89,25 @@ def _stage_zip(zf: zipfile.ZipFile, kb_path: Path) -> Path:
 
 
 def _promote_staging(staging: Path, kb_path: Path) -> None:
-    _clear_kb(kb_path)
-    for child in staging.iterdir():
-        dest = kb_path / child.name
-        shutil.move(str(child), str(dest))
-    shutil.rmtree(staging, ignore_errors=True)
+    """Replace kb_path with staging via directory rename-swap (restores on failure)."""
+    kb_path = Path(kb_path)
+    staging = Path(staging)
+    bak = kb_path.parent / f".import-kb-bak-{uuid.uuid4().hex}"
+    moved_kb = False
+    try:
+        if kb_path.exists():
+            shutil.move(str(kb_path), str(bak))
+            moved_kb = True
+        shutil.move(str(staging), str(kb_path))
+    except Exception:
+        if moved_kb and bak.exists():
+            if kb_path.exists():
+                shutil.rmtree(kb_path, ignore_errors=True)
+            shutil.move(str(bak), str(kb_path))
+        raise
+    finally:
+        if bak.exists():
+            shutil.rmtree(bak, ignore_errors=True)
 
 
 def _backup_timestamp() -> str:

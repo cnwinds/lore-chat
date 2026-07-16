@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from app.backup.empty import is_kb_empty
 from app.backup.export_kb import build_export_zip
 from app.backup.import_kb import backup_dir_for, import_kb
 from app.config import Settings
@@ -63,6 +64,24 @@ def test_overwrite_creates_backup_and_replaces(tmp_path: Path, monkeypatch):
     assert (kb / "new" / "y.md").read_text(encoding="utf-8") == "new\n"
 
 
+def test_import_empty_only_survives_promote_failure(tmp_path: Path, monkeypatch):
+    kb = tmp_path / "kb"
+    kb.mkdir()
+    pack = _make_pack(tmp_path, "技术/a.md", "# hi\n")
+
+    import app.backup.import_kb as import_mod
+
+    def fail_promote(staging: Path, kb_path: Path) -> None:
+        raise OSError("simulated promote failure")
+
+    monkeypatch.setattr(import_mod, "_promote_staging", fail_promote)
+
+    result = import_kb(kb, pack, "empty_only")
+    assert result.ok is False
+    assert "simulated promote failure" in result.message
+    assert is_kb_empty(kb)
+
+
 def test_overwrite_rollback_on_bad_zip(tmp_path: Path, monkeypatch):
     kb = tmp_path / "kb"
     kb.mkdir()
@@ -113,6 +132,33 @@ def test_import_api_empty_only(client, tmp_path):
     assert (kb / "技术" / "imported.md").is_file()
 
 
+def test_import_api_failure_includes_backup_path(client, tmp_path, monkeypatch):
+    kb = client.app.state.settings_store.get().kb_path
+    (kb / "技术").mkdir(parents=True)
+    (kb / "技术" / "keep.md").write_text("# keep\n", encoding="utf-8")
+    pack = _make_pack(tmp_path, "new/y.md", "new\n")
+
+    import app.backup.import_kb as import_mod
+
+    def fail_promote(staging: Path, kb_path: Path) -> None:
+        raise OSError("simulated promote failure")
+
+    monkeypatch.setattr(import_mod, "_promote_staging", fail_promote)
+
+    with open(pack, "rb") as f:
+        r = client.post(
+            "/api/admin/import",
+            files={"file": ("pack.zip", f, "application/zip")},
+            data={"mode": "overwrite"},
+        )
+    assert r.status_code == 400, r.text
+    body = r.json()["detail"]
+    assert "rolled back" in body["detail"]
+    assert "backup_path" in body
+    assert Path(body["backup_path"]).is_file()
+    assert (kb / "技术" / "keep.md").read_text(encoding="utf-8") == "# keep\n"
+
+
 def test_import_api_rejects_non_empty(client, tmp_path):
     kb = client.app.state.settings_store.get().kb_path
     (kb / "技术").mkdir(parents=True)
@@ -127,7 +173,7 @@ def test_import_api_rejects_non_empty(client, tmp_path):
     assert r.status_code == 409
 
 
-def test_write_routes_blocked_during_maintenance(client):
+def test_write_routes_blocked_during_maintenance(client, tmp_path):
     client.app.state.maintenance_lock.acquire("export")
     try:
         r = client.post("/api/chat", json={"text": "hi"})
@@ -150,6 +196,16 @@ def test_write_routes_blocked_during_maintenance(client):
 
         r = client.get("/api/admin/export")
         assert r.status_code == 503
+
+        pack = _make_pack(tmp_path, "技术/blocked.md", "# blocked\n")
+        with open(pack, "rb") as f:
+            r = client.post(
+                "/api/admin/import",
+                files={"file": ("pack.zip", f, "application/zip")},
+                data={"mode": "empty_only"},
+            )
+        assert r.status_code == 503
+        assert r.json()["code"] == "maintenance"
     finally:
         client.app.state.maintenance_lock.release()
 
