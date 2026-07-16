@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 
 from app.auth import AuthStore, SessionStore
 from app.backup import MaintenanceLock
+from app.backup.guard import MaintenanceGuardMiddleware
 from app.auth.middleware import AuthMiddleware
 from app.auth.routes import router as auth_router
 from app.config import Settings, get_settings
@@ -120,6 +121,7 @@ def create_app(settings: Settings | None = None, llm: LLMClient | None = None) -
         allow_headers=["*"],
     )
     app.add_middleware(AuthMiddleware)
+    app.add_middleware(MaintenanceGuardMiddleware)
     app.include_router(auth_router)
     app.include_router(admin_router)
     app.include_router(router)

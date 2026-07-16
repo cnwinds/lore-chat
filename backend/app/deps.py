@@ -176,6 +176,44 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
     )
 
 
+def dispose_container(container: Container | None) -> None:
+    """Close sqlite/git handles so kb_path files can be replaced during import."""
+    if container is None:
+        return
+
+    def _close_sqlite(obj) -> None:
+        conn = getattr(obj, "conn", None)
+        if conn is None:
+            return
+        try:
+            conn.close()
+        except Exception:
+            pass
+        obj.conn = None
+
+    _close_sqlite(container.conversations)
+    _close_sqlite(container.conversation_fts)
+    _close_sqlite(container.indexer.fulltext)
+    try:
+        container.repo.repo.close()
+    except Exception:
+        pass
+
+
+def remount_container(app, llm: LLMClient | None = None) -> None:
+    """Rebuild container and reattach auth/session/settings after KB import."""
+    from app.auth import AuthStore, SessionStore
+    from app.settings_store import SettingsStore
+
+    old_store = app.state.settings_store
+    kb_path = old_store.get().kb_path
+    app.state.settings_store = SettingsStore(kb_path, old_store._base)
+    settings = app.state.settings_store.get()
+    app.state.container = build_container(settings, llm=llm)
+    app.state.auth_store = AuthStore(kb_path)
+    app.state.session_store = SessionStore(kb_path)
+
+
 def apply_settings(
     container: Container, settings: Settings, llm: LLMClient | None = None
 ) -> None:
