@@ -41,7 +41,8 @@ async function assertPortAvailable(port) {
 }
 
 async function waitForApiReady(uvicornProc) {
-  const url = `http://${apiHost}:${apiPort}/api/tree`;
+  // Use a public route; /api/tree requires auth and always returns 401 before setup.
+  const url = `http://${apiHost}:${apiPort}/api/health`;
   for (let attempt = 0; attempt < 120; attempt += 1) {
     if (uvicornProc.exitCode !== null) {
       throw new Error(
