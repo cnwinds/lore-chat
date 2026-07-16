@@ -76,5 +76,22 @@ class Settings(BaseSettings):
     memory_maintenance_interval_hours: int = 24
 
 
+EDITABLE_SETTING_KEYS: frozenset[str] = frozenset(
+    name for name in Settings.model_fields if name != "kb_path"
+)
+
+SECRET_SETTING_KEYS: frozenset[str] = frozenset(
+    {
+        "openai_api_key",
+        "small_api_key",
+        "big_api_key",
+        "embed_api_key",
+        "tavily_api_key",
+        "serper_api_key",
+        "brave_search_api_key",
+    }
+)
+
+
 def get_settings() -> "Settings":
     return Settings()
