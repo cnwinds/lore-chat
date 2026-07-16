@@ -1,8 +1,13 @@
 // 生产环境经 nginx 同源代理时 VITE_API_BASE 留空；本地开发在 .env 中设为 http://localhost:8000
 const BASE = import.meta.env.VITE_API_BASE ?? "";
 
+export type ApiError = Error & { status?: number };
+
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const r = await fetch(`${BASE}${path}`, init);
+  const r = await fetch(`${BASE}${path}`, {
+    credentials: "include",
+    ...init,
+  });
   if (!r.ok) {
     let detail = r.statusText;
     try {
@@ -20,9 +25,43 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
         /* ignore */
       }
     }
-    throw new Error(detail || `请求失败 (${r.status})`);
+    const err = new Error(detail || `请求失败 (${r.status})`) as ApiError;
+    err.status = r.status;
+    if (r.status === 401) {
+      window.dispatchEvent(new CustomEvent("auth:unauthorized"));
+    }
+    throw err;
   }
   return r.json() as Promise<T>;
+}
+
+export type AuthStatus = {
+  setup_required: boolean;
+  authenticated: boolean;
+};
+
+export function getAuthStatus() {
+  return apiFetch<AuthStatus>("/api/auth/status");
+}
+
+export function setupAuth(password: string) {
+  return apiFetch<{ ok: boolean }>("/api/auth/setup", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ password }),
+  });
+}
+
+export function login(password: string) {
+  return apiFetch<{ ok: boolean }>("/api/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ password }),
+  });
+}
+
+export function logout() {
+  return apiFetch<{ ok: boolean }>("/api/auth/logout", { method: "POST" });
 }
 
 export type QuestionOption = { id: string; label: string };
@@ -295,6 +334,7 @@ export async function* chatStream(
   } = options;
   const r = await fetch(`${BASE}/api/chat`, {
     method: "POST",
+    credentials: "include",
     headers: {
       "Content-Type": "application/json",
       Accept: "text/event-stream",
@@ -316,7 +356,12 @@ export async function* chatStream(
     } catch {
       /* ignore */
     }
-    throw new Error(detail || `请求失败 (${r.status})`);
+    const err = new Error(detail || `请求失败 (${r.status})`) as ApiError;
+    err.status = r.status;
+    if (r.status === 401) {
+      window.dispatchEvent(new CustomEvent("auth:unauthorized"));
+    }
+    throw err;
   }
   if (!r.body) {
     throw new Error("响应缺少可读流");
@@ -709,6 +754,7 @@ export async function getMergeSession(id: string): Promise<MergeSession> {
 export async function getActiveMerge(path: string): Promise<MergeSession | null> {
   const r = await fetch(
     `${BASE}/api/docs/merge/active?path=${encodeURIComponent(path)}`,
+    { credentials: "include" },
   );
   if (r.status === 404) return null;
   if (!r.ok) {
@@ -728,7 +774,12 @@ export async function getActiveMerge(path: string): Promise<MergeSession | null>
         /* ignore */
       }
     }
-    throw new Error(detail || `请求失败 (${r.status})`);
+    const err = new Error(detail || `请求失败 (${r.status})`) as ApiError;
+    err.status = r.status;
+    if (r.status === 401) {
+      window.dispatchEvent(new CustomEvent("auth:unauthorized"));
+    }
+    throw err;
   }
   const data = (await r.json()) as MergeSessionResponse;
   return toMergeSession(data);
@@ -768,3 +819,4 @@ export async function resolveMergeSources(
     },
   );
 }
+

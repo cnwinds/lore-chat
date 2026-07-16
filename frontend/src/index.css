@@ -3218,3 +3218,97 @@ a:hover {
   opacity: 0.45;
   cursor: default;
 }
+
+/* Auth gate */
+.auth-gate {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--bg-app);
+}
+
+.auth-gate-card {
+  width: min(380px, 100%);
+  padding: 28px 24px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-md);
+}
+
+.auth-gate-title {
+  margin: 0 0 6px;
+  font-size: var(--font-h2);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.auth-gate-subtitle {
+  margin: 0 0 20px;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  line-height: var(--leading-ui);
+}
+
+.auth-gate-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.auth-gate-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.auth-gate-field label {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.auth-gate-field input {
+  width: 100%;
+  padding: 9px 10px;
+  box-sizing: border-box;
+}
+
+.auth-gate-field input:focus {
+  outline: none;
+  border-color: var(--accent-border);
+  box-shadow: 0 0 0 2px var(--accent-focus);
+}
+
+.auth-gate-submit {
+  margin-top: 4px;
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: var(--text-on-accent);
+  font-weight: 600;
+  font-size: var(--text-sm);
+}
+
+.auth-gate-submit:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.auth-gate-error {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--danger-bg);
+  border: 1px solid var(--danger-border);
+  color: var(--danger-text);
+  font-size: var(--text-sm);
+}
+
+.auth-gate-submit:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}

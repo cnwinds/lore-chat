@@ -1,5 +1,7 @@
-import { useRef, useState } from "react";
-import { type SourceRef } from "./api";
+import { useEffect, useRef, useState } from "react";
+import { getAuthStatus, type SourceRef } from "./api";
+import { LoginPage } from "./components/auth/LoginPage";
+import { SetupPage } from "./components/auth/SetupPage";
 import { Chat } from "./components/Chat";
 import { SearchSnippetModal } from "./components/SearchSnippetModal";
 import { AppShell } from "./components/app/AppShell";
@@ -13,7 +15,34 @@ import { useDocPreviewLayout } from "./hooks/app/useDocPreviewLayout";
 import { useComposerDocState } from "./hooks/useComposerDocState";
 import type { JumpTarget } from "./hooks/chat/useConversationJump";
 
+type Gate = "loading" | "setup" | "login" | "app";
+
 export default function App() {
+  const [gate, setGate] = useState<Gate>("loading");
+
+  useEffect(() => {
+    getAuthStatus()
+      .then((s) => {
+        if (s.setup_required) setGate("setup");
+        else if (!s.authenticated) setGate("login");
+        else setGate("app");
+      })
+      .catch(() => setGate("login"));
+  }, []);
+
+  useEffect(() => {
+    const onUnauthorized = () => setGate("login");
+    window.addEventListener("auth:unauthorized", onUnauthorized);
+    return () => window.removeEventListener("auth:unauthorized", onUnauthorized);
+  }, []);
+
+  if (gate === "loading") return null;
+  if (gate === "setup") return <SetupPage onDone={() => setGate("app")} />;
+  if (gate === "login") return <LoginPage onDone={() => setGate("app")} />;
+  return <AppMain />;
+}
+
+function AppMain() {
   const [sidebarRefreshKey, setSidebarRefreshKey] = useState(0);
   const [snippetSource, setSnippetSource] = useState<Extract<
     SourceRef,
