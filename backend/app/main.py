@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.auth import AuthStore, SessionStore
+from app.backup import MaintenanceLock
 from app.auth.middleware import AuthMiddleware
 from app.auth.routes import router as auth_router
 from app.config import Settings, get_settings
@@ -95,6 +96,7 @@ def create_app(settings: Settings | None = None, llm: LLMClient | None = None) -
     app.state.settings_store = SettingsStore(base_settings.kb_path, base_settings)
     app.state.auth_store = AuthStore(base_settings.kb_path)
     app.state.session_store = SessionStore(base_settings.kb_path)
+    app.state.maintenance_lock = MaintenanceLock()
 
     @app.exception_handler(Exception)
     async def unhandled_exception_handler(request: Request, exc: Exception):
