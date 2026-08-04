@@ -16,6 +16,17 @@ from app.engine.patch import diff_affected_range
 router = APIRouter(prefix="/api")
 
 
+def _kb_path_exists_detail(
+    rel_path: str, message: str, suggested_filename: str
+) -> dict:
+    return {
+        "code": "PATH_EXISTS",
+        "path": rel_path,
+        "message": message,
+        "suggested_filename": suggested_filename,
+    }
+
+
 class IngestBody(BaseModel):
     text: str
 
@@ -279,12 +290,9 @@ async def kb_import(
     except KbPathExistsError as e:
         raise HTTPException(
             409,
-            detail={
-                "code": "PATH_EXISTS",
-                "path": e.rel_path,
-                "message": str(e),
-                "suggested_filename": suggest_alternate_filename(name),
-            },
+            detail=_kb_path_exists_detail(
+                e.rel_path, str(e), suggest_alternate_filename(name)
+            ),
         ) from e
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
@@ -310,14 +318,13 @@ async def kb_move(body: KbMoveBody, request: Request):
     except KbPathExistsError as e:
         raise HTTPException(
             409,
-            detail={
-                "code": "PATH_EXISTS",
-                "path": e.rel_path,
-                "message": str(e),
-                "suggested_filename": suggest_alternate_filename(
+            detail=_kb_path_exists_detail(
+                e.rel_path,
+                str(e),
+                suggest_alternate_filename(
                     body.to_filename or body.from_path.rsplit("/", 1)[-1]
                 ),
-            },
+            ),
         ) from e
     except FileNotFoundError as e:
         raise HTTPException(404, "源路径不存在") from e

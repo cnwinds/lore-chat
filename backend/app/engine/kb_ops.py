@@ -146,12 +146,8 @@ def delete_entry(repo: KnowledgeRepo, writer: KnowledgeWriter, path: str) -> lis
     if repo.is_protected(norm):
         raise ValueError(f"禁止删除：{path}")
     deleted = repo.delete_path(norm, commit_msg=f"delete: {norm}")
-    md_paths = [p for p in deleted if is_markdown_path(p)]
-    other = [p for p in deleted if p not in md_paths]
-    if md_paths:
-        writer.drop_from_index(md_paths)
-    if other:
-        writer.drop_from_index(other)
+    if deleted:
+        writer.drop_from_index(deleted)
     if deleted:
         writer.record_deletion(norm, deleted)
     return deleted

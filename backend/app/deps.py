@@ -16,6 +16,8 @@ from app.engine.pending import PendingStore
 from app.engine.merge_sessions import MergeSessionStore
 from app.engine.conversations import ConversationStore
 from app.engine.derivation_worker import DerivationWorker
+from app.engine.memory.llm_extractor import LLMMemoryExtractor
+from app.engine.memory.observer import MemoryObserver
 from app.engine.memory_worker import MemoryWorker
 from app.engine.memory_maintenance import MemoryMaintenanceJob
 from app.engine.memory.decay import DecayConfig
@@ -116,7 +118,13 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
         chunk_chars=settings.conversation_chunk_chars,
         overlap=settings.conversation_chunk_overlap_chars,
     )
-    memory_worker = MemoryWorker(conversations, memory_service)
+    memory_observer = MemoryObserver(
+        memory_store,
+        extractor=LLMMemoryExtractor(llm),
+    )
+    memory_worker = MemoryWorker(
+        conversations, memory_service, observer=memory_observer
+    )
     decay_config = DecayConfig(
         stale_days_goal_project=settings.memory_decay_stale_days,
         decay_days_inferred=settings.memory_decay_inferred_days,

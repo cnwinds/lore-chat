@@ -11,6 +11,7 @@ import { formatSidebarConversationTime } from "../utils/displayTime";
 import { FileTree, type FileTreeNodeContext } from "./FileTree";
 import { ThemeToggle } from "./ThemeToggle";
 import { useKbTreeActions } from "../hooks/useKbTreeActions";
+import { useDismissOnOutsideClick } from "../hooks/useDismissOnOutsideClick";
 import { isSystemLayerPath } from "../utils/fileTree";
 
 type SelectMods = { ctrlKey?: boolean; metaKey?: boolean; shiftKey?: boolean };
@@ -58,7 +59,9 @@ export function Sidebar({
     y: number;
     ctx: FileTreeNodeContext;
   } | null>(null);
+  const [kbHintOpen, setKbHintOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const kbHintRef = useRef<HTMLDivElement>(null);
 
   const conversationGroups = useMemo(
     () => groupConversationsByTime(conversations),
@@ -78,15 +81,13 @@ export function Sidebar({
     refresh();
   }, [refreshKey]);
 
-  useEffect(() => {
-    if (!menu) return;
-    function onDocClick(e: MouseEvent) {
-      if (menuRef.current?.contains(e.target as Node)) return;
-      setMenu(null);
-    }
-    document.addEventListener("click", onDocClick);
-    return () => document.removeEventListener("click", onDocClick);
-  }, [menu]);
+  useDismissOnOutsideClick(menuRef, !!menu, () => setMenu(null));
+  useDismissOnOutsideClick(
+    kbHintRef,
+    kbHintOpen,
+    () => setKbHintOpen(false),
+    { escape: true },
+  );
 
   async function handleDeleteConversation(e: React.MouseEvent, id: string) {
     e.stopPropagation();
@@ -272,7 +273,46 @@ export function Sidebar({
             onDrop={handleSectionDrop}
           >
             <div className="sidebar-section-head">
-              <h4>知识库</h4>
+              <div className="sidebar-section-title" ref={kbHintRef}>
+                <h4>知识库</h4>
+                <button
+                  type="button"
+                  className={`sidebar-hint-btn${kbHintOpen ? " open" : ""}`}
+                  aria-label="知识库使用说明"
+                  aria-expanded={kbHintOpen}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setKbHintOpen((v) => !v);
+                  }}
+                >
+                  ?
+                </button>
+                {kbHintOpen && (
+                  <div className="sidebar-kb-hint-popover" role="dialog" aria-label="知识库使用说明">
+                    <p className="sidebar-kb-hint-lead">文档与附件</p>
+                    <ul className="sidebar-kb-hint-list">
+                      <li>
+                        <strong>单击</strong> Markdown 打开预览；附件触发下载
+                      </li>
+                      <li>
+                        <strong>Ctrl / ⌘ + 单击</strong> 加入对话文档托盘
+                      </li>
+                      <li>
+                        <strong>双击</strong> 文件名重命名
+                      </li>
+                      <li>
+                        <strong>右键</strong> 下载、重命名、删除
+                      </li>
+                      <li>
+                        <strong>拖入</strong> 本地文件到文件夹（空白区域为根目录）
+                      </li>
+                      <li>
+                        <strong>拖拽</strong> 文件到另一文件夹可移动
+                      </li>
+                    </ul>
+                  </div>
+                )}
+              </div>
               <div className="sidebar-section-actions">
                 {onToggleCollapsed && (
                   <button
@@ -306,9 +346,6 @@ export function Sidebar({
               onStartRename={startRename}
               disabled={kb.busy}
             />
-            <p className="sidebar-tree-hint">
-              单击打开 · Ctrl+单击添加托盘 · 拖入文件到文件夹 · 右键管理
-            </p>
           </section>
 
           <footer className="sidebar-footer">
