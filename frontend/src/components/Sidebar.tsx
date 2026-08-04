@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  downloadUrl,
   getTree,
   listConversations,
   deleteConversation,
@@ -8,9 +7,10 @@ import {
 } from "../api";
 import { groupConversationsByTime } from "../utils/conversationGroups";
 import { formatSidebarConversationTime } from "../utils/displayTime";
-import { FileTree, type FileTreeNodeContext } from "./FileTree";
+import { FileTree } from "./FileTree";
 import { ThemeToggle } from "./ThemeToggle";
 import { useKbTreeActions } from "../hooks/useKbTreeActions";
+import { useFileTreeInteraction } from "../hooks/useFileTreeInteraction";
 import { useDismissOnOutsideClick } from "../hooks/useDismissOnOutsideClick";
 import { isSystemLayerPath } from "../utils/fileTree";
 
@@ -51,16 +51,7 @@ export function Sidebar({
 }: Props) {
   const [docs, setDocs] = useState<string[]>([]);
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
-  const [dropHighlightDir, setDropHighlightDir] = useState<string | null>(null);
-  const [renamingPath, setRenamingPath] = useState<string | null>(null);
-  const [renamingValue, setRenamingValue] = useState("");
-  const [menu, setMenu] = useState<{
-    x: number;
-    y: number;
-    ctx: FileTreeNodeContext;
-  } | null>(null);
   const [kbHintOpen, setKbHintOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
   const kbHintRef = useRef<HTMLDivElement>(null);
 
   const conversationGroups = useMemo(
@@ -76,12 +67,17 @@ export function Sidebar({
   }
 
   const kb = useKbTreeActions(refresh);
+  const tree = useFileTreeInteraction({
+    kb,
+    onKbPathChanged,
+    onKbPathsDeleted,
+  });
 
   useEffect(() => {
     refresh();
   }, [refreshKey]);
 
-  useDismissOnOutsideClick(menuRef, !!menu, () => setMenu(null));
+  useDismissOnOutsideClick(tree.menuRef, !!tree.menu, tree.closeMenu);
   useDismissOnOutsideClick(
     kbHintRef,
     kbHintOpen,
@@ -96,102 +92,30 @@ export function Sidebar({
     onDeleteConversation(id);
   }
 
-  function startRename(path: string, name: string) {
-    if (isSystemLayerPath(path)) return;
-    setRenamingPath(path);
-    setRenamingValue(name);
-  }
-
-  async function commitRename() {
-    if (!renamingPath) return;
-    const trimmed = renamingValue.trim();
-    setRenamingPath(null);
-    if (!trimmed || trimmed === renamingPath.split("/").pop()) return;
-    const newPath = await kb.renameFile(renamingPath, trimmed);
-    if (newPath && newPath !== renamingPath) {
-      onKbPathChanged?.(renamingPath, newPath);
-    }
-  }
-
-  function openContextMenu(e: React.MouseEvent, ctx: FileTreeNodeContext) {
-    if (isSystemLayerPath(ctx.path) && ctx.kind === "folder") return;
-    setMenu({ x: e.clientX, y: e.clientY, ctx });
-  }
-
-  async function handleMenuAction(action: string) {
-    if (!menu) return;
-    const { ctx } = menu;
-    setMenu(null);
-    const path = ctx.path;
-
-    if (action === "download" && ctx.kind === "file") {
-      window.open(downloadUrl(path), "_blank", "noopener,noreferrer");
-      return;
-    }
-    if (action === "rename" && ctx.kind === "file") {
-      startRename(path, ctx.node.type === "file" ? ctx.node.name : path);
-      return;
-    }
-    if (action === "delete") {
-      const label =
-        ctx.kind === "folder"
-          ? `确定删除文件夹「${path || "根目录"}」及其下全部文件？`
-          : `确定删除「${path}」？`;
-      if (!window.confirm(label)) return;
-      const deleted = await kb.deletePath(path);
-      onKbPathsDeleted?.(deleted);
-      return;
-    }
-  }
-
-  async function handleDropFiles(files: FileList, directory: string) {
-    if (isSystemLayerPath(directory)) return;
-    await kb.importMany(files, directory);
-  }
-
-  async function handleMovePath(fromPath: string, toDirectory: string) {
-    if (isSystemLayerPath(fromPath) || isSystemLayerPath(toDirectory)) return;
-    const base = fromPath.split("/").pop();
-    if (!base) return;
-    const newPath = await kb.moveFile(fromPath, toDirectory, base);
-    if (newPath && newPath !== fromPath) {
-      onKbPathChanged?.(fromPath, newPath);
-    }
-  }
-
-  function handleSectionDrop(e: React.DragEvent) {
-    e.preventDefault();
-    setDropHighlightDir(null);
-    if (kb.busy) return;
-    if (e.dataTransfer.files?.length) {
-      void handleDropFiles(e.dataTransfer.files, "");
-    }
-  }
-
   return (
     <aside className={`sidebar${collapsed ? " sidebar--collapsed" : ""}`}>
       {kb.conflictDialog}
-      {menu && (
+      {tree.menu && (
         <div
-          ref={menuRef}
+          ref={tree.menuRef}
           className="kb-tree-context-menu"
-          style={{ left: menu.x, top: menu.y }}
+          style={{ left: tree.menu.x, top: tree.menu.y }}
           role="menu"
         >
-          {menu.ctx.kind === "file" && (
+          {tree.menu.ctx.kind === "file" && (
             <>
-              <button type="button" role="menuitem" onClick={() => void handleMenuAction("download")}>
+              <button type="button" role="menuitem" onClick={() => void tree.handleMenuAction("download")}>
                 下载
               </button>
-              {!isSystemLayerPath(menu.ctx.path) && (
-                <button type="button" role="menuitem" onClick={() => void handleMenuAction("rename")}>
+              {!isSystemLayerPath(tree.menu.ctx.path) && (
+                <button type="button" role="menuitem" onClick={() => void tree.handleMenuAction("rename")}>
                   重命名
                 </button>
               )}
             </>
           )}
-          {!isSystemLayerPath(menu.ctx.path) && (
-            <button type="button" role="menuitem" onClick={() => void handleMenuAction("delete")}>
+          {!isSystemLayerPath(tree.menu.ctx.path) && (
+            <button type="button" role="menuitem" onClick={() => void tree.handleMenuAction("delete")}>
               删除
             </button>
           )}
@@ -263,14 +187,10 @@ export function Sidebar({
           </section>
 
           <section
-            className={`sidebar-section sidebar-tree-section${dropHighlightDir === "" ? " drop-target-root" : ""}`}
-            onDragOver={(e) => {
-              if (kb.busy) return;
-              e.preventDefault();
-              setDropHighlightDir("");
-            }}
-            onDragLeave={() => setDropHighlightDir(null)}
-            onDrop={handleSectionDrop}
+            className={`sidebar-section sidebar-tree-section${tree.rootDropActive ? " drop-target-root" : ""}`}
+            onDragOver={tree.onRootDragOver}
+            onDragLeave={tree.onRootDragLeave}
+            onDrop={tree.onRootDrop}
           >
             <div className="sidebar-section-head">
               <div className="sidebar-section-title" ref={kbHintRef}>
@@ -333,18 +253,7 @@ export function Sidebar({
               paths={docs}
               selectedPath={selectedPath}
               onSelectFile={onSelectFile}
-              dropHighlightDir={dropHighlightDir}
-              onDropHighlightDir={setDropHighlightDir}
-              onDropFiles={handleDropFiles}
-              onMovePath={handleMovePath}
-              onContextMenu={openContextMenu}
-              renamingPath={renamingPath}
-              renamingValue={renamingValue}
-              onRenamingValueChange={setRenamingValue}
-              onRenameCommit={() => void commitRename()}
-              onRenameCancel={() => setRenamingPath(null)}
-              onStartRename={startRename}
-              disabled={kb.busy}
+              {...tree.fileTreeProps}
             />
           </section>
 

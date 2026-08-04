@@ -61,6 +61,13 @@
 - `POST /api/conversations/{cid}/summarize` 请求体必填 `directory`、`filename`
 - 与 `summarize_conversation` 工具相同，经 `forced_rel_path` 写入，不再依赖纯 LLM 猜路径
 
+### 7. Container 子图（2026-08-04 加深）
+
+- **`deps_index`**：`IndexSubgraph`（vector/fts/indexer/retriever/conversation 索引/revision）
+- **`deps_memory`**：`MemorySubgraph`（store/service/worker/maintenance）；`rebind_llm` 替换 LLM extractor
+- **`deps_agent`**：`AgentSubgraph`（organizer/tools/agent/chat_runner）；`rebind_llm` 刷新 WebSearch/Fetcher 与 chat_runner
+- **`build_container`** 组装子图；`Container._*_subgraph` 仅供 `apply_settings`，不对外暴露给 HTTP
+
 ## 后果
 
 ### 正面

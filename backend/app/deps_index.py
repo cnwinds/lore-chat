@@ -1,0 +1,69 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from app.config import Settings
+from app.index.conversation_fts import ConversationFTS
+from app.index.conversation_vector import ConversationVector
+from app.index.fulltext import FullTextIndex
+from app.index.indexer import Indexer
+from app.index.revision import IndexRevision
+from app.index.vector import VectorIndex
+from app.engine.retriever import Retriever
+from app.models.llm import LLMClient
+from app.storage.repo import KnowledgeRepo
+
+
+@dataclass
+class IndexSubgraph:
+    vector: VectorIndex
+    fulltext: FullTextIndex
+    indexer: Indexer
+    conversation_fts: ConversationFTS
+    conversation_vector: ConversationVector
+    index_revision: IndexRevision
+    retriever: Retriever
+
+    def rebind_llm(self, llm: LLMClient) -> None:
+        self.indexer.llm = llm
+        self.retriever.llm = llm
+
+
+def build_index_subgraph(
+    settings: Settings,
+    repo: KnowledgeRepo,
+    llm: LLMClient,
+    *,
+    system_layer_prefix: str,
+) -> IndexSubgraph:
+    index_dir = settings.kb_path / ".kb" / "index"
+    vector = VectorIndex(index_dir / "vec")
+    fulltext = FullTextIndex(index_dir / "fts.db")
+    indexer = Indexer(
+        vector, fulltext, llm, reindex_full_threshold=settings.reindex_full_threshold
+    )
+    conversation_fts = ConversationFTS(index_dir / "conversation_fts.db")
+    conversation_vector = ConversationVector(index_dir / "vec")
+    index_revision = IndexRevision(index_dir / "revision.txt")
+    retriever = Retriever(
+        vector,
+        fulltext,
+        llm,
+        excluded_prefixes=(system_layer_prefix,),
+        min_score=settings.min_vector_score,
+        conversation_fts=conversation_fts,
+        conversation_vector=conversation_vector,
+        index_revision=index_revision,
+        rrf_k=settings.rrf_k,
+        lane_candidate_k=settings.lane_candidate_k,
+        repo=repo,
+    )
+    return IndexSubgraph(
+        vector=vector,
+        fulltext=fulltext,
+        indexer=indexer,
+        conversation_fts=conversation_fts,
+        conversation_vector=conversation_vector,
+        index_revision=index_revision,
+        retriever=retriever,
+    )
