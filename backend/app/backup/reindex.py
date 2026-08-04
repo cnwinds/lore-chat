@@ -16,7 +16,7 @@ def reindex_all(container: Container) -> dict:
     docs_indexed = 0
     for rel_path in container.repo.list_tree():
         doc = container.repo.read_doc(rel_path)
-        container.indexer.reindex_doc(rel_path, doc.body)
+        container.knowledge_writer.reindex_markdown_body(rel_path, doc.body)
         docs_indexed += 1
 
     settings = container.settings

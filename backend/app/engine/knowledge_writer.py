@@ -64,6 +64,13 @@ class KnowledgeWriter:
         self.indexer.reindex_doc(rel_path.replace("\\", "/").lstrip("/"), text)
         return True
 
+    def reindex_markdown_body(self, rel_path: str, body: str) -> None:
+        """维护性重建索引：文档已在 git，仅刷新 FTS/向量（不写 changelog）。"""
+        if self.indexer is None:
+            return
+        norm = rel_path.replace("\\", "/").lstrip("/")
+        self.indexer.reindex_doc(norm, body)
+
     def move_document(self, from_path: str, to_directory: str, to_filename: str) -> str:
         from_norm = from_path.replace("\\", "/").lstrip("/")
         to_path = join_kb_path(to_directory, to_filename)

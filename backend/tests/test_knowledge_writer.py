@@ -20,3 +20,14 @@ def test_persist_document_reindexes(tmp_path):
     )
     doc = repo.read_doc("技术/a.md")
     assert doc.body == "hello\n"
+
+
+def test_reindex_markdown_body_without_changelog(tmp_path):
+    repo = KnowledgeRepo(tmp_path / "knowledge")
+    repo.write_doc("b.md", {"title": "B"}, "one\n", commit_msg="add b")
+    llm = FakeLLMClient(embed_dim=8)
+    idx = Indexer(VectorIndex(tmp_path / "vec"), FullTextIndex(tmp_path / "fts.db"), llm)
+    writer = KnowledgeWriter(repo, idx)
+    writer.reindex_markdown_body("b.md", "one\n")
+    hits = idx.fulltext.query("one", k=3)
+    assert any(h.doc_id == "b.md" for h in hits)

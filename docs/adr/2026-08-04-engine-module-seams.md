@@ -20,6 +20,7 @@
 - **位置**：`backend/app/engine/knowledge_writer.py`
 - **对外**：`persist_document`、`save_edit`、`move_document`、`resolve_location(directory, filename)` 等
 - **规则**：Organizer / ToolRegistry **不直接**调用 `Indexer` 做落库侧效应；索引与 changelog 经 writer 完成
+- **维护例外**：`backup/reindex.reindex_all` 经 `KnowledgeWriter.reindex_markdown_body` 刷新已有文档索引（不写 changelog）
 
 ### 2. `tool_catalog` 与 `ToolRegistry` 分离
 
