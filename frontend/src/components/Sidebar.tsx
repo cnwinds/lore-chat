@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  downloadUrl,
   getTree,
   listConversations,
   deleteConversation,
@@ -7,8 +8,10 @@ import {
 } from "../api";
 import { groupConversationsByTime } from "../utils/conversationGroups";
 import { formatSidebarConversationTime } from "../utils/displayTime";
-import { FileTree } from "./FileTree";
+import { FileTree, type FileTreeNodeContext } from "./FileTree";
 import { ThemeToggle } from "./ThemeToggle";
+import { useKbTreeActions } from "../hooks/useKbTreeActions";
+import { isSystemLayerPath } from "../utils/fileTree";
 
 type SelectMods = { ctrlKey?: boolean; metaKey?: boolean; shiftKey?: boolean };
 
@@ -16,7 +19,6 @@ type Props = {
   refreshKey?: number;
   selectedPath: string | null;
   activeConversationId: string | null;
-  /** 首问乐观标题；仅当服务端仍为「新对话」时覆盖展示 */
   titleOverrides?: Record<string, string>;
   collapsed?: boolean;
   onToggleCollapsed?: () => void;
@@ -26,6 +28,8 @@ type Props = {
   onSelectConversation: (id: string) => void;
   onDeleteConversation: (id: string) => void;
   onDocsLoaded?: (paths: string[]) => void;
+  onKbPathChanged?: (fromPath: string, toPath: string) => void;
+  onKbPathsDeleted?: (paths: string[]) => void;
 };
 
 export function Sidebar({
@@ -41,9 +45,21 @@ export function Sidebar({
   onSelectConversation,
   onDeleteConversation,
   onDocsLoaded,
+  onKbPathChanged,
+  onKbPathsDeleted,
 }: Props) {
   const [docs, setDocs] = useState<string[]>([]);
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  const [dropHighlightDir, setDropHighlightDir] = useState<string | null>(null);
+  const [renamingPath, setRenamingPath] = useState<string | null>(null);
+  const [renamingValue, setRenamingValue] = useState("");
+  const [menu, setMenu] = useState<{
+    x: number;
+    y: number;
+    ctx: FileTreeNodeContext;
+  } | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
   const conversationGroups = useMemo(
     () => groupConversationsByTime(conversations),
     [conversations],
@@ -56,9 +72,21 @@ export function Sidebar({
     setConversations((await listConversations()).conversations);
   }
 
+  const kb = useKbTreeActions(refresh);
+
   useEffect(() => {
     refresh();
   }, [refreshKey]);
+
+  useEffect(() => {
+    if (!menu) return;
+    function onDocClick(e: MouseEvent) {
+      if (menuRef.current?.contains(e.target as Node)) return;
+      setMenu(null);
+    }
+    document.addEventListener("click", onDocClick);
+    return () => document.removeEventListener("click", onDocClick);
+  }, [menu]);
 
   async function handleDeleteConversation(e: React.MouseEvent, id: string) {
     e.stopPropagation();
@@ -67,8 +95,107 @@ export function Sidebar({
     onDeleteConversation(id);
   }
 
+  function startRename(path: string, name: string) {
+    if (isSystemLayerPath(path)) return;
+    setRenamingPath(path);
+    setRenamingValue(name);
+  }
+
+  async function commitRename() {
+    if (!renamingPath) return;
+    const trimmed = renamingValue.trim();
+    setRenamingPath(null);
+    if (!trimmed || trimmed === renamingPath.split("/").pop()) return;
+    const newPath = await kb.renameFile(renamingPath, trimmed);
+    if (newPath && newPath !== renamingPath) {
+      onKbPathChanged?.(renamingPath, newPath);
+    }
+  }
+
+  function openContextMenu(e: React.MouseEvent, ctx: FileTreeNodeContext) {
+    if (isSystemLayerPath(ctx.path) && ctx.kind === "folder") return;
+    setMenu({ x: e.clientX, y: e.clientY, ctx });
+  }
+
+  async function handleMenuAction(action: string) {
+    if (!menu) return;
+    const { ctx } = menu;
+    setMenu(null);
+    const path = ctx.path;
+
+    if (action === "download" && ctx.kind === "file") {
+      window.open(downloadUrl(path), "_blank", "noopener,noreferrer");
+      return;
+    }
+    if (action === "rename" && ctx.kind === "file") {
+      startRename(path, ctx.node.type === "file" ? ctx.node.name : path);
+      return;
+    }
+    if (action === "delete") {
+      const label =
+        ctx.kind === "folder"
+          ? `确定删除文件夹「${path || "根目录"}」及其下全部文件？`
+          : `确定删除「${path}」？`;
+      if (!window.confirm(label)) return;
+      const deleted = await kb.deletePath(path);
+      onKbPathsDeleted?.(deleted);
+      return;
+    }
+  }
+
+  async function handleDropFiles(files: FileList, directory: string) {
+    if (isSystemLayerPath(directory)) return;
+    await kb.importMany(files, directory);
+  }
+
+  async function handleMovePath(fromPath: string, toDirectory: string) {
+    if (isSystemLayerPath(fromPath) || isSystemLayerPath(toDirectory)) return;
+    const base = fromPath.split("/").pop();
+    if (!base) return;
+    const newPath = await kb.moveFile(fromPath, toDirectory, base);
+    if (newPath && newPath !== fromPath) {
+      onKbPathChanged?.(fromPath, newPath);
+    }
+  }
+
+  function handleSectionDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setDropHighlightDir(null);
+    if (kb.busy) return;
+    if (e.dataTransfer.files?.length) {
+      void handleDropFiles(e.dataTransfer.files, "");
+    }
+  }
+
   return (
     <aside className={`sidebar${collapsed ? " sidebar--collapsed" : ""}`}>
+      {kb.conflictDialog}
+      {menu && (
+        <div
+          ref={menuRef}
+          className="kb-tree-context-menu"
+          style={{ left: menu.x, top: menu.y }}
+          role="menu"
+        >
+          {menu.ctx.kind === "file" && (
+            <>
+              <button type="button" role="menuitem" onClick={() => void handleMenuAction("download")}>
+                下载
+              </button>
+              {!isSystemLayerPath(menu.ctx.path) && (
+                <button type="button" role="menuitem" onClick={() => void handleMenuAction("rename")}>
+                  重命名
+                </button>
+              )}
+            </>
+          )}
+          {!isSystemLayerPath(menu.ctx.path) && (
+            <button type="button" role="menuitem" onClick={() => void handleMenuAction("delete")}>
+              删除
+            </button>
+          )}
+        </div>
+      )}
       {collapsed ? (
         <div className="sidebar-expand-rail">
           <button
@@ -134,7 +261,16 @@ export function Sidebar({
             </div>
           </section>
 
-          <section className="sidebar-section sidebar-tree-section">
+          <section
+            className={`sidebar-section sidebar-tree-section${dropHighlightDir === "" ? " drop-target-root" : ""}`}
+            onDragOver={(e) => {
+              if (kb.busy) return;
+              e.preventDefault();
+              setDropHighlightDir("");
+            }}
+            onDragLeave={() => setDropHighlightDir(null)}
+            onDrop={handleSectionDrop}
+          >
             <div className="sidebar-section-head">
               <h4>知识库</h4>
               <div className="sidebar-section-actions">
@@ -153,8 +289,26 @@ export function Sidebar({
                 </button>
               </div>
             </div>
-            <FileTree paths={docs} selectedPath={selectedPath} onSelectFile={onSelectFile} />
-            <p className="sidebar-tree-hint">单击替换 · Ctrl+单击添加</p>
+            <FileTree
+              paths={docs}
+              selectedPath={selectedPath}
+              onSelectFile={onSelectFile}
+              dropHighlightDir={dropHighlightDir}
+              onDropHighlightDir={setDropHighlightDir}
+              onDropFiles={handleDropFiles}
+              onMovePath={handleMovePath}
+              onContextMenu={openContextMenu}
+              renamingPath={renamingPath}
+              renamingValue={renamingValue}
+              onRenamingValueChange={setRenamingValue}
+              onRenameCommit={() => void commitRename()}
+              onRenameCancel={() => setRenamingPath(null)}
+              onStartRename={startRename}
+              disabled={kb.busy}
+            />
+            <p className="sidebar-tree-hint">
+              单击打开 · Ctrl+单击添加托盘 · 拖入文件到文件夹 · 右键管理
+            </p>
           </section>
 
           <footer className="sidebar-footer">

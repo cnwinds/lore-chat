@@ -59,8 +59,10 @@ def test_append_doc(repo):
 def test_list_tree(repo):
     repo.write_doc("技术/x.md", {"title": "X"}, "b\n", commit_msg="c")
     repo.write_doc("生活/y.md", {"title": "Y"}, "b\n", commit_msg="c")
+    (repo.root / ".gitkeep").write_text("", encoding="utf-8")
     tree = repo.list_tree()
     assert "技术/x.md" in tree and "生活/y.md" in tree
+    assert ".gitkeep" not in tree
 
 
 def test_save_and_get_attachment(repo):

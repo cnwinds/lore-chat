@@ -84,6 +84,16 @@ class SummarizeBody(BaseModel):
     filename: str
 
 
+class KbMoveBody(BaseModel):
+    from_path: str
+    to_directory: str
+    to_filename: str | None = None
+
+
+class KbDeleteBody(BaseModel):
+    path: str
+
+
 # ---------------------------------------------------------------------------
 # 同步机器 API：/ingest、/ask
 #
@@ -225,14 +235,19 @@ async def upload(
 
 @router.get("/download")
 async def download(path: str, request: Request):
+    c = _c(request)
+    norm = path.replace("\\", "/").lstrip("/")
+    if norm.startswith(".kb/") or norm.startswith(".git/"):
+        raise HTTPException(404, "文件不存在")
     try:
-        data = _c(request).repo.get_attachment(path)
+        data = c.repo.get_attachment(norm)
     except FileNotFoundError:
         raise HTTPException(404, "文件不存在")
-    filename = path.rsplit("/", 1)[-1]
+    filename = norm.rsplit("/", 1)[-1]
+    media = "text/markdown; charset=utf-8" if norm.lower().endswith(".md") else "application/octet-stream"
     return StreamingResponse(
         io.BytesIO(data),
-        media_type="application/octet-stream",
+        media_type=media,
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
@@ -240,6 +255,92 @@ async def download(path: str, request: Request):
 @router.get("/tree")
 async def tree(request: Request):
     return {"docs": _c(request).repo.list_tree()}
+
+
+@router.post("/kb/import")
+async def kb_import(
+    request: Request,
+    file: UploadFile = File(...),
+    directory: str = Form(""),
+    filename: str | None = Form(None),
+):
+    from app.engine.kb_ops import KbPathExistsError, import_file, suggest_alternate_filename
+
+    c = _c(request)
+    d = directory.strip()
+    if d and c.repo.is_protected(f"{d}/.md"):
+        raise HTTPException(403, "禁止写入该目录")
+    name = (filename or file.filename or "upload.bin").strip()
+    data = await file.read()
+    try:
+        result = import_file(
+            c.repo, c.knowledge_writer, directory=d, filename=name, data=data
+        )
+    except KbPathExistsError as e:
+        raise HTTPException(
+            409,
+            detail={
+                "code": "PATH_EXISTS",
+                "path": e.rel_path,
+                "message": str(e),
+                "suggested_filename": suggest_alternate_filename(name),
+            },
+        ) from e
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    c.index_revision.bump()
+    return result
+
+
+@router.post("/kb/move")
+async def kb_move(body: KbMoveBody, request: Request):
+    from app.engine.kb_ops import KbPathExistsError, move_entry, suggest_alternate_filename
+
+    c = _c(request)
+    if c.repo.is_protected(body.to_directory):
+        raise HTTPException(403, "禁止移动到该目录")
+    try:
+        new_path = move_entry(
+            c.repo,
+            c.knowledge_writer,
+            from_path=body.from_path,
+            to_directory=body.to_directory,
+            to_filename=body.to_filename,
+        )
+    except KbPathExistsError as e:
+        raise HTTPException(
+            409,
+            detail={
+                "code": "PATH_EXISTS",
+                "path": e.rel_path,
+                "message": str(e),
+                "suggested_filename": suggest_alternate_filename(
+                    body.to_filename or body.from_path.rsplit("/", 1)[-1]
+                ),
+            },
+        ) from e
+    except FileNotFoundError as e:
+        raise HTTPException(404, "源路径不存在") from e
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    c.index_revision.bump()
+    return {"rel_path": new_path, "from_path": body.from_path}
+
+
+@router.post("/kb/delete")
+async def kb_delete(body: KbDeleteBody, request: Request):
+    from app.engine.kb_ops import delete_entry
+
+    c = _c(request)
+    try:
+        deleted = delete_entry(c.repo, c.knowledge_writer, body.path)
+    except FileNotFoundError as e:
+        raise HTTPException(404, "路径不存在") from e
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    if deleted:
+        c.index_revision.bump()
+    return {"deleted_paths": deleted}
 
 
 @router.get("/doc")

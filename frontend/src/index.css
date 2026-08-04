@@ -885,6 +885,120 @@ a:hover {
   padding: 0 6px;
 }
 
+.file-tree-file-btn {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.file-tree-row.file {
+  padding-right: 8px;
+}
+
+.file-tree-row.folder.drop-target,
+.sidebar-tree-section.drop-target-root .file-tree {
+  outline: 2px dashed var(--accent);
+  outline-offset: -2px;
+  background: var(--accent-soft);
+}
+
+.file-tree-rename-input {
+  flex: 1;
+  min-width: 0;
+  font-size: inherit;
+  padding: 2px 4px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+}
+
+.file-tree--busy {
+  opacity: 0.65;
+  pointer-events: none;
+}
+
+.kb-tree-context-menu {
+  position: fixed;
+  z-index: 2000;
+  min-width: 120px;
+  padding: 4px 0;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+}
+
+.kb-tree-context-menu button {
+  display: block;
+  width: 100%;
+  border: none;
+  background: transparent;
+  text-align: left;
+  padding: 8px 12px;
+  font-size: var(--font-ui-base);
+  cursor: pointer;
+  color: var(--text);
+}
+
+.kb-tree-context-menu button:hover {
+  background: var(--bg-hover);
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.modal-panel.kb-conflict-dialog {
+  max-width: 420px;
+  width: 100%;
+  background: var(--bg-surface);
+  border-radius: var(--radius-md);
+  padding: 16px 18px;
+  border: 1px solid var(--border);
+}
+
+.kb-conflict-message {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  margin: 8px 0 12px;
+}
+
+.kb-conflict-label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: var(--text-sm);
+  margin-bottom: 14px;
+}
+
+.kb-conflict-label input {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-ui-base);
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 /* Sidebar footer — theme toggle & settings */
 .sidebar-footer {
   flex-shrink: 0;

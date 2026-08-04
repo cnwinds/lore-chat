@@ -18,6 +18,8 @@ type Options = {
   doc: DocPreview;
   composerPrimaryPath: string | null;
   onSelectFile: (path: string, mods?: SelectMods) => void;
+  onKbPathChanged?: (from: string, to: string) => void;
+  onKbPathsDeleted?: (paths: string[]) => void;
 };
 
 export function useConversationShell({
@@ -26,6 +28,8 @@ export function useConversationShell({
   doc,
   composerPrimaryPath,
   onSelectFile,
+  onKbPathChanged,
+  onKbPathsDeleted,
 }: Options) {
   const [activeConversationId, setActiveConversationId] = useState<string | null>(
     null,
@@ -81,6 +85,8 @@ export function useConversationShell({
         ? () => doc.setSidebarCollapsed((c) => !c)
         : undefined,
     onSelectFile,
+    onKbPathChanged,
+    onKbPathsDeleted,
     onNewChat: () => {
       void newChat();
     },

@@ -171,6 +171,17 @@ export function useDocPreviewLayout(refreshSidebar: () => void) {
     else enterPinnedFocus();
   }
 
+  function remapOpenPath(from: string, to: string) {
+    if (floatPath === from) {
+      setFloatPath(to);
+      setFloatRefreshKey((k) => k + 1);
+    }
+    if (pinnedPath === from) {
+      setPinnedPath(to);
+      setPinnedRefreshKey((k) => k + 1);
+    }
+  }
+
   const showFloat = Boolean(floatPath);
   const showPinned = Boolean(pinnedPath);
   const panelFocus = Boolean(pinnedFocus && pinnedPath);
@@ -203,6 +214,7 @@ export function useDocPreviewLayout(refreshSidebar: () => void) {
     closePinnedPreview,
     closeAllPreviews,
     refreshKb,
+    remapOpenPath,
     openDocPreview,
     pinDocPreview,
     unpinDocPreview,

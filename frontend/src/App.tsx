@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { getAuthStatus, type SourceRef } from "./api";
+import { getAuthStatus, type SourceRef, isMarkdownPath, downloadUrl } from "./api";
 import { LoginPage } from "./components/auth/LoginPage";
 import { SetupPage } from "./components/auth/SetupPage";
 import { Chat } from "./components/Chat";
@@ -101,11 +101,31 @@ function AppMain() {
     mods?: { ctrlKey?: boolean; metaKey?: boolean; shiftKey?: boolean },
   ) {
     const title = path.split("/").pop() ?? path;
+    if (!isMarkdownPath(path)) {
+      window.open(downloadUrl(path), "_blank", "noopener,noreferrer");
+      return;
+    }
     if (mods?.ctrlKey || mods?.metaKey || mods?.shiftKey) {
       composer.addToTray(path, title);
     } else {
       doc.openDocPreview(path, undefined, { pin: false });
     }
+  }
+
+  function handleKbPathChanged(fromPath: string, toPath: string) {
+    composer.remapPath(fromPath, toPath);
+    doc.remapOpenPath(fromPath, toPath);
+    refreshSidebar();
+  }
+
+  function handleKbPathsDeleted(paths: string[]) {
+    const deleted = new Set(paths);
+    for (const p of [...composer.paths]) {
+      if (deleted.has(p)) composer.removeFromTray(p);
+    }
+    if (doc.floatPath && deleted.has(doc.floatPath)) doc.closeFloatPreview();
+    if (doc.pinnedPath && deleted.has(doc.pinnedPath)) doc.closePinnedPreview();
+    refreshSidebar();
   }
 
   function handleTraySetPrimary(path: string) {
@@ -130,6 +150,8 @@ function AppMain() {
     doc,
     composerPrimaryPath: composer.primaryPath,
     onSelectFile: handleSelectFile,
+    onKbPathChanged: handleKbPathChanged,
+    onKbPathsDeleted: handleKbPathsDeleted,
   });
 
   useAppEscapeKey(doc, snippetSource, () => setSnippetSource(null));

@@ -40,6 +40,16 @@ export function useComposerDocState() {
     setState((prev) => ({ ...prev, primaryPath: path }));
   }, []);
 
+  const remapPath = useCallback((from: string, to: string) => {
+    const title = to.split("/").pop() ?? to;
+    setState((prev) => ({
+      items: prev.items.map((i) =>
+        i.path === from ? { ...i, path: to, title } : i,
+      ),
+      primaryPath: prev.primaryPath === from ? to : prev.primaryPath,
+    }));
+  }, []);
+
   return {
     items,
     primaryPath,
@@ -48,5 +58,6 @@ export function useComposerDocState() {
     addToTray,
     removeFromTray,
     setPrimary,
+    remapPath,
   };
 }

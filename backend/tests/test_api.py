@@ -125,9 +125,21 @@ def test_upload_and_download(client):
     assert r.status_code == 200
     path = r.json()["attachment"]
     assert path.endswith("attachments/plan.txt")
+    assert path in client.get("/api/tree").json()["docs"]
     r2 = client.get("/api/download", params={"path": path})
     assert r2.status_code == 200
     assert r2.content == content
+
+
+def test_kb_import_conflict(client):
+    files = {"file": ("note.md", b"# a\n", "text/markdown")}
+    r = client.post("/api/kb/import", files=files, data={"directory": "导入测试"})
+    assert r.status_code == 200
+    r2 = client.post("/api/kb/import", files=files, data={"directory": "导入测试"})
+    assert r2.status_code == 409
+    detail = r2.json()["detail"]
+    assert detail["code"] == "PATH_EXISTS"
+    assert "suggested_filename" in detail
 
 
 def test_doc_endpoint(client):

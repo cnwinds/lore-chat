@@ -1,7 +1,17 @@
 // 生产环境经 nginx 同源代理时 VITE_API_BASE 留空；本地开发在 .env 中设为 http://localhost:8000
 const BASE = import.meta.env.VITE_API_BASE ?? "";
 
-export type ApiError = Error & { status?: number };
+export type ApiError = Error & {
+  status?: number;
+  pathExists?: PathExistsDetail;
+};
+
+export type PathExistsDetail = {
+  code: "PATH_EXISTS";
+  path: string;
+  message: string;
+  suggested_filename: string;
+};
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const r = await fetch(`${BASE}${path}`, {
@@ -10,14 +20,25 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   });
   if (!r.ok) {
     let detail = r.statusText;
+    let pathExists: PathExistsDetail | undefined;
     try {
       const body = await r.json();
-      detail =
-        typeof body.detail === "string"
-          ? body.detail
-          : typeof body.message === "string"
-            ? body.message
-            : JSON.stringify(body);
+      if (
+        r.status === 409 &&
+        body.detail &&
+        typeof body.detail === "object" &&
+        body.detail.code === "PATH_EXISTS"
+      ) {
+        pathExists = body.detail as PathExistsDetail;
+        detail = pathExists.message;
+      } else {
+        detail =
+          typeof body.detail === "string"
+            ? body.detail
+            : typeof body.message === "string"
+              ? body.message
+              : JSON.stringify(body);
+      }
     } catch {
       try {
         detail = (await r.text()) || detail;
@@ -27,6 +48,7 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
     }
     const err = new Error(detail || `请求失败 (${r.status})`) as ApiError;
     err.status = r.status;
+    err.pathExists = pathExists;
     if (r.status === 401) {
       window.dispatchEvent(new CustomEvent("auth:unauthorized"));
     }
@@ -705,13 +727,53 @@ export async function ask(query: string) {
 }
 
 export async function uploadFile(file: File, category: string) {
+  const r = await kbImport(file, category);
+  return { attachment: r.rel_path, indexed: r.indexed };
+}
+
+export async function kbImport(
+  file: File,
+  directory: string,
+  filename?: string,
+) {
   const fd = new FormData();
   fd.append("file", file);
-  fd.append("category", category);
-  return apiFetch<{ attachment: string; indexed: boolean }>("/api/upload", {
+  fd.append("directory", directory);
+  if (filename) fd.append("filename", filename);
+  return apiFetch<{ rel_path: string; kind: string; indexed: boolean }>(
+    "/api/kb/import",
+    { method: "POST", body: fd },
+  );
+}
+
+export async function kbMove(body: {
+  from_path: string;
+  to_directory: string;
+  to_filename?: string;
+}) {
+  return apiFetch<{ rel_path: string; from_path: string }>("/api/kb/move", {
     method: "POST",
-    body: fd,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
   });
+}
+
+export async function kbDelete(path: string) {
+  return apiFetch<{ deleted_paths: string[] }>("/api/kb/delete", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path }),
+  });
+}
+
+export function isMarkdownPath(path: string) {
+  return path.toLowerCase().endsWith(".md");
+}
+
+export function parentDirectory(relPath: string): string {
+  const norm = relPath.replace(/\\/g, "/");
+  const idx = norm.lastIndexOf("/");
+  return idx === -1 ? "" : norm.slice(0, idx);
 }
 
 export async function getTree() {

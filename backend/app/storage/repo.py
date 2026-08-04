@@ -110,9 +110,14 @@ class KnowledgeRepo:
 
     def list_tree(self) -> list[str]:
         out: list[str] = []
-        for p in sorted(self.root.rglob("*.md")):
+        for p in sorted(self.root.rglob("*")):
+            if not p.is_file():
+                continue
             rel = p.relative_to(self.root).as_posix()
-            if rel.startswith(".kb/"):
+            if rel.startswith(".kb/") or rel.startswith(".git/"):
+                continue
+            base = p.name
+            if base == ".gitkeep":
                 continue
             out.append(rel)
         return out
@@ -162,8 +167,8 @@ class KnowledgeRepo:
             raise FileNotFoundError(rel_path)
 
         if abs_p.is_file():
-            if not norm.endswith(".md"):
-                raise ValueError(f"只能删除 Markdown 文档: {rel_path}")
+            if self._is_protected(norm):
+                raise ValueError(f"禁止删除: {rel_path}")
             deleted = [norm]
             abs_p.unlink()
         else:
@@ -201,6 +206,26 @@ class KnowledgeRepo:
         self.write_doc(to_norm, doc.meta, doc.body, commit_msg=commit_msg)
         from_abs.unlink()
         self.repo.index.remove([from_norm])
+        self.repo.index.commit(commit_msg)
+        return to_norm
+
+    def move_file(self, from_path: str, to_path: str, *, commit_msg: str) -> str:
+        from_norm = from_path.replace("\\", "/").lstrip("/")
+        to_norm = to_path.replace("\\", "/").lstrip("/")
+        if from_norm == to_norm:
+            return from_norm
+        if self._is_protected(from_norm) or self._is_protected(to_norm):
+            raise ValueError(f"禁止移动: {from_path} -> {to_path}")
+        from_abs = self._abs(from_norm)
+        if not from_abs.is_file():
+            raise FileNotFoundError(from_path)
+        to_abs = self._abs(to_norm)
+        if to_abs.exists():
+            raise ValueError(f"目标路径已存在：{to_path}")
+        to_abs.parent.mkdir(parents=True, exist_ok=True)
+        from_abs.rename(to_abs)
+        self.repo.index.remove([from_norm])
+        self.repo.index.add([to_norm])
         self.repo.index.commit(commit_msg)
         return to_norm
 
