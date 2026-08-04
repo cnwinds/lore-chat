@@ -43,6 +43,7 @@ def test_summarize_long_conversation_calls_merge(tmp_path):
     from app.index.vector import VectorIndex
     from app.models.llm import FakeLLMClient
     from app.storage.repo import KnowledgeRepo
+    from tests.helpers import make_writer
 
     calls: list[int] = []
 
@@ -73,6 +74,7 @@ def test_summarize_long_conversation_calls_merge(tmp_path):
         pending=PendingStore(tmp_path / "pending.json"),
         llm=llm,
         settings=Settings(summarize_segment_chars=5000),
+        knowledge_writer=make_writer(repo, tmp_path),
     )
     transcript = ConversationStore.full_transcript(conv)
     assert len(transcript) > 5000

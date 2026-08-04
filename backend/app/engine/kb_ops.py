@@ -21,7 +21,6 @@ __all__ = [
 
 
 def import_file(
-    repo,
     writer: KnowledgeWriter,
     *,
     directory: str,
@@ -32,7 +31,6 @@ def import_file(
 
 
 def move_entry(
-    repo,
     writer: KnowledgeWriter,
     *,
     from_path: str,
@@ -46,5 +44,5 @@ def move_entry(
     )
 
 
-def delete_entry(repo, writer: KnowledgeWriter, path: str) -> list[str]:
+def delete_entry(writer: KnowledgeWriter, path: str) -> list[str]:
     return writer.delete_entry(path)

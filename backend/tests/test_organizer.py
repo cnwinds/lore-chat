@@ -6,6 +6,7 @@ from app.index.vector import VectorIndex
 from app.index.fulltext import FullTextIndex
 from app.index.indexer import Indexer
 from app.models.llm import FakeLLMClient
+from tests.helpers import make_writer
 
 
 def _make(tmp_path, chat_responses):
@@ -16,7 +17,14 @@ def _make(tmp_path, chat_responses):
     idx = Indexer(vi, fi, llm)
     retr = Retriever(vi, fi, llm)
     pending = PendingStore(tmp_path / "knowledge" / ".kb" / "pending.json")
-    org = Organizer(repo=repo, retriever=retr, indexer=idx, pending=pending, llm=llm)
+    org = Organizer(
+        repo=repo,
+        retriever=retr,
+        indexer=idx,
+        pending=pending,
+        llm=llm,
+        knowledge_writer=make_writer(repo, tmp_path),
+    )
     return org, repo, pending
 
 
@@ -54,7 +62,7 @@ def test_ingest_merge_into_existing(tmp_path):
     merged_body = "docker ps\n\ndocker logs 看日志\n"
     org, repo, pending = _make(tmp_path, [merged_body])
     repo.write_doc("技术/docker/常用命令.md", {"title": "常用命令"}, "docker ps\n", commit_msg="seed")
-    org.indexer.reindex_doc("技术/docker/常用命令.md", "docker ps\n")
+    org.writer.indexer.reindex_doc("技术/docker/常用命令.md", "docker ps\n")
     result = org.ingest_text(
         "docker logs 看日志",
         forced_rel_path="技术/docker/常用命令.md",

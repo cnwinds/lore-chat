@@ -22,6 +22,16 @@ def test_persist_document_reindexes(tmp_path):
     assert doc.body == "hello\n"
 
 
+def test_import_entry_attachment(tmp_path):
+    repo = KnowledgeRepo(tmp_path / "knowledge")
+    llm = FakeLLMClient(embed_dim=8)
+    idx = Indexer(VectorIndex(tmp_path / "vec"), FullTextIndex(tmp_path / "fts.db"), llm)
+    writer = KnowledgeWriter(repo, idx)
+    r = writer.import_entry(directory="d", filename="n.txt", data=b"plain text")
+    assert r["kind"] == "attachment"
+    assert repo.abs_path("d/attachments/n.txt").exists()
+
+
 def test_reindex_markdown_body_without_changelog(tmp_path):
     repo = KnowledgeRepo(tmp_path / "knowledge")
     repo.write_doc("b.md", {"title": "B"}, "one\n", commit_msg="add b")

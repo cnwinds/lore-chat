@@ -18,6 +18,7 @@ from app.index.indexer import Indexer
 from app.index.vector import VectorIndex
 from app.models.llm import FakeLLMClient
 from app.storage.repo import KnowledgeRepo
+from tests.helpers import make_writer
 
 
 def _decision(rel_path="娱乐/漫剧工具盘点.md"):
@@ -42,7 +43,15 @@ def _make(tmp_path, chat_responses):
     idx = Indexer(vi, fi, llm)
     retr = Retriever(vi, fi, llm, excluded_prefixes=("系统/",))
     pending = PendingStore(tmp_path / "knowledge" / ".kb" / "pending.json")
-    org = Organizer(repo=repo, retriever=retr, indexer=idx, pending=pending, llm=llm)
+    writer = make_writer(repo, tmp_path)
+    org = Organizer(
+        repo=repo,
+        retriever=retr,
+        indexer=idx,
+        pending=pending,
+        llm=llm,
+        knowledge_writer=writer,
+    )
     conversations = ConversationStore(tmp_path / "knowledge" / ".kb" / "conversations")
     conversation_fts = ConversationFTS(tmp_path / "knowledge" / ".kb" / "index" / "conversation_fts.db")
     derivation_worker = DerivationWorker(conversations, conversation_fts)
@@ -55,6 +64,7 @@ def _make(tmp_path, chat_responses):
         WebFetcher(),
         WebSearch(settings),
         pending,
+        writer,
         conversations=conversations,
         system_layer=system_layer,
         indexer=idx,

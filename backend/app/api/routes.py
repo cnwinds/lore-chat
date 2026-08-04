@@ -90,6 +90,13 @@ def _c(request: Request):
     return request.app.state.container
 
 
+def _kb_tree_service(request: Request):
+    from app.engine.kb_tree_service import KbTreeService
+
+    c = _c(request)
+    return c, KbTreeService(c.repo, c.knowledge_writer, c.index_revision)
+
+
 class SummarizeBody(BaseModel):
     directory: str
     filename: str
@@ -277,12 +284,10 @@ async def kb_import(
 ):
     from app.engine.kb_tree_service import (
         KbPathExistsError,
-        KbTreeService,
         suggest_alternate_filename,
     )
 
-    c = _c(request)
-    svc = KbTreeService(c.repo, c.knowledge_writer, c.index_revision)
+    _, svc = _kb_tree_service(request)
     name = (filename or file.filename or "upload.bin").strip()
     data = await file.read()
     try:
@@ -304,12 +309,10 @@ async def kb_import(
 async def kb_move(body: KbMoveBody, request: Request):
     from app.engine.kb_tree_service import (
         KbPathExistsError,
-        KbTreeService,
         suggest_alternate_filename,
     )
 
-    c = _c(request)
-    svc = KbTreeService(c.repo, c.knowledge_writer, c.index_revision)
+    _, svc = _kb_tree_service(request)
     try:
         return svc.move(
             from_path=body.from_path,
@@ -337,10 +340,7 @@ async def kb_move(body: KbMoveBody, request: Request):
 
 @router.post("/kb/delete")
 async def kb_delete(body: KbDeleteBody, request: Request):
-    from app.engine.kb_tree_service import KbTreeService
-
-    c = _c(request)
-    svc = KbTreeService(c.repo, c.knowledge_writer, c.index_revision)
+    _, svc = _kb_tree_service(request)
     try:
         return svc.delete(body.path)
     except FileNotFoundError as e:

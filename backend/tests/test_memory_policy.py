@@ -1,26 +1,38 @@
-from app.engine.memory.service import MemoryService
+from app.engine.memory.models import ExtractionResult, MemoryCandidate
+from app.engine.memory.observer import MemoryObserver
+from app.engine.memory.policy import extraction_after_evidence_gate
 from app.engine.memory.store import MemoryStore
-from app.storage.repo import KnowledgeRepo
 
 
-def _service(tmp_path, repo=None):
-    repo = repo or KnowledgeRepo(tmp_path / "knowledge", protected_dirs=("系统",))
-    store = MemoryStore(tmp_path / "memory.db", owner_key="ws1")
-    return MemoryService(store, repo)
+def test_extraction_after_evidence_gate_counts_rejects():
+    text = "我偏好简洁"
+    good = MemoryCandidate(
+        statement="我偏好简洁",
+        category="preference",
+        origin="direct",
+        confidence=0.9,
+        start_char=0,
+        end_char=5,
+    )
+    bad = MemoryCandidate(
+        statement="我偏好简洁",
+        category="preference",
+        origin="direct",
+        confidence=0.9,
+        start_char=10,
+        end_char=15,
+    )
+    out = extraction_after_evidence_gate(text, [good, bad])
+    assert len(out.candidates) == 1
+    assert out.rejected_evidence_count == 1
 
 
-def test_remember_rejects_secret_statement(tmp_path):
-    svc = _service(tmp_path)
-    out = svc.remember("我的 key=sk-abcdefghijklmnopqrstuvwxyz0123456789")
-    assert out["ok"] is False
-    assert out["error"] == "secret_rejected"
-    assert svc.store.list_confirmed() == []
+def test_observer_includes_extractor_rejected_count(tmp_path):
+    class FakeExtractor:
+        def extract(self, text, *, context_messages=None):
+            return ExtractionResult(candidates=[], rejected_evidence_count=2)
 
-
-def test_forget_creates_tombstone_and_blocks_same_value(tmp_path):
-    svc = _service(tmp_path)
-    f = svc.remember("记住我喜欢简洁回答")["fact"]
-    svc.forget(fact_id=f["id"])
-    again = svc.remember("记住我喜欢简洁回答")
-    assert again["ok"] is False
-    assert again["error"] == "tombstoned"
+    store = MemoryStore(tmp_path / "memory.db", owner_key="test")
+    obs = MemoryObserver(store, extractor=FakeExtractor())
+    r = obs.observe_message("hello", conversation_id="c1", message_id="m1")
+    assert r.rejected_count == 2

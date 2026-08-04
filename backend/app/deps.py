@@ -156,6 +156,7 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
         fetcher,
         web_search,
         pending,
+        knowledge_writer,
         conversations=conversations,
         system_layer=system_layer,
         indexer=indexer,
@@ -165,7 +166,6 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
         edit_doc_require_read=settings.edit_doc_require_read,
         conversation_context_max_chars=settings.conversation_context_max_chars,
         memory_service=memory_service,
-        knowledge_writer=knowledge_writer,
     )
     agent = AgentOrchestrator(settings, llm, tool_registry, system_layer=system_layer)
     chat_runner = ChatSessionRunner(agent, conversations)

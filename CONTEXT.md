@@ -20,7 +20,7 @@
 
 `backend/app/deps.py` 的 `Container` 持有：
 
-- `knowledge_writer` → 注入 `Organizer`、`ToolRegistry`、`MemoryService`（记忆投影不入 KB 检索）
+- `knowledge_writer` → 注入 `Organizer`、`ToolRegistry`、`MemoryService`（记忆投影不入 KB 检索）；**须为同一实例**
 - `chat_runner: ChatSessionRunner` → 注入 `agent` + `conversations`；路由用 `c.chat_runner`
 - `derivation_worker` / `memory_worker` → 消费 `ConversationStore.claim_outbox`
 

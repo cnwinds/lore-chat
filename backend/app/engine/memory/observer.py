@@ -44,7 +44,7 @@ class MemoryObserver:
         extracted = self.extractor.extract(text, context_messages=context_messages or [])
         confirmed = 0
         candidates = 0
-        rejected = 0
+        rejected = extracted.rejected_evidence_count
         for cand in extracted.candidates:
             out = self._apply_candidate(
                 cand,

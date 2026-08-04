@@ -4,7 +4,7 @@ import re
 
 from app.engine.memory.models import ExtractionResult, MemoryCandidate
 from app.engine.memory.normalize import infer_category
-from app.engine.memory.policy import validated_candidates
+from app.engine.memory.policy import extraction_after_evidence_gate
 from app.engine.secrets import scan_secrets
 
 _DIRECT_PREFIXES = (
@@ -86,6 +86,4 @@ class RuleBasedMemoryExtractor:
                 )
             )
 
-        return ExtractionResult(
-            candidates=validated_candidates(stripped, candidates[:3])
-        )
+        return extraction_after_evidence_gate(stripped, candidates[:3])

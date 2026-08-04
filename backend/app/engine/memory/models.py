@@ -16,3 +16,4 @@ class MemoryCandidate:
 @dataclass
 class ExtractionResult:
     candidates: list[MemoryCandidate]
+    rejected_evidence_count: int = 0

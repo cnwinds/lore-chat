@@ -16,6 +16,7 @@ from app.index.indexer import Indexer
 from app.index.vector import VectorIndex
 from app.models.llm import FakeLLMClient, ToolCall
 from app.storage.repo import KnowledgeRepo
+from tests.helpers import make_writer
 
 
 def _make_orchestrator(tmp_path, tool_responses, *, agent_parallel_tools=True):
@@ -28,10 +29,20 @@ def _make_orchestrator(tmp_path, tool_responses, *, agent_parallel_tools=True):
     idx = Indexer(vi, fi, llm)
     retr = Retriever(vi, fi, llm)
     pending = PendingStore(kb / ".kb" / "pending.json")
-    org = Organizer(repo=repo, retriever=retr, indexer=idx, pending=pending, llm=llm)
+    writer = make_writer(repo, tmp_path)
+    org = Organizer(
+        repo=repo,
+        retriever=retr,
+        indexer=idx,
+        pending=pending,
+        llm=llm,
+        knowledge_writer=writer,
+    )
     fetcher = WebFetcher(settings.fetch_url_timeout, settings.fetch_url_max_bytes)
     web_search = WebSearch(settings)
-    registry = ToolRegistry(retr, repo, org, fetcher, web_search, pending)
+    registry = ToolRegistry(
+        retr, repo, org, fetcher, web_search, pending, writer
+    )
     return AgentOrchestrator(settings, llm, registry)
 
 

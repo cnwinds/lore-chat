@@ -58,15 +58,15 @@ class Organizer:
         indexer: Indexer,
         pending: PendingStore,
         llm: LLMClient,
+        knowledge_writer: KnowledgeWriter,
         settings: Settings | None = None,
-        knowledge_writer: KnowledgeWriter | None = None,
     ):
         self.repo = repo
         self.retriever = retriever
         self.pending = pending
         self.llm = llm
         self.settings = settings or Settings()
-        self.writer = knowledge_writer or KnowledgeWriter(repo, indexer)
+        self.writer = knowledge_writer
         self.planner = PlacementPlanner(repo, retriever, llm)
 
     def ingest_text(

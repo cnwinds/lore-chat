@@ -17,6 +17,7 @@ from app.index.revision import IndexRevision
 from app.index.vector import VectorIndex
 from app.models.llm import FakeLLMClient
 from app.storage.repo import KnowledgeRepo
+from tests.helpers import make_writer
 
 
 def _make_registry(tmp_path, chat_responses=None, conversation_fts=None, conversations=None, **settings_kw):
@@ -29,7 +30,15 @@ def _make_registry(tmp_path, chat_responses=None, conversation_fts=None, convers
     retr = Retriever(vi, fi, llm, conversation_fts=conversation_fts, index_revision=rev)
     pending = PendingStore(tmp_path / "knowledge" / ".kb" / "pending.json")
     settings = Settings(kb_path=tmp_path / "knowledge", **settings_kw)
-    org = Organizer(repo=repo, retriever=retr, indexer=idx, pending=pending, llm=llm)
+    writer = make_writer(repo, tmp_path)
+    org = Organizer(
+        repo=repo,
+        retriever=retr,
+        indexer=idx,
+        pending=pending,
+        llm=llm,
+        knowledge_writer=writer,
+    )
     fetcher = WebFetcher()
     web_search = WebSearch(settings)
     registry = ToolRegistry(
@@ -39,8 +48,9 @@ def _make_registry(tmp_path, chat_responses=None, conversation_fts=None, convers
         fetcher,
         web_search,
         pending,
-        indexer=idx,
+        writer,
         conversations=conversations,
+        indexer=idx,
         edit_doc_max_edits=settings.edit_doc_max_edits,
         edit_doc_max_patch_chars=settings.edit_doc_max_patch_chars,
         edit_doc_require_read=settings.edit_doc_require_read,

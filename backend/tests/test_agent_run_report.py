@@ -48,6 +48,7 @@ async def test_tool_loop_logs_complete_stop_reason(tmp_path, caplog):
     from app.index.vector import VectorIndex
     from app.models.llm import FakeLLMClient, ToolCall
     from app.storage.repo import KnowledgeRepo
+    from tests.helpers import make_writer
 
     caplog.set_level(logging.INFO)
     kb = tmp_path / "knowledge"
@@ -70,9 +71,23 @@ async def test_tool_loop_logs_complete_stop_reason(tmp_path, caplog):
     idx = Indexer(vi, fi, llm)
     retr = Retriever(vi, fi, llm)
     pending = PendingStore(kb / ".kb" / "pending.json")
-    org = Organizer(repo=repo, retriever=retr, indexer=idx, pending=pending, llm=llm)
+    writer = make_writer(repo, tmp_path)
+    org = Organizer(
+        repo=repo,
+        retriever=retr,
+        indexer=idx,
+        pending=pending,
+        llm=llm,
+        knowledge_writer=writer,
+    )
     registry = ToolRegistry(
-        retr, repo, org, WebFetcher(5, 1000), WebSearch(settings), pending
+        retr,
+        repo,
+        org,
+        WebFetcher(5, 1000),
+        WebSearch(settings),
+        pending,
+        writer,
     )
     loop = AgentToolLoop(settings, llm, registry)
 
@@ -107,6 +122,7 @@ async def test_tool_loop_logs_cancelled_stop_reason(tmp_path, caplog):
     from app.index.vector import VectorIndex
     from app.models.llm import ChatStreamChunk, ChatWithToolsResult, FakeLLMClient
     from app.storage.repo import KnowledgeRepo
+    from tests.helpers import make_writer
 
     caplog.set_level(logging.WARNING)
     kb = tmp_path / "knowledge"
@@ -127,8 +143,18 @@ async def test_tool_loop_logs_cancelled_stop_reason(tmp_path, caplog):
     idx = Indexer(vi, fi, llm)
     retr = Retriever(vi, fi, llm)
     pending = PendingStore(kb / ".kb" / "pending.json")
-    org = Organizer(repo=repo, retriever=retr, indexer=idx, pending=pending, llm=llm)
-    registry = ToolRegistry(retr, repo, org, None, WebSearch(settings), pending)
+    writer = make_writer(repo, tmp_path)
+    org = Organizer(
+        repo=repo,
+        retriever=retr,
+        indexer=idx,
+        pending=pending,
+        llm=llm,
+        knowledge_writer=writer,
+    )
+    registry = ToolRegistry(
+        retr, repo, org, None, WebSearch(settings), pending, writer
+    )
     loop = AgentToolLoop(settings, llm, registry)
 
     gen = loop.stream(

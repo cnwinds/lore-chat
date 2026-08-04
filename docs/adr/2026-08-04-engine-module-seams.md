@@ -18,9 +18,17 @@
 ### 1. `KnowledgeWriter`（deep module）
 
 - **位置**：`backend/app/engine/knowledge_writer.py`
-- **对外**：`persist_document`、`save_edit`、`move_document`、`resolve_location(directory, filename)` 等
-- **规则**：Organizer / ToolRegistry **不直接**调用 `Indexer` 做落库侧效应；索引与 changelog 经 writer 完成
+- **对外**：`persist_document`、`save_edit`、`move_document`、`import_entry`、`move_entry`、`delete_entry`（含 Markdown 与 attachments）、`resolve_location(directory, filename)` 等
+- **规则**：Organizer / ToolRegistry / HTTP **不直接**调用 `Indexer` 做落库侧效应；索引与 changelog 经 writer 完成
 - **维护例外**：`backup/reindex.reindex_all` 经 `KnowledgeWriter.reindex_markdown_body` 刷新已有文档索引（不写 changelog）
+- **依赖**：`Organizer` 与 `ToolRegistry` 必须由 `Container` 注入**同一** `KnowledgeWriter` 实例，禁止在模块内 `KnowledgeWriter(repo, indexer)` 回退构造
+
+### 1b. `KbTreeService`（HTTP 编排 seam）
+
+- **位置**：`backend/app/engine/kb_tree_service.py`
+- **职责**：知识库树 REST（import/move/delete）的 protected 目录校验、`index_revision.bump()`；**不**重复索引/changelog 逻辑
+- **写入**：一律委托 `KnowledgeWriter.import_entry|move_entry|delete_entry`
+- **HTTP**：`routes.py` 只做 Form/Body、异常 → 状态码，经 `_kb_tree_service(request)` 获取 service
 
 ### 2. `tool_catalog` 与 `ToolRegistry` 分离
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import re
 
-from app.engine.memory.models import MemoryCandidate
+from app.engine.memory.models import ExtractionResult, MemoryCandidate
 from app.engine.memory.normalize import normalize_slot_key, value_hash
 
 _SENSITIVE_KEYWORDS = (
@@ -53,7 +53,30 @@ def validated_candidates(
     text: str, candidates: list[MemoryCandidate]
 ) -> list[MemoryCandidate]:
     """抽取 adapter 出口：仅保留证据与原文一致的候选。"""
-    return [c for c in candidates if validate_evidence(text, c)]
+    valid, _ = partition_by_evidence(text, candidates)
+    return valid
+
+
+def partition_by_evidence(
+    text: str, candidates: list[MemoryCandidate]
+) -> tuple[list[MemoryCandidate], int]:
+    valid: list[MemoryCandidate] = []
+    rejected = 0
+    for c in candidates:
+        if validate_evidence(text, c):
+            valid.append(c)
+        else:
+            rejected += 1
+    return valid, rejected
+
+
+def extraction_after_evidence_gate(
+    text: str, candidates: list[MemoryCandidate]
+) -> ExtractionResult:
+    valid, rejected = partition_by_evidence(text, candidates)
+    return ExtractionResult(
+        candidates=valid, rejected_evidence_count=rejected
+    )
 
 
 def is_direct_self_statement(statement: str) -> bool:

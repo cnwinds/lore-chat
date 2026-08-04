@@ -41,6 +41,7 @@ class ToolRegistry:
         fetcher,
         web_search,
         pending,
+        knowledge_writer: KnowledgeWriter,
         conversations=None,
         system_layer=None,
         indexer=None,
@@ -50,7 +51,6 @@ class ToolRegistry:
         edit_doc_require_read: bool = True,
         conversation_context_max_chars: int = 12000,
         memory_service=None,
-        knowledge_writer: KnowledgeWriter | None = None,
     ):
         self.retriever = retriever
         self.repo = repo
@@ -60,12 +60,7 @@ class ToolRegistry:
         self.pending = pending
         self.conversations = conversations
         self.system_layer = system_layer
-        writer = knowledge_writer or getattr(organizer, "writer", None)
-        if writer is None:
-            raise ValueError(
-                "ToolRegistry requires knowledge_writer (Container 应注入同一实例)"
-            )
-        self.knowledge_writer = writer
+        self.knowledge_writer = knowledge_writer
         self.disclosure_chars = disclosure_chars
         self.edit_doc_max_edits = edit_doc_max_edits
         self.edit_doc_max_patch_chars = edit_doc_max_patch_chars
