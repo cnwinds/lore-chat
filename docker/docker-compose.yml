@@ -1,17 +1,19 @@
+name: lore-chat
+
 services:
   backend:
     build:
-      context: ./backend
+      context: ../backend
       dockerfile: Dockerfile
     container_name: lorechat-backend
     env_file:
-      - .env
+      - ../.env
     environment:
       KB_PATH: /data/knowledge
       BACKUP_DIR: /data/backups
     volumes:
-      - knowledge-data:/data/knowledge
-      - backup-data:/data/backups
+      - ./data/knowledge:/data/knowledge
+      - ./data/backups:/data/backups
     restart: unless-stopped
     networks:
       - lorechat
@@ -24,7 +26,7 @@ services:
 
   web:
     build:
-      context: .
+      context: ..
       dockerfile: frontend/Dockerfile
     container_name: lorechat-web
     ports:
@@ -35,12 +37,6 @@ services:
     restart: unless-stopped
     networks:
       - lorechat
-
-volumes:
-  knowledge-data:
-    name: lorechat-knowledge
-  backup-data:
-    name: lorechat-backups
 
 networks:
   lorechat:

@@ -375,10 +375,12 @@ export const TOOL_LABELS: Record<string, string> = {
   read_doc: "读取文档",
   fetch_url: "打开链接",
   web_search: "搜索网页",
-  write_kb: "整理到知识库",
+  write_kb: "写入知识库文档",
   summarize_conversation: "归档整段会话",
   delete_kb: "删除知识库内容",
   ask_user: "征询用户",
+  edit_doc: "局部编辑文档",
+  move_doc: "移动或重命名文档",
 };
 
 // 会改动知识库、需要刷新侧栏的工具
@@ -387,6 +389,7 @@ export const KB_MUTATING_TOOLS = [
   "delete_kb",
   "summarize_conversation",
   "edit_doc",
+  "move_doc",
 ] as const;
 
 export type ConversationSummary = {
@@ -803,10 +806,17 @@ export async function deleteConversation(id: string) {
 }
 
 /** 把整段会话通读后全局重构、去重、成文归档到知识库。 */
-export async function summarizeConversation(id: string) {
+export async function summarizeConversation(
+  id: string,
+  location: { directory: string; filename: string },
+) {
   return apiFetch<IngestResult>(
     `/api/conversations/${encodeURIComponent(id)}/summarize`,
-    { method: "POST" },
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(location),
+    },
   );
 }
 

@@ -15,7 +15,9 @@ import { markToolBlockResolved } from "../utils/chatMessage";
 import { ChatMessageList } from "./chat/ChatMessageList";
 import { ComposerTray } from "./ComposerTray";
 import { ComposerToolbar } from "./ComposerToolbar";
+import { ArchiveConversationModal } from "./ArchiveConversationModal";
 import type { PendingFile } from "../types/composer";
+import { suggestArchivePath } from "../utils/suggestArchivePath";
 
 type ComposerDocItem = { path: string; title: string };
 
@@ -57,6 +59,7 @@ export function Chat({
 
   const [input, setInput] = useState("");
   const [archiving, setArchiving] = useState(false);
+  const [archiveModalOpen, setArchiveModalOpen] = useState(false);
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
   const [webEnabled, setWebEnabled] = useState<boolean>(
     () => localStorage.getItem("lorechat.webSearch") === "1",
@@ -190,13 +193,19 @@ export function Chat({
     );
   }
 
-  async function archiveConversation() {
+  function openArchiveModal() {
     if (!conversationId || streaming || archiving) return;
     if (!msgs.some((m) => m.role === "user")) return;
+    setArchiveModalOpen(true);
+  }
+
+  async function performArchive(directory: string, filename: string) {
+    if (!conversationId || streaming || archiving) return;
     const targetCid = conversationId;
     setArchiving(true);
     try {
-      const result = await summarizeConversation(targetCid);
+      const result = await summarizeConversation(targetCid, { directory, filename });
+      setArchiveModalOpen(false);
       if (conversationIdRef.current !== targetCid) {
         onSidebarRefresh?.();
         if (result.rel_path) refreshKb(result.rel_path);
@@ -231,6 +240,10 @@ export function Chat({
       setArchiving(false);
     }
   }
+
+  const firstUserText =
+    msgs.find((m) => m.role === "user")?.text?.trim() ?? "";
+  const archiveDefaults = suggestArchivePath(summaryPath, firstUserText);
 
   function handleQuestionResolved(
     blockId: string,
@@ -379,7 +392,7 @@ export function Chat({
               summarized={summarized}
               summaryPath={summaryPath}
               canArchive={msgs.some((m) => m.role === "user")}
-              onArchive={archiveConversation}
+              onArchive={openArchiveModal}
               onOpenSummary={(path) => openDoc(path, undefined, { pin: true })}
               onAttachClick={() => fileInputRef.current?.click()}
               onSend={send}
@@ -389,6 +402,14 @@ export function Chat({
           </div>
         </div>
       </div>
+      <ArchiveConversationModal
+        open={archiveModalOpen}
+        initialDirectory={archiveDefaults.directory}
+        initialFilename={archiveDefaults.filename}
+        submitting={archiving}
+        onClose={() => !archiving && setArchiveModalOpen(false)}
+        onConfirm={(directory, filename) => void performArchive(directory, filename)}
+      />
     </div>
   );
 }

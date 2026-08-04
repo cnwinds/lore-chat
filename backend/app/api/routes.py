@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import io
 import json
 import uuid
@@ -9,14 +8,10 @@ from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from app.engine.agent.events import done, error_event, text_delta, think_delta
-from app.engine.source_key import extend_sources
-from app.engine.agent.prompts import MODE_DEFAULT, MODE_FORCE_WRITE, MODE_NO_WRITE
+from app.engine.knowledge_writer import KnowledgeWriter
+from app.engine.chat.session_runner import consume_agent_ask, consume_agent_ingest
 from app.engine.conversations import TurnInProgress
 from app.engine.patch import diff_affected_range
-from app.logging_config import get_logger
-
-_log = get_logger("chat")
 
 router = APIRouter(prefix="/api")
 
@@ -84,122 +79,9 @@ def _c(request: Request):
     return request.app.state.container
 
 
-def _parse_sse(ev: str) -> tuple[str, dict] | None:
-    lines = ev.strip().split("\n")
-    event_type = None
-    data = None
-    for line in lines:
-        if line.startswith("event: "):
-            event_type = line[7:]
-        elif line.startswith("data: "):
-            data = json.loads(line[6:])
-    if event_type and data is not None:
-        return event_type, data
-    return None
-
-
-class _TimelineAccumulator:
-    def __init__(self) -> None:
-        self.timeline: list[dict] = []
-        self.all_sources: list[dict] = []
-        self.total_duration_ms: int | None = None
-        self.assistant_text: str = ""
-        self._tools: dict[str, dict] = {}
-        self._parallel: dict[str, dict] = {}
-        self._active_parallel: str | None = None
-        self._text_block: dict | None = None
-        self._think_block: dict | None = None
-
-    def accumulate(self, event_type: str, data: dict) -> None:
-        if event_type == "tool_start":
-            block = {
-                "type": "tool",
-                "id": data["id"],
-                "tool": data["tool"],
-                "label": data["label"],
-                "ts": data["ts"],
-                "status": "running",
-            }
-            inp = data.get("input")
-            if isinstance(inp, dict) and inp.get("query"):
-                block["query"] = inp["query"]
-            self._tools[data["id"]] = block
-            if self._active_parallel:
-                self._parallel[self._active_parallel]["children"].append(block)
-            else:
-                self.timeline.append(block)
-            self._text_block = None
-            self._think_block = None
-
-        elif event_type == "tool_result":
-            block = self._tools.get(data["id"])
-            if block:
-                block["status"] = "done"
-                block["summary"] = data.get("summary", "")
-                block["sources"] = data.get("sources") or []
-                if data.get("content"):
-                    block["content"] = data["content"]
-                if data.get("duration_ms") is not None:
-                    block["duration_ms"] = data["duration_ms"]
-                if data.get("query"):
-                    block["query"] = data["query"]
-                for key in ("question_id", "question", "options", "multi_select"):
-                    if data.get(key) is not None:
-                        block[key] = data[key]
-                for key in ("preview", "reindex_mode", "applied"):
-                    if data.get(key) is not None:
-                        block[key] = data[key]
-                extend_sources(self.all_sources, block.get("sources") or [])
-
-        elif event_type == "parallel_batch_start":
-            block = {
-                "type": "parallel",
-                "batch_id": data["batch_id"],
-                "ts": data["ts"],
-                "children": [],
-            }
-            self._parallel[data["batch_id"]] = block
-            self.timeline.append(block)
-            self._active_parallel = data["batch_id"]
-            self._text_block = None
-            self._think_block = None
-
-        elif event_type == "parallel_batch_end":
-            block = self._parallel.get(data["batch_id"])
-            if block and data.get("duration_ms") is not None:
-                block["duration_ms"] = data["duration_ms"]
-            if self._active_parallel == data["batch_id"]:
-                self._active_parallel = None
-
-        elif event_type == "think_delta":
-            delta = data.get("delta", "")
-            if self._think_block is None:
-                self._think_block = {
-                    "type": "think",
-                    "ts": data["ts"],
-                    "content": delta,
-                }
-                self.timeline.append(self._think_block)
-            else:
-                self._think_block["content"] += delta
-
-        elif event_type == "text_delta":
-            delta = data.get("delta", "")
-            self.assistant_text += delta
-            if self._text_block is None:
-                self._text_block = {
-                    "type": "text",
-                    "ts": data["ts"],
-                    "content": delta,
-                }
-                self.timeline.append(self._text_block)
-            else:
-                self._text_block["content"] += delta
-
-        elif event_type == "done":
-            extend_sources(self.all_sources, data.get("sources") or [])
-            if data.get("total_duration_ms") is not None:
-                self.total_duration_ms = data["total_duration_ms"]
+class SummarizeBody(BaseModel):
+    directory: str
+    filename: str
 
 
 # ---------------------------------------------------------------------------
@@ -210,42 +92,6 @@ class _TimelineAccumulator:
 #   - 同步 JSON，无需解析 SSE
 # 详见 docs/superpowers/specs/2026-07-12-ingest-ask-api-design.md
 # ---------------------------------------------------------------------------
-
-
-def _ingest_from_write_kb_result(data: dict) -> dict:
-    """将 write_kb 的 tool_result 转为 IngestResult 兼容的 JSON。"""
-    status = data.get("status")
-    rel_path = data.get("rel_path")
-    if not rel_path:
-        sources = data.get("sources") or []
-        rel_path = sources[0]["path"] if sources and sources[0].get("path") else None
-    if status is None:
-        # 兜底：老格式无结构化状态时按 rel_path 推断
-        status = "saved" if rel_path else "rejected"
-    return {
-        "status": status,
-        "rel_path": rel_path,
-        "question_id": data.get("question_id"),
-        "message": data.get("summary", ""),
-    }
-
-
-async def _consume_agent_ingest(agent, text: str) -> dict:
-    """消费 Agent 一轮 force_write，返回首个 write_kb 的结构化结果。
-
-    未调用 write_kb 时由路由层抛 502。不传 conversation_id / web_enabled。
-    """
-    result: dict | None = None
-    async for ev in agent.run(text, mode=MODE_FORCE_WRITE):
-        parsed = _parse_sse(ev)
-        if not parsed:
-            continue
-        event_type, data = parsed
-        if event_type == "tool_result" and data.get("tool") == "write_kb":
-            result = _ingest_from_write_kb_result(data)
-    if result is None:
-        raise HTTPException(502, "录入失败: Agent 未调用 write_kb")
-    return result
 
 
 def _merge_session_view(c, session: dict) -> dict:
@@ -260,36 +106,14 @@ def _merge_session_view(c, session: dict) -> dict:
     return {"session": session, "user_modified": user_modified}
 
 
-async def _consume_agent_ask(agent, query: str) -> dict:
-    """消费 Agent 一轮 no_write，拼接正文并返回 sources。
-
-    write_kb 已被 select_tools 硬门移除。不传 conversation_id / web_enabled。
-    """
-    text_parts: list[str] = []
-    sources: list[dict] = []
-    async for ev in agent.run(query, mode=MODE_NO_WRITE):
-        parsed = _parse_sse(ev)
-        if not parsed:
-            continue
-        event_type, data = parsed
-        if event_type == "text_delta":
-            text_parts.append(data.get("delta", ""))
-        elif event_type == "done":
-            sources = data.get("sources") or []
-    attachments = [
-        s["path"]
-        for s in sources
-        if s.get("type") == "kb" and "/attachments/" in (s.get("path") or "")
-    ]
-    return {"text": "".join(text_parts), "sources": sources, "attachments": attachments}
-
-
 @router.post("/ingest")
 async def ingest(body: IngestBody, request: Request):
     """强制落库（测试/脚本 API）。产品聊天请用 POST /api/chat。"""
     c = _c(request)
     try:
-        return await _consume_agent_ingest(c.agent, body.text)
+        return await consume_agent_ingest(c.agent, body.text)
+    except RuntimeError as e:
+        raise HTTPException(502, f"录入失败: {e}") from e
     except HTTPException:
         raise
     except Exception as e:
@@ -300,119 +124,9 @@ async def ingest(body: IngestBody, request: Request):
 async def ask(body: AskBody, request: Request):
     """只读问答（测试/脚本 API）。产品聊天请用 POST /api/chat。"""
     try:
-        return await _consume_agent_ask(_c(request).agent, body.query)
+        return await consume_agent_ask(_c(request).agent, body.query)
     except Exception as e:
         raise HTTPException(502, f"问答失败: {e}") from e
-
-
-async def _chat_stream_no_persist(c, body: ChatBody, paths: list[str], primary: str | None):
-    """无 conversation_id：不持久化，纯流式转发（沿用旧行为）。"""
-    try:
-        async for ev in c.agent.run(
-            body.text,
-            mode=MODE_DEFAULT,
-            active_doc_path=primary,
-            active_doc_paths=paths,
-            primary_doc_path=primary,
-            history=None,
-            conversation_id=None,
-            web_enabled=body.web_enabled,
-        ):
-            yield ev
-    except Exception as e:
-        yield error_event(str(e))
-
-
-async def _chat_replay(turn: dict):
-    """turn 已 complete/interrupted：从已存 timeline 重放，不再次运行 Agent。"""
-    assistant = turn.get("assistant_message") or {}
-    for block in assistant.get("timeline") or []:
-        if block.get("type") == "think" and block.get("content"):
-            yield think_delta(block["content"])
-        elif block.get("type") == "text" and block.get("content"):
-            yield text_delta(block["content"])
-    yield done(assistant.get("sources") or [], assistant.get("total_duration_ms") or 0)
-
-
-async def _chat_stream_and_persist(
-    c,
-    body: ChatBody,
-    cid: str,
-    turn: dict,
-    history: list[dict],
-    paths: list[str],
-    primary: str | None,
-):
-    acc = _TimelineAccumulator()
-    assistant_saved = False
-
-    def _finalize(status: str, error: str | None = None) -> None:
-        nonlocal assistant_saved
-        if assistant_saved:
-            return
-        assistant: dict = {
-            "text": acc.assistant_text,
-            "timeline": acc.timeline,
-            "sources": acc.all_sources,
-            "total_duration_ms": acc.total_duration_ms,
-            "status": status,
-        }
-        if error is not None:
-            assistant["error"] = error
-        has_content = bool(
-            assistant.get("text")
-            or assistant.get("timeline")
-            or assistant.get("sources")
-            or assistant.get("error")
-        )
-        if status == "complete" and not has_content:
-            _log.warning(
-                "chat empty assistant cid=%s turn_id=%s timeline_blocks=%d text_len=%d",
-                cid,
-                turn["turn_id"],
-                len(acc.timeline),
-                len(acc.assistant_text),
-            )
-        c.conversations.finalize_turn(cid, turn_id=turn["turn_id"], assistant=assistant)
-        assistant_saved = True
-
-    try:
-        async for ev in c.agent.run(
-            body.text,
-            mode=MODE_DEFAULT,
-            active_doc_path=primary,
-            active_doc_paths=paths,
-            primary_doc_path=primary,
-            history=history,
-            conversation_id=cid,
-            web_enabled=body.web_enabled,
-        ):
-            parsed = _parse_sse(ev)
-            if parsed:
-                acc.accumulate(*parsed)
-                if parsed[0] == "done":
-                    # 拦截最终 done：先落库再把事件转发给客户端。
-                    _finalize("complete")
-            yield ev
-    except asyncio.CancelledError:
-        def _finalize_partial() -> None:
-            if acc.timeline or acc.assistant_text:
-                _finalize("interrupted")
-
-        await asyncio.shield(asyncio.to_thread(_finalize_partial))
-        raise
-    except Exception as e:
-        _finalize("interrupted", error=str(e))
-        yield error_event(str(e))
-    finally:
-        if not assistant_saved and (acc.timeline or acc.assistant_text):
-            _finalize("interrupted")
-        elif not assistant_saved:
-            _log.warning(
-                "chat stream closed without persisting assistant cid=%s turn_id=%s",
-                cid,
-                turn["turn_id"],
-            )
 
 
 @router.post("/chat")
@@ -434,7 +148,12 @@ async def chat(body: ChatBody, request: Request):
 
     if not body.conversation_id:
         return StreamingResponse(
-            _chat_stream_no_persist(c, body, paths, primary),
+            c.chat_runner.stream_ephemeral(
+                body.text,
+                doc_paths=paths,
+                primary_doc=primary,
+                web_enabled=body.web_enabled,
+            ),
             media_type="text/event-stream",
         )
 
@@ -460,10 +179,20 @@ async def chat(body: ChatBody, request: Request):
         )
 
     if turn.get("status", "running") != "running":
-        return StreamingResponse(_chat_replay(turn), media_type="text/event-stream")
+        return StreamingResponse(
+            c.chat_runner.replay_turn(turn), media_type="text/event-stream"
+        )
 
     return StreamingResponse(
-        _chat_stream_and_persist(c, body, cid, turn, history, paths, primary),
+        c.chat_runner.stream_and_persist(
+            body.text,
+            conversation_id=cid,
+            turn=turn,
+            history=history,
+            doc_paths=paths,
+            primary_doc=primary,
+            web_enabled=body.web_enabled,
+        ),
         media_type="text/event-stream",
     )
 
@@ -543,22 +272,23 @@ async def update_doc(body: UpdateDocBody, request: Request):
         if not sync.get("ok"):
             c.repo.write_doc(body.path, doc.meta, old_body, commit_msg=f"rollback: {body.path}")
             raise HTTPException(400, sync.get("message", "记忆同步失败"))
-        try:
-            c.indexer.remove_doc(body.path)
-        except Exception:
-            pass
+        c.knowledge_writer.drop_from_index([body.path])
     else:
-        c.repo.write_doc(body.path, doc.meta, body.body, commit_msg=f"edit: {body.path}")
         if old_body != body.body:
             affected_start, affected_end = diff_affected_range(old_body, body.body)
-            c.indexer.reindex_doc_after_edit(
+            c.knowledge_writer.save_edit(
                 body.path,
+                doc.meta,
                 old_body,
                 body.body,
-                affected_start,
-                affected_end,
+                affected_start=affected_start,
+                affected_end=affected_end,
+                commit_msg=f"edit: {body.path}",
+                changelog_line=f"用户编辑 {body.path}",
             )
-    c.repo.log_change(f"用户编辑 {body.path}")
+        else:
+            c.repo.write_doc(body.path, doc.meta, body.body, commit_msg=f"edit: {body.path}")
+            c.repo.log_change(f"用户编辑 {body.path}")
     d = c.repo.read_doc(body.path)
     return {"rel_path": d.rel_path, "meta": d.meta, "body": d.body}
 
@@ -763,8 +493,11 @@ async def append_conversation_messages(
 
 
 @router.post("/conversations/{cid}/summarize")
-async def summarize_conversation(cid: str, request: Request):
+async def summarize_conversation(cid: str, body: SummarizeBody, request: Request):
     c = _c(request)
+    rel_path, path_err = KnowledgeWriter.resolve_location(body.model_dump())
+    if path_err:
+        raise HTTPException(400, path_err.get("summary") or path_err.get("error"))
     try:
         conv = c.conversations.get(cid)
     except KeyError as e:
@@ -778,6 +511,7 @@ async def summarize_conversation(cid: str, request: Request):
         result = c.organizer.summarize_conversation(
             transcript,
             conv=conv,
+            forced_rel_path=rel_path,
             system_rules=system_rules,
             conversation_id=cid,
         )

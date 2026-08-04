@@ -2,23 +2,22 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterable
-import os
 import sqlite3
 import threading
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 from typing import Protocol
 
-MAX_OUTBOX_ATTEMPTS = 5
+from app.engine.conversation.outbox import (
+    DerivationOutbox,
+    append_deletion_ledger,
+    default_deletion_ledger_path,
+)
 
 
 def _now() -> str:
     return datetime.now().isoformat(timespec="seconds")
-
-
-def _future(seconds: float) -> str:
-    return (datetime.now() + timedelta(seconds=seconds)).isoformat(timespec="seconds")
 
 
 def _title_from_text(text: str) -> str:
@@ -207,6 +206,8 @@ class ConversationStore:
 
             migrate_json_shards(self.dir)
 
+        self._outbox = DerivationOutbox(self.conn, self._lock)
+
     # ------------------------------------------------------------------
     # 内部辅助
     # ------------------------------------------------------------------
@@ -225,41 +226,13 @@ class ConversationStore:
         return int(row["n"])
 
     def _enqueue_index_jobs(self, message_id: str, turn_id: str | None) -> None:
-        now = _now()
-        for kind in ("index_fts", "index_vector"):
-            self.conn.execute(
-                """
-                INSERT INTO derivation_outbox(
-                    kind, source_message_id, source_revision, turn_id,
-                    status, attempts, next_run_at, created_at, updated_at
-                ) VALUES (?, ?, 1, ?, 'pending', 0, ?, ?, ?)
-                """,
-                (kind, message_id, turn_id, now, now, now),
-            )
+        self._outbox.enqueue_index_jobs(message_id, turn_id)
 
     def _enqueue_observe_memory(self, message_id: str, turn_id: str) -> None:
-        now = _now()
-        self.conn.execute(
-            """
-            INSERT INTO derivation_outbox(
-                kind, source_message_id, source_revision, turn_id,
-                status, attempts, next_run_at, created_at, updated_at
-            ) VALUES ('observe_memory', ?, 1, ?, 'blocked', 0, ?, ?, ?)
-            """,
-            (message_id, turn_id, now, now, now),
-        )
+        self._outbox.enqueue_observe_memory(message_id, turn_id)
 
     def _activate_observe_jobs(self, turn_id: str, *, observation_allowed: bool) -> None:
-        status = "pending" if observation_allowed else "cancelled"
-        now = _now()
-        self.conn.execute(
-            """
-            UPDATE derivation_outbox
-            SET status = ?, updated_at = ?, next_run_at = ?
-            WHERE turn_id = ? AND kind = 'observe_memory' AND status = 'blocked'
-            """,
-            (status, now, now, turn_id),
-        )
+        self._outbox.activate_observe_jobs(turn_id, observation_allowed=observation_allowed)
 
     @staticmethod
     def _message_row_to_dict(row: sqlite3.Row) -> dict:
@@ -423,24 +396,7 @@ class ConversationStore:
         return sorted(items, key=lambda c: c["updated_at"], reverse=True)
 
     def _default_deletion_ledger_path(self) -> Path:
-        return self.dir.parent / "migrations" / "conversation-deletions.jsonl"
-
-    @staticmethod
-    def _append_deletion_ledger(
-        path: Path, cid: str, deletion_id: str, deleted_at: str, options: dict
-    ) -> None:
-        """跨版本留存的删除凭据：追加 JSONL 行并 fsync，供历史回填/审计恢复使用。"""
-        path.parent.mkdir(parents=True, exist_ok=True)
-        entry = {
-            "conversation_id": cid,
-            "deletion_id": deletion_id,
-            "deleted_at": deleted_at,
-            "options": options,
-        }
-        with open(path, "a", encoding="utf-8") as f:
-            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
-            f.flush()
-            os.fsync(f.fileno())
+        return default_deletion_ledger_path(self.dir)
 
     def delete(
         self,
@@ -472,7 +428,7 @@ class ConversationStore:
         deleted_at = _now()
         options = {"delete_summary": delete_summary}
         ledger_file = Path(ledger_path) if ledger_path else self._default_deletion_ledger_path()
-        self._append_deletion_ledger(ledger_file, cid, deletion_id, deleted_at, options)
+        append_deletion_ledger(ledger_file, cid, deletion_id, deleted_at, options)
 
         with self._lock:
             self._conversation_row(cid)
@@ -484,20 +440,7 @@ class ConversationStore:
                 """,
                 (cid, deletion_id, deleted_at, _dumps(options)),
             )
-            self.conn.execute(
-                """
-                UPDATE derivation_outbox
-                SET status = 'cancelled', updated_at = ?
-                WHERE status IN ('pending', 'running')
-                  AND (
-                        turn_id IN (SELECT id FROM turns WHERE conversation_id = ?)
-                        OR source_message_id IN (
-                            SELECT id FROM messages WHERE conversation_id = ?
-                        )
-                  )
-                """,
-                (deleted_at, cid, cid),
-            )
+            self._outbox.cancel_pending_for_conversation(cid, deleted_at)
             self.conn.execute("DELETE FROM turns WHERE conversation_id = ?", (cid,))
             if delete_summary:
                 self.conn.execute(
@@ -922,101 +865,14 @@ class ConversationStore:
         self, kind: str, limit: int = 10, lease_seconds: int = 60
     ) -> list[dict]:
         """认领待处理（或租约已过期）的 outbox 任务，标记为 running 并返回。"""
-        with self._lock:
-            now = _now()
-            if kind == "observe_memory":
-                rows = self.conn.execute(
-                    """
-                    SELECT * FROM derivation_outbox
-                    WHERE kind = 'observe_memory'
-                      AND (
-                            (status = 'pending' AND turn_id IN (
-                                SELECT id FROM turns WHERE finalized_at IS NOT NULL
-                            ))
-                            OR (status = 'running' AND (
-                                locked_until IS NULL OR locked_until <= ?
-                            ))
-                      )
-                      AND (next_run_at IS NULL OR next_run_at <= ?)
-                    ORDER BY id ASC
-                    LIMIT ?
-                    """,
-                    (now, now, limit),
-                ).fetchall()
-            else:
-                rows = self.conn.execute(
-                    """
-                    SELECT * FROM derivation_outbox
-                    WHERE kind = ?
-                      AND (
-                            status = 'pending'
-                            OR (status = 'running' AND (
-                                locked_until IS NULL OR locked_until <= ?
-                            ))
-                      )
-                      AND (next_run_at IS NULL OR next_run_at <= ?)
-                    ORDER BY id ASC
-                    LIMIT ?
-                    """,
-                    (kind, now, now, limit),
-                ).fetchall()
-            if not rows:
-                return []
-            locked_until = _future(lease_seconds)
-            jobs: list[dict] = []
-            for row in rows:
-                self.conn.execute(
-                    """
-                    UPDATE derivation_outbox
-                    SET status = 'running', locked_until = ?, updated_at = ?
-                    WHERE id = ?
-                    """,
-                    (locked_until, now, row["id"]),
-                )
-                job = dict(row)
-                job["status"] = "running"
-                job["locked_until"] = locked_until
-                jobs.append(job)
-            self.conn.commit()
-            return jobs
+        return self._outbox.claim(kind, limit=limit, lease_seconds=lease_seconds)
 
     def complete_outbox(self, job_id: int) -> None:
-        with self._lock:
-            self.conn.execute(
-                """
-                UPDATE derivation_outbox
-                SET status = 'done', locked_until = NULL, updated_at = ?
-                WHERE id = ?
-                """,
-                (_now(), job_id),
-            )
-            self.conn.commit()
+        self._outbox.complete(job_id)
 
     def fail_outbox(self, job_id: int, error: str, backoff: float = 1.0) -> None:
         """失败重试：指数退避（backoff * 2^(attempts-1)），超过最大次数后置为 dead。"""
-        with self._lock:
-            row = self.conn.execute(
-                "SELECT attempts FROM derivation_outbox WHERE id = ?", (job_id,)
-            ).fetchone()
-            if row is None:
-                return
-            attempts = int(row["attempts"]) + 1
-            if attempts >= MAX_OUTBOX_ATTEMPTS:
-                status = "dead"
-                next_run_at = None
-            else:
-                status = "pending"
-                next_run_at = _future(backoff * (2 ** (attempts - 1)))
-            self.conn.execute(
-                """
-                UPDATE derivation_outbox
-                SET attempts = ?, status = ?, next_run_at = ?, last_error = ?,
-                    locked_until = NULL, updated_at = ?
-                WHERE id = ?
-                """,
-                (attempts, status, next_run_at, error, _now(), job_id),
-            )
-            self.conn.commit()
+        self._outbox.fail(job_id, error, backoff=backoff)
 
     def list_outbox(
         self,
@@ -1024,20 +880,7 @@ class ConversationStore:
         kind: str | None = None,
         message_id: str | None = None,
     ) -> list[dict]:
-        with self._lock:
-            clauses = ["1=1"]
-            params: list = []
-            if kind:
-                clauses.append("kind = ?")
-                params.append(kind)
-            if message_id:
-                clauses.append("source_message_id = ?")
-                params.append(message_id)
-            rows = self.conn.execute(
-                f"SELECT * FROM derivation_outbox WHERE {' AND '.join(clauses)} ORDER BY id",
-                params,
-            ).fetchall()
-            return [dict(r) for r in rows]
+        return self._outbox.list_jobs(kind=kind, message_id=message_id)
 
     def append_system_event(self, conversation_id: str, event_type: str, payload: dict) -> dict:
         event_id = _new_id()

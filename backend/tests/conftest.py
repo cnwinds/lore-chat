@@ -14,7 +14,15 @@ def _build_tool_responses() -> list[dict]:
             {
                 "content": None,
                 "tool_calls": [
-                    ToolCall(id=f"w{i}", name="write_kb", arguments={"text": ""})
+                    ToolCall(
+                        id=f"w{i}",
+                        name="write_kb",
+                        arguments={
+                            "text": "",
+                            "directory": "未分类",
+                            "filename": "ingest.md",
+                        },
+                    )
                 ],
             }
         )
@@ -54,6 +62,11 @@ class AgentFakeLLM(FakeLLMClient):
             args = dict(tc.arguments)
             if tc.name == "write_kb" and not args.get("text"):
                 args["text"] = user_text
+            if tc.name == "write_kb":
+                if "directory" not in args:
+                    args["directory"] = "未分类"
+                if "filename" not in args:
+                    args["filename"] = "ingest.md"
             elif tc.name == "search_kb" and not args.get("query"):
                 args["query"] = user_text
             patched.append(ToolCall(id=tc.id, name=tc.name, arguments=args))

@@ -20,6 +20,8 @@ from app.engine.memory_worker import MemoryWorker
 from app.engine.memory_maintenance import MemoryMaintenanceJob
 from app.engine.memory.decay import DecayConfig
 from app.engine.organizer import Organizer
+from app.engine.knowledge_writer import KnowledgeWriter
+from app.engine.chat.session_runner import ChatSessionRunner
 from app.engine.agent.orchestrator import AgentOrchestrator
 from app.engine.agent.system_layer import SystemLayer
 from app.engine.agent.tools import ToolRegistry
@@ -47,8 +49,10 @@ class Container:
     derivation_worker: DerivationWorker
     memory_worker: MemoryWorker
     memory_maintenance: MemoryMaintenanceJob
+    knowledge_writer: KnowledgeWriter
     organizer: Organizer
     agent: AgentOrchestrator
+    chat_runner: ChatSessionRunner
     system_layer: SystemLayer
     memory_service: MemoryService
 
@@ -121,12 +125,14 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
     memory_maintenance = MemoryMaintenanceJob(
         memory_store, conversations, config=decay_config
     )
+    knowledge_writer = KnowledgeWriter(repo, indexer)
     organizer = Organizer(
         repo=repo,
         retriever=retriever,
         indexer=indexer,
         pending=pending,
         llm=llm,
+        knowledge_writer=knowledge_writer,
     )
     memory_service.conversations = conversations
     memory_service.indexer = indexer
@@ -151,8 +157,10 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
         edit_doc_require_read=settings.edit_doc_require_read,
         conversation_context_max_chars=settings.conversation_context_max_chars,
         memory_service=memory_service,
+        knowledge_writer=knowledge_writer,
     )
     agent = AgentOrchestrator(settings, llm, tool_registry, system_layer=system_layer)
+    chat_runner = ChatSessionRunner(agent, conversations)
     return Container(
         settings=settings,
         workspace_id=workspace_id,
@@ -169,8 +177,10 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
         derivation_worker=derivation_worker,
         memory_worker=memory_worker,
         memory_maintenance=memory_maintenance,
+        knowledge_writer=knowledge_writer,
         organizer=organizer,
         agent=agent,
+        chat_runner=chat_runner,
         system_layer=system_layer,
         memory_service=memory_service,
     )
@@ -230,3 +240,4 @@ def apply_settings(
     container.agent.tools.fetcher = WebFetcher(
         settings.fetch_url_timeout, settings.fetch_url_max_bytes
     )
+    container.chat_runner = ChatSessionRunner(container.agent, container.conversations)

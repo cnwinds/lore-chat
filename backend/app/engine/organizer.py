@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import json
+
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -10,10 +10,12 @@ from app.config import Settings
 from app.engine.conversations import ConversationStore
 from app.engine.content_hash import body_hash
 from app.storage.repo import KnowledgeRepo
+from app.engine.placement import PlacementDecision, PlacementPlanner
 from app.engine.intent import is_question_only
 from app.engine.merge_sessions import MergeSessionStore
 from app.engine.retriever import Retriever
 from app.engine.pending import PendingStore
+from app.engine.knowledge_writer import KnowledgeWriter
 from app.index.indexer import Indexer
 from app.models.llm import LLMClient
 
@@ -26,17 +28,6 @@ _DEFAULT_SUMMARY_RULES = (
     "3. 剥离对话痕迹（如「帮我记录」「用户说」），只留结论与事实。\n"
     "4. 保留可核验性：事实、数据、版本、链接等须有出处，不臆造、不补全。"
 )
-
-
-@dataclass
-class PlacementDecision:
-    action: str
-    rel_path: str
-    title: str
-    category: str
-    tags: list[str]
-    ambiguous: bool
-    reason: str
 
 
 @dataclass
@@ -68,6 +59,7 @@ class Organizer:
         pending: PendingStore,
         llm: LLMClient,
         settings: Settings | None = None,
+        knowledge_writer: KnowledgeWriter | None = None,
     ):
         self.repo = repo
         self.retriever = retriever
@@ -75,8 +67,16 @@ class Organizer:
         self.pending = pending
         self.llm = llm
         self.settings = settings or Settings()
+        self.writer = knowledge_writer or KnowledgeWriter(repo, indexer)
+        self.planner = PlacementPlanner(repo, retriever, llm)
 
-    def ingest_text(self, content: str, *, hint_path: str | None = None) -> IngestResult:
+    def ingest_text(
+        self,
+        content: str,
+        *,
+        forced_rel_path: str | None = None,
+        hint_path: str | None = None,
+    ) -> IngestResult:
         if is_question_only(content):
             return IngestResult(
                 status="rejected",
@@ -85,15 +85,25 @@ class Organizer:
                 message="这是提问而非资料，未写入知识库。",
             )
 
-        summary = self._understand(content)
+        if forced_rel_path:
+            decision = self.planner.decision_for_forced_path(forced_rel_path)
+            self._apply(decision, content)
+            return IngestResult(
+                status="saved",
+                rel_path=decision.rel_path,
+                question_id=None,
+                message=f"已保存到 {decision.rel_path}",
+            )
+
+        summary = self.planner.understand(content)
         search_query = (
             f"{summary.strip()}\n{content.strip()}".strip()
             if summary.strip()
             else content
         )
         related = self.retriever.search(search_query, k=5).hits
-        decision = self._normalize_decision(self._decide(content, summary, related), related)
-        decision = self._apply_hint_path(decision, hint_path)
+        decision = self.planner.normalize_decision(self.planner.decide(content, summary, related), related)
+        decision = self.planner.apply_hint_path(decision, hint_path)
 
         if decision.ambiguous:
             qid = self.pending.create(
@@ -125,6 +135,7 @@ class Organizer:
         *,
         conv: dict | None = None,
         hint_path: str | None = None,
+        forced_rel_path: str | None = None,
         system_rules: str = "",
         conversation_id: str | None = None,
     ) -> IngestResult:
@@ -150,21 +161,26 @@ class Organizer:
                 self._synthesize_segment(seg["text"], system_rules, seg) for seg in segments
             ]
             body = self._synthesize_merge_segments(partials, system_rules)
-        summary = self._understand(body)
+        summary = self.planner.understand(body)
         related = self.retriever.search(summary or body, k=5).hits
-        decision = self._normalize_decision(self._decide(body, summary, related), related)
-        decision = self._apply_hint_path(decision, hint_path)
-        # 归档果断落库，不因 ambiguous 打断用户
-        if decision.ambiguous:
-            decision = PlacementDecision(
-                action="new",
-                rel_path=decision.rel_path,
-                title=decision.title,
-                category=decision.category,
-                tags=decision.tags,
-                ambiguous=False,
-                reason=decision.reason or "会话归档",
+        if forced_rel_path:
+            decision = self.planner.decision_for_forced_path(forced_rel_path)
+        else:
+            decision = self.planner.normalize_decision(
+                self.planner.decide(body, summary, related), related
             )
+            decision = self.planner.apply_hint_path(decision, hint_path)
+            # 归档果断落库，不因 ambiguous 打断用户
+            if decision.ambiguous:
+                decision = PlacementDecision(
+                    action="new",
+                    rel_path=decision.rel_path,
+                    title=decision.title,
+                    category=decision.category,
+                    tags=decision.tags,
+                    ambiguous=False,
+                    reason=decision.reason or "会话归档",
+                )
         self._apply(decision, body, conversation_id=conversation_id)
         return IngestResult(
             status="saved",
@@ -227,10 +243,10 @@ class Organizer:
             sources.append((rel, doc.body))
 
         merged_body = self._synthesize_merge(sources, instruction)
-        summary = self._understand(merged_body)
+        summary = self.planner.understand(merged_body)
         related = self.retriever.search(summary or merged_body, k=5).hits
-        decision = self._normalize_decision(
-            self._decide(merged_body, summary, related), related
+        decision = self.planner.normalize_decision(
+            self.planner.decide(merged_body, summary, related), related
         )
 
         if title_hint:
@@ -264,25 +280,19 @@ class Organizer:
                 reason=decision.reason,
             )
 
-        self.repo.write_doc(
+        self.writer.persist_document(
             decision.rel_path,
-            meta={
+            {
                 "title": decision.title,
                 "tags": decision.tags,
                 "source": "merge",
                 "merged_from": list(source_paths),
             },
-            body=merged_body,
+            merged_body,
             commit_msg=f"merge: 生成合并文档 {decision.rel_path}",
+            changelog_line=f"创建 {decision.rel_path}：{decision.reason or decision.title}",
         )
         doc = self.repo.read_doc(decision.rel_path)
-        self.indexer.reindex_doc(decision.rel_path, doc.body)
-        self.repo.log_change(
-            f"创建 {decision.rel_path}：{decision.reason or decision.title}",
-            commit_msg=f"chore: changelog for {decision.rel_path}",
-        )
-
-        generated_hash = body_hash(doc.body)
         merge_id = session_id
         user_modified = False
         if merge_id:
@@ -364,11 +374,16 @@ class Organizer:
             )
         rel_path = session.get("new_path")
         if rel_path:
+            deleted: list[str] = []
             try:
-                self.repo.delete_path(rel_path, commit_msg=f"merge: 拒绝并删除 {rel_path}")
+                deleted = self.repo.delete_path(
+                    rel_path, commit_msg=f"merge: 拒绝并删除 {rel_path}"
+                )
             except (FileNotFoundError, ValueError):
                 pass
-            self.indexer.remove_doc(rel_path)
+            if deleted:
+                self.writer.drop_from_index(deleted)
+                self.writer.record_deletion(rel_path, deleted)
         merge_sessions.update(merge_id, status="rejected")
         return MergeResult(
             status="rejected",
@@ -443,10 +458,13 @@ class Organizer:
             if self.repo.is_protected(path):
                 continue
             try:
-                self.repo.delete_path(path, commit_msg=f"merge: 删除源文档 {path}")
+                deleted_files = self.repo.delete_path(
+                    path, commit_msg=f"merge: 删除源文档 {path}"
+                )
             except (FileNotFoundError, ValueError):
                 continue
-            self.indexer.remove_doc(path)
+            self.writer.drop_from_index(deleted_files)
+            self.writer.record_deletion(path, deleted_files)
             deleted.append(path)
 
         if deleted:
@@ -681,123 +699,12 @@ class Organizer:
             body += "\n"
         return body
 
-    def _understand(self, content: str) -> str:
-        messages = [
-            {"role": "system", "content": "用一句话概括这条内容的主题，便于检索。"},
-            {"role": "user", "content": content},
-        ]
-        return self.llm.chat(messages)
-
-    def _decide(self, content: str, summary: str, related) -> PlacementDecision:
-        related_desc = (
-            "\n".join(f"- {h.source}: {h.chunk[:80]}" for h in related)
-            or "（无相关文档）"
-        )
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    "你是知识库组织员。果断决策，避免让用户确认。\n"
-                    "规则：\n"
-                    "1. 与已有文档同一主题、同一问题的补充 → merge 到最相关的一篇"
-                    "（系统会读取原文并整篇重组为完整文档，非简单追加），ambiguous=false\n"
-                    "2. 不要为同一主题创建重复文档；已有相关文档时优先 merge\n"
-                    "3. 全新主题 → action=new\n"
-                    "4. ambiguous=true 仅在完全无法判断归到哪篇时使用（应极少出现）\n"
-                    "只输出 JSON：action(new|merge|append), rel_path(以.md结尾), "
-                    "title, category(如 技术/powershell), tags(数组), ambiguous(bool), reason"
-                ),
-            },
-            {
-                "role": "user",
-                "content": f"新内容：{content}\n摘要：{summary}\n相关文档：\n{related_desc}",
-            },
-        ]
-        raw = self.llm.chat(messages)
-        data = self._parse_json(raw)
-        return PlacementDecision(
-            action=data.get("action", "new"),
-            rel_path=data.get("rel_path") or "未分类/note.md",
-            title=data.get("title", "未命名"),
-            category=data.get("category", ""),
-            tags=data.get("tags", []),
-            ambiguous=bool(data.get("ambiguous", False)),
-            reason=data.get("reason", ""),
-        )
-
     @staticmethod
     def _extract_written_path(context: str) -> str | None:
         if not context:
             return None
         match = re.search(r"保存在\s+(\S+?)(?:\s|$|[，。])", context)
         return match.group(1) if match else None
-
-    def _apply_hint_path(
-        self, decision: PlacementDecision, hint_path: str | None
-    ) -> PlacementDecision:
-        if not hint_path:
-            return decision
-        try:
-            doc = self.repo.read_doc(hint_path)
-        except FileNotFoundError:
-            return decision
-        return PlacementDecision(
-            action="merge",
-            rel_path=hint_path,
-            title=decision.title or doc.meta.get("title", ""),
-            category=decision.category,
-            tags=decision.tags,
-            ambiguous=False,
-            reason=decision.reason or f"合并到用户正在查看的 {hint_path}",
-        )
-
-    def _normalize_decision(self, decision: PlacementDecision, related) -> PlacementDecision:
-        """有相关文档时自动合并，不再向用户确认。"""
-        if not decision.ambiguous:
-            if decision.action in ("merge", "append") and related:
-                related_paths = {h.source for h in related}
-                if decision.rel_path not in related_paths:
-                    decision = PlacementDecision(
-                        action="merge",
-                        rel_path=related[0].source,
-                        title=decision.title,
-                        category=decision.category,
-                        tags=decision.tags,
-                        ambiguous=False,
-                        reason=decision.reason or f"合并到 {related[0].source}",
-                    )
-            return decision
-
-        if related:
-            target = decision.rel_path
-            related_paths = {h.source for h in related}
-            if target not in related_paths:
-                target = related[0].source
-            return PlacementDecision(
-                action="merge",
-                rel_path=target,
-                title=decision.title,
-                category=decision.category,
-                tags=decision.tags,
-                ambiguous=False,
-                reason=decision.reason or f"自动合并到 {target}",
-            )
-        return decision
-
-    @staticmethod
-    def _parse_json(raw: str) -> dict:
-        raw = raw.strip()
-        if raw.startswith("```"):
-            raw = raw.strip("`")
-            if raw.startswith("json"):
-                raw = raw[4:]
-        start, end = raw.find("{"), raw.rfind("}")
-        if start != -1 and end != -1:
-            raw = raw[start : end + 1]
-        try:
-            return json.loads(raw)
-        except json.JSONDecodeError:
-            return {}
 
     def _apply(
         self,
@@ -822,13 +729,13 @@ class Organizer:
                 merged_meta["tags"] = list(dict.fromkeys(existing_tags + decision.tags))
             merged_meta = _conversation_ids_meta(merged_meta, conversation_id)
             body = self._reorganize(doc.body, content, decision.title)
-            self.repo.write_doc(
+            self.writer.persist_document(
                 rel_path,
-                meta=merged_meta,
-                body=body,
+                merged_meta,
+                body,
                 commit_msg=f"merge: 整理合并 {rel_path}",
+                changelog_line=f"整理合并到 {rel_path}：{decision.reason or decision.title}",
             )
-            verb = "整理合并到"
         else:
             meta: dict = {
                 "title": decision.title,
@@ -836,20 +743,13 @@ class Organizer:
                 "source": "conversation" if conversation_id else "chat",
             }
             meta = _conversation_ids_meta(meta, conversation_id)
-            self.repo.write_doc(
+            self.writer.persist_document(
                 rel_path,
-                meta=meta,
-                body=f"{content}\n",
+                meta,
+                f"{content}\n",
                 commit_msg=f"add: 新建 {rel_path}",
+                changelog_line=f"创建 {rel_path}：{decision.reason or decision.title}",
             )
-            verb = "创建"
-
-        doc = self.repo.read_doc(rel_path)
-        self.indexer.reindex_doc(rel_path, doc.body)
-        self.repo.log_change(
-            f"{verb} {rel_path}：{decision.reason or decision.title}",
-            commit_msg=f"chore: changelog for {rel_path}",
-        )
 
 
 def _conversation_ids_meta(meta: dict, conversation_id: str | None) -> dict:

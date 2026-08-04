@@ -117,7 +117,9 @@ async def test_summarize_conversation_tool_flow(tmp_path, monkeypatch):
     monkeypatch.setattr(idx, "remove_conversation", lambda cid: removed.append(cid))
 
     result = await registry.execute(
-        "summarize_conversation", {}, conversation_id=cid
+        "summarize_conversation",
+        {"directory": "娱乐", "filename": "漫剧工具盘点.md"},
+        conversation_id=cid,
     )
     assert "已归档" in result["summary"]
     assert result["sources"][0]["path"] == "娱乐/漫剧工具盘点.md"
@@ -144,6 +146,21 @@ async def test_summarize_without_conversation_context(tmp_path):
     assert result.get("error")
 
 
+def test_summarize_endpoint_requires_directory_and_filename(tmp_path):
+    from fastapi.testclient import TestClient
+
+    from app.main import create_app
+
+    settings = Settings(kb_path=tmp_path / "knowledge")
+    app = create_app(settings=settings, llm=FakeLLMClient(embed_dim=8))
+
+    with TestClient(app) as client:
+        client.post("/api/auth/setup", json={"password": "test-password-123"})
+        cid = app.state.container.conversations.create()
+        r = client.post(f"/api/conversations/{cid}/summarize")
+        assert r.status_code == 422
+
+
 def test_summarize_endpoint_keeps_message_fts_and_skips_remove_conversation(
     tmp_path, monkeypatch
 ):
@@ -160,6 +177,8 @@ def test_summarize_endpoint_keeps_message_fts_and_skips_remove_conversation(
     app = create_app(settings=settings, llm=llm)
 
     with TestClient(app) as client:
+        r = client.post("/api/auth/setup", json={"password": "test-password-123"})
+        assert r.status_code == 200, r.text
         c = app.state.container
         cid = c.conversations.create()
         turn = c.conversations.begin_turn(
@@ -186,7 +205,10 @@ def test_summarize_endpoint_keeps_message_fts_and_skips_remove_conversation(
             c.indexer, "remove_conversation", lambda cid: removed.append(cid)
         )
 
-        r = client.post(f"/api/conversations/{cid}/summarize")
+        r = client.post(
+            f"/api/conversations/{cid}/summarize",
+            json={"directory": "娱乐", "filename": "漫剧工具盘点.md"},
+        )
         assert r.status_code == 200, r.text
         assert r.json()["status"] == "saved"
 

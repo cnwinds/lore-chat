@@ -63,6 +63,8 @@ npm run dev
 
 需安装 [Docker Desktop for Windows](https://www.docker.com/products/docker-desktop/)。
 
+构建已配置国内 apt / PyPI / npm 源。若**拉取基础镜像**（`python`、`node`、`nginx`）仍很慢，可在宿主机配置 Docker Hub 镜像加速：Linux 将 [docker/daemon.json.example](docker/daemon.json.example) 中的 `registry-mirrors` 合并进 `/etc/docker/daemon.json` 后重启 Docker；Windows/macOS 在 Docker Desktop → Settings → Docker Engine 中同样添加 `registry-mirrors` 字段。
+
 ```powershell
 Copy-Item .env.docker.example .env    # 编辑填入 OPENAI_API_KEY
 .\lorechat.bat start
@@ -70,29 +72,34 @@ Copy-Item .env.docker.example .env    # 编辑填入 OPENAI_API_KEY
 
 默认访问 **http://localhost:8080**（可在 `.env` 中修改 `WEB_PORT`）。
 
-架构：`web`（Nginx 静态前端 + 反向代理 `/api`）→ `backend`（FastAPI）。知识库数据持久化在 Docker 卷 `lorechat-knowledge`。
+架构：`web`（Nginx 静态前端 + 反向代理 `/api`）→ `backend`（FastAPI）。运行数据挂载在项目目录 `docker/data/`（知识库 `knowledge/`、备份 `backups/`）。
+
+在项目根目录执行（`--project-directory docker` 与 compose 内相对路径一致；`--env-file .env` 读取根目录配置含 `WEB_PORT`）：
 
 ```powershell
-docker compose up -d --build
-docker compose logs -f
-docker compose down
+docker compose --project-directory docker --env-file .env -f docker/docker-compose.yml up -d --build
+docker compose --project-directory docker --env-file .env -f docker/docker-compose.yml logs -f
+docker compose --project-directory docker --env-file .env -f docker/docker-compose.yml down
 ```
 
 ## 数据目录说明
 
-知识库根目录由环境变量 `KB_PATH` 指定（默认 `./knowledge`）：
+**Docker 部署：** 数据在 `docker/data/knowledge/`（容器内 `KB_PATH=/data/knowledge`），导入前自动备份在 `docker/data/backups/`。
+
+**本地开发：** 知识库根目录由环境变量 `KB_PATH` 指定（默认 `backend` 下 `./knowledge`）。
 
 ```
-knowledge/                 ← git 仓库，可直接打开浏览/编辑
+docker/data/knowledge/     ← Docker 运行时知识库（git 仓库，可直接浏览/编辑）
 ├── 技术/
-│   └── docker/
-│       └── 常用命令.md
+│   └── …
 ├── attachments/           ← 附件原件
 └── .kb/
     ├── index/             ← 向量/全文索引（可删除后重建）
     ├── pending.json       ← 待用户确认的归置问题
     └── changelog.md       ← AI 整理操作记录
 ```
+
+部署相关文件在 `docker/`（如 `docker/nginx/default.conf`）。
 
 - **Markdown 文件**是唯一事实来源；索引仅为加速缓存。
 - **git 历史**记录每次写入与整理，可随时回滚。
@@ -122,6 +129,11 @@ Lore Chat 使用**统一 Agent**：直接聊天即可，无需说「记录」或
 | `BRAVE_SEARCH_API_KEY` | [Brave Search API](https://brave.com/search/api/) |
 
 未配置任何搜索密钥时，Agent 仍可使用本地知识库与 URL 抓取，但无法联网搜索。
+
+## 架构与贡献
+
+- 模块地图与 seam 约定：[CONTEXT.md](CONTEXT.md)
+- 引擎拆分决策记录：[docs/adr/2026-08-04-engine-module-seams.md](docs/adr/2026-08-04-engine-module-seams.md)
 
 ### Agent 配置
 

@@ -7,6 +7,10 @@ backend/.venv/
 
 # Local runtime data
 backend/knowledge/
+docker/data/knowledge/*
+!docker/data/knowledge/.gitkeep
+docker/data/backups/*
+!docker/data/backups/.gitkeep
 **/.pytest_cache/
 __pycache__/
 *.pyc

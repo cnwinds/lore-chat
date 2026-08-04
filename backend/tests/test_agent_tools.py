@@ -284,10 +284,45 @@ async def test_delete_kb_doc(tmp_path):
 @pytest.mark.asyncio
 async def test_write_kb_exposes_structured_status(tmp_path):
     registry, repo, idx = _make_registry(tmp_path)
-    result = await registry.execute("write_kb", {"text": "docker ps 查看容器列表"})
-    assert result["status"] in {"saved", "question", "rejected"}
-    if result["status"] == "saved":
-        assert result["rel_path"]
+    result = await registry.execute(
+        "write_kb",
+        {
+            "text": "docker ps 查看容器列表",
+            "directory": "技术/docker",
+            "filename": "常用命令.md",
+        },
+    )
+    assert result["status"] == "saved"
+    assert result["rel_path"] == "技术/docker/常用命令.md"
+    assert repo.read_doc("技术/docker/常用命令.md").body
+
+
+@pytest.mark.asyncio
+async def test_write_kb_requires_directory_and_filename(tmp_path):
+    registry, _, _ = _make_registry(tmp_path)
+    result = await registry.execute("write_kb", {"text": "hello"})
+    assert result["error"] == "MISSING_PATH"
+
+
+@pytest.mark.asyncio
+async def test_move_doc_tool(tmp_path):
+    registry, repo, idx = _make_registry(tmp_path)
+    path = "llm/old-name.md"
+    repo.write_doc(path, {"title": "Old"}, "body\n", commit_msg="seed")
+    idx.reindex_doc(path, "body\n")
+    result = await registry.execute(
+        "move_doc",
+        {
+            "from_path": path,
+            "to_directory": "技术/llm",
+            "to_filename": "new-name.md",
+        },
+    )
+    assert result["status"] == "saved"
+    assert result["rel_path"] == "技术/llm/new-name.md"
+    repo.read_doc("技术/llm/new-name.md")
+    with pytest.raises(FileNotFoundError):
+        repo.read_doc(path)
 
 
 @pytest.mark.asyncio

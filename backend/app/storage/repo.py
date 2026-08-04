@@ -182,6 +182,28 @@ class KnowledgeRepo:
             self.repo.index.commit(commit_msg)
         return deleted
 
+    def move_doc(self, from_path: str, to_path: str, *, commit_msg: str) -> str:
+        from_norm = from_path.replace("\\", "/").lstrip("/")
+        to_norm = to_path.replace("\\", "/").lstrip("/")
+        if from_norm == to_norm:
+            return from_norm
+        if self._is_protected(from_norm) or self._is_protected(to_norm):
+            raise ValueError(f"禁止移动系统或内部路径: {from_path} -> {to_path}")
+        if not from_norm.endswith(".md") or not to_norm.endswith(".md"):
+            raise ValueError("只能移动 Markdown 文档")
+        from_abs = self._abs(from_norm)
+        if not from_abs.is_file():
+            raise FileNotFoundError(from_path)
+        to_abs = self._abs(to_norm)
+        if to_abs.exists():
+            raise ValueError(f"目标路径已存在：{to_path}")
+        doc = self.read_doc(from_norm)
+        self.write_doc(to_norm, doc.meta, doc.body, commit_msg=commit_msg)
+        from_abs.unlink()
+        self.repo.index.remove([from_norm])
+        self.repo.index.commit(commit_msg)
+        return to_norm
+
     def log_change(
         self, entry: str, *, commit_msg: str = "chore: update changelog"
     ) -> None:

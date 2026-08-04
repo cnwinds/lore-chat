@@ -3587,6 +3587,28 @@ a:hover {
   border-top: 1px solid var(--border);
 }
 
+.archive-modal-hint {
+  margin: 0 0 12px;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.archive-modal-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+  font-size: var(--text-sm);
+}
+
+.archive-modal-field input {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font: inherit;
+  background: var(--bg-surface);
+}
+
 /* Composer card */
 .chat-composer-wrap {
   flex-shrink: 0;

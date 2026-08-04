@@ -154,6 +154,18 @@ def test_resolve_agent_done_without_write_says_confirmed(tmp_path):
     assert result.message == "好的，已确认。"
 
 
+def test_ingest_forced_path_creates_new_file(tmp_path):
+    org, repo, pending = _make(tmp_path, [])
+    result = org.ingest_text(
+        "全新内容段落",
+        forced_rel_path="技术/llm/指定路径.md",
+    )
+    assert result.status == "saved"
+    assert result.rel_path == "技术/llm/指定路径.md"
+    doc = repo.read_doc("技术/llm/指定路径.md")
+    assert "全新内容段落" in doc.body
+
+
 def test_ingest_hint_path_merges_into_active_doc(tmp_path):
     decision = json.dumps(
         {
