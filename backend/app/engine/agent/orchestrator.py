@@ -50,6 +50,8 @@ class AgentOrchestrator:
         primary_doc_path: str | None = None,
         history: list[dict] | None = None,
         conversation_id: str | None = None,
+        turn_id: str | None = None,
+        run_id: str | None = None,
         web_enabled: bool = False,
     ) -> AsyncIterator[str]:
         system_layer_text = (
@@ -78,5 +80,7 @@ class AgentOrchestrator:
             conversation_id=conversation_id,
             active_doc_path=primary,
             started_at=start,
+            turn_id=turn_id,
+            run_id=run_id,
         ):
             yield ev

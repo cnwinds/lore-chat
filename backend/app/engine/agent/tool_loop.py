@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import time
 import uuid
 from collections.abc import AsyncIterator
@@ -15,6 +16,7 @@ from app.engine.agent.events import (
     think_delta,
     tool_start,
 )
+from app.engine.agent.run_report import AgentRunReport
 from app.engine.agent.tool_events import emit_tool_result_sse
 from app.engine.agent.tools import (
     READ_ONLY_TOOLS,
@@ -48,81 +50,147 @@ class AgentToolLoop:
         conversation_id: str | None,
         active_doc_path: str | None,
         started_at: float | None = None,
+        turn_id: str | None = None,
+        run_id: str | None = None,
     ) -> AsyncIterator[str]:
         start = started_at if started_at is not None else time.monotonic()
+        run_id = run_id or uuid.uuid4().hex[:8]
         all_sources: list[dict] = []
         tool_call_count = 0
+        llm_rounds = 0
         tool_active_doc_path = active_doc_path
+        report = AgentRunReport(
+            layer="agent",
+            stop_reason="unknown",
+            conversation_id=conversation_id,
+            turn_id=turn_id,
+            run_id=run_id,
+            tool_limit=self.settings.agent_max_tool_calls,
+        )
+        _log.info(
+            "agent run start cid=%s turn_id=%s run_id=%s tool_limit=%d",
+            conversation_id or "-",
+            turn_id or "-",
+            run_id,
+            self.settings.agent_max_tool_calls,
+        )
 
-        while tool_call_count < self.settings.agent_max_tool_calls:
-            result: ChatWithToolsResult | None = None
-            stream_iter = iter(
-                self.llm.stream_chat_with_tools(messages, tools_for_run, big=True)
-            )
-            sentinel = object()
-            while True:
-                chunk = await asyncio.to_thread(next, stream_iter, sentinel)
-                if chunk is sentinel:
-                    break
-                if chunk.think_delta:
-                    yield think_delta(chunk.think_delta)
-                if chunk.text_delta:
-                    yield text_delta(chunk.text_delta)
-                if chunk.result is not None:
-                    result = chunk.result
-            if result is None:
-                _log.warning("agent llm round ended without final result")
-                break
-            if not result.content and not result.tool_calls:
-                _log.warning(
-                    "agent llm round empty content=%r tool_calls=0 messages=%d",
-                    result.content,
-                    len(messages),
+        try:
+            while tool_call_count < self.settings.agent_max_tool_calls:
+                llm_rounds += 1
+                result: ChatWithToolsResult | None = None
+                stream_iter = iter(
+                    self.llm.stream_chat_with_tools(messages, tools_for_run, big=True)
                 )
-            if result.tool_calls:
-                turn_outputs: list[tuple[ToolCall, dict, int]] = []
-                batches = self._split_batches(result.tool_calls)
-                for batch in batches:
-                    names = [tc.name for tc in batch]
-                    if (
-                        len(batch) > 1
-                        and self.settings.agent_parallel_tools
-                        and can_parallelize(names)
-                    ):
-                        async for ev, entry in self._run_parallel_batch(
-                            batch,
-                            active_doc_path=tool_active_doc_path,
-                            conversation_id=conversation_id,
+                sentinel = object()
+                while True:
+                    chunk = await asyncio.to_thread(next, stream_iter, sentinel)
+                    if chunk is sentinel:
+                        break
+                    if chunk.think_delta:
+                        yield think_delta(chunk.think_delta)
+                    if chunk.text_delta:
+                        yield text_delta(chunk.text_delta)
+                    if chunk.result is not None:
+                        result = chunk.result
+                if result is None:
+                    report.stop_reason = "llm_stream_incomplete"
+                    report.detail = f"round={llm_rounds} no ChatWithToolsResult"
+                    break
+                if not result.content and not result.tool_calls:
+                    _log.warning(
+                        "agent llm round empty content=%r tool_calls=0 messages=%d round=%d",
+                        result.content,
+                        len(messages),
+                        llm_rounds,
+                    )
+                if result.tool_calls:
+                    report.last_tool_names = [tc.name for tc in result.tool_calls]
+                    turn_outputs: list[tuple[ToolCall, dict, int]] = []
+                    batches = self._split_batches(result.tool_calls)
+                    for batch in batches:
+                        names = [tc.name for tc in batch]
+                        if (
+                            len(batch) > 1
+                            and self.settings.agent_parallel_tools
+                            and can_parallelize(names)
                         ):
-                            yield ev
-                            if entry is not None:
-                                turn_outputs.append(entry)
-                                extend_sources(
-                                    all_sources, entry[1].get("sources", [])
-                                )
-                    else:
-                        for tc in batch:
-                            yield tool_start(
-                                tc.id, tc.name, TOOL_LABELS[tc.name], tc.arguments
-                            )
-                            out, duration_ms = await self._execute_tool(
-                                tc,
+                            async for ev, entry in self._run_parallel_batch(
+                                batch,
                                 active_doc_path=tool_active_doc_path,
                                 conversation_id=conversation_id,
-                            )
-                            yield emit_tool_result_sse(tc, out, duration_ms)
-                            turn_outputs.append((tc, out, duration_ms))
-                            extend_sources(all_sources, out.get("sources", []))
+                            ):
+                                yield ev
+                                if entry is not None:
+                                    turn_outputs.append(entry)
+                                    extend_sources(
+                                        all_sources, entry[1].get("sources", [])
+                                    )
+                        else:
+                            for tc in batch:
+                                yield tool_start(
+                                    tc.id,
+                                    tc.name,
+                                    TOOL_LABELS[tc.name],
+                                    tc.arguments,
+                                )
+                                out, duration_ms = await self._execute_tool(
+                                    tc,
+                                    active_doc_path=tool_active_doc_path,
+                                    conversation_id=conversation_id,
+                                )
+                                yield emit_tool_result_sse(tc, out, duration_ms)
+                                turn_outputs.append((tc, out, duration_ms))
+                                extend_sources(all_sources, out.get("sources", []))
 
-                self._append_tool_turn(messages, result, turn_outputs)
-                tool_call_count += len(result.tool_calls)
-                continue
+                    self._append_tool_turn(messages, result, turn_outputs)
+                    tool_call_count += len(result.tool_calls)
+                    continue
 
-            break
-        else:
-            yield text_delta(_LIMIT_MSG)
+                report.stop_reason = (
+                    "assistant_reply_empty"
+                    if not (result.content or "").strip()
+                    else "assistant_reply"
+                )
+                break
+            else:
+                report.stop_reason = "tool_call_limit"
+                yield text_delta(_LIMIT_MSG)
 
-        yield done(all_sources, int((time.monotonic() - start) * 1000))
+            duration_ms = int((time.monotonic() - start) * 1000)
+            report.done_emitted = True
+            yield done(all_sources, duration_ms)
+        except asyncio.CancelledError:
+            report.stop_reason = "cancelled"
+            report.detail = "asyncio.CancelledError during agent loop"
+            raise
+        except Exception as e:
+            report.stop_reason = "error"
+            report.detail = str(e)
+            raise
+        finally:
+            report.llm_rounds = llm_rounds
+            report.tool_calls_total = tool_call_count
+            report.duration_ms = int((time.monotonic() - start) * 1000)
+            if report.stop_reason == "unknown":
+                if report.done_emitted:
+                    report.stop_reason = "done_emitted"
+                else:
+                    report.stop_reason = "consumer_aborted"
+                    report.detail = "SSE consumer closed before done event"
+            level = (
+                logging.WARNING
+                if report.stop_reason
+                in (
+                    "cancelled",
+                    "consumer_aborted",
+                    "llm_stream_incomplete",
+                    "error",
+                    "assistant_reply_empty",
+                )
+                else logging.INFO
+            )
+            report.emit(_log, level=level)
 
     def _split_batches(self, tool_calls: list[ToolCall]) -> list[list[ToolCall]]:
         if not self.settings.agent_parallel_tools:

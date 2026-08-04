@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import logging
+import time
+import uuid
 from collections.abc import AsyncIterator
 
 from app.engine.agent.events import done, error_event, text_delta, think_delta
 from app.engine.agent.prompts import MODE_DEFAULT, MODE_FORCE_WRITE, MODE_NO_WRITE
+from app.engine.agent.run_report import AgentRunReport
 from app.engine.chat.sse import parse_agent_sse_event
 from app.engine.chat.timeline import TimelineAccumulator
 from app.logging_config import get_logger
@@ -66,6 +70,19 @@ class ChatSessionRunner:
         assistant_saved = False
         cid = conversation_id
         turn_id = turn["turn_id"]
+        run_id = uuid.uuid4().hex[:8]
+        started = time.monotonic()
+        stop_reason = "unknown"
+        done_seen = False
+        turn_status: str | None = None
+        detail: str | None = None
+
+        _log.info(
+            "chat run start cid=%s turn_id=%s run_id=%s",
+            cid,
+            turn_id,
+            run_id,
+        )
 
         def _finalize(status: str, error: str | None = None) -> None:
             nonlocal assistant_saved
@@ -98,15 +115,27 @@ class ChatSessionRunner:
                 primary_doc_path=primary_doc,
                 history=history,
                 conversation_id=cid,
+                turn_id=turn_id,
+                run_id=run_id,
                 web_enabled=web_enabled,
             ):
                 parsed = parse_agent_sse_event(ev)
                 if parsed:
                     acc.accumulate(*parsed)
                     if parsed[0] == "done":
+                        done_seen = True
+                        stop_reason = "turn_complete"
+                        turn_status = "complete"
                         _finalize("complete")
                 yield ev
+            if not done_seen and stop_reason == "unknown":
+                stop_reason = "agent_finished_without_done"
+                detail = "agent generator ended without done SSE event"
         except asyncio.CancelledError:
+            stop_reason = "client_disconnect"
+            turn_status = "interrupted"
+            detail = "asyncio.CancelledError (client closed SSE or server shutdown)"
+
             def _finalize_partial() -> None:
                 if acc.timeline or acc.assistant_text:
                     _finalize("interrupted")
@@ -114,17 +143,48 @@ class ChatSessionRunner:
             await asyncio.shield(asyncio.to_thread(_finalize_partial))
             raise
         except Exception as e:
+            stop_reason = "agent_exception"
+            turn_status = "interrupted"
+            detail = str(e)
             _finalize("interrupted", error=str(e))
             yield error_event(str(e))
         finally:
             if not assistant_saved and (acc.timeline or acc.assistant_text):
+                if stop_reason == "unknown":
+                    stop_reason = "stream_closed_partial"
+                    detail = "HTTP stream closed with partial assistant output"
+                turn_status = turn_status or "interrupted"
                 _finalize("interrupted")
             elif not assistant_saved:
-                _log.warning(
-                    "chat stream closed without persisting assistant cid=%s turn_id=%s",
-                    cid,
-                    turn_id,
+                if stop_reason == "unknown":
+                    stop_reason = "stream_closed_empty"
+                    detail = "HTTP stream closed before any assistant output"
+
+            report = AgentRunReport(
+                layer="chat",
+                stop_reason=stop_reason,
+                conversation_id=cid,
+                turn_id=turn_id,
+                run_id=run_id,
+                done_emitted=done_seen,
+                turn_status=turn_status,
+                duration_ms=int((time.monotonic() - started) * 1000),
+                detail=detail,
+            )
+            level = (
+                logging.WARNING
+                if turn_status == "interrupted"
+                or stop_reason
+                in (
+                    "client_disconnect",
+                    "stream_closed_partial",
+                    "stream_closed_empty",
+                    "agent_exception",
+                    "agent_finished_without_done",
                 )
+                else logging.INFO
+            )
+            report.emit(_log, level=level)
 
 
 def ingest_from_write_kb_result(data: dict) -> dict:
