@@ -35,6 +35,8 @@
 
 `move_doc` 使用 `from_path` + `to_directory` + `to_filename`。
 
+维护性全量文档索引重建：`backup/reindex.reindex_all` → `KnowledgeWriter.reindex_markdown_body`（不写 changelog）。
+
 ## 聊天持久化
 
 1. `begin_turn` → 写入用户消息 + running turn  
