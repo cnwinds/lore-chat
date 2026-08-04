@@ -39,22 +39,9 @@ def build_memory_subgraph(
     llm: LLMClient,
     conversations: ConversationStore,
     *,
-    workspace_id: str,
-    memory_service: MemoryService | None = None,
+    memory_service: MemoryService,
 ) -> MemorySubgraph:
-    if memory_service is None:
-        memory_store = MemoryStore(
-            settings.kb_path / ".kb" / "memory" / "memory.db",
-            owner_key=workspace_id,
-        )
-        memory_service = MemoryService(
-            memory_store,
-            repo,
-            conversations=None,
-            indexer=None,
-        )
-    else:
-        memory_store = memory_service.store
+    memory_store = memory_service.store
     memory_observer = MemoryObserver(
         memory_store,
         extractor=LLMMemoryExtractor(llm),

@@ -93,12 +93,7 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
     )
 
     memory = build_memory_subgraph(
-        settings,
-        repo,
-        llm,
-        conversations,
-        workspace_id=workspace_id,
-        memory_service=memory_service,
+        settings, repo, llm, conversations, memory_service=memory_service
     )
 
     derivation_worker = DerivationWorker(
@@ -204,8 +199,9 @@ def apply_settings(
     new_llm = llm or OpenAILLMClient(settings)
     container.llm = new_llm
     if container._index_subgraph is not None:
-        container._index_subgraph.rebind_llm(new_llm)
-    container.derivation_worker.llm = new_llm
+        container._index_subgraph.rebind_llm(
+            new_llm, derivation_worker=container.derivation_worker
+        )
     if container._memory_subgraph is not None:
         container._memory_subgraph.rebind_llm(new_llm)
     if container._agent_subgraph is not None:

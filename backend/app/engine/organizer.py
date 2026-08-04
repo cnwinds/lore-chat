@@ -602,6 +602,14 @@ class Organizer:
                 continue_prompt="\n".join(parts),
             )
 
+        if not payload.get("kind"):
+            return IngestResult(
+                status="saved",
+                rel_path=None,
+                question_id=None,
+                message=f"已确认：{'、'.join(labels)}",
+            )
+
         parts = [
             "用户通过选项确认了要记录的内容：",
             "\n".join(f"- {label}" for label in labels),

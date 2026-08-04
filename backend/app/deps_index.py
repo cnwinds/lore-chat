@@ -9,6 +9,7 @@ from app.index.fulltext import FullTextIndex
 from app.index.indexer import Indexer
 from app.index.revision import IndexRevision
 from app.index.vector import VectorIndex
+from app.engine.derivation_worker import DerivationWorker
 from app.engine.retriever import Retriever
 from app.models.llm import LLMClient
 from app.storage.repo import KnowledgeRepo
@@ -24,9 +25,13 @@ class IndexSubgraph:
     index_revision: IndexRevision
     retriever: Retriever
 
-    def rebind_llm(self, llm: LLMClient) -> None:
+    def rebind_llm(
+        self, llm: LLMClient, *, derivation_worker: DerivationWorker | None = None
+    ) -> None:
         self.indexer.llm = llm
         self.retriever.llm = llm
+        if derivation_worker is not None:
+            derivation_worker.llm = llm
 
 
 def build_index_subgraph(
