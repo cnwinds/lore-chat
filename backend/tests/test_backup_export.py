@@ -3,7 +3,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from app.backup.export_kb import build_export_zip
+from app.backup.export_kb import build_directory_zip, build_export_zip
 from app.config import Settings
 from app.main import create_app
 from app.models.llm import FakeLLMClient
@@ -32,6 +32,21 @@ def test_export_includes_docs_excludes_index(tmp_path: Path):
         for n in names
         if "vec" in n
     )
+
+
+def test_directory_zip_contains_folder_prefix(tmp_path: Path):
+    kb = tmp_path / "kb"
+    (kb / "导入测试").mkdir(parents=True)
+    (kb / "导入测试" / "a.md").write_text("# a\n", encoding="utf-8")
+    (kb / "导入测试" / "子").mkdir()
+    (kb / "导入测试" / "子" / "b.txt").write_bytes(b"hi")
+
+    out = tmp_path / "pack.zip"
+    name = build_directory_zip(kb, "导入测试", out)
+    assert name == "导入测试"
+    with zipfile.ZipFile(out) as z:
+        names = sorted(z.namelist())
+    assert names == ["导入测试/a.md", "导入测试/子/b.txt"]
 
 
 def test_export_api_requires_auth_and_returns_zip(client, tmp_path):

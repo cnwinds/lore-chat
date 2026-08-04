@@ -32,6 +32,21 @@ def test_import_entry_attachment(tmp_path):
     assert repo.abs_path("d/attachments/n.txt").exists()
 
 
+def test_move_directory_entry(tmp_path):
+    repo = KnowledgeRepo(tmp_path / "knowledge")
+    repo.write_doc("projects/mini-app/a.md", {"title": "A"}, "a\n", commit_msg="add")
+    llm = FakeLLMClient(embed_dim=8)
+    idx = Indexer(VectorIndex(tmp_path / "vec"), FullTextIndex(tmp_path / "fts.db"), llm)
+    writer = KnowledgeWriter(repo, idx)
+    new_root = writer.move_directory_entry(
+        from_path="projects/mini-app",
+        to_directory="archive",
+    )
+    assert new_root == "archive/mini-app"
+    assert repo.read_doc("archive/mini-app/a.md").body == "a\n"
+    assert "projects/mini-app/a.md" not in repo.list_tree()
+
+
 def test_reindex_markdown_body_without_changelog(tmp_path):
     repo = KnowledgeRepo(tmp_path / "knowledge")
     repo.write_doc("b.md", {"title": "B"}, "one\n", commit_msg="add b")

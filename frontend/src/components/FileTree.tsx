@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type DragEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import {
   buildFileTree,
   collectDefaultExpandedFolderPaths,
@@ -6,6 +6,22 @@ import {
   type TreeNode,
 } from "../utils/fileTree";
 import { isMarkdownPath } from "../api";
+import { dropEffectForTransfer } from "../utils/droppedFiles";
+
+function parentDirectoryFromPath(path: string): string {
+  const idx = path.lastIndexOf("/");
+  return idx === -1 ? "" : path.slice(0, idx);
+}
+
+function folderPathsContainingFile(filePath: string): string[] {
+  const parts = filePath.split("/").filter(Boolean);
+  if (parts.length <= 1) return [];
+  const folders: string[] = [];
+  for (let i = 0; i < parts.length - 1; i++) {
+    folders.push(parts.slice(0, i + 1).join("/"));
+  }
+  return folders;
+}
 
 type SelectMods = { ctrlKey?: boolean; metaKey?: boolean; shiftKey?: boolean };
 
@@ -17,12 +33,15 @@ export type FileTreeNodeContext = {
 
 type Props = {
   paths: string[];
-  selectedPath: string | null;
+  /** 当前在预览中打开的文件路径（侧边栏高亮） */
+  activePaths?: string[];
   onSelectFile: (path: string, mods?: SelectMods) => void;
   dropHighlightDir: string | null;
   onDropHighlightDir: (dir: string | null) => void;
-  onDropFiles: (files: FileList, directory: string) => void;
+  onDropFiles: (dataTransfer: DataTransfer, directory: string) => void;
   onMovePath: (fromPath: string, toDirectory: string) => void;
+  onInternalDragStart?: () => void;
+  onInternalDragEnd?: () => void;
   onContextMenu: (e: React.MouseEvent, ctx: FileTreeNodeContext) => void;
   renamingPath: string | null;
   renamingValue: string;
@@ -35,12 +54,14 @@ type Props = {
 
 export function FileTree({
   paths,
-  selectedPath,
+  activePaths = [],
   onSelectFile,
   dropHighlightDir,
   onDropHighlightDir,
   onDropFiles,
   onMovePath,
+  onInternalDragStart,
+  onInternalDragEnd,
   onContextMenu,
   renamingPath,
   renamingValue,
@@ -51,14 +72,54 @@ export function FileTree({
   disabled,
 }: Props) {
   const tree = useMemo(() => buildFileTree(paths), [paths]);
+  const activePathSet = useMemo(() => new Set(activePaths), [activePaths]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [dragPath, setDragPath] = useState<string | null>(null);
+  const dragPathRef = useRef<string | null>(null);
+
+  function setDragSource(path: string | null) {
+    dragPathRef.current = path;
+    setDragPath(path);
+    if (path === null) onInternalDragEnd?.();
+  }
+
+  function readDragSource(e: DragEvent): string {
+    return (
+      e.dataTransfer.getData("text/kb-path") ||
+      e.dataTransfer.getData("text/plain") ||
+      dragPathRef.current ||
+      dragPath ||
+      ""
+    );
+  }
+
+  function setDragPayload(e: DragEvent, path: string) {
+    e.dataTransfer.setData("text/kb-path", path);
+    e.dataTransfer.setData("text/plain", path);
+    e.dataTransfer.effectAllowed = "move";
+    dragPathRef.current = path;
+    setDragPath(path);
+    onInternalDragStart?.();
+  }
 
   useEffect(() => {
     if (tree.length > 0) {
       setExpanded(new Set(collectDefaultExpandedFolderPaths(tree)));
     }
   }, [tree]);
+
+  useEffect(() => {
+    if (!activePaths.length) return;
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      for (const filePath of activePaths) {
+        for (const folder of folderPathsContainingFile(filePath)) {
+          next.add(folder);
+        }
+      }
+      return next;
+    });
+  }, [activePaths]);
 
   function toggleFolder(path: string) {
     setExpanded((prev) => {
@@ -74,19 +135,20 @@ export function FileTree({
     e.stopPropagation();
     onDropHighlightDir(null);
     if (disabled || isSystemLayerPath(directory)) return;
-    if (e.dataTransfer.files?.length) {
-      onDropFiles(e.dataTransfer.files, directory);
+    if (e.dataTransfer.types.includes("Files")) {
+      onDropFiles(e.dataTransfer, directory);
       return;
     }
-    const from = e.dataTransfer.getData("text/kb-path") || dragPath;
-    if (from) onMovePath(from, directory);
-    setDragPath(null);
+    const from = readDragSource(e);
+    if (from) void onMovePath(from, directory);
+    setDragSource(null);
   }
 
   function allowDrop(e: DragEvent, directory: string) {
     if (disabled || isSystemLayerPath(directory)) return;
     e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = dropEffectForTransfer(e.dataTransfer);
     onDropHighlightDir(directory);
   }
 
@@ -99,14 +161,18 @@ export function FileTree({
           node={node}
           depth={0}
           expanded={expanded}
-          selectedPath={selectedPath}
+          activePathSet={activePathSet}
           dropHighlightDir={dropHighlightDir}
           dragPath={dragPath}
-          setDragPath={setDragPath}
+          setDragSource={setDragSource}
+          readDragSource={readDragSource}
+          setDragPayload={setDragPayload}
           onToggleFolder={toggleFolder}
           onSelectFile={onSelectFile}
           onFolderDrop={handleFolderDrop}
           onFolderDragOver={allowDrop}
+          onDropFiles={onDropFiles}
+          onMovePath={onMovePath}
           onDropHighlightDir={onDropHighlightDir}
           onContextMenu={onContextMenu}
           renamingPath={renamingPath}
@@ -126,14 +192,18 @@ function TreeItem({
   node,
   depth,
   expanded,
-  selectedPath,
+  activePathSet,
   dropHighlightDir,
   dragPath,
-  setDragPath,
+  setDragSource,
+  readDragSource,
+  setDragPayload,
   onToggleFolder,
   onSelectFile,
   onFolderDrop,
   onFolderDragOver,
+  onDropFiles,
+  onMovePath,
   onDropHighlightDir,
   onContextMenu,
   renamingPath,
@@ -147,14 +217,18 @@ function TreeItem({
   node: TreeNode;
   depth: number;
   expanded: Set<string>;
-  selectedPath: string | null;
+  activePathSet: Set<string>;
   dropHighlightDir: string | null;
   dragPath: string | null;
-  setDragPath: (p: string | null) => void;
+  setDragSource: (p: string | null) => void;
+  readDragSource: (e: DragEvent) => string;
+  setDragPayload: (e: DragEvent, path: string) => void;
   onToggleFolder: (path: string) => void;
   onSelectFile: (path: string, mods?: SelectMods) => void;
   onFolderDrop: (e: DragEvent, directory: string) => void;
   onFolderDragOver: (e: DragEvent, directory: string) => void;
+  onDropFiles: (dataTransfer: DataTransfer, directory: string) => void;
+  onMovePath: (fromPath: string, toDirectory: string) => void;
   onDropHighlightDir: (dir: string | null) => void;
   onContextMenu: (e: React.MouseEvent, ctx: FileTreeNodeContext) => void;
   renamingPath: string | null;
@@ -171,23 +245,43 @@ function TreeItem({
   if (node.type === "folder") {
     const isOpen = expanded.has(node.path);
     const dropActive = dropHighlightDir === node.path;
+    const isRenaming = renamingPath === node.path;
     return (
       <>
         <div
           className={`file-tree-row folder${systemLayer ? " system-layer" : ""}${dropActive ? " drop-target" : ""}`}
           style={{ paddingLeft: pad }}
-          onClick={() => onToggleFolder(node.path)}
+          draggable={!disabled && !systemLayer && !isRenaming}
+          onDragStart={(e) => setDragPayload(e, node.path)}
+          onDragEnd={() => setDragSource(null)}
+          onClick={() => {
+            if (!isRenaming) onToggleFolder(node.path);
+          }}
           onContextMenu={(e) => {
             e.preventDefault();
             onContextMenu(e, { node, kind: "folder", path: node.path });
           }}
           onDragOver={(e) => onFolderDragOver(e, node.path)}
-          onDragLeave={() => onDropHighlightDir(null)}
           onDrop={(e) => onFolderDrop(e, node.path)}
         >
           <span className="file-tree-chevron">{isOpen ? "▼" : "▶"}</span>
           <span className="file-tree-icon">{isOpen ? "📂" : "📁"}</span>
-          <span className="file-tree-label">{node.name}</span>
+          {isRenaming ? (
+            <input
+              className="file-tree-rename-input"
+              value={renamingValue}
+              onChange={(e) => onRenamingValueChange(e.target.value)}
+              onBlur={onRenameCommit}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") onRenameCommit();
+                if (e.key === "Escape") onRenameCancel();
+              }}
+              autoFocus
+              onClick={(e) => e.stopPropagation()}
+            />
+          ) : (
+            <span className="file-tree-label">{node.name}</span>
+          )}
         </div>
         {isOpen &&
           node.children.map((child) => (
@@ -196,14 +290,18 @@ function TreeItem({
               node={child}
               depth={depth + 1}
               expanded={expanded}
-              selectedPath={selectedPath}
+              activePathSet={activePathSet}
               dropHighlightDir={dropHighlightDir}
               dragPath={dragPath}
-              setDragPath={setDragPath}
+              setDragSource={setDragSource}
+              readDragSource={readDragSource}
+              setDragPayload={setDragPayload}
               onToggleFolder={onToggleFolder}
               onSelectFile={onSelectFile}
               onFolderDrop={onFolderDrop}
               onFolderDragOver={onFolderDragOver}
+              onDropFiles={onDropFiles}
+              onMovePath={onMovePath}
               onDropHighlightDir={onDropHighlightDir}
               onContextMenu={onContextMenu}
               renamingPath={renamingPath}
@@ -219,21 +317,50 @@ function TreeItem({
     );
   }
 
-  const selected = selectedPath === node.path;
+  const selected = activePathSet.has(node.path);
   const isRenaming = renamingPath === node.path;
   const isAttach = !isMarkdownPath(node.path);
+  const fileParentDir = parentDirectoryFromPath(node.path);
+
+  function handleFileDragOver(e: DragEvent) {
+    if (disabled || isSystemLayerPath(node.path)) return;
+    const files = e.dataTransfer.types.includes("Files");
+    const kbPath = e.dataTransfer.types.includes("text/kb-path") ||
+      e.dataTransfer.types.includes("text/plain");
+    if (!files && !kbPath) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = dropEffectForTransfer(e.dataTransfer);
+    onDropHighlightDir(fileParentDir);
+  }
+
+  function handleFileDrop(e: DragEvent) {
+    if (disabled || isSystemLayerPath(node.path)) return;
+    if (e.dataTransfer.types.includes("Files")) {
+      e.preventDefault();
+      e.stopPropagation();
+      onDropHighlightDir(null);
+      onDropFiles(e.dataTransfer, fileParentDir);
+      return;
+    }
+    const from = readDragSource(e);
+    if (!from) return;
+    e.preventDefault();
+    e.stopPropagation();
+    onDropHighlightDir(null);
+    void onMovePath(from, fileParentDir);
+    setDragSource(null);
+  }
 
   return (
     <div
       className={`file-tree-row file${systemLayer ? " system-layer" : ""}${selected ? " selected" : ""}`}
       style={{ paddingLeft: pad + 18 }}
       draggable={!disabled && !systemLayer && !isRenaming}
-      onDragStart={(e) => {
-        setDragPath(node.path);
-        e.dataTransfer.setData("text/kb-path", node.path);
-        e.dataTransfer.effectAllowed = "move";
-      }}
-      onDragEnd={() => setDragPath(null)}
+      onDragOver={handleFileDragOver}
+      onDrop={handleFileDrop}
+      onDragStart={(e) => setDragPayload(e, node.path)}
+      onDragEnd={() => setDragSource(null)}
       onContextMenu={(e) => {
         e.preventDefault();
         onContextMenu(e, { node, kind: "file", path: node.path });
@@ -255,7 +382,7 @@ function TreeItem({
       ) : (
         <button
           type="button"
-          className="file-tree-file-btn"
+          className={`file-tree-file-btn${selected ? " file-tree-file-btn--active" : ""}`}
           onClick={(e) =>
             onSelectFile(node.path, {
               ctrlKey: e.ctrlKey,

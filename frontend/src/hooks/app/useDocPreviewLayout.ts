@@ -6,6 +6,7 @@ import {
   setStoredFloatWidth,
   setStoredPanelWidth,
 } from "../../utils/docStorage";
+import { remapKbPath } from "../../utils/remapKbPath";
 
 function pathTouchesChanged(path: string | null, changedPath?: string): boolean {
   return Boolean(
@@ -172,13 +173,19 @@ export function useDocPreviewLayout(refreshSidebar: () => void) {
   }
 
   function remapOpenPath(from: string, to: string) {
-    if (floatPath === from) {
-      setFloatPath(to);
-      setFloatRefreshKey((k) => k + 1);
+    if (floatPath) {
+      const next = remapKbPath(floatPath, from, to);
+      if (next !== floatPath) {
+        setFloatPath(next);
+        setFloatRefreshKey((k) => k + 1);
+      }
     }
-    if (pinnedPath === from) {
-      setPinnedPath(to);
-      setPinnedRefreshKey((k) => k + 1);
+    if (pinnedPath) {
+      const next = remapKbPath(pinnedPath, from, to);
+      if (next !== pinnedPath) {
+        setPinnedPath(next);
+        setPinnedRefreshKey((k) => k + 1);
+      }
     }
   }
 

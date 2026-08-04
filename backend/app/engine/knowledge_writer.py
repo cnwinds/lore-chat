@@ -8,6 +8,7 @@ from app.index.indexer import Indexer
 from app.storage import frontmatter
 from app.storage.kb_paths import (
     KbPathError,
+    join_kb_directory,
     join_kb_path,
     normalize_directory,
     title_from_rel_path,
@@ -228,6 +229,52 @@ class KnowledgeWriter:
         )
         return {"rel_path": rel, "kind": "attachment", "indexed": indexed}
 
+    def move_directory_entry(
+        self,
+        *,
+        from_path: str,
+        to_directory: str,
+        to_name: str | None = None,
+    ) -> str:
+        from_norm = from_path.replace("\\", "/").strip("/")
+        if not from_norm:
+            raise ValueError("不能移动根目录")
+        name = _safe_basename(to_name or PurePosixPath(from_norm).name)
+        try:
+            new_root = join_kb_directory(to_directory, name)
+        except KbPathError as e:
+            raise ValueError(str(e)) from e
+        if new_root == from_norm or new_root.startswith(f"{from_norm}/"):
+            raise ValueError("不能移动到自身或其子目录内")
+        to_dir_norm = to_directory.replace("\\", "/").strip("/")
+        if to_dir_norm == from_norm or to_dir_norm.startswith(f"{from_norm}/"):
+            raise ValueError("不能移动到自身或其子目录内")
+        if self.repo.abs_path(new_root).exists():
+            raise KbPathExistsError(new_root)
+
+        old_paths, new_paths = self.repo.move_directory(
+            from_norm,
+            new_root,
+            commit_msg=f"move dir: {from_norm} -> {new_root}",
+        )
+        if not old_paths:
+            raise FileNotFoundError(from_path)
+
+        self.drop_from_index(old_paths)
+        for new in new_paths:
+            if is_markdown_path(new):
+                doc = self.repo.read_doc(new)
+                if self.indexer is not None:
+                    self.indexer.reindex_doc(new, doc.body)
+            else:
+                extracted = extract_text(self.repo.abs_path(new))
+                self.index_extracted_text(new, extracted)
+        self.repo.log_change(
+            f"移动文件夹 {from_norm} → {new_root}（{len(new_paths)} 个文件）",
+            commit_msg=f"chore: changelog move dir {new_root}",
+        )
+        return new_root
+
     def move_entry(
         self,
         *,
@@ -238,6 +285,14 @@ class KnowledgeWriter:
         from_norm = from_path.replace("\\", "/").lstrip("/")
         if self.repo.is_protected(from_norm):
             raise ValueError(f"禁止移动：{from_path}")
+
+        from_abs = self.repo.abs_path(from_norm)
+        if from_abs.is_dir():
+            return self.move_directory_entry(
+                from_path=from_norm,
+                to_directory=to_directory,
+                to_name=to_filename,
+            )
 
         if is_markdown_path(from_norm):
             fn = to_filename or PurePosixPath(from_norm).name

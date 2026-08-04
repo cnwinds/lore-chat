@@ -270,6 +270,32 @@ async def download(path: str, request: Request):
     )
 
 
+@router.get("/download-zip")
+async def download_zip(path: str, request: Request):
+    from app.backup.export_kb import build_directory_zip
+
+    c = _c(request)
+    norm = path.replace("\\", "/").strip("/")
+    if not norm:
+        raise HTTPException(400, "请指定目录")
+    if c.repo.is_protected(norm):
+        raise HTTPException(403, "禁止下载该目录")
+    try:
+        buf = io.BytesIO()
+        base_name = build_directory_zip(c.repo.root, norm, buf)
+        buf.seek(0)
+    except FileNotFoundError:
+        raise HTTPException(404, "目录不存在")
+    except NotADirectoryError:
+        raise HTTPException(400, "不是目录")
+    filename = f"{base_name}.zip"
+    return StreamingResponse(
+        buf,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @router.get("/tree")
 async def tree(request: Request):
     return {"docs": _c(request).repo.list_tree()}

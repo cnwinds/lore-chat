@@ -817,6 +817,45 @@ export function downloadUrl(path: string) {
   return `${BASE}/api/download?path=${encodeURIComponent(path)}`;
 }
 
+export async function downloadKbDirectory(directory: string) {
+  const r = await fetch(
+    `${BASE}/api/download-zip?path=${encodeURIComponent(directory)}`,
+    { credentials: "include" },
+  );
+  if (!r.ok) {
+    let detail = r.statusText;
+    try {
+      const body = await r.json();
+      detail =
+        typeof body.detail === "string"
+          ? body.detail
+          : typeof body.message === "string"
+            ? body.message
+            : JSON.stringify(body);
+    } catch {
+      try {
+        detail = (await r.text()) || detail;
+      } catch {
+        /* ignore */
+      }
+    }
+    const err = new Error(detail || `下载失败 (${r.status})`) as ApiError;
+    err.status = r.status;
+    if (r.status === 401) {
+      window.dispatchEvent(new CustomEvent("auth:unauthorized"));
+    }
+    throw err;
+  }
+  const blob = await r.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  const base = directory.replace(/\/+$/, "").split("/").pop() || "folder";
+  a.download = `${base}.zip`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 export async function listConversations() {
   return apiFetch<{ conversations: ConversationSummary[] }>("/api/conversations");
 }

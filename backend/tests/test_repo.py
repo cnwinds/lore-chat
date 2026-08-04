@@ -101,6 +101,38 @@ def test_delete_directory(repo):
     assert not (repo.root / "projects" / "mini-app").exists()
 
 
+def test_move_directory(repo):
+    repo.write_doc("projects/mini-app/a.md", {"title": "A"}, "a\n", commit_msg="add")
+    repo.save_attachment(
+        "projects/mini-app", "x.pdf", b"pdf", commit_msg="att"
+    )
+    old, new = repo.move_directory(
+        "projects/mini-app", "archive/mini-app", commit_msg="move dir"
+    )
+    assert set(old) == {
+        "projects/mini-app/a.md",
+        "projects/mini-app/attachments/x.pdf",
+    }
+    assert set(new) == {
+        "archive/mini-app/a.md",
+        "archive/mini-app/attachments/x.pdf",
+    }
+    assert not (repo.root / "projects" / "mini-app").exists()
+    assert (repo.root / "archive" / "mini-app" / "a.md").is_file()
+    assert "archive/mini-app/a.md" in repo.list_tree()
+
+
+def test_move_file_attachment(repo):
+    repo.save_attachment("d", "n.txt", b"hi", commit_msg="att")
+    new = repo.move_file(
+        "d/attachments/n.txt",
+        "d/attachments/renamed.txt",
+        commit_msg="rename att",
+    )
+    assert new == "d/attachments/renamed.txt"
+    assert repo.get_attachment(new) == b"hi"
+
+
 def test_delete_protected_path_raises(repo):
     with pytest.raises(ValueError, match="禁止删除"):
         repo.delete_path(".kb/changelog.md", commit_msg="nope")

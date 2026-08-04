@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   createConversation,
   listConversations,
@@ -9,6 +9,21 @@ import type { useDocPreviewLayout } from "./useDocPreviewLayout";
 import type { JumpTarget } from "../chat/useConversationJump";
 
 type DocPreview = ReturnType<typeof useDocPreviewLayout>;
+
+function treeActivePaths(
+  doc: DocPreview,
+  composerPrimaryPath: string | null,
+): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const p of [doc.pinnedPath, doc.floatPath, composerPrimaryPath]) {
+    if (p && !seen.has(p)) {
+      seen.add(p);
+      out.push(p);
+    }
+  }
+  return out;
+}
 
 type SelectMods = { ctrlKey?: boolean; metaKey?: boolean; shiftKey?: boolean };
 
@@ -71,9 +86,14 @@ export function useConversationShell({
     doc.closeAllPreviews();
   }
 
+  const kbTreeActivePaths = useMemo(
+    () => treeActivePaths(doc, composerPrimaryPath),
+    [doc.pinnedPath, doc.floatPath, composerPrimaryPath],
+  );
+
   const sidebarProps: ComponentProps<typeof Sidebar> = {
     refreshKey: sidebarRefreshKey,
-    selectedPath: composerPrimaryPath,
+    activePaths: kbTreeActivePaths,
     activeConversationId,
     titleOverrides,
     collapsed:

@@ -895,6 +895,16 @@ a:hover {
   font-weight: 500;
 }
 
+.file-tree-row.file.selected .file-tree-label {
+  color: var(--accent-hover);
+  font-weight: 600;
+}
+
+.file-tree-file-btn--active .file-tree-label {
+  color: var(--accent-hover);
+  font-weight: 600;
+}
+
 .file-tree-row.system-layer {
   color: var(--system-layer);
   font-weight: 500;
@@ -960,11 +970,131 @@ a:hover {
   padding-right: 8px;
 }
 
-.file-tree-row.folder.drop-target,
-.sidebar-tree-section.drop-target-root .file-tree {
+.file-tree-row.folder {
+  cursor: grab;
+}
+
+.file-tree-row.folder.drop-target {
   outline: 2px dashed var(--accent);
   outline-offset: -2px;
   background: var(--accent-soft);
+}
+
+.kb-floating-root-drop-shell {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 40;
+  pointer-events: none;
+}
+
+.kb-floating-root-drop-backdrop {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 52px;
+  background-color: var(--bg-muted);
+  border-bottom: 1px solid var(--border);
+  pointer-events: none;
+}
+
+.kb-floating-root-drop {
+  position: relative;
+  z-index: 1;
+  margin: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 2px dashed var(--accent);
+  border-radius: var(--radius-md);
+  background-color: var(--bg-surface);
+  box-shadow: var(--shadow-md);
+  font-size: 12px;
+  color: var(--text);
+  pointer-events: auto;
+}
+
+.kb-floating-root-drop.active {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-md), inset 0 0 0 1px var(--accent);
+}
+
+.kb-floating-root-drop-title {
+  font-weight: 700;
+  position: relative;
+  z-index: 1;
+}
+
+.kb-floating-root-drop-hint {
+  color: var(--text-muted);
+  font-size: 11px;
+  position: relative;
+  z-index: 1;
+}
+
+.sidebar-tree-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  isolation: isolate;
+}
+
+.sidebar-tree-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.sidebar-tree-scroll .file-tree {
+  overflow: visible;
+  flex: none;
+  min-height: auto;
+}
+
+.kb-drop-target-hint {
+  margin: 0 12px 6px;
+  padding: 6px 8px;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--accent-soft);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--accent);
+}
+
+.kb-drop-target-hint strong {
+  font-weight: 600;
+}
+
+.kb-import-progress {
+  margin: 0 12px 8px;
+}
+
+.kb-import-progress-text {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kb-import-progress-bar {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+  overflow: hidden;
+}
+
+.kb-import-progress-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.15s ease;
 }
 
 .file-tree-rename-input {

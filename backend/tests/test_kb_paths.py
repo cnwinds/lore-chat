@@ -13,3 +13,10 @@ def test_join_kb_path_rejects_conv_prefix():
         join_kb_path("conv:abc", "note.md")
     with pytest.raises(KbPathError):
         join_kb_path("技术", "conv:abc.md")
+
+
+def test_join_kb_directory():
+    from app.storage.kb_paths import join_kb_directory
+
+    assert join_kb_directory("技术", "备忘") == "技术/备忘"
+    assert join_kb_directory("", "备忘") == "备忘"

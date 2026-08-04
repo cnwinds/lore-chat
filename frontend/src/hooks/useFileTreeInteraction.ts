@@ -1,7 +1,12 @@
 import { useCallback, useRef, useState, type DragEvent } from "react";
-import { downloadUrl } from "../api";
+import { isKbFolderMoveInvalid } from "../utils/kbTreeMove";
+import { downloadKbDirectory, downloadUrl } from "../api";
 import type { FileTreeNodeContext } from "../components/FileTree";
 import { isSystemLayerPath } from "../utils/fileTree";
+import {
+  collectDroppedFiles,
+  dropEffectForTransfer,
+} from "../utils/droppedFiles";
 import type { useKbTreeActions } from "./useKbTreeActions";
 
 type KbActions = ReturnType<typeof useKbTreeActions>;
@@ -27,6 +32,9 @@ export function useFileTreeInteraction({
   onKbPathsDeleted,
 }: Options) {
   const [dropHighlightDir, setDropHighlightDir] = useState<string | null>(null);
+  const [externalFileDrag, setExternalFileDrag] = useState(false);
+  const [internalKbDrag, setInternalKbDrag] = useState(false);
+  const externalDragDepthRef = useRef(0);
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
   const [renamingValue, setRenamingValue] = useState("");
   const [menu, setMenu] = useState<KbTreeContextMenu | null>(null);
@@ -44,7 +52,7 @@ export function useFileTreeInteraction({
     const from = renamingPath;
     setRenamingPath(null);
     if (!trimmed || trimmed === from.split("/").pop()) return;
-    const newPath = await kb.renameFile(from, trimmed);
+    const newPath = await kb.renameEntry(from, trimmed);
     if (newPath && newPath !== from) {
       onKbPathChanged?.(from, newPath);
     }
@@ -65,12 +73,20 @@ export function useFileTreeInteraction({
       setMenu(null);
       const path = ctx.path;
 
-      if (action === "download" && ctx.kind === "file") {
-        window.open(downloadUrl(path), "_blank", "noopener,noreferrer");
+      if (action === "download") {
+        if (ctx.kind === "file") {
+          window.open(downloadUrl(path), "_blank", "noopener,noreferrer");
+        } else {
+          try {
+            await downloadKbDirectory(path);
+          } catch (e) {
+            window.alert(e instanceof Error ? e.message : "下载失败");
+          }
+        }
         return;
       }
-      if (action === "rename" && ctx.kind === "file") {
-        startRename(path, ctx.node.type === "file" ? ctx.node.name : path);
+      if (action === "rename") {
+        startRename(path, ctx.node.name);
         return;
       }
       if (action === "delete") {
@@ -86,44 +102,127 @@ export function useFileTreeInteraction({
     [kb, menu, onKbPathsDeleted, startRename],
   );
 
-  const handleDropFiles = useCallback(
-    async (files: FileList, directory: string) => {
-      if (isSystemLayerPath(directory)) return;
-      await kb.importMany(files, directory);
+  const clearExternalDrag = useCallback(() => {
+    externalDragDepthRef.current = 0;
+    setExternalFileDrag(false);
+    setDropHighlightDir(null);
+  }, []);
+
+  const finishInternalDrag = useCallback(() => {
+    setInternalKbDrag(false);
+    setDropHighlightDir(null);
+  }, []);
+
+  const onInternalDragStart = useCallback(() => {
+    // 须在 dragStart 之后异步更新，否则重渲染会打断 HTML5 拖动
+    window.requestAnimationFrame(() => {
+      setInternalKbDrag(true);
+    });
+  }, []);
+
+  const onInternalDragEnd = useCallback(() => {
+    finishInternalDrag();
+  }, [finishInternalDrag]);
+
+  const handleFloatingRootDragOver = useCallback(
+    (e: DragEvent) => {
+      if (kb.busy) return;
+      const files = e.dataTransfer.types.includes("Files");
+      const kbPath =
+        e.dataTransfer.types.includes("text/kb-path") ||
+        e.dataTransfer.types.includes("text/plain");
+      if (!files && !kbPath) return;
+      e.preventDefault();
+      e.stopPropagation();
+      e.dataTransfer.dropEffect = dropEffectForTransfer(e.dataTransfer);
+      setDropHighlightDir("");
     },
-    [kb],
+    [kb.busy],
+  );
+
+  const handleDropFiles = useCallback(
+    async (dataTransfer: DataTransfer, directory: string) => {
+      if (isSystemLayerPath(directory)) return;
+      const items = await collectDroppedFiles(dataTransfer);
+      clearExternalDrag();
+      finishInternalDrag();
+      if (!items.length) return;
+      await kb.importMany(items, directory);
+    },
+    [clearExternalDrag, finishInternalDrag, kb],
   );
 
   const handleMovePath = useCallback(
     async (fromPath: string, toDirectory: string) => {
       if (isSystemLayerPath(fromPath) || isSystemLayerPath(toDirectory)) return;
+      if (isKbFolderMoveInvalid(fromPath, toDirectory)) return;
       const base = fromPath.split("/").pop();
       if (!base) return;
+      finishInternalDrag();
       const newPath = await kb.moveFile(fromPath, toDirectory, base);
       if (newPath && newPath !== fromPath) {
         onKbPathChanged?.(fromPath, newPath);
       }
     },
-    [kb, onKbPathChanged],
+    [finishInternalDrag, kb, onKbPathChanged],
+  );
+
+  const handleFloatingRootDrop = useCallback(
+    (e: DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (kb.busy) return;
+      if (e.dataTransfer.types.includes("Files")) {
+        void handleDropFiles(e.dataTransfer, "");
+        return;
+      }
+      const from =
+        e.dataTransfer.getData("text/kb-path") ||
+        e.dataTransfer.getData("text/plain");
+      if (from) void handleMovePath(from, "");
+    },
+    [handleDropFiles, handleMovePath, kb.busy],
   );
 
   const handleSectionDrop = useCallback(
     (e: DragEvent) => {
       e.preventDefault();
-      setDropHighlightDir(null);
       if (kb.busy) return;
-      if (e.dataTransfer.files?.length) {
-        void handleDropFiles(e.dataTransfer.files, "");
+      if (e.dataTransfer.types.includes("Files")) {
+        void handleDropFiles(e.dataTransfer, "");
+        return;
       }
+      const from =
+        e.dataTransfer.getData("text/kb-path") ||
+        e.dataTransfer.getData("text/plain");
+      if (from) void handleMovePath(from, "");
     },
-    [handleDropFiles, kb.busy],
+    [handleDropFiles, handleMovePath, kb.busy],
   );
+
+  const onKbSectionDragEnter = useCallback((e: DragEvent) => {
+    if (!e.dataTransfer.types.includes("Files")) return;
+    externalDragDepthRef.current += 1;
+    window.requestAnimationFrame(() => {
+      setExternalFileDrag(true);
+    });
+  }, []);
+
+  const onKbSectionDragLeave = useCallback((e: DragEvent) => {
+    if (!e.dataTransfer.types.includes("Files")) return;
+    externalDragDepthRef.current -= 1;
+    if (externalDragDepthRef.current <= 0) {
+      clearExternalDrag();
+    }
+  }, [clearExternalDrag]);
 
   const fileTreeProps = {
     dropHighlightDir,
     onDropHighlightDir: setDropHighlightDir,
     onDropFiles: handleDropFiles,
     onMovePath: handleMovePath,
+    onInternalDragStart,
+    onInternalDragEnd,
     onContextMenu: openContextMenu,
     renamingPath,
     renamingValue,
@@ -134,9 +233,9 @@ export function useFileTreeInteraction({
     disabled: kb.busy,
   };
 
-  const rootDropActive = dropHighlightDir === "";
-
   const closeMenu = useCallback(() => setMenu(null), []);
+
+  const showFloatingRoot = externalFileDrag || internalKbDrag;
 
   return {
     menu,
@@ -144,13 +243,25 @@ export function useFileTreeInteraction({
     closeMenu,
     handleMenuAction,
     fileTreeProps,
-    rootDropActive,
+    externalFileDrag,
+    showFloatingRoot,
+    floatingRootActive: dropHighlightDir === "",
+    floatingRootUploadMode: externalFileDrag,
+    onFloatingRootDragOver: handleFloatingRootDragOver,
+    onFloatingRootDrop: handleFloatingRootDrop,
+    onKbSectionDragEnter,
+    onKbSectionDragLeave,
     onRootDragOver: (e: DragEvent) => {
       if (kb.busy) return;
+      const files = e.dataTransfer.types.includes("Files");
+      const kbPath =
+        e.dataTransfer.types.includes("text/kb-path") ||
+        e.dataTransfer.types.includes("text/plain");
+      if (!files && !kbPath) return;
       e.preventDefault();
-      setDropHighlightDir("");
+      e.dataTransfer.dropEffect = dropEffectForTransfer(e.dataTransfer);
+      if (files) setDropHighlightDir("");
     },
-    onRootDragLeave: () => setDropHighlightDir(null),
     onRootDrop: handleSectionDrop,
   };
 }

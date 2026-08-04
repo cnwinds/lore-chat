@@ -229,6 +229,51 @@ class KnowledgeRepo:
         self.repo.index.commit(commit_msg)
         return to_norm
 
+    def move_directory(self, from_dir: str, to_dir: str, *, commit_msg: str) -> tuple[list[str], list[str]]:
+        from_norm = from_dir.replace("\\", "/").strip("/")
+        to_norm = to_dir.replace("\\", "/").strip("/")
+        if not from_norm:
+            raise ValueError("不能移动根目录")
+        if from_norm == to_norm:
+            return [], []
+        if self._is_protected(from_norm) or self._is_protected(to_norm):
+            raise ValueError(f"禁止移动: {from_dir} -> {to_dir}")
+        from_abs = self._abs(from_norm)
+        if not from_abs.exists():
+            raise FileNotFoundError(from_dir)
+        if not from_abs.is_dir():
+            raise ValueError(f"不是目录: {from_dir}")
+
+        to_abs = self._abs(to_norm)
+        if to_abs.exists():
+            raise ValueError(f"目标路径已存在：{to_dir}")
+
+        old_paths: list[str] = []
+        for p in sorted(from_abs.rglob("*")):
+            if not p.is_file():
+                continue
+            rel = p.relative_to(self.root).as_posix()
+            if not self._is_protected(rel):
+                old_paths.append(rel)
+
+        to_abs.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(from_abs), str(to_abs))
+
+        prefix_old = from_norm + "/"
+        prefix_new = to_norm + "/"
+        new_paths: list[str] = []
+        for old in old_paths:
+            if old.startswith(prefix_old):
+                new_paths.append(prefix_new + old[len(prefix_old) :])
+            else:
+                new_paths.append(to_norm)
+
+        if old_paths:
+            self.repo.index.remove(old_paths)
+            self.repo.index.add(new_paths)
+            self.repo.index.commit(commit_msg)
+        return old_paths, new_paths
+
     def log_change(
         self, entry: str, *, commit_msg: str = "chore: update changelog"
     ) -> None:

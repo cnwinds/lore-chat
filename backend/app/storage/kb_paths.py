@@ -48,5 +48,17 @@ def join_kb_path(directory: str, filename: str) -> str:
     return f"{d}/{f}" if d else f
 
 
+def join_kb_directory(base: str, folder_name: str) -> str:
+    """拼接知识库目录路径（文件夹名，非 Markdown 文件名）。"""
+    parent = normalize_directory(base)
+    name = (folder_name or "").replace("\\", "/").strip().strip("/")
+    if not name or "/" in name:
+        raise KbPathError(f"非法文件夹名：{folder_name}")
+    if name.startswith("."):
+        raise KbPathError(f"非法文件夹名：{folder_name}")
+    _reject_internal_segments("文件夹名", name)
+    return f"{parent}/{name}" if parent else name
+
+
 def title_from_rel_path(rel_path: str) -> str:
     return PurePosixPath(rel_path.replace("\\", "/")).stem

@@ -81,3 +81,45 @@ def _write_zip(zf: zipfile.ZipFile, kb_path: Path, manifest: dict) -> None:
     zf.writestr("manifest.json", manifest_json(manifest))
     for rel, path in _iter_export_files(kb_path):
         zf.write(path, rel)
+
+
+def _kb_user_file(rel: str, path: Path) -> bool:
+    if _should_exclude(rel):
+        return False
+    if rel.startswith(".kb/") or rel.startswith(".git/"):
+        return False
+    if path.name == ".gitkeep":
+        return False
+    return True
+
+
+def build_directory_zip(kb_path: Path, dir_rel: str, dest: Path | BinaryIO) -> str:
+    """Pack one knowledge-base directory; zip entries are `{folder_name}/…`. Returns base filename."""
+    root = Path(kb_path)
+    norm = _normalize_rel(dir_rel).strip("/")
+    if not norm or norm.startswith(".kb/") or norm.startswith(".git/"):
+        raise FileNotFoundError(dir_rel)
+
+    base = root / norm
+    if not base.exists():
+        raise FileNotFoundError(dir_rel)
+    if not base.is_dir():
+        raise NotADirectoryError(dir_rel)
+
+    folder_name = norm.rsplit("/", 1)[-1]
+    entries: list[tuple[str, Path]] = []
+    for path in sorted(base.rglob("*")):
+        if not path.is_file():
+            continue
+        rel = path.relative_to(root).as_posix()
+        if not _kb_user_file(rel, path):
+            continue
+        inner = path.relative_to(base).as_posix()
+        entries.append((f"{folder_name}/{inner}", path))
+
+    with zipfile.ZipFile(dest, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        if not entries:
+            zf.writestr(f"{folder_name}/", b"")
+        for arcname, path in entries:
+            zf.write(path, arcname)
+    return folder_name

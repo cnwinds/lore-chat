@@ -1,4 +1,5 @@
 import { useCallback, useState } from "react";
+import { remapKbPath, remapKbPathNullable } from "../utils/remapKbPath";
 import type { ComposerDocState } from "../types/composer";
 
 export function useComposerDocState() {
@@ -41,12 +42,13 @@ export function useComposerDocState() {
   }, []);
 
   const remapPath = useCallback((from: string, to: string) => {
-    const title = to.split("/").pop() ?? to;
     setState((prev) => ({
-      items: prev.items.map((i) =>
-        i.path === from ? { ...i, path: to, title } : i,
-      ),
-      primaryPath: prev.primaryPath === from ? to : prev.primaryPath,
+      items: prev.items.map((i) => {
+        const path = remapKbPath(i.path, from, to);
+        if (path === i.path) return i;
+        return { ...i, path, title: path.split("/").pop() ?? path };
+      }),
+      primaryPath: remapKbPathNullable(prev.primaryPath, from, to),
     }));
   }, []);
 

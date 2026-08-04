@@ -8,9 +8,12 @@ import {
 import { groupConversationsByTime } from "../utils/conversationGroups";
 import { formatSidebarConversationTime } from "../utils/displayTime";
 import { FileTree } from "./FileTree";
+import { KbFloatingRootDrop } from "./KbFloatingRootDrop";
+import { KbTreeProgressBar } from "./KbTreeProgressBar";
 import { ThemeToggle } from "./ThemeToggle";
 import { useKbTreeActions } from "../hooks/useKbTreeActions";
 import { useFileTreeInteraction } from "../hooks/useFileTreeInteraction";
+import { useDragAutoScroll } from "../hooks/useDragAutoScroll";
 import { useDismissOnOutsideClick } from "../hooks/useDismissOnOutsideClick";
 import { isSystemLayerPath } from "../utils/fileTree";
 
@@ -18,7 +21,7 @@ type SelectMods = { ctrlKey?: boolean; metaKey?: boolean; shiftKey?: boolean };
 
 type Props = {
   refreshKey?: number;
-  selectedPath: string | null;
+  activePaths?: string[];
   activeConversationId: string | null;
   titleOverrides?: Record<string, string>;
   collapsed?: boolean;
@@ -35,7 +38,7 @@ type Props = {
 
 export function Sidebar({
   refreshKey = 0,
-  selectedPath,
+  activePaths = [],
   activeConversationId,
   titleOverrides = {},
   collapsed = false,
@@ -53,6 +56,8 @@ export function Sidebar({
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [kbHintOpen, setKbHintOpen] = useState(false);
   const kbHintRef = useRef<HTMLDivElement>(null);
+  const treeScrollRef = useRef<HTMLDivElement>(null);
+  const { onDragOverAutoScroll } = useDragAutoScroll(treeScrollRef);
 
   const conversationGroups = useMemo(
     () => groupConversationsByTime(conversations),
@@ -66,7 +71,7 @@ export function Sidebar({
     setConversations((await listConversations()).conversations);
   }
 
-  const kb = useKbTreeActions(refresh);
+  const kb = useKbTreeActions(refresh, docs);
   const tree = useFileTreeInteraction({
     kb,
     onKbPathChanged,
@@ -102,17 +107,16 @@ export function Sidebar({
           style={{ left: tree.menu.x, top: tree.menu.y }}
           role="menu"
         >
-          {tree.menu.ctx.kind === "file" && (
-            <>
-              <button type="button" role="menuitem" onClick={() => void tree.handleMenuAction("download")}>
-                下载
-              </button>
-              {!isSystemLayerPath(tree.menu.ctx.path) && (
-                <button type="button" role="menuitem" onClick={() => void tree.handleMenuAction("rename")}>
-                  重命名
-                </button>
-              )}
-            </>
+          {(tree.menu.ctx.kind === "file" ||
+            (tree.menu.ctx.kind === "folder" && !isSystemLayerPath(tree.menu.ctx.path))) && (
+            <button type="button" role="menuitem" onClick={() => void tree.handleMenuAction("download")}>
+              下载
+            </button>
+          )}
+          {!isSystemLayerPath(tree.menu.ctx.path) && (
+            <button type="button" role="menuitem" onClick={() => void tree.handleMenuAction("rename")}>
+              重命名
+            </button>
           )}
           {!isSystemLayerPath(tree.menu.ctx.path) && (
             <button type="button" role="menuitem" onClick={() => void tree.handleMenuAction("delete")}>
@@ -187,9 +191,10 @@ export function Sidebar({
           </section>
 
           <section
-            className={`sidebar-section sidebar-tree-section${tree.rootDropActive ? " drop-target-root" : ""}`}
+            className="sidebar-section sidebar-tree-section"
+            onDragEnter={tree.onKbSectionDragEnter}
+            onDragLeave={tree.onKbSectionDragLeave}
             onDragOver={tree.onRootDragOver}
-            onDragLeave={tree.onRootDragLeave}
             onDrop={tree.onRootDrop}
           >
             <div className="sidebar-section-head">
@@ -218,16 +223,16 @@ export function Sidebar({
                         <strong>Ctrl / ⌘ + 单击</strong> 加入对话文档托盘
                       </li>
                       <li>
-                        <strong>双击</strong> 文件名重命名
+                        <strong>双击</strong> 文件名重命名；文件夹可右键重命名
                       </li>
                       <li>
-                        <strong>右键</strong> 下载、重命名、删除
+                        <strong>右键</strong> 下载（文件夹为 ZIP）、重命名、删除
                       </li>
                       <li>
-                        <strong>拖入</strong> 本地文件到文件夹（空白区域为根目录）
+                        <strong>拖入</strong> 到文件夹行；移动或上传时顶部会出现「根目录」
                       </li>
                       <li>
-                        <strong>拖拽</strong> 文件到另一文件夹可移动
+                        <strong>拖拽</strong> 文件或文件夹到其他目录可移动
                       </li>
                     </ul>
                   </div>
@@ -249,12 +254,29 @@ export function Sidebar({
                 </button>
               </div>
             </div>
-            <FileTree
-              paths={docs}
-              selectedPath={selectedPath}
-              onSelectFile={onSelectFile}
-              {...tree.fileTreeProps}
-            />
+            {kb.treeProgress ? (
+              <KbTreeProgressBar progress={kb.treeProgress} />
+            ) : null}
+            <div
+              className="sidebar-tree-body"
+              onDragOverCapture={onDragOverAutoScroll}
+            >
+              <div ref={treeScrollRef} className="sidebar-tree-scroll">
+                <FileTree
+                  paths={docs}
+                  activePaths={activePaths}
+                  onSelectFile={onSelectFile}
+                  {...tree.fileTreeProps}
+                />
+              </div>
+              <KbFloatingRootDrop
+                visible={tree.showFloatingRoot}
+                active={tree.floatingRootActive}
+                uploadMode={tree.floatingRootUploadMode}
+                onDragOver={tree.onFloatingRootDragOver}
+                onDrop={tree.onFloatingRootDrop}
+              />
+            </div>
           </section>
 
           <footer className="sidebar-footer">

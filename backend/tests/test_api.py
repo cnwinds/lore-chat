@@ -131,6 +131,20 @@ def test_upload_and_download(client):
     assert r2.content == content
 
 
+def test_download_zip_directory(client):
+    files = {"file": ("note.md", b"# a\n", "text/markdown")}
+    r = client.post("/api/kb/import", files=files, data={"directory": "导出目录"})
+    assert r.status_code == 200
+    r2 = client.get("/api/download-zip", params={"path": "导出目录"})
+    assert r2.status_code == 200
+    assert "zip" in r2.headers.get("content-type", "")
+    import zipfile
+    from io import BytesIO
+
+    with zipfile.ZipFile(BytesIO(r2.content)) as z:
+        assert "导出目录/note.md" in z.namelist()
+
+
 def test_kb_import_conflict(client):
     files = {"file": ("note.md", b"# a\n", "text/markdown")}
     r = client.post("/api/kb/import", files=files, data={"directory": "导入测试"})
