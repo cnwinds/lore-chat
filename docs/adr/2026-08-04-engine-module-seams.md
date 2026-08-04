@@ -33,6 +33,11 @@
 - **Container 字段**：`chat_runner`
 - **HTTP**：`/api/chat` 只委托 runner；ingest/ask 使用 `consume_agent_*`  helper
 
+### 3b. `AgentToolLoop`
+
+- **位置**：`backend/app/engine/agent/tool_loop.py`（SSE 映射在 `tool_events.py`，消息组装在 `message_builder.py`）
+- **`AgentOrchestrator`** 仅负责 system layer、模式与 `select_tools`，LLM 多轮工具循环委托 `AgentToolLoop`
+
 ### 4. `DerivationOutbox`
 
 - **位置**：`backend/app/engine/conversation/outbox.py`
