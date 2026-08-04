@@ -102,25 +102,6 @@ class PlacementPlanner:
             reason=f"新建于指定路径 {norm}",
         )
 
-    def apply_hint_path(
-        self, decision: PlacementDecision, hint_path: str | None
-    ) -> PlacementDecision:
-        if not hint_path:
-            return decision
-        try:
-            doc = self.repo.read_doc(hint_path)
-        except FileNotFoundError:
-            return decision
-        return PlacementDecision(
-            action="merge",
-            rel_path=hint_path,
-            title=decision.title or doc.meta.get("title", ""),
-            category=decision.category,
-            tags=decision.tags,
-            ambiguous=False,
-            reason=decision.reason or f"合并到用户正在查看的 {hint_path}",
-        )
-
     def normalize_decision(self, decision: PlacementDecision, related) -> PlacementDecision:
         if not decision.ambiguous:
             if decision.action in ("merge", "append") and related:

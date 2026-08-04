@@ -7,12 +7,26 @@ class KbPathError(ValueError):
     pass
 
 
+def _reject_internal_segments(label: str, value: str) -> None:
+    norm = value.replace("\\", "/")
+    if "conv:" in norm.lower():
+        raise KbPathError(f"{label} 不得包含 conv: 等内部前缀")
+    for seg in norm.split("/"):
+        if not seg:
+            continue
+        if seg.startswith(".") or seg == "..":
+            raise KbPathError(f"非法{label}：{value}")
+        if seg.lower().startswith("conv:"):
+            raise KbPathError(f"{label} 不得使用会话内部前缀：{seg}")
+
+
 def normalize_directory(directory: str) -> str:
     d = (directory or "").replace("\\", "/").strip().strip("/")
     if not d:
         return ""
     if d.startswith(".") or ".." in d.split("/"):
         raise KbPathError(f"非法目录：{directory}")
+    _reject_internal_segments("目录", d)
     return d
 
 
@@ -24,6 +38,7 @@ def normalize_filename(filename: str) -> str:
         raise KbPathError("filename 必须以 .md 结尾")
     if f.startswith("."):
         raise KbPathError(f"非法文件名：{filename}")
+    _reject_internal_segments("文件名", f)
     return f
 
 

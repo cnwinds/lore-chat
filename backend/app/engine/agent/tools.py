@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 
 from app.engine.conversation_context import read_conversation_context
+from app.engine.kb_structure import summarize_kb_structure
 from app.engine.knowledge_writer import KnowledgeWriter
 from app.engine.memory.constants import MEMORY_DOC_REL
 from app.engine.conversations import ConversationStore
@@ -91,6 +92,8 @@ class ToolRegistry:
             return await asyncio.to_thread(
                 self._read_doc, args, conversation_id=conversation_id
             )
+        if name == "list_kb_structure":
+            return await asyncio.to_thread(self._list_kb_structure, args)
         if name == "read_conversation_context":
             return await asyncio.to_thread(self._read_conversation_context, args)
         if name == "fetch_url":
@@ -228,6 +231,18 @@ class ToolRegistry:
             out["outline"] = info["outline"]
         self._mark_read(conversation_id, path)
         return out
+
+    def _list_kb_structure(self, args: dict) -> dict:
+        data = summarize_kb_structure(self.repo)
+        return {
+            "summary": data["summary"],
+            "sources": [],
+            "directories": data["directories"],
+            "root_docs": data["root_docs"],
+            "top_level_categories": data["top_level_categories"],
+            "protected_paths": data["protected_paths"],
+            "total_docs": data["total_docs"],
+        }
 
     def _read_conversation_context(self, args: dict) -> dict:
         if not self.conversations:

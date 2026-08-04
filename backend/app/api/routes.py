@@ -382,8 +382,7 @@ def _is_agent_question(q: dict) -> bool:
         return True
     if kind == "merge_sources":
         return False
-    # organizer 歧义确认问题带 decision/content，走 resolve_pending
-    return not payload.get("decision") and not payload.get("content")
+    return True
 
 
 @router.post("/questions/{qid}/resolve")
@@ -430,7 +429,7 @@ async def resolve(qid: str, body: ResolveBody, request: Request):
                 qid, [body.choice], conversation_context=conversation_context
             )
         else:
-            result = c.organizer.resolve_pending(qid, body.choice)
+            raise HTTPException(400, "该问题类型已废弃，请重新发起写入")
     else:
         raise HTTPException(400, "请提供 choice 或 choices")
 

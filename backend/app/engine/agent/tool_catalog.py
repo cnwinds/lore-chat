@@ -5,7 +5,8 @@ from app.engine.knowledge_writer import KnowledgeWriter
 resolve_kb_location = KnowledgeWriter.resolve_location
 
 READ_ONLY_TOOLS = frozenset({
-    "search_kb", "read_doc", "read_conversation_context", "fetch_url", "web_search",
+    "search_kb", "read_doc", "list_kb_structure", "read_conversation_context",
+    "fetch_url", "web_search",
     "recall_memory",
 })
 WRITE_TOOLS = frozenset({
@@ -23,6 +24,7 @@ def can_parallelize(tool_names: list[str]) -> bool:
 TOOL_LABELS = {
     "search_kb": "检索本地知识库",
     "read_doc": "读取文档",
+    "list_kb_structure": "查看知识库目录结构",
     "read_conversation_context": "读取会话邻近消息",
     "fetch_url": "打开链接",
     "web_search": "搜索网页",
@@ -109,6 +111,18 @@ TOOL_DEFINITIONS: list[dict] = [
     {
         "type": "function",
         "function": {
+            "name": "list_kb_structure",
+            "description": (
+                "列出知识库当前目录结构与各目录下的文档文件名（只读）。"
+                "在 write_kb、summarize_conversation、move_doc 之前必须先调用本工具，"
+                "据此决定放入已有目录、新建子目录或 move_doc 调整结构；禁止凭记忆编造路径。"
+            ),
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "read_conversation_context",
             "description": "读取某条会话消息及其前后若干条邻近消息（用于核验检索命中、展开上下文）。",
             "parameters": {
@@ -163,8 +177,9 @@ TOOL_DEFINITIONS: list[dict] = [
             "name": "write_kb",
             "description": (
                 "将内容写入知识库。必须指定 directory 与 filename（目录 + 文件名）。"
+                "写入前应先 list_kb_structure 规划路径。"
                 "目标文件已存在时合并重组；不存在时在指定路径新建。"
-                "禁止用 conv: 等内部前缀作为路径。"
+                "禁止 conv: 等内部前缀、禁止会话 id 当目录名。"
             ),
             "parameters": {
                 "type": "object",
@@ -251,7 +266,7 @@ TOOL_DEFINITIONS: list[dict] = [
             "description": (
                 "把当前整段会话通读后全局重构、去重、成文，归档为一篇知识库文档。"
                 "用户要求「总结/归档本次会话/整理成文档/生成会话纪要」时调用。"
-                "必须指定 directory 与 filename。"
+                "归档前应先 list_kb_structure 规划 directory 与 filename；必须指定二者。"
             ),
             "parameters": {
                 "type": "object",
@@ -266,7 +281,7 @@ TOOL_DEFINITIONS: list[dict] = [
             "name": "move_doc",
             "description": (
                 "将已有文档移动到新目录或重命名（修改 filename）。"
-                "移动前建议 read_doc 确认源文档；目标路径不得已存在。"
+                "移动前建议 list_kb_structure 与 read_doc；目标路径不得已存在。"
             ),
             "parameters": {
                 "type": "object",

@@ -503,3 +503,18 @@ def test_select_tools_force_write_keeps_write_kb():
     names = _tool_names(select_tools(MODE_FORCE_WRITE, web_enabled=True))
     assert "write_kb" in names
 
+
+@pytest.mark.asyncio
+async def test_list_kb_structure_tool(tmp_path):
+    registry, repo, idx = _make_registry(tmp_path)
+    repo.write_doc(
+        "技术/docker/常用命令.md",
+        {"title": "常用命令"},
+        "docker ps",
+        commit_msg="seed",
+    )
+    result = await registry.execute("list_kb_structure", {})
+    assert "技术/docker" in result["summary"]
+    assert any(d["path"] == "技术/docker" for d in result["directories"])
+    assert result["total_docs"] >= 1
+

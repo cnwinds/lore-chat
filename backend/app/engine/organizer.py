@@ -73,8 +73,7 @@ class Organizer:
         self,
         content: str,
         *,
-        forced_rel_path: str | None = None,
-        hint_path: str | None = None,
+        forced_rel_path: str,
     ) -> IngestResult:
         if is_question_only(content):
             return IngestResult(
@@ -84,42 +83,15 @@ class Organizer:
                 message="这是提问而非资料，未写入知识库。",
             )
 
-        if forced_rel_path:
-            decision = self.planner.decision_for_forced_path(forced_rel_path)
-            self._apply(decision, content)
+        if not (forced_rel_path or "").strip():
             return IngestResult(
-                status="saved",
-                rel_path=decision.rel_path,
-                question_id=None,
-                message=f"已保存到 {decision.rel_path}",
-            )
-
-        summary = self.planner.understand(content)
-        search_query = (
-            f"{summary.strip()}\n{content.strip()}".strip()
-            if summary.strip()
-            else content
-        )
-        related = self.retriever.search(search_query, k=5).hits
-        decision = self.planner.normalize_decision(self.planner.decide(content, summary, related), related)
-        decision = self.planner.apply_hint_path(decision, hint_path)
-
-        if decision.ambiguous:
-            qid = self.pending.create(
-                question=f"这条内容可能与《{decision.rel_path}》重叠：{decision.reason}。如何处理？",
-                options=[
-                    {"id": "merge", "label": f"合并进 {decision.rel_path}"},
-                    {"id": "new", "label": "新建独立文档"},
-                ],
-                payload={"content": content, "decision": decision.__dict__},
-            )
-            return IngestResult(
-                status="question",
+                status="rejected",
                 rel_path=None,
-                question_id=qid,
-                message="需要你确认如何归置这条内容。",
+                question_id=None,
+                message="缺少目标路径。请通过 write_kb 指定 directory 与 filename。",
             )
 
+        decision = self.planner.decision_for_forced_path(forced_rel_path)
         self._apply(decision, content)
         return IngestResult(
             status="saved",
@@ -133,8 +105,7 @@ class Organizer:
         transcript: str,
         *,
         conv: dict | None = None,
-        hint_path: str | None = None,
-        forced_rel_path: str | None = None,
+        forced_rel_path: str,
         system_rules: str = "",
         conversation_id: str | None = None,
     ) -> IngestResult:
@@ -160,26 +131,14 @@ class Organizer:
                 self._synthesize_segment(seg["text"], system_rules, seg) for seg in segments
             ]
             body = self._synthesize_merge_segments(partials, system_rules)
-        summary = self.planner.understand(body)
-        related = self.retriever.search(summary or body, k=5).hits
-        if forced_rel_path:
-            decision = self.planner.decision_for_forced_path(forced_rel_path)
-        else:
-            decision = self.planner.normalize_decision(
-                self.planner.decide(body, summary, related), related
+        if not (forced_rel_path or "").strip():
+            return IngestResult(
+                status="rejected",
+                rel_path=None,
+                question_id=None,
+                message="归档必须指定 directory 与 filename（由工具参数拼成目标路径）。",
             )
-            decision = self.planner.apply_hint_path(decision, hint_path)
-            # 归档果断落库，不因 ambiguous 打断用户
-            if decision.ambiguous:
-                decision = PlacementDecision(
-                    action="new",
-                    rel_path=decision.rel_path,
-                    title=decision.title,
-                    category=decision.category,
-                    tags=decision.tags,
-                    ambiguous=False,
-                    reason=decision.reason or "会话归档",
-                )
+        decision = self.planner.decision_for_forced_path(forced_rel_path)
         self._apply(decision, body, conversation_id=conversation_id)
         return IngestResult(
             status="saved",
@@ -247,6 +206,7 @@ class Organizer:
         decision = self.planner.normalize_decision(
             self.planner.decide(merged_body, summary, related), related
         )
+        generated_hash = body_hash(merged_body)
 
         if title_hint:
             decision = PlacementDecision(
@@ -587,26 +547,6 @@ class Organizer:
             body += "\n"
         return body
 
-    def resolve_pending(self, qid: str, choice: str) -> IngestResult:
-        q = self.pending.get(qid)
-        content = q["payload"]["content"]
-        d = q["payload"]["decision"]
-        decision = PlacementDecision(
-            **{
-                **d,
-                "action": "merge" if choice == "merge" else "new",
-                "ambiguous": False,
-            }
-        )
-        self._apply(decision, content)
-        self.pending.resolve(qid, choice)
-        return IngestResult(
-            status="saved",
-            rel_path=decision.rel_path,
-            question_id=None,
-            message=f"已按你的选择保存到 {decision.rel_path}",
-        )
-
     def resolve_agent_choices(
         self,
         qid: str,
@@ -652,7 +592,7 @@ class Organizer:
             if context:
                 parts.append(f"\n背景：{context}")
             parts.append(
-                "\n请结合以上对话与选择，继续完成知识库整理（必要时调用 write_kb）。"
+                "\n请结合以上对话与选择，继续完成知识库整理（必要时先 list_kb_structure，再 write_kb）。"
             )
             return IngestResult(
                 status="continue",
@@ -662,12 +602,25 @@ class Organizer:
                 continue_prompt="\n".join(parts),
             )
 
-        text = "用户希望记录以下内容：\n" + "\n".join(f"- {label}" for label in labels)
+        parts = [
+            "用户通过选项确认了要记录的内容：",
+            "\n".join(f"- {label}" for label in labels),
+        ]
         if conversation_context.strip():
-            text += f"\n\n对话上下文：\n{conversation_context.strip()}"
+            parts.append(f"\n对话上下文：\n{conversation_context.strip()}")
         if context:
-            text += f"\n\n背景：{context}"
-        return self.ingest_text(text)
+            parts.append(f"\n背景：{context}")
+        parts.append(
+            "\n请先调用 list_kb_structure 查看目录，再调用 write_kb（必填 directory、filename、text）写入；"
+            "禁止无路径自动落库。"
+        )
+        return IngestResult(
+            status="continue",
+            rel_path=None,
+            question_id=None,
+            message="请按目录规划写入知识库。",
+            continue_prompt="\n".join(parts),
+        )
 
     def _reorganize(self, existing_body: str, new_content: str, title: str) -> str:
         messages = [

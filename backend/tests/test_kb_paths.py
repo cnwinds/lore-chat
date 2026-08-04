@@ -8,8 +8,8 @@ def test_join_kb_path():
     assert join_kb_path("", "root.md") == "root.md"
 
 
-def test_join_kb_path_rejects_bad_filename():
+def test_join_kb_path_rejects_conv_prefix():
     with pytest.raises(KbPathError):
-        join_kb_path("技术", "note.txt")
+        join_kb_path("conv:abc", "note.md")
     with pytest.raises(KbPathError):
-        join_kb_path("技术", "../escape.md")
+        join_kb_path("技术", "conv:abc.md")
