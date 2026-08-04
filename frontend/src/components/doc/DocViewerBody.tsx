@@ -18,6 +18,7 @@ type Props = {
   editMode: EditMode;
   body: string;
   onBodyChange: (nextBody: string, nextSelection?: DocSelection) => void;
+  onPreviewChange?: (nextBody: string) => void;
   loadedPath: string;
   refreshKey: number;
   previewRemountKey: number;
@@ -41,6 +42,7 @@ export function DocViewerBody({
   editMode,
   body,
   onBodyChange,
+  onPreviewChange,
   loadedPath,
   refreshKey,
   previewRemountKey,
@@ -72,7 +74,7 @@ export function DocViewerBody({
             <DocLivePreview
               key={`${loadedPath}#${refreshKey}#${previewRemountKey}`}
               initialBody={body}
-              onChange={(b) => onBodyChange(b)}
+              onChange={(b) => (onPreviewChange ?? onBodyChange)(b)}
               onStable={onPreviewStable}
               onUserEdit={onPreviewUserEdit}
               readOnly={readOnly}

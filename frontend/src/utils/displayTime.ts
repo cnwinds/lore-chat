@@ -5,8 +5,13 @@ export const DISPLAY_TIME_ZONE = "Asia/Shanghai";
 const LOCALE = "zh-CN";
 
 const NAIVE_ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/;
+const WALL_CLOCK = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
 
 type Ymd = { y: number; m: number; d: number };
+
+function pad2(v: string): string {
+  return v.length === 1 ? `0${v}` : v;
+}
 
 function partsInZone(
   date: Date,
@@ -37,6 +42,10 @@ function partsInZone(
 export function parseStoredInstant(iso: string): Date | null {
   const trimmed = iso.trim();
   if (!trimmed) return null;
+  if (WALL_CLOCK.test(trimmed)) {
+    const d = new Date(`${trimmed.replace(" ", "T")}+08:00`);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
   let normalized = trimmed;
   if (NAIVE_ISO.test(trimmed) && !/(Z|[+-]\d{2}:\d{2})$/i.test(trimmed)) {
     normalized = `${trimmed}+08:00`;
@@ -96,12 +105,18 @@ export function formatSidebarConversationTime(
   return formatMonthDay(iso);
 }
 
-/** 文档元数据等：yyyy-MM-dd HH:mm。 */
+/** 文档元数据等：`YYYY-MM-DD HH:mm:ss`（已是该格式则原样返回）。 */
 export function formatDisplayDateTime(iso: string): string {
-  const d = parseStoredInstant(iso);
+  const trimmed = iso.trim();
+  if (WALL_CLOCK.test(trimmed)) return trimmed;
+  const isoWall = trimmed.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2})/);
+  if (isoWall) {
+    return `${isoWall[1]} ${isoWall[2]}`;
+  }
+  const d = parseStoredInstant(trimmed);
   if (!d) return "";
   const p = partsInZone(d, DISPLAY_TIME_ZONE, true);
-  return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}`;
+  return `${p.year}-${p.month}-${p.day} ${pad2(p.hour)}:${pad2(p.minute)}:${pad2(p.second)}`;
 }
 
 /** 客户端乐观时间戳，与后端 now_iso_seconds 语义一致（+08:00）。 */

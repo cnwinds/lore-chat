@@ -188,12 +188,28 @@ export function DocViewer({
     if (nextSelection) setSelection(nextSelection);
   };
 
+  /** 预览模式：Crepe 初始化后的二次序列化若仅表面差异，不记为用户编辑。 */
+  const handlePreviewChange = useCallback(
+    (nextBody: string) => {
+      setBody(nextBody);
+      if (userEditedRef.current) return;
+      setSavedBody((saved) => {
+        if (isDocMarkdownDirty(nextBody, saved)) {
+          userEditedRef.current = true;
+          return saved;
+        }
+        return nextBody;
+      });
+    },
+    [setBody, setSavedBody, userEditedRef],
+  );
+
   const handlePreviewStable = useCallback((md: string) => {
+    if (userEditedRef.current) return;
     setBody(md);
-    if (!userEditedRef.current) {
-      setSavedBody((saved) => (isDocMarkdownDirty(md, saved) ? saved : md));
-    }
-  }, []);
+    // 以 Crepe 序列化结果作为未编辑基线，避免 parse/serialize 与磁盘原文 purely cosmetic 差异
+    setSavedBody(md);
+  }, [setBody, setSavedBody, userEditedRef]);
 
   const handlePreviewUserEdit = useCallback(() => {
     userEditedRef.current = true;
@@ -293,6 +309,7 @@ export function DocViewer({
         editMode={editMode}
         body={body}
         onBodyChange={handleBodyChange}
+        onPreviewChange={handlePreviewChange}
         loadedPath={loadedPath}
         refreshKey={refreshKey}
         previewRemountKey={previewRemountKey}

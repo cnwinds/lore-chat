@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { Crepe } from "@milkdown/crepe";
 import "@milkdown/crepe/theme/common/style.css";
+import { isMarkdownCosmeticallyEqual } from "../utils/docMarkdown";
 
 export type DocSelection = { start: number; end: number };
 
@@ -43,8 +44,11 @@ export function DocLivePreview({
       listener.markdownUpdated((_ctx, markdown) => {
         if (!readyRef.current) return;
         if (markdown === lastMarkdownRef.current) return;
+        const prev = lastMarkdownRef.current;
         lastMarkdownRef.current = markdown;
-        onUserEditRef.current?.();
+        if (!isMarkdownCosmeticallyEqual(markdown, prev)) {
+          onUserEditRef.current?.();
+        }
         onChangeRef.current(markdown);
       });
     });

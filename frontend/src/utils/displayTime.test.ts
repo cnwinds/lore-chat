@@ -26,7 +26,17 @@ describe("formatMessageTime", () => {
 
 describe("formatDisplayDateTime", () => {
   it("formats naive stored time for meta panel", () => {
-    expect(formatDisplayDateTime("2026-07-10T10:00:00")).toBe("2026-07-10 10:00");
+    expect(formatDisplayDateTime("2026-07-10T10:00:00")).toBe("2026-07-10 10:00:00");
+  });
+
+  it("strips ISO offset to wall clock", () => {
+    expect(formatDisplayDateTime("2026-08-04T14:24:40+08:00")).toBe(
+      "2026-08-04 14:24:40",
+    );
+  });
+
+  it("passes through wall clock strings", () => {
+    expect(formatDisplayDateTime("2026-08-04 14:24:40")).toBe("2026-08-04 14:24:40");
   });
 });
 

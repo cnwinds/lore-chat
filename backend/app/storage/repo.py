@@ -7,7 +7,7 @@ from pathlib import Path
 from git import Repo
 
 from app.storage import frontmatter
-from app.time import DISPLAY_TZ, now_iso_seconds
+from app.time import DISPLAY_TZ, now_wall_clock
 
 
 @dataclass
@@ -86,7 +86,7 @@ class KnowledgeRepo:
     ) -> None:
         abs_p = self._abs(rel_path)
         abs_p.parent.mkdir(parents=True, exist_ok=True)
-        now = now_iso_seconds()
+        now = now_wall_clock()
         if abs_p.exists():
             existing_meta, _ = frontmatter.parse(abs_p.read_text(encoding="utf-8"))
             created = (
@@ -208,7 +208,7 @@ class KnowledgeRepo:
         self, entry: str, *, commit_msg: str = "chore: update changelog"
     ) -> None:
         path = self.root / ".kb" / "changelog.md"
-        stamp = now_iso_seconds()
+        stamp = now_wall_clock()
         with path.open("a", encoding="utf-8") as f:
             f.write(f"- {stamp} {entry}\n")
         self._commit([".kb/changelog.md"], commit_msg)
