@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import json
 import uuid
-from datetime import datetime
 from pathlib import Path
 
 from app.engine.content_hash import is_body_modified
+from app.time import now_iso_seconds
 
 
 def _now() -> str:
-    return datetime.now().isoformat(timespec="seconds")
+    return now_iso_seconds()
 
 
 class MergeSessionStore:

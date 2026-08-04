@@ -33,6 +33,6 @@ def test_tool_result_with_ask_user_fields():
     assert data["options"][0]["label"] == "选项 A"
 
 
-def test_now_ts_has_timezone():
+def test_now_ts_uses_china_offset():
     ts = now_ts()
-    assert "T" in ts
+    assert "+08:00" in ts

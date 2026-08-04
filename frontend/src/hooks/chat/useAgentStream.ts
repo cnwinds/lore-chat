@@ -17,6 +17,7 @@ import {
   type SourceRef,
 } from "../../api";
 import { kbPathFromToolResult } from "../../utils/chatMessage";
+import { nowIsoDisplay } from "../../utils/displayTime";
 
 export type DocContext = { paths: string[]; primary: string | null };
 
@@ -111,7 +112,7 @@ export function useAgentStream({
 
     const assistantMsg: ChatMessage = {
       role: "assistant",
-      ts: new Date().toISOString(),
+      ts: nowIsoDisplay(),
       timeline: [],
       sources: [],
     };
@@ -123,7 +124,7 @@ export function useAgentStream({
         {
           role: "user",
           text: display,
-          ts: new Date().toISOString(),
+          ts: nowIsoDisplay(),
           ...(userMeta?.attachments?.length
             ? { attachments: userMeta.attachments }
             : {}),
@@ -180,7 +181,7 @@ export function useAgentStream({
             if (data.total_duration_ms !== undefined) {
               msg.total_duration_ms = data.total_duration_ms as number;
             }
-            msg.ts = new Date().toISOString();
+            msg.ts = nowIsoDisplay();
           }
           return msg;
         });

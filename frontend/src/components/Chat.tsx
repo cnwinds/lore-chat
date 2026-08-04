@@ -12,6 +12,7 @@ import {
 } from "../api";
 import { useDocPreview } from "../contexts/DocPreviewContext";
 import { markToolBlockResolved } from "../utils/chatMessage";
+import { nowIsoDisplay } from "../utils/displayTime";
 import { ChatMessageList } from "./chat/ChatMessageList";
 import { ComposerTray } from "./ComposerTray";
 import { ComposerToolbar } from "./ComposerToolbar";
@@ -163,7 +164,7 @@ export function Chat({
         const msg = err instanceof Error ? err.message : "上传失败";
         setMsgs((m) => [
           ...m,
-          { role: "assistant", text: `错误：${msg}`, ts: new Date().toISOString() },
+          { role: "assistant", text: `错误：${msg}`, ts: nowIsoDisplay() },
         ]);
         return;
       }
@@ -217,7 +218,7 @@ export function Chat({
           : result.message || "归档完成";
       setMsgs((m) => [
         ...m,
-        { role: "assistant", text, ts: new Date().toISOString() },
+        { role: "assistant", text, ts: nowIsoDisplay() },
       ]);
       if (result.rel_path) {
         setSummarized(true);
@@ -234,7 +235,7 @@ export function Chat({
       const msg = err instanceof Error ? err.message : "归档失败";
       setMsgs((m) => [
         ...m,
-        { role: "assistant", text: `错误：${msg}`, ts: new Date().toISOString() },
+        { role: "assistant", text: `错误：${msg}`, ts: nowIsoDisplay() },
       ]);
     } finally {
       setArchiving(false);
@@ -263,7 +264,7 @@ export function Chat({
         {
           role: "assistant",
           text: result.message,
-          ts: new Date().toISOString(),
+          ts: nowIsoDisplay(),
         },
       ]);
       if (result.rel_path) {
@@ -277,7 +278,7 @@ export function Chat({
         {
           role: "assistant",
           text: result.message,
-          ts: new Date().toISOString(),
+          ts: nowIsoDisplay(),
         },
       ]);
     }

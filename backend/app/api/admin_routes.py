@@ -72,7 +72,9 @@ def export_kb(request: Request):
         buf = io.BytesIO()
         build_export_zip(kb_path, buf)
         buf.seek(0)
-        filename = f"lorechat-kb-{datetime.now().strftime('%Y%m%d')}.zip"
+        from app.time import now_display
+
+        filename = f"lorechat-kb-{now_display().strftime('%Y%m%d')}.zip"
         return StreamingResponse(
             buf,
             media_type="application/zip",

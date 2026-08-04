@@ -10,15 +10,17 @@ MAX_OUTBOX_ATTEMPTS = 5
 
 
 def _now() -> str:
-    from datetime import datetime
+    from app.time import now_iso_seconds
 
-    return datetime.now().isoformat(timespec="seconds")
+    return now_iso_seconds()
 
 
 def _future(seconds: float) -> str:
-    from datetime import datetime, timedelta
+    from datetime import timedelta
 
-    return (datetime.now() + timedelta(seconds=seconds)).isoformat(timespec="seconds")
+    from app.time import now_display
+
+    return (now_display() + timedelta(seconds=seconds)).isoformat(timespec="seconds")
 
 
 def default_deletion_ledger_path(conversations_dir: Path) -> Path:

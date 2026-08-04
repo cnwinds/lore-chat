@@ -17,7 +17,9 @@ from app.engine.conversation.outbox import (
 
 
 def _now() -> str:
-    return datetime.now().isoformat(timespec="seconds")
+    from app.time import now_iso_seconds
+
+    return now_iso_seconds()
 
 
 def _title_from_text(text: str) -> str:

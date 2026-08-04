@@ -2,8 +2,7 @@ from __future__ import annotations
 
 import shutil
 from dataclasses import dataclass
-from datetime import datetime
-from pathlib import Path
+from app.time import DISPLAY_TZ, now_iso_seconds
 
 from git import Repo
 
@@ -66,7 +65,7 @@ class KnowledgeRepo:
             if commits:
                 return (
                     commits[0]
-                    .committed_datetime.replace(tzinfo=None)
+                    .committed_datetime.astimezone(DISPLAY_TZ)
                     .isoformat(timespec="seconds")
                 )
         except Exception:
@@ -86,7 +85,7 @@ class KnowledgeRepo:
     ) -> None:
         abs_p = self._abs(rel_path)
         abs_p.parent.mkdir(parents=True, exist_ok=True)
-        now = datetime.now().isoformat(timespec="seconds")
+        now = now_iso_seconds()
         if abs_p.exists():
             existing_meta, _ = frontmatter.parse(abs_p.read_text(encoding="utf-8"))
             created = (
@@ -208,7 +207,7 @@ class KnowledgeRepo:
         self, entry: str, *, commit_msg: str = "chore: update changelog"
     ) -> None:
         path = self.root / ".kb" / "changelog.md"
-        stamp = datetime.now().isoformat(timespec="seconds")
+        stamp = now_iso_seconds()
         with path.open("a", encoding="utf-8") as f:
             f.write(f"- {stamp} {entry}\n")
         self._commit([".kb/changelog.md"], commit_msg)

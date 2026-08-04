@@ -6,6 +6,7 @@ import {
   type ConversationSummary,
 } from "../api";
 import { groupConversationsByTime } from "../utils/conversationGroups";
+import { formatSidebarConversationTime } from "../utils/displayTime";
 import { FileTree } from "./FileTree";
 import { ThemeToggle } from "./ThemeToggle";
 
@@ -26,20 +27,6 @@ type Props = {
   onDeleteConversation: (id: string) => void;
   onDocsLoaded?: (paths: string[]) => void;
 };
-
-function formatTime(iso: string) {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  const now = new Date();
-  const sameDay =
-    d.getFullYear() === now.getFullYear() &&
-    d.getMonth() === now.getMonth() &&
-    d.getDate() === now.getDate();
-  if (sameDay) {
-    return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
-  }
-  return d.toLocaleDateString(undefined, { month: "numeric", day: "numeric" });
-}
 
 export function Sidebar({
   refreshKey = 0,
@@ -127,7 +114,7 @@ export function Sidebar({
                         >
                           <span className="conversation-title">{title}</span>
                           <span className="conversation-meta">
-                            {formatTime(c.updated_at)}
+                            {formatSidebarConversationTime(c.updated_at)}
                             {c.message_count > 0 ? ` · ${c.message_count} 条` : ""}
                           </span>
                         </button>

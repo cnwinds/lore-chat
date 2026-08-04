@@ -1,4 +1,5 @@
 import type { SourceRef } from "../api";
+import { formatMonthDay } from "../utils/displayTime";
 
 type Props = {
   source: SourceRef;
@@ -8,9 +9,8 @@ type Props = {
 
 function formatConvTs(ts?: string): string | null {
   if (!ts) return null;
-  const d = new Date(ts);
-  if (Number.isNaN(d.getTime())) return ts.slice(0, 10) || null;
-  return d.toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" });
+  const out = formatMonthDay(ts);
+  return out || ts.slice(0, 10) || null;
 }
 
 function conversationExcerptPreview(excerpt?: string): string {

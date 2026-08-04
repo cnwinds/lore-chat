@@ -7,9 +7,9 @@ import {
 import type { ChatMessage } from "../api";
 
 describe("formatMessageTs", () => {
-  it("formats valid ISO time in zh-CN 24h", () => {
-    const out = formatMessageTs("2026-07-12T14:30:00.000Z");
-    expect(out).toMatch(/^\d{2}:\d{2}$/);
+  it("formats UTC instant as Beijing HH:mm", () => {
+    const out = formatMessageTs("2026-07-12T06:30:00.000Z");
+    expect(out).toBe("14:30");
   });
 
   it("returns empty for invalid", () => {

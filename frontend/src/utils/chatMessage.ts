@@ -1,4 +1,5 @@
 import type { ChatMessage, SourceRef, TimelineBlock } from "../api";
+import { formatMessageTime } from "./displayTime";
 
 export function kbPathFromToolResult(
   data: Record<string, unknown>,
@@ -8,18 +9,9 @@ export function kbPathFromToolResult(
   return kb?.path;
 }
 
+/** @deprecated 使用 formatMessageTime；保留别名避免大范围重命名 */
 export function formatMessageTs(ts: string): string {
-  try {
-    const d = new Date(ts);
-    if (Number.isNaN(d.getTime())) return "";
-    return d.toLocaleTimeString("zh-CN", {
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    });
-  } catch {
-    return "";
-  }
+  return formatMessageTime(ts);
 }
 
 export function markToolBlockResolved(

@@ -15,6 +15,6 @@ describe("formatMetaEntries", () => {
       "更新时间",
       "标签",
     ]);
-    expect(entries[1].value).toBe("2026-07-10T10:00:00");
+    expect(entries[1].value).toBe("2026-07-10 10:00");
   });
 });

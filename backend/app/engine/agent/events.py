@@ -1,9 +1,11 @@
 from __future__ import annotations
 import json
-from datetime import datetime
+
+from app.time import now_iso_seconds
+
 
 def now_ts() -> str:
-    return datetime.now().astimezone().isoformat(timespec="seconds")
+    return now_iso_seconds()
 
 def sse_event(event_type: str, data: dict) -> str:
     if "ts" not in data:

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from app.time import DISPLAY_TZ_LABEL, now_display
 
 MODE_DEFAULT = "default"
 # 供 POST /api/ingest 使用（测试/脚本 API，非产品 UI）
@@ -12,13 +12,12 @@ _WEEKDAY_ZH = "一二三四五六日"
 
 
 def _current_date_context() -> str:
-    now = datetime.now().astimezone()
+    now = now_display()
     wd = _WEEKDAY_ZH[now.weekday()]
-    tz = now.tzname() or "本地时区"
     return (
         f"\n\n## 当前时间\n"
         f"今天是 {now.year} 年 {now.month} 月 {now.day} 日（星期{wd}），"
-        f"当前时刻 {now.strftime('%H:%M')}（{tz}）。"
+        f"当前时刻 {now.strftime('%H:%M')}（{DISPLAY_TZ_LABEL}）。"
         f"用户提及「最近」「本周」「今天」「过去一年」等相对时间时，以此为准；"
         f"联网搜索新闻、版本、发布信息时，查询词中的年份与日期须与当前时间一致。"
     )

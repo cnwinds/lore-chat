@@ -1,3 +1,5 @@
+import { formatDisplayDateTime } from "./displayTime";
+
 const META_LABELS: Record<string, string> = {
   title: "标题",
   created: "创建时间",
@@ -20,7 +22,18 @@ const META_ORDER = [
   "memory_revision",
 ];
 
+const META_DATETIME_KEYS = new Set(["created", "updated"]);
+
 export type MetaEntry = { key: string; label: string; value: string };
+
+function formatMetaValue(key: string, value: unknown): string {
+  const raw = Array.isArray(value) ? value.join(", ") : String(value);
+  if (META_DATETIME_KEYS.has(key)) {
+    const formatted = formatDisplayDateTime(raw);
+    if (formatted) return formatted;
+  }
+  return raw;
+}
 
 export function formatMetaEntries(meta: Record<string, unknown>): MetaEntry[] {
   const filtered = Object.entries(meta).filter(([k]) => k !== "conversation_id");
@@ -38,6 +51,6 @@ export function formatMetaEntries(meta: Record<string, unknown>): MetaEntry[] {
     .map(([key, value]) => ({
       key,
       label: META_LABELS[key] ?? key,
-      value: Array.isArray(value) ? value.join(", ") : String(value),
+      value: formatMetaValue(key, value),
     }));
 }

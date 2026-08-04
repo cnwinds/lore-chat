@@ -6,7 +6,6 @@ import shutil
 import uuid
 import zipfile
 from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
 from typing import BinaryIO, Literal
 
@@ -111,7 +110,9 @@ def _promote_staging(staging: Path, kb_path: Path) -> None:
 
 
 def _backup_timestamp() -> str:
-    return datetime.now().strftime("%Y%m%d-%H%M%S")
+    from app.time import now_display
+
+    return now_display().strftime("%Y%m%d-%H%M%S")
 
 
 def import_kb(
