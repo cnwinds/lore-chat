@@ -5,7 +5,6 @@ from app.engine.memory.llm_extractor import (
     is_template_like,
     locate_statement_span,
 )
-from app.engine.memory.policy import validate_evidence
 from app.models.llm import FakeLLMClient
 
 
@@ -38,7 +37,6 @@ def test_llm_extractor_parses_and_validates_quote():
     out = ext.extract(text)
     assert len(out.candidates) == 1
     assert out.candidates[0].statement == "我偏好简洁回答"
-    assert validate_evidence(text, out.candidates[0])
 
 
 def test_llm_extractor_skips_template_from_model():

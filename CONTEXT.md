@@ -10,7 +10,8 @@
 | 聊天 | `backend/app/engine/chat/` | `ChatSessionRunner`、时间线累积、SSE 解析 |
 | Agent | `backend/app/engine/agent/` | `AgentOrchestrator`（adapter）、`AgentToolLoop`（LLM+工具循环）、`tool_catalog`、`tools.py`（执行） |
 | 会话 | `backend/app/engine/conversations.py` + `conversation/outbox.py` | SQLite 消息/turn；派生任务队列 |
-| 知识写入 | `backend/app/engine/knowledge_writer.py` | 路径 + git + 索引 + changelog **唯一写入 seam** |
+| 知识写入 | `backend/app/engine/knowledge_writer.py` | 路径 + git + 索引 + changelog **唯一写入 seam**；`import_entry` / `move_entry` / `delete_entry`（含附件） |
+| 知识库树 HTTP | `backend/app/engine/kb_tree_service.py` | import/move/delete + protected + `index_revision.bump` |
 | 归位 | `backend/app/engine/placement.py` | LLM 决定 new/merge 与 `rel_path` |
 | 整理 | `backend/app/engine/organizer.py` | 录入/归档/合并的正文合成 + 调用 `PlacementPlanner` + `KnowledgeWriter` |
 | 存储 | `backend/app/storage/` | `KnowledgeRepo`、`kb_paths` |

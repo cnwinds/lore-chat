@@ -3,15 +3,13 @@ import {
   kbDelete,
   kbImport,
   kbMove,
-  type ApiError,
   parentDirectory,
   isMarkdownPath,
 } from "../api";
 import { KbNameConflictDialog } from "../components/KbNameConflictDialog";
+import { kbMutateWithConflictRetry } from "../lib/kbMutateWithConflictRetry";
 
 type ConflictState = {
-  file: File;
-  directory: string;
   filename: string;
   message: string;
   resolve: (filename: string | null) => void;
@@ -21,35 +19,32 @@ export function useKbTreeActions(onTreeChanged: () => void) {
   const [conflict, setConflict] = useState<ConflictState | null>(null);
   const [busy, setBusy] = useState(false);
 
+  const promptConflict = useCallback((ctx: {
+    suggestedFilename: string;
+    message: string;
+    resolve: (filename: string | null) => void;
+  }) => {
+    setConflict({
+      filename: ctx.suggestedFilename,
+      message: ctx.message,
+      resolve: ctx.resolve,
+    });
+  }, []);
+
   const importOne = useCallback(
     async (file: File, directory: string): Promise<string | null> => {
-      let filename = file.name;
-      for (;;) {
-        try {
-          const r = await kbImport(file, directory, filename);
+      const rel = await kbMutateWithConflictRetry({
+        initialFilename: file.name,
+        onConflict: promptConflict,
+        run: async (filename) => {
+          const r = await kbImport(file, directory, filename!);
           return r.rel_path;
-        } catch (e) {
-          const err = e as ApiError;
-          if (err.status === 409 && err.pathExists) {
-            const chosen = await new Promise<string | null>((resolve) => {
-              setConflict({
-                file,
-                directory,
-                filename: err.pathExists!.suggested_filename,
-                message: err.pathExists!.message,
-                resolve,
-              });
-            });
-            setConflict(null);
-            if (!chosen) return null;
-            filename = chosen;
-            continue;
-          }
-          throw e;
-        }
-      }
+        },
+      });
+      setConflict(null);
+      return rel;
     },
-    [],
+    [promptConflict],
   );
 
   const importMany = useCallback(
@@ -71,9 +66,11 @@ export function useKbTreeActions(onTreeChanged: () => void) {
     async (fromPath: string, toDirectory: string, toFilename?: string) => {
       setBusy(true);
       try {
-        let name = toFilename;
-        for (;;) {
-          try {
+        const rel = await kbMutateWithConflictRetry({
+          initialFilename: toFilename ?? fromPath.split("/").pop() ?? "file",
+          canRetryOnConflict: (name) => name !== undefined,
+          onConflict: promptConflict,
+          run: async (name) => {
             const r = await kbMove({
               from_path: fromPath,
               to_directory: toDirectory,
@@ -81,31 +78,15 @@ export function useKbTreeActions(onTreeChanged: () => void) {
             });
             onTreeChanged();
             return r.rel_path;
-          } catch (e) {
-            const err = e as ApiError;
-            if (err.status === 409 && err.pathExists && name !== undefined) {
-              const chosen = await new Promise<string | null>((resolve) => {
-                setConflict({
-                  file: new File([], name || fromPath.split("/").pop() || "file"),
-                  directory: toDirectory,
-                  filename: err.pathExists!.suggested_filename,
-                  message: err.pathExists!.message,
-                  resolve,
-                });
-              });
-              setConflict(null);
-              if (!chosen) return null;
-              name = chosen;
-              continue;
-            }
-            throw e;
-          }
-        }
+          },
+        });
+        setConflict(null);
+        return rel;
       } finally {
         setBusy(false);
       }
     },
-    [onTreeChanged],
+    [onTreeChanged, promptConflict],
   );
 
   const renameFile = useCallback(

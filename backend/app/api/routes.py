@@ -275,18 +275,18 @@ async def kb_import(
     directory: str = Form(""),
     filename: str | None = Form(None),
 ):
-    from app.engine.kb_ops import KbPathExistsError, import_file, suggest_alternate_filename
+    from app.engine.kb_tree_service import (
+        KbPathExistsError,
+        KbTreeService,
+        suggest_alternate_filename,
+    )
 
     c = _c(request)
-    d = directory.strip()
-    if d and c.repo.is_protected(f"{d}/.md"):
-        raise HTTPException(403, "禁止写入该目录")
+    svc = KbTreeService(c.repo, c.knowledge_writer, c.index_revision)
     name = (filename or file.filename or "upload.bin").strip()
     data = await file.read()
     try:
-        result = import_file(
-            c.repo, c.knowledge_writer, directory=d, filename=name, data=data
-        )
+        return svc.import_upload(directory=directory, filename=name, data=data)
     except KbPathExistsError as e:
         raise HTTPException(
             409,
@@ -294,23 +294,24 @@ async def kb_import(
                 e.rel_path, str(e), suggest_alternate_filename(name)
             ),
         ) from e
+    except PermissionError as e:
+        raise HTTPException(403, str(e)) from e
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
-    c.index_revision.bump()
-    return result
 
 
 @router.post("/kb/move")
 async def kb_move(body: KbMoveBody, request: Request):
-    from app.engine.kb_ops import KbPathExistsError, move_entry, suggest_alternate_filename
+    from app.engine.kb_tree_service import (
+        KbPathExistsError,
+        KbTreeService,
+        suggest_alternate_filename,
+    )
 
     c = _c(request)
-    if c.repo.is_protected(body.to_directory):
-        raise HTTPException(403, "禁止移动到该目录")
+    svc = KbTreeService(c.repo, c.knowledge_writer, c.index_revision)
     try:
-        new_path = move_entry(
-            c.repo,
-            c.knowledge_writer,
+        return svc.move(
             from_path=body.from_path,
             to_directory=body.to_directory,
             to_filename=body.to_filename,
@@ -326,28 +327,26 @@ async def kb_move(body: KbMoveBody, request: Request):
                 ),
             ),
         ) from e
+    except PermissionError as e:
+        raise HTTPException(403, str(e)) from e
     except FileNotFoundError as e:
         raise HTTPException(404, "源路径不存在") from e
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
-    c.index_revision.bump()
-    return {"rel_path": new_path, "from_path": body.from_path}
 
 
 @router.post("/kb/delete")
 async def kb_delete(body: KbDeleteBody, request: Request):
-    from app.engine.kb_ops import delete_entry
+    from app.engine.kb_tree_service import KbTreeService
 
     c = _c(request)
+    svc = KbTreeService(c.repo, c.knowledge_writer, c.index_revision)
     try:
-        deleted = delete_entry(c.repo, c.knowledge_writer, body.path)
+        return svc.delete(body.path)
     except FileNotFoundError as e:
         raise HTTPException(404, "路径不存在") from e
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
-    if deleted:
-        c.index_revision.bump()
-    return {"deleted_paths": deleted}
 
 
 @router.get("/doc")

@@ -1,8 +1,60 @@
 from __future__ import annotations
 
+import re
+from pathlib import PurePosixPath
+
+from app.index.extract import extract_text
 from app.index.indexer import Indexer
-from app.storage.kb_paths import KbPathError, join_kb_path
+from app.storage import frontmatter
+from app.storage.kb_paths import (
+    KbPathError,
+    join_kb_path,
+    normalize_directory,
+    title_from_rel_path,
+)
 from app.storage.repo import KnowledgeRepo
+
+_ATTACHMENTS = "/attachments/"
+
+
+class KbPathExistsError(FileExistsError):
+    def __init__(self, rel_path: str):
+        self.rel_path = rel_path
+        super().__init__(f"目标路径已存在：{rel_path}")
+
+
+def is_markdown_path(rel_path: str) -> bool:
+    return rel_path.replace("\\", "/").lower().endswith(".md")
+
+
+def is_attachment_path(rel_path: str) -> bool:
+    return _ATTACHMENTS in rel_path.replace("\\", "/")
+
+
+def suggest_alternate_filename(filename: str) -> str:
+    base = _safe_basename(filename)
+    stem = PurePosixPath(base).stem
+    suffix = PurePosixPath(base).suffix
+    m = re.match(r"^(.+) \((\d+)\)$", stem)
+    if m:
+        b, n = m.group(1), int(m.group(2))
+        return f"{b} ({n + 1}){suffix}"
+    return f"{stem} (1){suffix}"
+
+
+def _safe_basename(name: str) -> str:
+    base = PurePosixPath(name.replace("\\", "/")).name.strip()
+    if not base or base in (".", ".."):
+        raise ValueError("无效文件名")
+    if "/" in base or ".." in base:
+        raise ValueError("无效文件名")
+    return base
+
+
+def _attachment_rel(directory: str, filename: str) -> str:
+    d = normalize_directory(directory)
+    fn = _safe_basename(filename)
+    return f"{d}/attachments/{fn}" if d else f"attachments/{fn}"
 
 
 class KnowledgeWriter:
@@ -129,3 +181,104 @@ class KnowledgeWriter:
                 "status": "failed",
             }
         return rel, None
+
+    def import_entry(
+        self,
+        *,
+        directory: str,
+        filename: str,
+        data: bytes,
+    ) -> dict:
+        fn = _safe_basename(filename)
+        if is_markdown_path(fn):
+            try:
+                rel = join_kb_path(directory, fn)
+            except KbPathError as e:
+                raise ValueError(str(e)) from e
+            if self.repo.abs_path(rel).exists():
+                raise KbPathExistsError(rel)
+            text = data.decode("utf-8", errors="replace")
+            meta, body = frontmatter.parse(text)
+            if not meta.get("title"):
+                meta["title"] = title_from_rel_path(rel)
+            meta.setdefault("source", "import")
+            self.persist_document(
+                rel,
+                meta,
+                body if body.endswith("\n") else body + "\n",
+                commit_msg=f"import: {rel}",
+                changelog_line=f"导入 {rel}",
+            )
+            return {"rel_path": rel, "kind": "markdown", "indexed": True}
+
+        rel = _attachment_rel(directory, fn)
+        if self.repo.abs_path(rel).exists():
+            raise KbPathExistsError(rel)
+        self.repo.save_attachment(
+            normalize_directory(directory),
+            fn,
+            data,
+            commit_msg=f"import attachment {fn}",
+        )
+        extracted = extract_text(self.repo.abs_path(rel))
+        indexed = self.index_extracted_text(rel, extracted)
+        self.repo.log_change(
+            f"导入附件 {rel}",
+            commit_msg=f"chore: changelog import {fn}",
+        )
+        return {"rel_path": rel, "kind": "attachment", "indexed": indexed}
+
+    def move_entry(
+        self,
+        *,
+        from_path: str,
+        to_directory: str,
+        to_filename: str | None = None,
+    ) -> str:
+        from_norm = from_path.replace("\\", "/").lstrip("/")
+        if self.repo.is_protected(from_norm):
+            raise ValueError(f"禁止移动：{from_path}")
+
+        if is_markdown_path(from_norm):
+            fn = to_filename or PurePosixPath(from_norm).name
+            try:
+                rel = join_kb_path(to_directory, fn)
+            except KbPathError as e:
+                raise ValueError(str(e)) from e
+            if self.repo.abs_path(rel).exists():
+                raise KbPathExistsError(rel)
+            try:
+                return self.move_document(from_norm, to_directory, fn)
+            except ValueError as e:
+                if "已存在" in str(e):
+                    raise KbPathExistsError(rel) from e
+                raise
+
+        if not is_attachment_path(from_norm):
+            raise ValueError("仅支持移动 Markdown 文档或 attachments 下的文件")
+
+        fn = _safe_basename(to_filename or PurePosixPath(from_norm).name)
+        to_rel = _attachment_rel(to_directory, fn)
+        if self.repo.abs_path(to_rel).exists():
+            raise KbPathExistsError(to_rel)
+        new_path = self.repo.move_file(
+            from_norm, to_rel, commit_msg=f"move: {from_norm} -> {to_rel}"
+        )
+        self.drop_from_index([from_norm])
+        extracted = extract_text(self.repo.abs_path(new_path))
+        self.index_extracted_text(new_path, extracted)
+        self.repo.log_change(
+            f"移动附件 {from_norm} → {new_path}",
+            commit_msg=f"chore: changelog move {new_path}",
+        )
+        return new_path
+
+    def delete_entry(self, path: str) -> list[str]:
+        norm = path.replace("\\", "/").rstrip("/")
+        if self.repo.is_protected(norm):
+            raise ValueError(f"禁止删除：{path}")
+        deleted = self.repo.delete_path(norm, commit_msg=f"delete: {norm}")
+        if deleted:
+            self.drop_from_index(deleted)
+            self.record_deletion(norm, deleted)
+        return deleted

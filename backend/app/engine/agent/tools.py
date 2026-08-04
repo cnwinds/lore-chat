@@ -62,9 +62,9 @@ class ToolRegistry:
         self.system_layer = system_layer
         writer = knowledge_writer or getattr(organizer, "writer", None)
         if writer is None:
-            if indexer is None:
-                raise ValueError("ToolRegistry requires knowledge_writer or indexer")
-            writer = KnowledgeWriter(repo, indexer)
+            raise ValueError(
+                "ToolRegistry requires knowledge_writer (Container 应注入同一实例)"
+            )
         self.knowledge_writer = writer
         self.disclosure_chars = disclosure_chars
         self.edit_doc_max_edits = edit_doc_max_edits

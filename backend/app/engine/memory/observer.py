@@ -12,7 +12,6 @@ from app.engine.memory.policy import (
     quote_hash_for,
     should_promote,
     slot_for_candidate,
-    validate_evidence,
 )
 from app.engine.memory.store import MemoryStore
 from app.engine.secrets import scan_secrets
@@ -47,9 +46,6 @@ class MemoryObserver:
         candidates = 0
         rejected = 0
         for cand in extracted.candidates:
-            if not validate_evidence(text, cand):
-                rejected += 1
-                continue
             out = self._apply_candidate(
                 cand,
                 text=text,

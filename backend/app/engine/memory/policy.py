@@ -49,6 +49,13 @@ def validate_evidence(text: str, candidate: MemoryCandidate) -> bool:
     return quote.strip() == candidate.statement.strip() or candidate.statement.strip() in quote
 
 
+def validated_candidates(
+    text: str, candidates: list[MemoryCandidate]
+) -> list[MemoryCandidate]:
+    """抽取 adapter 出口：仅保留证据与原文一致的候选。"""
+    return [c for c in candidates if validate_evidence(text, c)]
+
+
 def is_direct_self_statement(statement: str) -> bool:
     text = (statement or "").strip()
     return any(text.startswith(m) or m in text[:20] for m in _DIRECT_MARKERS)

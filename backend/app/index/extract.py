@@ -12,11 +12,12 @@ def extract_text(path: str | Path) -> str:
     if ext in _READABLE:
         try:
             from markitdown import MarkItDown
+            from markitdown._markitdown import FileConversionException
 
             md = MarkItDown()
             result = md.convert(str(path))
             return result.text_content or ""
-        except Exception:
+        except (Exception, FileConversionException):
             return ""
     # 二进制（zip/rar 等）不抽取内容
     return ""
