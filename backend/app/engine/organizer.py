@@ -63,7 +63,6 @@ class Organizer:
     ):
         self.repo = repo
         self.retriever = retriever
-        self.indexer = indexer
         self.pending = pending
         self.llm = llm
         self.settings = settings or Settings()

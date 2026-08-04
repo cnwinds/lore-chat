@@ -10,6 +10,7 @@ from app.engine.memory.normalize import infer_category, normalize_slot_key, valu
 from app.engine.memory.policy import infer_sensitivity
 from app.engine.memory.store import MemoryStore
 from app.engine.secrets import scan_secrets
+from app.engine.knowledge_writer import KnowledgeWriter
 from app.storage.repo import KnowledgeRepo
 
 _MARKER_RE = re.compile(r"<!--\s*memory:([A-Za-z0-9_-]+)\s*-->")
@@ -33,6 +34,7 @@ class MemoryService:
         memory_max_chars: int = 4000,
         conversations=None,
         indexer=None,
+        knowledge_writer: KnowledgeWriter | None = None,
     ):
         self.store = store
         self.repo = repo
@@ -40,6 +42,17 @@ class MemoryService:
         self.memory_max_chars = memory_max_chars
         self.conversations = conversations
         self.indexer = indexer
+        self.knowledge_writer = knowledge_writer
+
+    def _drop_memory_from_search_index(self) -> None:
+        if self.knowledge_writer is not None:
+            self.knowledge_writer.drop_from_index([self.memory_rel])
+            return
+        if self.indexer:
+            try:
+                self.indexer.remove_doc(self.memory_rel)
+            except Exception:
+                pass
 
     def remember(
         self,
@@ -213,11 +226,7 @@ class MemoryService:
             rendered_fact_ids=rendered_ids,
             valid_snapshot_body=body,
         )
-        if self.indexer:
-            try:
-                self.indexer.remove_doc(self.memory_rel)
-            except Exception:
-                pass
+        self._drop_memory_from_search_index()
         return body
 
     def import_manual_document(self, meta: dict, body: str, *, dry_run: bool = False) -> dict:
@@ -269,11 +278,7 @@ class MemoryService:
             rendered_fact_ids=list(current_ids),
             valid_snapshot_body=body,
         )
-        if self.indexer:
-            try:
-                self.indexer.remove_doc(self.memory_rel)
-            except Exception:
-                pass
+        self._drop_memory_from_search_index()
         return {"ok": True, "message": "手动编辑已同步"}
 
     def _check_import_tombstones(self, items: list[dict]) -> dict | None:

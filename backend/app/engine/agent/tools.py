@@ -59,10 +59,12 @@ class ToolRegistry:
         self.pending = pending
         self.conversations = conversations
         self.system_layer = system_layer
-        self.indexer = indexer or getattr(organizer, "indexer", None)
-        self.knowledge_writer = knowledge_writer or getattr(
-            organizer, "writer", None
-        ) or KnowledgeWriter(repo, self.indexer)
+        writer = knowledge_writer or getattr(organizer, "writer", None)
+        if writer is None:
+            if indexer is None:
+                raise ValueError("ToolRegistry requires knowledge_writer or indexer")
+            writer = KnowledgeWriter(repo, indexer)
+        self.knowledge_writer = writer
         self.disclosure_chars = disclosure_chars
         self.edit_doc_max_edits = edit_doc_max_edits
         self.edit_doc_max_patch_chars = edit_doc_max_patch_chars

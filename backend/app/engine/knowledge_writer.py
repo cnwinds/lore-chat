@@ -57,6 +57,13 @@ class KnowledgeWriter:
         )
         return reindex_mode
 
+    def index_extracted_text(self, rel_path: str, text: str) -> bool:
+        """附件等非 Markdown 主文档的可检索文本入索引。"""
+        if not text.strip() or self.indexer is None:
+            return False
+        self.indexer.reindex_doc(rel_path.replace("\\", "/").lstrip("/"), text)
+        return True
+
     def move_document(self, from_path: str, to_directory: str, to_filename: str) -> str:
         from_norm = from_path.replace("\\", "/").lstrip("/")
         to_path = join_kb_path(to_directory, to_filename)

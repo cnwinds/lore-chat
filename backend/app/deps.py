@@ -135,7 +135,7 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
         knowledge_writer=knowledge_writer,
     )
     memory_service.conversations = conversations
-    memory_service.indexer = indexer
+    memory_service.knowledge_writer = knowledge_writer
     from app.engine.memory.renderer import MemoryRenderer
 
     MemoryRenderer(repo).ensure_seed()

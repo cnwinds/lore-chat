@@ -215,13 +215,12 @@ async def upload(
     from app.index.extract import extract_text
 
     text = extract_text(abs_path)
-    if text.strip():
-        c.indexer.reindex_doc(rel, text)
+    indexed = c.knowledge_writer.index_extracted_text(rel, text)
     c.repo.log_change(
         f"上传附件 {rel}",
         commit_msg=f"chore: changelog upload {file.filename}",
     )
-    return {"attachment": rel, "indexed": bool(text.strip())}
+    return {"attachment": rel, "indexed": indexed}
 
 
 @router.get("/download")
