@@ -30,7 +30,7 @@ _INFERRED_MARKERS = (
 
 
 class RuleBasedMemoryExtractor:
-    """确定性提取器：测试与无 LLM 环境使用。"""
+    """确定性提取器：测试与无 LLM 环境使用；statement 为原文逐字摘录（见 LLMMemoryExtractor）。"""
 
     def extract(self, text: str, *, context_messages: list[dict] | None = None) -> ExtractionResult:
         if scan_secrets(text):

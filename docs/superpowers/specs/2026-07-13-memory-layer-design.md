@@ -434,7 +434,7 @@ confirmed 事实、用户删除和 tombstone 不能仅靠原会话无损重建�
 2. 检出的 secret 值不进入 MemoryExtractor；向量与 FTS 索引使用等长掩码文本，原始会话仍遵循会话保留策略。
 3. MemoryExtractor 读取当前用户消息和必要的少量邻近上下文，输出严格结构化候选。
 4. 助手文本可以帮助理解指代，但不能作为“关于用户”的唯一证据。
-5. 每条候选必须给出用户原话的精确字符范围；范围与原文不匹配则整条拒绝。
+5. 每条候选必须给出用户原话的精确字符范围（`evidence` 摘录），范围与原文不匹配则整条拒绝。生产环境 `LLMMemoryExtractor` 可将 `statement` 整理改写后写入 `记忆.md`，但 `evidence` 仍为逐字子串；policy 对改写项要求摘录足够长且与 statement 有足够字元重叠，防止短摘录配胡编事实。测试/无 LLM 环境的 `RuleBasedMemoryExtractor` 仍使 `statement` 与摘录一致。
 
 提取目标仅限用户本人：
 
@@ -832,7 +832,7 @@ confirmed + origin=manual/explicit_remember
 - scanner 只能承诺拦截规则覆盖的 secret 格式，验收措辞不得扩大为“任何未知 secret 都绝不进入索引”。
 - 阶段 1A 回填前先扫描并重建全部旧会话索引。知识文档与附件的 secret 清理属于独立安全项目，不由本设计虚假覆盖。
 - 健康、财务、精确住址等敏感事实只有手动编辑或显式 remember 才能确认。
-- 证据字符范围必须与原消息精确匹配，阻止模型凭空生成来源。
+- 证据字符范围必须与原消息精确匹配（`evidence` 逐字摘录）；`statement` 可经 LLM 改写，但须通过摘录长度与字元重叠校验，阻止模型凭空生成来源。
 - 记忆渲染只接受已定义分类中的简短陈述，不接受代码块、工具调用或规则覆盖文字。
 - 本期所有 memory 表统一使用 workspace `owner_key`；不提供多账号承诺。
 
@@ -865,8 +865,9 @@ confirmed + origin=manual/explicit_remember
 ```text
 models.py     -> 枚举、结构化提取结果、领域模型
 store.py      -> memory.db schema、事务、查询、tombstone
-extractor.py  -> LLM 结构化提取与精确证据校验
-policy.py     -> 晋升、冲突、敏感、衰减规则
+extractor.py  -> 规则/LLM 结构化提取（LLM 可改写 statement，evidence 锚定原文）
+llm_extractor.py -> 生产默认 LLM 提取
+policy.py     -> 晋升、冲突、敏感、证据门槛（含改写重叠校验）
 renderer.py   -> 记忆.md 解析、手改同步、容量控制、原子渲染
 service.py    -> 对外用例：observe / manage / recall / explain
 worker.py     -> 消费 derivation_outbox、lease、重试与恢复
@@ -970,7 +971,7 @@ worker.py     -> 消费 derivation_outbox、lease、重试与恢复
 - 等长 secret 掩码不改变 Unicode code point offset；
 - 混合结果融合、去重、分页、同源分组；
 - 用户与助手消息的 secret 检测均先于 FTS、embedding 和 extractor；
-- 提取证据范围精确匹配；
+- 提取 evidence 范围精确匹配原文；改写 statement 须通过重叠门槛；
 - 明确普通自述立即确认；
 - 推断在同一会话重复出现仍不晋升；
 - 推断跨两个会话且置信度足够才晋升；

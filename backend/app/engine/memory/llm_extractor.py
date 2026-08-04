@@ -6,9 +6,12 @@ from typing import Protocol
 
 from app.engine.memory.models import ExtractionResult, MemoryCandidate
 from app.engine.memory.normalize import infer_category
-from app.engine.memory.policy import extraction_after_evidence_gate
+from app.engine.memory.policy import extraction_after_evidence_gate, is_template_like
 from app.engine.secrets import scan_secrets
 from app.models.llm import LLMClient
+
+# 生产默认：LLM 可改写 statement，evidence 锚定原文。
+# 测试/无 LLM 环境使用 RuleBasedMemoryExtractor（statement 为原文逐字摘录）。
 
 _SYSTEM_PROMPT = """你是用户长期记忆抽取器。只分析「用户本条消息」，提取可长期复用的个人画像事实（身份、稳定偏好、长期目标、常用工具/环境、明确约束）。
 
@@ -19,36 +22,21 @@ _SYSTEM_PROMPT = """你是用户长期记忆抽取器。只分析「用户本条
 - 不确定的推测（除非用户明确用「可能」「好像」且仍在描述自己）
 
 规则：
-1. statement 必须是用户原文中的连续子串，逐字一致，不得改写或补全。
-2. category 取其一：identity / preference / goal / workflow / constraint
-3. origin：用户明确自述用 direct；从上下文合理推断用 inferred
-4. confidence：direct 通常 0.85–1.0；inferred 通常 0.5–0.75
-5. 无合适事实时返回空数组
+1. statement：写入记忆文件的表述。可理解用户原意后整理改写，要求完整、简洁、可读（优先第一人称「我…」），适合长期画像；不要占位符、不要只留半句标签（如仅「我是一名工程师」而省略职责与专长）。同一消息内若有多条独立事实，拆成多条 candidate，每条 statement 自洽完整。
+2. evidence：必须是用户本条消息中的连续子串，逐字一致，不得改写；用于证明该事实出自用户原话，应覆盖 statement 所依据的原文（可一句或多句，不必与 statement 字面相同）。
+3. category 取其一：identity / preference / goal / workflow / constraint
+4. origin：用户明确自述用 direct；从上下文合理推断用 inferred
+5. confidence：direct 通常 0.85–1.0；inferred 通常 0.5–0.75
+6. 无合适事实时返回空数组
 
 只输出 JSON，不要 markdown 围栏：
-{"candidates":[{"statement":"...","category":"preference","origin":"direct","confidence":0.9}]}"""
+{"candidates":[{"statement":"...","evidence":"...","category":"preference","origin":"direct","confidence":0.9}]}"""
 
 
 class MemoryExtractor(Protocol):
     def extract(
         self, text: str, *, context_messages: list[dict] | None = None
     ) -> ExtractionResult: ...
-
-
-_TEMPLATE_RE = re.compile(
-    r"_{3,}|______|\(职业\)|（职业）|填入你的|填入职业|我读这本书的目的"
-)
-
-
-def is_template_like(statement: str) -> bool:
-    s = (statement or "").strip()
-    if not s:
-        return True
-    if _TEMPLATE_RE.search(s):
-        return True
-    if "____" in s and len(s) < 40:
-        return True
-    return False
 
 
 def locate_statement_span(text: str, statement: str) -> tuple[int, int] | None:
@@ -151,7 +139,10 @@ class LLMMemoryExtractor:
                 continue
             if scan_secrets(statement):
                 continue
-            span = locate_statement_span(stripped, statement)
+            evidence = str(item.get("evidence") or statement).strip()
+            if len(evidence) < 3 or scan_secrets(evidence) or is_template_like(evidence):
+                continue
+            span = locate_statement_span(stripped, evidence)
             if span is None:
                 continue
             start, end = span
@@ -172,6 +163,7 @@ class LLMMemoryExtractor:
             except (TypeError, ValueError):
                 confidence = 0.85 if origin == "direct" else 0.65
             confidence = max(0.0, min(1.0, confidence))
+            rewritten = statement != evidence
             candidates.append(
                 MemoryCandidate(
                     statement=statement,
@@ -180,6 +172,7 @@ class LLMMemoryExtractor:
                     confidence=confidence,
                     start_char=start,
                     end_char=end,
+                    rewritten=rewritten,
                 )
             )
         return extraction_after_evidence_gate(stripped, candidates)

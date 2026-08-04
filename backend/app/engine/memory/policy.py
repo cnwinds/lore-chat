@@ -28,6 +28,39 @@ _CHANGE_MARKERS = ("现在", "以后", "改为", "不再", "改成")
 _PROMOTION_CONFIDENCE = 0.80
 _PROMOTION_MIN_CONVERSATIONS = 2
 
+_TEMPLATE_RE = re.compile(
+    r"_{3,}|______|\(职业\)|（职业）|填入你的|填入职业|我读这本书的目的"
+)
+_MIN_EVIDENCE_QUOTE_LEN = 8
+_MIN_EVIDENCE_CORE_LEN = 8
+_REWRITE_STMT_EVIDENCE_OVERLAP = 0.35
+_PUNCT_STRIP_RE = re.compile(r"[\s，。、；：！？,.;:!?\"'「」【】（）()\[\]{}]+")
+
+
+def is_template_like(text: str) -> bool:
+    s = (text or "").strip()
+    if not s:
+        return True
+    if _TEMPLATE_RE.search(s):
+        return True
+    if "____" in s and len(s) < 40:
+        return True
+    return False
+
+
+def _core_chars(text: str) -> str:
+    return _PUNCT_STRIP_RE.sub("", text or "")
+
+
+def rewrite_supported_by_evidence(statement: str, evidence_quote: str) -> bool:
+    """改写 statement 须与 evidence 摘录有足够字元重叠，防止短摘录配胡编事实。"""
+    stmt = _core_chars(statement)
+    ev = _core_chars(evidence_quote)
+    if len(ev) < _MIN_EVIDENCE_CORE_LEN or len(stmt) < 2:
+        return False
+    common = sum(1 for c in stmt if c in ev)
+    return common / len(stmt) >= _REWRITE_STMT_EVIDENCE_OVERLAP
+
 
 def infer_sensitivity(statement: str) -> str:
     text = (statement or "").strip()
@@ -45,8 +78,15 @@ def validate_evidence(text: str, candidate: MemoryCandidate) -> bool:
         return False
     if candidate.start_char >= candidate.end_char:
         return False
-    quote = text[candidate.start_char : candidate.end_char]
-    return quote.strip() == candidate.statement.strip() or candidate.statement.strip() in quote
+    quote = text[candidate.start_char : candidate.end_char].strip()
+    stmt = candidate.statement.strip()
+    if not quote or is_template_like(quote):
+        return False
+    if not candidate.rewritten:
+        return quote == stmt or stmt in quote
+    if len(quote) < _MIN_EVIDENCE_QUOTE_LEN:
+        return False
+    return rewrite_supported_by_evidence(stmt, quote)
 
 
 def validated_candidates(
