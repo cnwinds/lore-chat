@@ -11,6 +11,8 @@
 | Agent | `backend/app/engine/agent/` | `AgentOrchestrator`（adapter）、`AgentToolLoop`（LLM+工具循环）、`tool_catalog`、`tool_impl/*`（执行）、`tools.py`（ToolRegistry 组装） |
 | 会话 | `backend/app/engine/conversations.py` + `conversation/outbox.py` | SQLite 消息/turn；派生任务队列 |
 | 知识写入 | `backend/app/engine/knowledge_writer.py` | 路径 + git + 索引 + changelog **唯一写入 seam**；`import_entry` / `move_entry` / `delete_entry`（含附件） |
+| 条目变更 | `backend/app/engine/kb_entry_ops.py` | Agent/HTTP 共用的写/移/删 facade（`write_mode`：auto/merge/replace；`SKILL.md` 默认 replace） |
+| 文档成文 | `backend/app/engine/document_synthesis.py` | 归档/合并/入库合并的 LLM 成文；Organizer 与 MergeWorkflow 共用 |
 | 知识库树 HTTP | `backend/app/engine/kb_tree_service.py` | import/move/delete + protected + `index_revision.bump` |
 | 归位 | `backend/app/engine/placement.py` | LLM 决定 new/merge 与 `rel_path` |
 | 整理 | `backend/app/engine/organizer.py` | 录入/归档正文合成 + `PlacementPlanner` + `KnowledgeWriter` |
@@ -57,6 +59,7 @@
 ## 进一步阅读
 
 - [ADR：引擎模块 seam（2026-08-04）](docs/adr/2026-08-04-engine-module-seams.md)
+- [ADR：多文档合并仅 UI（2026-08-05）](docs/adr/2026-08-05-merge-ui-only.md)
 - 产品规格：`docs/superpowers/specs/`
 
 ## Language（对话与知识库）

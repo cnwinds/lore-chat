@@ -140,7 +140,7 @@ def test_ingest_forced_path_creates_new_file(tmp_path):
     assert "全新内容段落" in doc.body
 
 
-def test_legacy_pending_resolves_to_continue_with_write_kb_hint(tmp_path):
+def test_legacy_pending_resolves_to_saved_without_kind(tmp_path):
     org, repo, pending = _make(tmp_path, [])
     qid = pending.create(
         "记录哪部分？",
@@ -148,6 +148,22 @@ def test_legacy_pending_resolves_to_continue_with_write_kb_hint(tmp_path):
         {"context": "背景说明"},
     )
     result = org.resolve_agent_choices(qid, ["a"])
-    assert result.status == "continue"
-    assert "list_kb_structure" in result.continue_prompt
-    assert "write_kb" in result.continue_prompt
+    assert result.status == "saved"
+    assert "要点 A" in result.message
+
+
+def test_ingest_skill_md_uses_replace_not_merge(tmp_path):
+    org, repo, _ = _make(tmp_path, ["# should-not-appear\n"])
+    repo.write_doc(
+        "skill/demo/SKILL.md",
+        {"title": "Old"},
+        "# old body\n",
+        commit_msg="seed",
+    )
+    new_body = "---\nname: demo\ndescription: x\n---\n\n# Demo\n\nbody\n"
+    result = org.ingest_text(new_body, forced_rel_path="skill/demo/SKILL.md")
+    assert result.status == "saved"
+    doc = repo.read_doc("skill/demo/SKILL.md")
+    assert "name: demo" in doc.body
+    assert "should-not-appear" not in doc.body
+    assert "# Demo" in doc.body

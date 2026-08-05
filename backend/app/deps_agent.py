@@ -31,6 +31,9 @@ class AgentSubgraph:
 
     def rebind_llm(self, settings: Settings, llm: LLMClient) -> None:
         self.organizer.llm = llm
+        self.organizer.synthesis.llm = llm
+        self.organizer.merge.llm = llm
+        self.organizer.merge.synthesis = self.organizer.synthesis
         self.agent.settings = settings
         self.agent.llm = llm
         self.agent.tools.web_search = WebSearch(settings)

@@ -3,6 +3,8 @@ from __future__ import annotations
 from app.engine.agent.tool_catalog import resolve_kb_location
 from app.engine.agent.tool_impl.doc_read_guard import DocReadGuard
 from app.engine.conversations import ConversationStore
+from app.engine.kb_entry_ops import KbEntryOps
+from app.engine.write_policy import WriteMode
 from app.engine.knowledge_writer import KbPathExistsError, KnowledgeWriter
 from app.engine.memory.constants import MEMORY_DOC_REL
 from app.engine.organizer import Organizer
@@ -24,10 +26,14 @@ class KbMutateTools:
         system_layer=None,
         edit_doc_max_edits: int = 10,
         edit_doc_max_patch_chars: int = 8192,
+        entry_ops: KbEntryOps | None = None,
     ) -> None:
         self.repo = repo
         self.organizer = organizer
         self.knowledge_writer = knowledge_writer
+        self.entry_ops = entry_ops or KbEntryOps(
+            repo=repo, writer=knowledge_writer, organizer=organizer
+        )
         self.read_guard = read_guard
         self.memory_service = memory_service
         self.conversations = conversations
@@ -42,7 +48,13 @@ class KbMutateTools:
         text = args["text"]
         if args.get("context"):
             text = args["context"] + "\n\n" + text
-        result = self.organizer.ingest_text(text, forced_rel_path=rel_path)
+        mode_raw = args.get("write_mode", "auto")
+        write_mode: WriteMode = (
+            mode_raw if mode_raw in ("auto", "merge", "replace") else "auto"
+        )
+        result = self.entry_ops.write_text(
+            text, rel_path=rel_path, write_mode=write_mode
+        )
         sources = [{"type": "kb", "path": result.rel_path}] if result.rel_path else []
         out: dict = {
             "summary": result.message,
@@ -106,7 +118,7 @@ class KbMutateTools:
             str(raw_fn) if raw_fn is not None and str(raw_fn).strip() else None
         )
         try:
-            new_path = self.knowledge_writer.move_entry(
+            new_path = self.entry_ops.move_entry(
                 from_path=from_path,
                 to_directory=to_directory,
                 to_filename=to_filename,
@@ -150,7 +162,7 @@ class KbMutateTools:
     def delete_kb(self, args: dict) -> dict:
         path = args["path"]
         try:
-            deleted = self.repo.delete_path(path, commit_msg=f"delete: {path}")
+            deleted = self.entry_ops.delete_entry(path)
         except FileNotFoundError:
             return {
                 "summary": f"路径不存在：{path}",
@@ -159,9 +171,6 @@ class KbMutateTools:
             }
         except ValueError as e:
             return {"summary": str(e), "sources": [], "error": str(e)}
-
-        self.knowledge_writer.drop_from_index(deleted)
-        self.knowledge_writer.record_deletion(path, deleted)
 
         return {
             "summary": f"已删除 {path}（{len(deleted)} 个文件）",

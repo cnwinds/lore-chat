@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from app.engine.content_hash import body_hash
+from app.engine.document_synthesis import DocumentSynthesis
 from app.engine.knowledge_writer import KnowledgeWriter
 from app.engine.merge_sessions import MergeSessionStore
 from app.engine.pending import PendingStore
@@ -35,6 +36,7 @@ class MergeWorkflow:
         writer: KnowledgeWriter,
         planner: PlacementPlanner,
         pending: PendingStore,
+        synthesis: DocumentSynthesis | None = None,
     ):
         self.repo = repo
         self.retriever = retriever
@@ -42,6 +44,7 @@ class MergeWorkflow:
         self.writer = writer
         self.planner = planner
         self.pending = pending
+        self.synthesis = synthesis or DocumentSynthesis(llm)
 
     def merge_documents(
         self,
@@ -336,34 +339,7 @@ class MergeWorkflow:
         )
 
     def _synthesize_merge(self, sources: list[tuple[str, str]], instruction: str) -> str:
-        source_text = "\n\n".join(
-            f"=== 文档 {path} ===\n{body}" for path, body in sources
-        )
-        user_instruction = instruction.strip() or "在不遗漏关键信息的前提下去重合并。"
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    "你是知识库编辑，负责把多篇文档合并成一篇可长期维护的 Markdown 文档。\n"
-                    "要求：\n"
-                    "1. 按主题重组内容，去重并消除冲突，优先保留更新且更完整的信息\n"
-                    "2. 只输出正文 Markdown，不要 frontmatter，不要使用代码围栏包裹全文\n"
-                    "3. 避免对话化语言，直接给出结构化知识内容"
-                ),
-            },
-            {
-                "role": "user",
-                "content": (
-                    f"合并要求：{user_instruction}\n\n"
-                    "请将以下文档合并成一篇：\n\n"
-                    f"{source_text}"
-                ),
-            },
-        ]
-        body = self.llm.chat(messages, big=True).strip()
-        if not body.endswith("\n"):
-            body += "\n"
-        return body
+        return self.synthesis.merge_documents(sources, instruction)
 
 
 __all__ = ["MergeResult", "MergeWorkflow"]

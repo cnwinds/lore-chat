@@ -189,6 +189,15 @@ TOOL_DEFINITIONS: list[dict] = [
                         "type": "string",
                         "description": "可选上下文（如来源说明），会拼接到正文前",
                     },
+                    "write_mode": {
+                        "type": "string",
+                        "enum": ["auto", "merge", "replace"],
+                        "description": (
+                            "写入策略：auto（默认；SKILL.md 覆盖写入，其它已存在则 LLM 合并）；"
+                            "merge（强制合并重组）；replace（整篇覆盖正文，保留元数据）"
+                        ),
+                        "default": "auto",
+                    },
                     **_path_fields()[0],
                 },
                 "required": ["text", "directory", "filename"],

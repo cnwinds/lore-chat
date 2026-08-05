@@ -14,19 +14,11 @@ from app.engine.intent import is_question_only
 from app.engine.merge_sessions import MergeSessionStore
 from app.engine.retriever import Retriever
 from app.engine.pending import PendingStore
+from app.engine.document_synthesis import DocumentSynthesis
 from app.engine.knowledge_writer import KnowledgeWriter
 from app.engine.merge_workflow import MergeResult, MergeWorkflow
+from app.engine.write_policy import WriteMode, resolve_write_mode
 from app.models.llm import LLMClient
-
-
-# 仅当《戒律》缺失/读取失败时的兜底规则；正常运行以 system_rules（《戒律》二）为准。
-_DEFAULT_SUMMARY_RULES = (
-    "1. 总结对象是整段会话，先通读全部对话与依据再动笔。\n"
-    "2. 全局重构、禁止流水线拼接：按主题而非发言/来源顺序组织；跨轮去重合并；"
-    "禁止用 --- 堆叠多个一级标题，全篇只有一套自洽的标题层级。\n"
-    "3. 剥离对话痕迹（如「帮我记录」「用户说」），只留结论与事实。\n"
-    "4. 保留可核验性：事实、数据、版本、链接等须有出处，不臆造、不补全。"
-)
 
 
 @dataclass
@@ -56,6 +48,7 @@ class Organizer:
         self.llm = llm
         self.settings = settings or Settings()
         self.writer = knowledge_writer
+        self.synthesis = DocumentSynthesis(llm)
         self.planner = planner or PlacementPlanner(repo, retriever, llm)
         self.merge = merge_workflow or MergeWorkflow(
             repo=repo,
@@ -64,6 +57,7 @@ class Organizer:
             writer=knowledge_writer,
             planner=self.planner,
             pending=pending,
+            synthesis=self.synthesis,
         )
 
     def ingest_text(
@@ -71,6 +65,8 @@ class Organizer:
         content: str,
         *,
         forced_rel_path: str,
+        write_mode: WriteMode = "auto",
+        conversation_id: str | None = None,
     ) -> IngestResult:
         if is_question_only(content):
             return IngestResult(
@@ -89,7 +85,10 @@ class Organizer:
             )
 
         decision = self.planner.decision_for_forced_path(forced_rel_path)
-        self._apply(decision, content)
+        mode = resolve_write_mode(decision.rel_path, write_mode)
+        self._apply(
+            decision, content, conversation_id=conversation_id, write_mode=mode
+        )
         return IngestResult(
             status="saved",
             rel_path=decision.rel_path,
@@ -117,7 +116,7 @@ class Organizer:
         if conv is None:
             conv = {"messages": []}
         if len(transcript) <= self.settings.summarize_segment_chars:
-            body = self._synthesize(transcript, system_rules)
+            body = self.synthesis.archive_transcript(transcript, system_rules)
         else:
             segments = list(
                 ConversationStore.iter_transcript_segments(
@@ -125,9 +124,10 @@ class Organizer:
                 )
             )
             partials = [
-                self._synthesize_segment(seg["text"], system_rules, seg) for seg in segments
+                self.synthesis.archive_segment(seg["text"], system_rules, seg)
+                for seg in segments
             ]
-            body = self._synthesize_merge_segments(partials, system_rules)
+            body = self.synthesis.merge_archive_segments(partials, system_rules)
         if not (forced_rel_path or "").strip():
             return IngestResult(
                 status="rejected",
@@ -136,7 +136,10 @@ class Organizer:
                 message="归档必须指定 directory 与 filename（由工具参数拼成目标路径）。",
             )
         decision = self.planner.decision_for_forced_path(forced_rel_path)
-        self._apply(decision, body, conversation_id=conversation_id)
+        # 归档正文已是完整终稿，覆盖目标路径，避免再与旧稿 LLM 合并
+        self._apply(
+            decision, body, conversation_id=conversation_id, write_mode="replace"
+        )
         return IngestResult(
             status="saved",
             rel_path=decision.rel_path,
@@ -187,82 +190,87 @@ class Organizer:
             merge_id, delete_paths, merge_sessions=merge_sessions
         )
 
-    def _synthesize(self, transcript: str, system_rules: str) -> str:
-        rules = system_rules.strip() or _DEFAULT_SUMMARY_RULES
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    "你是知识库编辑，负责把一整段会话归档成一篇结构清晰、可长期查阅的文档。\n"
-                    "务必遵守下列规约（尤其是会话总结/归档部分）：\n\n" + rules
-                ),
-            },
-            {
-                "role": "user",
-                "content": (
-                    "以下是完整会话记录。请严格按上述规约通读全文后产出归档文档正文；"
-                    "只输出正文 Markdown，不要 frontmatter，不要用代码围栏包裹全文。\n\n"
-                    f"=== 会话记录 ===\n{transcript}"
-                ),
-            },
-        ]
-        body = self.llm.chat(messages, big=True).strip()
-        if not body.endswith("\n"):
-            body += "\n"
-        return body
+    @staticmethod
+    def _extract_written_path(context: str) -> str | None:
+        if not context:
+            return None
+        match = re.search(r"保存在\s+(\S+?)(?:\s|$|[，。])", context)
+        return match.group(1) if match else None
 
-    def _synthesize_segment(self, segment_text: str, system_rules: str, seg: dict) -> str:
-        rules = system_rules.strip() or _DEFAULT_SUMMARY_RULES
-        first_id = seg.get("first_message_id", "")
-        last_id = seg.get("last_message_id", "")
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    "你是知识库编辑，负责把会话片段归档成结构化摘要。\n"
-                    "务必遵守下列规约：\n\n" + rules
-                ),
-            },
-            {
-                "role": "user",
-                "content": (
-                    f"以下是会话片段（消息 {first_id} 至 {last_id}）。"
-                    "请产出该片段的摘要 Markdown，只输出正文，不要 frontmatter。\n\n"
-                    f"=== 片段 ===\n{segment_text}"
-                ),
-            },
-        ]
-        body = self.llm.chat(messages, big=True).strip()
-        if not body.endswith("\n"):
-            body += "\n"
-        return body
+    def _apply(
+        self,
+        decision: PlacementDecision,
+        content: str,
+        *,
+        conversation_id: str | None = None,
+        write_mode: WriteMode = "merge",
+    ) -> None:
+        rel_path = decision.rel_path
+        exists = False
+        try:
+            self.repo.read_doc(rel_path)
+            exists = True
+        except FileNotFoundError:
+            exists = False
 
-    def _synthesize_merge_segments(self, partials: list[str], system_rules: str) -> str:
-        rules = system_rules.strip() or _DEFAULT_SUMMARY_RULES
-        merged_input = "\n\n".join(
-            f"=== 段摘要 {i + 1} ===\n{p}" for i, p in enumerate(partials)
+        body = content if content.endswith("\n") else f"{content}\n"
+
+        if write_mode == "replace" and exists:
+            doc = self.repo.read_doc(rel_path)
+            meta = {
+                **doc.meta,
+                "title": decision.title or doc.meta.get("title", ""),
+            }
+            if decision.tags:
+                existing_tags = doc.meta.get("tags") or []
+                meta["tags"] = list(dict.fromkeys(existing_tags + decision.tags))
+            meta = _conversation_ids_meta(meta, conversation_id)
+            self.writer.persist_document(
+                rel_path,
+                meta,
+                body,
+                commit_msg=f"replace: {rel_path}",
+                changelog_line=f"覆盖写入 {rel_path}：{decision.reason or decision.title}",
+            )
+            return
+
+        if write_mode == "merge" and decision.action in ("merge", "append") and exists:
+            doc = self.repo.read_doc(rel_path)
+            merged_meta = {
+                **doc.meta,
+                "title": decision.title or doc.meta.get("title", ""),
+            }
+            if decision.tags:
+                existing_tags = doc.meta.get("tags") or []
+                merged_meta["tags"] = list(
+                    dict.fromkeys(existing_tags + decision.tags)
+                )
+            merged_meta = _conversation_ids_meta(merged_meta, conversation_id)
+            merged_body = self.synthesis.reorganize_existing(
+                doc.body, content, decision.title
+            )
+            self.writer.persist_document(
+                rel_path,
+                merged_meta,
+                merged_body,
+                commit_msg=f"merge: 整理合并 {rel_path}",
+                changelog_line=f"整理合并到 {rel_path}：{decision.reason or decision.title}",
+            )
+            return
+
+        meta: dict = {
+            "title": decision.title,
+            "tags": decision.tags,
+            "source": "conversation" if conversation_id else "chat",
+        }
+        meta = _conversation_ids_meta(meta, conversation_id)
+        self.writer.persist_document(
+            rel_path,
+            meta,
+            body,
+            commit_msg=f"add: 新建 {rel_path}",
+            changelog_line=f"创建 {rel_path}：{decision.reason or decision.title}",
         )
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    "你是知识库编辑，负责把多段会话摘要归并为一篇完整归档文档。\n"
-                    "务必遵守下列规约：\n\n" + rules
-                ),
-            },
-            {
-                "role": "user",
-                "content": (
-                    "以下是按时间顺序的各段摘要。请全局重构、去重合并为终稿 Markdown；"
-                    "只输出正文，不要 frontmatter。\n\n"
-                    f"{merged_input}"
-                ),
-            },
-        ]
-        body = self.llm.chat(messages, big=True).strip()
-        if not body.endswith("\n"):
-            body += "\n"
-        return body
 
     def resolve_agent_choices(
         self,
@@ -346,87 +354,6 @@ class Organizer:
             message="请按目录规划写入知识库。",
             continue_prompt="\n".join(parts),
         )
-
-    def _reorganize(self, existing_body: str, new_content: str, title: str) -> str:
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    "你是知识库文档编辑。将已有文档与新内容合并，输出一份完整、结构清晰的 Markdown 正文。\n"
-                    "要求：\n"
-                    # 与会话总结规约（《戒律》二）同源；后续应考虑统一注入以免措辞漂移
-                    "1. 通读已有文档与新内容，按主题去重合并，禁止简单拼接（与会话总结规约一致）\n"
-                    "2. 形成完整文档：标题层级合理、章节有序、信息不遗漏\n"
-                    "3. 删除对话痕迹（如「帮我记录」「用户希望记录」等元叙述），保留事实\n"
-                    "4. 若新内容修正或补充旧内容，以新内容为准\n"
-                    "5. 只输出正文 Markdown，不要 frontmatter，不要用代码围栏包裹全文"
-                ),
-            },
-            {
-                "role": "user",
-                "content": (
-                    f"文档标题参考：{title}\n\n"
-                    f"=== 已有文档 ===\n{existing_body}\n\n"
-                    f"=== 待合并的新内容 ===\n{new_content}"
-                ),
-            },
-        ]
-        body = self.llm.chat(messages, big=True).strip()
-        if not body.endswith("\n"):
-            body += "\n"
-        return body
-
-    @staticmethod
-    def _extract_written_path(context: str) -> str | None:
-        if not context:
-            return None
-        match = re.search(r"保存在\s+(\S+?)(?:\s|$|[，。])", context)
-        return match.group(1) if match else None
-
-    def _apply(
-        self,
-        decision: PlacementDecision,
-        content: str,
-        *,
-        conversation_id: str | None = None,
-    ) -> None:
-        rel_path = decision.rel_path
-        exists = False
-        try:
-            self.repo.read_doc(rel_path)
-            exists = True
-        except FileNotFoundError:
-            exists = False
-
-        if decision.action in ("merge", "append") and exists:
-            doc = self.repo.read_doc(rel_path)
-            merged_meta = {**doc.meta, "title": decision.title or doc.meta.get("title", "")}
-            if decision.tags:
-                existing_tags = doc.meta.get("tags") or []
-                merged_meta["tags"] = list(dict.fromkeys(existing_tags + decision.tags))
-            merged_meta = _conversation_ids_meta(merged_meta, conversation_id)
-            body = self._reorganize(doc.body, content, decision.title)
-            self.writer.persist_document(
-                rel_path,
-                merged_meta,
-                body,
-                commit_msg=f"merge: 整理合并 {rel_path}",
-                changelog_line=f"整理合并到 {rel_path}：{decision.reason or decision.title}",
-            )
-        else:
-            meta: dict = {
-                "title": decision.title,
-                "tags": decision.tags,
-                "source": "conversation" if conversation_id else "chat",
-            }
-            meta = _conversation_ids_meta(meta, conversation_id)
-            self.writer.persist_document(
-                rel_path,
-                meta,
-                f"{content}\n",
-                commit_msg=f"add: 新建 {rel_path}",
-                changelog_line=f"创建 {rel_path}：{decision.reason or decision.title}",
-            )
 
 
 def _conversation_ids_meta(meta: dict, conversation_id: str | None) -> dict:
