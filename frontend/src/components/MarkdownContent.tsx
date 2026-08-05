@@ -1,5 +1,6 @@
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { remarkTrimAutolinkUrls } from "../utils/markdownAutolink";
 
 type Props = {
   children: string;
@@ -9,7 +10,9 @@ type Props = {
 export function MarkdownContent({ children, className }: Props) {
   return (
     <div className={className}>
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>{children}</ReactMarkdown>
+      <ReactMarkdown remarkPlugins={[remarkGfm, remarkTrimAutolinkUrls]}>
+        {children}
+      </ReactMarkdown>
     </div>
   );
 }
