@@ -14,35 +14,15 @@ from app.engine.conversation.outbox import (
     append_deletion_ledger,
     default_deletion_ledger_path,
 )
-
-
-def _now() -> str:
-    from app.time import now_iso_seconds
-
-    return now_iso_seconds()
-
-
-def _title_from_text(text: str) -> str:
-    line = text.strip().split("\n")[0]
-    if len(line) > 40:
-        return line[:40] + "…"
-    return line or "新对话"
-
-
-def _new_id() -> str:
-    return uuid.uuid4().hex
-
-
-def _loads(raw: str | None, default):
-    if not raw:
-        return default
-    return json.loads(raw)
-
-
-def _dumps(value) -> str | None:
-    if value is None:
-        return None
-    return json.dumps(value, ensure_ascii=False)
+from app.engine.conversation.shared import (
+    TurnInProgress,
+    dumps_json as _dumps,
+    loads_json as _loads,
+    new_id as _new_id,
+    now_iso as _now,
+    title_from_text as _title_from_text,
+)
+from app.engine.conversation.turn_lifecycle import TurnLifecycle
 
 
 class _ConversationFTSLike(Protocol):
@@ -59,15 +39,6 @@ class _IndexRevisionLike(Protocol):
 
 class _IndexerLike(Protocol):
     def remove_conversation(self, cid: str) -> None: ...
-
-
-class TurnInProgress(Exception):
-    """本会话已存在一个 running turn，同一 client_message_id 不应再次触发 Agent。"""
-
-    def __init__(self, turn_id: str, retry_after_ms: int = 1000):
-        super().__init__(f"turn {turn_id} in progress")
-        self.turn_id = turn_id
-        self.retry_after_ms = retry_after_ms
 
 
 _SCHEMA = """
@@ -209,6 +180,7 @@ class ConversationStore:
             migrate_json_shards(self.dir)
 
         self._outbox = DerivationOutbox(self.conn, self._lock)
+        self._turn_lifecycle = TurnLifecycle(self)
 
     # ------------------------------------------------------------------
     # 内部辅助
@@ -487,188 +459,19 @@ class ConversationStore:
         primary_doc: str | None = None,
         attachments: list[str] | None = None,
     ) -> dict:
-        with self._lock:
-            conv_row = self._conversation_row(cid)
-
-            existing = self.conn.execute(
-                "SELECT * FROM turns WHERE conversation_id = ? AND client_message_id = ?",
-                (cid, client_message_id),
-            ).fetchone()
-            if existing is not None:
-                if existing["status"] == "running":
-                    raise TurnInProgress(existing["id"])
-                user_row = self.conn.execute(
-                    "SELECT * FROM messages WHERE id = ?",
-                    (existing["user_message_id"],),
-                ).fetchone()
-                result: dict = {
-                    "turn_id": existing["id"],
-                    "status": existing["status"],
-                    "user_message": self._message_row_to_dict(user_row),
-                }
-                if existing["assistant_message_id"]:
-                    assistant_row = self.conn.execute(
-                        "SELECT * FROM messages WHERE id = ?",
-                        (existing["assistant_message_id"],),
-                    ).fetchone()
-                    if assistant_row is not None:
-                        result["assistant_message"] = self._message_row_to_dict(
-                            assistant_row
-                        )
-                return result
-
-            # 单个会话同一时间只允许一个 active turn（spec §6.1）：不同
-            # client_message_id 但会话已有 running turn 时，拒绝开启新 turn。
-            if conv_row["active_turn_id"]:
-                active_turn = self.conn.execute(
-                    "SELECT * FROM turns WHERE id = ?",
-                    (conv_row["active_turn_id"],),
-                ).fetchone()
-                if active_turn is not None and active_turn["status"] == "running":
-                    raise TurnInProgress(active_turn["id"])
-
-            now = user_ts or _now()
-            msg_id = _new_id()
-            seq = self._next_seq(cid)
-            self.conn.execute(
-                """
-                INSERT INTO messages(
-                    id, conversation_id, seq, role, text, ts, status,
-                    client_message_id, doc_context_json, attachments_json, primary_doc
-                ) VALUES (?, ?, ?, 'user', ?, ?, 'complete', ?, ?, ?, ?)
-                """,
-                (
-                    msg_id,
-                    cid,
-                    seq,
-                    user_text,
-                    now,
-                    client_message_id,
-                    _dumps(doc_context),
-                    _dumps(attachments),
-                    primary_doc,
-                ),
-            )
-
-            turn_id = _new_id()
-            started_at = _now()
-            self.conn.execute(
-                """
-                INSERT INTO turns(
-                    id, conversation_id, client_message_id, user_message_id,
-                    assistant_message_id, status, observation_allowed,
-                    started_at
-                ) VALUES (?, ?, ?, ?, NULL, 'running', ?, ?)
-                """,
-                (turn_id, cid, client_message_id, msg_id, int(observation_allowed), started_at),
-            )
-
-            self._enqueue_index_jobs(msg_id, turn_id)
-            self._enqueue_observe_memory(msg_id, turn_id)
-            self._mark_dirty_and_stale(cid)
-
-            title = conv_row["title"]
-            if title == "新对话" and user_text.strip():
-                self.conn.execute(
-                    "UPDATE conversations SET title = ? WHERE id = ?",
-                    (_title_from_text(user_text), cid),
-                )
-
-            self.conn.execute(
-                "UPDATE conversations SET active_turn_id = ?, updated_at = ? WHERE id = ?",
-                (turn_id, started_at, cid),
-            )
-            self.conn.commit()
-
-            msg_row = self.conn.execute(
-                "SELECT * FROM messages WHERE id = ?", (msg_id,)
-            ).fetchone()
-            return {
-                "turn_id": turn_id,
-                "status": "running",
-                "user_message": self._message_row_to_dict(msg_row),
-            }
+        return self._turn_lifecycle.begin_turn(
+            cid,
+            user_text,
+            client_message_id,
+            observation_allowed,
+            user_ts=user_ts,
+            doc_context=doc_context,
+            primary_doc=primary_doc,
+            attachments=attachments,
+        )
 
     def finalize_turn(self, cid: str, turn_id: str, assistant: dict) -> dict | None:
-        with self._lock:
-            self._conversation_row(cid)
-            turn = self.conn.execute(
-                "SELECT * FROM turns WHERE id = ? AND conversation_id = ?",
-                (turn_id, cid),
-            ).fetchone()
-            if turn is None:
-                raise KeyError(turn_id)
-
-            if turn["status"] != "running":
-                # 幂等：已 finalize 过的 turn 不再插入第二条助手消息。
-                if turn["assistant_message_id"]:
-                    msg_row = self.conn.execute(
-                        "SELECT * FROM messages WHERE id = ?",
-                        (turn["assistant_message_id"],),
-                    ).fetchone()
-                    if msg_row is not None:
-                        return self._message_row_to_dict(msg_row)
-                return None
-
-            status = assistant.get("status") or "complete"
-            has_content = bool(
-                assistant.get("text")
-                or assistant.get("timeline")
-                or assistant.get("sources")
-                or assistant.get("error")
-            )
-
-            assistant_msg_id = None
-            result: dict | None = None
-            if has_content:
-                assistant_msg_id = _new_id()
-                seq = self._next_seq(cid)
-                now = assistant.get("ts") or _now()
-                self.conn.execute(
-                    """
-                    INSERT INTO messages(
-                        id, conversation_id, seq, role, text, ts, status,
-                        in_reply_to_message_id, timeline_json, sources_json,
-                        total_duration_ms
-                    ) VALUES (?, ?, ?, 'assistant', ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        assistant_msg_id,
-                        cid,
-                        seq,
-                        assistant.get("text") or "",
-                        now,
-                        status,
-                        turn["user_message_id"],
-                        _dumps(assistant.get("timeline", [])),
-                        _dumps(assistant.get("sources", [])),
-                        assistant.get("total_duration_ms"),
-                    ),
-                )
-                self._enqueue_index_jobs(assistant_msg_id, turn_id)
-                msg_row = self.conn.execute(
-                    "SELECT * FROM messages WHERE id = ?", (assistant_msg_id,)
-                ).fetchone()
-                result = self._message_row_to_dict(msg_row)
-
-            turn_status = "complete" if status == "complete" else "interrupted"
-            finalized_at = _now()
-            self._activate_observe_jobs(
-                turn_id, observation_allowed=bool(turn["observation_allowed"])
-            )
-            self.conn.execute(
-                """
-                UPDATE turns SET assistant_message_id = ?, status = ?, finalized_at = ?
-                WHERE id = ?
-                """,
-                (assistant_msg_id, turn_status, finalized_at, turn_id),
-            )
-            self.conn.execute(
-                "UPDATE conversations SET active_turn_id = NULL, updated_at = ? WHERE id = ?",
-                (finalized_at, cid),
-            )
-            self.conn.commit()
-            return result
+        return self._turn_lifecycle.finalize_turn(cid, turn_id, assistant)
 
     def append_exchange(
         self,

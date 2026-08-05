@@ -34,7 +34,6 @@ def _make_registry(tmp_path, chat_responses=None, conversation_fts=None, convers
     org = Organizer(
         repo=repo,
         retriever=retr,
-        indexer=idx,
         pending=pending,
         llm=llm,
         knowledge_writer=writer,

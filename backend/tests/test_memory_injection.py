@@ -3,12 +3,13 @@ from app.engine.agent.system_layer import SystemLayer
 from app.engine.memory.service import MemoryService
 from app.engine.memory.store import MemoryStore
 from app.storage.repo import KnowledgeRepo
+from tests.helpers import make_writer
 
 
 def _layer(tmp_path):
     repo = KnowledgeRepo(tmp_path / "knowledge", protected_dirs=("系统",))
     store = MemoryStore(tmp_path / "memory.db", owner_key="ws1")
-    svc = MemoryService(store, repo)
+    svc = MemoryService(store, repo, knowledge_writer=make_writer(repo, tmp_path))
     return SystemLayer(repo, memory_service=svc), svc
 
 

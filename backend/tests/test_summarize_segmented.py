@@ -70,7 +70,6 @@ def test_summarize_long_conversation_calls_merge(tmp_path):
     org = Organizer(
         repo=repo,
         retriever=Retriever(vi, fi, llm),
-        indexer=Indexer(vi, fi, llm),
         pending=PendingStore(tmp_path / "pending.json"),
         llm=llm,
         settings=Settings(summarize_segment_chars=5000),

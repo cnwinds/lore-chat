@@ -10,7 +10,8 @@ from pydantic import BaseModel
 
 from app.engine.knowledge_writer import KnowledgeWriter
 from app.engine.chat.session_runner import consume_agent_ask, consume_agent_ingest
-from app.engine.conversations import TurnInProgress
+from app.engine.conversation.shared import TurnInProgress
+from app.engine.pending_resolver import PendingResolveInput
 from app.engine.patch import diff_affected_range
 
 router = APIRouter(prefix="/api")
@@ -428,7 +429,7 @@ async def update_doc(body: UpdateDocBody, request: Request):
 @router.post("/docs/merge")
 async def merge_docs(body: MergeBody, request: Request):
     c = _c(request)
-    result = c.organizer.merge_documents(
+    result = c.merge_workflow.merge_documents(
         body.paths,
         instruction=body.instruction,
         order=body.order,
@@ -461,7 +462,7 @@ async def get_merge(merge_id: str, request: Request):
 async def regenerate_merge(merge_id: str, request: Request):
     c = _c(request)
     try:
-        result = c.organizer.regenerate_merge(merge_id, merge_sessions=c.merge_sessions)
+        result = c.merge_workflow.regenerate_merge(merge_id, merge_sessions=c.merge_sessions)
     except KeyError as e:
         raise HTTPException(404, "合并会话不存在") from e
     return result.__dict__
@@ -471,7 +472,7 @@ async def regenerate_merge(merge_id: str, request: Request):
 async def accept_merge(merge_id: str, request: Request):
     c = _c(request)
     try:
-        result = c.organizer.accept_merge(merge_id, merge_sessions=c.merge_sessions)
+        result = c.merge_workflow.accept_merge(merge_id, merge_sessions=c.merge_sessions)
     except KeyError as e:
         raise HTTPException(404, "合并会话不存在") from e
     return result.__dict__
@@ -481,7 +482,7 @@ async def accept_merge(merge_id: str, request: Request):
 async def reject_merge(merge_id: str, request: Request):
     c = _c(request)
     try:
-        result = c.organizer.reject_merge(merge_id, merge_sessions=c.merge_sessions)
+        result = c.merge_workflow.reject_merge(merge_id, merge_sessions=c.merge_sessions)
     except KeyError as e:
         raise HTTPException(404, "合并会话不存在") from e
     return result.__dict__
@@ -493,7 +494,7 @@ async def resolve_merge_sources(
 ):
     c = _c(request)
     try:
-        result = c.organizer.resolve_merge_sources(
+        result = c.merge_workflow.resolve_merge_sources(
             merge_id,
             body.delete_paths,
             merge_sessions=c.merge_sessions,
@@ -508,71 +509,25 @@ async def questions(request: Request):
     return {"questions": _c(request).pending.list_open()}
 
 
-def _is_agent_question(q: dict) -> bool:
-    payload = q.get("payload", {})
-    kind = payload.get("kind")
-    if kind == "agent":
-        return True
-    if kind == "merge_sources":
-        return False
-    return True
-
-
 @router.post("/questions/{qid}/resolve")
 async def resolve(qid: str, body: ResolveBody, request: Request):
     c = _c(request)
     try:
-        q = c.pending.get(qid)
+        result = c.pending_resolver.resolve(
+            PendingResolveInput(
+                qid=qid,
+                choice=body.choice,
+                choices=body.choices,
+                conversation_id=body.conversation_id,
+            )
+        )
     except KeyError as e:
         raise HTTPException(404, "问题不存在") from e
-    conversation_context = ""
-    if body.conversation_id:
-        try:
-            conv = c.conversations.get(body.conversation_id)
-            conversation_context = c.conversations.context_excerpt(conv)
-        except KeyError as e:
-            raise HTTPException(404, "对话不存在") from e
-    chosen_ids = body.choices or ([body.choice] if body.choice else [])
-    chosen_labels = [
-        o["label"] for o in q.get("options", []) if o.get("id") in chosen_ids
-    ]
-    payload = q.get("payload", {})
-    if payload.get("kind") == "merge_sources":
-        if not body.choices:
-            raise HTTPException(400, "该问题请使用 choices 提交要删除的源文档")
-        merge_id = payload.get("merge_id")
-        if not merge_id:
-            raise HTTPException(400, "该问题缺少 merge_id")
-        c.pending.resolve_many(qid, body.choices)
-        result = c.organizer.resolve_merge_sources(
-            merge_id,
-            list(body.choices),
-            merge_sessions=c.merge_sessions,
-        )
-    elif body.choices:
-        if _is_agent_question(q):
-            result = c.organizer.resolve_agent_choices(
-                qid, body.choices, conversation_context=conversation_context
-            )
-        else:
-            raise HTTPException(400, "该问题不支持多选")
-    elif body.choice:
-        if _is_agent_question(q):
-            result = c.organizer.resolve_agent_choices(
-                qid, [body.choice], conversation_context=conversation_context
-            )
-        else:
-            raise HTTPException(400, "该问题类型已废弃，请重新发起写入")
-    else:
-        raise HTTPException(400, "请提供 choice 或 choices")
-
-    if body.conversation_id and chosen_labels:
-        try:
-            c.conversations.mark_question_resolved(
-                body.conversation_id, qid, "、".join(chosen_labels)
-            )
-        except Exception:
-            pass
+    except ValueError as e:
+        msg = str(e)
+        if msg == "对话不存在":
+            raise HTTPException(404, msg) from e
+        raise HTTPException(400, msg) from e
     return result.__dict__
 
 

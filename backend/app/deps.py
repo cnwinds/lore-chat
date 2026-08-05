@@ -16,6 +16,8 @@ from app.engine.conversations import ConversationStore
 from app.engine.derivation_worker import DerivationWorker
 from app.engine.memory_worker import MemoryWorker
 from app.engine.memory_maintenance import MemoryMaintenanceJob
+from app.engine.pending_resolver import PendingResolver
+from app.engine.merge_workflow import MergeWorkflow
 from app.engine.organizer import Organizer
 from app.engine.knowledge_writer import KnowledgeWriter
 from app.engine.chat.session_runner import ChatSessionRunner
@@ -48,7 +50,9 @@ class Container:
     memory_worker: MemoryWorker
     memory_maintenance: MemoryMaintenanceJob
     knowledge_writer: KnowledgeWriter
+    merge_workflow: MergeWorkflow
     organizer: Organizer
+    pending_resolver: PendingResolver
     agent: AgentOrchestrator
     chat_runner: ChatSessionRunner
     system_layer: SystemLayer
@@ -67,23 +71,25 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
         settings.kb_path / ".kb" / "memory" / "memory.db",
         owner_key=workspace_id,
     )
-    memory_service = MemoryService(
-        memory_store,
-        repo,
-        conversations=None,
-        indexer=None,
-    )
     system_layer = SystemLayer(
         repo,
         dir_name=settings.system_layer_dir,
         precepts_filename=settings.precepts_filename,
         soul_filename=settings.soul_filename,
-        memory_service=memory_service,
+        memory_service=None,
     )
 
     index = build_index_subgraph(
         settings, repo, llm, system_layer_prefix=system_layer.prefix
     )
+    knowledge_writer = KnowledgeWriter(repo, index.indexer)
+    memory_service = MemoryService(
+        memory_store,
+        repo,
+        conversations=None,
+        knowledge_writer=knowledge_writer,
+    )
+    system_layer.memory_service = memory_service
     pending = PendingStore(settings.kb_path / ".kb" / "pending.json")
     merge_sessions = MergeSessionStore(
         settings.kb_path / ".kb" / "merge_sessions.json"
@@ -105,9 +111,7 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
         chunk_chars=settings.conversation_chunk_chars,
         overlap=settings.conversation_chunk_overlap_chars,
     )
-    knowledge_writer = KnowledgeWriter(repo, index.indexer)
     memory.wire_conversations(conversations)
-    memory.wire_knowledge_writer(knowledge_writer)
 
     from app.engine.memory.renderer import MemoryRenderer
 
@@ -124,6 +128,14 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
         system_layer=system_layer,
         knowledge_writer=knowledge_writer,
         memory_service=memory.service,
+    )
+
+    pending_resolver = PendingResolver(
+        pending=pending,
+        organizer=agent.organizer,
+        merge_workflow=agent.organizer.merge,
+        conversations=conversations,
+        merge_sessions=merge_sessions,
     )
 
     return Container(
@@ -143,7 +155,9 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
         memory_worker=memory.worker,
         memory_maintenance=memory.maintenance,
         knowledge_writer=knowledge_writer,
+        merge_workflow=agent.organizer.merge,
         organizer=agent.organizer,
+        pending_resolver=pending_resolver,
         agent=agent.agent,
         chat_runner=agent.chat_runner,
         system_layer=system_layer,

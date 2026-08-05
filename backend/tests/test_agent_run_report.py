@@ -75,7 +75,6 @@ async def test_tool_loop_logs_complete_stop_reason(tmp_path, caplog):
     org = Organizer(
         repo=repo,
         retriever=retr,
-        indexer=idx,
         pending=pending,
         llm=llm,
         knowledge_writer=writer,
@@ -147,7 +146,6 @@ async def test_tool_loop_logs_cancelled_stop_reason(tmp_path, caplog):
     org = Organizer(
         repo=repo,
         retriever=retr,
-        indexer=idx,
         pending=pending,
         llm=llm,
         knowledge_writer=writer,

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from app.engine.conversations import ConversationStore
-from app.engine.memory.observer import MemoryObserver
+from app.engine.memory.intake import MemoryIntake
 from app.engine.memory.service import MemoryService
 from app.logging_config import get_logger
 
@@ -16,11 +16,11 @@ class MemoryWorker:
         conversations: ConversationStore,
         memory_service: MemoryService,
         *,
-        observer: MemoryObserver | None = None,
+        observer: MemoryIntake | None = None,
     ):
         self.conversations = conversations
         self.memory_service = memory_service
-        self.observer = observer or MemoryObserver(memory_service.store)
+        self.intake = observer or MemoryIntake(memory_service.store)
 
     def process_observe_job(self, job: dict) -> None:
         job_id = job["id"]
@@ -35,7 +35,7 @@ class MemoryWorker:
                 return
             text = message.get("text") or ""
             cid = message["conversation_id"]
-            result = self.observer.observe_message(
+            result = self.intake.observe_user_message(
                 text,
                 conversation_id=cid,
                 message_id=message_id,

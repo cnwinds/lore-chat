@@ -33,26 +33,17 @@ class MemoryService:
         memory_rel: str = MEMORY_DOC_REL,
         memory_max_chars: int = 4000,
         conversations=None,
-        indexer=None,
-        knowledge_writer: KnowledgeWriter | None = None,
+        knowledge_writer: KnowledgeWriter,
     ):
         self.store = store
         self.repo = repo
         self.memory_rel = memory_rel
         self.memory_max_chars = memory_max_chars
         self.conversations = conversations
-        self.indexer = indexer
         self.knowledge_writer = knowledge_writer
 
     def _drop_memory_from_search_index(self) -> None:
-        if self.knowledge_writer is not None:
-            self.knowledge_writer.drop_from_index([self.memory_rel])
-            return
-        if self.indexer:
-            try:
-                self.indexer.remove_doc(self.memory_rel)
-            except Exception:
-                pass
+        self.knowledge_writer.drop_from_index([self.memory_rel])
 
     def remember(
         self,

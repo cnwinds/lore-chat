@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from app.config import Settings
 from app.engine.conversations import ConversationStore
 from app.engine.memory.decay import DecayConfig
+from app.engine.memory.intake import MemoryIntake
 from app.engine.memory.llm_extractor import LLMMemoryExtractor
 from app.engine.memory.observer import MemoryObserver
 from app.engine.memory.service import MemoryService
@@ -26,11 +27,8 @@ class MemorySubgraph:
     def wire_conversations(self, conversations: ConversationStore) -> None:
         self.service.conversations = conversations
 
-    def wire_knowledge_writer(self, writer: KnowledgeWriter) -> None:
-        self.service.knowledge_writer = writer
-
     def rebind_llm(self, llm: LLMClient) -> None:
-        self.worker.observer.extractor = LLMMemoryExtractor(llm)
+        self.worker.intake.observer.extractor = LLMMemoryExtractor(llm)
 
 
 def build_memory_subgraph(
@@ -42,12 +40,12 @@ def build_memory_subgraph(
     memory_service: MemoryService,
 ) -> MemorySubgraph:
     memory_store = memory_service.store
-    memory_observer = MemoryObserver(
+    memory_intake = MemoryIntake(
         memory_store,
-        extractor=LLMMemoryExtractor(llm),
+        observer=MemoryObserver(memory_store, extractor=LLMMemoryExtractor(llm)),
     )
     memory_worker = MemoryWorker(
-        conversations, memory_service, observer=memory_observer
+        conversations, memory_service, observer=memory_intake
     )
     decay_config = DecayConfig(
         stale_days_goal_project=settings.memory_decay_stale_days,

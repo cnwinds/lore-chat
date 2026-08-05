@@ -4,12 +4,13 @@ from app.engine.memory.service import MemoryService
 from app.engine.memory.store import MemoryStore
 from app.engine.memory.normalize import value_hash, normalize_slot_key
 from app.storage.repo import KnowledgeRepo
+from tests.helpers import make_writer
 
 
 def _service(tmp_path, repo=None):
     repo = repo or KnowledgeRepo(tmp_path / "knowledge", protected_dirs=("系统",))
     store = MemoryStore(tmp_path / "memory.db", owner_key="ws1")
-    return MemoryService(store, repo)
+    return MemoryService(store, repo, knowledge_writer=make_writer(repo, tmp_path))
 
 
 def test_clear_tombstone_allows_remember_after_forget(tmp_path):

@@ -10,6 +10,7 @@ from app.engine.conversations import ConversationStore
 from app.engine.disclosure import disclose, disclosure_summary
 from app.engine.patch import Edit, Insert, apply_edits, apply_insert
 from app.storage.kb_paths import KbPathError
+from app.engine.agent.tool_dispatch import dispatch_tool
 from app.engine.agent.tool_catalog import (
     TOOL_DEFINITIONS,
     TOOL_LABELS,
@@ -78,46 +79,13 @@ class ToolRegistry:
         active_doc_path: str | None = None,
         conversation_id: str | None = None,
     ) -> dict:
-        # 含同步 LLM/嵌入的工具放到线程，避免堵死事件循环（聊天中无法打开文档）
-        if name == "search_kb":
-            return await asyncio.to_thread(
-                self._search_kb, args, conversation_id=conversation_id
-            )
-        if name == "read_doc":
-            return await asyncio.to_thread(
-                self._read_doc, args, conversation_id=conversation_id
-            )
-        if name == "list_kb_structure":
-            return await asyncio.to_thread(self._list_kb_structure, args)
-        if name == "read_conversation_context":
-            return await asyncio.to_thread(self._read_conversation_context, args)
-        if name == "fetch_url":
-            return await self._fetch_url(args)
-        if name == "web_search":
-            return await self._web_search(args)
-        if name == "write_kb":
-            return await asyncio.to_thread(self._write_kb, args)
-        if name == "edit_doc":
-            return await asyncio.to_thread(
-                self._edit_doc, args, conversation_id=conversation_id
-            )
-        if name == "summarize_conversation":
-            return self._summarize_conversation(
-                args, conversation_id=conversation_id
-            )
-        if name == "delete_kb":
-            return await asyncio.to_thread(self._delete_kb, args)
-        if name == "move_doc":
-            return await asyncio.to_thread(self._move_doc, args)
-        if name == "ask_user":
-            return self._ask_user(args)
-        if name == "manage_memory":
-            return await asyncio.to_thread(
-                self._manage_memory, args, conversation_id=conversation_id
-            )
-        if name == "recall_memory":
-            return await asyncio.to_thread(self._recall_memory, args)
-        return {"summary": f"未知工具：{name}", "sources": [], "error": f"unknown tool: {name}"}
+        return await dispatch_tool(
+            self,
+            name,
+            args,
+            active_doc_path=active_doc_path,
+            conversation_id=conversation_id,
+        )
 
     def _mark_read(self, conversation_id: str | None, path: str) -> None:
         if not conversation_id:

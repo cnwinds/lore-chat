@@ -13,7 +13,9 @@
 | 知识写入 | `backend/app/engine/knowledge_writer.py` | 路径 + git + 索引 + changelog **唯一写入 seam**；`import_entry` / `move_entry` / `delete_entry`（含附件） |
 | 知识库树 HTTP | `backend/app/engine/kb_tree_service.py` | import/move/delete + protected + `index_revision.bump` |
 | 归位 | `backend/app/engine/placement.py` | LLM 决定 new/merge 与 `rel_path` |
-| 整理 | `backend/app/engine/organizer.py` | 录入/归档/合并的正文合成 + 调用 `PlacementPlanner` + `KnowledgeWriter` |
+| 整理 | `backend/app/engine/organizer.py` | 录入/归档正文合成 + `PlacementPlanner` + `KnowledgeWriter` |
+| 文档合并 | `backend/app/engine/merge_workflow.py` | 多源合并、审阅会话；HTTP 经 `Container.merge_workflow` |
+| Pending 决议 | `backend/app/engine/pending_resolver.py` | `/questions/.../resolve` 编排 seam |
 | 存储 | `backend/app/storage/` | `KnowledgeRepo`、`kb_paths` |
 
 ## 依赖注入
@@ -56,3 +58,17 @@
 
 - [ADR：引擎模块 seam（2026-08-04）](docs/adr/2026-08-04-engine-module-seams.md)
 - 产品规格：`docs/superpowers/specs/`
+
+## Language（对话与知识库 · 讨论中）
+
+**文档托盘**：用户在发送前选中的知识库上下文集合；当前以 Markdown 文档路径为主，经 `doc_context` 随消息持久化。
+_Avoid_: 附件托盘（与 `attachments/` 二进制附件区分）
+
+**Skill 激活**：识别为 Skill 后，在本轮 system 注入元信息与入口正文；不预载 `references/` 等子资源。
+_Avoid_: 全量注入、自动 RAG 灌入
+
+**Skill 包**：知识库目录内包含 `SKILL.md` 的 Skill 单元；激活时以该目录为根、以 `SKILL.md` 为入口。
+_Avoid_: 把目录下每个文件单独当作托盘项
+
+**单文件 Skill**：无独立目录、自身作为入口的 Skill；含 Cursor 式 frontmatter，或位于 `skill/` 顶层的约定白名单 `.md`。
+_Avoid_: 任意 Markdown 笔记

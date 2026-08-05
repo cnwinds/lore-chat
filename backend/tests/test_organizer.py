@@ -20,7 +20,6 @@ def _make(tmp_path, chat_responses):
     org = Organizer(
         repo=repo,
         retriever=retr,
-        indexer=idx,
         pending=pending,
         llm=llm,
         knowledge_writer=make_writer(repo, tmp_path),

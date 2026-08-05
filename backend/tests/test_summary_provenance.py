@@ -56,7 +56,6 @@ def test_organizer_writes_conversation_ids_list(tmp_path):
     org = Organizer(
         repo=repo,
         retriever=Retriever(vi, fi, llm),
-        indexer=Indexer(vi, fi, llm),
         pending=PendingStore(tmp_path / "pending.json"),
         llm=llm,
         knowledge_writer=make_writer(repo, tmp_path),

@@ -33,7 +33,6 @@ def _make_orchestrator(tmp_path, tool_responses, *, agent_parallel_tools=True):
     org = Organizer(
         repo=repo,
         retriever=retr,
-        indexer=idx,
         pending=pending,
         llm=llm,
         knowledge_writer=writer,

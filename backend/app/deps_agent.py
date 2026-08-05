@@ -9,7 +9,9 @@ from app.engine.agent.tools import ToolRegistry
 from app.engine.chat.session_runner import ChatSessionRunner
 from app.engine.conversations import ConversationStore
 from app.engine.knowledge_writer import KnowledgeWriter
+from app.engine.merge_workflow import MergeWorkflow
 from app.engine.organizer import Organizer
+from app.engine.placement import PlacementPlanner
 from app.engine.pending import PendingStore
 from app.engine.retriever import Retriever
 from app.index.indexer import Indexer
@@ -51,13 +53,23 @@ def build_agent_subgraph(
     knowledge_writer: KnowledgeWriter,
     memory_service: MemoryService,
 ) -> AgentSubgraph:
+    planner_host = PlacementPlanner(repo, retriever, llm)
+    merge_workflow = MergeWorkflow(
+        repo=repo,
+        retriever=retriever,
+        llm=llm,
+        writer=knowledge_writer,
+        planner=planner_host,
+        pending=pending,
+    )
     organizer = Organizer(
         repo=repo,
         retriever=retriever,
-        indexer=indexer,
         pending=pending,
         llm=llm,
         knowledge_writer=knowledge_writer,
+        planner=planner_host,
+        merge_workflow=merge_workflow,
     )
     fetcher = WebFetcher(settings.fetch_url_timeout, settings.fetch_url_max_bytes)
     web_search = WebSearch(settings)
