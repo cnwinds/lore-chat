@@ -3,6 +3,7 @@ import {
   formatDuration,
   getMessageCopyText,
   downloadUrl,
+  normalizeDocContext,
   type ChatMessage,
   type IngestResult,
   type SourceRef,
@@ -41,18 +42,24 @@ function basename(path: string): string {
 }
 
 function renderUserMessageChips(m: ChatMessage) {
-  const hasDocs = (m.doc_context?.length ?? 0) > 0;
+  const docItems = normalizeDocContext(m.doc_context);
+  const hasDocs = docItems.length > 0;
   const hasFiles = (m.attachments?.length ?? 0) > 0;
   if (!hasDocs && !hasFiles) return null;
 
   return (
     <div className="chat-user-chips">
-      {m.doc_context?.map((path) => (
+      {docItems.map((item) => (
         <DocChip
-          key={path}
-          title={basename(path)}
-          tooltip={path}
-          primary={path === m.primary_doc}
+          key={`${item.kind}:${item.path}`}
+          title={
+            item.kind === "skill_root"
+              ? `Skill · ${basename(item.path) || "根"}`
+              : basename(item.path)
+          }
+          tooltip={item.path}
+          primary={item.kind === "document" && item.path === m.primary_doc}
+          skill={item.kind === "skill_root"}
         />
       ))}
       {m.attachments?.map((a) => (
@@ -202,7 +209,7 @@ export function messageHasBody(m: ChatMessage, isLive: boolean): boolean {
   if (m.text) return true;
   if (m.sources?.length) return true;
   if (m.attachments?.length) return true;
-  if (m.doc_context?.length) return true;
+  if (normalizeDocContext(m.doc_context).length) return true;
   if (isLive) return false;
   return !!(m.ts || getMessageDuration(m) || getMessageCopyText(m));
 }

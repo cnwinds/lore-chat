@@ -57,6 +57,14 @@ class KbTreeService:
             self.index_revision.bump()
         return {"deleted_paths": deleted}
 
+    def discover_skills(self, from_dir: str) -> list[str]:
+        from app.engine.kb_skill import discover_skill_roots
+
+        norm = from_dir.replace("\\", "/").strip("/")
+        if norm and self.repo.is_protected(norm):
+            raise PermissionError("禁止扫描该目录")
+        return discover_skill_roots(self.repo, norm)
+
 
 __all__ = [
     "KbTreeService",

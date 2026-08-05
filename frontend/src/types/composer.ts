@@ -1,4 +1,10 @@
-export type DocTrayItem = { path: string; title: string };
+export type DocTrayKind = "document" | "skill_root";
+
+export type DocTrayItem = {
+  path: string;
+  title: string;
+  kind: DocTrayKind;
+};
 
 export type ComposerDocState = {
   items: DocTrayItem[];
@@ -11,3 +17,5 @@ export type PendingFile = {
   name: string;
   size: number;
 };
+
+export const COMPOSER_TRAY_MAX = 8;

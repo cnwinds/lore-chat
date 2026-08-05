@@ -4,6 +4,8 @@ import io
 import json
 import uuid
 
+from typing import Literal
+
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -42,6 +44,11 @@ class ResolveBody(BaseModel):
     conversation_id: str | None = None
 
 
+class DocContextItem(BaseModel):
+    path: str
+    kind: Literal["document", "skill_root"] = "document"
+
+
 class ChatBody(BaseModel):
     text: str
     conversation_id: str | None = None
@@ -49,22 +56,63 @@ class ChatBody(BaseModel):
     active_doc_path: str | None = None  # backward compat
     active_doc_paths: list[str] = []
     primary_doc_path: str | None = None
+    doc_context: list[DocContextItem] = []
     web_enabled: bool = False
     attachments: list[str] = []
     observation_allowed: bool = True
 
 
-def _normalize_chat_docs(body: ChatBody) -> tuple[list[str], str | None]:
-    paths = list(body.active_doc_paths)
-    primary = body.primary_doc_path
-    if body.active_doc_path:
-        if not paths:
+def _normalize_chat_context(
+    body: ChatBody,
+    repo,
+) -> tuple[list[dict[str, str]], list[str], list[str], str | None]:
+    from app.engine.doc_context import (
+        DocContextValidationError,
+        missing_skill_roots,
+        normalize_doc_context_items,
+        parse_doc_context_for_api,
+        split_doc_context,
+    )
+
+    if body.doc_context:
+        try:
+            items = parse_doc_context_for_api(
+                [i.model_dump() for i in body.doc_context]
+            )
+        except DocContextValidationError as e:
+            raise HTTPException(400, str(e)) from e
+    else:
+        paths = list(body.active_doc_paths)
+        if body.active_doc_path and not paths:
             paths = [body.active_doc_path]
+        items = normalize_doc_context_items(
+            [{"path": p, "kind": "document"} for p in paths]
+        )
+    doc_paths, skill_roots = split_doc_context(items)
+    if skill_roots:
+        missing = missing_skill_roots(repo, skill_roots)
+        if missing:
+            raise HTTPException(
+                400,
+                f"以下 Skill 包不存在或缺少 SKILL.md：{', '.join(missing)}",
+            )
+    primary = body.primary_doc_path or body.active_doc_path
+    if body.active_doc_path and body.active_doc_path not in doc_paths:
+        if not doc_paths:
+            doc_paths = [body.active_doc_path]
         if primary is None:
             primary = body.active_doc_path
-    if primary is not None and primary not in paths:
-        raise HTTPException(400, "primary_doc_path 必须在 active_doc_paths 内")
-    return paths, primary
+    if primary is not None:
+        if primary in skill_roots:
+            raise HTTPException(400, "primary_doc_path 不能是 Skill 包路径")
+        if primary not in doc_paths:
+            raise HTTPException(400, "primary_doc_path 必须在文档托盘路径内")
+    return items, doc_paths, skill_roots, primary
+
+
+def _normalize_chat_docs(body: ChatBody, repo) -> tuple[list[str], str | None]:
+    _, doc_paths, _, primary = _normalize_chat_context(body, repo)
+    return doc_paths, primary
 
 
 class AppendMessagesBody(BaseModel):
@@ -168,7 +216,7 @@ async def chat(body: ChatBody, request: Request):
     - 否则流式运行 Agent，并在收到 done 前 finalize_turn 落库
     """
     c = _c(request)
-    paths, primary = _normalize_chat_docs(body)
+    doc_items, paths, skill_roots, primary = _normalize_chat_context(body, c.repo)
     if body.conversation_id:
         try:
             c.conversations.get(body.conversation_id)
@@ -180,6 +228,7 @@ async def chat(body: ChatBody, request: Request):
             c.chat_runner.stream_ephemeral(
                 body.text,
                 doc_paths=paths,
+                skill_roots=skill_roots or None,
                 primary_doc=primary,
                 web_enabled=body.web_enabled,
             ),
@@ -197,7 +246,7 @@ async def chat(body: ChatBody, request: Request):
             user_text=body.text,
             client_message_id=client_message_id,
             observation_allowed=body.observation_allowed,
-            doc_context=paths or None,
+            doc_context=doc_items or None,
             primary_doc=primary,
             attachments=body.attachments or None,
         )
@@ -219,6 +268,7 @@ async def chat(body: ChatBody, request: Request):
             turn=turn,
             history=history,
             doc_paths=paths,
+            skill_roots=skill_roots or None,
             primary_doc=primary,
             web_enabled=body.web_enabled,
         ),
@@ -300,6 +350,16 @@ async def download_zip(path: str, request: Request):
 @router.get("/tree")
 async def tree(request: Request):
     return {"docs": _c(request).repo.list_tree()}
+
+
+@router.get("/kb/discover-skills")
+async def discover_skills(request: Request, from_dir: str = ""):
+    c, svc = _kb_tree_service(request)
+    try:
+        roots = svc.discover_skills(from_dir)
+    except PermissionError as e:
+        raise HTTPException(403, str(e)) from e
+    return {"roots": roots}
 
 
 @router.post("/kb/import")

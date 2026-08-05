@@ -44,6 +44,8 @@ function baseOptions(overrides: Partial<Parameters<typeof useAgentStream>[0]> = 
     previewPath: null,
     webEnabled: false,
     docPaths: [] as string[],
+    documentPaths: [] as string[],
+    docContextItems: [] as api.DocContextItem[],
     primaryDocPath: null,
     msgs: [] as ChatMessage[],
     setMsgs,

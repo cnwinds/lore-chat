@@ -36,6 +36,7 @@ type Props = {
   /** 当前在预览中打开的文件路径（侧边栏高亮） */
   activePaths?: string[];
   onSelectFile: (path: string, mods?: SelectMods) => void;
+  onSelectFolder?: (path: string, mods?: SelectMods) => void;
   dropHighlightDir: string | null;
   onDropHighlightDir: (dir: string | null) => void;
   onDropFiles: (dataTransfer: DataTransfer, directory: string) => void;
@@ -56,6 +57,7 @@ export function FileTree({
   paths,
   activePaths = [],
   onSelectFile,
+  onSelectFolder,
   dropHighlightDir,
   onDropHighlightDir,
   onDropFiles,
@@ -169,6 +171,7 @@ export function FileTree({
           setDragPayload={setDragPayload}
           onToggleFolder={toggleFolder}
           onSelectFile={onSelectFile}
+          onSelectFolder={onSelectFolder}
           onFolderDrop={handleFolderDrop}
           onFolderDragOver={allowDrop}
           onDropFiles={onDropFiles}
@@ -200,6 +203,7 @@ function TreeItem({
   setDragPayload,
   onToggleFolder,
   onSelectFile,
+  onSelectFolder,
   onFolderDrop,
   onFolderDragOver,
   onDropFiles,
@@ -225,6 +229,7 @@ function TreeItem({
   setDragPayload: (e: DragEvent, path: string) => void;
   onToggleFolder: (path: string) => void;
   onSelectFile: (path: string, mods?: SelectMods) => void;
+  onSelectFolder?: (path: string, mods?: SelectMods) => void;
   onFolderDrop: (e: DragEvent, directory: string) => void;
   onFolderDragOver: (e: DragEvent, directory: string) => void;
   onDropFiles: (dataTransfer: DataTransfer, directory: string) => void;
@@ -254,7 +259,19 @@ function TreeItem({
           draggable={!disabled && !systemLayer && !isRenaming}
           onDragStart={(e) => setDragPayload(e, node.path)}
           onDragEnd={() => setDragSource(null)}
-          onClick={() => {
+          onClick={(e) => {
+            if (
+              !isRenaming &&
+              onSelectFolder &&
+              (e.ctrlKey || e.metaKey)
+            ) {
+              e.stopPropagation();
+              onSelectFolder(node.path, {
+                ctrlKey: e.ctrlKey,
+                metaKey: e.metaKey,
+              });
+              return;
+            }
             if (!isRenaming) onToggleFolder(node.path);
           }}
           onContextMenu={(e) => {
@@ -298,6 +315,7 @@ function TreeItem({
               setDragPayload={setDragPayload}
               onToggleFolder={onToggleFolder}
               onSelectFile={onSelectFile}
+              onSelectFolder={onSelectFolder}
               onFolderDrop={onFolderDrop}
               onFolderDragOver={onFolderDragOver}
               onDropFiles={onDropFiles}

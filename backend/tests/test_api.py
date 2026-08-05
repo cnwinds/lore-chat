@@ -118,6 +118,57 @@ def test_tree_lists_docs(client):
     assert any(p.endswith(".md") for p in r.json()["docs"])
 
 
+def test_discover_skills_nested(client):
+    files = {"file": ("SKILL.md", b"# skill\n", "text/markdown")}
+    r = client.post(
+        "/api/kb/import",
+        files=files,
+        data={"directory": "skill/职业规划/张雪峰"},
+    )
+    assert r.status_code == 200
+    r2 = client.get("/api/kb/discover-skills", params={"from_dir": "skill"})
+    assert r2.status_code == 200
+    assert "skill/职业规划/张雪峰" in r2.json()["roots"]
+
+
+def test_chat_rejects_skill_as_primary(client):
+    r = client.post(
+        "/api/chat",
+        json={
+            "text": "hi",
+            "doc_context": [
+                {"path": "skill/pkg", "kind": "skill_root"},
+                {"path": "a.md", "kind": "document"},
+            ],
+            "primary_doc_path": "skill/pkg",
+        },
+    )
+    assert r.status_code == 400
+
+
+def test_chat_rejects_invalid_doc_context_kind(client):
+    r = client.post(
+        "/api/chat",
+        json={
+            "text": "hi",
+            "doc_context": [{"path": "x.md", "kind": "not_a_kind"}],
+        },
+    )
+    assert r.status_code == 422
+
+
+def test_chat_rejects_missing_skill_root(client):
+    r = client.post(
+        "/api/chat",
+        json={
+            "text": "hi",
+            "doc_context": [{"path": "no/such/skill", "kind": "skill_root"}],
+        },
+    )
+    assert r.status_code == 400
+    assert "SKILL.md" in r.json()["detail"]
+
+
 def test_upload_and_download(client):
     content = "kubernetes 部署方案".encode("utf-8")
     files = {"file": ("plan.txt", content, "text/plain")}

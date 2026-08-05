@@ -33,6 +33,9 @@ type Options = {
   doc: DocPreview;
   composerPrimaryPath: string | null;
   onSelectFile: (path: string, mods?: SelectMods) => void;
+  onSelectFolder?: (path: string, mods?: SelectMods) => void;
+  onAttachSkillsFolder?: (path: string) => void;
+  onDocsLoaded?: (paths: string[]) => void;
   onKbPathChanged?: (from: string, to: string) => void;
   onKbPathsDeleted?: (paths: string[]) => void;
 };
@@ -43,6 +46,9 @@ export function useConversationShell({
   doc,
   composerPrimaryPath,
   onSelectFile,
+  onSelectFolder,
+  onAttachSkillsFolder,
+  onDocsLoaded,
   onKbPathChanged,
   onKbPathsDeleted,
 }: Options) {
@@ -105,6 +111,9 @@ export function useConversationShell({
         ? () => doc.setSidebarCollapsed((c) => !c)
         : undefined,
     onSelectFile,
+    onSelectFolder,
+    onAttachSkillsFolder,
+    onDocsLoaded,
     onKbPathChanged,
     onKbPathsDeleted,
     onNewChat: () => {

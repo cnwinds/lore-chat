@@ -228,7 +228,11 @@ class ConversationStore:
         if row["total_duration_ms"] is not None:
             msg["total_duration_ms"] = row["total_duration_ms"]
         if row["doc_context_json"] is not None:
-            msg["doc_context"] = _loads(row["doc_context_json"], [])
+            from app.engine.doc_context import normalize_doc_context_items
+
+            msg["doc_context"] = normalize_doc_context_items(
+                _loads(row["doc_context_json"], [])
+            )
         if row["attachments_json"] is not None:
             msg["attachments"] = _loads(row["attachments_json"], [])
         if row["primary_doc"]:

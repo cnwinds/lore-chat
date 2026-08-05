@@ -20,14 +20,15 @@ type DocChipProps = {
   title: string;
   tooltip?: string;
   primary?: boolean;
+  skill?: boolean;
   onClick?: () => void;
   onRemove?: () => void;
 };
 
-export function DocChip({ title, tooltip, primary, onClick, onRemove }: DocChipProps) {
+export function DocChip({ title, tooltip, primary, skill, onClick, onRemove }: DocChipProps) {
   return (
     <div
-      className={`composer-doc-chip${primary ? " composer-doc-chip--primary" : ""}`}
+      className={`composer-doc-chip${primary ? " composer-doc-chip--primary" : ""}${skill ? " composer-doc-chip--skill" : ""}`}
       onClick={onClick}
       role={onClick ? "button" : undefined}
       tabIndex={onClick ? 0 : undefined}
@@ -97,10 +98,14 @@ export function ComposerTray({
     <div className="composer-tray">
       {items.map((item) => (
         <DocChip
-          key={item.path}
+          key={`${item.kind}:${item.path}`}
           title={item.title}
-          primary={item.path === primaryPath}
-          onClick={() => onSetPrimary(item.path)}
+          tooltip={item.path}
+          primary={item.kind === "document" && item.path === primaryPath}
+          skill={item.kind === "skill_root"}
+          onClick={
+            item.kind === "document" ? () => onSetPrimary(item.path) : undefined
+          }
           onRemove={() => onRemoveDoc(item.path)}
         />
       ))}

@@ -28,6 +28,9 @@ type Props = {
   onToggleCollapsed?: () => void;
   onOpenSettings?: () => void;
   onSelectFile: (path: string, mods?: SelectMods) => void;
+  onSelectFolder?: (path: string, mods?: SelectMods) => void;
+  onAttachSkillsFolder?: (path: string) => void;
+  onDocsLoaded?: (paths: string[]) => void;
   onNewChat: () => void;
   onSelectConversation: (id: string) => void;
   onDeleteConversation: (id: string) => void;
@@ -45,6 +48,8 @@ export function Sidebar({
   onToggleCollapsed,
   onOpenSettings,
   onSelectFile,
+  onSelectFolder,
+  onAttachSkillsFolder,
   onNewChat,
   onSelectConversation,
   onDeleteConversation,
@@ -113,6 +118,20 @@ export function Sidebar({
               下载
             </button>
           )}
+          {tree.menu.ctx.kind === "folder" &&
+            !isSystemLayerPath(tree.menu.ctx.path) &&
+            onAttachSkillsFolder && (
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  onAttachSkillsFolder(tree.menu!.ctx.path);
+                  tree.closeMenu();
+                }}
+              >
+                附加 Skill…
+              </button>
+            )}
           {!isSystemLayerPath(tree.menu.ctx.path) && (
             <button type="button" role="menuitem" onClick={() => void tree.handleMenuAction("rename")}>
               重命名
@@ -226,7 +245,7 @@ export function Sidebar({
                         <strong>双击</strong> 文件名重命名；文件夹可右键重命名
                       </li>
                       <li>
-                        <strong>右键</strong> 下载（文件夹为 ZIP）、重命名、删除
+                        <strong>Ctrl+单击文件夹</strong> 附加 Skill（递归发现 SKILL.md）
                       </li>
                       <li>
                         <strong>拖入</strong> 到文件夹行；移动或上传时顶部会出现「根目录」
@@ -266,6 +285,7 @@ export function Sidebar({
                   paths={docs}
                   activePaths={activePaths}
                   onSelectFile={onSelectFile}
+                  onSelectFolder={onSelectFolder}
                   {...tree.fileTreeProps}
                 />
               </div>

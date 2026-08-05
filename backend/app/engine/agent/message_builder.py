@@ -14,6 +14,8 @@ def build_agent_messages(
     active_doc_path: str | None,
     active_doc_paths: list[str] | None,
     primary_doc_path: str | None,
+    skill_roots: list[str] | None = None,
+    extra_system_messages: list[dict] | None = None,
 ) -> list[dict]:
     messages: list[dict] = [
         {
@@ -28,17 +30,22 @@ def build_agent_messages(
     if active_doc_path and active_doc_path not in paths:
         if not paths:
             paths = [active_doc_path]
-    if paths:
-        lines = []
-        for p in paths:
-            suffix = "（主文档，默认编辑目标）" if p == primary else "（参考上下文）"
-            lines.append(f"- {p}{suffix}")
+    tray_lines: list[str] = []
+    for p in paths:
+        suffix = "（主文档，默认编辑目标）" if p == primary else "（参考文档）"
+        tray_lines.append(f"- {p}{suffix}")
+    for root in skill_roots or []:
+        label = root or "(根目录)"
+        tray_lines.append(f"- {label}（Skill 包）")
+    if tray_lines:
         messages.append(
             {
                 "role": "system",
-                "content": "[上下文] 用户当前文档托盘：\n" + "\n".join(lines),
+                "content": "[上下文] 用户当前文档托盘：\n" + "\n".join(tray_lines),
             }
         )
+    if extra_system_messages:
+        messages.extend(extra_system_messages)
     if history:
         messages.extend(history)
     messages.append({"role": "user", "content": user_text})

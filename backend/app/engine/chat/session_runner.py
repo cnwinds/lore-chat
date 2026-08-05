@@ -28,6 +28,7 @@ class ChatSessionRunner:
         text: str,
         *,
         doc_paths: list[str],
+        skill_roots: list[str] | None = None,
         primary_doc: str | None,
         web_enabled: bool,
     ) -> AsyncIterator[str]:
@@ -38,6 +39,7 @@ class ChatSessionRunner:
                 active_doc_path=primary_doc,
                 active_doc_paths=doc_paths,
                 primary_doc_path=primary_doc,
+                skill_roots=skill_roots,
                 history=None,
                 conversation_id=None,
                 web_enabled=web_enabled,
@@ -63,6 +65,7 @@ class ChatSessionRunner:
         turn: dict,
         history: list[dict],
         doc_paths: list[str],
+        skill_roots: list[str] | None = None,
         primary_doc: str | None,
         web_enabled: bool,
     ) -> AsyncIterator[str]:
@@ -113,6 +116,7 @@ class ChatSessionRunner:
                 active_doc_path=primary_doc,
                 active_doc_paths=doc_paths,
                 primary_doc_path=primary_doc,
+                skill_roots=skill_roots,
                 history=history,
                 conversation_id=cid,
                 turn_id=turn_id,

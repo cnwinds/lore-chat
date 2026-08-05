@@ -291,6 +291,26 @@ export type TimelineBlock =
   | { type: "text"; ts: string; content: string }
   | { type: "think"; ts: string; content: string };
 
+export type DocContextItem = {
+  path: string;
+  kind: "document" | "skill_root";
+};
+
+export function normalizeDocContext(
+  raw: DocContextItem[] | string[] | undefined,
+): DocContextItem[] {
+  if (!raw?.length) return [];
+  return raw.map((item) => {
+    if (typeof item === "string") {
+      return { path: item, kind: "document" as const };
+    }
+    return {
+      path: item.path,
+      kind: item.kind === "skill_root" ? "skill_root" : "document",
+    };
+  });
+}
+
 export type ChatMessage = {
   id?: string;
   role: "user" | "assistant";
@@ -299,7 +319,7 @@ export type ChatMessage = {
   timeline?: TimelineBlock[];
   sources?: SourceRef[];
   attachments?: string[];
-  doc_context?: string[];
+  doc_context?: DocContextItem[] | string[];
   primary_doc?: string;
   intent?: "recall" | "remember";
   /** 本轮回复总耗时（毫秒），来自 SSE done 事件 */
@@ -451,6 +471,7 @@ export async function chat(text: string, conversationId?: string | null) {
 export type ChatStreamOptions = {
   conversationId?: string | null;
   activeDocPaths?: string[];
+  docContext?: DocContextItem[];
   primaryDocPath?: string | null;
   webEnabled?: boolean;
   attachments?: string[];
@@ -465,11 +486,25 @@ export async function* chatStream(
   const {
     conversationId,
     activeDocPaths = [],
+    docContext,
     primaryDocPath,
     webEnabled = false,
     attachments = [],
     clientMessageId,
   } = options;
+  const body: Record<string, unknown> = {
+    text,
+    conversation_id: conversationId ?? undefined,
+    client_message_id: clientMessageId ?? undefined,
+    primary_doc_path: primaryDocPath ?? undefined,
+    web_enabled: webEnabled,
+    attachments: attachments.length ? attachments : undefined,
+  };
+  if (docContext?.length) {
+    body.doc_context = docContext;
+  } else if (activeDocPaths.length) {
+    body.active_doc_paths = activeDocPaths;
+  }
   const r = await fetch(`${BASE}/api/chat`, {
     method: "POST",
     credentials: "include",
@@ -477,15 +512,7 @@ export async function* chatStream(
       "Content-Type": "application/json",
       Accept: "text/event-stream",
     },
-    body: JSON.stringify({
-      text,
-      conversation_id: conversationId ?? undefined,
-      client_message_id: clientMessageId ?? undefined,
-      active_doc_paths: activeDocPaths.length ? activeDocPaths : undefined,
-      primary_doc_path: primaryDocPath ?? undefined,
-      web_enabled: webEnabled,
-      attachments: attachments.length ? attachments : undefined,
-    }),
+    body: JSON.stringify(body),
   });
   if (!r.ok) {
     let detail = r.statusText;
@@ -778,6 +805,11 @@ export function parentDirectory(relPath: string): string {
 
 export async function getTree() {
   return apiFetch<{ docs: string[] }>("/api/tree");
+}
+
+export async function discoverSkills(fromDir = "") {
+  const q = fromDir ? `?from_dir=${encodeURIComponent(fromDir)}` : "";
+  return apiFetch<{ roots: string[] }>(`/api/kb/discover-skills${q}`);
 }
 
 export type DocContent = {

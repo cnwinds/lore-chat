@@ -253,6 +253,34 @@ async def test_run_web_disabled_excludes_web_search(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_run_injects_skill_activation(tmp_path):
+    kb = tmp_path / "knowledge"
+    repo = KnowledgeRepo(kb)
+    repo.write_doc(
+        "skill/demo/SKILL.md",
+        {"title": "Demo"},
+        "ROLE RULE: speak like demo.\n",
+        commit_msg="seed",
+    )
+    orchestrator = _make_orchestrator(
+        tmp_path,
+        tool_responses=[{"content": "ok", "tool_calls": []}],
+    )
+    async for _ in orchestrator.run(
+        "你好",
+        skill_roots=["skill/demo"],
+    ):
+        pass
+    messages = orchestrator.llm.calls[-1]["messages"]
+    system_contents = "\n".join(
+        m["content"] for m in messages if m["role"] == "system"
+    )
+    assert "Skill 激活" in system_contents
+    assert "ROLE RULE" in system_contents
+    assert "skill/demo（Skill 包）" in system_contents
+
+
+@pytest.mark.asyncio
 async def test_run_injects_multi_doc_context(tmp_path):
     orchestrator = _make_orchestrator(
         tmp_path,

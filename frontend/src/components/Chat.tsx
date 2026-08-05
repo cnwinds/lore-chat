@@ -7,6 +7,7 @@ import type { JumpTarget } from "../hooks/chat/useConversationJump";
 import {
   uploadFile,
   summarizeConversation,
+  type DocContextItem,
   type IngestResult,
   type SourceRef,
 } from "../api";
@@ -17,10 +18,10 @@ import { ChatMessageList } from "./chat/ChatMessageList";
 import { ComposerTray } from "./ComposerTray";
 import { ComposerToolbar } from "./ComposerToolbar";
 import { ArchiveConversationModal } from "./ArchiveConversationModal";
-import type { PendingFile } from "../types/composer";
+import type { DocTrayItem, PendingFile } from "../types/composer";
 import { suggestArchivePath } from "../utils/suggestArchivePath";
 
-type ComposerDocItem = { path: string; title: string };
+type ComposerDocItem = DocTrayItem;
 
 const INPUT_MIN_HEIGHT = 34;
 const INPUT_MAX_HEIGHT = 160;
@@ -36,7 +37,8 @@ type Props = {
   onJumpHandled?: () => void;
   docTrayItems?: ComposerDocItem[];
   primaryDocPath?: string | null;
-  docPaths?: string[];
+  documentPaths?: string[];
+  docContextItems?: DocContextItem[];
   onTraySetPrimary?: (path: string) => void;
   onTrayRemove?: (path: string) => void;
 };
@@ -52,7 +54,8 @@ export function Chat({
   onJumpHandled,
   docTrayItems = [],
   primaryDocPath = null,
-  docPaths = [],
+  documentPaths = [],
+  docContextItems = [],
   onTraySetPrimary,
   onTrayRemove,
 }: Props) {
@@ -97,7 +100,9 @@ export function Chat({
     conversationId,
     previewPath,
     webEnabled,
-    docPaths,
+    docPaths: documentPaths,
+    documentPaths,
+    docContextItems,
     primaryDocPath,
     msgs,
     setMsgs,
@@ -172,7 +177,7 @@ export function Chat({
 
     const ctx = resolveDocContext();
     if (
-      ctx.paths.length === 0 &&
+      ctx.docContext.length === 0 &&
       /[（(]*(几|两|\d+).*文档|合并|整合/.test(text)
     ) {
       setInput(text);
@@ -187,7 +192,7 @@ export function Chat({
       text,
       {
         attachments: uploadedPaths.length ? uploadedPaths : undefined,
-        doc_context: ctx.paths.length ? ctx.paths : undefined,
+        doc_context: ctx.docContext.length ? ctx.docContext : undefined,
         primary_doc: ctx.primary ?? undefined,
       },
       ctx,

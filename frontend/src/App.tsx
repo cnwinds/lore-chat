@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { getAuthStatus, type SourceRef, isMarkdownPath, downloadUrl } from "./api";
+import { getAuthStatus, type SourceRef, isMarkdownPath, downloadUrl, discoverSkills } from "./api";
 import { LoginPage } from "./components/auth/LoginPage";
 import { SetupPage } from "./components/auth/SetupPage";
 import { Chat } from "./components/Chat";
@@ -15,6 +15,9 @@ import { useConversationShell } from "./hooks/app/useConversationShell";
 import { useDocPreviewLayout } from "./hooks/app/useDocPreviewLayout";
 import { useComposerDocState } from "./hooks/useComposerDocState";
 import type { JumpTarget } from "./hooks/chat/useConversationJump";
+import { SkillPickModal } from "./components/SkillPickModal";
+import { COMPOSER_TRAY_MAX } from "./types/composer";
+import { isInsideSkillPackage } from "./utils/kbSkill";
 
 type Gate = "loading" | "setup" | "login" | "app";
 
@@ -55,11 +58,16 @@ function AppMain() {
   const doc = useDocPreviewLayout(refreshSidebar);
   const composer = useComposerDocState();
   const pinAddedTrayRef = useRef<string | null>(null);
+  const [kbDocs, setKbDocs] = useState<string[]>([]);
+  const [skillPick, setSkillPick] = useState<{
+    folder: string;
+    candidates: string[];
+  } | null>(null);
 
   function addDocToComposer(path: string) {
     const title = path.split("/").pop() ?? path;
-    if (!composer.paths.includes(path)) {
-      composer.addToTray(path, title);
+    if (!composer.items.some((i) => i.path === path)) {
+      composer.addDocumentToTray(path, title);
     }
     composer.setPrimary(path);
   }
@@ -76,7 +84,7 @@ function AppMain() {
   function handlePinDoc() {
     const path = doc.floatPath;
     if (!path) return;
-    const wasInTray = composer.paths.includes(path);
+    const wasInTray = composer.items.some((i) => i.path === path);
     if (!wasInTray) {
       pinAddedTrayRef.current = path;
       addDocToComposer(path);
@@ -106,7 +114,11 @@ function AppMain() {
       return;
     }
     if (mods?.ctrlKey || mods?.metaKey || mods?.shiftKey) {
-      composer.addToTray(path, title);
+      if (isInsideSkillPackage(path, kbDocs)) {
+        window.alert("Skill 包内文档请点文件夹附加 Skill；此处仅可打开阅读。");
+        return;
+      }
+      composer.addDocumentToTray(path, title);
     } else {
       doc.openDocPreview(path, undefined, { pin: false });
     }
@@ -118,9 +130,47 @@ function AppMain() {
     refreshSidebar();
   }
 
+  function openSkillPickForFolder(folderPath: string) {
+    void (async () => {
+      try {
+        const { roots } = await discoverSkills(folderPath);
+        if (roots.length === 0) {
+          window.alert(
+            "该目录及子目录下未发现 Skill 包（每个包须为直接包含 SKILL.md 的文件夹）。",
+          );
+          return;
+        }
+        setSkillPick({ folder: folderPath, candidates: roots });
+      } catch (err) {
+        window.alert(err instanceof Error ? err.message : "发现 Skill 失败");
+      }
+    })();
+  }
+
+  function handleSelectFolder(path: string, mods?: { ctrlKey?: boolean; metaKey?: boolean }) {
+    if (mods?.ctrlKey || mods?.metaKey) {
+      openSkillPickForFolder(path);
+    }
+  }
+
+  function handleSkillPickConfirm(selected: string[]) {
+    const room = composer.trayRemaining;
+    if (room <= 0) {
+      window.alert(`托盘已满（最多 ${COMPOSER_TRAY_MAX} 项）。`);
+      setSkillPick(null);
+      return;
+    }
+    const toAdd = selected.slice(0, room);
+    if (toAdd.length < selected.length) {
+      window.alert(`托盘最多 ${COMPOSER_TRAY_MAX} 项，已加入前 ${toAdd.length} 个 Skill。`);
+    }
+    composer.addSkillRoots(toAdd);
+    setSkillPick(null);
+  }
+
   function handleKbPathsDeleted(paths: string[]) {
     const deleted = new Set(paths);
-    for (const p of [...composer.paths]) {
+    for (const p of composer.items.map((i) => i.path)) {
       if (deleted.has(p)) composer.removeFromTray(p);
     }
     if (doc.floatPath && deleted.has(doc.floatPath)) doc.closeFloatPreview();
@@ -129,19 +179,16 @@ function AppMain() {
   }
 
   function handleTraySetPrimary(path: string) {
+    const item = composer.items.find((i) => i.path === path);
+    if (!item || item.kind !== "document") return;
     composer.setPrimary(path);
     openDocWithComposer(path, undefined, { pin: true });
   }
 
   function handleTrayRemove(path: string) {
-    const nextPrimary =
-      composer.primaryPath !== path
-        ? composer.primaryPath
-        : (composer.items.find((i) => i.path !== path)?.path ?? null);
+    const wasPinned = doc.pinnedPath === path;
     composer.removeFromTray(path);
-    if (doc.pinnedPath === path && nextPrimary === null) {
-      doc.closePinnedPreview();
-    }
+    if (wasPinned) doc.closePinnedPreview();
   }
 
   const conversation = useConversationShell({
@@ -150,6 +197,9 @@ function AppMain() {
     doc,
     composerPrimaryPath: composer.primaryPath,
     onSelectFile: handleSelectFile,
+    onSelectFolder: handleSelectFolder,
+    onAttachSkillsFolder: openSkillPickForFolder,
+    onDocsLoaded: setKbDocs,
     onKbPathChanged: handleKbPathChanged,
     onKbPathsDeleted: handleKbPathsDeleted,
   });
@@ -210,7 +260,8 @@ function AppMain() {
             onJumpHandled={conversation.clearPendingJump}
             docTrayItems={composer.items}
             primaryDocPath={composer.primaryPath}
-            docPaths={composer.paths}
+            documentPaths={composer.documentPaths}
+            docContextItems={composer.docContextItems}
             onTraySetPrimary={handleTraySetPrimary}
             onTrayRemove={handleTrayRemove}
           />
@@ -250,6 +301,14 @@ function AppMain() {
               onClose={() => setSnippetSource(null)}
             />
             <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+            <SkillPickModal
+              open={skillPick !== null}
+              folderLabel={skillPick?.folder ?? ""}
+              candidates={skillPick?.candidates ?? []}
+              maxSelectable={composer.trayRemaining}
+              onConfirm={handleSkillPickConfirm}
+              onCancel={() => setSkillPick(null)}
+            />
           </>
         }
       />

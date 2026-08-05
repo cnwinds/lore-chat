@@ -14,18 +14,25 @@ import {
   updateTimeline,
   KB_MUTATING_TOOLS,
   type ChatMessage,
+  type DocContextItem,
   type SourceRef,
 } from "../../api";
 import { kbPathFromToolResult } from "../../utils/chatMessage";
 import { nowIsoDisplay } from "../../utils/displayTime";
 
-export type DocContext = { paths: string[]; primary: string | null };
+export type DocContext = {
+  documentPaths: string[];
+  docContext: DocContextItem[];
+  primary: string | null;
+};
 
 type UseAgentStreamOptions = {
   conversationId: string | null;
   previewPath?: string | null;
   webEnabled: boolean;
   docPaths: string[];
+  documentPaths: string[];
+  docContextItems: DocContextItem[];
   primaryDocPath: string | null;
   msgs: ChatMessage[];
   setMsgs: Dispatch<SetStateAction<ChatMessage[]>>;
@@ -46,6 +53,8 @@ export function useAgentStream({
   previewPath: _previewPath,
   webEnabled,
   docPaths,
+  documentPaths,
+  docContextItems,
   primaryDocPath,
   msgs,
   setMsgs,
@@ -84,7 +93,11 @@ export function useAgentStream({
   }, [streaming]);
 
   function resolveDocContext(): DocContext {
-    return { paths: docPaths, primary: primaryDocPath };
+    return {
+      documentPaths,
+      docContext: docContextItems,
+      primary: primaryDocPath,
+    };
   }
 
   async function ensureConversationId(): Promise<string> {
@@ -158,7 +171,8 @@ export function useAgentStream({
       const clientMessageId = crypto.randomUUID();
       for await (const { event, data } of chatStream(apiText, {
         conversationId: cid,
-        activeDocPaths: ctx.paths,
+        activeDocPaths: ctx.documentPaths,
+        docContext: ctx.docContext.length ? ctx.docContext : undefined,
         primaryDocPath: ctx.primary,
         webEnabled,
         attachments: userMeta?.attachments ?? [],

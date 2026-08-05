@@ -3989,7 +3989,46 @@ a:hover {
 }
 
 .composer-doc-chip--primary:hover {
-  background: var(--accent-soft);
+  background: var(--composer-chip-primary-hover);
+}
+
+.composer-doc-chip--skill {
+  border-style: dashed;
+}
+
+.composer-doc-chip--skill .composer-doc-chip-bar {
+  background: var(--accent, #7c6cf0);
+}
+
+.skill-pick-modal {
+  max-width: 28rem;
+}
+
+.skill-pick-hint {
+  margin: 0 0 0.75rem;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+.skill-pick-list {
+  list-style: none;
+  margin: 0 0 1rem;
+  padding: 0;
+  max-height: 16rem;
+  overflow-y: auto;
+}
+
+.skill-pick-list label {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.35rem 0;
+  cursor: pointer;
+}
+
+.skill-pick-path {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.85rem;
 }
 
 .composer-doc-chip-bar {

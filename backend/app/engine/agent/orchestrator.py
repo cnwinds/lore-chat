@@ -6,6 +6,7 @@ from collections.abc import AsyncIterator
 from app.config import Settings
 from app.engine.agent.message_builder import build_agent_messages
 from app.engine.agent.prompts import MODE_DEFAULT
+from app.engine.agent.skill_activation import build_skill_activation_system_messages
 from app.engine.agent.tool_loop import AgentToolLoop
 from app.engine.agent.tools import ToolRegistry, select_tools
 
@@ -48,6 +49,7 @@ class AgentOrchestrator:
         active_doc_path: str | None = None,
         active_doc_paths: list[str] | None = None,
         primary_doc_path: str | None = None,
+        skill_roots: list[str] | None = None,
         history: list[dict] | None = None,
         conversation_id: str | None = None,
         turn_id: str | None = None,
@@ -60,6 +62,11 @@ class AgentOrchestrator:
         user_memory = (
             self.system_layer.memory_context() if self.system_layer else ""
         )
+        skill_msgs = build_skill_activation_system_messages(
+            self.tools.repo,
+            list(skill_roots or []),
+            disclosure_limit=self.tools.disclosure_chars,
+        )
         messages = build_agent_messages(
             user_text,
             mode=mode,
@@ -70,6 +77,8 @@ class AgentOrchestrator:
             active_doc_path=active_doc_path,
             active_doc_paths=active_doc_paths,
             primary_doc_path=primary_doc_path,
+            skill_roots=skill_roots,
+            extra_system_messages=skill_msgs or None,
         )
         tools_for_run = select_tools(mode, web_enabled)
         primary = primary_doc_path or active_doc_path

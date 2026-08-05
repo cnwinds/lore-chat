@@ -59,16 +59,22 @@
 - [ADR：引擎模块 seam（2026-08-04）](docs/adr/2026-08-04-engine-module-seams.md)
 - 产品规格：`docs/superpowers/specs/`
 
-## Language（对话与知识库 · 讨论中）
+## Language（对话与知识库）
 
-**文档托盘**：用户在发送前选中的知识库上下文集合；当前以 Markdown 文档路径为主，经 `doc_context` 随消息持久化。
-_Avoid_: 附件托盘（与 `attachments/` 二进制附件区分）
+**文档托盘**：用户在发送前选中的知识库上下文集合；项为带类型的 `{ path, kind }`，持久化在消息的 `doc_context` 中。可含普通文档与 Skill 根等。
+_Avoid_: 附件托盘（与 `attachments/` 二进制附件区分）；仅用无类型路径列表表达 Skill
 
-**Skill 激活**：识别为 Skill 后，在本轮 system 注入元信息与入口正文；不预载 `references/` 等子资源。
-_Avoid_: 全量注入、自动 RAG 灌入
+**主文档**：托盘内用于默认 `edit_doc` 目标的普通 Markdown 文档。Skill 包（`skill_root`）不可作主文档；用户明确指定路径时仍可 `edit_doc`（含某 Skill 的 `SKILL.md`）。
+_Avoid_: 把 Skill 根当作可编辑文档
 
-**Skill 包**：知识库目录内包含 `SKILL.md` 的 Skill 单元；激活时以该目录为根、以 `SKILL.md` 为入口。
-_Avoid_: 把目录下每个文件单独当作托盘项
+**Skill 激活**：仅当托盘含 `skill_root` 时，在本轮 system 对该包注入元信息与 `SKILL.md` 入口正文（首窗与 `read_doc` 默认 limit 对齐，约 3000 字；不足则全文）；不预载 `references/` 等子资源。
+_Avoid_: 全量注入；对普通 `document` 路径做 Skill 激活
 
-**单文件 Skill**：无独立目录、自身作为入口的 Skill；含 Cursor 式 frontmatter，或位于 `skill/` 顶层的约定白名单 `.md`。
-_Avoid_: 任意 Markdown 笔记
+**Skill 包发现**：用户点选侧栏某文件夹后，自该目录起**递归**找出所有「目录内直接含 `SKILL.md`」的包根；经**勾选确认层**（列出候选路径，用户选择）后以若干 `skill_root` 写入托盘。点选目录自身含 `SKILL.md` 时，候选列表须包含该目录。未发现任何包时提示用户，不写入托盘。
+_Avoid_: 不经确认自动塞满托盘；只扫描一层
+
+**托盘项类型（kind）**：`document`（普通 Markdown）与 `skill_root`（Skill 包根目录）。**仅 `skill_root` 触发 Skill 激活**；`document` 永不因 Skill 规则激活。历史纯字符串路径读作 `document`；不重放补做 Skill 激活。
+_Avoid_: 单文件 Skill；对旧会话做全库迁移
+
+**多 Skill 并存**：同一轮可挂多个 `skill_root`；各 Skill 分段注入 system，顺序与托盘一致；与用户消息冲突以用户消息为准；Skill 之间冲突则合并取交集或向用户澄清。
+_Avoid_: 每轮仅允许一个 Skill（除非产品另行限制）
