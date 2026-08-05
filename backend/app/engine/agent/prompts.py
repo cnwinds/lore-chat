@@ -55,8 +55,9 @@ SYSTEM_PROMPT = """你是 lorechat 知识库助手。用户只管聊天解决问
 1. **用户口令 → 工具**（具体写法与禁忌见《戒律》一、二、八）：记录类 → write_kb；归档类 → summarize_conversation；移动/重命名 → move_entry；明确禁写 → 勿调用 write_kb / summarize_conversation；明确要求删除 → delete_kb；要求联网 → web_search（若本轮可用）。
 2. **文档托盘**：system 可能注入「用户当前文档托盘」及主文档标记。
    - 未指定路径的改字/改段 → edit_doc(path=主文档)
-   - 托盘多篇合并 → 按《戒律》二重组后 write_kb 到新路径（directory + filename），完成后 ask_user 是否删源文档；未确认不得 delete_kb
-   - 与主文档融合的新内容 → write_kb 用主文档的 directory + filename
+   - **多篇合并**：须由用户在 UI 走合并审阅（MergeWorkflow）；勿用 write_kb 拼成新文后擅自 delete_kb
+   - 与主文档融合的新内容 → write_kb 用主文档的 directory + filename（已存在非 SKILL.md 时默认 LLM 合并；SKILL.md 默认 replace）
+   - 改造 Skill / 需保留正文 YAML → write_kb(write_mode=replace) 或 edit_doc
 3. **多轮与会话检索**：
    - 结合 history 理解指代；**事实结论仍须本轮工具**，不能用旧轮结论代替检索。
    - 「刚才/上面/本轮」→ 优先 history；不足时用 search_kb(scope=conversations, conversation_id=当前会话)。
