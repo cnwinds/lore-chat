@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { useAgentStream } from "./useAgentStream";
 import * as api from "../../api";
-import type { ChatMessage } from "../../api";
+import type { ChatMessage, DocContextItem } from "../../api";
 
 vi.mock("../../api", async (importOriginal) => {
   const mod = await importOriginal<typeof import("../../api")>();
@@ -43,9 +43,8 @@ function baseOptions(overrides: Partial<Parameters<typeof useAgentStream>[0]> = 
     conversationId: "cid-1",
     previewPath: null,
     webEnabled: false,
-    docPaths: [] as string[],
     documentPaths: [] as string[],
-    docContextItems: [] as api.DocContextItem[],
+    docContextItems: [] as DocContextItem[],
     primaryDocPath: null,
     msgs: [] as ChatMessage[],
     setMsgs,

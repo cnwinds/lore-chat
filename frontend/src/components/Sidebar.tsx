@@ -34,7 +34,6 @@ type Props = {
   onNewChat: () => void;
   onSelectConversation: (id: string) => void;
   onDeleteConversation: (id: string) => void;
-  onDocsLoaded?: (paths: string[]) => void;
   onKbPathChanged?: (fromPath: string, toPath: string) => void;
   onKbPathsDeleted?: (paths: string[]) => void;
 };

@@ -30,7 +30,6 @@ type UseAgentStreamOptions = {
   conversationId: string | null;
   previewPath?: string | null;
   webEnabled: boolean;
-  docPaths: string[];
   documentPaths: string[];
   docContextItems: DocContextItem[];
   primaryDocPath: string | null;
@@ -52,7 +51,6 @@ export function useAgentStream({
   conversationId,
   previewPath: _previewPath,
   webEnabled,
-  docPaths,
   documentPaths,
   docContextItems,
   primaryDocPath,

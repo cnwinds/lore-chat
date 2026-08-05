@@ -100,7 +100,6 @@ export function Chat({
     conversationId,
     previewPath,
     webEnabled,
-    docPaths: documentPaths,
     documentPaths,
     docContextItems,
     primaryDocPath,
