@@ -54,8 +54,8 @@ _PRECEPTS_BODY = """# 戒律 · 行为规约
    - **并入已有文档**：`search_kb` 与 `read_doc` 确认主题一致 → 对同一路径 `write_kb`（相同 directory + filename）或 `edit_doc` 做局部修改。
    - **放入已有目录**：在已有分类下新建 `.md`（`write_kb` / `summarize_conversation` 指定该 directory 与新 filename）。
    - **新建子目录**：在已有顶层分类下扩展子目录（如 `技术/模型对比/`），避免随意新建孤立顶层目录。
-   - **调整结构**：现有目录命名混乱或文档放错层时，在用户同意或指令明确时用 `move_doc` 理顺后再写入；不得为省事堆在根目录或临时目录。
-3. **路径表达**：一律使用 `directory` + `filename`（`move_doc` 用 `from_path` + `to_directory` + `to_filename`）。禁止裸 `rel_path`、禁止 `target_path` 式写法、禁止 `conv:` 前缀、禁止以会话 id 命名目录或文件。
+   - **调整结构**：现有目录命名混乱或文档放错层时，在用户同意或指令明确时用 `move_entry` 理顺后再写入；不得为省事堆在根目录或临时目录。
+3. **路径表达**：一律使用 `directory` + `filename`（`move_entry` 用 `from_path` + `to_directory` + `to_filename`）。禁止裸 `rel_path`、禁止 `target_path` 式写法、禁止 `conv:` 前缀、禁止以会话 id 命名目录或文件。
 4. **命名习惯**：目录名稳定表意（中文或固定 slug），层级一般不超过 3 层；文件名简短、以 `.md` 结尾，与同目录既有文档风格一致。
 5. **受保护区域**：`系统/` 仅维护规约与心法，普通知识不得写入；写入前确认目标不在受保护路径。
 """

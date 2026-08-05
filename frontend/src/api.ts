@@ -422,7 +422,8 @@ export const TOOL_LABELS: Record<string, string> = {
   delete_kb: "删除知识库内容",
   ask_user: "征询用户",
   edit_doc: "局部编辑文档",
-  move_doc: "移动或重命名文档",
+  move_entry: "移动或重命名路径",
+  move_doc: "移动或重命名路径",
 };
 
 // 会改动知识库、需要刷新侧栏的工具
@@ -431,6 +432,7 @@ export const KB_MUTATING_TOOLS = [
   "delete_kb",
   "summarize_conversation",
   "edit_doc",
+  "move_entry",
   "move_doc",
 ] as const;
 

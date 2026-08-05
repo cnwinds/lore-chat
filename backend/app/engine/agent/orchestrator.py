@@ -67,10 +67,15 @@ class AgentOrchestrator:
             list(skill_roots or []),
             disclosure_limit=self.tools.disclosure_chars,
         )
+        search_configured = (
+            self.tools.web_search is not None
+            and self.tools.web_search.provider is not None
+        )
+        web_search_enabled = web_enabled and search_configured
         messages = build_agent_messages(
             user_text,
             mode=mode,
-            web_enabled=web_enabled,
+            web_enabled=web_search_enabled,
             system_layer_text=system_layer_text,
             user_memory=user_memory,
             history=history,
@@ -80,7 +85,9 @@ class AgentOrchestrator:
             skill_roots=skill_roots,
             extra_system_messages=skill_msgs or None,
         )
-        tools_for_run = select_tools(mode, web_enabled)
+        tools_for_run = select_tools(
+            mode, web_enabled, search_configured=search_configured
+        )
         primary = primary_doc_path or active_doc_path
         start = time.monotonic()
         async for ev in self._tool_loop.stream(

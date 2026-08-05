@@ -53,7 +53,7 @@ def build_tool_dispatch(registry: ToolRegistry) -> dict[str, ToolHandler]:
         "edit_doc": _edit_doc,
         "summarize_conversation": _summarize,
         "delete_kb": lambda args, **kw: asyncio.to_thread(registry._delete_kb, args),
-        "move_doc": lambda args, **kw: asyncio.to_thread(registry._move_doc, args),
+        "move_entry": lambda args, **kw: asyncio.to_thread(registry._move_entry, args),
         "ask_user": lambda args, **kw: registry._ask_user(args),
         "manage_memory": _manage_memory,
         "recall_memory": lambda args, **kw: asyncio.to_thread(registry._recall_memory, args),

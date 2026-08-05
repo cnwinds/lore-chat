@@ -314,13 +314,13 @@ async def test_write_kb_requires_directory_and_filename(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_move_doc_tool(tmp_path):
+async def test_move_entry_tool(tmp_path):
     registry, repo, idx = _make_registry(tmp_path)
     path = "llm/old-name.md"
     repo.write_doc(path, {"title": "Old"}, "body\n", commit_msg="seed")
     idx.reindex_doc(path, "body\n")
     result = await registry.execute(
-        "move_doc",
+        "move_entry",
         {
             "from_path": path,
             "to_directory": "技术/llm",
@@ -332,6 +332,38 @@ async def test_move_doc_tool(tmp_path):
     repo.read_doc("技术/llm/new-name.md")
     with pytest.raises(FileNotFoundError):
         repo.read_doc(path)
+
+
+@pytest.mark.asyncio
+async def test_move_entry_directory(tmp_path):
+    registry, repo, idx = _make_registry(tmp_path)
+    repo.write_doc(
+        "skill/old-pkg/SKILL.md",
+        {"title": "S"},
+        "body\n",
+        commit_msg="seed",
+    )
+    repo.write_doc(
+        "skill/old-pkg/references/a.md",
+        {"title": "A"},
+        "ref\n",
+        commit_msg="seed",
+    )
+    idx.reindex_doc("skill/old-pkg/SKILL.md", "body\n")
+    idx.reindex_doc("skill/old-pkg/references/a.md", "ref\n")
+    result = await registry.execute(
+        "move_entry",
+        {
+            "from_path": "skill/old-pkg",
+            "to_directory": "skill",
+            "to_filename": "new-pkg",
+        },
+    )
+    assert result["status"] == "saved"
+    assert result["rel_path"] == "skill/new-pkg"
+    repo.read_doc("skill/new-pkg/SKILL.md")
+    repo.read_doc("skill/new-pkg/references/a.md")
+    assert not (repo.root / "skill" / "old-pkg").exists()
 
 
 @pytest.mark.asyncio
@@ -501,6 +533,14 @@ def test_select_tools_web_disabled_drops_web_search():
 def test_select_tools_web_enabled_keeps_web_search():
     names = _tool_names(select_tools(MODE_DEFAULT, web_enabled=True))
     assert "web_search" in names
+
+
+def test_select_tools_web_enabled_but_no_provider_drops_web_search():
+    names = _tool_names(
+        select_tools(MODE_DEFAULT, web_enabled=True, search_configured=False)
+    )
+    assert "web_search" not in names
+    assert "fetch_url" in names
 
 
 def test_select_tools_no_write_drops_write_kb():

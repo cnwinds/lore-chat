@@ -8,7 +8,7 @@
 |----|------|------|
 | HTTP | `backend/app/api/routes.py` | 鉴权、DTO、StreamingResponse；**不**解析 Agent SSE |
 | 聊天 | `backend/app/engine/chat/` | `ChatSessionRunner`、时间线累积、SSE 解析 |
-| Agent | `backend/app/engine/agent/` | `AgentOrchestrator`（adapter）、`AgentToolLoop`（LLM+工具循环）、`tool_catalog`、`tools.py`（执行） |
+| Agent | `backend/app/engine/agent/` | `AgentOrchestrator`（adapter）、`AgentToolLoop`（LLM+工具循环）、`tool_catalog`、`tool_impl/*`（执行）、`tools.py`（ToolRegistry 组装） |
 | 会话 | `backend/app/engine/conversations.py` + `conversation/outbox.py` | SQLite 消息/turn；派生任务队列 |
 | 知识写入 | `backend/app/engine/knowledge_writer.py` | 路径 + git + 索引 + changelog **唯一写入 seam**；`import_entry` / `move_entry` / `delete_entry`（含附件） |
 | 知识库树 HTTP | `backend/app/engine/kb_tree_service.py` | import/move/delete + protected + `index_revision.bump` |
@@ -36,7 +36,7 @@
 - HTTP：`POST /api/conversations/{id}/summarize` body 同形
 - 校验与拼接：`kb_paths.join_kb_path` / `KnowledgeWriter.resolve_location`
 
-`move_doc` 使用 `from_path` + `to_directory` + `to_filename`。
+`move_entry` 使用 `from_path` + `to_directory` + `to_filename`。
 
 维护性全量文档索引重建：`backup/reindex.reindex_all` → `KnowledgeWriter.reindex_markdown_body`（不写 changelog）。
 

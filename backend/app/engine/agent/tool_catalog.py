@@ -11,7 +11,7 @@ READ_ONLY_TOOLS = frozenset({
 })
 WRITE_TOOLS = frozenset({
     "write_kb", "delete_kb", "ask_user", "summarize_conversation", "edit_doc",
-    "manage_memory", "move_doc",
+    "manage_memory", "move_entry",
 })
 
 _DEFAULT_DISCLOSURE_CHARS = 3000
@@ -33,7 +33,7 @@ TOOL_LABELS = {
     "delete_kb": "删除知识库内容",
     "ask_user": "征询用户",
     "edit_doc": "局部编辑文档",
-    "move_doc": "移动或重命名文档",
+    "move_entry": "移动或重命名路径",
     "manage_memory": "管理长期用户记忆",
     "recall_memory": "回忆已确认的用户画像",
 }
@@ -114,8 +114,8 @@ TOOL_DEFINITIONS: list[dict] = [
             "name": "list_kb_structure",
             "description": (
                 "列出知识库当前目录结构与各目录下的文档文件名（只读）。"
-                "在 write_kb、summarize_conversation、move_doc 之前必须先调用本工具，"
-                "据此决定放入已有目录、新建子目录或 move_doc 调整结构；禁止凭记忆编造路径。"
+                "在 write_kb、summarize_conversation、move_entry 之前必须先调用本工具，"
+                "据此决定放入已有目录、新建子目录或 move_entry 调整结构；禁止凭记忆编造路径。"
             ),
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
@@ -278,17 +278,21 @@ TOOL_DEFINITIONS: list[dict] = [
     {
         "type": "function",
         "function": {
-            "name": "move_doc",
+            "name": "move_entry",
             "description": (
-                "将已有文档移动到新目录或重命名（修改 filename）。"
-                "移动前建议 list_kb_structure 与 read_doc；目标路径不得已存在。"
+                "移动知识库中的 Markdown 文件、附件，或整个目录（如 Skill 包目录）。"
+                "与侧栏拖放移动行为一致：目录移动时 to_filename 为新文件夹名（省略则用原目录名）；"
+                "单文件移动时 to_filename 为目标 .md 文件名（省略则用原文件名）。"
+                "移动前建议 list_kb_structure；目标路径不得已存在。"
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "from_path": {
                         "type": "string",
-                        "description": "当前文档相对路径，如 技术/llm/旧名.md",
+                        "description": (
+                            "当前相对路径：.md 文件、attachments 下文件，或目录（如 skill/张雪峰）"
+                        ),
                     },
                     "to_directory": {
                         "type": "string",
@@ -296,10 +300,12 @@ TOOL_DEFINITIONS: list[dict] = [
                     },
                     "to_filename": {
                         "type": "string",
-                        "description": _KB_FILENAME_DESC,
+                        "description": (
+                            "目标文件名（.md 或附件名）或新目录名；省略时保留 from_path 最后一段名称"
+                        ),
                     },
                 },
-                "required": ["from_path", "to_directory", "to_filename"],
+                "required": ["from_path", "to_directory"],
             },
         },
     },
@@ -401,10 +407,15 @@ TOOL_DEFINITIONS: list[dict] = [
 _MODE_NO_WRITE = "no_write"
 
 
-def select_tools(mode: str, web_enabled: bool) -> list[dict]:
-    """按 mode 与 web_enabled 硬门过滤下发给模型的工具集。
+def select_tools(
+    mode: str,
+    web_enabled: bool,
+    *,
+    search_configured: bool = True,
+) -> list[dict]:
+    """按 mode 与联网能力硬门过滤下发给模型的工具集。
 
-    - web_enabled=False：移除 web_search（保留 fetch_url，贴链接=显式意图）。
+    - web_enabled=False 或未配置搜索 provider：移除 web_search（保留 fetch_url）。
     - mode=no_write：移除 write_kb（/api/ask；此前仅靠 prompt 约束，此处收紧为硬门）。
     - mode=force_write：保留 write_kb（/api/ingest 依赖 prompt 强制调用）。
 
@@ -412,7 +423,7 @@ def select_tools(mode: str, web_enabled: bool) -> list[dict]:
     docs/superpowers/specs/2026-07-12-ingest-ask-api-design.md
     """
     excluded: set[str] = set()
-    if not web_enabled:
+    if not web_enabled or not search_configured:
         excluded.add("web_search")
     if mode == _MODE_NO_WRITE:
         excluded.add("write_kb")
