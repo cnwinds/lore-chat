@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import shutil
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from git import Repo
 
@@ -158,6 +158,35 @@ class KnowledgeRepo:
     def is_writable(self, rel_path: str) -> bool:
         return not self._is_internal(rel_path)
 
+    def _dir_has_kb_files(self, abs_dir: Path) -> bool:
+        for p in abs_dir.rglob("*"):
+            if not p.is_file():
+                continue
+            rel = p.relative_to(self.root).as_posix()
+            if rel.startswith(".git/") or rel.startswith(".kb/"):
+                continue
+            if p.name == ".gitkeep":
+                continue
+            if self._is_protected(rel):
+                continue
+            return True
+        return False
+
+    def _prune_empty_directories(self, rel_dir: str) -> None:
+        """移动/删除文件后，自底向上移除已无知识库文件的目录。"""
+        norm = rel_dir.replace("\\", "/").strip("/")
+        while norm:
+            if self._is_protected(norm):
+                break
+            abs_p = self._abs(norm)
+            if not abs_p.is_dir():
+                break
+            if self._dir_has_kb_files(abs_p):
+                break
+            shutil.rmtree(abs_p)
+            parent = PurePosixPath(norm).parent.as_posix()
+            norm = "" if parent in ("", ".") else parent
+
     def delete_path(self, rel_path: str, *, commit_msg: str) -> list[str]:
         norm = rel_path.replace("\\", "/").rstrip("/")
         if self._is_protected(norm):
@@ -171,6 +200,9 @@ class KnowledgeRepo:
                 raise ValueError(f"禁止删除: {rel_path}")
             deleted = [norm]
             abs_p.unlink()
+            parent = PurePosixPath(norm).parent.as_posix()
+            if parent not in ("", "."):
+                self._prune_empty_directories(parent)
         else:
             deleted = []
             for p in sorted(abs_p.rglob("*")):
@@ -205,6 +237,9 @@ class KnowledgeRepo:
         doc = self.read_doc(from_norm)
         self.write_doc(to_norm, doc.meta, doc.body, commit_msg=commit_msg)
         from_abs.unlink()
+        parent = PurePosixPath(from_norm).parent.as_posix()
+        if parent not in ("", "."):
+            self._prune_empty_directories(parent)
         self.repo.index.remove([from_norm])
         self.repo.index.commit(commit_msg)
         return to_norm
@@ -224,6 +259,9 @@ class KnowledgeRepo:
             raise ValueError(f"目标路径已存在：{to_path}")
         to_abs.parent.mkdir(parents=True, exist_ok=True)
         from_abs.rename(to_abs)
+        parent = PurePosixPath(from_norm).parent.as_posix()
+        if parent not in ("", "."):
+            self._prune_empty_directories(parent)
         self.repo.index.remove([from_norm])
         self.repo.index.add([to_norm])
         self.repo.index.commit(commit_msg)
@@ -258,6 +296,9 @@ class KnowledgeRepo:
 
         to_abs.parent.mkdir(parents=True, exist_ok=True)
         shutil.move(str(from_abs), str(to_abs))
+        parent = PurePosixPath(from_norm).parent.as_posix()
+        if parent not in ("", "."):
+            self._prune_empty_directories(parent)
 
         prefix_old = from_norm + "/"
         prefix_new = to_norm + "/"

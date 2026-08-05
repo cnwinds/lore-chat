@@ -118,6 +118,7 @@ def test_move_directory(repo):
         "archive/mini-app/attachments/x.pdf",
     }
     assert not (repo.root / "projects" / "mini-app").exists()
+    assert not (repo.root / "projects").exists()
     assert (repo.root / "archive" / "mini-app" / "a.md").is_file()
     assert "archive/mini-app/a.md" in repo.list_tree()
 

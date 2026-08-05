@@ -79,7 +79,11 @@ export function collectFolderPaths(nodes: TreeNode[]): string[] {
   return paths;
 }
 
-/** 默认展开的文件夹路径（系统控制层目录保持折叠） */
+/** 默认展开的文件夹：前 2 层展开，第 3 层及以下折叠；系统控制层目录保持折叠 */
 export function collectDefaultExpandedFolderPaths(nodes: TreeNode[]): string[] {
-  return collectFolderPaths(nodes).filter((p) => p !== SYSTEM_LAYER_DIR);
+  return collectFolderPaths(nodes).filter((p) => {
+    if (p === SYSTEM_LAYER_DIR) return false;
+    const depth = p.split("/").filter(Boolean).length;
+    return depth <= 2;
+  });
 }

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 
 type Props = {
   open: boolean;
@@ -42,11 +43,12 @@ export function SkillPickModal({
     });
   }
 
-  return (
+  return createPortal(
     <div className="modal-backdrop" role="presentation" onClick={onCancel}>
       <div
         className="modal-panel skill-pick-modal"
         role="dialog"
+        aria-modal="true"
         aria-labelledby="skill-pick-title"
         onClick={(e) => e.stopPropagation()}
       >
@@ -86,6 +88,7 @@ export function SkillPickModal({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
