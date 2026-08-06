@@ -1,8 +1,5 @@
 import type { ChatMessage, SourceRef, TimelineBlock } from "../api";
 import { formatMessageTime } from "./displayTime";
-import { isNoiseProgressLine } from "./progressLog";
-
-export { isNoiseProgressLine };
 
 export function kbPathFromToolResult(
   data: Record<string, unknown>,
@@ -93,65 +90,6 @@ export function normalizeLoadedMessage(m: ChatMessage): ChatMessage {
     timeline,
     status: m.status === "interrupted" || hasInterrupted ? "interrupted" : m.status,
   };
-}
-
-function latestMeaningfulProgress(
-  block: Extract<TimelineBlock, { type: "tool" }>,
-): string | undefined {
-  const log = block.progress_log;
-  if (log?.length) {
-    for (let i = log.length - 1; i >= 0; i--) {
-      const line = (log[i] || "").trim();
-      if (line && !isNoiseProgressLine(line)) return line;
-    }
-  }
-  if (block.summary && !isNoiseProgressLine(block.summary)) {
-    return block.summary.trim();
-  }
-  if (block.query) {
-    return block.tool === "sandbox_run" ? `$ ${block.query}` : block.query;
-  }
-  return block.label;
-}
-
-/** 流式控制条文案：当前正在跑的工具最新输出。 */
-export function liveStreamingStatus(
-  msgs: ChatMessage[],
-  streamingAssistantIdx: number | null,
-): string | null {
-  const candidates: ChatMessage[] = [];
-  if (
-    streamingAssistantIdx != null &&
-    streamingAssistantIdx >= 0 &&
-    streamingAssistantIdx < msgs.length
-  ) {
-    candidates.push(msgs[streamingAssistantIdx]);
-  }
-  for (let i = msgs.length - 1; i >= 0; i--) {
-    if (msgs[i].role === "assistant") {
-      if (!candidates.includes(msgs[i])) candidates.push(msgs[i]);
-      break;
-    }
-  }
-  for (const msg of candidates) {
-    const timeline = msg.timeline;
-    if (!timeline?.length) continue;
-    for (let i = timeline.length - 1; i >= 0; i--) {
-      const block = timeline[i];
-      if (block.type === "tool" && block.status === "running") {
-        return latestMeaningfulProgress(block) ?? null;
-      }
-      if (block.type === "parallel") {
-        for (let j = block.children.length - 1; j >= 0; j--) {
-          const child = block.children[j];
-          if (child.type === "tool" && child.status === "running") {
-            return latestMeaningfulProgress(child) ?? null;
-          }
-        }
-      }
-    }
-  }
-  return null;
 }
 
 export type ChatDisplayRow = {

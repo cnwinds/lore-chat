@@ -6,7 +6,6 @@ import {
   expandMessagesForDisplay,
   timelineAwaitsUserAnswer,
   normalizeLoadedMessage,
-  liveStreamingStatus,
 } from "./chatMessage";
 import type { ChatMessage } from "../api";
 
@@ -159,28 +158,5 @@ describe("normalizeLoadedMessage", () => {
       status: "interrupted",
       summary: "连接中断，未完成",
     });
-  });
-});
-
-describe("liveStreamingStatus", () => {
-  it("shows latest sandbox progress on the control bar", () => {
-    const msgs = [
-      {
-        role: "assistant" as const,
-        timeline: [
-          {
-            type: "tool" as const,
-            id: "t1",
-            tool: "sandbox_run",
-            label: "在沙箱执行命令",
-            ts: "t",
-            status: "running" as const,
-            query: "python fetch.py",
-            progress_log: ["$ python fetch.py", "top count: 500", "仍在运行… 90s"],
-          },
-        ],
-      },
-    ];
-    expect(liveStreamingStatus(msgs, 0)).toBe("top count: 500");
   });
 });
