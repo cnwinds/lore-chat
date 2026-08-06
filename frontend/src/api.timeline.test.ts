@@ -110,7 +110,8 @@ describe("updateTimeline tool_progress", () => {
     const block = timeline[0];
     expect(block.type).toBe("tool");
     if (block.type === "tool") {
-      expect(block.progress_log).toEqual(["$ ls\nab\n"]);
+      // 行级无尾换行时自动插入 \\n
+      expect(block.progress_log).toEqual(["$ ls\na\nb\n"]);
     }
   });
 });

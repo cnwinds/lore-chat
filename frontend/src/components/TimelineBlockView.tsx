@@ -13,11 +13,15 @@ import { SandboxTerminal } from "./SandboxTerminal";
 import { SourceChip } from "./SourceChip";
 import { MessageRangeHighlight } from "./chat/MessageRangeHighlight";
 import { isNoiseProgressLine } from "../utils/progressLog";
+import { toolDisplayDurationMs } from "../utils/toolDuration";
 
 type Props = {
   block: TimelineBlock;
   cumulative: CumulativeInfo;
+  /** 整轮流式墙钟（仅用于消息级）；单工具请用 nowMs + started_at_ms */
   liveElapsedMs?: number;
+  /** 当前墙钟 ms，供运行中工具本地秒表 */
+  nowMs?: number;
   isLive?: boolean;
   inParallel?: boolean;
   durationBold?: boolean;
@@ -93,6 +97,7 @@ function maxParallelDuration(children: TimelineBlock[]): number | undefined {
 function ToolBlockView({
   block,
   liveElapsedMs,
+  nowMs,
   durationBold,
   onOpenSource,
   previewPath,
@@ -101,6 +106,7 @@ function ToolBlockView({
 }: {
   block: Extract<TimelineBlock, { type: "tool" }>;
   liveElapsedMs?: number;
+  nowMs?: number;
   durationBold?: boolean;
   onOpenSource: (src: SourceRef) => void;
   previewPath?: string | null;
@@ -113,7 +119,7 @@ function ToolBlockView({
 }) {
   // 检索/搜索/打开链接默认折叠；其余工具在流式或执行中默认展开。
   // 未作答的征询始终展开，方便用户直接选择。
-  const isLive = liveElapsedMs !== undefined;
+  const isLive = liveElapsedMs !== undefined || nowMs !== undefined;
   const pendingAsk =
     (block.tool === "ask_user" || block.tool === "sandbox_run") &&
     block.status === "done" &&
@@ -143,10 +149,11 @@ function ToolBlockView({
   }
 
   const oneLiner = toolOneLiner(block);
-  const displayMs =
-    block.status === "running" && liveElapsedMs !== undefined
-      ? liveElapsedMs
-      : block.duration_ms;
+  // 运行中：按本工具 started_at_ms 计秒；勿用整轮 liveElapsedMs（会偏长，结束后又跳回 duration 显得偏短）
+  const displayMs = toolDisplayDurationMs(block, {
+    nowMs,
+    liveElapsedMs,
+  });
 
   function handleOpenSource(src: SourceRef) {
     if (
@@ -324,6 +331,7 @@ export function TimelineBlockView({
   block,
   cumulative,
   liveElapsedMs,
+  nowMs,
   isLive,
   inParallel,
   durationBold,
@@ -338,6 +346,7 @@ export function TimelineBlockView({
       <ToolBlockView
         block={block}
         liveElapsedMs={liveElapsedMs}
+        nowMs={nowMs}
         durationBold={inParallel ? durationBold : true}
         onOpenSource={onOpenSource}
         previewPath={previewPath}
@@ -367,6 +376,7 @@ export function TimelineBlockView({
             block={child}
             cumulative={cumulative}
             liveElapsedMs={liveElapsedMs}
+            nowMs={nowMs}
             inParallel
             durationBold={
               child.type === "tool" &&

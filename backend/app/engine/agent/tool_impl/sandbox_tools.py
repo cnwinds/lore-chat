@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from pathlib import PurePosixPath
 
+from app.engine.chat.progress_log import ensure_line_chunk
 from app.engine.knowledge_writer import KbPathExistsError, KnowledgeWriter
 from app.engine.pending import PendingStore
 from app.engine.sandbox.policy import command_needs_confirmation
@@ -123,7 +124,11 @@ class SandboxTools:
                     chunk = status.logs or ""
                     if chunk:
                         full_logs += chunk
-                        emit_progress(chunk, phase="log", execution_id=eid)
+                        emit_progress(
+                            ensure_line_chunk(chunk),
+                            phase="log",
+                            execution_id=eid,
+                        )
                     if status.next_cursor is not None:
                         cursor = status.next_cursor
                     if not status.running:

@@ -1,5 +1,5 @@
 // 生产环境经 nginx 同源代理时 VITE_API_BASE 留空；本地开发在 .env 中设为 http://localhost:8000
-import { isNoiseProgressLine } from "./utils/progressLog";
+import { appendProgressChunk } from "./utils/progressLog";
 
 const BASE = import.meta.env.VITE_API_BASE ?? "";
 
@@ -282,6 +282,8 @@ export type TimelineBlock =
       sources?: SourceRef[];
       content?: string;
       duration_ms?: number;
+      /** 前端本地：tool_start 时 Date.now()，供运行中秒表 */
+      started_at_ms?: number;
       question_id?: string;
       question?: string;
       options?: QuestionOption[];
@@ -690,6 +692,7 @@ export function updateTimeline(
       label: (data.label as string) || TOOL_LABELS[data.tool as string] || (data.tool as string),
       ts: data.ts as string,
       status: "running",
+      started_at_ms: Date.now(),
       ...(query ? { query } : {}),
     };
     const parallelIdx = findActiveParallelIndex(timeline);
@@ -708,32 +711,16 @@ export function updateTimeline(
     const message = typeof data.message === "string" ? data.message : "";
     if (!message) return timeline;
     return updateToolBlock(timeline, id, (block) => {
-      // 丢弃无意义的心跳行，避免刷屏
-      if (isNoiseProgressLine(message)) {
+      const next = appendProgressChunk(block.progress_log, message);
+      if (next === block.progress_log) {
         return block;
       }
-      const prev = block.progress_log ?? [];
-      // 终端流：把连续输出拼到同一缓冲项，保留原始换行
-      let next: string[];
-      if (
-        prev.length > 0 &&
-        !message.startsWith("$ ") &&
-        !/^\[exit\s/.test(message.trim())
-      ) {
-        next = [...prev.slice(0, -1), prev[prev.length - 1] + message];
-      } else {
-        next = [...prev, message];
-      }
-      const joinedLen = next.reduce((n, s) => n + s.length, 0);
-      if (joinedLen > 100_000) {
-        const joined = next.join("");
-        next = [joined.slice(-100_000)];
-      }
+      const previewSrc = message.trim();
       const preview =
-        message.trim().length > 0
-          ? message.trim().length < 200
-            ? message.trim()
-            : `${message.trim().slice(0, 200)}…`
+        previewSrc.length > 0
+          ? previewSrc.length < 200
+            ? previewSrc
+            : `${previewSrc.slice(0, 200)}…`
           : block.summary;
       return {
         ...block,

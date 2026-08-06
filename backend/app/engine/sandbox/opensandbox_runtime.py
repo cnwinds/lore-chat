@@ -245,6 +245,7 @@ class OpenSandboxRuntime:
     ) -> CommandResult:
         from opensandbox.models.execd import ExecutionHandlers, OutputMessage, RunCommandOpts
 
+        from app.engine.chat.progress_log import ensure_line_chunk
         from app.engine.sandbox.progress import emit_progress
 
         if _ready:
@@ -268,14 +269,14 @@ class OpenSandboxRuntime:
             if not text:
                 return
             out_chunks.append(text)
-            emit_progress(text)
+            emit_progress(ensure_line_chunk(text))
 
         async def on_stderr(msg: OutputMessage) -> None:
             text = msg.text or ""
             if not text:
                 return
             err_chunks.append(text)
-            emit_progress(text)
+            emit_progress(ensure_line_chunk(text))
 
         async def on_init(execution) -> None:
             _track(getattr(execution, "id", None) or getattr(execution, "execution_id", None))

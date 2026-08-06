@@ -322,6 +322,8 @@ class AgentToolLoop:
                 }
 
         task = asyncio.create_task(_run())
+        duration_ms = 0
+        out: dict | None = None
         try:
             while True:
                 if task.done() and queue.empty():
@@ -336,6 +338,8 @@ class AgentToolLoop:
                             yield "progress", queue.get_nowait()
                         break
             out = await task
+            # 在工具任务完成瞬间取耗时，避免后续 yield/消费拖长
+            duration_ms = int((time.monotonic() - t0) * 1000)
         except asyncio.CancelledError:
             if not task.done():
                 task.cancel()
@@ -352,7 +356,7 @@ class AgentToolLoop:
                 except (asyncio.CancelledError, Exception):
                     pass
             reset_progress_queue(token)
-        duration_ms = int((time.monotonic() - t0) * 1000)
+        assert out is not None
         yield "result", (out, duration_ms)
 
     async def _run_parallel_batch(

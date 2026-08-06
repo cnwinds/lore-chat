@@ -83,6 +83,7 @@ export function useAgentStream({
 }: UseAgentStreamOptions) {
   const [streaming, setStreaming] = useState(false);
   const [liveElapsedMs, setLiveElapsedMs] = useState(0);
+  const [streamNowMs, setStreamNowMs] = useState(() => Date.now());
   const streamingStartRef = useRef<number | null>(null);
   const streamingAssistantIdxRef = useRef<number | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -101,8 +102,10 @@ export function useAgentStream({
       return;
     }
     const tick = () => {
+      const now = Date.now();
+      setStreamNowMs(now);
       if (streamingStartRef.current !== null) {
-        setLiveElapsedMs(Date.now() - streamingStartRef.current);
+        setLiveElapsedMs(now - streamingStartRef.current);
       }
     };
     tick();
@@ -316,6 +319,7 @@ export function useAgentStream({
   return {
     streaming,
     liveElapsedMs,
+    streamNowMs,
     streamingAssistantIdxRef,
     streamingRef,
     runAgentStream,

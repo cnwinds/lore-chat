@@ -11,6 +11,7 @@ export type ChatMessageListProps = {
   loadingHistory: boolean;
   streaming: boolean;
   liveElapsedMs: number;
+  streamNowMs?: number;
   streamingAssistantIdxRef: MutableRefObject<number | null>;
   messagesContainerRef: RefObject<HTMLDivElement | null>;
   messagesEndRef: RefObject<HTMLDivElement | null>;
@@ -29,6 +30,7 @@ export function ChatMessageList({
   loadingHistory,
   streaming,
   liveElapsedMs,
+  streamNowMs,
   streamingAssistantIdxRef,
   messagesContainerRef,
   messagesEndRef,
@@ -66,6 +68,7 @@ export function ChatMessageList({
                 message={row.message}
                 isLiveStreaming={isLiveStreaming}
                 liveElapsedMs={liveElapsedMs}
+                streamNowMs={streamNowMs}
                 previewPath={previewPath}
                 conversationId={conversationId}
                 onOpenSource={onOpenSource}

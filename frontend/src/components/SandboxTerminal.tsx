@@ -1,15 +1,17 @@
 import { useEffect, useRef } from "react";
 import type { TimelineBlock } from "../api";
-import { isNoiseProgressLine } from "../utils/progressLog";
+import {
+  isNoiseProgressLine,
+  joinProgressChunks,
+} from "../utils/progressLog";
 
 type ToolBlock = Extract<TimelineBlock, { type: "tool" }>;
 
-/** 将 progress_log 拼成终端正文（兼容旧「每项一行」与新「含换行的流式块」）。 */
+/** 将 progress_log 拼成终端正文（兼容旧「每项一行无尾换行」与流式块）。 */
 export function sandboxTerminalBody(block: ToolBlock): string {
   const cmd = (block.query || "").trim();
   const raw = (block.progress_log || []).filter((l) => !isNoiseProgressLine(l));
-  const hasEmbeddedNl = raw.some((x) => x.includes("\n"));
-  let output = hasEmbeddedNl ? raw.join("") : raw.join("\n");
+  let output = joinProgressChunks(raw);
 
   // 去掉与 query 重复的首行 `$ cmd`
   if (cmd && output) {
@@ -27,7 +29,8 @@ export function sandboxTerminalBody(block: ToolBlock): string {
     !isNoiseProgressLine(block.summary) &&
     !block.question_id
   ) {
-    parts.push(block.summary.trim());
+    // summary 里可能是 "exit=0\\n..." 多行
+    parts.push(block.summary.replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim());
   }
   return parts.join("\n");
 }

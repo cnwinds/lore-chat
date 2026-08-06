@@ -22,7 +22,7 @@ def test_tool_progress_concatenates_chunks():
         {"id": "1", "tool": "sandbox_run", "message": "b\n", "ts": "t3"},
     )
     block = acc.timeline[0]
-    assert block["progress_log"] == ["$ ls\nab\n"]
+    assert block["progress_log"] == ["$ ls\na\nb\n"]
 
 
 def test_tool_progress_skips_noise():

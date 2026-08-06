@@ -187,6 +187,7 @@ export function Chat({
   const {
     streaming,
     liveElapsedMs,
+    streamNowMs,
     streamingAssistantIdxRef,
     runAgentStream,
     stopStreaming,
@@ -689,6 +690,7 @@ export function Chat({
         loadingHistory={loadingHistory}
         streaming={streaming}
         liveElapsedMs={liveElapsedMs}
+        streamNowMs={streamNowMs}
         streamingAssistantIdxRef={streamingAssistantIdxRef}
         messagesContainerRef={messagesContainerRef}
         messagesEndRef={messagesEndRef}

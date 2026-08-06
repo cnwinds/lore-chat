@@ -27,6 +27,8 @@ export type ChatMessageRowProps = {
   message: ChatMessage;
   isLiveStreaming: boolean;
   liveElapsedMs: number;
+  /** 流式墙钟，供单工具 started_at_ms 秒表 */
+  streamNowMs?: number;
   previewPath?: string | null;
   conversationId: string | null;
   onOpenSource: (src: SourceRef) => void;
@@ -120,6 +122,7 @@ function renderMessageContent(
   m: ChatMessage,
   isLive: boolean,
   liveElapsedMs: number,
+  streamNowMs: number | undefined,
   previewPath: string | null | undefined,
   conversationId: string | null,
   onOpenSource: (src: SourceRef) => void,
@@ -161,6 +164,7 @@ function renderMessageContent(
           block={block}
           cumulative={cumulative}
           liveElapsedMs={isLive ? liveElapsedMs : undefined}
+          nowMs={isLive ? streamNowMs : undefined}
           isLive={isLive}
           onOpenSource={onOpenSource}
           previewPath={previewPath}
@@ -221,6 +225,7 @@ export function ChatMessageRow({
   message: m,
   isLiveStreaming,
   liveElapsedMs,
+  streamNowMs,
   previewPath,
   conversationId,
   onOpenSource,
@@ -266,6 +271,7 @@ export function ChatMessageRow({
           m,
           isLiveStreaming,
           liveElapsedMs,
+          streamNowMs,
           previewPath,
           conversationId,
           onOpenSource,
