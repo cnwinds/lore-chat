@@ -102,11 +102,11 @@ class ToolRegistry:
 
     @property
     def web_search(self):
-        return self.web.web_search
+        return self.web.searcher
 
     @web_search.setter
     def web_search(self, value) -> None:
-        self.web.web_search = value
+        self.web.searcher = value
 
     @property
     def memory_service(self):

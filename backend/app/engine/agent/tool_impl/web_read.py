@@ -12,7 +12,7 @@ class WebReadTools:
         disclosure_chars: int,
     ) -> None:
         self.fetcher = fetcher
-        self.web_search = web_search
+        self.searcher = web_search
         self.disclosure_chars = disclosure_chars
         self._fetch_cache: dict[str, object] = {}
 
@@ -59,10 +59,10 @@ class WebReadTools:
     async def web_search(self, args: dict) -> dict:
         query = args["query"]
         k = args.get("k", 5)
-        results, err = await self.web_search.search(query, k=k)
+        results, err = await self.searcher.search(query, k=k)
         if err:
             return {"summary": err, "sources": [], "error": err}
-        provider = self.web_search.provider_name or "unknown"
+        provider = self.searcher.provider_name or "unknown"
         sources = [
             {
                 "type": "search",

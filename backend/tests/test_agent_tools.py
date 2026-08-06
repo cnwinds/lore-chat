@@ -1,3 +1,5 @@
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
 
 from app.config import Settings
@@ -7,7 +9,7 @@ from app.engine.organizer import Organizer
 from app.engine.pending import PendingStore
 from app.engine.retriever import Retriever
 from app.engine.web.fetcher import WebFetcher
-from app.engine.web.search import WebSearch
+from app.engine.web.search import SearchResult, WebSearch
 from app.engine.conversations import ConversationStore
 from app.index.conversation_fts import ConversationFTS
 from app.index.fulltext import FullTextIndex
@@ -522,6 +524,25 @@ async def test_edit_doc_insert_append(tmp_path):
 
 def _tool_names(defs):
     return {d["function"]["name"] for d in defs}
+
+
+@pytest.mark.asyncio
+async def test_web_search_tool_invokes_searcher(tmp_path):
+    """属性与方法不能同名 web_search，否则会 TypeError: not callable。"""
+    registry, _, _ = _make_registry(tmp_path)
+    mock = MagicMock()
+    mock.provider_name = "tavily"
+    mock.search = AsyncMock(
+        return_value=(
+            [SearchResult(title="A", url="https://a.example", snippet="snip")],
+            None,
+        )
+    )
+    registry.web_search = mock
+    result = await registry.execute("web_search", {"query": "DeepSeek API 涨价", "k": 3})
+    assert "搜索到 1 条" in result["summary"]
+    assert result["sources"][0]["url"] == "https://a.example"
+    mock.search.assert_awaited_once_with("DeepSeek API 涨价", k=3)
 
 
 def test_select_tools_web_disabled_drops_web_search():
