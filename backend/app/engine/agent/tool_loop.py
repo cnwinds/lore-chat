@@ -10,12 +10,15 @@ from collections.abc import AsyncIterator
 from app.config import Settings
 from app.engine.agent.events import (
     done,
+    inject_deferred,
     parallel_batch_end,
     parallel_batch_start,
     text_delta,
     think_delta,
     tool_start,
+    user_inject,
 )
+from app.engine.chat.turn_inject import PendingInject, TurnInjectBroker
 from app.engine.agent.run_report import AgentRunReport
 from app.engine.agent.tool_events import emit_tool_result_sse
 from app.engine.agent.tools import (
@@ -52,6 +55,8 @@ class AgentToolLoop:
         started_at: float | None = None,
         turn_id: str | None = None,
         run_id: str | None = None,
+        inject_broker: TurnInjectBroker | None = None,
+        on_inject_applied=None,
     ) -> AsyncIterator[str]:
         start = started_at if started_at is not None else time.monotonic()
         run_id = run_id or uuid.uuid4().hex[:8]
@@ -145,6 +150,13 @@ class AgentToolLoop:
 
                     self._append_tool_turn(messages, result, turn_outputs)
                     tool_call_count += len(result.tool_calls)
+                    async for ev in self._drain_injects(
+                        messages,
+                        turn_id=turn_id,
+                        inject_broker=inject_broker,
+                        on_inject_applied=on_inject_applied,
+                    ):
+                        yield ev
                     continue
 
                 report.stop_reason = (
@@ -156,6 +168,11 @@ class AgentToolLoop:
             else:
                 report.stop_reason = "tool_call_limit"
                 yield text_delta(_LIMIT_MSG)
+
+            async for ev in self._defer_remaining_injects(
+                turn_id=turn_id, inject_broker=inject_broker
+            ):
+                yield ev
 
             duration_ms = int((time.monotonic() - start) * 1000)
             report.done_emitted = True
@@ -270,6 +287,61 @@ class AgentToolLoop:
 
         batch_duration = int((time.monotonic() - batch_start) * 1000)
         yield parallel_batch_end(batch_id, batch_duration), None
+
+    async def _drain_injects(
+        self,
+        messages: list[dict],
+        *,
+        turn_id: str | None,
+        inject_broker: TurnInjectBroker | None,
+        on_inject_applied,
+    ) -> AsyncIterator[str]:
+        if not turn_id or inject_broker is None:
+            return
+        pending = inject_broker.drain(turn_id)
+        for item in pending:
+            content = self._format_inject_content(item)
+            messages.append({"role": "user", "content": content})
+            message_id = None
+            if on_inject_applied is not None:
+                message_id = on_inject_applied(item)
+            yield user_inject(
+                item.inject_id,
+                item.text,
+                message_id=message_id,
+                client_message_id=item.client_message_id,
+                doc_context=item.doc_context,
+                primary_doc=item.primary_doc,
+                attachments=item.attachments,
+            )
+
+    async def _defer_remaining_injects(
+        self,
+        *,
+        turn_id: str | None,
+        inject_broker: TurnInjectBroker | None,
+    ) -> AsyncIterator[str]:
+        if not turn_id or inject_broker is None:
+            return
+        for item in inject_broker.drain(turn_id):
+            yield inject_deferred(item.inject_id)
+
+    @staticmethod
+    def _format_inject_content(item: PendingInject) -> str:
+        parts: list[str] = []
+        docs = item.doc_context or []
+        if docs:
+            labels = []
+            for d in docs:
+                if isinstance(d, dict):
+                    labels.append(str(d.get("path") or d))
+                else:
+                    labels.append(str(d))
+            parts.append("（补充文档上下文：" + "、".join(labels) + "）")
+        if item.attachments:
+            parts.append("（附件：" + "、".join(item.attachments) + "）")
+        parts.append(item.text)
+        return "\n\n".join(parts)
 
     def _append_tool_turn(
         self,

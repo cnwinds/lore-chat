@@ -103,6 +103,27 @@ class TimelineAccumulator:
             else:
                 self._text_block["content"] += delta
 
+        elif event_type == "user_inject":
+            self._text_block = None
+            self._think_block = None
+            block = {
+                "type": "user_inject",
+                "inject_id": data.get("inject_id"),
+                "ts": data.get("ts"),
+                "text": data.get("text") or "",
+            }
+            if data.get("message_id"):
+                block["message_id"] = data["message_id"]
+            if data.get("client_message_id"):
+                block["client_message_id"] = data["client_message_id"]
+            if data.get("doc_context"):
+                block["doc_context"] = data["doc_context"]
+            if data.get("primary_doc"):
+                block["primary_doc"] = data["primary_doc"]
+            if data.get("attachments"):
+                block["attachments"] = data["attachments"]
+            self.timeline.append(block)
+
         elif event_type == "done":
             extend_sources(self.all_sources, data.get("sources") or [])
             if data.get("total_duration_ms") is not None:

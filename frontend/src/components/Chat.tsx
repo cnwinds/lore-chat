@@ -1,10 +1,12 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useChatConversation } from "../hooks/chat/useChatConversation";
 import { useChatScroll } from "../hooks/chat/useChatScroll";
 import { useAgentStream } from "../hooks/chat/useAgentStream";
 import { useConversationMemoryEvents } from "../hooks/chat/useConversationMemoryEvents";
+import { useSendQueue } from "../hooks/chat/useSendQueue";
 import type { JumpTarget } from "../hooks/chat/useConversationJump";
 import {
+  chatInject,
   uploadFile,
   summarizeConversation,
   type DocContextItem,
@@ -14,9 +16,16 @@ import {
 import { useDocPreview } from "../contexts/DocPreviewContext";
 import { markToolBlockResolved } from "../utils/chatMessage";
 import { nowIsoDisplay } from "../utils/displayTime";
+import {
+  mergeGroupText,
+  takeNextGroup,
+  SEND_QUEUE_MAX,
+  type SendQueueItem,
+} from "../utils/sendQueue";
 import { ChatMessageList } from "./chat/ChatMessageList";
 import { ComposerTray } from "./ComposerTray";
 import { ComposerToolbar } from "./ComposerToolbar";
+import { ComposerSendQueue } from "./ComposerSendQueue";
 import { ArchiveConversationModal } from "./ArchiveConversationModal";
 import type { DocTrayItem, PendingFile } from "../types/composer";
 import { suggestArchivePath } from "../utils/suggestArchivePath";
@@ -90,11 +99,89 @@ export function Chat({
     onJumpHandled,
   });
   const stickToBottomRef = useRef(true);
+
+  const sendQueue = useSendQueue(conversationId);
+  const itemsRef = useRef(sendQueue.items);
+  const pausedRef = useRef(sendQueue.paused);
+  const flushingRef = useRef(false);
+  const pendingGroupRef = useRef<SendQueueItem[] | null>(null);
+  itemsRef.current = sendQueue.items;
+  pausedRef.current = sendQueue.paused;
+
+  const flushQueueRef = useRef<() => Promise<void>>(async () => {});
+  const maybeInjectFrontRef = useRef<() => Promise<void>>(async () => {});
+
+  const handleStreamEnd = useCallback(
+    (info: { failed: boolean; aborted: boolean }) => {
+      if (info.failed || info.aborted) {
+        sendQueue.setPaused(true);
+        const pending = pendingGroupRef.current;
+        pendingGroupRef.current = null;
+        sendQueue.setItems((prev) => {
+          let next = prev.map((x) =>
+            x.locked
+              ? { ...x, locked: false, timing: "defer" as const, error: null }
+              : x,
+          );
+          if (pending?.length) {
+            next = [
+              ...pending.map((g, i) => ({
+                ...g,
+                locked: false,
+                error: info.failed && i === 0 ? "发送失败" : null,
+              })),
+              ...next,
+            ];
+          }
+          return next;
+        });
+        flushingRef.current = false;
+        return;
+      }
+      pendingGroupRef.current = null;
+      flushingRef.current = false;
+      queueMicrotask(() => {
+        void flushQueueRef.current();
+      });
+    },
+    [sendQueue],
+  );
+
+  const handleInjectDeferred = useCallback(
+    (injectId: string) => {
+      sendQueue.setItems((prev) =>
+        prev.map((x) =>
+          x.id === injectId || x.locked
+            ? {
+                ...x,
+                locked: false,
+                timing: "defer" as const,
+                error: null,
+              }
+            : x,
+        ),
+      );
+      console.info("本轮无法插入，已改为回合后再发", injectId);
+    },
+    [sendQueue],
+  );
+
+  const handleUserInjected = useCallback(
+    (injectId: string) => {
+      sendQueue.setItems((prev) =>
+        prev.filter((x) => x.id !== injectId && !x.locked),
+      );
+    },
+    [sendQueue],
+  );
+
   const {
     streaming,
     liveElapsedMs,
     streamingAssistantIdxRef,
     runAgentStream,
+    stopStreaming,
+    ensureConversationId,
     resolveDocContext,
   } = useAgentStream({
     conversationId,
@@ -115,6 +202,9 @@ export function Chat({
     onFirstQuestionTitle,
     onSidebarRefresh,
     onKbChanged: refreshKb,
+    onStreamEnd: handleStreamEnd,
+    onInjectDeferred: handleInjectDeferred,
+    onUserInjected: handleUserInjected,
   });
   const { messagesContainerRef } = useChatScroll(
     [msgs, loadingHistory, streaming],
@@ -147,14 +237,153 @@ export function Chat({
     });
   }
 
+  const runOutbound = useCallback(
+    async (group: SendQueueItem[]) => {
+      const text = mergeGroupText(group);
+      const first = group[0];
+      const docContext = first.doc_context ?? [];
+      const documentPathsForRun = docContext
+        .filter((d) => d.kind !== "skill_root")
+        .map((d) => d.path);
+      return runAgentStream(
+        text,
+        text,
+        {
+          attachments: first.attachments?.length ? first.attachments : undefined,
+          doc_context: docContext.length ? docContext : undefined,
+          primary_doc: first.primary_doc ?? undefined,
+        },
+        {
+          documentPaths: documentPathsForRun,
+          docContext,
+          primary: first.primary_doc ?? null,
+        },
+        { webEnabled: first.webEnabled },
+      );
+    },
+    [runAgentStream],
+  );
+
+  const flushQueue = useCallback(async () => {
+    if (flushingRef.current || streamingRef.current || pausedRef.current) return;
+    const taken = takeNextGroup(itemsRef.current);
+    if (!taken) return;
+    flushingRef.current = true;
+    const { group, rest } = taken;
+    pendingGroupRef.current = group;
+    itemsRef.current = rest;
+    sendQueue.setItems(rest);
+    try {
+      const started = await runOutbound(group);
+      if (!started) {
+        pendingGroupRef.current = null;
+        const restored = [...group, ...itemsRef.current];
+        itemsRef.current = restored;
+        sendQueue.setItems(restored);
+        flushingRef.current = false;
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "发送失败";
+      pendingGroupRef.current = null;
+      sendQueue.setPaused(true);
+      const restored = [
+        ...group.map((g, i) => ({
+          ...g,
+          locked: false,
+          error: i === 0 ? msg : null,
+        })),
+        ...itemsRef.current,
+      ];
+      itemsRef.current = restored;
+      sendQueue.setItems(restored);
+      flushingRef.current = false;
+    }
+  }, [runOutbound, sendQueue]);
+
+  flushQueueRef.current = flushQueue;
+
+  const maybeInjectFront = useCallback(async () => {
+    if (!streamingRef.current || pausedRef.current) return;
+    const items = itemsRef.current;
+    const taken = takeNextGroup(items);
+    if (!taken || taken.group[0].timing !== "inject") return;
+    if (taken.group.some((g) => g.locked)) return;
+    const cid = conversationIdRef.current;
+    if (!cid) return;
+
+    const { group, rest } = taken;
+    const injectId = group[0].id;
+    const locked = [
+      ...group.map((g) => ({ ...g, locked: true })),
+      ...rest,
+    ];
+    itemsRef.current = locked;
+    sendQueue.setItems(locked);
+    try {
+      await chatInject({
+        conversationId: cid,
+        text: mergeGroupText(group),
+        injectId,
+        clientMessageId: `inject:${injectId}`,
+        docContext: group[0].doc_context,
+        primaryDocPath: group[0].primary_doc,
+        attachments: group[0].attachments,
+      });
+    } catch (err) {
+      const status = (err as { status?: number }).status;
+      const deferred = [
+        ...group.map((g) => ({
+          ...g,
+          locked: false,
+          timing: "defer" as const,
+          error: null as string | null,
+        })),
+        ...rest,
+      ];
+      if (status === 409) {
+        itemsRef.current = deferred;
+        sendQueue.setItems(deferred);
+        console.info("本轮无法插入，已改为回合后再发");
+      } else {
+        const msg = err instanceof Error ? err.message : "注入失败";
+        const failed = [
+          {
+            ...group[0],
+            locked: false,
+            timing: "defer" as const,
+            error: msg,
+          },
+          ...group.slice(1).map((g) => ({
+            ...g,
+            locked: false,
+            timing: "defer" as const,
+          })),
+          ...rest,
+        ];
+        itemsRef.current = failed;
+        sendQueue.setItems(failed);
+        sendQueue.setPaused(true);
+      }
+    }
+  }, [sendQueue]);
+
+  maybeInjectFrontRef.current = maybeInjectFront;
+
+  useEffect(() => {
+    if (streaming) {
+      void maybeInjectFrontRef.current();
+    }
+  }, [streaming, sendQueue.items]);
+
   async function send() {
-    if (!input.trim() || streaming) return;
-    const text = input;
-    setInput("");
+    if (!input.trim() && pendingFiles.length === 0) return;
+    const text = input.trim();
+    if (!text && pendingFiles.length === 0) return;
 
     const filesToUpload = [...pendingFiles];
     const uploadedPaths: string[] = [];
 
+    setInput("");
     if (filesToUpload.length > 0) {
       setPendingFiles([]);
       try {
@@ -165,6 +394,7 @@ export function Chat({
         }
       } catch (err) {
         setPendingFiles(filesToUpload);
+        setInput(text);
         const msg = err instanceof Error ? err.message : "上传失败";
         setMsgs((m) => [
           ...m,
@@ -186,16 +416,95 @@ export function Chat({
       return;
     }
 
-    await runAgentStream(
+    const shouldQueue = streaming || sendQueue.items.length > 0;
+    if (!shouldQueue) {
+      await runAgentStream(
+        text,
+        text,
+        {
+          attachments: uploadedPaths.length ? uploadedPaths : undefined,
+          doc_context: ctx.docContext.length ? ctx.docContext : undefined,
+          primary_doc: ctx.primary ?? undefined,
+        },
+        ctx,
+      );
+      return;
+    }
+
+    if (!conversationId) {
+      try {
+        await ensureConversationId();
+      } catch (err) {
+        setInput(text);
+        const msg = err instanceof Error ? err.message : "创建对话失败";
+        setMsgs((m) => [
+          ...m,
+          { role: "assistant", text: `错误：${msg}`, ts: nowIsoDisplay() },
+        ]);
+        return;
+      }
+    }
+
+    const newItem: SendQueueItem = {
+      id: crypto.randomUUID(),
       text,
-      text,
-      {
-        attachments: uploadedPaths.length ? uploadedPaths : undefined,
-        doc_context: ctx.docContext.length ? ctx.docContext : undefined,
-        primary_doc: ctx.primary ?? undefined,
-      },
-      ctx,
+      timing: "defer",
+      mergeWithNext: false,
+      doc_context: ctx.docContext.length ? ctx.docContext : undefined,
+      primary_doc: ctx.primary,
+      attachments: uploadedPaths.length ? uploadedPaths : undefined,
+      webEnabled,
+      locked: false,
+      error: null,
+    };
+    if (itemsRef.current.length >= SEND_QUEUE_MAX) {
+      window.alert(`发送队列最多 ${SEND_QUEUE_MAX} 条`);
+      setInput(text);
+      return;
+    }
+    sendQueue.setItems([...itemsRef.current, newItem]);
+    itemsRef.current = [...itemsRef.current, newItem];
+
+    if (!streaming && !sendQueue.paused) {
+      void flushQueue();
+    } else if (streaming) {
+      void maybeInjectFront();
+    }
+  }
+
+  function handleStop() {
+    stopStreaming();
+    sendQueue.setPaused(true);
+  }
+
+  function handleContinue() {
+    sendQueue.setPaused(false);
+    sendQueue.setItems(
+      itemsRef.current.map((x) => ({ ...x, error: null, locked: false })),
     );
+    queueMicrotask(() => {
+      void flushQueueRef.current();
+    });
+  }
+
+  function handleRetry() {
+    sendQueue.setItems(
+      itemsRef.current.map((x) => ({ ...x, error: null })),
+    );
+    sendQueue.setPaused(false);
+    queueMicrotask(() => {
+      void flushQueueRef.current();
+    });
+  }
+
+  function handleSkipFailed() {
+    const items = itemsRef.current;
+    const next = items[0]?.error ? items.slice(1) : items.filter((x) => !x.error);
+    sendQueue.setItems(next);
+    sendQueue.setPaused(false);
+    queueMicrotask(() => {
+      void flushQueueRef.current();
+    });
   }
 
   function openArchiveModal() {
@@ -259,7 +568,16 @@ export function Chat({
     refreshKb(result.rel_path ?? undefined);
 
     if (result.status === "continue" && result.continue_prompt) {
-      void runAgentStream(result.continue_prompt, choiceLabel);
+      if (streaming || sendQueue.items.length > 0) {
+        sendQueue.enqueue({
+          text: result.continue_prompt,
+          timing: "defer",
+          webEnabled,
+        });
+        if (!streaming && !sendQueue.paused) void flushQueue();
+      } else {
+        void runAgentStream(result.continue_prompt, choiceLabel);
+      }
       return;
     }
     if (result.status === "saved" && result.message) {
@@ -361,6 +679,31 @@ export function Chat({
         onQuestionResolved={handleQuestionResolved}
       />
       <div className="chat-composer-wrap">
+        <ComposerSendQueue
+          items={sendQueue.items}
+          paused={sendQueue.paused}
+          onContinue={handleContinue}
+          onRetry={handleRetry}
+          onSkipFailed={handleSkipFailed}
+          onUpdateText={(id, text) => sendQueue.updateItem(id, { text })}
+          onSetTiming={sendQueue.setItemTiming}
+          onToggleMerge={(id) => {
+            const item = sendQueue.items.find((x) => x.id === id);
+            if (!item) return;
+            const idx = sendQueue.items.findIndex((x) => x.id === id);
+            const nextItem = sendQueue.items[idx + 1];
+            const merge = !item.mergeWithNext;
+            if (merge && nextItem && nextItem.timing !== item.timing) {
+              sendQueue.setItemTiming(nextItem.id, item.timing);
+            }
+            sendQueue.updateItem(id, { mergeWithNext: merge });
+          }}
+          onRemove={sendQueue.removeItem}
+          onMove={sendQueue.moveItem}
+          onSetAllTiming={sendQueue.setAllTiming}
+          onSetAllMerge={sendQueue.setAllMerge}
+          onClear={sendQueue.clear}
+        />
         <div className="composer-card">
           <ComposerTray
             items={docTrayItems}
@@ -378,8 +721,7 @@ export function Chat({
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={onInputKeyDown}
                 rows={1}
-                placeholder="输入消息…"
-                disabled={streaming}
+                placeholder={streaming ? "输入消息加入队列…" : "输入消息…"}
                 title="Ctrl+Enter 发送"
                 style={{
                   minHeight: INPUT_MIN_HEIGHT,
@@ -401,6 +743,7 @@ export function Chat({
               onOpenSummary={(path) => openDoc(path, undefined, { pin: true })}
               onAttachClick={() => fileInputRef.current?.click()}
               onSend={send}
+              onStop={handleStop}
               fileInputRef={fileInputRef}
               onFileChange={onFile}
             />

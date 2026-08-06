@@ -60,6 +60,16 @@ class ChatBody(BaseModel):
     observation_allowed: bool = True
 
 
+class InjectBody(BaseModel):
+    conversation_id: str
+    text: str
+    inject_id: str | None = None
+    client_message_id: str | None = None
+    doc_context: list[DocContextItem] = []
+    primary_doc_path: str | None = None
+    attachments: list[str] = []
+
+
 class AppendMessagesBody(BaseModel):
     messages: list[dict]
 

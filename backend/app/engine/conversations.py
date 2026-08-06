@@ -535,6 +535,49 @@ class ConversationStore:
             self.conn.commit()
             return self._conv_to_dict(self._conversation_row(cid))
 
+    def append_injected_user_message(
+        self,
+        cid: str,
+        *,
+        text: str,
+        client_message_id: str,
+        doc_context: list | None = None,
+        primary_doc: str | None = None,
+        attachments: list[str] | None = None,
+    ) -> dict:
+        """Persist a mid-turn injected user message (seq before finalize assistant)."""
+        with self._lock:
+            self._conversation_row(cid)
+            msg_id = _new_id()
+            seq = self._next_seq(cid)
+            now = _now()
+            self.conn.execute(
+                """
+                INSERT INTO messages(
+                    id, conversation_id, seq, role, text, ts, status,
+                    client_message_id, doc_context_json, attachments_json, primary_doc
+                ) VALUES (?, ?, ?, 'user', ?, ?, 'complete', ?, ?, ?, ?)
+                """,
+                (
+                    msg_id,
+                    cid,
+                    seq,
+                    text,
+                    now,
+                    client_message_id,
+                    _dumps(doc_context),
+                    _dumps(attachments),
+                    primary_doc,
+                ),
+            )
+            self.conn.execute(
+                "UPDATE conversations SET updated_at = ? WHERE id = ?", (now, cid)
+            )
+            self.conn.commit()
+            row = self.conn.execute(
+                "SELECT * FROM messages WHERE id = ?", (msg_id,)
+            ).fetchone()
+            return self._message_row_to_dict(row)
     def mark_question_resolved(
         self, cid: str, question_id: str, choice_label: str
     ) -> None:

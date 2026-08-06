@@ -14,6 +14,99 @@ export function formatMessageTs(ts: string): string {
   return formatMessageTime(ts);
 }
 
+export function isInjectedUserMessage(m: ChatMessage): boolean {
+  return (
+    m.role === "user" &&
+    (!!m.injected ||
+      (!!m.client_message_id && m.client_message_id.startsWith("inject:")))
+  );
+}
+
+export type ChatDisplayRow = {
+  key: string;
+  message: ChatMessage;
+  /** Index in the original msgs array (for live-streaming detection). */
+  sourceIndex: number;
+  /** Last assistant slice of a split turn keeps sources/meta. */
+  isTailSlice: boolean;
+};
+
+/**
+ * Expand assistant timelines that contain mid-turn user_inject blocks into
+ * interleaved assistant segments + standalone user bubbles, in stream order.
+ * Standalone DB inject user rows are skipped (shown via timeline expansion).
+ */
+export function expandMessagesForDisplay(msgs: ChatMessage[]): ChatDisplayRow[] {
+  const rows: ChatDisplayRow[] = [];
+  for (let i = 0; i < msgs.length; i++) {
+    const m = msgs[i];
+    if (isInjectedUserMessage(m)) continue;
+
+    if (m.role !== "assistant" || !m.timeline?.some((b) => b.type === "user_inject")) {
+      rows.push({
+        key: `${m.id ?? m.ts ?? "msg"}-${i}`,
+        message: m,
+        sourceIndex: i,
+        isTailSlice: true,
+      });
+      continue;
+    }
+
+    const timeline = m.timeline;
+    let segment: TimelineBlock[] = [];
+    let part = 0;
+
+    const flushAssistant = (blocks: TimelineBlock[], isTail: boolean) => {
+      if (!blocks.length && !isTail) return;
+      if (!blocks.length && isTail) {
+        // Empty trailing slice: still show if sources-only / live shell.
+        if (!m.sources?.length && !m.text) return;
+      }
+      rows.push({
+        key: `${m.id ?? m.ts ?? "msg"}-${i}-a${part}`,
+        message: {
+          ...m,
+          timeline: blocks,
+          text: isTail ? m.text : undefined,
+          sources: isTail ? m.sources : undefined,
+          total_duration_ms: isTail ? m.total_duration_ms : undefined,
+        },
+        sourceIndex: i,
+        isTailSlice: isTail,
+      });
+      part += 1;
+    };
+
+    for (const block of timeline) {
+      if (block.type === "user_inject") {
+        flushAssistant(segment, false);
+        segment = [];
+        rows.push({
+          key: `${m.id ?? m.ts ?? "msg"}-${i}-inj-${block.inject_id}`,
+          message: {
+            id: block.message_id,
+            role: "user",
+            text: block.text,
+            ts: block.ts,
+            injected: true,
+            client_message_id:
+              block.client_message_id ?? `inject:${block.inject_id}`,
+            ...(block.doc_context ? { doc_context: block.doc_context } : {}),
+            ...(block.primary_doc ? { primary_doc: block.primary_doc } : {}),
+            ...(block.attachments ? { attachments: block.attachments } : {}),
+          },
+          sourceIndex: i,
+          isTailSlice: true,
+        });
+        continue;
+      }
+      segment.push(block);
+    }
+    flushAssistant(segment, true);
+  }
+  return rows;
+}
+
 export function markToolBlockResolved(
   messages: ChatMessage[],
   blockId: string,

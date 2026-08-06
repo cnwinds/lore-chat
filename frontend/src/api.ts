@@ -289,7 +289,18 @@ export type TimelineBlock =
       duration_ms?: number;
     }
   | { type: "text"; ts: string; content: string }
-  | { type: "think"; ts: string; content: string };
+  | { type: "think"; ts: string; content: string }
+  | {
+      type: "user_inject";
+      inject_id: string;
+      ts: string;
+      text: string;
+      message_id?: string;
+      client_message_id?: string;
+      doc_context?: DocContextItem[];
+      primary_doc?: string;
+      attachments?: string[];
+    };
 
 export type DocContextItem = {
   path: string;
@@ -324,6 +335,9 @@ export type ChatMessage = {
   intent?: "recall" | "remember";
   /** 本轮回复总耗时（毫秒），来自 SSE done 事件 */
   total_duration_ms?: number;
+  /** Mid-turn inject (client_message_id starts with inject:) */
+  injected?: boolean;
+  client_message_id?: string;
 };
 
 /** 提取消息可复制文本；助手仅含 timeline 中的结论文字 */
@@ -479,6 +493,7 @@ export type ChatStreamOptions = {
   attachments?: string[];
   /** 幂等重试键：同一 (conversation_id, clientMessageId) 重复发送不会重跑 Agent。 */
   clientMessageId?: string;
+  signal?: AbortSignal;
 };
 
 export async function* chatStream(
@@ -493,6 +508,7 @@ export async function* chatStream(
     webEnabled = false,
     attachments = [],
     clientMessageId,
+    signal,
   } = options;
   const body: Record<string, unknown> = {
     text,
@@ -515,6 +531,7 @@ export async function* chatStream(
       Accept: "text/event-stream",
     },
     body: JSON.stringify(body),
+    signal,
   });
   if (!r.ok) {
     let detail = r.statusText;
@@ -557,24 +574,58 @@ export async function* chatStream(
     }
   }
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const parts = buffer.split("\n\n");
-    buffer = parts.pop() ?? "";
-    for (const part of parts) {
-      const evt = parseEventBlock(part);
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const parts = buffer.split("\n\n");
+      buffer = parts.pop() ?? "";
+      for (const part of parts) {
+        const evt = parseEventBlock(part);
+        if (evt) yield evt;
+      }
+    }
+
+    // flush 尾部残留（末尾未以空行结束的完整事件块）
+    buffer += decoder.decode();
+    if (buffer.trim()) {
+      const evt = parseEventBlock(buffer);
       if (evt) yield evt;
     }
+  } finally {
+    try {
+      reader.releaseLock();
+    } catch {
+      /* ignore */
+    }
   }
+}
 
-  // flush 尾部残留（末尾未以空行结束的完整事件块）
-  buffer += decoder.decode();
-  if (buffer.trim()) {
-    const evt = parseEventBlock(buffer);
-    if (evt) yield evt;
-  }
+export type ChatInjectBody = {
+  conversationId: string;
+  text: string;
+  injectId: string;
+  clientMessageId?: string;
+  docContext?: DocContextItem[];
+  primaryDocPath?: string | null;
+  attachments?: string[];
+};
+
+export function chatInject(body: ChatInjectBody) {
+  return apiFetch<{ status: string; inject_id: string }>("/api/chat/inject", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      conversation_id: body.conversationId,
+      text: body.text,
+      inject_id: body.injectId,
+      client_message_id: body.clientMessageId ?? `inject:${body.injectId}`,
+      doc_context: body.docContext,
+      primary_doc_path: body.primaryDocPath ?? undefined,
+      attachments: body.attachments,
+    }),
+  });
 }
 
 function findActiveParallelIndex(timeline: TimelineBlock[]): number {
@@ -720,6 +771,34 @@ export function updateTimeline(
     return [
       ...timeline,
       { type: "text", ts: data.ts as string, content: delta },
+    ];
+  }
+
+  if (event === "user_inject") {
+    const injectId = (data.inject_id as string) || "";
+    return [
+      ...timeline,
+      {
+        type: "user_inject",
+        inject_id: injectId,
+        ts: (data.ts as string) || new Date().toISOString(),
+        text: (data.text as string) || "",
+        ...(typeof data.message_id === "string"
+          ? { message_id: data.message_id }
+          : {}),
+        ...(typeof data.client_message_id === "string"
+          ? { client_message_id: data.client_message_id }
+          : {}),
+        ...(Array.isArray(data.doc_context)
+          ? { doc_context: data.doc_context as DocContextItem[] }
+          : {}),
+        ...(typeof data.primary_doc === "string"
+          ? { primary_doc: data.primary_doc }
+          : {}),
+        ...(Array.isArray(data.attachments)
+          ? { attachments: data.attachments as string[] }
+          : {}),
+      },
     ];
   }
 

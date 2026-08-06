@@ -50,5 +50,38 @@ def think_delta(delta):
 def done(sources, total_duration_ms):
     return sse_event("done", {"sources": sources, "total_duration_ms": total_duration_ms})
 
+def user_inject(
+    inject_id: str,
+    text: str,
+    *,
+    message_id: str | None = None,
+    client_message_id: str | None = None,
+    doc_context=None,
+    primary_doc: str | None = None,
+    attachments=None,
+):
+    payload: dict = {
+        "inject_id": inject_id,
+        "text": text,
+        "injected": True,
+    }
+    if message_id:
+        payload["message_id"] = message_id
+    if client_message_id:
+        payload["client_message_id"] = client_message_id
+    if doc_context:
+        payload["doc_context"] = doc_context
+    if primary_doc:
+        payload["primary_doc"] = primary_doc
+    if attachments:
+        payload["attachments"] = attachments
+    return sse_event("user_inject", payload)
+
+def inject_deferred(inject_id: str, reason: str = "no_tool_boundary"):
+    return sse_event(
+        "inject_deferred",
+        {"inject_id": inject_id, "reason": reason},
+    )
+
 def error_event(message):
     return sse_event("error", {"message": message})

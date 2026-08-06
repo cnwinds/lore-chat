@@ -11,6 +11,7 @@ from app.engine.agent.prompts import MODE_DEFAULT, MODE_FORCE_WRITE, MODE_NO_WRI
 from app.engine.agent.run_report import AgentRunReport
 from app.engine.chat.sse import parse_agent_sse_event
 from app.engine.chat.timeline import TimelineAccumulator
+from app.engine.chat.turn_inject import PendingInject, TurnInjectBroker
 from app.logging_config import get_logger
 
 _log = get_logger("chat.session")
@@ -19,9 +20,14 @@ _log = get_logger("chat.session")
 class ChatSessionRunner:
     """Agent 运行与 SSE 持久化的 deep module；HTTP 层只做 adapter。"""
 
-    def __init__(self, agent, conversations):
+    def __init__(self, agent, conversations, inject_broker: TurnInjectBroker | None = None):
         self.agent = agent
         self.conversations = conversations
+        self.inject_broker = inject_broker or TurnInjectBroker()
+
+    def enqueue_inject(self, conversation_id: str, item: PendingInject) -> str:
+        """Queue a mid-turn user inject for the active turn. Raises KeyError if none."""
+        return self.inject_broker.enqueue(conversation_id, item)
 
     async def stream_ephemeral(
         self,
@@ -109,6 +115,18 @@ class ChatSessionRunner:
             self.conversations.finalize_turn(cid, turn_id=turn_id, assistant=assistant)
             assistant_saved = True
 
+        def _on_inject_applied(item: PendingInject) -> str:
+            msg = self.conversations.append_injected_user_message(
+                cid,
+                text=item.text,
+                client_message_id=item.client_message_id,
+                doc_context=item.doc_context,
+                primary_doc=item.primary_doc,
+                attachments=item.attachments,
+            )
+            return msg["id"]
+
+        self.inject_broker.register_turn(cid, turn_id)
         try:
             async for ev in self.agent.run(
                 text,
@@ -122,6 +140,8 @@ class ChatSessionRunner:
                 turn_id=turn_id,
                 run_id=run_id,
                 web_enabled=web_enabled,
+                inject_broker=self.inject_broker,
+                on_inject_applied=_on_inject_applied,
             ):
                 parsed = parse_agent_sse_event(ev)
                 if parsed:
@@ -153,6 +173,7 @@ class ChatSessionRunner:
             _finalize("interrupted", error=str(e))
             yield error_event(str(e))
         finally:
+            self.inject_broker.unregister_turn(cid, turn_id)
             if not assistant_saved and (acc.timeline or acc.assistant_text):
                 if stop_reason == "unknown":
                     stop_reason = "stream_closed_partial"

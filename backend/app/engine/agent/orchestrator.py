@@ -55,6 +55,8 @@ class AgentOrchestrator:
         turn_id: str | None = None,
         run_id: str | None = None,
         web_enabled: bool = False,
+        inject_broker=None,
+        on_inject_applied=None,
     ) -> AsyncIterator[str]:
         system_layer_text = (
             self.system_layer.compose_rules() if self.system_layer else ""
@@ -98,5 +100,7 @@ class AgentOrchestrator:
             started_at=start,
             turn_id=turn_id,
             run_id=run_id,
+            inject_broker=inject_broker,
+            on_inject_applied=on_inject_applied,
         ):
             yield ev

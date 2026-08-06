@@ -64,6 +64,9 @@
 
 ## Language（对话与知识库）
 
+**发送队列**：流式输出时输入框仍可编辑；发送进入按会话隔离的队列（`localStorage`，上限 20）。默认时机 **defer**（当前 turn `done` 后 FIFO/`begin_turn`）；可改为 **inject**（不中断 turn，在 tool 结果回写后、下次 LLM 前插入；无窗口则降级 defer）。「与下一条合并」将同策略相邻项合成一条用户消息。空闲且队列空则直发；停止只中断当前 turn；失败暂停刷队。
+_Avoid_: 流式中锁死输入；同会话并行多个 running turn；inject 打断当前生成
+
 **文档托盘**：用户在发送前选中的知识库上下文集合；项为带类型的 `{ path, kind }`，持久化在消息的 `doc_context` 中。可含普通文档与 Skill 根等。
 _Avoid_: 附件托盘（与 `attachments/` 二进制附件区分）；仅用无类型路径列表表达 Skill
 

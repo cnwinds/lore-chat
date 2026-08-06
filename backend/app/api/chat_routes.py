@@ -5,8 +5,9 @@ import uuid
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
-from app.api.http_deps import AskBody, ChatBody, IngestBody, container, normalize_chat_context
+from app.api.http_deps import AskBody, ChatBody, InjectBody, IngestBody, container, normalize_chat_context
 from app.engine.chat.session_runner import consume_agent_ask, consume_agent_ingest
+from app.engine.chat.turn_inject import PendingInject
 from app.engine.conversation.shared import TurnInProgress
 
 router = APIRouter()
@@ -95,3 +96,38 @@ async def chat(body: ChatBody, request: Request):
         ),
         media_type="text/event-stream",
     )
+
+
+@router.post("/chat/inject")
+async def chat_inject(body: InjectBody, request: Request):
+    """Queue a user message into the active turn (A1); drained after tool results."""
+    c = container(request)
+    text = (body.text or "").strip()
+    if not text:
+        raise HTTPException(400, "text required")
+    try:
+        c.conversations.get(body.conversation_id)
+    except KeyError as e:
+        raise HTTPException(404, "对话不存在") from e
+
+    inject_id = body.inject_id or uuid.uuid4().hex
+    client_message_id = body.client_message_id or f"inject:{inject_id}"
+    doc_items = [i.model_dump() for i in body.doc_context] if body.doc_context else None
+    try:
+        c.chat_runner.enqueue_inject(
+            body.conversation_id,
+            PendingInject(
+                inject_id=inject_id,
+                text=text,
+                client_message_id=client_message_id,
+                doc_context=doc_items,
+                primary_doc=body.primary_doc_path,
+                attachments=body.attachments or None,
+            ),
+        )
+    except KeyError:
+        raise HTTPException(
+            409,
+            detail={"code": "no_active_turn", "message": "当前没有可注入的回合"},
+        ) from None
+    return {"status": "queued", "inject_id": inject_id}

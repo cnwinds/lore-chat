@@ -235,7 +235,7 @@ describe("useAgentStream", () => {
     const options = baseOptions();
     const { result } = renderHook(() => useAgentStream(options));
 
-    let firstCall!: Promise<void>;
+    let firstCall!: Promise<boolean>;
     await act(async () => {
       firstCall = result.current.runAgentStream("first");
       // let the setStreaming(true) update flush so result.current reflects it
@@ -245,7 +245,8 @@ describe("useAgentStream", () => {
     expect(result.current.streaming).toBe(true);
 
     await act(async () => {
-      await result.current.runAgentStream("second");
+      const second = await result.current.runAgentStream("second");
+      expect(second).toBe(false);
     });
     expect(vi.mocked(api.chatStream)).toHaveBeenCalledTimes(1);
 

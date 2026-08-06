@@ -1,5 +1,6 @@
 import type { MutableRefObject, RefObject } from "react";
 import { formatDuration, type ChatMessage, type IngestResult, type SourceRef } from "../../api";
+import { expandMessagesForDisplay } from "../../utils/chatMessage";
 import { ChatMessageRow, messageHasBody } from "./ChatMessageRow";
 
 export type ChatMessageListProps = {
@@ -33,6 +34,8 @@ export function ChatMessageList({
   onOpenSource,
   onQuestionResolved,
 }: ChatMessageListProps) {
+  const rows = expandMessagesForDisplay(msgs);
+
   return (
     <>
       <div className="chat-messages" ref={messagesContainerRef}>
@@ -43,16 +46,18 @@ export function ChatMessageList({
               直接输入即可。Agent 会自动检索知识库、搜索网页并整理到知识库。
             </div>
           )}
-          {msgs.map((m, i) => {
+          {rows.map((row) => {
             const isLiveStreaming =
-              streaming && streamingAssistantIdxRef.current === i;
-            if (!messageHasBody(m, isLiveStreaming)) {
+              streaming &&
+              row.isTailSlice &&
+              streamingAssistantIdxRef.current === row.sourceIndex;
+            if (!messageHasBody(row.message, isLiveStreaming)) {
               return null;
             }
             return (
               <ChatMessageRow
-                key={`${m.ts ?? "msg"}-${i}`}
-                message={m}
+                key={row.key}
+                message={row.message}
                 isLiveStreaming={isLiveStreaming}
                 liveElapsedMs={liveElapsedMs}
                 previewPath={previewPath}

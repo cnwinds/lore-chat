@@ -3,6 +3,7 @@ import {
   formatMessageTs,
   markToolBlockResolved,
   kbPathFromToolResult,
+  expandMessagesForDisplay,
 } from "./chatMessage";
 import type { ChatMessage } from "../api";
 
@@ -47,5 +48,56 @@ describe("kbPathFromToolResult", () => {
       sources: [{ type: "kb", path: "foo/bar.md" }],
     });
     expect(path).toBe("foo/bar.md");
+  });
+});
+
+describe("expandMessagesForDisplay", () => {
+  it("splits assistant timeline around user_inject into user bubbles", () => {
+    const msgs: ChatMessage[] = [
+      { role: "user", text: "先问", id: "u0" },
+      {
+        role: "user",
+        text: "补充",
+        id: "u-inj",
+        injected: true,
+        client_message_id: "inject:inj1",
+      },
+      {
+        role: "assistant",
+        id: "a0",
+        timeline: [
+          {
+            type: "tool",
+            id: "t1",
+            tool: "search_kb",
+            label: "检索",
+            ts: "t0",
+            status: "done",
+          },
+          {
+            type: "user_inject",
+            inject_id: "inj1",
+            ts: "t1",
+            text: "补充",
+            message_id: "u-inj",
+          },
+          { type: "text", ts: "t2", content: "结论" },
+        ],
+      },
+    ];
+    const rows = expandMessagesForDisplay(msgs);
+    expect(rows.map((r) => r.message.role)).toEqual([
+      "user",
+      "assistant",
+      "user",
+      "assistant",
+    ]);
+    expect(rows[2].message).toMatchObject({
+      role: "user",
+      text: "补充",
+      injected: true,
+    });
+    expect(rows[1].message.timeline?.map((b) => b.type)).toEqual(["tool"]);
+    expect(rows[3].message.timeline?.map((b) => b.type)).toEqual(["text"]);
   });
 });

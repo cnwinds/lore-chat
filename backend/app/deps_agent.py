@@ -40,7 +40,11 @@ class AgentSubgraph:
         self.agent.tools.fetcher = WebFetcher(
             settings.fetch_url_timeout, settings.fetch_url_max_bytes
         )
-        self.chat_runner = ChatSessionRunner(self.agent, self.chat_runner.conversations)
+        self.chat_runner = ChatSessionRunner(
+            self.agent,
+            self.chat_runner.conversations,
+            inject_broker=self.chat_runner.inject_broker,
+        )
 
 
 def build_agent_subgraph(

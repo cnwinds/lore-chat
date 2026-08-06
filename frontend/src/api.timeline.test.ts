@@ -26,3 +26,39 @@ describe("updateTimeline think_delta", () => {
     expect(timeline[1]).toEqual({ type: "text", ts: "t2", content: "回答" });
   });
 });
+
+describe("updateTimeline user_inject", () => {
+  it("inserts inject after tools and before later text", () => {
+    let timeline = updateTimeline([], "tool_start", {
+      id: "1",
+      tool: "search_kb",
+      label: "检索",
+      ts: "t0",
+      input: { query: "x" },
+    });
+    timeline = updateTimeline(timeline, "tool_result", {
+      id: "1",
+      summary: "ok",
+      sources: [],
+    });
+    timeline = updateTimeline(timeline, "user_inject", {
+      inject_id: "inj1",
+      text: "补充一句",
+      ts: "t1",
+    });
+    timeline = updateTimeline(timeline, "text_delta", {
+      delta: "后续回答",
+      ts: "t2",
+    });
+    expect(timeline.map((b) => b.type)).toEqual([
+      "tool",
+      "user_inject",
+      "text",
+    ]);
+    expect(timeline[1]).toMatchObject({
+      type: "user_inject",
+      inject_id: "inj1",
+      text: "补充一句",
+    });
+  });
+});

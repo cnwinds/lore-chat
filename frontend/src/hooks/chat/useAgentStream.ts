@@ -17,13 +17,19 @@ import {
   type DocContextItem,
   type SourceRef,
 } from "../../api";
-import { kbPathFromToolResult } from "../../utils/chatMessage";
+import { isInjectedUserMessage, kbPathFromToolResult } from "../../utils/chatMessage";
 import { nowIsoDisplay } from "../../utils/displayTime";
 
 export type DocContext = {
   documentPaths: string[];
   docContext: DocContextItem[];
   primary: string | null;
+};
+
+export type StreamEndInfo = {
+  failed: boolean;
+  aborted: boolean;
+  conversationId: string | null;
 };
 
 type UseAgentStreamOptions = {
@@ -45,6 +51,9 @@ type UseAgentStreamOptions = {
   onFirstQuestionTitle?: (id: string, title: string) => void;
   onSidebarRefresh?: () => void;
   onKbChanged?: (changedPath?: string) => void;
+  onStreamEnd?: (info: StreamEndInfo) => void;
+  onInjectDeferred?: (injectId: string) => void;
+  onUserInjected?: (injectId: string) => void;
 };
 
 export function useAgentStream({
@@ -66,11 +75,21 @@ export function useAgentStream({
   onFirstQuestionTitle,
   onSidebarRefresh,
   onKbChanged,
+  onStreamEnd,
+  onInjectDeferred,
+  onUserInjected,
 }: UseAgentStreamOptions) {
   const [streaming, setStreaming] = useState(false);
   const [liveElapsedMs, setLiveElapsedMs] = useState(0);
   const streamingStartRef = useRef<number | null>(null);
   const streamingAssistantIdxRef = useRef<number | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const onStreamEndRef = useRef(onStreamEnd);
+  const onInjectDeferredRef = useRef(onInjectDeferred);
+  const onUserInjectedRef = useRef(onUserInjected);
+  onStreamEndRef.current = onStreamEnd;
+  onInjectDeferredRef.current = onInjectDeferred;
+  onUserInjectedRef.current = onUserInjected;
 
   useEffect(() => {
     streamingRef.current = streaming;
@@ -106,20 +125,28 @@ export function useAgentStream({
     return id;
   }
 
+  function stopStreaming() {
+    abortRef.current?.abort();
+  }
+
   async function runAgentStream(
     apiText: string,
     userDisplayText?: string,
     userMeta?: Pick<ChatMessage, "attachments" | "doc_context" | "primary_doc">,
     docCtx?: DocContext,
-  ) {
-    if (streaming) return;
+    opts?: { webEnabled?: boolean },
+  ): Promise<boolean> {
+    if (streamingRef.current) return false;
     const display = userDisplayText ?? apiText;
     const isFirstUserQuestion = !msgs.some((m) => m.role === "user");
     stickToBottomRef.current = true;
-    setStreaming(true);
     streamingRef.current = true;
+    setStreaming(true);
     streamingStartRef.current = Date.now();
     setLiveElapsedMs(0);
+
+    const controller = new AbortController();
+    abortRef.current = controller;
 
     const assistantMsg: ChatMessage = {
       role: "assistant",
@@ -160,27 +187,46 @@ export function useAgentStream({
       });
 
     let streamFailed = false;
+    let aborted = false;
+    let cid: string | null = null;
     try {
-      const cid = await ensureConversationId();
+      cid = await ensureConversationId();
       if (isFirstUserQuestion) {
         onFirstQuestionTitle?.(cid, titleFromText(display));
       }
       const ctx = docCtx ?? resolveDocContext();
       const clientMessageId = crypto.randomUUID();
+      const useWeb = opts?.webEnabled ?? webEnabled;
       for await (const { event, data } of chatStream(apiText, {
         conversationId: cid,
         activeDocPaths: ctx.documentPaths,
         docContext: ctx.docContext.length ? ctx.docContext : undefined,
         primaryDocPath: ctx.primary,
-        webEnabled,
+        webEnabled: useWeb,
         attachments: userMeta?.attachments ?? [],
         clientMessageId,
+        signal: controller.signal,
       })) {
         if (event === "error") {
           const message = (data.message as string) || "请求失败";
           patchAssistant((msg) => ({ ...msg, text: `错误：${message}` }));
           streamFailed = true;
           break;
+        }
+
+        if (event === "user_inject") {
+          const injectId = data.inject_id as string;
+          patchAssistant((prevMsg) => ({
+            ...prevMsg,
+            timeline: updateTimeline(prevMsg.timeline ?? [], event, data),
+          }));
+          onUserInjectedRef.current?.(injectId);
+          continue;
+        }
+
+        if (event === "inject_deferred") {
+          onInjectDeferredRef.current?.(data.inject_id as string);
+          continue;
         }
 
         patchAssistant((prevMsg) => {
@@ -209,26 +255,47 @@ export function useAgentStream({
         }
       }
     } catch (err) {
-      streamFailed = true;
-      const msg = err instanceof Error ? err.message : "请求失败";
-      patchAssistant((prevMsg) => ({ ...prevMsg, text: `错误：${msg}` }));
+      if (
+        (err instanceof DOMException && err.name === "AbortError") ||
+        (err instanceof Error && err.name === "AbortError")
+      ) {
+        aborted = true;
+      } else {
+        streamFailed = true;
+        const msg = err instanceof Error ? err.message : "请求失败";
+        patchAssistant((prevMsg) => ({ ...prevMsg, text: `错误：${msg}` }));
+      }
     } finally {
+      abortRef.current = null;
       streamingRef.current = false;
       setStreaming(false);
       skipLoadRef.current = null;
       onSidebarRefresh?.();
-      const cid = conversationIdRef.current;
-      if (cid && !streamFailed) {
-        getConversation(cid)
+      const endCid = conversationIdRef.current ?? cid;
+      onStreamEndRef.current?.({
+        failed: streamFailed,
+        aborted,
+        conversationId: endCid,
+      });
+      if (endCid && !streamFailed && !aborted) {
+        getConversation(endCid)
           .then((conv) => {
-            if (conversationIdRef.current !== cid) return;
-            setMsgs(conv.messages);
+            if (conversationIdRef.current !== endCid) return;
+            // A queued follow-up turn may already be streaming — do not clobber it.
+            if (streamingRef.current) return;
+            setMsgs(
+              conv.messages.map((m) => ({
+                ...m,
+                injected: isInjectedUserMessage(m),
+              })),
+            );
             setSummarized(!!conv.summarized);
             setSummaryPath(conv.summary_path ?? null);
           })
           .catch(() => {});
       }
     }
+    return true;
   }
 
   return {
@@ -237,6 +304,7 @@ export function useAgentStream({
     streamingAssistantIdxRef,
     streamingRef,
     runAgentStream,
+    stopStreaming,
     ensureConversationId,
     resolveDocContext,
   };

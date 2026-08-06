@@ -9,7 +9,7 @@ import {
   type SourceRef,
 } from "../../api";
 import { DocChip, FileChip } from "../ComposerTray";
-import { formatMessageTs } from "../../utils/chatMessage";
+import { formatMessageTs, isInjectedUserMessage } from "../../utils/chatMessage";
 import { MarkdownContent } from "../MarkdownContent";
 import { ChatSources } from "../ChatSources";
 import { CopyButton } from "../CopyButton";
@@ -144,7 +144,10 @@ function renderMessageContent(
               highlightRange.end,
             )
           : null;
-      return m.timeline.map((block, i) => (
+      return m.timeline
+        .map((block, originalIndex) => ({ block, originalIndex }))
+        .filter(({ block }) => block.type !== "user_inject")
+        .map(({ block, originalIndex }) => (
         <TimelineBlockView
           key={
             block.type === "tool"
@@ -152,8 +155,8 @@ function renderMessageContent(
               : block.type === "parallel"
                 ? block.batch_id
                 : block.type === "think"
-                  ? `think-${i}`
-                  : `text-${i}`
+                  ? `think-${originalIndex}`
+                  : `text-${originalIndex}`
           }
           block={block}
           cumulative={cumulative}
@@ -163,7 +166,7 @@ function renderMessageContent(
           previewPath={previewPath}
           conversationId={conversationId}
           onQuestionResolved={onQuestionResolved}
-          textHighlight={blockHighlights?.get(i)}
+          textHighlight={blockHighlights?.get(originalIndex)}
         />
       ));
     }
@@ -250,6 +253,9 @@ export function ChatMessageRow({
       {...(m.id ? { "data-message-id": m.id } : {})}
     >
       <div className={`chat-bubble chat-bubble-${m.role}`}>
+        {m.role === "user" && isInjectedUserMessage(m) && (
+            <div className="chat-inject-tag">已插入本轮</div>
+          )}
         {m.role === "user" && renderUserMessageChips(m)}
         {renderMessageContent(
           m,

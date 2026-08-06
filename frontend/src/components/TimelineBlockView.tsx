@@ -299,7 +299,9 @@ export function TimelineBlockView({
                   ? child.batch_id
                   : child.type === "think"
                     ? `think-${i}`
-                    : `text-${i}`
+                    : child.type === "user_inject"
+                      ? `inject-${child.inject_id}`
+                      : `text-${i}`
             }
             block={child}
             cumulative={cumulative}
@@ -325,21 +327,30 @@ export function TimelineBlockView({
     return <ThinkBlockView block={block} isLive={isLive} />;
   }
 
-  return (
-    <div className="timeline-text">
-      {textHighlight ? (
-        <div className="chat-markdown">
-          <MessageRangeHighlight
-            text={block.content}
-            start={textHighlight.start}
-            end={textHighlight.end}
-          />
-        </div>
-      ) : (
-        <MarkdownContent className="markdown-body chat-markdown">
-          {block.content}
-        </MarkdownContent>
-      )}
-    </div>
-  );
+  if (block.type === "user_inject") {
+    // Shown as a standalone user bubble via expandMessagesForDisplay.
+    return null;
+  }
+
+  if (block.type === "text") {
+    return (
+      <div className="timeline-text">
+        {textHighlight ? (
+          <div className="chat-markdown">
+            <MessageRangeHighlight
+              text={block.content}
+              start={textHighlight.start}
+              end={textHighlight.end}
+            />
+          </div>
+        ) : (
+          <MarkdownContent className="markdown-body chat-markdown">
+            {block.content}
+          </MarkdownContent>
+        )}
+      </div>
+    );
+  }
+
+  return null;
 }

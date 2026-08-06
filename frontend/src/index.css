@@ -3919,6 +3919,172 @@ a:hover {
   box-sizing: border-box;
 }
 
+.composer-send-queue {
+  margin-bottom: 8px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-elevated, var(--bg-surface));
+  padding: 8px 10px;
+}
+
+.composer-send-queue-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin-bottom: 6px;
+}
+
+.composer-send-queue-title {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.composer-send-queue-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.composer-queue-btn {
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  color: var(--text-muted);
+  border-radius: 6px;
+  font-size: 12px;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+
+.composer-queue-btn:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+.composer-queue-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.composer-send-queue-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.composer-send-queue-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: var(--bg-surface);
+  border: 1px solid transparent;
+}
+
+.composer-send-queue-item.is-locked {
+  opacity: 0.75;
+}
+
+.composer-send-queue-item.is-error {
+  border-color: var(--danger, #c44);
+}
+
+.composer-send-queue-item-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.composer-send-queue-edit {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font: inherit;
+  font-size: var(--text-sm);
+  background: transparent;
+  color: var(--text);
+}
+
+.composer-send-queue-text {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.composer-send-queue-error {
+  font-size: 12px;
+  color: var(--danger, #c44);
+}
+
+.composer-send-queue-item-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.composer-send-queue-item-controls select {
+  font-size: 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  color: var(--text);
+  padding: 2px 4px;
+}
+
+.composer-queue-merge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.chat-inject-tag {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.timeline-user-inject {
+  margin: 10px 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated, var(--bg-surface));
+  align-self: stretch;
+}
+
+.timeline-user-inject-tag {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.timeline-user-inject-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: var(--text-sm);
+  color: var(--text);
+  line-height: 1.5;
+}
+
+.composer-send-btn--stop {
+  background: var(--danger, #c44);
+  color: #fff;
+  border-color: transparent;
+}
+
+.composer-send-btn--stop:hover:not(:disabled) {
+  filter: brightness(1.05);
+}
+
 .composer-card {
   width: 100%;
   border: 1px solid var(--border-strong);

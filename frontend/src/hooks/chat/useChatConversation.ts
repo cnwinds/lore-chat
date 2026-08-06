@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type MutableRefObject } from "react";
 import { getConversation, type ChatMessage } from "../../api";
+import { isInjectedUserMessage } from "../../utils/chatMessage";
 import {
   scrollToMessageHighlight,
   type JumpTarget,
@@ -47,7 +48,12 @@ export function useChatConversation({
     getConversation(conversationId)
       .then((conv) => {
         if (!cancelled && !streamingRef.current) {
-          setMsgs(conv.messages);
+          setMsgs(
+            conv.messages.map((m) => ({
+              ...m,
+              injected: isInjectedUserMessage(m),
+            })),
+          );
           setSummarized(!!conv.summarized);
           setSummaryPath(conv.summary_path ?? null);
         }
