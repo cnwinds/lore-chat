@@ -3,6 +3,7 @@ import type { TimelineBlock } from "../api";
 import {
   isNoiseProgressLine,
   joinProgressChunks,
+  normalizeStreamChunk,
 } from "../utils/progressLog";
 
 type ToolBlock = Extract<TimelineBlock, { type: "tool" }>;
@@ -30,7 +31,7 @@ export function sandboxTerminalBody(block: ToolBlock): string {
     !block.question_id
   ) {
     // summary 里可能是 "exit=0\\n..." 多行
-    parts.push(block.summary.replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim());
+    parts.push(normalizeStreamChunk(block.summary).trim());
   }
   return parts.join("\n");
 }

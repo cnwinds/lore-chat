@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   appendProgressChunk,
   joinProgressChunks,
+  normalizeStreamChunk,
 } from "./progressLog";
 import { sandboxTerminalBody } from "../components/SandboxTerminal";
 
@@ -17,6 +18,24 @@ describe("progressLog newlines", () => {
     let log = appendProgressChunk([], "a\n");
     log = appendProgressChunk(log, "b\n");
     expect(joinProgressChunks(log)).toBe("a\nb\n");
+  });
+
+  it("overwrites ANSI spinner frames instead of stacking lines", () => {
+    let log = appendProgressChunk([], "◐ Downloading 1%\n");
+    log = appendProgressChunk(log, "\x1b[1G\x1b[J◑ Downloading 2%");
+    log = appendProgressChunk(log, "\x1b[1G\x1b[J◒ Downloading 3%");
+    const body = joinProgressChunks(log);
+    expect(body).toContain("Downloading 3%");
+    expect(body.match(/Downloading/g)?.length).toBe(1);
+  });
+
+  it("collapses persisted progress spam on display", () => {
+    const spam = Array.from(
+      { length: 40 },
+      (_, i) => `Downloading Chrome | ${i + 1}% | 1.0s`,
+    );
+    expect(normalizeStreamChunk(spam.join("\n"))).toContain("40%");
+    expect(normalizeStreamChunk(spam.join("\n")).split("\n").length).toBe(1);
   });
 
   it("renders legacy per-line progress_log with separators", () => {

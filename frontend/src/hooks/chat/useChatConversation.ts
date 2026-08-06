@@ -16,7 +16,7 @@ type Options = {
   pendingJump?: JumpTarget | null;
   onJumpHandled?: () => void;
   /** Called when loaded conversation has a server-side running turn. */
-  onActiveTurn?: (conversationId: string) => void;
+  onActiveTurn?: (conversationId: string, startedAt?: string | null) => void;
 };
 
 export function useChatConversation({
@@ -67,7 +67,10 @@ export function useChatConversation({
           setSummarized(!!conv.summarized);
           setSummaryPath(conv.summary_path ?? null);
           if (conv.active_turn?.status === "running") {
-            onActiveTurnRef.current?.(conversationId);
+            onActiveTurnRef.current?.(
+              conversationId,
+              conv.active_turn.started_at,
+            );
           }
         }
       })

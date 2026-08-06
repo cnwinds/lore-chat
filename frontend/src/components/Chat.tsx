@@ -84,9 +84,9 @@ export function Chat({
   const streamingRef = useRef(false);
   const conversationIdRef = useRef(conversationId);
   const stickToBottomRef = useRef(true);
-  const resumeActiveTurnRef = useRef<(cid: string) => Promise<boolean>>(
-    async () => false,
-  );
+  const resumeActiveTurnRef = useRef<
+    (cid: string, startedAt?: string | null) => Promise<boolean>
+  >(async () => false);
 
   const {
     msgs,
@@ -102,8 +102,8 @@ export function Chat({
     streamingRef,
     pendingJump,
     onJumpHandled,
-    onActiveTurn: (cid) => {
-      void resumeActiveTurnRef.current(cid);
+    onActiveTurn: (cid, startedAt) => {
+      void resumeActiveTurnRef.current(cid, startedAt);
     },
   });
 

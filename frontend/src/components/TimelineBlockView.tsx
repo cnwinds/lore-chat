@@ -12,7 +12,10 @@ import { PendingQuestion } from "./PendingQuestion";
 import { SandboxTerminal } from "./SandboxTerminal";
 import { SourceChip } from "./SourceChip";
 import { MessageRangeHighlight } from "./chat/MessageRangeHighlight";
-import { isNoiseProgressLine } from "../utils/progressLog";
+import {
+  isNoiseProgressLine,
+  joinProgressChunks,
+} from "../utils/progressLog";
 import { toolDisplayDurationMs } from "../utils/toolDuration";
 
 type Props = {
@@ -229,7 +232,7 @@ function ToolBlockView({
         block.progress_log.length > 0 && (
         <div className="timeline-tool-body timeline-tool-progress">
           <pre className="timeline-tool-progress-log">
-            {block.progress_log.join("\n")}
+            {joinProgressChunks(block.progress_log)}
           </pre>
         </div>
       )}

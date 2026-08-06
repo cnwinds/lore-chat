@@ -391,14 +391,20 @@ export function useAgentStream({
   }
 
   /** Reattach observation to a server-side running turn (e.g. after page reload). */
-  async function resumeActiveTurn(cid: string): Promise<boolean> {
+  async function resumeActiveTurn(
+    cid: string,
+    startedAt?: string | null,
+  ): Promise<boolean> {
     if (streamingRef.current) return false;
     stickToBottomRef.current = true;
     stopRequestedRef.current = false;
     streamingRef.current = true;
     setStreaming(true);
-    streamingStartRef.current = Date.now();
-    setLiveElapsedMs(0);
+    const startedMs = startedAt ? Date.parse(startedAt) : NaN;
+    streamingStartRef.current = Number.isFinite(startedMs)
+      ? startedMs
+      : Date.now();
+    setLiveElapsedMs(Math.max(0, Date.now() - streamingStartRef.current));
 
     const controller = new AbortController();
     abortRef.current = controller;
