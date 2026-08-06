@@ -1,4 +1,6 @@
 // 生产环境经 nginx 同源代理时 VITE_API_BASE 留空；本地开发在 .env 中设为 http://localhost:8000
+import { isNoiseProgressLine } from "./utils/progressLog";
+
 const BASE = import.meta.env.VITE_API_BASE ?? "";
 
 export type ApiError = Error & {
@@ -252,9 +254,16 @@ export type SourceRef =
     };
 
 function toolQueryFromInput(input: unknown): string | undefined {
-  if (!input || typeof input !== "object" || !("query" in input)) return undefined;
-  const q = (input as { query?: unknown }).query;
-  return typeof q === "string" && q.trim() ? q.trim() : undefined;
+  if (!input || typeof input !== "object") return undefined;
+  const o = input as Record<string, unknown>;
+  for (const key of ["query", "command", "path", "sandbox_path"]) {
+    const v = o[key];
+    if (typeof v === "string" && v.trim()) {
+      const s = v.trim();
+      return s.length > 120 ? `${s.slice(0, 120)}…` : s;
+    }
+  }
+  return undefined;
 }
 
 export type TimelineBlock =
@@ -264,10 +273,12 @@ export type TimelineBlock =
       tool: string;
       label: string;
       ts: string;
-      status: "running" | "done";
+      status: "running" | "done" | "interrupted";
       /** 检索/搜索关键词（search_kb、web_search） */
       query?: string;
       summary?: string;
+      /** 沙箱等长任务的关键节点日志 */
+      progress_log?: string[];
       sources?: SourceRef[];
       content?: string;
       duration_ms?: number;
@@ -333,6 +344,8 @@ export type ChatMessage = {
   doc_context?: DocContextItem[] | string[];
   primary_doc?: string;
   intent?: "recall" | "remember";
+  /** complete | interrupted — 来自持久化 turn 状态 */
+  status?: "complete" | "interrupted" | string;
   /** 本轮回复总耗时（毫秒），来自 SSE done 事件 */
   total_duration_ms?: number;
   /** Mid-turn inject (client_message_id starts with inject:) */
@@ -438,6 +451,11 @@ export const TOOL_LABELS: Record<string, string> = {
   edit_doc: "局部编辑文档",
   move_entry: "移动或重命名路径",
   move_doc: "移动或重命名路径",
+  sandbox_run: "在沙箱执行命令",
+  sandbox_list_dir: "列出沙箱目录",
+  sandbox_read_file: "读取沙箱文件",
+  publish_from_sandbox: "从沙箱发布到知识库",
+  sandbox_job_status: "查询沙箱后台任务",
 };
 
 // 会改动知识库、需要刷新侧栏的工具
@@ -448,6 +466,7 @@ export const KB_MUTATING_TOOLS = [
   "edit_doc",
   "move_entry",
   "move_doc",
+  "publish_from_sandbox",
 ] as const;
 
 export type ConversationSummary = {
@@ -682,6 +701,46 @@ export function updateTimeline(
       );
     }
     return [...timeline, toolBlock];
+  }
+
+  if (event === "tool_progress") {
+    const id = data.id as string;
+    const message = typeof data.message === "string" ? data.message : "";
+    if (!message) return timeline;
+    return updateToolBlock(timeline, id, (block) => {
+      // 丢弃无意义的心跳行，避免刷屏
+      if (isNoiseProgressLine(message)) {
+        return block;
+      }
+      const prev = block.progress_log ?? [];
+      // 终端流：把连续输出拼到同一缓冲项，保留原始换行
+      let next: string[];
+      if (
+        prev.length > 0 &&
+        !message.startsWith("$ ") &&
+        !/^\[exit\s/.test(message.trim())
+      ) {
+        next = [...prev.slice(0, -1), prev[prev.length - 1] + message];
+      } else {
+        next = [...prev, message];
+      }
+      const joinedLen = next.reduce((n, s) => n + s.length, 0);
+      if (joinedLen > 100_000) {
+        const joined = next.join("");
+        next = [joined.slice(-100_000)];
+      }
+      const preview =
+        message.trim().length > 0
+          ? message.trim().length < 200
+            ? message.trim()
+            : `${message.trim().slice(0, 200)}…`
+          : block.summary;
+      return {
+        ...block,
+        progress_log: next,
+        ...(preview ? { summary: preview } : {}),
+      };
+    });
   }
 
   if (event === "tool_result") {

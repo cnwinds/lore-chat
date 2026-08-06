@@ -136,6 +136,7 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
         merge_workflow=agent.organizer.merge,
         conversations=conversations,
         merge_sessions=merge_sessions,
+        sandbox_tools=agent.tools.sandbox,
     )
 
     return Container(

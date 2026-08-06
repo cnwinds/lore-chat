@@ -9,8 +9,10 @@ import {
 } from "../api";
 import { MarkdownContent } from "./MarkdownContent";
 import { PendingQuestion } from "./PendingQuestion";
+import { SandboxTerminal } from "./SandboxTerminal";
 import { SourceChip } from "./SourceChip";
 import { MessageRangeHighlight } from "./chat/MessageRangeHighlight";
+import { isNoiseProgressLine } from "../utils/progressLog";
 
 type Props = {
   block: TimelineBlock;
@@ -33,11 +35,32 @@ type Props = {
 /** 折叠时单行摘要：工具类型 + 关键结果 */
 function toolOneLiner(block: Extract<TimelineBlock, { type: "tool" }>): string | undefined {
   if (block.status === "running") {
+    if (block.progress_log?.length) {
+      for (let i = block.progress_log.length - 1; i >= 0; i--) {
+        const line = (block.progress_log[i] || "").trim();
+        if (line && !isNoiseProgressLine(line)) return line;
+      }
+    }
     return block.query || "执行中…";
   }
-  if (block.tool === "ask_user") {
+  if (block.status === "interrupted") {
+    return block.summary || "连接中断，未完成";
+  }
+  if (block.tool === "ask_user" || (block.tool === "sandbox_run" && block.question_id)) {
     if (block.choice_resolved) return `已选择：${block.choice_resolved}`;
     return block.question || block.summary;
+  }
+  if (block.tool === "sandbox_run" && block.query) {
+    const cmd =
+      block.query.length > 80 ? `${block.query.slice(0, 80)}…` : block.query;
+    if (block.summary) {
+      const s =
+        block.summary.length > 60
+          ? `${block.summary.slice(0, 60)}…`
+          : block.summary;
+      return `$ ${cmd} · ${s}`;
+    }
+    return `$ ${cmd}`;
   }
   if (block.tool === "fetch_url") {
     const web = block.sources?.find((s) => s.type === "web");
@@ -92,16 +115,24 @@ function ToolBlockView({
   // 未作答的征询始终展开，方便用户直接选择。
   const isLive = liveElapsedMs !== undefined;
   const pendingAsk =
-    block.tool === "ask_user" &&
+    (block.tool === "ask_user" || block.tool === "sandbox_run") &&
     block.status === "done" &&
-    !block.choice_resolved;
+    !block.choice_resolved &&
+    !!block.question_id &&
+    Array.isArray(block.options) &&
+    block.options.length > 0;
   const collapsedByDefault =
     block.tool === "search_kb" ||
     block.tool === "web_search" ||
     block.tool === "fetch_url";
   const defaultOpen =
     !collapsedByDefault &&
-    (isLive || pendingAsk || block.status === "running");
+    (isLive ||
+      pendingAsk ||
+      block.status === "running" ||
+      (block.tool === "sandbox_run" &&
+        !block.question_id &&
+        (!!block.query || !!block.progress_log?.length)));
   // 用户显式点过则以其选择为准，否则用默认值。
   // 展开状态用组件内 state 维护，随组件卸载自动回收（不跨会话泄漏）。
   const [override, setOverride] = useState<boolean | null>(null);
@@ -131,6 +162,9 @@ function ToolBlockView({
     onOpenSource(src);
   }
 
+  const statusIcon =
+    block.status === "running" ? "⏳" : block.status === "interrupted" ? "⚠" : "✓";
+
   return (
     <div className={`timeline-tool timeline-tool-${block.status}`}>
       <button
@@ -142,7 +176,7 @@ function ToolBlockView({
       >
         <span className="timeline-tool-label">
           <span className="timeline-tool-name">
-            {block.status === "running" ? "⏳" : "✓"} {block.label}
+            {statusIcon} {block.label}
           </span>
           {!open && oneLiner && (
             <span className="timeline-tool-oneline">{oneLiner}</span>
@@ -157,6 +191,14 @@ function ToolBlockView({
         )}
         <span className="timeline-tool-chevron">{open ? "▾" : "▸"}</span>
       </button>
+      {open &&
+        block.tool === "sandbox_run" &&
+        !block.question_id &&
+        (!!block.query || !!block.progress_log?.length || block.status === "running") && (
+          <div className="timeline-tool-body">
+            <SandboxTerminal block={block} live={isLive || block.status === "running"} />
+          </div>
+        )}
       {open &&
         (block.tool === "web_search" || block.tool === "search_kb") &&
         block.query && (
@@ -174,6 +216,16 @@ function ToolBlockView({
           ))}
         </div>
       )}
+      {open &&
+        block.tool !== "sandbox_run" &&
+        block.progress_log &&
+        block.progress_log.length > 0 && (
+        <div className="timeline-tool-body timeline-tool-progress">
+          <pre className="timeline-tool-progress-log">
+            {block.progress_log.join("\n")}
+          </pre>
+        </div>
+      )}
       {open && block.content && block.tool === "fetch_url" && (
         <div className="timeline-tool-body timeline-tool-content">
           <MarkdownContent className="markdown-body chat-markdown">
@@ -181,13 +233,22 @@ function ToolBlockView({
           </MarkdownContent>
         </div>
       )}
-      {open && block.summary && (
-        (block.tool === "write_kb" || block.tool === "edit_doc" || !block.sources?.length) &&
+      {open &&
+        block.summary &&
+        !(block.progress_log && block.progress_log.length > 0) &&
+        block.tool !== "sandbox_run" &&
+        (block.tool === "write_kb" ||
+          block.tool === "edit_doc" ||
+          !block.sources?.length) &&
         block.tool !== "ask_user" && (
+          <div className="timeline-tool-body">
+            <div className="timeline-tool-summary">{block.summary}</div>
+          </div>
+        )}
+      {open && block.status === "interrupted" && !block.summary && (
         <div className="timeline-tool-body">
-          <div className="timeline-tool-summary">{block.summary}</div>
+          <div className="timeline-tool-summary">连接中断，未完成</div>
         </div>
-        )
       )}
       {open && block.tool === "edit_doc" && block.preview && (
         <div className="timeline-tool-body timeline-tool-patch-preview">
@@ -196,7 +257,7 @@ function ToolBlockView({
         </div>
       )}
       {open &&
-        block.tool === "ask_user" &&
+        (block.tool === "ask_user" || block.tool === "sandbox_run") &&
         block.status === "done" &&
         block.question_id &&
         block.options &&

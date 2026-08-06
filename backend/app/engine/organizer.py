@@ -28,6 +28,8 @@ class IngestResult:
     question_id: str | None
     message: str
     continue_prompt: str | None = None
+    # 沙箱确认批准后由 resolve 路由直接执行（不依赖模型再调 tool）
+    sandbox_run_args: dict | None = None
 
 
 class Organizer:
@@ -325,6 +327,41 @@ class Organizer:
                 question_id=None,
                 message="正在根据你的选择继续处理…",
                 continue_prompt="\n".join(parts),
+            )
+
+        if payload.get("kind") == "sandbox_confirm":
+            if "deny" in choice_ids or choice_ids == ["deny"]:
+                return IngestResult(
+                    status="acknowledged",
+                    rel_path=None,
+                    question_id=None,
+                    message="已取消沙箱命令。",
+                )
+            if "approve" not in choice_ids:
+                return IngestResult(
+                    status="rejected",
+                    rel_path=None,
+                    question_id=qid,
+                    message="未选择有效选项",
+                )
+            command = payload.get("command") or ""
+            cwd = payload.get("cwd") or "/workspace"
+            background = bool(payload.get("background", False))
+            timeout_sec = payload.get("timeout_sec")
+            run_args: dict = {
+                "command": command,
+                "cwd": cwd,
+                "background": background,
+                "confirmed": True,
+            }
+            if timeout_sec is not None:
+                run_args["timeout_sec"] = timeout_sec
+            return IngestResult(
+                status="sandbox_execute",
+                rel_path=None,
+                question_id=None,
+                message="正在按你的批准执行沙箱命令…",
+                sandbox_run_args=run_args,
             )
 
         if not payload.get("kind"):

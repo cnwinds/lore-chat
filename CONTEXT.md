@@ -53,6 +53,7 @@
 ## 运行数据（Docker）
 
 - Compose：`docker/docker-compose.yml`（项目根执行：`docker compose -f docker/docker-compose.yml --project-directory docker --env-file .env`）
+- **可选执行能力**：叠加 `docker/docker-compose.sandbox.yml` 启动 OpenSandbox；`SANDBOX_ENABLED` / `GET /api/health` → `capabilities.sandbox`。启用后 Agent 可调用 `sandbox_run` / `sandbox_list_dir` / `sandbox_read_file` / `publish_from_sandbox`（SSE `tool_progress`）。见 [ADR 2026-08-06](docs/adr/2026-08-06-opensandbox-runtime.md)
 - 知识库卷：`docker/data/knowledge/`
 - 备份卷：`docker/data/backups/`
 

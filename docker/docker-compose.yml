@@ -11,9 +11,20 @@ services:
     environment:
       KB_PATH: /data/knowledge
       BACKUP_DIR: /data/backups
+      # 默认关闭；带执行能力请叠加 docker-compose.sandbox.yml
+      SANDBOX_ENABLED: ${SANDBOX_ENABLED:-false}
+      # 出站代理（.env 中 HTTP(S)_PROXY）；未设置则为空
+      HTTP_PROXY: ${HTTP_PROXY:-}
+      HTTPS_PROXY: ${HTTPS_PROXY:-}
+      http_proxy: ${http_proxy:-${HTTP_PROXY:-}}
+      https_proxy: ${https_proxy:-${HTTPS_PROXY:-}}
+      NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1}
+      no_proxy: ${no_proxy:-${NO_PROXY:-localhost,127.0.0.1}}
     volumes:
       - ./data/knowledge:/data/knowledge
       - ./data/backups:/data/backups
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
     networks:
       - lorechat

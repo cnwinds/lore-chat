@@ -196,6 +196,11 @@ export function SettingsPanel({ open, onClose }: Props) {
   const [agentMaxToolCalls, setAgentMaxToolCalls] = useState(25);
   const [agentParallelTools, setAgentParallelTools] = useState(true);
   const [agentMaxParallel, setAgentMaxParallel] = useState(4);
+  const [sandboxEnabled, setSandboxEnabled] = useState(false);
+  const [sandboxTrustMode, setSandboxTrustMode] = useState(true);
+  const [sandboxMirrorRegion, setSandboxMirrorRegion] = useState<"cn" | "global">(
+    "cn",
+  );
 
   const [oldPassword, setOldPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -234,6 +239,11 @@ export function SettingsPanel({ open, onClose }: Props) {
       setAgentMaxToolCalls(num(data.agent_max_tool_calls, 25));
       setAgentParallelTools(bool(data.agent_parallel_tools, true));
       setAgentMaxParallel(num(data.agent_max_parallel, 4));
+      setSandboxEnabled(bool(data.sandbox_enabled, false));
+      setSandboxTrustMode(bool(data.sandbox_trust_mode, true));
+      setSandboxMirrorRegion(
+        data.sandbox_mirror_region === "global" ? "global" : "cn",
+      );
 
       const masked: Partial<Record<SecretKey, string>> = {};
       for (const key of SECRET_KEYS) {
@@ -300,6 +310,8 @@ export function SettingsPanel({ open, onClose }: Props) {
         agent_max_tool_calls: agentMaxToolCalls,
         agent_parallel_tools: agentParallelTools,
         agent_max_parallel: agentMaxParallel,
+        sandbox_trust_mode: sandboxTrustMode,
+        sandbox_mirror_region: sandboxMirrorRegion,
       };
 
       for (const key of SECRET_KEYS) {
@@ -649,6 +661,44 @@ export function SettingsPanel({ open, onClose }: Props) {
                           onChange={(e) => setAgentMaxParallel(Number(e.target.value))}
                           disabled={!agentParallelTools || saving}
                         />
+                      </label>
+                    </div>
+                    <div className="settings-group">
+                      <h3 className="settings-group-title">沙箱执行</h3>
+                      <p className="settings-group-hint">
+                        执行能力由部署决定（是否叠加 docker-compose.sandbox.yml）。默认信任模式：沙箱命令直接执行；关闭后高风险命令会先征询。软件源影响 apt / pip / npm 安装速度与可达性。
+                      </p>
+                      <label className="settings-field">
+                        <span>执行能力（只读）</span>
+                        <input
+                          value={sandboxEnabled ? "已启用" : "未启用"}
+                          readOnly
+                          className="settings-readonly"
+                        />
+                      </label>
+                      <label className="settings-field settings-field--checkbox">
+                        <input
+                          type="checkbox"
+                          checked={sandboxTrustMode}
+                          onChange={(e) => setSandboxTrustMode(e.target.checked)}
+                          disabled={saving || !sandboxEnabled}
+                        />
+                        <span>信任模式（跳过 sandbox_run 确认，默认开启）</span>
+                      </label>
+                      <label className="settings-field">
+                        <span>软件源</span>
+                        <select
+                          value={sandboxMirrorRegion}
+                          onChange={(e) =>
+                            setSandboxMirrorRegion(
+                              e.target.value === "global" ? "global" : "cn",
+                            )
+                          }
+                          disabled={saving || !sandboxEnabled}
+                        >
+                          <option value="cn">国内（阿里云 / npmmirror）</option>
+                          <option value="global">国外（官方源）</option>
+                        </select>
                       </label>
                     </div>
                   </div>

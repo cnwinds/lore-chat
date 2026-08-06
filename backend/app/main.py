@@ -19,6 +19,7 @@ from app.models.llm import LLMClient
 from app.deps import build_container
 from app.api.admin_routes import router as admin_router
 from app.api.routes import router
+from app.engine.sandbox.mirrors import normalize_mirror_region
 from app.settings_store import SettingsStore
 
 _PLACEHOLDER_API_KEYS = frozenset({"", "sk-none", "sk-your-key"})
@@ -105,8 +106,22 @@ def create_app(settings: Settings | None = None, llm: LLMClient | None = None) -
         return JSONResponse(status_code=500, content={"detail": str(exc)})
 
     @app.get("/api/health")
-    def health():
-        return {"status": "ok"}
+    def health(request: Request):
+        settings = request.app.state.settings_store.get()
+        return {
+            "status": "ok",
+            "capabilities": {
+                "sandbox": bool(settings.sandbox_enabled),
+                "sandbox_trust_mode": bool(
+                    settings.sandbox_enabled and settings.sandbox_trust_mode
+                ),
+                "sandbox_mirror_region": (
+                    normalize_mirror_region(settings.sandbox_mirror_region)
+                    if settings.sandbox_enabled
+                    else None
+                ),
+            },
+        }
 
     cors_origins = [
         origin.strip()

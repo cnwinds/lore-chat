@@ -18,7 +18,9 @@ from app.engine.agent.tool_impl import (
     MemoryTools,
     WebReadTools,
 )
+from app.engine.agent.tool_impl.sandbox_tools import SandboxTools
 from app.engine.knowledge_writer import KnowledgeWriter
+from app.engine.sandbox.protocol import SandboxRuntime
 
 __all__ = [
     "ToolRegistry",
@@ -52,6 +54,7 @@ class ToolRegistry:
         edit_doc_require_read: bool = True,
         conversation_context_max_chars: int = 12000,
         memory_service=None,
+        sandbox_runtime: SandboxRuntime | None = None,
     ):
         del indexer  # 保留构造签名，索引经 knowledge_writer
         self.repo = repo
@@ -62,6 +65,7 @@ class ToolRegistry:
         self.knowledge_writer = knowledge_writer
         self.disclosure_chars = disclosure_chars
         self.edit_doc_require_read = edit_doc_require_read
+        self.sandbox_runtime = sandbox_runtime
 
         read_guard = DocReadGuard(require_read=edit_doc_require_read)
         self.kb_read = KbReadTools(
@@ -90,6 +94,12 @@ class ToolRegistry:
         )
         self.memory = MemoryTools(memory_service)
         self.interaction = InteractionTools(pending)
+        self.sandbox = SandboxTools(
+            sandbox_runtime,
+            knowledge_writer,
+            pending=pending,
+            trust_mode=True,
+        )
         self._dispatch_handlers = None
 
     @property
@@ -177,3 +187,18 @@ class ToolRegistry:
 
     def _ask_user(self, args: dict) -> dict:
         return self.interaction.ask_user(args)
+
+    async def _sandbox_run(self, args: dict) -> dict:
+        return await self.sandbox.sandbox_run(args)
+
+    async def _sandbox_job_status(self, args: dict) -> dict:
+        return await self.sandbox.sandbox_job_status(args)
+
+    async def _sandbox_list_dir(self, args: dict) -> dict:
+        return await self.sandbox.sandbox_list_dir(args)
+
+    async def _sandbox_read_file(self, args: dict) -> dict:
+        return await self.sandbox.sandbox_read_file(args)
+
+    async def _publish_from_sandbox(self, args: dict) -> dict:
+        return await self.sandbox.publish_from_sandbox(args)

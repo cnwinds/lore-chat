@@ -35,6 +35,11 @@ def tool_result(
     payload.update(extra)
     return sse_event("tool_result", payload)
 
+def tool_progress(id, tool, message, **extra):
+    payload = {"id": id, "tool": tool, "message": message}
+    payload.update(extra)
+    return sse_event("tool_progress", payload)
+
 def parallel_batch_start(batch_id, tools):
     return sse_event("parallel_batch_start", {"batch_id": batch_id, "tools": tools})
 

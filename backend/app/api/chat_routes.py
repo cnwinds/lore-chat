@@ -7,10 +7,17 @@ from fastapi.responses import StreamingResponse
 
 from app.api.http_deps import AskBody, ChatBody, InjectBody, IngestBody, container, normalize_chat_context
 from app.engine.chat.session_runner import consume_agent_ask, consume_agent_ingest
+from app.engine.chat.sse_keepalive import with_sse_keepalive
 from app.engine.chat.turn_inject import PendingInject
 from app.engine.conversation.shared import TurnInProgress
 
 router = APIRouter()
+
+_SSE_HEADERS = {
+    "Cache-Control": "no-cache",
+    "Connection": "keep-alive",
+    "X-Accel-Buffering": "no",
+}
 
 
 @router.post("/ingest")
@@ -49,14 +56,17 @@ async def chat(body: ChatBody, request: Request):
 
     if not body.conversation_id:
         return StreamingResponse(
-            c.chat_runner.stream_ephemeral(
-                body.text,
-                doc_paths=paths,
-                skill_roots=skill_roots or None,
-                primary_doc=primary,
-                web_enabled=body.web_enabled,
+            with_sse_keepalive(
+                c.chat_runner.stream_ephemeral(
+                    body.text,
+                    doc_paths=paths,
+                    skill_roots=skill_roots or None,
+                    primary_doc=primary,
+                    web_enabled=body.web_enabled,
+                )
             ),
             media_type="text/event-stream",
+            headers=_SSE_HEADERS,
         )
 
     cid = body.conversation_id
@@ -80,21 +90,26 @@ async def chat(body: ChatBody, request: Request):
 
     if turn.get("status", "running") != "running":
         return StreamingResponse(
-            c.chat_runner.replay_turn(turn), media_type="text/event-stream"
+            with_sse_keepalive(c.chat_runner.replay_turn(turn)),
+            media_type="text/event-stream",
+            headers=_SSE_HEADERS,
         )
 
     return StreamingResponse(
-        c.chat_runner.stream_and_persist(
-            body.text,
-            conversation_id=cid,
-            turn=turn,
-            history=history,
-            doc_paths=paths,
-            skill_roots=skill_roots or None,
-            primary_doc=primary,
-            web_enabled=body.web_enabled,
+        with_sse_keepalive(
+            c.chat_runner.stream_and_persist(
+                body.text,
+                conversation_id=cid,
+                turn=turn,
+                history=history,
+                doc_paths=paths,
+                skill_roots=skill_roots or None,
+                primary_doc=primary,
+                web_enabled=body.web_enabled,
+            )
         ),
         media_type="text/event-stream",
+        headers=_SSE_HEADERS,
     )
 
 

@@ -88,7 +88,12 @@ class AgentOrchestrator:
             extra_system_messages=skill_msgs or None,
         )
         tools_for_run = select_tools(
-            mode, web_enabled, search_configured=search_configured
+            mode,
+            web_enabled,
+            search_configured=search_configured,
+            sandbox_enabled=bool(
+                self.settings.sandbox_enabled and self.tools.sandbox_runtime is not None
+            ),
         )
         primary = primary_doc_path or active_doc_path
         start = time.monotonic()

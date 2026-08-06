@@ -1,0 +1,25 @@
+[server]
+host = "0.0.0.0"
+port = 8090
+
+[log]
+level = "INFO"
+
+[runtime]
+type = "docker"
+execd_image = "opensandbox/execd:v1.0.18"
+
+[egress]
+image = "opensandbox/egress:v1.1.0"
+
+[docker]
+network_mode = "bridge"
+# server 跑在容器里时须用宿主机可达地址（官方 compose 示例同此）；
+# backend 走 use_server_proxy，不直连 host_ip。宿主机直连调试请用 spike 的 127.0.0.1。
+host_ip = "host.docker.internal"
+drop_capabilities = ["AUDIT_WRITE", "MKNOD", "NET_ADMIN", "NET_RAW", "SYS_ADMIN", "SYS_MODULE", "SYS_PTRACE", "SYS_TIME", "SYS_TTY_CONFIG"]
+no_new_privileges = true
+pids_limit = 4096
+
+[ingress]
+mode = "direct"

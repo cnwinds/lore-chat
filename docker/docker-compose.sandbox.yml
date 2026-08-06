@@ -1,0 +1,49 @@
+# 带执行能力（OpenSandbox）的叠加编排。
+# 默认 docker-compose.yml 不含沙箱；需要执行能力时额外 -f 本文件。
+#
+# 启动示例（项目根）：
+#   docker compose --project-directory docker --env-file .env \
+#     -f docker/docker-compose.yml -f docker/docker-compose.sandbox.yml up -d --build
+
+services:
+  backend:
+    environment:
+      SANDBOX_ENABLED: "true"
+      OPENSANDBOX_DOMAIN: opensandbox-server:8090
+      OPENSANDBOX_PROTOCOL: http
+      # server 内嵌 proxy 在本机 Docker 下会挂死；backend 经 host.docker.internal 直连 sandbox 端口
+      OPENSANDBOX_USE_SERVER_PROXY: "false"
+      OPENSANDBOX_API_KEY: ${OPENSANDBOX_API_KEY:-}
+      OPENSANDBOX_WORKSPACE_VOLUME: lorechat-sandbox-workspace
+      # 默认信任：沙箱命令不征询；可在设置里关闭
+      SANDBOX_TRUST_MODE: ${SANDBOX_TRUST_MODE:-true}
+      SANDBOX_MIRROR_REGION: ${SANDBOX_MIRROR_REGION:-cn}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      opensandbox-server:
+        condition: service_started
+
+  opensandbox-server:
+    image: opensandbox/server:latest
+    container_name: lorechat-opensandbox
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./opensandbox/config.toml:/etc/opensandbox/config.toml:ro
+    environment:
+      SANDBOX_CONFIG_PATH: /etc/opensandbox/config.toml
+      # 生产务必在 .env 设置 OPENSANDBOX_API_KEY，并改 OPENSANDBOX_INSECURE_SERVER=NO
+      OPENSANDBOX_INSECURE_SERVER: ${OPENSANDBOX_INSECURE_SERVER:-YES}
+    ports:
+      # 可选：宿主机调试；backend 走内网 opensandbox-server:8090
+      - "${OPENSANDBOX_HOST_PORT:-18090}:8090"
+    networks:
+      - lorechat
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+volumes:
+  # OpenSandbox PVC claimName 对应的 Docker named volume（须预先存在）
+  lorechat-sandbox-workspace:
+    name: lorechat-sandbox-workspace

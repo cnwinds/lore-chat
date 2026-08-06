@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from app.engine.chat.progress_log import append_progress_chunk
 from app.engine.source_key import extend_sources
 
 
@@ -28,8 +29,13 @@ class TimelineAccumulator:
                 "status": "running",
             }
             inp = data.get("input")
-            if isinstance(inp, dict) and inp.get("query"):
-                block["query"] = inp["query"]
+            if isinstance(inp, dict):
+                for key in ("query", "command", "path", "sandbox_path"):
+                    v = inp.get(key)
+                    if isinstance(v, str) and v.strip():
+                        s = v.strip()
+                        block["query"] = s if len(s) <= 200 else s[:200] + "…"
+                        break
             self._tools[data["id"]] = block
             if self._active_parallel:
                 self._parallel[self._active_parallel]["children"].append(block)
@@ -37,6 +43,19 @@ class TimelineAccumulator:
                 self.timeline.append(block)
             self._text_block = None
             self._think_block = None
+
+        elif event_type == "tool_progress":
+            block = self._tools.get(data["id"])
+            if block:
+                msg = data.get("message") or ""
+                log = block.setdefault("progress_log", [])
+                if isinstance(log, list) and msg:
+                    block["progress_log"] = append_progress_chunk(log, msg)
+                    preview = msg.strip() or block.get("summary") or ""
+                    if preview:
+                        block["summary"] = (
+                            preview if len(preview) < 200 else preview[:200] + "…"
+                        )
 
         elif event_type == "tool_result":
             block = self._tools.get(data["id"])
@@ -50,7 +69,14 @@ class TimelineAccumulator:
                     block["duration_ms"] = data["duration_ms"]
                 if data.get("query"):
                     block["query"] = data["query"]
-                for key in ("question_id", "question", "options", "multi_select"):
+                for key in (
+                    "question_id",
+                    "question",
+                    "options",
+                    "multi_select",
+                    "awaiting_user",
+                    "awaiting_confirm",
+                ):
                     if data.get(key) is not None:
                         block[key] = data[key]
                 for key in ("preview", "reindex_mode", "applied"):
@@ -130,9 +156,12 @@ class TimelineAccumulator:
                 self.total_duration_ms = data["total_duration_ms"]
 
     def assistant_payload(self, status: str, *, error: str | None = None) -> dict:
+        timeline = self.timeline
+        if status == "interrupted":
+            timeline = _mark_running_tools_interrupted(timeline)
         assistant: dict = {
             "text": self.assistant_text,
-            "timeline": self.timeline,
+            "timeline": timeline,
             "sources": self.all_sources,
             "total_duration_ms": self.total_duration_ms,
             "status": status,
@@ -140,3 +169,19 @@ class TimelineAccumulator:
         if error is not None:
             assistant["error"] = error
         return assistant
+
+
+def _mark_running_tools_interrupted(timeline: list[dict]) -> list[dict]:
+    """断流落库时，把仍 running 的工具块标为 interrupted，避免刷新后永远转圈。"""
+
+    def patch(block: dict) -> dict:
+        b = dict(block)
+        if b.get("type") == "tool" and b.get("status") == "running":
+            b["status"] = "interrupted"
+            if not b.get("summary"):
+                b["summary"] = "连接中断，未完成"
+        elif b.get("type") == "parallel":
+            b["children"] = [patch(c) for c in (b.get("children") or [])]
+        return b
+
+    return [patch(block) for block in timeline]

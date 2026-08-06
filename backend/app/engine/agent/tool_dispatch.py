@@ -57,6 +57,11 @@ def build_tool_dispatch(registry: ToolRegistry) -> dict[str, ToolHandler]:
         "ask_user": lambda args, **kw: registry._ask_user(args),
         "manage_memory": _manage_memory,
         "recall_memory": lambda args, **kw: asyncio.to_thread(registry._recall_memory, args),
+        "sandbox_run": lambda args, **kw: registry._sandbox_run(args),
+        "sandbox_job_status": lambda args, **kw: registry._sandbox_job_status(args),
+        "sandbox_list_dir": lambda args, **kw: registry._sandbox_list_dir(args),
+        "sandbox_read_file": lambda args, **kw: registry._sandbox_read_file(args),
+        "publish_from_sandbox": lambda args, **kw: registry._publish_from_sandbox(args),
     }
 
 

@@ -256,6 +256,11 @@ export function ChatMessageRow({
         {m.role === "user" && isInjectedUserMessage(m) && (
             <div className="chat-inject-tag">已插入本轮</div>
           )}
+        {m.role === "assistant" && m.status === "interrupted" && !isLiveStreaming && (
+          <div className="chat-interrupted-note" role="status">
+            本轮因刷新或断线中断；未完成的步骤已标出，可继续发消息或回答待确认项。
+          </div>
+        )}
         {m.role === "user" && renderUserMessageChips(m)}
         {renderMessageContent(
           m,

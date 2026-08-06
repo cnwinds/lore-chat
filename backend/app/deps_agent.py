@@ -18,6 +18,7 @@ from app.index.indexer import Indexer
 from app.engine.memory.service import MemoryService
 from app.engine.web.fetcher import WebFetcher
 from app.engine.web.search import WebSearch
+from app.engine.sandbox.factory import build_sandbox_runtime
 from app.models.llm import LLMClient
 from app.storage.repo import KnowledgeRepo
 
@@ -39,6 +40,13 @@ class AgentSubgraph:
         self.agent.tools.web_search = WebSearch(settings)
         self.agent.tools.fetcher = WebFetcher(
             settings.fetch_url_timeout, settings.fetch_url_max_bytes
+        )
+        from app.engine.sandbox.factory import apply_sandbox_settings
+
+        apply_sandbox_settings(
+            settings,
+            runtime=getattr(self.agent.tools.sandbox, "runtime", None),
+            sandbox_tools=self.agent.tools.sandbox,
         )
         self.chat_runner = ChatSessionRunner(
             self.agent,
@@ -80,6 +88,7 @@ def build_agent_subgraph(
     )
     fetcher = WebFetcher(settings.fetch_url_timeout, settings.fetch_url_max_bytes)
     web_search = WebSearch(settings)
+    sandbox_runtime = build_sandbox_runtime(settings)
     tool_registry = ToolRegistry(
         retriever,
         repo,
@@ -97,6 +106,14 @@ def build_agent_subgraph(
         edit_doc_require_read=settings.edit_doc_require_read,
         conversation_context_max_chars=settings.conversation_context_max_chars,
         memory_service=memory_service,
+        sandbox_runtime=sandbox_runtime,
+    )
+    from app.engine.sandbox.factory import apply_sandbox_settings
+
+    apply_sandbox_settings(
+        settings,
+        runtime=sandbox_runtime,
+        sandbox_tools=tool_registry.sandbox,
     )
     agent = AgentOrchestrator(settings, llm, tool_registry, system_layer=system_layer)
     chat_runner = ChatSessionRunner(agent, conversations)

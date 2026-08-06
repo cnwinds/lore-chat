@@ -17,7 +17,7 @@ import {
   type DocContextItem,
   type SourceRef,
 } from "../../api";
-import { isInjectedUserMessage, kbPathFromToolResult, timelineAwaitsUserAnswer } from "../../utils/chatMessage";
+import { isInjectedUserMessage, kbPathFromToolResult, normalizeLoadedMessage, timelineAwaitsUserAnswer } from "../../utils/chatMessage";
 import { nowIsoDisplay } from "../../utils/displayTime";
 
 export type DocContext = {
@@ -257,7 +257,7 @@ export function useAgentStream({
             onKbChanged?.(kbPathFromToolResult(data));
           }
           if (
-            data.tool === "ask_user" &&
+            (data.tool === "ask_user" || data.tool === "sandbox_run") &&
             data.question_id &&
             Array.isArray(data.options) &&
             (data.options as unknown[]).length > 0
@@ -297,10 +297,12 @@ export function useAgentStream({
             // A queued follow-up turn may already be streaming — do not clobber it.
             if (streamingRef.current) return;
             setMsgs(
-              conv.messages.map((m) => ({
-                ...m,
-                injected: isInjectedUserMessage(m),
-              })),
+              conv.messages.map((m) =>
+                normalizeLoadedMessage({
+                  ...m,
+                  injected: isInjectedUserMessage(m),
+                }),
+              ),
             );
             setSummarized(!!conv.summarized);
             setSummaryPath(conv.summary_path ?? null);

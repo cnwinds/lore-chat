@@ -3,6 +3,7 @@
 stop_reason（agent 层）:
   assistant_reply      — LLM 返回正文，无 tool_calls
   assistant_reply_empty — 无 tool_calls 且正文为空
+  awaiting_user        — ask_user / sandbox_confirm，停等用户选择
   tool_call_limit      — 达到 agent_max_tool_calls
   llm_stream_incomplete — 流式 LLM 未产出 ChatWithToolsResult
   cancelled            — asyncio.CancelledError

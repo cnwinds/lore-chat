@@ -15,7 +15,17 @@ def test_health_public(tmp_path):
     with _raw_client(tmp_path) as c:
         r = c.get("/api/health")
         assert r.status_code == 200
-        assert r.json()["status"] == "ok"
+        body = r.json()
+        assert body["status"] == "ok"
+        assert body["capabilities"]["sandbox"] is False
+
+
+def test_health_sandbox_capability_when_enabled(tmp_path):
+    settings = Settings(kb_path=tmp_path / "knowledge", sandbox_enabled=True)
+    app = create_app(settings=settings, llm=FakeLLMClient(embed_dim=8))
+    with TestClient(app) as c:
+        body = c.get("/api/health").json()
+        assert body["capabilities"]["sandbox"] is True
 
 
 def test_tree_requires_auth(tmp_path):

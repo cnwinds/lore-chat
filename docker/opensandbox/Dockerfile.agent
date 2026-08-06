@@ -1,0 +1,18 @@
+# 固化 Agent 沙箱依赖；构建后替换 opensandbox config 的 execd_image。
+# 国内构建可先配置 Docker registry mirror。
+FROM opensandbox/execd:v1.0.18
+
+USER root
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        ffmpeg \
+        curl \
+        ca-certificates \
+        python3-pip \
+        python3-venv \
+    && rm -rf /var/lib/apt/lists/*
+
+# 可选：预装 Python 包（按 skill 需要增减）
+# RUN pip3 install --no-cache-dir edge-tts
+
+WORKDIR /workspace

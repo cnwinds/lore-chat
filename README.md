@@ -77,10 +77,18 @@ Copy-Item .env.docker.example .env    # 编辑填入 OPENAI_API_KEY
 在项目根目录执行（`--project-directory docker` 与 compose 内相对路径一致；`--env-file .env` 读取根目录配置含 `WEB_PORT`）：
 
 ```powershell
+# 默认：无命令执行能力
 docker compose --project-directory docker --env-file .env -f docker/docker-compose.yml up -d --build
+
+# 带执行能力（叠加 OpenSandbox）
+docker compose --project-directory docker --env-file .env `
+  -f docker/docker-compose.yml -f docker/docker-compose.sandbox.yml up -d --build
+
 docker compose --project-directory docker --env-file .env -f docker/docker-compose.yml logs -f
 docker compose --project-directory docker --env-file .env -f docker/docker-compose.yml down
 ```
+
+`GET /api/health` 的 `capabilities.sandbox` 为 `true` 时表示本实例启用了执行 Runtime（Agent 命令工具后续按此开关装配）。详见 [ADR：OpenSandbox Runtime](docs/adr/2026-08-06-opensandbox-runtime.md)。
 
 ## 数据目录说明
 

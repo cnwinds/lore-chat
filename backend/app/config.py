@@ -75,9 +75,33 @@ class Settings(BaseSettings):
     memory_decay_candidate_days: int = 180
     memory_maintenance_interval_hours: int = 24
 
+    # OpenSandbox 执行 Runtime（可选；默认关闭，见 docker-compose.sandbox.yml）
+    sandbox_enabled: bool = False
+    opensandbox_domain: str = "127.0.0.1:18090"
+    opensandbox_protocol: str = "http"
+    opensandbox_api_key: str | None = None
+    opensandbox_use_server_proxy: bool = False
+    opensandbox_workspace_volume: str = "lorechat-sandbox-workspace"
+    # 信任模式：跳过 sandbox_run 确认门（可经设置 UI 热改；默认开启）
+    sandbox_trust_mode: bool = True
+    # 沙箱软件源：cn=国内镜像（阿里云/npmmirror），global=官方源
+    sandbox_mirror_region: str = "cn"
+
 
 EDITABLE_SETTING_KEYS: frozenset[str] = frozenset(
-    name for name in Settings.model_fields if name != "kb_path"
+    name
+    for name in Settings.model_fields
+    if name
+    not in {
+        "kb_path",
+        # 部署级能力开关：勿经 UI 热改，避免与 Compose 编排脱节
+        "sandbox_enabled",
+        "opensandbox_domain",
+        "opensandbox_protocol",
+        "opensandbox_api_key",
+        "opensandbox_use_server_proxy",
+        "opensandbox_workspace_volume",
+    }
 )
 
 SECRET_SETTING_KEYS: frozenset[str] = frozenset(
@@ -89,6 +113,7 @@ SECRET_SETTING_KEYS: frozenset[str] = frozenset(
         "tavily_api_key",
         "serper_api_key",
         "brave_search_api_key",
+        "opensandbox_api_key",
     }
 )
 

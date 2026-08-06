@@ -8,10 +8,12 @@ READ_ONLY_TOOLS = frozenset({
     "search_kb", "read_doc", "list_kb_structure", "read_conversation_context",
     "fetch_url", "web_search",
     "recall_memory",
+    "sandbox_list_dir", "sandbox_read_file", "sandbox_job_status",
 })
 WRITE_TOOLS = frozenset({
     "write_kb", "delete_kb", "ask_user", "summarize_conversation", "edit_doc",
     "manage_memory", "move_entry",
+    "sandbox_run", "publish_from_sandbox",
 })
 
 _DEFAULT_DISCLOSURE_CHARS = 3000
@@ -36,7 +38,20 @@ TOOL_LABELS = {
     "move_entry": "移动或重命名路径",
     "manage_memory": "管理长期用户记忆",
     "recall_memory": "回忆已确认的用户画像",
+    "sandbox_run": "在沙箱执行命令",
+    "sandbox_list_dir": "列出沙箱目录",
+    "sandbox_read_file": "读取沙箱文件",
+    "publish_from_sandbox": "从沙箱发布到知识库",
+    "sandbox_job_status": "查询沙箱后台任务",
 }
+
+SANDBOX_TOOLS = frozenset({
+    "sandbox_run",
+    "sandbox_list_dir",
+    "sandbox_read_file",
+    "publish_from_sandbox",
+    "sandbox_job_status",
+})
 
 _KB_DIRECTORY_DESC = (
     "相对知识库根的目录，不含首尾斜杠；根目录下文档传空字符串。"
@@ -411,6 +426,136 @@ TOOL_DEFINITIONS: list[dict] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "sandbox_run",
+            "description": (
+                "在服务器持久沙箱中执行 shell 命令（工作目录默认 /workspace）。"
+                "短命令同步返回；background=true 或长耗时会轮询直至结束，并流式上报进度。"
+                "仅在实例启用执行能力时可用。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "command": {
+                        "type": "string",
+                        "description": "要执行的 shell 命令",
+                    },
+                    "cwd": {
+                        "type": "string",
+                        "description": "工作目录，默认 /workspace",
+                        "default": "/workspace",
+                    },
+                    "background": {
+                        "type": "boolean",
+                        "description": "是否按后台 job 轮询（适合长任务）",
+                        "default": False,
+                    },
+                    "timeout_sec": {
+                        "type": "number",
+                        "description": "同步执行超时秒数，默认 120",
+                    },
+                    "confirmed": {
+                        "type": "boolean",
+                        "description": (
+                            "用户已在 UI 确认执行后由系统续跑时置 true；"
+                            "模型勿自行设为 true 以绕过确认"
+                        ),
+                        "default": False,
+                    },
+                },
+                "required": ["command"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "sandbox_job_status",
+            "description": (
+                "查询此前 sandbox_run 返回的后台 execution_id 状态与日志（跨回合续查）。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "execution_id": {
+                        "type": "string",
+                        "description": "sandbox_run 返回的 execution_id",
+                    },
+                },
+                "required": ["execution_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "sandbox_list_dir",
+            "description": "列出沙箱内目录内容（默认 /workspace）",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "绝对路径，默认 /workspace",
+                        "default": "/workspace",
+                    },
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "sandbox_read_file",
+            "description": "读取沙箱内文本文件内容（有长度上限）",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "沙箱内绝对路径，如 /workspace/旁白.md",
+                    },
+                    "max_chars": {
+                        "type": "integer",
+                        "description": "最多返回字符数，默认 50000",
+                    },
+                },
+                "required": ["path"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "publish_from_sandbox",
+            "description": (
+                "将沙箱 /workspace 下的文件显式发布到知识库。"
+                "中间产物不要自动入库；仅最终旁白/分镜/成片等需要归档时调用。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "sandbox_path": {
+                        "type": "string",
+                        "description": "沙箱绝对路径，必须在 /workspace 下",
+                    },
+                    "directory": {
+                        "type": "string",
+                        "description": _KB_DIRECTORY_DESC,
+                    },
+                    "filename": {
+                        "type": "string",
+                        "description": (
+                            "目标文件名；Markdown 用 .md，其它作为附件入库"
+                        ),
+                    },
+                },
+                "required": ["sandbox_path", "directory", "filename"],
+            },
+        },
+    },
 ]
 
 _MODE_NO_WRITE = "no_write"
@@ -421,12 +566,14 @@ def select_tools(
     web_enabled: bool,
     *,
     search_configured: bool = True,
+    sandbox_enabled: bool = False,
 ) -> list[dict]:
-    """按 mode 与联网能力硬门过滤下发给模型的工具集。
+    """按 mode / 联网 / 沙箱能力硬门过滤下发给模型的工具集。
 
     - web_enabled=False 或未配置搜索 provider：移除 web_search（保留 fetch_url）。
     - mode=no_write：移除 write_kb（/api/ask；此前仅靠 prompt 约束，此处收紧为硬门）。
     - mode=force_write：保留 write_kb（/api/ingest 依赖 prompt 强制调用）。
+    - sandbox_enabled=False：移除全部沙箱工具。
 
     /api/chat 使用 mode=default。ingest/ask 为测试与脚本同步 API，见
     docs/superpowers/specs/2026-07-12-ingest-ask-api-design.md
@@ -437,4 +584,7 @@ def select_tools(
     if mode == _MODE_NO_WRITE:
         excluded.add("write_kb")
         excluded.add("manage_memory")
+        excluded.add("publish_from_sandbox")
+    if not sandbox_enabled:
+        excluded |= SANDBOX_TOOLS
     return [d for d in TOOL_DEFINITIONS if d["function"]["name"] not in excluded]

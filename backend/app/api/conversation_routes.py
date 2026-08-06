@@ -23,7 +23,7 @@ async def questions(request: Request):
 async def resolve(qid: str, body: ResolveBody, request: Request):
     c = container(request)
     try:
-        result = c.pending_resolver.resolve(
+        result = await c.pending_resolver.resolve_and_apply(
             PendingResolveInput(
                 qid=qid,
                 choice=body.choice,
@@ -38,6 +38,10 @@ async def resolve(qid: str, body: ResolveBody, request: Request):
         if msg == "对话不存在":
             raise HTTPException(404, msg) from e
         raise HTTPException(400, msg) from e
+    except RuntimeError as e:
+        raise HTTPException(502, str(e)) from e
+    except Exception as e:
+        raise HTTPException(502, f"沙箱执行失败: {e}") from e
     return result.__dict__
 
 

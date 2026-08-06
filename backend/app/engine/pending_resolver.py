@@ -18,7 +18,7 @@ class PendingResolveInput:
 
 
 class PendingResolver:
-    """待决问题决议：合并源删除、Agent 多选、会话标记。"""
+    """待决问题决议：合并源删除、Agent 多选、沙箱确认执行、会话标记。"""
 
     def __init__(
         self,
@@ -28,18 +28,20 @@ class PendingResolver:
         merge_workflow: MergeWorkflow,
         conversations: ConversationStore,
         merge_sessions: MergeSessionStore,
+        sandbox_tools=None,
     ):
         self.pending = pending
         self.organizer = organizer
         self.merge_workflow = merge_workflow
         self.conversations = conversations
         self.merge_sessions = merge_sessions
+        self.sandbox_tools = sandbox_tools
 
     @staticmethod
     def _is_agent_question(q: dict) -> bool:
         payload = q.get("payload", {})
         kind = payload.get("kind")
-        if kind == "agent":
+        if kind in ("agent", "sandbox_confirm"):
             return True
         if kind == "merge_sources":
             return False
@@ -101,6 +103,32 @@ class PendingResolver:
                 pass
 
         return result
+
+    async def resolve_and_apply(
+        self, body: PendingResolveInput
+    ) -> IngestResult | MergeResult:
+        """同步决议；若为沙箱批准则直接执行命令并转为 continue。"""
+        result = self.resolve(body)
+        if not isinstance(result, IngestResult):
+            return result
+        run_args = result.sandbox_run_args
+        if result.status != "sandbox_execute" or not isinstance(run_args, dict):
+            return result
+        if self.sandbox_tools is None:
+            raise RuntimeError("沙箱未启用，无法执行已批准的命令")
+        out = await self.sandbox_tools.sandbox_run(dict(run_args))
+        summary = (out.get("summary") or "").strip() or "(无输出)"
+        return IngestResult(
+            status="continue",
+            rel_path=None,
+            question_id=None,
+            message="沙箱命令已执行",
+            continue_prompt=(
+                "用户已批准，沙箱命令已在后端直接执行完毕。结果如下：\n"
+                f"{summary}\n\n"
+                "请根据以上输出继续任务；不要重复征询或重复执行同一命令。"
+            ),
+        )
 
 
 __all__ = ["PendingResolver", "PendingResolveInput"]

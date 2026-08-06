@@ -1,6 +1,9 @@
 import type { MutableRefObject, RefObject } from "react";
 import { formatDuration, type ChatMessage, type IngestResult, type SourceRef } from "../../api";
-import { expandMessagesForDisplay } from "../../utils/chatMessage";
+import {
+  expandMessagesForDisplay,
+  liveStreamingStatus,
+} from "../../utils/chatMessage";
 import { ChatMessageRow, messageHasBody } from "./ChatMessageRow";
 
 export type ChatMessageListProps = {
@@ -35,6 +38,9 @@ export function ChatMessageList({
   onQuestionResolved,
 }: ChatMessageListProps) {
   const rows = expandMessagesForDisplay(msgs);
+  const statusText = streaming
+    ? liveStreamingStatus(msgs, streamingAssistantIdxRef.current)
+    : null;
 
   return (
     <>
@@ -76,8 +82,10 @@ export function ChatMessageList({
       </div>
       {streaming && (
         <div className="chat-streaming-wrap">
-          <div className="chat-streaming-bar">
-            <span className="chat-streaming-label">思考中…</span>
+          <div className="chat-streaming-bar" title={statusText ?? undefined}>
+            <span className="chat-streaming-label">
+              {statusText ? statusText : "思考中…"}
+            </span>
             {liveElapsedMs > 0 && (
               <span className="chat-streaming-duration">
                 用时 {formatDuration(liveElapsedMs)}

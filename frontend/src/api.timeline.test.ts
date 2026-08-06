@@ -62,3 +62,55 @@ describe("updateTimeline user_inject", () => {
     });
   });
 });
+
+describe("updateTimeline tool_progress", () => {
+  it("appends progress_log while tool is running", () => {
+    let timeline = updateTimeline([], "tool_start", {
+      id: "1",
+      tool: "sandbox_run",
+      label: "run",
+      ts: "t0",
+      input: { command: "echo hi" },
+    });
+    timeline = updateTimeline(timeline, "tool_progress", {
+      id: "1",
+      tool: "sandbox_run",
+      message: "tick",
+      ts: "t1",
+    });
+    const block = timeline[0];
+    expect(block.type).toBe("tool");
+    if (block.type === "tool") {
+      expect(block.query).toBe("echo hi");
+      expect(block.progress_log).toEqual(["tick"]);
+      expect(block.summary).toBe("tick");
+    }
+  });
+
+  it("concatenates streaming chunks into one buffer", () => {
+    let timeline = updateTimeline([], "tool_start", {
+      id: "1",
+      tool: "sandbox_run",
+      label: "run",
+      ts: "t0",
+      input: { command: "ls" },
+    });
+    timeline = updateTimeline(timeline, "tool_progress", {
+      id: "1",
+      message: "$ ls\n",
+    });
+    timeline = updateTimeline(timeline, "tool_progress", {
+      id: "1",
+      message: "a",
+    });
+    timeline = updateTimeline(timeline, "tool_progress", {
+      id: "1",
+      message: "b\n",
+    });
+    const block = timeline[0];
+    expect(block.type).toBe("tool");
+    if (block.type === "tool") {
+      expect(block.progress_log).toEqual(["$ ls\nab\n"]);
+    }
+  });
+});

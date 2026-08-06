@@ -15,6 +15,7 @@ from app.engine.agent.events import (
     parallel_batch_start,
     text_delta,
     think_delta,
+    tool_progress,
     tool_start,
     user_inject,
 )
@@ -27,6 +28,7 @@ from app.engine.agent.tools import (
     ToolRegistry,
     can_parallelize,
 )
+from app.engine.sandbox.progress import bind_progress_queue, reset_progress_queue
 from app.engine.source_key import extend_sources
 from app.logging_config import get_logger
 from app.models.llm import ChatWithToolsResult, LLMClient, ToolCall
@@ -35,6 +37,15 @@ _log = get_logger("agent.tool_loop")
 
 _LIMIT_MSG = "（已达工具调用上限，以上为目前能给出的结论。）"
 _NON_SERIALIZABLE_KEYS = frozenset({"hits", "ingest_result"})
+
+
+def tool_awaits_user(out: dict) -> bool:
+    """工具结果是否要求本轮停下来等用户（ask_user / sandbox_confirm）。"""
+    if out.get("awaiting_user") or out.get("awaiting_confirm"):
+        return True
+    qid = out.get("question_id")
+    options = out.get("options")
+    return bool(qid) and isinstance(options, list) and len(options) > 0
 
 
 class AgentToolLoop:
@@ -112,6 +123,7 @@ class AgentToolLoop:
                 if result.tool_calls:
                     report.last_tool_names = [tc.name for tc in result.tool_calls]
                     turn_outputs: list[tuple[ToolCall, dict, int]] = []
+                    awaiting_user = False
                     batches = self._split_batches(result.tool_calls)
                     for batch in batches:
                         names = [tc.name for tc in batch]
@@ -120,6 +132,7 @@ class AgentToolLoop:
                             and self.settings.agent_parallel_tools
                             and can_parallelize(names)
                         ):
+                            batch_outputs: list[tuple[ToolCall, dict, int]] = []
                             async for ev, entry in self._run_parallel_batch(
                                 batch,
                                 active_doc_path=tool_active_doc_path,
@@ -127,10 +140,14 @@ class AgentToolLoop:
                             ):
                                 yield ev
                                 if entry is not None:
+                                    batch_outputs.append(entry)
                                     turn_outputs.append(entry)
                                     extend_sources(
                                         all_sources, entry[1].get("sources", [])
                                     )
+                            if any(tool_awaits_user(out) for _, out, _ in batch_outputs):
+                                awaiting_user = True
+                                break
                         else:
                             for tc in batch:
                                 yield tool_start(
@@ -139,17 +156,41 @@ class AgentToolLoop:
                                     TOOL_LABELS[tc.name],
                                     tc.arguments,
                                 )
-                                out, duration_ms = await self._execute_tool(
+                                out = None
+                                duration_ms = 0
+                                async for kind, payload in self._execute_tool_stream(
                                     tc,
                                     active_doc_path=tool_active_doc_path,
                                     conversation_id=conversation_id,
-                                )
+                                ):
+                                    if kind == "progress":
+                                        yield tool_progress(
+                                            tc.id,
+                                            tc.name,
+                                            payload.get("message", ""),
+                                            **{
+                                                k: v
+                                                for k, v in payload.items()
+                                                if k != "message"
+                                            },
+                                        )
+                                    else:
+                                        out, duration_ms = payload
+                                assert out is not None
                                 yield emit_tool_result_sse(tc, out, duration_ms)
                                 turn_outputs.append((tc, out, duration_ms))
                                 extend_sources(all_sources, out.get("sources", []))
+                                if tool_awaits_user(out):
+                                    awaiting_user = True
+                                    break
+                        if awaiting_user:
+                            break
 
                     self._append_tool_turn(messages, result, turn_outputs)
-                    tool_call_count += len(result.tool_calls)
+                    tool_call_count += len(turn_outputs)
+                    if awaiting_user:
+                        report.stop_reason = "awaiting_user"
+                        break
                     async for ev in self._drain_injects(
                         messages,
                         turn_id=turn_id,
@@ -241,22 +282,78 @@ class AgentToolLoop:
         active_doc_path: str | None = None,
         conversation_id: str | None = None,
     ) -> tuple[dict, int]:
-        t0 = time.monotonic()
-        try:
-            out = await self.tools.execute(
-                tc.name,
-                tc.arguments,
-                active_doc_path=active_doc_path,
-                conversation_id=conversation_id,
-            )
-        except Exception as e:
-            out = {
-                "summary": f"工具执行失败：{e}",
-                "sources": [],
-                "error": str(e),
-            }
-        duration_ms = int((time.monotonic() - t0) * 1000)
+        out = None
+        duration_ms = 0
+        async for kind, payload in self._execute_tool_stream(
+            tc,
+            active_doc_path=active_doc_path,
+            conversation_id=conversation_id,
+        ):
+            if kind == "result":
+                out, duration_ms = payload
+        assert out is not None
         return out, duration_ms
+
+    async def _execute_tool_stream(
+        self,
+        tc: ToolCall,
+        *,
+        active_doc_path: str | None = None,
+        conversation_id: str | None = None,
+    ) -> AsyncIterator[tuple[str, object]]:
+        """Yield ('progress', dict) then ('result', (out, duration_ms))."""
+        t0 = time.monotonic()
+        queue: asyncio.Queue = asyncio.Queue()
+        token = bind_progress_queue(queue)
+
+        async def _run() -> dict:
+            try:
+                return await self.tools.execute(
+                    tc.name,
+                    tc.arguments,
+                    active_doc_path=active_doc_path,
+                    conversation_id=conversation_id,
+                )
+            except Exception as e:
+                return {
+                    "summary": f"工具执行失败：{e}",
+                    "sources": [],
+                    "error": str(e),
+                }
+
+        task = asyncio.create_task(_run())
+        try:
+            while True:
+                if task.done() and queue.empty():
+                    break
+                try:
+                    item = await asyncio.wait_for(queue.get(), timeout=0.15)
+                    yield "progress", item
+                except asyncio.TimeoutError:
+                    if task.done():
+                        # drain remaining
+                        while not queue.empty():
+                            yield "progress", queue.get_nowait()
+                        break
+            out = await task
+        except asyncio.CancelledError:
+            if not task.done():
+                task.cancel()
+                try:
+                    await task
+                except (asyncio.CancelledError, Exception):
+                    pass
+            raise
+        finally:
+            if not task.done():
+                task.cancel()
+                try:
+                    await task
+                except (asyncio.CancelledError, Exception):
+                    pass
+            reset_progress_queue(token)
+        duration_ms = int((time.monotonic() - t0) * 1000)
+        yield "result", (out, duration_ms)
 
     async def _run_parallel_batch(
         self,
@@ -349,6 +446,8 @@ class AgentToolLoop:
         result: ChatWithToolsResult,
         outputs: list[tuple[ToolCall, dict, int]],
     ) -> None:
+        # 仅写入已执行的 tool_calls（征询中途停下时可能只跑了部分）
+        executed = [tc for tc, _, _ in outputs]
         messages.append(
             {
                 "role": "assistant",
@@ -362,7 +461,7 @@ class AgentToolLoop:
                             "arguments": json.dumps(tc.arguments, ensure_ascii=False),
                         },
                     }
-                    for tc in result.tool_calls
+                    for tc in executed
                 ],
             }
         )

@@ -601,7 +601,7 @@ class ConversationStore:
                 for block in blocks:
                     if (
                         block.get("type") == "tool"
-                        and block.get("tool") == "ask_user"
+                        and block.get("tool") in ("ask_user", "sandbox_run")
                         and block.get("question_id") == question_id
                     ):
                         block["choice_resolved"] = choice_label
@@ -1046,7 +1046,10 @@ class ConversationStore:
                     lines.append(f"助手：{text[:800]}")
                 elif msg.get("timeline"):
                     for block in msg["timeline"]:
-                        if block.get("type") == "tool" and block.get("tool") == "ask_user":
+                        if block.get("type") == "tool" and block.get("tool") in (
+                            "ask_user",
+                            "sandbox_run",
+                        ):
                             q = block.get("question") or block.get("summary") or ""
                             if q:
                                 lines.append(f"助手征询：{q}")

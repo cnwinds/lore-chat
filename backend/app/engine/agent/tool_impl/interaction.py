@@ -25,4 +25,6 @@ class InteractionTools:
             "question_id": qid,
             "question": question,
             "options": options,
+            "multi_select": multi_select,
+            "awaiting_user": True,
         }

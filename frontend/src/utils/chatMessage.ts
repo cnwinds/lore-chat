@@ -1,5 +1,8 @@
 import type { ChatMessage, SourceRef, TimelineBlock } from "../api";
 import { formatMessageTime } from "./displayTime";
+import { isNoiseProgressLine } from "./progressLog";
+
+export { isNoiseProgressLine };
 
 export function kbPathFromToolResult(
   data: Record<string, unknown>,
@@ -25,8 +28,10 @@ export function isInjectedUserMessage(m: ChatMessage): boolean {
 function toolBlockAwaitsUser(
   block: Extract<TimelineBlock, { type: "tool" }>,
 ): boolean {
+  const confirmTool =
+    block.tool === "ask_user" || block.tool === "sandbox_run";
   return (
-    block.tool === "ask_user" &&
+    confirmTool &&
     block.status === "done" &&
     !block.choice_resolved &&
     !!block.question_id &&
@@ -49,6 +54,104 @@ export function timelineAwaitsUserAnswer(
     }
   }
   return false;
+}
+
+/** 刷新/重载后：把仍标 running 的工具收成 interrupted，避免永远转圈。 */
+export function normalizeLoadedTimeline(
+  timeline: TimelineBlock[] | undefined,
+): TimelineBlock[] | undefined {
+  if (!timeline?.length) return timeline;
+
+  function patch(block: TimelineBlock): TimelineBlock {
+    if (block.type === "tool" && block.status === "running") {
+      return {
+        ...block,
+        status: "interrupted",
+        summary: block.summary || "连接中断，未完成",
+      };
+    }
+    if (block.type === "parallel") {
+      return { ...block, children: block.children.map(patch) };
+    }
+    return block;
+  }
+  return timeline.map(patch);
+}
+
+export function normalizeLoadedMessage(m: ChatMessage): ChatMessage {
+  if (!m.timeline?.length) return m;
+  const timeline = normalizeLoadedTimeline(m.timeline);
+  if (!timeline || timeline === m.timeline) return m;
+  const hasInterrupted = timeline.some(
+    (b) =>
+      (b.type === "tool" && b.status === "interrupted") ||
+      (b.type === "parallel" &&
+        b.children.some((c) => c.type === "tool" && c.status === "interrupted")),
+  );
+  return {
+    ...m,
+    timeline,
+    status: m.status === "interrupted" || hasInterrupted ? "interrupted" : m.status,
+  };
+}
+
+function latestMeaningfulProgress(
+  block: Extract<TimelineBlock, { type: "tool" }>,
+): string | undefined {
+  const log = block.progress_log;
+  if (log?.length) {
+    for (let i = log.length - 1; i >= 0; i--) {
+      const line = (log[i] || "").trim();
+      if (line && !isNoiseProgressLine(line)) return line;
+    }
+  }
+  if (block.summary && !isNoiseProgressLine(block.summary)) {
+    return block.summary.trim();
+  }
+  if (block.query) {
+    return block.tool === "sandbox_run" ? `$ ${block.query}` : block.query;
+  }
+  return block.label;
+}
+
+/** 流式控制条文案：当前正在跑的工具最新输出。 */
+export function liveStreamingStatus(
+  msgs: ChatMessage[],
+  streamingAssistantIdx: number | null,
+): string | null {
+  const candidates: ChatMessage[] = [];
+  if (
+    streamingAssistantIdx != null &&
+    streamingAssistantIdx >= 0 &&
+    streamingAssistantIdx < msgs.length
+  ) {
+    candidates.push(msgs[streamingAssistantIdx]);
+  }
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    if (msgs[i].role === "assistant") {
+      if (!candidates.includes(msgs[i])) candidates.push(msgs[i]);
+      break;
+    }
+  }
+  for (const msg of candidates) {
+    const timeline = msg.timeline;
+    if (!timeline?.length) continue;
+    for (let i = timeline.length - 1; i >= 0; i--) {
+      const block = timeline[i];
+      if (block.type === "tool" && block.status === "running") {
+        return latestMeaningfulProgress(block) ?? null;
+      }
+      if (block.type === "parallel") {
+        for (let j = block.children.length - 1; j >= 0; j--) {
+          const child = block.children[j];
+          if (child.type === "tool" && child.status === "running") {
+            return latestMeaningfulProgress(child) ?? null;
+          }
+        }
+      }
+    }
+  }
+  return null;
 }
 
 export type ChatDisplayRow = {

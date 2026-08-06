@@ -160,10 +160,19 @@ class ChatSessionRunner:
             turn_status = "interrupted"
             detail = "asyncio.CancelledError (client closed SSE or server shutdown)"
 
+            async def _interrupt_sandbox() -> None:
+                rt = getattr(getattr(self.agent.tools, "sandbox", None), "runtime", None)
+                if rt is not None and hasattr(rt, "interrupt_all"):
+                    try:
+                        await rt.interrupt_all()
+                    except Exception:
+                        _log.warning("interrupt sandbox on disconnect failed", exc_info=True)
+
             def _finalize_partial() -> None:
                 if acc.timeline or acc.assistant_text:
                     _finalize("interrupted")
 
+            await asyncio.shield(_interrupt_sandbox())
             await asyncio.shield(asyncio.to_thread(_finalize_partial))
             raise
         except Exception as e:
