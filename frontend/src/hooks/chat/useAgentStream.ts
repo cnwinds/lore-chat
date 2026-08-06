@@ -17,7 +17,7 @@ import {
   type DocContextItem,
   type SourceRef,
 } from "../../api";
-import { isInjectedUserMessage, kbPathFromToolResult } from "../../utils/chatMessage";
+import { isInjectedUserMessage, kbPathFromToolResult, timelineAwaitsUserAnswer } from "../../utils/chatMessage";
 import { nowIsoDisplay } from "../../utils/displayTime";
 
 export type DocContext = {
@@ -30,6 +30,8 @@ export type StreamEndInfo = {
   failed: boolean;
   aborted: boolean;
   conversationId: string | null;
+  /** Turn ended with an unanswered ask_user — do not auto-flush the send queue. */
+  awaitingUser?: boolean;
 };
 
 type UseAgentStreamOptions = {
@@ -188,6 +190,7 @@ export function useAgentStream({
 
     let streamFailed = false;
     let aborted = false;
+    let awaitingUser = false;
     let cid: string | null = null;
     try {
       cid = await ensureConversationId();
@@ -240,6 +243,7 @@ export function useAgentStream({
               msg.total_duration_ms = data.total_duration_ms as number;
             }
             msg.ts = nowIsoDisplay();
+            awaitingUser = timelineAwaitsUserAnswer(msg.timeline);
           }
           return msg;
         });
@@ -251,6 +255,14 @@ export function useAgentStream({
             )
           ) {
             onKbChanged?.(kbPathFromToolResult(data));
+          }
+          if (
+            data.tool === "ask_user" &&
+            data.question_id &&
+            Array.isArray(data.options) &&
+            (data.options as unknown[]).length > 0
+          ) {
+            awaitingUser = true;
           }
         }
       }
@@ -275,6 +287,7 @@ export function useAgentStream({
       onStreamEndRef.current?.({
         failed: streamFailed,
         aborted,
+        awaitingUser: !streamFailed && !aborted && awaitingUser,
         conversationId: endCid,
       });
       if (endCid && !streamFailed && !aborted) {

@@ -112,7 +112,11 @@ export function Chat({
   const maybeInjectFrontRef = useRef<() => Promise<void>>(async () => {});
 
   const handleStreamEnd = useCallback(
-    (info: { failed: boolean; aborted: boolean }) => {
+    (info: {
+      failed: boolean;
+      aborted: boolean;
+      awaitingUser?: boolean;
+    }) => {
       if (info.failed || info.aborted) {
         sendQueue.setPaused(true);
         const pending = pendingGroupRef.current;
@@ -140,6 +144,11 @@ export function Chat({
       }
       pendingGroupRef.current = null;
       flushingRef.current = false;
+      if (info.awaitingUser) {
+        // Model asked the user a question — hold the queue until they answer.
+        sendQueue.setPaused(true);
+        return;
+      }
       queueMicrotask(() => {
         void flushQueueRef.current();
       });
@@ -568,18 +577,28 @@ export function Chat({
     refreshKb(result.rel_path ?? undefined);
 
     if (result.status === "continue" && result.continue_prompt) {
+      // Answering unpauses; the follow-up stream will auto-flush on done
+      // unless it asks another question.
+      sendQueue.setPaused(false);
+      pausedRef.current = false;
       if (streaming || sendQueue.items.length > 0) {
         sendQueue.enqueue({
           text: result.continue_prompt,
           timing: "defer",
           webEnabled,
         });
-        if (!streaming && !sendQueue.paused) void flushQueue();
+        if (!streaming) void flushQueue();
       } else {
         void runAgentStream(result.continue_prompt, choiceLabel);
       }
       return;
     }
+    // Resume deferred queue after the user answered.
+    sendQueue.setPaused(false);
+    pausedRef.current = false;
+    queueMicrotask(() => {
+      void flushQueueRef.current();
+    });
     if (result.status === "saved" && result.message) {
       setMsgs((m) => [
         ...m,

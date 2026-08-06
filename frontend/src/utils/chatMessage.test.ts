@@ -4,6 +4,7 @@ import {
   markToolBlockResolved,
   kbPathFromToolResult,
   expandMessagesForDisplay,
+  timelineAwaitsUserAnswer,
 } from "./chatMessage";
 import type { ChatMessage } from "../api";
 
@@ -99,5 +100,39 @@ describe("expandMessagesForDisplay", () => {
     });
     expect(rows[1].message.timeline?.map((b) => b.type)).toEqual(["tool"]);
     expect(rows[3].message.timeline?.map((b) => b.type)).toEqual(["text"]);
+  });
+});
+
+describe("timelineAwaitsUserAnswer", () => {
+  it("detects unanswered ask_user blocks", () => {
+    expect(
+      timelineAwaitsUserAnswer([
+        {
+          type: "tool",
+          id: "t1",
+          tool: "ask_user",
+          label: "征询",
+          ts: "t",
+          status: "done",
+          question_id: "q1",
+          options: [{ id: "a", label: "A" }],
+        },
+      ]),
+    ).toBe(true);
+    expect(
+      timelineAwaitsUserAnswer([
+        {
+          type: "tool",
+          id: "t1",
+          tool: "ask_user",
+          label: "征询",
+          ts: "t",
+          status: "done",
+          question_id: "q1",
+          options: [{ id: "a", label: "A" }],
+          choice_resolved: "A",
+        },
+      ]),
+    ).toBe(false);
   });
 });

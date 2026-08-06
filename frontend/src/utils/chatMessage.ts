@@ -22,6 +22,35 @@ export function isInjectedUserMessage(m: ChatMessage): boolean {
   );
 }
 
+function toolBlockAwaitsUser(
+  block: Extract<TimelineBlock, { type: "tool" }>,
+): boolean {
+  return (
+    block.tool === "ask_user" &&
+    block.status === "done" &&
+    !block.choice_resolved &&
+    !!block.question_id &&
+    Array.isArray(block.options) &&
+    block.options.length > 0
+  );
+}
+
+/** True when the turn left an unanswered ask_user prompt. */
+export function timelineAwaitsUserAnswer(
+  timeline: TimelineBlock[] | undefined,
+): boolean {
+  if (!timeline?.length) return false;
+  for (const block of timeline) {
+    if (block.type === "tool" && toolBlockAwaitsUser(block)) return true;
+    if (block.type === "parallel") {
+      for (const child of block.children) {
+        if (child.type === "tool" && toolBlockAwaitsUser(child)) return true;
+      }
+    }
+  }
+  return false;
+}
+
 export type ChatDisplayRow = {
   key: string;
   message: ChatMessage;
