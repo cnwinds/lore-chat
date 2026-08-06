@@ -70,6 +70,10 @@ class InjectBody(BaseModel):
     attachments: list[str] = []
 
 
+class StopChatBody(BaseModel):
+    conversation_id: str
+
+
 class AppendMessagesBody(BaseModel):
     messages: list[dict]
 

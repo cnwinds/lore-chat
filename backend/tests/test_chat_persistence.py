@@ -106,7 +106,8 @@ def test_history_excludes_current_user_message(tmp_path):
     assert history_before != history_after
 
 
-def test_chat_cancelled_finalizes_interrupted(client, monkeypatch):
+def test_chat_agent_cancelled_finalizes_interrupted(client, monkeypatch):
+    """Agent Task 内 CancelledError（显式 stop 路径）应落库 interrupted。"""
     cid = client.post("/api/conversations", json={"title": "t"}).json()["id"]
     container = client.app.state.container
 
@@ -132,6 +133,54 @@ def test_chat_cancelled_finalizes_interrupted(client, monkeypatch):
     assert msgs[1]["role"] == "assistant"
     assert msgs[1]["status"] == "interrupted"
     assert msgs[1]["text"] == "部分回复"
+
+
+def test_chat_stop_endpoint(client, monkeypatch):
+    cid = client.post("/api/conversations", json={"title": "t"}).json()["id"]
+    container = client.app.state.container
+
+    async def slow_run(self, user_text, **kwargs):
+        yield text_delta("running…")
+        await asyncio.sleep(3600)
+
+    monkeypatch.setattr(type(container.agent), "run", slow_run, raising=True)
+
+    import threading
+    import time
+
+    err: list[BaseException] = []
+
+    def post_chat():
+        try:
+            client.post(
+                "/api/chat",
+                json={
+                    "text": "你好",
+                    "conversation_id": cid,
+                    "client_message_id": "cli-stop",
+                },
+            )
+        except BaseException as e:
+            err.append(e)
+
+    t = threading.Thread(target=post_chat, daemon=True)
+    t.start()
+    for _ in range(100):
+        if container.chat_runner.turn_hub.get_active(cid):
+            break
+        time.sleep(0.05)
+    assert container.chat_runner.turn_hub.get_active(cid)
+
+    r = client.post("/api/chat/stop", json={"conversation_id": cid})
+    assert r.status_code == 200
+    assert r.json()["status"] == "stopping"
+    t.join(timeout=10)
+
+    conv = client.get(f"/api/conversations/{cid}").json()
+    assert conv.get("active_turn") is None
+    assistant = [m for m in conv["messages"] if m["role"] == "assistant"]
+    assert assistant
+    assert assistant[-1]["status"] == "interrupted"
 
 
 def test_finalize_turn_interrupted_directly(tmp_path):

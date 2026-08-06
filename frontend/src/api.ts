@@ -491,6 +491,12 @@ export function titleFromText(text: string): string {
 export type Conversation = ConversationSummary & {
   messages: ChatMessage[];
   summarized_at?: string | null;
+  active_turn_id?: string | null;
+  active_turn?: {
+    turn_id: string;
+    status: string;
+    started_at?: string;
+  } | null;
 };
 
 /** @deprecated Use {@link chatStream} — /api/chat returns SSE; product UI only. */
@@ -571,6 +577,15 @@ export async function* chatStream(
   if (!r.body) {
     throw new Error("响应缺少可读流");
   }
+  yield* readSseResponse(r);
+}
+
+async function* readSseResponse(
+  r: Response,
+): AsyncGenerator<ChatStreamEvent> {
+  if (!r.body) {
+    throw new Error("响应缺少可读流");
+  }
   const reader = r.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
@@ -608,7 +623,6 @@ export async function* chatStream(
       }
     }
 
-    // flush 尾部残留（末尾未以空行结束的完整事件块）
     buffer += decoder.decode();
     if (buffer.trim()) {
       const evt = parseEventBlock(buffer);
@@ -621,6 +635,49 @@ export async function* chatStream(
       /* ignore */
     }
   }
+}
+
+export async function* observeActiveTurnStream(
+  conversationId: string,
+  options: { afterSeq?: number; signal?: AbortSignal } = {},
+): AsyncGenerator<ChatStreamEvent> {
+  const params = new URLSearchParams();
+  if (options.afterSeq !== undefined) {
+    params.set("after_seq", String(options.afterSeq));
+  }
+  const qs = params.toString();
+  const r = await fetch(
+    `${BASE}/api/conversations/${encodeURIComponent(conversationId)}/turns/active/stream${qs ? `?${qs}` : ""}`,
+    {
+      method: "GET",
+      credentials: "include",
+      headers: { Accept: "text/event-stream" },
+      signal: options.signal,
+    },
+  );
+  if (!r.ok) {
+    let detail = r.statusText;
+    try {
+      detail = (await r.text()) || detail;
+    } catch {
+      /* ignore */
+    }
+    const err = new Error(detail || `请求失败 (${r.status})`) as ApiError;
+    err.status = r.status;
+    if (r.status === 401) {
+      window.dispatchEvent(new CustomEvent("auth:unauthorized"));
+    }
+    throw err;
+  }
+  yield* readSseResponse(r);
+}
+
+export function stopChat(conversationId: string) {
+  return apiFetch<{ status: string; conversation_id: string }>("/api/chat/stop", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ conversation_id: conversationId }),
+  });
 }
 
 export type ChatInjectBody = {

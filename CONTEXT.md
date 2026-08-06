@@ -7,7 +7,7 @@
 | 层 | 路径 | 职责 |
 |----|------|------|
 | HTTP | `backend/app/api/routes.py` | 鉴权、DTO、StreamingResponse；**不**解析 Agent SSE |
-| 聊天 | `backend/app/engine/chat/` | `ChatSessionRunner`、时间线累积、SSE 解析 |
+| 聊天 | `backend/app/engine/chat/` | `TurnExecutionHub`（后台执行）、`ChatSessionRunner`（观测/注入 facade）、时间线、SSE |
 | Agent | `backend/app/engine/agent/` | `AgentOrchestrator`（adapter）、`AgentToolLoop`（LLM+工具循环）、`tool_catalog`、`tool_impl/*`（执行）、`tools.py`（ToolRegistry 组装） |
 | 会话 | `backend/app/engine/conversations.py` + `conversation/outbox.py` | SQLite 消息/turn；派生任务队列 |
 | 知识写入 | `backend/app/engine/knowledge_writer.py` | 路径 + git + 索引 + changelog **唯一写入 seam**；`import_entry` / `move_entry` / `delete_entry`（含附件） |
@@ -25,7 +25,7 @@
 `backend/app/deps.py` 的 `Container` 持有各运行时模块；构图拆为子图（`deps_index.py` / `deps_memory.py` / `deps_agent.py`），`apply_settings` 经子图 `rebind_llm` 热更新。
 
 - `knowledge_writer` → 注入 `Organizer`、`ToolRegistry`、`MemoryService`（记忆投影不入 KB 检索）；**须为同一实例**
-- `chat_runner: ChatSessionRunner` → 注入 `agent` + `conversations`；路由用 `c.chat_runner`
+- `chat_runner: ChatSessionRunner` → 持有 `turn_hub` + `agent` + `conversations`；路由用 `c.chat_runner`（观测/stop/inject）
 - `derivation_worker` / `memory_worker` → 消费 `ConversationStore.claim_outbox`
 
 `apply_settings()` 会重建 `chat_runner`（agent/llm 热更新后仍指向同一 conversations）。
@@ -45,10 +45,11 @@
 ## 聊天持久化
 
 1. `begin_turn` → 写入用户消息 + running turn  
-2. `ChatSessionRunner.stream_and_persist` → 累积 SSE → `finalize_turn`  
-3. Outbox：`index_fts` / `index_vector` / `observe_memory`
+2. `TurnExecutionHub.ensure_running` → 进程内 Task 跑 Agent；SSE 仅 `subscribe` 观测（断开不取消执行）  
+3. `done` / 显式 `POST /api/chat/stop` / 启动孤儿回收 → `finalize_turn`  
+4. Outbox：`index_fts` / `index_vector` / `observe_memory`
 
-无 `conversation_id` 时仅 `stream_ephemeral`，不落库。
+无 `conversation_id` 时仅 `stream_ephemeral`，不落库（仍跟连接走）。
 
 ## 运行数据（Docker）
 

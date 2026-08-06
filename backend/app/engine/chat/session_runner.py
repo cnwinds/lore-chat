@@ -1,33 +1,44 @@
 from __future__ import annotations
 
-import asyncio
-import logging
-import time
-import uuid
 from collections.abc import AsyncIterator
 
 from app.engine.agent.events import done, error_event, text_delta, think_delta
 from app.engine.agent.prompts import MODE_DEFAULT, MODE_FORCE_WRITE, MODE_NO_WRITE
-from app.engine.agent.run_report import AgentRunReport
 from app.engine.chat.sse import parse_agent_sse_event
-from app.engine.chat.timeline import TimelineAccumulator
+from app.engine.chat.turn_hub import TurnExecutionHub, TurnRunSpec
 from app.engine.chat.turn_inject import PendingInject, TurnInjectBroker
-from app.logging_config import get_logger
-
-_log = get_logger("chat.session")
 
 
 class ChatSessionRunner:
-    """Agent 运行与 SSE 持久化的 deep module；HTTP 层只做 adapter。"""
+    """Agent 运行与观测通道的 deep module；HTTP 层只做 adapter。
 
-    def __init__(self, agent, conversations, inject_broker: TurnInjectBroker | None = None):
+    有 conversation_id 的回合由 TurnExecutionHub 在后台 Task 中执行；
+    SSE 仅 subscribe，断开不影响执行。
+    """
+
+    def __init__(
+        self,
+        agent,
+        conversations,
+        inject_broker: TurnInjectBroker | None = None,
+        turn_hub: TurnExecutionHub | None = None,
+    ):
         self.agent = agent
         self.conversations = conversations
         self.inject_broker = inject_broker or TurnInjectBroker()
+        self.turn_hub = turn_hub or TurnExecutionHub(
+            agent, conversations, inject_broker=self.inject_broker
+        )
+        # Keep broker shared if hub was injected with a different one
+        if turn_hub is not None:
+            self.inject_broker = self.turn_hub.inject_broker
 
     def enqueue_inject(self, conversation_id: str, item: PendingInject) -> str:
         """Queue a mid-turn user inject for the active turn. Raises KeyError if none."""
         return self.inject_broker.enqueue(conversation_id, item)
+
+    def request_stop(self, conversation_id: str) -> bool:
+        return self.turn_hub.request_stop(conversation_id)
 
     async def stream_ephemeral(
         self,
@@ -75,150 +86,35 @@ class ChatSessionRunner:
         primary_doc: str | None,
         web_enabled: bool,
     ) -> AsyncIterator[str]:
-        acc = TimelineAccumulator()
-        assistant_saved = False
-        cid = conversation_id
-        turn_id = turn["turn_id"]
-        run_id = uuid.uuid4().hex[:8]
-        started = time.monotonic()
-        stop_reason = "unknown"
-        done_seen = False
-        turn_status: str | None = None
-        detail: str | None = None
-
-        _log.info(
-            "chat run start cid=%s turn_id=%s run_id=%s",
-            cid,
-            turn_id,
-            run_id,
+        """Start (or attach to) background turn execution and observe SSE events."""
+        spec = TurnRunSpec(
+            text=text,
+            history=history,
+            doc_paths=doc_paths,
+            skill_roots=skill_roots,
+            primary_doc=primary_doc,
+            web_enabled=web_enabled,
         )
+        self.turn_hub.ensure_running(conversation_id, turn, spec)
+        async for ev in self.turn_hub.subscribe(
+            conversation_id, turn["turn_id"], after_seq=0
+        ):
+            yield ev
 
-        def _finalize(status: str, error: str | None = None) -> None:
-            nonlocal assistant_saved
-            if assistant_saved:
-                return
-            assistant = acc.assistant_payload(status, error=error)
-            has_content = bool(
-                assistant.get("text")
-                or assistant.get("timeline")
-                or assistant.get("sources")
-                or assistant.get("error")
-            )
-            if status == "complete" and not has_content:
-                _log.warning(
-                    "chat empty assistant cid=%s turn_id=%s timeline_blocks=%d text_len=%d",
-                    cid,
-                    turn_id,
-                    len(acc.timeline),
-                    len(acc.assistant_text),
-                )
-            self.conversations.finalize_turn(cid, turn_id=turn_id, assistant=assistant)
-            assistant_saved = True
-
-        def _on_inject_applied(item: PendingInject) -> str:
-            msg = self.conversations.append_injected_user_message(
-                cid,
-                text=item.text,
-                client_message_id=item.client_message_id,
-                doc_context=item.doc_context,
-                primary_doc=item.primary_doc,
-                attachments=item.attachments,
-            )
-            return msg["id"]
-
-        self.inject_broker.register_turn(cid, turn_id)
-        try:
-            async for ev in self.agent.run(
-                text,
-                mode=MODE_DEFAULT,
-                active_doc_path=primary_doc,
-                active_doc_paths=doc_paths,
-                primary_doc_path=primary_doc,
-                skill_roots=skill_roots,
-                history=history,
-                conversation_id=cid,
-                turn_id=turn_id,
-                run_id=run_id,
-                web_enabled=web_enabled,
-                inject_broker=self.inject_broker,
-                on_inject_applied=_on_inject_applied,
-            ):
-                parsed = parse_agent_sse_event(ev)
-                if parsed:
-                    acc.accumulate(*parsed)
-                    if parsed[0] == "done":
-                        done_seen = True
-                        stop_reason = "turn_complete"
-                        turn_status = "complete"
-                        _finalize("complete")
-                yield ev
-            if not done_seen and stop_reason == "unknown":
-                stop_reason = "agent_finished_without_done"
-                detail = "agent generator ended without done SSE event"
-        except asyncio.CancelledError:
-            stop_reason = "client_disconnect"
-            turn_status = "interrupted"
-            detail = "asyncio.CancelledError (client closed SSE or server shutdown)"
-
-            async def _interrupt_sandbox() -> None:
-                rt = getattr(getattr(self.agent.tools, "sandbox", None), "runtime", None)
-                if rt is not None and hasattr(rt, "interrupt_all"):
-                    try:
-                        await rt.interrupt_all()
-                    except Exception:
-                        _log.warning("interrupt sandbox on disconnect failed", exc_info=True)
-
-            def _finalize_partial() -> None:
-                if acc.timeline or acc.assistant_text:
-                    _finalize("interrupted")
-
-            await asyncio.shield(_interrupt_sandbox())
-            await asyncio.shield(asyncio.to_thread(_finalize_partial))
-            raise
-        except Exception as e:
-            stop_reason = "agent_exception"
-            turn_status = "interrupted"
-            detail = str(e)
-            _finalize("interrupted", error=str(e))
-            yield error_event(str(e))
-        finally:
-            self.inject_broker.unregister_turn(cid, turn_id)
-            if not assistant_saved and (acc.timeline or acc.assistant_text):
-                if stop_reason == "unknown":
-                    stop_reason = "stream_closed_partial"
-                    detail = "HTTP stream closed with partial assistant output"
-                turn_status = turn_status or "interrupted"
-                _finalize("interrupted")
-            elif not assistant_saved:
-                if stop_reason == "unknown":
-                    stop_reason = "stream_closed_empty"
-                    detail = "HTTP stream closed before any assistant output"
-
-            report = AgentRunReport(
-                layer="chat",
-                stop_reason=stop_reason,
-                conversation_id=cid,
-                turn_id=turn_id,
-                run_id=run_id,
-                done_emitted=done_seen,
-                turn_status=turn_status,
-                duration_ms=int((time.monotonic() - started) * 1000),
-                detail=detail,
-            )
-            level = (
-                logging.WARNING
-                if turn_status == "interrupted"
-                or stop_reason
-                in (
-                    "client_disconnect",
-                    "stream_closed_partial",
-                    "stream_closed_empty",
-                    "agent_exception",
-                    "agent_finished_without_done",
-                )
-                else logging.INFO
-            )
-            report.emit(_log, level=level)
+    async def observe_active_turn(
+        self,
+        conversation_id: str,
+        *,
+        after_seq: int = 0,
+    ) -> AsyncIterator[str]:
+        """Observe the in-memory active (or retained) turn without starting a new one."""
+        turn_id = self.turn_hub.resolve_turn_id(conversation_id)
+        if not turn_id:
+            return
+        async for ev in self.turn_hub.subscribe(
+            conversation_id, turn_id, after_seq=after_seq
+        ):
+            yield ev
 
 
 def ingest_from_write_kb_result(data: dict) -> dict:

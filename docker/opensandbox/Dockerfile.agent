@@ -3,14 +3,33 @@
 FROM opensandbox/execd:v1.0.18
 
 USER root
+ARG NODE_VERSION=22.18.0
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         ffmpeg \
         curl \
         ca-certificates \
+        xz-utils \
         python3-pip \
         python3-venv \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && curl -fsSL "https://npmmirror.com/mirrors/node/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" \
+         -o /tmp/node.tar.xz \
+    || curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" \
+         -o /tmp/node.tar.xz \
+    && mkdir -p /usr/local/lib/nodejs \
+    && tar -xJf /tmp/node.tar.xz -C /usr/local/lib/nodejs \
+    && rm -f /tmp/node.tar.xz \
+    && ln -sfn "/usr/local/lib/nodejs/node-v${NODE_VERSION}-linux-x64" /usr/local/lib/nodejs/current \
+    && ln -sfn /usr/local/lib/nodejs/current/bin/node /usr/local/bin/node \
+    && ln -sfn /usr/local/lib/nodejs/current/bin/npm /usr/local/bin/npm \
+    && ln -sfn /usr/local/lib/nodejs/current/bin/npx /usr/local/bin/npx \
+    && (test ! -e /usr/bin/node || mv -f /usr/bin/node /usr/bin/node.debian) \
+    && (test ! -e /usr/bin/npm || mv -f /usr/bin/npm /usr/bin/npm.debian) \
+    && ln -sfn /usr/local/bin/node /usr/bin/node \
+    && ln -sfn /usr/local/bin/npm /usr/bin/npm \
+    && ln -sfn /usr/local/bin/npx /usr/bin/npx \
+    && node -v && npm -v
 
 # 可选：预装 Python 包（按 skill 需要增减）
 # RUN pip3 install --no-cache-dir edge-tts

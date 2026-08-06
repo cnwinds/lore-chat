@@ -83,6 +83,11 @@ export function Chat({
   const skipLoadRef = useRef<string | null>(null);
   const streamingRef = useRef(false);
   const conversationIdRef = useRef(conversationId);
+  const stickToBottomRef = useRef(true);
+  const resumeActiveTurnRef = useRef<(cid: string) => Promise<boolean>>(
+    async () => false,
+  );
+
   const {
     msgs,
     setMsgs,
@@ -97,8 +102,10 @@ export function Chat({
     streamingRef,
     pendingJump,
     onJumpHandled,
+    onActiveTurn: (cid) => {
+      void resumeActiveTurnRef.current(cid);
+    },
   });
-  const stickToBottomRef = useRef(true);
 
   const sendQueue = useSendQueue(conversationId);
   const itemsRef = useRef(sendQueue.items);
@@ -115,8 +122,14 @@ export function Chat({
     (info: {
       failed: boolean;
       aborted: boolean;
+      detached?: boolean;
       awaitingUser?: boolean;
     }) => {
+      // Observation-only disconnect: turn still runs; do not pause the queue.
+      if (info.detached) {
+        flushingRef.current = false;
+        return;
+      }
       if (info.failed || info.aborted) {
         sendQueue.setPaused(true);
         const pending = pendingGroupRef.current;
@@ -190,6 +203,7 @@ export function Chat({
     streamNowMs,
     streamingAssistantIdxRef,
     runAgentStream,
+    resumeActiveTurn,
     stopStreaming,
     ensureConversationId,
     resolveDocContext,
@@ -216,6 +230,7 @@ export function Chat({
     onInjectDeferred: handleInjectDeferred,
     onUserInjected: handleUserInjected,
   });
+  resumeActiveTurnRef.current = resumeActiveTurn;
   const { messagesContainerRef } = useChatScroll(
     [msgs, loadingHistory, streaming],
     stickToBottomRef,

@@ -48,10 +48,13 @@ class AgentSubgraph:
             runtime=getattr(self.agent.tools.sandbox, "runtime", None),
             sandbox_tools=self.agent.tools.sandbox,
         )
+        hub = self.chat_runner.turn_hub
+        hub.agent = self.agent
         self.chat_runner = ChatSessionRunner(
             self.agent,
             self.chat_runner.conversations,
             inject_broker=self.chat_runner.inject_broker,
+            turn_hub=hub,
         )
 
 

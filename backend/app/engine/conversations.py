@@ -300,12 +300,26 @@ class ConversationStore:
         cid = row["id"]
         summarized, summary_path, summarized_at = self._summary_state(cid)
         summaries = self._list_summaries_unlocked(cid)
+        active_turn_id = row["active_turn_id"]
+        active_turn = None
+        if active_turn_id:
+            trow = self.conn.execute(
+                "SELECT id, status, started_at FROM turns WHERE id = ?",
+                (active_turn_id,),
+            ).fetchone()
+            if trow is not None:
+                active_turn = {
+                    "turn_id": trow["id"],
+                    "status": trow["status"],
+                    "started_at": trow["started_at"],
+                }
         return {
             "id": cid,
             "title": row["title"],
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
-            "active_turn_id": row["active_turn_id"],
+            "active_turn_id": active_turn_id,
+            "active_turn": active_turn,
             "messages": self._load_messages(cid),
             "summaries": summaries,
             "summarized": summarized,
@@ -476,6 +490,40 @@ class ConversationStore:
 
     def finalize_turn(self, cid: str, turn_id: str, assistant: dict) -> dict | None:
         return self._turn_lifecycle.finalize_turn(cid, turn_id, assistant)
+
+    def list_running_turns(self) -> list[dict]:
+        with self._lock:
+            rows = self.conn.execute(
+                """
+                SELECT id AS turn_id, conversation_id, client_message_id, started_at
+                FROM turns WHERE status = 'running'
+                """
+            ).fetchall()
+            return [
+                {
+                    "turn_id": r["turn_id"],
+                    "conversation_id": r["conversation_id"],
+                    "client_message_id": r["client_message_id"],
+                    "started_at": r["started_at"],
+                }
+                for r in rows
+            ]
+
+    def get_turn(self, turn_id: str) -> dict | None:
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT * FROM turns WHERE id = ?", (turn_id,)
+            ).fetchone()
+            if row is None:
+                return None
+            return {
+                "turn_id": row["id"],
+                "conversation_id": row["conversation_id"],
+                "status": row["status"],
+                "client_message_id": row["client_message_id"],
+                "started_at": row["started_at"],
+                "finalized_at": row["finalized_at"],
+            }
 
     def append_exchange(
         self,

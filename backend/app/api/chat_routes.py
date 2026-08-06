@@ -5,7 +5,15 @@ import uuid
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
-from app.api.http_deps import AskBody, ChatBody, InjectBody, IngestBody, container, normalize_chat_context
+from app.api.http_deps import (
+    AskBody,
+    ChatBody,
+    InjectBody,
+    IngestBody,
+    StopChatBody,
+    container,
+    normalize_chat_context,
+)
 from app.engine.chat.session_runner import consume_agent_ask, consume_agent_ingest
 from app.engine.chat.sse_keepalive import with_sse_keepalive
 from app.engine.chat.turn_inject import PendingInject
@@ -45,7 +53,7 @@ async def ask(body: AskBody, request: Request):
 
 @router.post("/chat")
 async def chat(body: ChatBody, request: Request):
-    """产品主入口：SSE 流式 Agent，会话持久化与时间线。"""
+    """产品主入口：开始或附着观测后台 Agent 回合（SSE）。"""
     c = container(request)
     doc_items, paths, skill_roots, primary = normalize_chat_context(body, c.repo)
     if body.conversation_id:
@@ -88,11 +96,12 @@ async def chat(body: ChatBody, request: Request):
             detail={"code": "turn_in_progress", "retry_after_ms": e.retry_after_ms},
         )
 
+    headers = {**_SSE_HEADERS, "X-Turn-Id": turn["turn_id"]}
     if turn.get("status", "running") != "running":
         return StreamingResponse(
             with_sse_keepalive(c.chat_runner.replay_turn(turn)),
             media_type="text/event-stream",
-            headers=_SSE_HEADERS,
+            headers=headers,
         )
 
     return StreamingResponse(
@@ -109,8 +118,63 @@ async def chat(body: ChatBody, request: Request):
             )
         ),
         media_type="text/event-stream",
-        headers=_SSE_HEADERS,
+        headers=headers,
     )
+
+
+@router.get("/conversations/{cid}/turns/active/stream")
+async def observe_active_turn(
+    cid: str,
+    request: Request,
+    after_seq: int = 0,
+):
+    """观测通道：附着当前内存中的活跃（或短暂保留的）回合 SSE，不启动新执行。"""
+    c = container(request)
+    try:
+        conv = c.conversations.get(cid)
+    except KeyError as e:
+        raise HTTPException(404, "对话不存在") from e
+
+    turn_id = c.chat_runner.turn_hub.resolve_turn_id(cid)
+    if not turn_id:
+        active = conv.get("active_turn") or {}
+        if active.get("status") == "running":
+            raise HTTPException(
+                409,
+                detail={
+                    "code": "turn_orphaned",
+                    "message": "回合在数据库中仍为 running，但进程内无执行任务（可能已重启）",
+                },
+            )
+        raise HTTPException(
+            404,
+            detail={"code": "no_active_turn", "message": "当前没有可观测的回合"},
+        )
+
+    headers = {**_SSE_HEADERS, "X-Turn-Id": turn_id}
+    return StreamingResponse(
+        with_sse_keepalive(
+            c.chat_runner.observe_active_turn(cid, after_seq=after_seq)
+        ),
+        media_type="text/event-stream",
+        headers=headers,
+    )
+
+
+@router.post("/chat/stop")
+async def chat_stop(body: StopChatBody, request: Request):
+    """显式停止当前会话的后台回合（含沙箱 interrupt）。"""
+    c = container(request)
+    try:
+        c.conversations.get(body.conversation_id)
+    except KeyError as e:
+        raise HTTPException(404, "对话不存在") from e
+    if not c.chat_runner.request_stop(body.conversation_id):
+        raise HTTPException(
+            409,
+            detail={"code": "no_active_turn", "message": "当前没有可停止的回合"},
+        )
+    return {"status": "stopping", "conversation_id": body.conversation_id}
 
 
 @router.post("/chat/inject")

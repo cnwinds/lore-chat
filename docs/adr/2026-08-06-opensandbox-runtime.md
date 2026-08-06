@@ -58,7 +58,7 @@ Lore Chat 的 Agent 工具面是服务器内白名单语义工具（KB / 网页 
 - `GET /api/health` → `capabilities.sandbox` 反映本实例是否启用；沙箱相关部署 Settings **不可**经 UI 热改（与 Compose 编排绑定）。
 - **确认策略**：默认 `sandbox_trust_mode=true`，沙箱命令直接执行；关闭后对高风险 `sandbox_run` 征询（执行/取消），**批准后由后端直接执行**（不依赖模型再调 `sandbox_run`）。
 - **软件源**：`sandbox_mirror_region=cn|global`（默认 `cn`），可经设置热改；影响沙箱内 apt / pip / npm（国内=阿里云/npmmirror，国外=官方源）。切换后下次 `ensure_ready` 会重配。
-- **断连**：SSE / 客户端断开时 interrupt 沙箱内跟踪中的命令/job。
+- **执行与观测解耦**：有 `conversation_id` 的回合在进程内 `asyncio.Task`（`TurnExecutionHub`）中执行；前端 SSE 仅为观测通道，连接断开**不**取消回合、**不** interrupt 沙箱。仅 **显式 stop**（`POST /api/chat/stop`）会 cancel Task 并 interrupt 沙箱；进程重启时将 DB 中无对应 Task 的 `running` 孤儿 **finalize 为 interrupted**（不保证能 interrupt 已失联的沙箱进程）。
 - **跨回合**：`sandbox_job_status(execution_id)` 查询未完成的后台任务。
 
 ## 后果

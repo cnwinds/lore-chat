@@ -15,6 +15,8 @@ type Options = {
   streamingRef: MutableRefObject<boolean>;
   pendingJump?: JumpTarget | null;
   onJumpHandled?: () => void;
+  /** Called when loaded conversation has a server-side running turn. */
+  onActiveTurn?: (conversationId: string) => void;
 };
 
 export function useChatConversation({
@@ -23,12 +25,15 @@ export function useChatConversation({
   streamingRef,
   pendingJump = null,
   onJumpHandled,
+  onActiveTurn,
 }: Options) {
   const [msgs, setMsgs] = useState<ChatMessage[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [summarized, setSummarized] = useState(false);
   const [summaryPath, setSummaryPath] = useState<string | null>(null);
   const pendingJumpRef = useRef<JumpTarget | null>(null);
+  const onActiveTurnRef = useRef(onActiveTurn);
+  onActiveTurnRef.current = onActiveTurn;
 
   useEffect(() => {
     if (pendingJump) {
@@ -61,6 +66,9 @@ export function useChatConversation({
           );
           setSummarized(!!conv.summarized);
           setSummaryPath(conv.summary_path ?? null);
+          if (conv.active_turn?.status === "running") {
+            onActiveTurnRef.current?.(conversationId);
+          }
         }
       })
       .catch(() => {

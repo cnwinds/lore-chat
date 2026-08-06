@@ -10,14 +10,22 @@ import {
   chatStream,
   createConversation,
   getConversation,
+  observeActiveTurnStream,
+  stopChat,
   titleFromText,
   updateTimeline,
   KB_MUTATING_TOOLS,
   type ChatMessage,
+  type ChatStreamEvent,
   type DocContextItem,
   type SourceRef,
 } from "../../api";
-import { isInjectedUserMessage, kbPathFromToolResult, normalizeLoadedMessage, timelineAwaitsUserAnswer } from "../../utils/chatMessage";
+import {
+  isInjectedUserMessage,
+  kbPathFromToolResult,
+  normalizeLoadedMessage,
+  timelineAwaitsUserAnswer,
+} from "../../utils/chatMessage";
 import { nowIsoDisplay } from "../../utils/displayTime";
 
 export type DocContext = {
@@ -28,9 +36,11 @@ export type DocContext = {
 
 export type StreamEndInfo = {
   failed: boolean;
+  /** Explicit stop — turn cancelled on server. */
   aborted: boolean;
+  /** Observation SSE closed; turn may still be running server-side. */
+  detached?: boolean;
   conversationId: string | null;
-  /** Turn ended with an unanswered ask_user — do not auto-flush the send queue. */
   awaitingUser?: boolean;
 };
 
@@ -87,6 +97,7 @@ export function useAgentStream({
   const streamingStartRef = useRef<number | null>(null);
   const streamingAssistantIdxRef = useRef<number | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const stopRequestedRef = useRef(false);
   const onStreamEndRef = useRef(onStreamEnd);
   const onInjectDeferredRef = useRef(onInjectDeferred);
   const onUserInjectedRef = useRef(onUserInjected);
@@ -114,6 +125,13 @@ export function useAgentStream({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [streaming]);
 
+  // Conversation switch / unmount: detach observation only (do not stop the turn).
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+    };
+  }, [conversationId]);
+
   function resolveDocContext(): DocContext {
     return {
       documentPaths,
@@ -130,8 +148,149 @@ export function useAgentStream({
     return id;
   }
 
-  function stopStreaming() {
+  async function stopStreaming() {
+    stopRequestedRef.current = true;
+    const cid = conversationIdRef.current;
+    if (cid) {
+      try {
+        await stopChat(cid);
+      } catch {
+        /* 409 / network — still abort local observe */
+      }
+    }
     abortRef.current?.abort();
+  }
+
+  function patchAssistant(updater: (msg: ChatMessage) => ChatMessage) {
+    setMsgs((prev) => {
+      if (prev.length === 0) return prev;
+      const idx = prev.length - 1;
+      const copy = [...prev];
+      copy[idx] = updater(copy[idx]);
+      return copy;
+    });
+  }
+
+  async function consumeEvents(
+    events: AsyncGenerator<ChatStreamEvent>,
+  ): Promise<{ streamFailed: boolean; awaitingUser: boolean }> {
+    let streamFailed = false;
+    let awaitingUser = false;
+    for await (const { event, data } of events) {
+      if (event === "error") {
+        const message = (data.message as string) || "请求失败";
+        patchAssistant((msg) => ({ ...msg, text: `错误：${message}` }));
+        streamFailed = true;
+        break;
+      }
+
+      if (event === "user_inject") {
+        const injectId = data.inject_id as string;
+        patchAssistant((prevMsg) => ({
+          ...prevMsg,
+          timeline: updateTimeline(prevMsg.timeline ?? [], event, data),
+        }));
+        onUserInjectedRef.current?.(injectId);
+        continue;
+      }
+
+      if (event === "inject_deferred") {
+        onInjectDeferredRef.current?.(data.inject_id as string);
+        continue;
+      }
+
+      patchAssistant((prevMsg) => {
+        const msg = { ...prevMsg };
+        if (event !== "done") {
+          msg.timeline = updateTimeline(msg.timeline ?? [], event, data);
+        }
+        if (event === "done") {
+          msg.sources = (data.sources as SourceRef[]) || [];
+          if (data.total_duration_ms !== undefined) {
+            msg.total_duration_ms = data.total_duration_ms as number;
+          }
+          msg.ts = nowIsoDisplay();
+          awaitingUser = timelineAwaitsUserAnswer(msg.timeline);
+        }
+        return msg;
+      });
+
+      if (event === "tool_result") {
+        if (
+          (KB_MUTATING_TOOLS as readonly string[]).includes(data.tool as string)
+        ) {
+          onKbChanged?.(kbPathFromToolResult(data));
+        }
+        if (
+          (data.tool === "ask_user" || data.tool === "sandbox_run") &&
+          data.question_id &&
+          Array.isArray(data.options) &&
+          (data.options as unknown[]).length > 0
+        ) {
+          awaitingUser = true;
+        }
+      }
+    }
+    return { streamFailed, awaitingUser };
+  }
+
+  async function finishObservation(
+    cid: string | null,
+    info: {
+      streamFailed: boolean;
+      aborted: boolean;
+      detached: boolean;
+      awaitingUser: boolean;
+    },
+  ) {
+    abortRef.current = null;
+    stopRequestedRef.current = false;
+    streamingRef.current = false;
+    setStreaming(false);
+    skipLoadRef.current = null;
+    onSidebarRefresh?.();
+    const endCid = conversationIdRef.current ?? cid;
+    onStreamEndRef.current?.({
+      failed: info.streamFailed,
+      aborted: info.aborted,
+      detached: info.detached,
+      awaitingUser:
+        !info.streamFailed && !info.aborted && !info.detached && info.awaitingUser,
+      conversationId: endCid,
+    });
+    if (endCid && !info.streamFailed && !info.aborted && !info.detached) {
+      getConversation(endCid)
+        .then((conv) => {
+          if (conversationIdRef.current !== endCid) return;
+          if (streamingRef.current) return;
+          setMsgs(
+            conv.messages.map((m) =>
+              normalizeLoadedMessage({
+                ...m,
+                injected: isInjectedUserMessage(m),
+              }),
+            ),
+          );
+          setSummarized(!!conv.summarized);
+          setSummaryPath(conv.summary_path ?? null);
+        })
+        .catch(() => {});
+    } else if (endCid && info.aborted) {
+      getConversation(endCid)
+        .then((conv) => {
+          if (conversationIdRef.current !== endCid) return;
+          if (streamingRef.current) return;
+          setMsgs(
+            conv.messages.map((m) =>
+              normalizeLoadedMessage({
+                ...m,
+                injected: isInjectedUserMessage(m),
+              }),
+            ),
+          );
+        })
+        .catch(() => {});
+    }
   }
 
   async function runAgentStream(
@@ -145,6 +304,7 @@ export function useAgentStream({
     const display = userDisplayText ?? apiText;
     const isFirstUserQuestion = !msgs.some((m) => m.role === "user");
     stickToBottomRef.current = true;
+    stopRequestedRef.current = false;
     streamingRef.current = true;
     setStreaming(true);
     streamingStartRef.current = Date.now();
@@ -179,20 +339,10 @@ export function useAgentStream({
         assistantMsg,
       ];
     });
-    // 流式期间助手消息始终是数组的最后一项；直接定位它，
-    // 避免依赖 setMsgs 更新器里异步写入的 ref（在“继续”流程下会读到过期值，
-    // 导致把 timeline 写进了 msgs[0] 这条用户消息，输出错位到右上角）。
-    const patchAssistant = (updater: (msg: ChatMessage) => ChatMessage) =>
-      setMsgs((prev) => {
-        if (prev.length === 0) return prev;
-        const idx = prev.length - 1;
-        const copy = [...prev];
-        copy[idx] = updater(copy[idx]);
-        return copy;
-      });
 
     let streamFailed = false;
     let aborted = false;
+    let detached = false;
     let awaitingUser = false;
     let cid: string | null = null;
     try {
@@ -203,115 +353,103 @@ export function useAgentStream({
       const ctx = docCtx ?? resolveDocContext();
       const clientMessageId = crypto.randomUUID();
       const useWeb = opts?.webEnabled ?? webEnabled;
-      for await (const { event, data } of chatStream(apiText, {
-        conversationId: cid,
-        activeDocPaths: ctx.documentPaths,
-        docContext: ctx.docContext.length ? ctx.docContext : undefined,
-        primaryDocPath: ctx.primary,
-        webEnabled: useWeb,
-        attachments: userMeta?.attachments ?? [],
-        clientMessageId,
-        signal: controller.signal,
-      })) {
-        if (event === "error") {
-          const message = (data.message as string) || "请求失败";
-          patchAssistant((msg) => ({ ...msg, text: `错误：${message}` }));
-          streamFailed = true;
-          break;
-        }
-
-        if (event === "user_inject") {
-          const injectId = data.inject_id as string;
-          patchAssistant((prevMsg) => ({
-            ...prevMsg,
-            timeline: updateTimeline(prevMsg.timeline ?? [], event, data),
-          }));
-          onUserInjectedRef.current?.(injectId);
-          continue;
-        }
-
-        if (event === "inject_deferred") {
-          onInjectDeferredRef.current?.(data.inject_id as string);
-          continue;
-        }
-
-        patchAssistant((prevMsg) => {
-          const msg = { ...prevMsg };
-          if (event !== "done") {
-            msg.timeline = updateTimeline(msg.timeline ?? [], event, data);
-          }
-          if (event === "done") {
-            msg.sources = (data.sources as SourceRef[]) || [];
-            if (data.total_duration_ms !== undefined) {
-              msg.total_duration_ms = data.total_duration_ms as number;
-            }
-            msg.ts = nowIsoDisplay();
-            awaitingUser = timelineAwaitsUserAnswer(msg.timeline);
-          }
-          return msg;
-        });
-
-        if (event === "tool_result") {
-          if (
-            (KB_MUTATING_TOOLS as readonly string[]).includes(
-              data.tool as string,
-            )
-          ) {
-            onKbChanged?.(kbPathFromToolResult(data));
-          }
-          if (
-            (data.tool === "ask_user" || data.tool === "sandbox_run") &&
-            data.question_id &&
-            Array.isArray(data.options) &&
-            (data.options as unknown[]).length > 0
-          ) {
-            awaitingUser = true;
-          }
-        }
-      }
+      const result = await consumeEvents(
+        chatStream(apiText, {
+          conversationId: cid,
+          activeDocPaths: ctx.documentPaths,
+          docContext: ctx.docContext.length ? ctx.docContext : undefined,
+          primaryDocPath: ctx.primary,
+          webEnabled: useWeb,
+          attachments: userMeta?.attachments ?? [],
+          clientMessageId,
+          signal: controller.signal,
+        }),
+      );
+      streamFailed = result.streamFailed;
+      awaitingUser = result.awaitingUser;
     } catch (err) {
       if (
         (err instanceof DOMException && err.name === "AbortError") ||
         (err instanceof Error && err.name === "AbortError")
       ) {
-        aborted = true;
+        if (stopRequestedRef.current) aborted = true;
+        else detached = true;
       } else {
         streamFailed = true;
         const msg = err instanceof Error ? err.message : "请求失败";
         patchAssistant((prevMsg) => ({ ...prevMsg, text: `错误：${msg}` }));
       }
     } finally {
-      abortRef.current = null;
-      streamingRef.current = false;
-      setStreaming(false);
-      skipLoadRef.current = null;
-      onSidebarRefresh?.();
-      const endCid = conversationIdRef.current ?? cid;
-      onStreamEndRef.current?.({
-        failed: streamFailed,
+      await finishObservation(cid, {
+        streamFailed,
         aborted,
-        awaitingUser: !streamFailed && !aborted && awaitingUser,
-        conversationId: endCid,
+        detached,
+        awaitingUser,
       });
-      if (endCid && !streamFailed && !aborted) {
-        getConversation(endCid)
-          .then((conv) => {
-            if (conversationIdRef.current !== endCid) return;
-            // A queued follow-up turn may already be streaming — do not clobber it.
-            if (streamingRef.current) return;
-            setMsgs(
-              conv.messages.map((m) =>
-                normalizeLoadedMessage({
-                  ...m,
-                  injected: isInjectedUserMessage(m),
-                }),
-              ),
-            );
-            setSummarized(!!conv.summarized);
-            setSummaryPath(conv.summary_path ?? null);
-          })
-          .catch(() => {});
+    }
+    return true;
+  }
+
+  /** Reattach observation to a server-side running turn (e.g. after page reload). */
+  async function resumeActiveTurn(cid: string): Promise<boolean> {
+    if (streamingRef.current) return false;
+    stickToBottomRef.current = true;
+    stopRequestedRef.current = false;
+    streamingRef.current = true;
+    setStreaming(true);
+    streamingStartRef.current = Date.now();
+    setLiveElapsedMs(0);
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    setMsgs((m) => {
+      const last = m[m.length - 1];
+      if (last?.role === "assistant") {
+        streamingAssistantIdxRef.current = m.length - 1;
+        return m;
       }
+      streamingAssistantIdxRef.current = m.length;
+      return [
+        ...m,
+        {
+          role: "assistant",
+          ts: nowIsoDisplay(),
+          timeline: [],
+          sources: [],
+        },
+      ];
+    });
+
+    let streamFailed = false;
+    let aborted = false;
+    let detached = false;
+    let awaitingUser = false;
+    try {
+      const result = await consumeEvents(
+        observeActiveTurnStream(cid, { signal: controller.signal }),
+      );
+      streamFailed = result.streamFailed;
+      awaitingUser = result.awaitingUser;
+    } catch (err) {
+      if (
+        (err instanceof DOMException && err.name === "AbortError") ||
+        (err instanceof Error && err.name === "AbortError")
+      ) {
+        if (stopRequestedRef.current) aborted = true;
+        else detached = true;
+      } else {
+        streamFailed = true;
+        const msg = err instanceof Error ? err.message : "请求失败";
+        patchAssistant((prevMsg) => ({ ...prevMsg, text: `错误：${msg}` }));
+      }
+    } finally {
+      await finishObservation(cid, {
+        streamFailed,
+        aborted,
+        detached,
+        awaitingUser,
+      });
     }
     return true;
   }
@@ -323,6 +461,7 @@ export function useAgentStream({
     streamingAssistantIdxRef,
     streamingRef,
     runAgentStream,
+    resumeActiveTurn,
     stopStreaming,
     ensureConversationId,
     resolveDocContext,

@@ -45,6 +45,16 @@ def create_app(settings: Settings | None = None, llm: LLMClient | None = None) -
                 "OPENAI_API_KEY 未配置（仍为占位符）。录入与问答将失败，请编辑 backend/.env"
             )
         app.state.container = build_container(effective, llm=_llm)
+        try:
+            n = app.state.container.chat_runner.turn_hub.recover_orphan_turns()
+            if n:
+                logging.getLogger("uvicorn.error").warning(
+                    "recovered %d orphan running turn(s) as interrupted", n
+                )
+        except Exception:
+            logging.getLogger("uvicorn.error").exception(
+                "orphan turn recovery failed"
+            )
 
         stop_event = threading.Event()
         worker_thread: threading.Thread | None = None
