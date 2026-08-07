@@ -13,6 +13,7 @@ from app.storage.kb_paths import (
     normalize_directory,
     title_from_rel_path,
 )
+from app.storage.kb_text_files import is_kb_text_file
 from app.storage.repo import KnowledgeRepo
 
 
@@ -54,7 +55,7 @@ def _file_rel(directory: str, filename: str) -> str:
 
 
 class KnowledgeWriter:
-    """知识库 Markdown 落盘、索引与 changelog 的唯一 seam。"""
+    """知识库落盘、索引与 changelog 的唯一 seam（Markdown 文档与文本/附件文件）。"""
 
     def __init__(self, repo: KnowledgeRepo, indexer: Indexer | None = None):
         self.repo = repo
@@ -218,6 +219,44 @@ class KnowledgeWriter:
             commit_msg=f"chore: changelog import {fn}",
         )
         return {"rel_path": rel, "kind": "file", "indexed": indexed}
+
+    def write_text_file(
+        self,
+        *,
+        directory: str,
+        filename: str,
+        content: str,
+        overwrite: bool = False,
+    ) -> dict:
+        """写入白名单文本资产（非 Markdown）；不做 LLM 合并。"""
+        fn = _safe_basename(filename)
+        if is_markdown_path(fn):
+            raise ValueError("Markdown 请使用 write_kb，勿用 write_kb_file")
+        if not is_kb_text_file(fn):
+            raise ValueError(
+                f"不支持的文件类型：{fn}（仅允许文本代码/配置类扩展名）"
+            )
+        rel = _file_rel(directory, fn)
+        if not self.repo.is_writable(rel):
+            raise ValueError(f"禁止写入：{rel}")
+        exists = self.repo.abs_path(rel).exists()
+        if exists and not overwrite:
+            raise KbPathExistsError(rel)
+        data = content.encode("utf-8")
+        action = "覆盖" if exists else "写入"
+        self.repo.write_bytes(rel, data, commit_msg=f"{action} file: {rel}")
+        extracted = extract_text(self.repo.abs_path(rel))
+        indexed = self.index_extracted_text(rel, extracted)
+        self.repo.log_change(
+            f"{action}文件 {rel}",
+            commit_msg=f"chore: changelog {action} {fn}",
+        )
+        return {
+            "rel_path": rel,
+            "kind": "file",
+            "indexed": indexed,
+            "overwritten": exists,
+        }
 
     def move_directory_entry(
         self,

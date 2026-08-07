@@ -5,7 +5,11 @@ from app.engine.agent.tool_impl.doc_read_guard import DocReadGuard
 from app.engine.conversations import ConversationStore
 from app.engine.kb_entry_ops import KbEntryOps
 from app.engine.write_policy import WriteMode
-from app.engine.knowledge_writer import KbPathExistsError, KnowledgeWriter
+from app.engine.knowledge_writer import (
+    KbPathExistsError,
+    KnowledgeWriter,
+    is_markdown_path,
+)
 from app.engine.memory.constants import MEMORY_DOC_REL
 from app.engine.organizer import Organizer
 from app.engine.patch import Edit, Insert, apply_edits, apply_insert
@@ -66,6 +70,65 @@ class KbMutateTools:
         if result.question_id:
             out["question_id"] = result.question_id
         return out
+
+    def write_kb_file(self, args: dict) -> dict:
+        directory = args.get("directory")
+        filename = (args.get("filename") or "").strip()
+        if directory is None or not filename:
+            return {
+                "summary": "缺少 directory 或 filename",
+                "sources": [],
+                "error": "MISSING_PATH",
+                "status": "failed",
+            }
+        if "content" not in args:
+            return {
+                "summary": "缺少 content",
+                "sources": [],
+                "error": "MISSING_CONTENT",
+                "status": "failed",
+            }
+        content = args["content"]
+        if not isinstance(content, str):
+            return {
+                "summary": "content 必须是字符串",
+                "sources": [],
+                "error": "INVALID_CONTENT",
+                "status": "failed",
+            }
+        overwrite = bool(args.get("overwrite", False))
+        try:
+            result = self.knowledge_writer.write_text_file(
+                directory=str(directory),
+                filename=filename,
+                content=content,
+                overwrite=overwrite,
+            )
+        except KbPathExistsError as e:
+            return {
+                "summary": f"目标已存在：{e.rel_path}（传 overwrite=true 可覆盖）",
+                "sources": [],
+                "error": "ALREADY_EXISTS",
+                "status": "failed",
+                "rel_path": e.rel_path,
+            }
+        except (ValueError, KbPathError) as e:
+            return {
+                "summary": str(e),
+                "sources": [],
+                "error": "INVALID",
+                "status": "failed",
+            }
+        rel = result["rel_path"]
+        action = "已覆盖" if result.get("overwritten") else "已写入"
+        return {
+            "summary": f"{action}知识库文件：{rel}",
+            "sources": [{"type": "kb", "path": rel}],
+            "status": "saved",
+            "rel_path": rel,
+            "kind": result.get("kind"),
+            "overwritten": bool(result.get("overwritten")),
+        }
 
     def summarize_conversation(
         self, args: dict, *, conversation_id: str | None = None
@@ -187,6 +250,12 @@ class KbMutateTools:
             return self._edit_doc_error("INVALID", "edits 与 insert 不能同时使用")
         if not edits_raw and not insert_raw:
             return self._edit_doc_error("INVALID", "必须提供 edits 或 insert")
+
+        if not is_markdown_path(path):
+            return self._edit_doc_error(
+                "NOT_MARKDOWN",
+                f"非 Markdown 请用 write_kb_file(overwrite=true) 整文件覆盖：{path}",
+            )
 
         if not self.repo.is_writable(path):
             return self._edit_doc_error("PROTECTED", f"路径不可写：{path}")

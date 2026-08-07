@@ -1,8 +1,10 @@
-"""沙箱工具：run / list / read / publish / job_status（含确认门）。"""
+"""沙箱工具：run / list / read / publish / stage / job_status（含确认门）。"""
 
 from __future__ import annotations
 
 import asyncio
+import posixpath
+import shlex
 from pathlib import PurePosixPath
 
 from app.engine.chat.progress_log import ensure_line_chunk
@@ -312,4 +314,59 @@ class SandboxTools:
             "sources": [{"type": "kb", "path": rel}] if rel else [],
             "rel_path": rel,
             "kind": result.get("kind"),
+        }
+
+    async def stage_to_sandbox(self, args: dict) -> dict:
+        rt = self._require()
+        if isinstance(rt, dict):
+            return rt
+        kb_path = (args.get("kb_path") or "").replace("\\", "/").lstrip("/")
+        if not kb_path:
+            return {
+                "summary": "缺少 kb_path",
+                "sources": [],
+                "error": "missing kb_path",
+            }
+        abs_kb = self.knowledge_writer.repo.abs_path(kb_path)
+        if not abs_kb.exists() or not abs_kb.is_file():
+            return {
+                "summary": f"知识库文件不存在：{kb_path}",
+                "sources": [],
+                "error": "not found",
+            }
+        raw_dest = (args.get("sandbox_path") or "").strip()
+        if raw_dest:
+            dest = posixpath.normpath(str(PurePosixPath(raw_dest)))
+        else:
+            dest = posixpath.normpath(str(PurePosixPath("/workspace") / kb_path))
+        if dest != "/workspace" and not dest.startswith("/workspace/"):
+            return {
+                "summary": "sandbox_path 必须在 /workspace 下",
+                "sources": [],
+                "error": "path not under /workspace",
+            }
+        if dest == "/workspace":
+            return {
+                "summary": "sandbox_path 不能是 /workspace 目录本身",
+                "sources": [],
+                "error": "invalid sandbox_path",
+            }
+        try:
+            data = self.knowledge_writer.repo.read_bytes(kb_path)
+        except FileNotFoundError:
+            return {
+                "summary": f"知识库文件不存在：{kb_path}",
+                "sources": [],
+                "error": "not found",
+            }
+        await rt.ensure_ready()
+        parent = str(PurePosixPath(dest).parent)
+        if parent and parent != "/":
+            await rt.run(f"mkdir -p {shlex.quote(parent)}", cwd="/", timeout_sec=30)
+        await rt.write_file(dest, data)
+        return {
+            "summary": f"已投放 {kb_path} → {dest}",
+            "sources": [{"type": "kb", "path": kb_path}],
+            "kb_path": kb_path,
+            "sandbox_path": dest,
         }

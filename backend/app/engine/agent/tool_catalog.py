@@ -11,9 +11,10 @@ READ_ONLY_TOOLS = frozenset({
     "sandbox_list_dir", "sandbox_read_file", "sandbox_job_status",
 })
 WRITE_TOOLS = frozenset({
-    "write_kb", "delete_kb", "ask_user", "summarize_conversation", "edit_doc",
+    "write_kb", "write_kb_file", "delete_kb", "ask_user", "summarize_conversation",
+    "edit_doc",
     "manage_memory", "move_entry",
-    "sandbox_run", "publish_from_sandbox",
+    "sandbox_run", "publish_from_sandbox", "stage_to_sandbox",
 })
 
 _DEFAULT_DISCLOSURE_CHARS = 3000
@@ -31,6 +32,7 @@ TOOL_LABELS = {
     "fetch_url": "打开链接",
     "web_search": "搜索网页",
     "write_kb": "写入知识库文档",
+    "write_kb_file": "写入知识库代码/文本文件",
     "summarize_conversation": "归档整段会话",
     "delete_kb": "删除知识库内容",
     "ask_user": "征询用户",
@@ -42,6 +44,7 @@ TOOL_LABELS = {
     "sandbox_list_dir": "列出沙箱目录",
     "sandbox_read_file": "读取沙箱文件",
     "publish_from_sandbox": "从沙箱发布到知识库",
+    "stage_to_sandbox": "将知识库文件投放到沙箱",
     "sandbox_job_status": "查询沙箱后台任务",
 }
 
@@ -50,6 +53,7 @@ SANDBOX_TOOLS = frozenset({
     "sandbox_list_dir",
     "sandbox_read_file",
     "publish_from_sandbox",
+    "stage_to_sandbox",
     "sandbox_job_status",
 })
 
@@ -58,6 +62,10 @@ _KB_DIRECTORY_DESC = (
     "示例：技术/llm、projects/mini-app"
 )
 _KB_FILENAME_DESC = "Markdown 文件名，必须以 .md 结尾。示例：DeepSeek对比.md、常用命令.md"
+_KB_FILE_FILENAME_DESC = (
+    "非 Markdown 文本文件名（如 .sh/.py/.js/.yaml）；禁止 .md（文档请用 write_kb）。"
+    "示例：gen_audio.sh、fetch.py"
+)
 
 
 def _path_fields(*, directory_required: bool = True, filename_required: bool = True) -> dict:
@@ -109,8 +117,9 @@ TOOL_DEFINITIONS: list[dict] = [
         "function": {
             "name": "read_doc",
             "description": (
-                "按渐进式披露读取知识库文档：默认返回前 3000 字，并附结构大纲（各标题及字符位置）。"
-                "内容不足时，用 offset 跳到相关小节或翻页继续读取，不要盲目全量读取。"
+                "按渐进式披露读取知识库文档或文本资产："
+                "Markdown 返回正文并附结构大纲；白名单文本文件（.sh/.py 等）按纯文本读取。"
+                "默认返回前 3000 字；内容不足时用 offset 续读，不要盲目全量读取。"
             ),
             "parameters": {
                 "type": "object",
@@ -129,7 +138,7 @@ TOOL_DEFINITIONS: list[dict] = [
             "name": "list_kb_structure",
             "description": (
                 "列出知识库当前目录结构与各目录下的文档文件名（只读）。"
-                "在 write_kb、summarize_conversation、move_entry 之前必须先调用本工具，"
+                "在 write_kb、write_kb_file、summarize_conversation、move_entry 之前必须先调用本工具，"
                 "据此决定放入已有目录、新建子目录或 move_entry 调整结构；禁止凭记忆编造路径。"
             ),
             "parameters": {"type": "object", "properties": {}, "required": []},
@@ -216,6 +225,40 @@ TOOL_DEFINITIONS: list[dict] = [
                     **_path_fields()[0],
                 },
                 "required": ["text", "directory", "filename"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "write_kb_file",
+            "description": (
+                "将文本类代码/配置文件写入知识库（.sh/.py/.js/.yaml 等）。"
+                "禁止 .md（文档请用 write_kb）。不做 LLM 合并；已存在时须 overwrite=true 整文件覆盖。"
+                "写入前应先 list_kb_structure 规划路径。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "content": {
+                        "type": "string",
+                        "description": "文件全文（UTF-8 文本）",
+                    },
+                    "directory": {
+                        "type": "string",
+                        "description": _KB_DIRECTORY_DESC,
+                    },
+                    "filename": {
+                        "type": "string",
+                        "description": _KB_FILE_FILENAME_DESC,
+                    },
+                    "overwrite": {
+                        "type": "boolean",
+                        "description": "目标已存在时是否整文件覆盖，默认 false",
+                        "default": False,
+                    },
+                },
+                "required": ["content", "directory", "filename"],
             },
         },
     },
@@ -558,6 +601,34 @@ TOOL_DEFINITIONS: list[dict] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "stage_to_sandbox",
+            "description": (
+                "将知识库中的文件显式投放到沙箱 /workspace，便于 sandbox_run 执行。"
+                "默认映射 kb_path → /workspace/{kb_path}；沙箱侧已存在则覆盖。"
+                "权威副本仍在知识库；改完脚本应 write_kb_file(overwrite=true) 回写。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "kb_path": {
+                        "type": "string",
+                        "description": "知识库相对路径，如 scripts/gen_audio.sh",
+                    },
+                    "sandbox_path": {
+                        "type": "string",
+                        "description": (
+                            "可选；沙箱绝对路径，须在 /workspace 下。"
+                            "省略则使用 /workspace/{kb_path}"
+                        ),
+                    },
+                },
+                "required": ["kb_path"],
+            },
+        },
+    },
 ]
 
 _MODE_NO_WRITE = "no_write"
@@ -573,7 +644,7 @@ def select_tools(
     """按 mode / 联网 / 沙箱能力硬门过滤下发给模型的工具集。
 
     - web_enabled=False 或未配置搜索 provider：移除 web_search（保留 fetch_url）。
-    - mode=no_write：移除 write_kb（/api/ask；此前仅靠 prompt 约束，此处收紧为硬门）。
+    - mode=no_write：移除 write_kb / write_kb_file / manage_memory / publish_from_sandbox（保留 stage_to_sandbox）。
     - mode=force_write：保留 write_kb（/api/ingest 依赖 prompt 强制调用）。
     - sandbox_enabled=False：移除全部沙箱工具。
 
@@ -585,6 +656,7 @@ def select_tools(
         excluded.add("web_search")
     if mode == _MODE_NO_WRITE:
         excluded.add("write_kb")
+        excluded.add("write_kb_file")
         excluded.add("manage_memory")
         excluded.add("publish_from_sandbox")
     if not sandbox_enabled:

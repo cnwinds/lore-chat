@@ -50,6 +50,9 @@ def build_tool_dispatch(registry: ToolRegistry) -> dict[str, ToolHandler]:
         "fetch_url": lambda args, **kw: registry._fetch_url(args),
         "web_search": lambda args, **kw: registry._web_search(args),
         "write_kb": lambda args, **kw: asyncio.to_thread(registry._write_kb, args),
+        "write_kb_file": lambda args, **kw: asyncio.to_thread(
+            registry._write_kb_file, args
+        ),
         "edit_doc": _edit_doc,
         "summarize_conversation": _summarize,
         "delete_kb": lambda args, **kw: asyncio.to_thread(registry._delete_kb, args),
@@ -62,6 +65,7 @@ def build_tool_dispatch(registry: ToolRegistry) -> dict[str, ToolHandler]:
         "sandbox_list_dir": lambda args, **kw: registry._sandbox_list_dir(args),
         "sandbox_read_file": lambda args, **kw: registry._sandbox_read_file(args),
         "publish_from_sandbox": lambda args, **kw: registry._publish_from_sandbox(args),
+        "stage_to_sandbox": lambda args, **kw: registry._stage_to_sandbox(args),
     }
 
 

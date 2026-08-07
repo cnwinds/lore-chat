@@ -163,6 +163,9 @@ class ToolRegistry:
     def _write_kb(self, args: dict) -> dict:
         return self.kb_mutate.write_kb(args)
 
+    def _write_kb_file(self, args: dict) -> dict:
+        return self.kb_mutate.write_kb_file(args)
+
     def _summarize_conversation(
         self, args: dict, *, conversation_id: str | None = None
     ) -> dict:
@@ -202,3 +205,6 @@ class ToolRegistry:
 
     async def _publish_from_sandbox(self, args: dict) -> dict:
         return await self.sandbox.publish_from_sandbox(args)
+
+    async def _stage_to_sandbox(self, args: dict) -> dict:
+        return await self.sandbox.stage_to_sandbox(args)

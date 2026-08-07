@@ -4,6 +4,7 @@ from app.engine.conversation_context import read_conversation_context
 from app.engine.disclosure import disclose, disclosure_summary
 from app.engine.kb_structure import summarize_kb_structure
 from app.engine.agent.tool_impl.doc_read_guard import DocReadGuard
+from app.storage.kb_text_files import is_kb_text_file
 from app.storage.repo import KnowledgeRepo
 
 
@@ -84,7 +85,17 @@ class KbReadTools:
         return {"type": "kb", "path": h.source, "excerpt": h.chunk[:200]}
 
     def read_doc(self, args: dict, *, conversation_id: str | None = None) -> dict:
-        path = args["path"]
+        path = (args.get("path") or "").replace("\\", "/").lstrip("/")
+        if not path:
+            return {
+                "summary": "缺少 path",
+                "sources": [],
+                "error": "missing path",
+            }
+
+        if is_kb_text_file(path):
+            return self._read_text_file(path, args, conversation_id=conversation_id)
+
         try:
             doc = self.repo.read_doc(path)
         except FileNotFoundError:
@@ -109,6 +120,36 @@ class KbReadTools:
             out["next_offset"] = info["next_offset"]
         if "outline" in info:
             out["outline"] = info["outline"]
+        self.read_guard.mark(conversation_id, path)
+        return out
+
+    def _read_text_file(
+        self, path: str, args: dict, *, conversation_id: str | None = None
+    ) -> dict:
+        try:
+            data = self.repo.read_bytes(path)
+        except FileNotFoundError:
+            return {
+                "summary": f"文件不存在：{path}",
+                "sources": [],
+                "error": f"FileNotFoundError: {path}",
+            }
+        text = data.decode("utf-8", errors="replace")
+        offset = args.get("offset", 0)
+        limit = args.get("limit", self.disclosure_chars)
+        info = disclose(text, offset=offset, limit=limit, with_outline=False)
+        out = {
+            "summary": disclosure_summary(f"读取 {path}", info),
+            "sources": [{"type": "kb", "path": path}],
+            "body": info["body"],
+            "total_chars": info["total_chars"],
+            "offset": info["offset"],
+            "returned_chars": info["returned_chars"],
+            "has_more": info["has_more"],
+            "kind": "file",
+        }
+        if "next_offset" in info:
+            out["next_offset"] = info["next_offset"]
         self.read_guard.mark(conversation_id, path)
         return out
 

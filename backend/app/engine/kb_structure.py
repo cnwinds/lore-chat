@@ -1,18 +1,26 @@
 from __future__ import annotations
 
+from app.storage.kb_text_files import is_kb_text_file
 from app.storage.repo import KnowledgeRepo
 
 
 def summarize_kb_structure(repo: KnowledgeRepo, *, max_files_per_dir: int = 15) -> dict:
-    """聚合知识库目录树，供 Agent 规划归类路径。"""
+    """聚合知识库目录树，供 Agent 规划归类路径（含 Markdown 与文本代码资产）。"""
     paths = sorted(repo.list_tree())
     by_dir: dict[str, list[str]] = {}
     root_docs: list[str] = []
     protected_paths: list[str] = []
+    md_count = 0
+    file_count = 0
 
     for rel in paths:
-        if not rel.endswith(".md"):
+        is_md = rel.lower().endswith(".md")
+        if not (is_md or is_kb_text_file(rel)):
             continue
+        if is_md:
+            md_count += 1
+        else:
+            file_count += 1
         if repo.is_protected(rel):
             protected_paths.append(rel)
             continue
@@ -37,8 +45,10 @@ def summarize_kb_structure(repo: KnowledgeRepo, *, max_files_per_dir: int = 15) 
 
     top_level = sorted({d.split("/")[0] for d in by_dir} | set(root_docs))
     lines = [
-        f"共 {len(paths)} 篇 Markdown；可写目录 {len(directories)} 个"
-        + (f"，根目录文档 {len(root_docs)} 篇" if root_docs else "")
+        f"共 {md_count} 篇 Markdown"
+        + (f"、{file_count} 个文本文件" if file_count else "")
+        + f"；可写目录 {len(directories)} 个"
+        + (f"，根目录条目 {len(root_docs)} 个" if root_docs else "")
     ]
     if directories:
         lines.append("目录示例（path → 文档数）：")
@@ -60,5 +70,5 @@ def summarize_kb_structure(repo: KnowledgeRepo, *, max_files_per_dir: int = 15) 
         "directories": directories,
         "root_docs": sorted(root_docs),
         "protected_paths": protected_paths,
-        "total_docs": len([p for p in paths if p.endswith(".md")]),
+        "total_docs": md_count + file_count,
     }

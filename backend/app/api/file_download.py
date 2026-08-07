@@ -5,60 +5,13 @@ from __future__ import annotations
 import mimetypes
 from pathlib import PurePosixPath
 
-# 浏览器对 application/x-sh 等常直接下载；映射为 text/plain 便于默认预览。
-_TEXT_PREVIEW_SUFFIXES = frozenset(
-    {
-        ".sh",
-        ".bash",
-        ".zsh",
-        ".fish",
-        ".ps1",
-        ".bat",
-        ".cmd",
-        ".py",
-        ".js",
-        ".ts",
-        ".tsx",
-        ".jsx",
-        ".json",
-        ".yaml",
-        ".yml",
-        ".toml",
-        ".ini",
-        ".cfg",
-        ".conf",
-        ".csv",
-        ".tsv",
-        ".sql",
-        ".xml",
-        ".html",
-        ".css",
-        ".rs",
-        ".go",
-        ".java",
-        ".c",
-        ".h",
-        ".cpp",
-        ".hpp",
-        ".md",
-        ".txt",
-        ".log",
-        ".env",
-        ".gitignore",
-        ".dockerfile",
-    }
-)
+from app.storage.kb_text_files import KB_TEXT_FILE_NAMES, TEXT_PREVIEW_SUFFIXES
 
 
 def media_type_for_filename(filename: str) -> str:
     name = (filename or "").strip()
     suffix = PurePosixPath(name.replace("\\", "/")).suffix.lower()
-    if suffix in _TEXT_PREVIEW_SUFFIXES or name.lower() in (
-        "dockerfile",
-        "makefile",
-        "license",
-        "readme",
-    ):
+    if suffix in TEXT_PREVIEW_SUFFIXES or name.lower() in KB_TEXT_FILE_NAMES:
         if suffix == ".md":
             return "text/markdown; charset=utf-8"
         if suffix in (".html", ".htm"):
