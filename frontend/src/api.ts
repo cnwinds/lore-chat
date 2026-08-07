@@ -101,6 +101,125 @@ export function putSettings(patch: Record<string, unknown>) {
   });
 }
 
+export type UsageAgg = {
+  calls: number;
+  ok_calls: number;
+  error_calls: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+  unknown_token_calls: number;
+  cost: number;
+  cost_known_calls: number;
+  unpriced_calls: number;
+  model?: string;
+  bucket?: string;
+};
+
+export type UsageSummary = {
+  timezone: string;
+  granularity: string;
+  start: string;
+  end: string;
+  totals: UsageAgg;
+  by_bucket: UsageAgg[];
+  by_model: Array<UsageAgg & { model: string }>;
+};
+
+export type UsageEvent = {
+  id: string;
+  ts: string;
+  model: string;
+  kind: string;
+  role?: string | null;
+  prompt_tokens?: number | null;
+  completion_tokens?: number | null;
+  total_tokens?: number | null;
+  tokens_known: number | boolean;
+  cost?: number | null;
+  status: string;
+  error?: string | null;
+  duration_ms?: number | null;
+  conversation_id?: string | null;
+  turn_id?: string | null;
+};
+
+export type UsagePrice = {
+  model: string;
+  prompt_per_1k: number | null;
+  completion_per_1k: number | null;
+  embed_per_1k: number | null;
+  updated_at: string;
+};
+
+export function getUsageSummary(params?: {
+  granularity?: string;
+  start?: string;
+  end?: string;
+}) {
+  const q = new URLSearchParams();
+  if (params?.granularity) q.set("granularity", params.granularity);
+  if (params?.start) q.set("start", params.start);
+  if (params?.end) q.set("end", params.end);
+  const qs = q.toString();
+  return apiFetch<UsageSummary>(`/api/usage/summary${qs ? `?${qs}` : ""}`);
+}
+
+export function getUsageEvents(params?: {
+  start?: string;
+  end?: string;
+  model?: string;
+  limit?: number;
+  offset?: number;
+}) {
+  const q = new URLSearchParams();
+  if (params?.start) q.set("start", params.start);
+  if (params?.end) q.set("end", params.end);
+  if (params?.model) q.set("model", params.model);
+  if (params?.limit != null) q.set("limit", String(params.limit));
+  if (params?.offset != null) q.set("offset", String(params.offset));
+  const qs = q.toString();
+  return apiFetch<{ items: UsageEvent[]; limit: number; offset: number }>(
+    `/api/usage/events${qs ? `?${qs}` : ""}`,
+  );
+}
+
+export function getUsagePrices() {
+  return apiFetch<{ items: UsagePrice[] }>("/api/usage/prices");
+}
+
+export function putUsagePrice(body: {
+  model: string;
+  prompt_per_1k?: number | null;
+  completion_per_1k?: number | null;
+  embed_per_1k?: number | null;
+}) {
+  return apiFetch<UsagePrice>("/api/usage/prices", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export function getUsagePrefs() {
+  return apiFetch<{ timezone: string; retention_days: number }>("/api/usage/prefs");
+}
+
+export function putUsagePrefs(body: {
+  timezone?: string;
+  retention_days?: number;
+}) {
+  return apiFetch<{ timezone: string; retention_days: number }>("/api/usage/prefs", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export function clearUsage() {
+  return apiFetch<{ deleted: number }>("/api/usage/clear", { method: "POST" });
+}
+
 export function changePassword(old_password: string, new_password: string) {
   return apiFetch<{ ok: boolean }>("/api/auth/change-password", {
     method: "POST",
