@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import logging
 import os
+import shlex
 import socket
 from datetime import timedelta
 from pathlib import Path
@@ -403,28 +405,53 @@ class OpenSandboxRuntime:
         return entries
 
     async def read_file(self, path: str, *, max_bytes: int = 200_000) -> bytes:
+        """按字节读取沙箱文件（二进制安全）。优先 files.read_bytes。"""
         sb = await self._sb()
-        # Prefer files API when available
-        read_file = getattr(getattr(sb, "files", None), "read_file", None)
-        if read_file is not None:
-            content = await read_file(path)
-            if isinstance(content, bytes):
-                return content[:max_bytes]
-            return str(content).encode("utf-8", errors="replace")[:max_bytes]
-        result = await self.run(f"head -c {max_bytes} -- {path}", cwd="/", timeout_sec=60)
+        limit = max(0, int(max_bytes))
+        files = getattr(sb, "files", None)
+        read_bytes = getattr(files, "read_bytes", None) if files is not None else None
+        if read_bytes is not None:
+            kwargs: dict = {}
+            if limit > 0:
+                kwargs["range_header"] = f"bytes=0-{limit - 1}"
+            try:
+                data = await read_bytes(path, **kwargs)
+            except Exception:
+                # 部分实现可能不支持 Range；整文件读取后再截断
+                data = await read_bytes(path)
+            if not isinstance(data, (bytes, bytearray)):
+                raise TypeError(
+                    f"read_bytes returned {type(data).__name__}, expected bytes"
+                )
+            return bytes(data)[:limit] if limit else bytes(data)
+
+        return await self._read_file_via_base64(path, limit=limit)
+
+    async def _read_file_via_base64(self, path: str, *, limit: int) -> bytes:
+        """无 files API 时经 base64 文本通道读取，避免 stdout 破坏二进制。"""
+        quoted = shlex.quote(path)
+        result = await self.run(
+            f"python3 -c \"import base64,sys; "
+            f"d=open(sys.argv[1],'rb').read(int(sys.argv[2])); "
+            f"sys.stdout.write(base64.b64encode(d).decode('ascii'))\" "
+            f"{quoted} {limit}",
+            cwd="/",
+            timeout_sec=120,
+        )
         if result.exit_code != 0:
             raise FileNotFoundError(result.stderr or path)
-        return result.stdout.encode("utf-8", errors="replace")
+        try:
+            return base64.b64decode(result.stdout.strip(), validate=False)
+        except Exception as e:
+            raise RuntimeError(f"sandbox read_file base64 decode failed: {path}") from e
 
     async def write_file(self, path: str, data: bytes) -> None:
+        """写入沙箱文件；原样传递 bytes（WriteEntry 支持 str|bytes）。"""
         sb = await self._sb()
         write_files = getattr(getattr(sb, "files", None), "write_files", None)
         if write_files is not None:
             from opensandbox.models.filesystem import WriteEntry
 
-            await write_files(
-                [WriteEntry(path=path, data=data.decode("utf-8", errors="replace"), mode=644)]
-            )
+            await write_files([WriteEntry(path=path, data=data, mode=644)])
             return
-        # fallback: base64 via shell would be heavy; require files API
         raise RuntimeError("sandbox files.write_files unavailable")

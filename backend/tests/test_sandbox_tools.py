@@ -120,6 +120,27 @@ async def test_sandbox_read_and_publish(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_publish_binary_attachment_roundtrip(tmp_path):
+    registry, runtime = _make_registry(tmp_path)
+    assert runtime is not None
+    png = b"\x89PNG\r\n\x1a\n" + bytes(range(256))
+    await runtime.write_file("/workspace/shot.png", png)
+    pub = await registry.execute(
+        "publish_from_sandbox",
+        {
+            "sandbox_path": "/workspace/shot.png",
+            "directory": "图",
+            "filename": "shot.png",
+        },
+    )
+    assert pub.get("error") is None, pub
+    assert pub.get("kind") == "attachment"
+    assert pub.get("rel_path") == "图/attachments/shot.png"
+    abs_p = registry.repo.abs_path(pub["rel_path"])
+    assert abs_p.read_bytes() == png
+
+
+@pytest.mark.asyncio
 async def test_publish_rejects_outside_workspace(tmp_path):
     registry, _ = _make_registry(tmp_path)
     r = await registry.execute(
