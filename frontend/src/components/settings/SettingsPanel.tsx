@@ -7,6 +7,7 @@ import {
   putSettings,
   reindexKb,
 } from "../../api";
+import { UsageSettingsTab } from "./UsageSettingsTab";
 
 type Props = {
   open: boolean;
@@ -25,13 +26,14 @@ const SECRET_KEYS = [
 
 type SecretKey = (typeof SECRET_KEYS)[number];
 
-type SettingsTab = "model" | "search" | "agent" | "kb" | "account";
+type SettingsTab = "model" | "search" | "agent" | "kb" | "usage" | "account";
 
 const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
   { id: "model", label: "模型" },
   { id: "search", label: "检索" },
   { id: "agent", label: "Agent" },
   { id: "kb", label: "知识库" },
+  { id: "usage", label: "用量" },
   { id: "account", label: "账户" },
 ];
 
@@ -865,6 +867,8 @@ export function SettingsPanel({ open, onClose }: Props) {
                   </footer>
                 ) : null}
               </form>
+
+              {activeTab === "usage" ? <UsageSettingsTab /> : null}
 
               {activeTab === "account" ? (
                 <div

@@ -30,6 +30,7 @@ from app.engine.agent.tools import (
 )
 from app.engine.sandbox.progress import bind_progress_queue, reset_progress_queue
 from app.engine.source_key import extend_sources
+from app.engine.usage.context import usage_context
 from app.logging_config import get_logger
 from app.models.llm import ChatWithToolsResult, LLMClient, ToolCall
 
@@ -95,20 +96,25 @@ class AgentToolLoop:
             while tool_call_count < self.settings.agent_max_tool_calls:
                 llm_rounds += 1
                 result: ChatWithToolsResult | None = None
-                stream_iter = iter(
-                    self.llm.stream_chat_with_tools(messages, tools_for_run, big=True)
-                )
-                sentinel = object()
-                while True:
-                    chunk = await asyncio.to_thread(next, stream_iter, sentinel)
-                    if chunk is sentinel:
-                        break
-                    if chunk.think_delta:
-                        yield think_delta(chunk.think_delta)
-                    if chunk.text_delta:
-                        yield text_delta(chunk.text_delta)
-                    if chunk.result is not None:
-                        result = chunk.result
+                with usage_context(
+                    conversation_id=conversation_id, turn_id=turn_id
+                ):
+                    stream_iter = iter(
+                        self.llm.stream_chat_with_tools(
+                            messages, tools_for_run, big=True
+                        )
+                    )
+                    sentinel = object()
+                    while True:
+                        chunk = await asyncio.to_thread(next, stream_iter, sentinel)
+                        if chunk is sentinel:
+                            break
+                        if chunk.think_delta:
+                            yield think_delta(chunk.think_delta)
+                        if chunk.text_delta:
+                            yield text_delta(chunk.text_delta)
+                        if chunk.result is not None:
+                            result = chunk.result
                 if result is None:
                     report.stop_reason = "llm_stream_incomplete"
                     report.detail = f"round={llm_rounds} no ChatWithToolsResult"

@@ -15,6 +15,13 @@ from app.logging_config import get_logger
 
 _log = get_logger("llm")
 
+# 延迟类型，避免循环导入
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.engine.usage.recorder import UsageRecorder
+
+
 
 @dataclass
 class ToolCall:
@@ -68,8 +75,13 @@ def _delta_reasoning(delta: Any) -> str | None:
 
 
 class OpenAILLMClient:
-    def __init__(self, settings: Settings):
+    def __init__(
+        self,
+        settings: Settings,
+        usage_recorder: "UsageRecorder | None" = None,
+    ):
         self.settings = settings
+        self.usage_recorder = usage_recorder
         self._small = OpenAI(
             api_key=settings.small_api_key or settings.openai_api_key,
             base_url=settings.small_base_url or settings.openai_base_url,
@@ -83,10 +95,56 @@ class OpenAILLMClient:
             base_url=settings.embed_base_url or settings.openai_base_url,
         )
 
+    def _record(self, **kwargs) -> None:
+        if self.usage_recorder is None:
+            return
+        try:
+            self.usage_recorder.record(**kwargs)
+        except Exception:
+            _log.exception("usage record failed")
+
+    @staticmethod
+    def _usage_from_resp(resp: Any) -> tuple[int | None, int | None, int | None, bool]:
+        usage = getattr(resp, "usage", None)
+        if usage is None:
+            return None, None, None, False
+        pt = getattr(usage, "prompt_tokens", None)
+        ct = getattr(usage, "completion_tokens", None)
+        tt = getattr(usage, "total_tokens", None)
+        known = pt is not None or ct is not None or tt is not None
+        return pt, ct, tt, known
+
     def chat(self, messages: list[dict], *, big: bool = False, temperature: float = 0.2) -> str:
         client = self._big if big else self._small
         model = self.settings.big_model if big else self.settings.small_model
-        resp = client.chat.completions.create(model=model, messages=messages, temperature=temperature)
+        role = "big" if big else "small"
+        t0 = time.monotonic()
+        try:
+            resp = client.chat.completions.create(
+                model=model, messages=messages, temperature=temperature
+            )
+        except BaseException as e:
+            self._record(
+                model=model,
+                kind="chat",
+                role=role,
+                status="error",
+                error=str(e),
+                duration_ms=int((time.monotonic() - t0) * 1000),
+            )
+            raise
+        pt, ct, tt, known = self._usage_from_resp(resp)
+        self._record(
+            model=model,
+            kind="chat",
+            role=role,
+            prompt_tokens=pt,
+            completion_tokens=ct,
+            total_tokens=tt,
+            tokens_known=known,
+            status="ok",
+            duration_ms=int((time.monotonic() - t0) * 1000),
+        )
         return resp.choices[0].message.content or ""
 
     def chat_with_tools(
@@ -99,10 +157,35 @@ class OpenAILLMClient:
     ) -> ChatWithToolsResult:
         client = self._big if big else self._small
         model = self.settings.big_model if big else self.settings.small_model
+        role = "big" if big else "small"
         kwargs: dict[str, Any] = {"model": model, "messages": messages, "temperature": temperature}
         if tools:
             kwargs["tools"] = tools
-        resp = client.chat.completions.create(**kwargs)
+        t0 = time.monotonic()
+        try:
+            resp = client.chat.completions.create(**kwargs)
+        except BaseException as e:
+            self._record(
+                model=model,
+                kind="chat_tools",
+                role=role,
+                status="error",
+                error=str(e),
+                duration_ms=int((time.monotonic() - t0) * 1000),
+            )
+            raise
+        pt, ct, tt, known = self._usage_from_resp(resp)
+        self._record(
+            model=model,
+            kind="chat_tools",
+            role=role,
+            prompt_tokens=pt,
+            completion_tokens=ct,
+            total_tokens=tt,
+            tokens_known=known,
+            status="ok",
+            duration_ms=int((time.monotonic() - t0) * 1000),
+        )
         msg = resp.choices[0].message
         tool_calls: list[ToolCall] = []
         if msg.tool_calls:
@@ -126,12 +209,14 @@ class OpenAILLMClient:
     ) -> Iterator[ChatStreamChunk]:
         client = self._big if big else self._small
         model = self.settings.big_model if big else self.settings.small_model
+        role = "big" if big else "small"
         stream_id = uuid.uuid4().hex[:8]
         kwargs: dict[str, Any] = {
             "model": model,
             "messages": messages,
             "temperature": temperature,
             "stream": True,
+            "stream_options": {"include_usage": True},
         }
         if tools:
             kwargs["tools"] = tools
@@ -153,11 +238,39 @@ class OpenAILLMClient:
         content_parts: list[str] = []
         think_parts: list[str] = []
         tc_acc: dict[int, dict[str, Any]] = {}
+        usage_prompt: int | None = None
+        usage_completion: int | None = None
+        usage_total: int | None = None
+        usage_known = False
 
         try:
-            stream = client.chat.completions.create(**kwargs)
+            try:
+                stream = client.chat.completions.create(**kwargs)
+            except Exception as e:
+                # 部分网关不支持 stream_options；去掉后重试以保可用性
+                if "stream_options" in kwargs:
+                    _log.warning(
+                        "llm stream include_usage unsupported id=%s model=%s err=%s; retry without",
+                        stream_id,
+                        model,
+                        e,
+                    )
+                    kwargs.pop("stream_options", None)
+                    stream = client.chat.completions.create(**kwargs)
+                else:
+                    raise
             for chunk in stream:
                 chunk_count += 1
+                u = getattr(chunk, "usage", None)
+                if u is not None:
+                    usage_prompt = getattr(u, "prompt_tokens", usage_prompt)
+                    usage_completion = getattr(u, "completion_tokens", usage_completion)
+                    usage_total = getattr(u, "total_tokens", usage_total)
+                    usage_known = (
+                        usage_prompt is not None
+                        or usage_completion is not None
+                        or usage_total is not None
+                    )
                 if not chunk.choices:
                     continue
                 choice = chunk.choices[0]
@@ -201,6 +314,18 @@ class OpenAILLMClient:
                 e,
                 exc_info=True,
             )
+            self._record(
+                model=model,
+                kind="stream_tools",
+                role=role,
+                prompt_tokens=usage_prompt,
+                completion_tokens=usage_completion,
+                total_tokens=usage_total,
+                tokens_known=usage_known,
+                status="error",
+                error=str(e),
+                duration_ms=elapsed_ms,
+            )
             raise
 
         elapsed_ms = int((time.monotonic() - t0) * 1000)
@@ -225,7 +350,8 @@ class OpenAILLMClient:
 
         _log.info(
             "llm stream end id=%s model=%s ms=%d chunks=%d content_chars=%d think_chars=%d "
-            "tool_deltas=%d tool_calls=%d tool_names=%s finish_reason=%s partial_tc_slots=%d",
+            "tool_deltas=%d tool_calls=%d tool_names=%s finish_reason=%s partial_tc_slots=%d "
+            "usage_known=%s prompt_tokens=%s completion_tokens=%s",
             stream_id,
             model,
             elapsed_ms,
@@ -237,6 +363,9 @@ class OpenAILLMClient:
             tool_names,
             finish_reason,
             partial_tc,
+            usage_known,
+            usage_prompt,
+            usage_completion,
         )
         if think_text and _log.isEnabledFor(10):  # DEBUG: 完整思考摘要
             preview = think_text[:500] + ("…" if len(think_text) > 500 else "")
@@ -266,6 +395,18 @@ class OpenAILLMClient:
                 finish_reason,
             )
 
+        self._record(
+            model=model,
+            kind="stream_tools",
+            role=role,
+            prompt_tokens=usage_prompt,
+            completion_tokens=usage_completion,
+            total_tokens=usage_total,
+            tokens_known=usage_known,
+            status="ok",
+            duration_ms=elapsed_ms,
+        )
+
         yield ChatStreamChunk(
             result=ChatWithToolsResult(content=content, tool_calls=tool_calls)
         )
@@ -273,15 +414,48 @@ class OpenAILLMClient:
     def embed(self, texts: list[str]) -> list[list[float]]:
         if not texts:
             return []
-        # DashScope text-embedding 等接口单次 batch 上限通常为 10
+        model = self.settings.embed_model
         batch_size = 10
         out: list[list[float]] = []
-        for i in range(0, len(texts), batch_size):
-            batch = texts[i : i + batch_size]
-            resp = self._embed.embeddings.create(
-                model=self.settings.embed_model, input=batch
+        t0 = time.monotonic()
+        prompt_tokens = 0
+        total_tokens = 0
+        any_known = False
+        try:
+            for i in range(0, len(texts), batch_size):
+                batch = texts[i : i + batch_size]
+                resp = self._embed.embeddings.create(model=model, input=batch)
+                out.extend(d.embedding for d in resp.data)
+                pt, _, tt, known = self._usage_from_resp(resp)
+                if known:
+                    any_known = True
+                    if pt is not None:
+                        prompt_tokens += pt
+                    if tt is not None:
+                        total_tokens += tt
+                    elif pt is not None:
+                        total_tokens += pt
+        except BaseException as e:
+            self._record(
+                model=model,
+                kind="embed",
+                role="embed",
+                status="error",
+                error=str(e),
+                duration_ms=int((time.monotonic() - t0) * 1000),
             )
-            out.extend(d.embedding for d in resp.data)
+            raise
+        self._record(
+            model=model,
+            kind="embed",
+            role="embed",
+            prompt_tokens=prompt_tokens if any_known else None,
+            completion_tokens=None,
+            total_tokens=total_tokens if any_known else None,
+            tokens_known=any_known,
+            status="ok",
+            duration_ms=int((time.monotonic() - t0) * 1000),
+        )
         return out
 
 

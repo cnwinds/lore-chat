@@ -18,6 +18,7 @@ from app.config import Settings, get_settings
 from app.models.llm import LLMClient
 from app.deps import build_container
 from app.api.admin_routes import router as admin_router
+from app.api.usage_routes import router as usage_router
 from app.api.routes import router
 from app.engine.sandbox.mirrors import normalize_mirror_region
 from app.settings_store import SettingsStore
@@ -149,6 +150,7 @@ def create_app(settings: Settings | None = None, llm: LLMClient | None = None) -
     app.add_middleware(MaintenanceGuardMiddleware)
     app.include_router(auth_router)
     app.include_router(admin_router)
+    app.include_router(usage_router)
     app.include_router(router)
     return app
 

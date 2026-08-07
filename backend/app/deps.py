@@ -30,6 +30,7 @@ from app.engine.workspace import ensure_workspace_id
 from app.deps_index import IndexSubgraph, build_index_subgraph
 from app.deps_memory import MemorySubgraph, build_memory_subgraph
 from app.deps_agent import AgentSubgraph, build_agent_subgraph
+from app.engine.usage import UsageRecorder, UsageService, UsageStore
 
 
 @dataclass
@@ -37,6 +38,7 @@ class Container:
     settings: Settings
     workspace_id: str
     llm: LLMClient
+    usage: UsageService
     repo: KnowledgeRepo
     indexer: Indexer
     retriever: Retriever
@@ -60,11 +62,17 @@ class Container:
     _index_subgraph: IndexSubgraph | None = field(default=None, repr=False)
     _memory_subgraph: MemorySubgraph | None = field(default=None, repr=False)
     _agent_subgraph: AgentSubgraph | None = field(default=None, repr=False)
+    _usage_store: UsageStore | None = field(default=None, repr=False)
 
 
 def build_container(settings: Settings, llm: LLMClient | None = None) -> Container:
     workspace_id = ensure_workspace_id(settings.kb_path)
-    llm = llm or OpenAILLMClient(settings)
+    usage_store = UsageStore(settings.kb_path / ".kb" / "usage" / "usage.db")
+    usage_recorder = UsageRecorder(usage_store)
+    usage = UsageService(usage_store)
+    llm = llm or OpenAILLMClient(settings, usage_recorder=usage_recorder)
+    if isinstance(llm, OpenAILLMClient) and llm.usage_recorder is None:
+        llm.usage_recorder = usage_recorder
     repo = KnowledgeRepo(settings.kb_path, protected_dirs=(settings.system_layer_dir,))
 
     memory_store = MemoryStore(
@@ -143,6 +151,7 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
         settings=settings,
         workspace_id=workspace_id,
         llm=llm,
+        usage=usage,
         repo=repo,
         indexer=index.indexer,
         retriever=index.retriever,
@@ -166,6 +175,7 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
         _index_subgraph=index,
         _memory_subgraph=memory,
         _agent_subgraph=agent,
+        _usage_store=usage_store,
     )
 
 
@@ -187,6 +197,11 @@ def dispose_container(container: Container | None) -> None:
     _close_sqlite(container.conversations)
     _close_sqlite(container.conversation_fts)
     _close_sqlite(container.indexer.fulltext)
+    if container._usage_store is not None:
+        try:
+            container._usage_store.close()
+        except Exception:
+            pass
     try:
         container.repo.repo.close()
     except Exception:
@@ -211,7 +226,12 @@ def apply_settings(
     container: Container, settings: Settings, llm: LLMClient | None = None
 ) -> None:
     container.settings = settings
-    new_llm = llm or OpenAILLMClient(settings)
+    recorder = None
+    if container._usage_store is not None:
+        recorder = UsageRecorder(container._usage_store)
+    new_llm = llm or OpenAILLMClient(settings, usage_recorder=recorder)
+    if isinstance(new_llm, OpenAILLMClient) and new_llm.usage_recorder is None and recorder:
+        new_llm.usage_recorder = recorder
     container.llm = new_llm
     if container._index_subgraph is not None:
         container._index_subgraph.rebind_llm(

@@ -1500,6 +1500,65 @@ a:hover {
   color: var(--text-muted);
 }
 
+.settings-usage-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-end;
+  margin-bottom: 12px;
+}
+
+.settings-usage-granularity {
+  min-width: 140px;
+}
+
+.settings-usage-totals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px 24px;
+  margin-bottom: 12px;
+}
+
+.settings-usage-metric-label {
+  display: block;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.settings-usage-table-wrap {
+  overflow: auto;
+  max-height: 280px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.settings-usage-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-xs);
+}
+
+.settings-usage-table th,
+.settings-usage-table td {
+  padding: 6px 8px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.settings-usage-table th {
+  position: sticky;
+  top: 0;
+  background: var(--bg-elevated, var(--bg));
+  font-weight: 600;
+}
+
+.settings-usage-price-input {
+  width: 88px;
+  padding: 4px 6px;
+  font-size: var(--text-xs);
+}
+
 .settings-field {
   display: flex;
   flex-direction: column;
