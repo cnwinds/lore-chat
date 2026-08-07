@@ -288,7 +288,7 @@ export function ChatMessageRow({
         {m.role !== "user" &&
           m.attachments?.map((a) => (
             <div key={a}>
-              <a href={downloadUrl(a)}>下载附件：{basename(a)}</a>
+              <a href={downloadUrl(a, { download: true })}>下载附件：{basename(a)}</a>
             </div>
           ))}
         {renderMessageMeta(m, isLiveStreaming, liveElapsedMs)}

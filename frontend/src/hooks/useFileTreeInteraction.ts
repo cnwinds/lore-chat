@@ -75,7 +75,11 @@ export function useFileTreeInteraction({
 
       if (action === "download") {
         if (ctx.kind === "file") {
-          window.open(downloadUrl(path), "_blank", "noopener,noreferrer");
+          window.open(
+            downloadUrl(path, { download: true }),
+            "_blank",
+            "noopener,noreferrer",
+          );
         } else {
           try {
             await downloadKbDirectory(path);

@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import io
 
-from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
+from fastapi.responses import FileResponse, StreamingResponse
 
+from app.api.file_download import content_disposition_type, media_type_for_filename
 from app.api.http_deps import (
     KbDeleteBody,
     KbMoveBody,
@@ -45,25 +46,27 @@ async def upload(
 
 
 @router.get("/download")
-async def download(path: str, request: Request):
+async def download(
+    path: str,
+    request: Request,
+    force_download: bool = Query(False, alias="download"),
+):
+    """打开附件：默认可预览类型 inline（浏览器内播视频/看图）；download=1 强制下载。"""
     c = container(request)
     norm = path.replace("\\", "/").lstrip("/")
     if norm.startswith(".kb/") or norm.startswith(".git/"):
         raise HTTPException(404, "文件不存在")
-    try:
-        data = c.repo.get_attachment(norm)
-    except FileNotFoundError:
+    abs_p = c.repo.abs_path(norm)
+    if not abs_p.is_file():
         raise HTTPException(404, "文件不存在")
-    filename = norm.rsplit("/", 1)[-1]
-    media = (
-        "text/markdown; charset=utf-8"
-        if norm.lower().endswith(".md")
-        else "application/octet-stream"
-    )
-    return StreamingResponse(
-        io.BytesIO(data),
+    filename = abs_p.name
+    media = media_type_for_filename(filename)
+    disposition = content_disposition_type(media, force_download=force_download)
+    return FileResponse(
+        path=abs_p,
         media_type=media,
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        filename=filename,
+        content_disposition_type=disposition,
     )
 
 

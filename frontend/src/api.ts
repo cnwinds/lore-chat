@@ -1029,8 +1029,13 @@ export async function resolveQuestion(
   });
 }
 
-export function downloadUrl(path: string) {
-  return `${BASE}/api/download?path=${encodeURIComponent(path)}`;
+export function downloadUrl(
+  path: string,
+  opts?: { download?: boolean },
+) {
+  const q = new URLSearchParams({ path });
+  if (opts?.download) q.set("download", "1");
+  return `${BASE}/api/download?${q.toString()}`;
 }
 
 export async function downloadKbDirectory(directory: string) {
