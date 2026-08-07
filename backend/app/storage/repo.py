@@ -122,17 +122,17 @@ class KnowledgeRepo:
             out.append(rel)
         return out
 
-    def save_attachment(
-        self, rel_dir: str, filename: str, data: bytes, *, commit_msg: str
-    ) -> str:
-        rel_path = f"{rel_dir.rstrip('/')}/attachments/{filename}"
-        abs_p = self._abs(rel_path)
+    def write_bytes(self, rel_path: str, data: bytes, *, commit_msg: str) -> str:
+        norm = rel_path.replace("\\", "/").lstrip("/")
+        if self._is_internal(norm):
+            raise ValueError(f"禁止写入：{rel_path}")
+        abs_p = self._abs(norm)
         abs_p.parent.mkdir(parents=True, exist_ok=True)
         abs_p.write_bytes(data)
-        self._commit([rel_path], commit_msg)
-        return rel_path
+        self._commit([norm], commit_msg)
+        return norm
 
-    def get_attachment(self, rel_path: str) -> bytes:
+    def read_bytes(self, rel_path: str) -> bytes:
         abs_p = self._abs(rel_path)
         if not abs_p.exists():
             raise FileNotFoundError(rel_path)

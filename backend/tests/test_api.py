@@ -172,10 +172,14 @@ def test_chat_rejects_missing_skill_root(client):
 def test_upload_and_download(client):
     content = "kubernetes 部署方案".encode("utf-8")
     files = {"file": ("plan.txt", content, "text/plain")}
-    r = client.post("/api/upload", files=files, data={"category": "技术/docker"})
+    r = client.post(
+        "/api/kb/import",
+        files=files,
+        data={"directory": "技术/docker"},
+    )
     assert r.status_code == 200
-    path = r.json()["attachment"]
-    assert path.endswith("attachments/plan.txt")
+    path = r.json()["rel_path"]
+    assert path == "技术/docker/plan.txt"
     assert path in client.get("/api/tree").json()["docs"]
     r2 = client.get("/api/download", params={"path": path})
     assert r2.status_code == 200

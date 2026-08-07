@@ -1056,11 +1056,6 @@ export async function ask(query: string) {
   );
 }
 
-export async function uploadFile(file: File, category: string) {
-  const r = await kbImport(file, category);
-  return { attachment: r.rel_path, indexed: r.indexed };
-}
-
 export async function kbImport(
   file: File,
   directory: string,

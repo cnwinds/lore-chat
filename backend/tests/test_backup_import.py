@@ -188,9 +188,9 @@ def test_write_routes_blocked_during_maintenance(client, tmp_path):
         assert r.status_code == 503
 
         r = client.post(
-            "/api/upload",
+            "/api/kb/import",
             files={"file": ("x.txt", io.BytesIO(b"hi"), "text/plain")},
-            data={"category": "未分类"},
+            data={"directory": "未分类"},
         )
         assert r.status_code == 503
 

@@ -26,7 +26,6 @@ export function isKbDirectoryPath(path: string, docs: string[]): boolean {
   const norm = path.replace(/\\/g, "/").replace(/\/+$/, "");
   if (!norm || docs.includes(norm)) return false;
   if (filesUnderKbDirectory(norm, docs).length > 0) return true;
-  if (norm.includes("/attachments/")) return false;
   const base = norm.split("/").pop() ?? "";
   return base.length > 0 && !base.includes(".");
 }

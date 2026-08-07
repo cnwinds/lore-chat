@@ -14,8 +14,7 @@ from app.index.fulltext import FullTextIndex
 from app.index.types import Hit
 from app.logging_config import get_logger
 from app.models.llm import LLMClient
-
-_ATTACH_MARKER = "/attachments/"
+from app.engine.knowledge_writer import is_markdown_path
 
 # 向量余弦相似度下限；低于此视为无关（小库中否则会把全部文档都当最近邻返回）
 MIN_VECTOR_SCORE = 0.45
@@ -313,5 +312,5 @@ class Retriever:
         ]
         text = self.llm.chat(messages, big=True)
         sources = list(dict.fromkeys(h.source for h in hits))
-        attachments = [s for s in sources if _ATTACH_MARKER in s]
+        attachments = [s for s in sources if not is_markdown_path(s)]
         return Answer(text=text, sources=sources, attachments=attachments)

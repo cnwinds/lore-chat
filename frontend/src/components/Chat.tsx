@@ -7,7 +7,7 @@ import { useSendQueue } from "../hooks/chat/useSendQueue";
 import type { JumpTarget } from "../hooks/chat/useConversationJump";
 import {
   chatInject,
-  uploadFile,
+  kbImport,
   summarizeConversation,
   type DocContextItem,
   type IngestResult,
@@ -413,9 +413,9 @@ export function Chat({
       setPendingFiles([]);
       try {
         for (const pf of filesToUpload) {
-          const r = await uploadFile(pf.file, "未分类");
-          uploadedPaths.push(r.attachment);
-          refreshKb(r.attachment);
+          const r = await kbImport(pf.file, "未分类");
+          uploadedPaths.push(r.rel_path);
+          refreshKb(r.rel_path);
         }
       } catch (err) {
         setPendingFiles(filesToUpload);

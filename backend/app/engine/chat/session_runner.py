@@ -7,6 +7,7 @@ from app.engine.agent.prompts import MODE_DEFAULT, MODE_FORCE_WRITE, MODE_NO_WRI
 from app.engine.chat.sse import parse_agent_sse_event
 from app.engine.chat.turn_hub import TurnExecutionHub, TurnRunSpec
 from app.engine.chat.turn_inject import PendingInject, TurnInjectBroker
+from app.engine.knowledge_writer import is_markdown_path
 
 
 class ChatSessionRunner:
@@ -162,6 +163,8 @@ async def consume_agent_ask(agent, query: str) -> dict:
     attachments = [
         s["path"]
         for s in sources
-        if s.get("type") == "kb" and "/attachments/" in (s.get("path") or "")
+        if s.get("type") == "kb"
+        and s.get("path")
+        and not is_markdown_path(s["path"])
     ]
     return {"text": "".join(text_parts), "sources": sources, "attachments": attachments}

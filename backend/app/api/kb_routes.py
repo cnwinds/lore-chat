@@ -19,39 +19,13 @@ from app.engine.patch import diff_affected_range
 router = APIRouter()
 
 
-@router.post("/upload")
-async def upload(
-    request: Request,
-    file: UploadFile = File(...),
-    category: str = Form("未分类"),
-):
-    c = container(request)
-    data = await file.read()
-    rel = c.repo.save_attachment(
-        category,
-        file.filename,
-        data,
-        commit_msg=f"add attachment {file.filename}",
-    )
-    abs_path = c.repo.abs_path(rel)
-    from app.index.extract import extract_text
-
-    text = extract_text(abs_path)
-    indexed = c.knowledge_writer.index_extracted_text(rel, text)
-    c.repo.log_change(
-        f"上传附件 {rel}",
-        commit_msg=f"chore: changelog upload {file.filename}",
-    )
-    return {"attachment": rel, "indexed": indexed}
-
-
 @router.get("/download")
 async def download(
     path: str,
     request: Request,
     force_download: bool = Query(False, alias="download"),
 ):
-    """打开附件：默认可预览类型 inline（浏览器内播视频/看图）；download=1 强制下载。"""
+    """打开文件：默认 inline 预览；download=1 强制下载。"""
     c = container(request)
     norm = path.replace("\\", "/").lstrip("/")
     if norm.startswith(".kb/") or norm.startswith(".git/"):

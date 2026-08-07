@@ -15,8 +15,6 @@ from app.storage.kb_paths import (
 )
 from app.storage.repo import KnowledgeRepo
 
-_ATTACHMENTS = "/attachments/"
-
 
 class KbPathExistsError(FileExistsError):
     def __init__(self, rel_path: str):
@@ -26,10 +24,6 @@ class KbPathExistsError(FileExistsError):
 
 def is_markdown_path(rel_path: str) -> bool:
     return rel_path.replace("\\", "/").lower().endswith(".md")
-
-
-def is_attachment_path(rel_path: str) -> bool:
-    return _ATTACHMENTS in rel_path.replace("\\", "/")
 
 
 def suggest_alternate_filename(filename: str) -> str:
@@ -52,10 +46,11 @@ def _safe_basename(name: str) -> str:
     return base
 
 
-def _attachment_rel(directory: str, filename: str) -> str:
+def _file_rel(directory: str, filename: str) -> str:
+    """非 Markdown：directory/filename（不再使用 attachments/ 子目录）。"""
     d = normalize_directory(directory)
     fn = _safe_basename(filename)
-    return f"{d}/attachments/{fn}" if d else f"attachments/{fn}"
+    return f"{d}/{fn}" if d else fn
 
 
 class KnowledgeWriter:
@@ -212,22 +207,17 @@ class KnowledgeWriter:
             )
             return {"rel_path": rel, "kind": "markdown", "indexed": True}
 
-        rel = _attachment_rel(directory, fn)
+        rel = _file_rel(directory, fn)
         if self.repo.abs_path(rel).exists():
             raise KbPathExistsError(rel)
-        self.repo.save_attachment(
-            normalize_directory(directory),
-            fn,
-            data,
-            commit_msg=f"import attachment {fn}",
-        )
+        self.repo.write_bytes(rel, data, commit_msg=f"import file: {rel}")
         extracted = extract_text(self.repo.abs_path(rel))
         indexed = self.index_extracted_text(rel, extracted)
         self.repo.log_change(
-            f"导入附件 {rel}",
+            f"导入文件 {rel}",
             commit_msg=f"chore: changelog import {fn}",
         )
-        return {"rel_path": rel, "kind": "attachment", "indexed": indexed}
+        return {"rel_path": rel, "kind": "file", "indexed": indexed}
 
     def move_directory_entry(
         self,
@@ -309,11 +299,8 @@ class KnowledgeWriter:
                     raise KbPathExistsError(rel) from e
                 raise
 
-        if not is_attachment_path(from_norm):
-            raise ValueError("仅支持移动 Markdown 文档或 attachments 下的文件")
-
         fn = _safe_basename(to_filename or PurePosixPath(from_norm).name)
-        to_rel = _attachment_rel(to_directory, fn)
+        to_rel = _file_rel(to_directory, fn)
         if self.repo.abs_path(to_rel).exists():
             raise KbPathExistsError(to_rel)
         new_path = self.repo.move_file(
@@ -323,7 +310,7 @@ class KnowledgeWriter:
         extracted = extract_text(self.repo.abs_path(new_path))
         self.index_extracted_text(new_path, extracted)
         self.repo.log_change(
-            f"移动附件 {from_norm} → {new_path}",
+            f"移动文件 {from_norm} → {new_path}",
             commit_msg=f"chore: changelog move {new_path}",
         )
         return new_path

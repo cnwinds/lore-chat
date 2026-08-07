@@ -304,9 +304,11 @@ TOOL_DEFINITIONS: list[dict] = [
         "function": {
             "name": "move_entry",
             "description": (
-                "移动知识库中的 Markdown 文件、附件，或整个目录（如 Skill 包目录）。"
+                "移动知识库中的文件（Markdown 或其它文件如 .pdf/.sh）"
+                "或整个目录（如 Skill 包目录）。"
                 "与侧栏拖放移动行为一致：目录移动时 to_filename 为新文件夹名（省略则用原目录名）；"
-                "单文件移动时 to_filename 为目标 .md 文件名（省略则用原文件名）。"
+                "单文件移动时 to_filename 为目标文件名（省略则用原文件名）；"
+                "Markdown 须以 .md 结尾；目标为 to_directory/filename。"
                 "移动前建议 list_kb_structure；目标路径不得已存在。"
             ),
             "parameters": {
@@ -315,7 +317,7 @@ TOOL_DEFINITIONS: list[dict] = [
                     "from_path": {
                         "type": "string",
                         "description": (
-                            "当前相对路径：.md 文件、attachments 下文件，或目录（如 skill/张雪峰）"
+                            "当前相对路径：任意知识库文件，或目录（如 skill/张雪峰）"
                         ),
                     },
                     "to_directory": {
@@ -325,7 +327,7 @@ TOOL_DEFINITIONS: list[dict] = [
                     "to_filename": {
                         "type": "string",
                         "description": (
-                            "目标文件名（.md 或附件名）或新目录名；省略时保留 from_path 最后一段名称"
+                            "目标文件名或新目录名；省略时保留 from_path 最后一段名称"
                         ),
                     },
                 },
@@ -548,7 +550,7 @@ TOOL_DEFINITIONS: list[dict] = [
                     "filename": {
                         "type": "string",
                         "description": (
-                            "目标文件名；Markdown 用 .md，其它作为附件入库"
+                            "目标文件名；Markdown 用 .md，其它文件落在 directory/filename"
                         ),
                     },
                 },

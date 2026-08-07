@@ -4,7 +4,6 @@ import {
   kbImport,
   kbMove,
   parentDirectory,
-  isMarkdownPath,
 } from "../api";
 import { KbNameConflictDialog } from "../components/KbNameConflictDialog";
 import { kbMutateWithConflictRetry } from "../lib/kbMutateWithConflictRetry";
@@ -150,16 +149,7 @@ export function useKbTreeActions(onTreeChanged: () => void, docs: string[]) {
 
   const renameFile = useCallback(
     async (fromPath: string, newFilename: string) => {
-      const contentDir = (() => {
-        const norm = fromPath.replace(/\\/g, "/");
-        const i = norm.indexOf("/attachments/");
-        if (i === -1) return parentDirectory(norm);
-        return norm.slice(0, i);
-      })();
-      if (isMarkdownPath(fromPath)) {
-        return moveFile(fromPath, parentDirectory(fromPath), newFilename);
-      }
-      return moveFile(fromPath, contentDir, newFilename);
+      return moveFile(fromPath, parentDirectory(fromPath), newFilename);
     },
     [moveFile],
   );

@@ -4,7 +4,6 @@ import sqlite3
 from pathlib import Path
 
 _CONVERSATIONS_DB_REL = Path(".kb") / "conversations" / "conversations.db"
-_ATTACHMENTS_MARKER = "/attachments/"
 
 
 def is_kb_empty(kb_path: Path, system_layer_dir: str = "系统") -> bool:
@@ -14,7 +13,7 @@ def is_kb_empty(kb_path: Path, system_layer_dir: str = "系统") -> bool:
         return False
     if _has_user_markdown(root, system_layer_dir):
         return False
-    if _has_attachments(root):
+    if _has_user_files(root, system_layer_dir):
         return False
     return True
 
@@ -42,13 +41,18 @@ def _has_user_markdown(root: Path, system_layer_dir: str) -> bool:
     return False
 
 
-def _has_attachments(root: Path) -> bool:
+def _has_user_files(root: Path, system_layer_dir: str) -> bool:
+    """非 Markdown 用户文件（任意后缀），不计 .kb/.git/系统层。"""
+    prefix = system_layer_dir.rstrip("/") + "/"
     for path in root.rglob("*"):
         if not path.is_file():
             continue
         rel = path.relative_to(root).as_posix()
         if rel.startswith(".kb/") or rel.startswith(".git/"):
             continue
-        if _ATTACHMENTS_MARKER in f"/{rel}/":
-            return True
+        if rel.startswith(prefix):
+            continue
+        if rel.lower().endswith(".md"):
+            continue
+        return True
     return False

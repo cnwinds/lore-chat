@@ -29,10 +29,10 @@ def test_non_empty_with_conversation(tmp_path):
     assert is_kb_empty(tmp_path) is False
 
 
-def test_non_empty_with_attachment(tmp_path):
-    attach_dir = tmp_path / "技术" / "docker" / "attachments"
-    attach_dir.mkdir(parents=True)
-    (attach_dir / "plan.pdf").write_bytes(b"%PDF-1.4 fake")
+def test_non_empty_with_file(tmp_path):
+    d = tmp_path / "技术" / "docker"
+    d.mkdir(parents=True)
+    (d / "plan.pdf").write_bytes(b"%PDF-1.4 fake")
     assert is_kb_empty(tmp_path) is False
 
 

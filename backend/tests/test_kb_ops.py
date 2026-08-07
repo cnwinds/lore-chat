@@ -1,7 +1,6 @@
 from app.engine.knowledge_writer import (
     KbPathExistsError,
     KnowledgeWriter,
-    is_attachment_path,
     is_markdown_path,
     suggest_alternate_filename,
 )
@@ -19,7 +18,7 @@ def _writer(repo, tmp_path):
     return KnowledgeWriter(repo, idx)
 
 
-def test_import_md_and_attachment(tmp_path):
+def test_import_md_and_file(tmp_path):
     repo = KnowledgeRepo(tmp_path / "knowledge", protected_dirs=("系统",))
     w = _writer(repo, tmp_path)
     r1 = w.import_entry(directory="技术", filename="note.md", data=b"# Hi\nbody\n")
@@ -27,8 +26,22 @@ def test_import_md_and_attachment(tmp_path):
     assert repo.read_doc("技术/note.md").body.strip().startswith("# Hi")
 
     r2 = w.import_entry(directory="技术", filename="plan.pdf", data=b"%PDF fake")
-    assert r2["rel_path"] == "技术/attachments/plan.pdf"
-    assert "技术/attachments/plan.pdf" in repo.list_tree()
+    assert r2["kind"] == "file"
+    assert r2["rel_path"] == "技术/plan.pdf"
+    assert "技术/plan.pdf" in repo.list_tree()
+
+
+def test_import_script(tmp_path):
+    repo = KnowledgeRepo(tmp_path / "knowledge")
+    w = _writer(repo, tmp_path)
+    r = w.import_entry(
+        directory="scripts",
+        filename="gen_audio.sh",
+        data=b"#!/bin/sh\necho ok\n",
+    )
+    assert r["kind"] == "file"
+    assert r["rel_path"] == "scripts/gen_audio.sh"
+    assert repo.abs_path("scripts/gen_audio.sh").exists()
 
 
 def test_import_conflict(tmp_path):
@@ -40,25 +53,40 @@ def test_import_conflict(tmp_path):
     assert suggest_alternate_filename("a.md") == "a (1).md"
 
 
-def test_move_attachment(tmp_path):
+def test_move_file(tmp_path):
     repo = KnowledgeRepo(tmp_path / "knowledge")
     w = _writer(repo, tmp_path)
-    w.import_entry(directory="a", filename="f.txt", data=b"hello")
+    w.import_entry(directory="a", filename="f.pdf", data=b"%PDF fake")
     new = w.move_entry(
-        from_path="a/attachments/f.txt", to_directory="b", to_filename="f.txt"
+        from_path="a/f.pdf", to_directory="b", to_filename="f.pdf"
     )
-    assert new == "b/attachments/f.txt"
-    assert not repo.abs_path("a/attachments/f.txt").exists()
+    assert new == "b/f.pdf"
+    assert not repo.abs_path("a/f.pdf").exists()
 
 
-def test_delete_attachment(tmp_path):
+def test_rename_file(tmp_path):
+    repo = KnowledgeRepo(tmp_path / "knowledge")
+    w = _writer(repo, tmp_path)
+    w.import_entry(directory="scripts", filename="run.sh", data=b"#!/bin/sh\necho hi\n")
+
+    new = w.move_entry(
+        from_path="scripts/run.sh", to_directory="scripts", to_filename="start.sh"
+    )
+    assert new == "scripts/start.sh"
+    assert repo.abs_path("scripts/start.sh").read_text(encoding="utf-8").startswith(
+        "#!/bin/sh"
+    )
+    assert not repo.abs_path("scripts/run.sh").exists()
+
+
+def test_delete_file(tmp_path):
     repo = KnowledgeRepo(tmp_path / "knowledge")
     w = _writer(repo, tmp_path)
     w.import_entry(directory="x", filename="z.bin", data=b"\x00")
-    deleted = w.delete_entry("x/attachments/z.bin")
-    assert deleted == ["x/attachments/z.bin"]
+    deleted = w.delete_entry("x/z.bin")
+    assert deleted == ["x/z.bin"]
 
 
 def test_path_helpers():
     assert is_markdown_path("a.md")
-    assert is_attachment_path("d/attachments/x.bin")
+    assert not is_markdown_path("a.pdf")

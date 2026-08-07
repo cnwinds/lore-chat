@@ -3,33 +3,81 @@
 from __future__ import annotations
 
 import mimetypes
+from pathlib import PurePosixPath
 
-# 浏览器可直接打开/播放的类型：默认 inline；其余 attachment。
-_INLINE_PREFIXES = ("video/", "audio/", "image/", "text/")
-_INLINE_TYPES = frozenset(
+# 浏览器对 application/x-sh 等常直接下载；映射为 text/plain 便于默认预览。
+_TEXT_PREVIEW_SUFFIXES = frozenset(
     {
-        "application/pdf",
-        "application/json",
+        ".sh",
+        ".bash",
+        ".zsh",
+        ".fish",
+        ".ps1",
+        ".bat",
+        ".cmd",
+        ".py",
+        ".js",
+        ".ts",
+        ".tsx",
+        ".jsx",
+        ".json",
+        ".yaml",
+        ".yml",
+        ".toml",
+        ".ini",
+        ".cfg",
+        ".conf",
+        ".csv",
+        ".tsv",
+        ".sql",
+        ".xml",
+        ".html",
+        ".css",
+        ".rs",
+        ".go",
+        ".java",
+        ".c",
+        ".h",
+        ".cpp",
+        ".hpp",
+        ".md",
+        ".txt",
+        ".log",
+        ".env",
+        ".gitignore",
+        ".dockerfile",
     }
 )
 
 
 def media_type_for_filename(filename: str) -> str:
     name = (filename or "").strip()
+    suffix = PurePosixPath(name.replace("\\", "/")).suffix.lower()
+    if suffix in _TEXT_PREVIEW_SUFFIXES or name.lower() in (
+        "dockerfile",
+        "makefile",
+        "license",
+        "readme",
+    ):
+        if suffix == ".md":
+            return "text/markdown; charset=utf-8"
+        if suffix in (".html", ".htm"):
+            return "text/html; charset=utf-8"
+        if suffix == ".css":
+            return "text/css; charset=utf-8"
+        if suffix == ".json":
+            return "application/json"
+        return "text/plain; charset=utf-8"
     guessed, _ = mimetypes.guess_type(name)
     if guessed:
         return guessed
-    if name.lower().endswith(".md"):
-        return "text/markdown; charset=utf-8"
     return "application/octet-stream"
 
 
 def content_disposition_type(
     media_type: str, *, force_download: bool = False
 ) -> str:
+    """默认 inline（点击预览）；仅 ?download=1 / force_download 才 attachment。"""
     if force_download:
         return "attachment"
-    base = (media_type or "").split(";", 1)[0].strip().lower()
-    if base in _INLINE_TYPES or any(base.startswith(p) for p in _INLINE_PREFIXES):
-        return "inline"
-    return "attachment"
+    return "inline"

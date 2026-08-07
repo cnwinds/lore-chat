@@ -51,8 +51,8 @@ def test_delete_bumps_when_paths_removed(tmp_path):
     svc, _, rev = _svc(tmp_path)
     svc.import_upload(directory="x", filename="f.txt", data=b"hi")
     before = rev.get()
-    r = svc.delete("x/attachments/f.txt")
-    assert r["deleted_paths"] == ["x/attachments/f.txt"]
+    r = svc.delete("x/f.txt")
+    assert r["deleted_paths"] == ["x/f.txt"]
     assert rev.get() == before + 1
 
 

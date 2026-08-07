@@ -15,17 +15,25 @@ def test_media_type_unknown_fallback():
     assert media_type_for_filename("data.bin") == "application/octet-stream"
 
 
-def test_inline_for_video_by_default():
+def test_media_type_shell_is_text_plain():
+    assert media_type_for_filename("gen_audio.sh") == "text/plain; charset=utf-8"
+
+
+def test_inline_by_default_including_octet_stream():
     assert content_disposition_type("video/mp4") == "inline"
     assert content_disposition_type("image/png") == "inline"
     assert content_disposition_type("application/pdf") == "inline"
+    assert content_disposition_type("application/octet-stream") == "inline"
+    assert content_disposition_type("text/plain; charset=utf-8") == "inline"
 
 
 def test_force_download_overrides_inline():
     assert (
         content_disposition_type("video/mp4", force_download=True) == "attachment"
     )
-
-
-def test_octet_stream_is_attachment():
-    assert content_disposition_type("application/octet-stream") == "attachment"
+    assert (
+        content_disposition_type(
+            "application/octet-stream", force_download=True
+        )
+        == "attachment"
+    )

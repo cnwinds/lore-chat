@@ -65,12 +65,12 @@ def test_list_tree(repo):
     assert ".gitkeep" not in tree
 
 
-def test_save_and_get_attachment(repo):
-    p = repo.save_attachment(
-        "技术/docker", "plan.pdf", b"%PDF-1.4 fake", commit_msg="add file"
+def test_write_and_read_bytes(repo):
+    p = repo.write_bytes(
+        "技术/docker/plan.pdf", b"%PDF-1.4 fake", commit_msg="add file"
     )
-    assert p == "技术/docker/attachments/plan.pdf"
-    assert repo.get_attachment(p) == b"%PDF-1.4 fake"
+    assert p == "技术/docker/plan.pdf"
+    assert repo.read_bytes(p) == b"%PDF-1.4 fake"
 
 
 def test_log_change_appends_changelog(repo):
@@ -103,19 +103,19 @@ def test_delete_directory(repo):
 
 def test_move_directory(repo):
     repo.write_doc("projects/mini-app/a.md", {"title": "A"}, "a\n", commit_msg="add")
-    repo.save_attachment(
-        "projects/mini-app", "x.pdf", b"pdf", commit_msg="att"
+    repo.write_bytes(
+        "projects/mini-app/x.pdf", b"pdf", commit_msg="add pdf"
     )
     old, new = repo.move_directory(
         "projects/mini-app", "archive/mini-app", commit_msg="move dir"
     )
     assert set(old) == {
         "projects/mini-app/a.md",
-        "projects/mini-app/attachments/x.pdf",
+        "projects/mini-app/x.pdf",
     }
     assert set(new) == {
         "archive/mini-app/a.md",
-        "archive/mini-app/attachments/x.pdf",
+        "archive/mini-app/x.pdf",
     }
     assert not (repo.root / "projects" / "mini-app").exists()
     assert not (repo.root / "projects").exists()
@@ -123,15 +123,15 @@ def test_move_directory(repo):
     assert "archive/mini-app/a.md" in repo.list_tree()
 
 
-def test_move_file_attachment(repo):
-    repo.save_attachment("d", "n.txt", b"hi", commit_msg="att")
+def test_move_file(repo):
+    repo.write_bytes("d/n.txt", b"hi", commit_msg="add")
     new = repo.move_file(
-        "d/attachments/n.txt",
-        "d/attachments/renamed.txt",
-        commit_msg="rename att",
+        "d/n.txt",
+        "d/renamed.txt",
+        commit_msg="rename",
     )
-    assert new == "d/attachments/renamed.txt"
-    assert repo.get_attachment(new) == b"hi"
+    assert new == "d/renamed.txt"
+    assert repo.read_bytes(new) == b"hi"
 
 
 def test_delete_protected_path_raises(repo):

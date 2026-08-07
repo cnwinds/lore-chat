@@ -42,12 +42,12 @@ def test_answer_returns_sources(tmp_path):
     assert "技术/docker/常用命令.md" in ans.sources
 
 
-def test_answer_attaches_readable_file(tmp_path):
+def test_answer_attaches_non_markdown(tmp_path):
     vi = VectorIndex(tmp_path / "vec")
     fi = FullTextIndex(tmp_path / "fts.db")
     llm = FakeLLMClient(chat_responses=["见附件方案。"], embed_dim=8)
     idx = Indexer(vi, fi, llm)
-    idx.reindex_doc("技术/docker/attachments/部署方案.pdf", "kubernetes 部署方案详细步骤")
+    idx.reindex_doc("技术/docker/部署方案.pdf", "kubernetes 部署方案详细步骤")
     retr = Retriever(vi, fi, llm)
     ans = retr.answer("部署方案")
-    assert "技术/docker/attachments/部署方案.pdf" in ans.attachments
+    assert "技术/docker/部署方案.pdf" in ans.attachments
