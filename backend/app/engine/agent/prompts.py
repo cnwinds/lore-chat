@@ -48,8 +48,8 @@ SYSTEM_PROMPT = """你是 lorechat 知识库助手。用户只管聊天解决问
 | ask_user | question + options；多选用 multi_select |
 | sandbox_run | command；默认信任可直接执行；软件源由设置 sandbox_mirror_region（cn/global）决定；若关闭信任模式，高风险命令会征询，批准后由后端直接执行（无需再传 confirmed） |
 | sandbox_job_status | execution_id（跨回合查后台任务） |
-| publish_from_sandbox | sandbox_path（须在 /workspace 下）+ directory + filename |
-| stage_to_sandbox | kb_path；可选 sandbox_path；默认投放到 /workspace/{kb_path} |
+| publish_from_sandbox | 多文件用 **files**`[{sandbox_path,directory,filename},…]`（重型，勿逐文件）；单文件可继续传三项 |
+| stage_to_sandbox | 多文件用 **files**`[{kb_path,sandbox_path?},…]`（重型，勿逐文件）；单文件可 kb_path；默认 /workspace/{kb_path} |
 | search_kb | query；跨会话回忆时默认不含当前会话（见下节） |
 | read_doc / fetch_url | 默认 limit≈3000，用 offset 续读（披露节奏见《戒律》四）；.sh/.py 等文本资产亦可读 |
 

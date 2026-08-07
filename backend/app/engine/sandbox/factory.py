@@ -74,6 +74,7 @@ def build_sandbox_runtime(settings: Settings):
         api_key=settings.opensandbox_api_key,
         use_server_proxy=settings.opensandbox_use_server_proxy,
         workspace_volume=settings.opensandbox_workspace_volume,
+        image=settings.sandbox_image,
         sandbox_env=sandbox_env,
         mirror_region=mirror_region,
     )

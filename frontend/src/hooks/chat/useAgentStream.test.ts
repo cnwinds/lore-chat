@@ -210,6 +210,7 @@ describe("useAgentStream", () => {
   it("ensureConversationId creates a conversation and marks skipLoadRef when none exists", async () => {
     const options = baseOptions({
       conversationId: null,
+      conversationIdRef: { current: null },
       onConversationCreated: vi.fn(),
     });
     const { result } = renderHook(() => useAgentStream(options));
@@ -221,7 +222,78 @@ describe("useAgentStream", () => {
 
     expect(cid).toBe("new-cid");
     expect(options.skipLoadRef.current).toBe("new-cid");
+    expect(options.conversationIdRef.current).toBe("new-cid");
     expect(options.onConversationCreated).toHaveBeenCalledWith("new-cid");
+  });
+
+  it("keeps observing when conversationId is assigned mid-stream (null → id)", async () => {
+    let releaseStream: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => {
+      releaseStream = resolve;
+    });
+    let sawAbort = false;
+    let streamFullyConsumed = false;
+    vi.mocked(api.chatStream).mockImplementation(async function* (_text, opts) {
+      const signal = opts?.signal;
+      const onAbort = () => {
+        sawAbort = true;
+      };
+      signal?.addEventListener("abort", onAbort);
+      try {
+        await gate;
+        if (signal?.aborted) {
+          const err = new Error("Aborted");
+          err.name = "AbortError";
+          throw err;
+        }
+        yield {
+          event: "tool_start",
+          data: { id: "t1", tool: "search_kb", ts: "2026-01-01T00:00:00.000Z" },
+        };
+        yield { event: "done", data: { sources: [] } };
+        streamFullyConsumed = true;
+      } finally {
+        signal?.removeEventListener("abort", onAbort);
+      }
+    });
+
+    const conversationIdRef = { current: null as string | null };
+    const { setMsgs } = makeSetMsgs([]);
+    const options = baseOptions({
+      conversationId: null,
+      conversationIdRef,
+      setMsgs,
+      onConversationCreated: (id) => {
+        conversationIdRef.current = id;
+      },
+    });
+
+    const { result, rerender } = renderHook(
+      (props) => useAgentStream(props),
+      { initialProps: options },
+    );
+
+    let run!: Promise<boolean>;
+    await act(async () => {
+      run = result.current.runAgentStream("hello new chat");
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // Simulate parent assigning the new conversation id (as onConversationCreated does).
+    rerender({ ...options, conversationId: "new-cid" });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    releaseStream?.();
+    await act(async () => {
+      await run;
+    });
+
+    expect(sawAbort).toBe(false);
+    expect(streamFullyConsumed).toBe(true);
+    expect(result.current.streaming).toBe(false);
   });
 
   it("ignores concurrent runAgentStream calls while already streaming", async () => {

@@ -43,8 +43,8 @@ TOOL_LABELS = {
     "sandbox_run": "在沙箱执行命令",
     "sandbox_list_dir": "列出沙箱目录",
     "sandbox_read_file": "读取沙箱文件",
-    "publish_from_sandbox": "从沙箱发布到知识库",
-    "stage_to_sandbox": "将知识库文件投放到沙箱",
+    "publish_from_sandbox": "从沙箱批量发布到知识库",
+    "stage_to_sandbox": "将知识库文件批量投放到沙箱",
     "sandbox_job_status": "查询沙箱后台任务",
 }
 
@@ -577,14 +577,46 @@ TOOL_DEFINITIONS: list[dict] = [
             "name": "publish_from_sandbox",
             "description": (
                 "将沙箱 /workspace 下的文件显式发布到知识库。"
+                "重型调用：多文件务必一次用 files 批量发布，勿逐文件反复调用。"
                 "中间产物不要自动入库；仅最终旁白/分镜/成片等需要归档时调用。"
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
+                    "files": {
+                        "type": "array",
+                        "description": (
+                            "推荐；要发布的文件列表。"
+                            "每项：sandbox_path + directory + filename"
+                        ),
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "sandbox_path": {
+                                    "type": "string",
+                                    "description": "沙箱绝对路径，必须在 /workspace 下",
+                                },
+                                "directory": {
+                                    "type": "string",
+                                    "description": _KB_DIRECTORY_DESC,
+                                },
+                                "filename": {
+                                    "type": "string",
+                                    "description": (
+                                        "目标文件名；Markdown 用 .md，"
+                                        "其它文件落在 directory/filename"
+                                    ),
+                                },
+                            },
+                            "required": ["sandbox_path", "directory", "filename"],
+                        },
+                    },
                     "sandbox_path": {
                         "type": "string",
-                        "description": "沙箱绝对路径，必须在 /workspace 下",
+                        "description": (
+                            "单文件兼容；沙箱绝对路径，必须在 /workspace 下。"
+                            "多文件请用 files"
+                        ),
                     },
                     "directory": {
                         "type": "string",
@@ -593,11 +625,12 @@ TOOL_DEFINITIONS: list[dict] = [
                     "filename": {
                         "type": "string",
                         "description": (
-                            "目标文件名；Markdown 用 .md，其它文件落在 directory/filename"
+                            "单文件兼容；目标文件名。"
+                            "Markdown 用 .md，其它文件落在 directory/filename"
                         ),
                     },
                 },
-                "required": ["sandbox_path", "directory", "filename"],
+                "required": [],
             },
         },
     },
@@ -607,25 +640,56 @@ TOOL_DEFINITIONS: list[dict] = [
             "name": "stage_to_sandbox",
             "description": (
                 "将知识库中的文件显式投放到沙箱 /workspace，便于 sandbox_run 执行。"
+                "重型调用：多文件务必一次用 files 批量投放，勿逐文件反复调用。"
                 "默认映射 kb_path → /workspace/{kb_path}；沙箱侧已存在则覆盖。"
                 "权威副本仍在知识库；改完脚本应 write_kb_file(overwrite=true) 回写。"
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
+                    "files": {
+                        "type": "array",
+                        "description": (
+                            "推荐；要投放的文件列表。"
+                            "每项：kb_path，可选 sandbox_path"
+                        ),
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "kb_path": {
+                                    "type": "string",
+                                    "description": (
+                                        "知识库相对路径，如 "
+                                        "skill/hn-video-report/scripts/fetch_hn.py"
+                                    ),
+                                },
+                                "sandbox_path": {
+                                    "type": "string",
+                                    "description": (
+                                        "可选；沙箱绝对路径，须在 /workspace 下。"
+                                        "省略则使用 /workspace/{kb_path}"
+                                    ),
+                                },
+                            },
+                            "required": ["kb_path"],
+                        },
+                    },
                     "kb_path": {
                         "type": "string",
-                        "description": "知识库相对路径，如 scripts/gen_audio.sh",
+                        "description": (
+                            "单文件兼容；知识库相对路径。"
+                            "多文件请用 files"
+                        ),
                     },
                     "sandbox_path": {
                         "type": "string",
                         "description": (
-                            "可选；沙箱绝对路径，须在 /workspace 下。"
+                            "单文件兼容；沙箱绝对路径，须在 /workspace 下。"
                             "省略则使用 /workspace/{kb_path}"
                         ),
                     },
                 },
-                "required": ["kb_path"],
+                "required": [],
             },
         },
     },

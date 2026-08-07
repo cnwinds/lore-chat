@@ -209,3 +209,7 @@ class FakeSandboxRuntime:
 
     async def write_file(self, path: str, data: bytes) -> None:
         self._files[self._norm(path)] = data
+
+    async def write_files(self, entries: list[tuple[str, bytes]]) -> None:
+        for path, data in entries:
+            await self.write_file(path, data)

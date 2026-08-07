@@ -88,6 +88,23 @@ async def test_write_file_passes_raw_bytes(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_write_files_batches_entries(tmp_path):
+    files = _FakeFiles({})
+    rt = _runtime(tmp_path, files)
+
+    await rt.write_files(
+        [
+            ("/workspace/a.txt", b"aaa"),
+            ("/workspace/b.bin", b"\x00\xff"),
+        ]
+    )
+
+    assert len(files.written) == 2
+    assert files.store["/workspace/a.txt"] == b"aaa"
+    assert files.store["/workspace/b.bin"] == b"\x00\xff"
+
+
+@pytest.mark.asyncio
 async def test_read_file_base64_fallback_when_no_files_api(tmp_path):
     import base64
 

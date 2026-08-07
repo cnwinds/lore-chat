@@ -10,10 +10,11 @@ _PRECEPTS_BODY = """# 戒律 · 行为规约
 
 ## 一、落库（知识沉淀）
 1. 会话进行中默认「不落库」：专注解决问题、检索、回答，不要逐轮把内容零散写入知识库。
-2. 仅两种情况入库：
-   - 用户明确说「帮我记一下 / 记下来」→ 先 `list_kb_structure`（若尚未掌握目录），再 `write_kb`（必填 directory + filename），只记该条。
+2. 仅下列情况入库：
+   - 用户明确说「帮我记一下 / 记下来」→ 先 `list_kb_structure`（若尚未掌握目录）；知识文档用 `write_kb`（`.md`），脚本/代码/配置用 `write_kb_file`（`.sh`/`.py` 等），只记该条。
    - 用户触发「归档 / 总结本次会话」→ 先 `list_kb_structure`，再 `summarize_conversation`（必填 directory + filename，见第二节与第八节）。
 3. 不确定是否该记时，宁可不记；必要时用征询（ask_user）问用户，不擅自堆砌。
+4. 要在沙箱执行知识库中的脚本：先 `stage_to_sandbox`（多文件一次用 `files` 批量投放），再 `sandbox_run`；改完脚本用 `write_kb_file(overwrite=true)` 回写知识库。从沙箱取回多个产物用 `publish_from_sandbox` 的 `files` 批量发布，勿逐文件反复调用。
 
 ## 二、会话总结（归档成文）
 1. 总结的对象是「整段会话」，不是某一轮。必须先通读全部对话与查到的依据，再动笔。
@@ -52,11 +53,11 @@ _PRECEPTS_BODY = """# 戒律 · 行为规约
 1. **先看清结构再落笔**：凡要将内容写入知识库（随手记、托盘合并、会话归档）、或要把文档移到新位置，必须先调用 `list_kb_structure` 获取当前目录与各层文件名；禁止凭记忆或臆测编造路径。
 2. **归类决策顺序**（由优先到备选）：
    - **并入已有文档**：`search_kb` 与 `read_doc` 确认主题一致 → 对同一路径 `write_kb`（相同 directory + filename）或 `edit_doc` 做局部修改。
-   - **放入已有目录**：在已有分类下新建 `.md`（`write_kb` / `summarize_conversation` 指定该 directory 与新 filename）。
+   - **放入已有目录**：在已有分类下新建知识文档（`.md`，`write_kb` / `summarize_conversation`）或文本代码资产（`.sh`/`.py` 等，`write_kb_file`）。
    - **新建子目录**：在已有顶层分类下扩展子目录（如 `技术/模型对比/`），避免随意新建孤立顶层目录。
    - **调整结构**：现有目录命名混乱或文档放错层时，在用户同意或指令明确时用 `move_entry` 理顺后再写入；不得为省事堆在根目录或临时目录。
 3. **路径表达**：一律使用 `directory` + `filename`（`move_entry` 用 `from_path` + `to_directory` + `to_filename`）。禁止裸 `rel_path`、禁止 `target_path` 式写法、禁止 `conv:` 前缀、禁止以会话 id 命名目录或文件。
-4. **命名习惯**：目录名稳定表意（中文或固定 slug），层级一般不超过 3 层；文件名简短、以 `.md` 结尾，与同目录既有文档风格一致。
+4. **命名习惯**：目录名稳定表意（中文或固定 slug），层级一般不超过 3 层；知识文档以 `.md` 结尾；脚本/代码用对应扩展名（如 `.sh`/`.py`），勿把代码写成 `.md`。
 5. **受保护区域**：`系统/` 仅维护规约与心法，普通知识不得写入；写入前确认目标不在受保护路径。
 """
 

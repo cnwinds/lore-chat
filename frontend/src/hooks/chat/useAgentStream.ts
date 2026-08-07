@@ -126,7 +126,11 @@ export function useAgentStream({
   }, [streaming]);
 
   // Conversation switch / unmount: detach observation only (do not stop the turn).
+  // Important: first send creates a conversation (null → id). That must NOT abort the
+  // in-flight POST /api/chat observe stream — otherwise UI freezes on an empty bubble
+  // while the server turn keeps running.
   useEffect(() => {
+    if (!conversationId) return;
     return () => {
       abortRef.current?.abort();
     };
@@ -144,6 +148,7 @@ export function useAgentStream({
     if (conversationId) return conversationId;
     const { id } = await createConversation();
     skipLoadRef.current = id;
+    conversationIdRef.current = id;
     onConversationCreated?.(id);
     return id;
   }

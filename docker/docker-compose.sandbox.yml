@@ -4,6 +4,10 @@
 # 启动示例（项目根）：
 #   docker compose --project-directory docker --env-file .env \
 #     -f docker/docker-compose.yml -f docker/docker-compose.sandbox.yml up -d --build
+#
+# 沙箱 Agent 镜像（hn-video-report 默认环境）须先构建：
+#   docker build -t lorechat-sandbox-agent:local \
+#     -f docker/opensandbox/Dockerfile.agent docker/opensandbox
 
 services:
   backend:
@@ -15,6 +19,7 @@ services:
       OPENSANDBOX_USE_SERVER_PROXY: "false"
       OPENSANDBOX_API_KEY: ${OPENSANDBOX_API_KEY:-}
       OPENSANDBOX_WORKSPACE_VOLUME: lorechat-sandbox-workspace
+      SANDBOX_IMAGE: ${SANDBOX_IMAGE:-lorechat-sandbox-agent:local}
       # 默认信任：沙箱命令不征询；可在设置里关闭
       SANDBOX_TRUST_MODE: ${SANDBOX_TRUST_MODE:-true}
       SANDBOX_MIRROR_REGION: ${SANDBOX_MIRROR_REGION:-cn}

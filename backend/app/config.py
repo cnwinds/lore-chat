@@ -82,6 +82,8 @@ class Settings(BaseSettings):
     opensandbox_api_key: str | None = None
     opensandbox_use_server_proxy: bool = False
     opensandbox_workspace_volume: str = "lorechat-sandbox-workspace"
+    # 沙箱业务镜像（工具链）；execd 由 OpenSandbox config.toml 的 execd_image 注入
+    sandbox_image: str = "lorechat-sandbox-agent:local"
     # 信任模式：跳过 sandbox_run 确认门（可经设置 UI 热改；默认开启）
     sandbox_trust_mode: bool = True
     # 沙箱软件源：cn=国内镜像（阿里云/npmmirror），global=官方源
@@ -101,6 +103,7 @@ EDITABLE_SETTING_KEYS: frozenset[str] = frozenset(
         "opensandbox_api_key",
         "opensandbox_use_server_proxy",
         "opensandbox_workspace_volume",
+        "sandbox_image",
     }
 )
 

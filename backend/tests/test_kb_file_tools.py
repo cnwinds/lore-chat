@@ -155,6 +155,37 @@ async def test_stage_to_sandbox_default_path(tmp_path):
     assert b"echo v2" in await runtime.read_file("/workspace/custom.sh")
 
 
+@pytest.mark.asyncio
+async def test_stage_to_sandbox_batch(tmp_path):
+    registry, runtime = _make_registry(tmp_path)
+    assert runtime is not None
+    for name, body in (
+        ("a.sh", "#!/bin/sh\necho a\n"),
+        ("b.py", "print('b')\n"),
+    ):
+        await registry.execute(
+            "write_kb_file",
+            {"directory": "scripts", "filename": name, "content": body},
+        )
+    staged = await registry.execute(
+        "stage_to_sandbox",
+        {
+            "files": [
+                {"kb_path": "scripts/a.sh"},
+                {
+                    "kb_path": "scripts/b.py",
+                    "sandbox_path": "/workspace/run/b.py",
+                },
+            ]
+        },
+    )
+    assert staged.get("ok") == 2
+    assert staged.get("failed") == 0
+    assert len(staged["items"]) == 2
+    assert b"echo a" in await runtime.read_file("/workspace/scripts/a.sh")
+    assert b"print('b')" in await runtime.read_file("/workspace/run/b.py")
+
+
 def test_select_tools_no_write_drops_write_kb_file_keeps_stage():
     names = _tool_names(
         select_tools(MODE_NO_WRITE, web_enabled=True, sandbox_enabled=True)

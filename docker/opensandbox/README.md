@@ -1,11 +1,31 @@
-# OpenSandbox Agent 镜像（固化常用依赖）
+# OpenSandbox Agent 业务镜像（固化 hn-video-report 默认环境）
 
-默认仍用上游 `opensandbox/execd` 极简镜像验证；反复成功的依赖应固化到本 Dockerfile，
-再把 `docker/opensandbox/config.toml` 的 `execd_image` 指到本地构建标签。
+官方 `opensandbox/execd` 只负责往沙箱里注入 **execd 进程**；  
+本镜像是 `Sandbox.create(image=…)` 用的 **业务环境**（Debian + 视频 skill 依赖）。
 
 ```bash
-docker build -t lorechat-sandbox-agent:local -f docker/opensandbox/Dockerfile.agent .
-# 然后在 config.toml: execd_image = "lorechat-sandbox-agent:local"
+# 仓库根目录
+docker build -t lorechat-sandbox-agent:local \
+  -f docker/opensandbox/Dockerfile.agent \
+  docker/opensandbox
 ```
 
-当前基础层与上游一致，并预装视频 skill 高频工具链（可按需删减）。
+- `config.toml` → `execd_image = "opensandbox/execd:v1.0.18"`（官方）
+- backend / compose → `SANDBOX_IMAGE=lorechat-sandbox-agent:local`（本镜像）
+
+换镜像后需重建沙箱容器（清 `.kb/sandbox_runtime.json` 的 `sandbox_id`）。
+
+## 预装
+
+| 类别 | 内容 |
+|------|------|
+| 系统 | ffmpeg、curl、unzip、fonts-noto-cjk、Chrome headless 运行库 |
+| Node | 22.18.0 |
+| Python | edge-tts、mutagen、matplotlib、numpy |
+| npm 全局 | hyperframes@0.7.94（`ONNXRUNTIME_NODE_INSTALL_CUDA=skip`） |
+
+## 不在镜像内
+
+- 项目 `package.json` / `hyperframes.json`
+- `chrome-headless-shell`（首次 render 自动下载）
+- 技能脚本（从知识库拷入）

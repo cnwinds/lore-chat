@@ -95,7 +95,7 @@ class OpenSandboxRuntime:
         api_key: str | None = None,
         use_server_proxy: bool = True,
         workspace_volume: str = "lorechat-sandbox-workspace",
-        image: str = "python:3.12-slim",
+        image: str = "lorechat-sandbox-agent:local",
         sandbox_env: dict[str, str] | None = None,
         mirror_region: MirrorRegion = "cn",
     ) -> None:
@@ -447,11 +447,18 @@ class OpenSandboxRuntime:
 
     async def write_file(self, path: str, data: bytes) -> None:
         """写入沙箱文件；原样传递 bytes（WriteEntry 支持 str|bytes）。"""
+        await self.write_files([(path, data)])
+
+    async def write_files(self, entries: list[tuple[str, bytes]]) -> None:
+        """批量写入；一次 API 调用（WriteEntry 支持 str|bytes）。"""
+        if not entries:
+            return
         sb = await self._sb()
         write_files = getattr(getattr(sb, "files", None), "write_files", None)
-        if write_files is not None:
-            from opensandbox.models.filesystem import WriteEntry
+        if write_files is None:
+            raise RuntimeError("sandbox files.write_files unavailable")
+        from opensandbox.models.filesystem import WriteEntry
 
-            await write_files([WriteEntry(path=path, data=data, mode=644)])
-            return
-        raise RuntimeError("sandbox files.write_files unavailable")
+        await write_files(
+            [WriteEntry(path=path, data=data, mode=644) for path, data in entries]
+        )

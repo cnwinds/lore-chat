@@ -120,6 +120,68 @@ async def test_sandbox_read_and_publish(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_publish_from_sandbox_batch(tmp_path):
+    registry, runtime = _make_registry(tmp_path)
+    assert runtime is not None
+    await runtime.write_file("/workspace/a.md", b"# A\n")
+    await runtime.write_file("/workspace/out/b.png", b"\x89PNG\r\n")
+    pub = await registry.execute(
+        "publish_from_sandbox",
+        {
+            "files": [
+                {
+                    "sandbox_path": "/workspace/a.md",
+                    "directory": "备忘",
+                    "filename": "a.md",
+                },
+                {
+                    "sandbox_path": "/workspace/out/b.png",
+                    "directory": "图",
+                    "filename": "b.png",
+                },
+            ]
+        },
+    )
+    assert pub.get("ok") == 2
+    assert pub.get("failed") == 0
+    assert pub.get("error") is None
+    paths = {it["rel_path"] for it in pub["items"]}
+    assert paths == {"备忘/a.md", "图/b.png"}
+    assert registry.repo.abs_path("备忘/a.md").is_file()
+    assert registry.repo.abs_path("图/b.png").read_bytes().startswith(b"\x89PNG")
+
+
+@pytest.mark.asyncio
+async def test_publish_from_sandbox_batch_partial(tmp_path):
+    registry, runtime = _make_registry(tmp_path)
+    assert runtime is not None
+    await runtime.write_file("/workspace/ok.md", b"# ok\n")
+    pub = await registry.execute(
+        "publish_from_sandbox",
+        {
+            "files": [
+                {
+                    "sandbox_path": "/workspace/ok.md",
+                    "directory": "备忘",
+                    "filename": "ok.md",
+                },
+                {
+                    "sandbox_path": "/workspace/missing.md",
+                    "directory": "备忘",
+                    "filename": "missing.md",
+                },
+            ]
+        },
+    )
+    assert pub.get("ok") == 1
+    assert pub.get("failed") == 1
+    assert pub.get("error")
+    by_sp = {it["sandbox_path"]: it for it in pub["items"]}
+    assert by_sp["/workspace/ok.md"]["ok"] is True
+    assert by_sp["/workspace/missing.md"]["error"] == "not found"
+
+
+@pytest.mark.asyncio
 async def test_publish_binary_file_roundtrip(tmp_path):
     registry, runtime = _make_registry(tmp_path)
     assert runtime is not None

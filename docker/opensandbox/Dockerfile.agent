@@ -1,19 +1,51 @@
-# 固化 Agent 沙箱依赖；构建后替换 opensandbox config 的 execd_image。
-# 国内构建可先配置 Docker registry mirror。
-FROM opensandbox/execd:v1.0.18
+# lore-chat Agent 沙箱「业务镜像」：固化 hn-video-report §0 依赖（Debian）。
+# OpenSandbox 会另用 execd_image（官方 opensandbox/execd）把 execd 注入本镜像启动的容器。
+#
+#   docker build -t lorechat-sandbox-agent:local \
+#     -f docker/opensandbox/Dockerfile.agent docker/opensandbox
+#
+# 不预装：项目 package.json / hyperframes.json、chrome-headless-shell（首次 render 自动下）。
+
+FROM debian:bookworm-slim
 
 USER root
 ARG NODE_VERSION=22.18.0
-RUN apt-get update \
-    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        ffmpeg \
+ARG HYPERFRAMES_VERSION=0.7.94
+ENV DEBIAN_FRONTEND=noninteractive
+ENV ONNXRUNTIME_NODE_INSTALL_CUDA=skip
+ENV npm_config_onnxruntime_node_install_cuda=skip
+ENV PATH="/usr/local/lib/nodejs/current/bin:/usr/local/bin:/usr/bin:/bin"
+
+RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources \
+    && sed -i 's/security.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
         curl \
         ca-certificates \
         xz-utils \
+        unzip \
+        ffmpeg \
+        python3 \
         python3-pip \
-        python3-venv \
-    && rm -rf /var/lib/apt/lists/* \
-    && curl -fsSL "https://npmmirror.com/mirrors/node/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" \
+        fonts-noto-cjk \
+        libnss3 \
+        libnspr4 \
+        libatk1.0-0 \
+        libatk-bridge2.0-0 \
+        libcups2 \
+        libdrm2 \
+        libxkbcommon0 \
+        libxcomposite1 \
+        libxdamage1 \
+        libxfixes3 \
+        libxrandr2 \
+        libgbm1 \
+        libasound2 \
+        libpango-1.0-0 \
+        libcairo2 \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN curl -fsSL "https://npmmirror.com/mirrors/node/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" \
          -o /tmp/node.tar.xz \
     || curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" \
          -o /tmp/node.tar.xz \
@@ -24,14 +56,28 @@ RUN apt-get update \
     && ln -sfn /usr/local/lib/nodejs/current/bin/node /usr/local/bin/node \
     && ln -sfn /usr/local/lib/nodejs/current/bin/npm /usr/local/bin/npm \
     && ln -sfn /usr/local/lib/nodejs/current/bin/npx /usr/local/bin/npx \
-    && (test ! -e /usr/bin/node || mv -f /usr/bin/node /usr/bin/node.debian) \
-    && (test ! -e /usr/bin/npm || mv -f /usr/bin/npm /usr/bin/npm.debian) \
     && ln -sfn /usr/local/bin/node /usr/bin/node \
     && ln -sfn /usr/local/bin/npm /usr/bin/npm \
     && ln -sfn /usr/local/bin/npx /usr/bin/npx \
-    && node -v && npm -v
+    && node -v | grep -q '^v22' \
+    && npm -v
 
-# 可选：预装 Python 包（按 skill 需要增减）
-# RUN pip3 install --no-cache-dir edge-tts
+RUN pip3 install --no-cache-dir --break-system-packages \
+        -i https://mirrors.aliyun.com/pypi/simple/ \
+        --trusted-host mirrors.aliyun.com \
+        edge-tts mutagen matplotlib numpy \
+    && rm -rf /root/.cache/matplotlib \
+    && python3 -c "import edge_tts, mutagen, matplotlib, numpy"
+
+RUN npm config set registry https://registry.npmmirror.com \
+    && npm install -g "hyperframes@${HYPERFRAMES_VERSION}" \
+        --onnxruntime-node-install-cuda=skip \
+    && ln -sfn /usr/local/lib/nodejs/current/bin/hyperframes /usr/local/bin/hyperframes \
+    && ln -sfn /usr/local/bin/hyperframes /usr/bin/hyperframes \
+    && hyperframes --help >/dev/null \
+    && npm cache clean --force
+
+RUN mkdir -p /workspace
 
 WORKDIR /workspace
+CMD ["sleep", "infinity"]

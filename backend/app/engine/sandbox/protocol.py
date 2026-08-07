@@ -75,3 +75,7 @@ class SandboxRuntime(Protocol):
 
     async def write_file(self, path: str, data: bytes) -> None:
         ...
+
+    async def write_files(self, entries: list[tuple[str, bytes]]) -> None:
+        """批量写入沙箱文件（path, data）；空列表为 no-op。"""
+        ...
