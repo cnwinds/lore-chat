@@ -109,8 +109,7 @@ class SandboxTools:
         )
 
         await rt.ensure_ready()
-        shown = command if len(command) <= 240 else command[:240] + "…"
-        emit_progress(f"$ {shown}\n", phase="start")
+        # 命令提示行由前端用 query 渲染，不写入 progress_log，避免重复。
 
         if background or timeout_sec > self.short_timeout_sec:
             eid = await rt.start_job(command, cwd=cwd)

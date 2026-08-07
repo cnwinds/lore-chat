@@ -58,5 +58,51 @@ describe("progressLog newlines", () => {
     expect(body).toContain("total 12\n");
     expect(body).toContain("drwxr-xr-x 3 root root");
     expect(body).not.toMatch(/total 12drwx/);
+    expect(body.match(/^\$ /gm)).toHaveLength(1);
+  });
+
+  it("keeps a single prompt when progress has no echoed command", () => {
+    const body = sandboxTerminalBody({
+      type: "tool",
+      id: "1",
+      tool: "sandbox_run",
+      label: "run",
+      ts: "t",
+      status: "done",
+      query: "echo hi",
+      progress_log: ["hi\n", "[exit 0]"],
+    });
+    expect(body).toBe("$ echo hi\nhi\n[exit 0]");
+  });
+
+  it("dedupes legacy truncated progress prompt against query", () => {
+    const long = "x".repeat(200);
+    const body = sandboxTerminalBody({
+      type: "tool",
+      id: "1",
+      tool: "sandbox_run",
+      label: "run",
+      ts: "t",
+      status: "done",
+      query: long,
+      progress_log: [`$ ${long.slice(0, 120)}…\n`, "ok\n", "[exit 0]"],
+    });
+    expect(body.startsWith(`$ ${long}\n`)).toBe(true);
+    expect(body.match(/^\$ /gm)).toHaveLength(1);
+    expect(body).toContain("ok\n[exit 0]");
+  });
+
+  it("does not strip unrelated stdout that starts with $", () => {
+    const body = sandboxTerminalBody({
+      type: "tool",
+      id: "1",
+      tool: "sandbox_run",
+      label: "run",
+      ts: "t",
+      status: "done",
+      query: "cat price.txt",
+      progress_log: ["$ 9.99\n", "[exit 0]"],
+    });
+    expect(body).toBe("$ cat price.txt\n$ 9.99\n[exit 0]");
   });
 });

@@ -58,16 +58,15 @@ function toolOneLiner(block: Extract<TimelineBlock, { type: "tool" }>): string |
     return block.question || block.summary;
   }
   if (block.tool === "sandbox_run" && block.query) {
-    const cmd =
-      block.query.length > 80 ? `${block.query.slice(0, 80)}…` : block.query;
+    // 折叠行靠 CSS ellipsis；query 已在写入时按 TOOL_QUERY_MAX_CHARS 截断
     if (block.summary) {
       const s =
         block.summary.length > 60
           ? `${block.summary.slice(0, 60)}…`
           : block.summary;
-      return `$ ${cmd} · ${s}`;
+      return `$ ${block.query} · ${s}`;
     }
-    return `$ ${cmd}`;
+    return `$ ${block.query}`;
   }
   if (block.tool === "fetch_url") {
     const web = block.sources?.find((s) => s.type === "web");

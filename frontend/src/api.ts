@@ -1,5 +1,6 @@
 // 生产环境经 nginx 同源代理时 VITE_API_BASE 留空；本地开发在 .env 中设为 http://localhost:8000
 import { appendProgressChunk } from "./utils/progressLog";
+import { clipToolQuery } from "./utils/toolQuery";
 
 const BASE = import.meta.env.VITE_API_BASE ?? "";
 
@@ -259,8 +260,7 @@ function toolQueryFromInput(input: unknown): string | undefined {
   for (const key of ["query", "command", "path", "sandbox_path"]) {
     const v = o[key];
     if (typeof v === "string" && v.trim()) {
-      const s = v.trim();
-      return s.length > 120 ? `${s.slice(0, 120)}…` : s;
+      return clipToolQuery(v);
     }
   }
   return undefined;

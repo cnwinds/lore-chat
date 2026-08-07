@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from app.engine.chat.progress_log import append_progress_chunk
+from app.engine.chat.tool_query import clip_tool_query
 from app.engine.source_key import extend_sources
 
 
@@ -32,10 +33,11 @@ class TimelineAccumulator:
             if isinstance(inp, dict):
                 for key in ("query", "command", "path", "sandbox_path"):
                     v = inp.get(key)
-                    if isinstance(v, str) and v.strip():
-                        s = v.strip()
-                        block["query"] = s if len(s) <= 200 else s[:200] + "…"
-                        break
+                    if isinstance(v, str):
+                        q = clip_tool_query(v)
+                        if q:
+                            block["query"] = q
+                            break
             self._tools[data["id"]] = block
             if self._active_parallel:
                 self._parallel[self._active_parallel]["children"].append(block)

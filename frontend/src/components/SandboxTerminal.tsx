@@ -5,6 +5,7 @@ import {
   joinProgressChunks,
   normalizeStreamChunk,
 } from "../utils/progressLog";
+import { stripLegacyEchoedPrompt } from "../utils/toolQuery";
 
 type ToolBlock = Extract<TimelineBlock, { type: "tool" }>;
 
@@ -14,10 +15,9 @@ export function sandboxTerminalBody(block: ToolBlock): string {
   const raw = (block.progress_log || []).filter((l) => !isNoiseProgressLine(l));
   let output = joinProgressChunks(raw);
 
-  // 去掉与 query 重复的首行 `$ cmd`
+  // 旧数据：progress 里可能回显过 `$ cmd`；新后端不再写入。
   if (cmd && output) {
-    const esc = cmd.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    output = output.replace(new RegExp(`^\\$\\s*${esc}\\n?`), "");
+    output = stripLegacyEchoedPrompt(output, cmd);
   }
 
   const parts: string[] = [];
