@@ -104,15 +104,71 @@ class OpenAILLMClient:
             _log.exception("usage record failed")
 
     @staticmethod
-    def _usage_from_resp(resp: Any) -> tuple[int | None, int | None, int | None, bool]:
+    def _cached_tokens_from_usage(usage: Any) -> int | None:
+        """从 OpenAI / 兼容网关 usage 中解析 cache hit tokens。"""
+        if usage is None:
+            return None
+
+        def _as_int(v: Any) -> int | None:
+            if v is None:
+                return None
+            try:
+                return int(v)
+            except (TypeError, ValueError):
+                return None
+
+        # OpenAI: prompt_tokens_details.cached_tokens
+        details = getattr(usage, "prompt_tokens_details", None)
+        if details is not None:
+            cached = _as_int(getattr(details, "cached_tokens", None))
+            if cached is not None:
+                return cached
+            if isinstance(details, dict):
+                cached = _as_int(details.get("cached_tokens"))
+                if cached is not None:
+                    return cached
+
+        # DeepSeek 等: prompt_cache_hit_tokens
+        cached = _as_int(getattr(usage, "prompt_cache_hit_tokens", None))
+        if cached is not None:
+            return cached
+
+        # 部分网关: input_tokens_details.cached_tokens
+        input_details = getattr(usage, "input_tokens_details", None)
+        if input_details is not None:
+            cached = _as_int(getattr(input_details, "cached_tokens", None))
+            if cached is not None:
+                return cached
+            if isinstance(input_details, dict):
+                cached = _as_int(input_details.get("cached_tokens"))
+                if cached is not None:
+                    return cached
+
+        if isinstance(usage, dict):
+            details = usage.get("prompt_tokens_details")
+            if isinstance(details, dict):
+                cached = _as_int(details.get("cached_tokens"))
+                if cached is not None:
+                    return cached
+            cached = _as_int(usage.get("prompt_cache_hit_tokens"))
+            if cached is not None:
+                return cached
+
+        return None
+
+    @staticmethod
+    def _usage_from_resp(
+        resp: Any,
+    ) -> tuple[int | None, int | None, int | None, int | None, bool]:
         usage = getattr(resp, "usage", None)
         if usage is None:
-            return None, None, None, False
+            return None, None, None, None, False
         pt = getattr(usage, "prompt_tokens", None)
         ct = getattr(usage, "completion_tokens", None)
         tt = getattr(usage, "total_tokens", None)
+        cache = OpenAILLMClient._cached_tokens_from_usage(usage)
         known = pt is not None or ct is not None or tt is not None
-        return pt, ct, tt, known
+        return pt, ct, tt, cache, known
 
     def chat(self, messages: list[dict], *, big: bool = False, temperature: float = 0.2) -> str:
         client = self._big if big else self._small
@@ -133,7 +189,7 @@ class OpenAILLMClient:
                 duration_ms=int((time.monotonic() - t0) * 1000),
             )
             raise
-        pt, ct, tt, known = self._usage_from_resp(resp)
+        pt, ct, tt, cache, known = self._usage_from_resp(resp)
         self._record(
             model=model,
             kind="chat",
@@ -141,6 +197,7 @@ class OpenAILLMClient:
             prompt_tokens=pt,
             completion_tokens=ct,
             total_tokens=tt,
+            cache_tokens=cache,
             tokens_known=known,
             status="ok",
             duration_ms=int((time.monotonic() - t0) * 1000),
@@ -174,7 +231,7 @@ class OpenAILLMClient:
                 duration_ms=int((time.monotonic() - t0) * 1000),
             )
             raise
-        pt, ct, tt, known = self._usage_from_resp(resp)
+        pt, ct, tt, cache, known = self._usage_from_resp(resp)
         self._record(
             model=model,
             kind="chat_tools",
@@ -182,6 +239,7 @@ class OpenAILLMClient:
             prompt_tokens=pt,
             completion_tokens=ct,
             total_tokens=tt,
+            cache_tokens=cache,
             tokens_known=known,
             status="ok",
             duration_ms=int((time.monotonic() - t0) * 1000),
@@ -241,6 +299,7 @@ class OpenAILLMClient:
         usage_prompt: int | None = None
         usage_completion: int | None = None
         usage_total: int | None = None
+        usage_cache: int | None = None
         usage_known = False
 
         try:
@@ -266,6 +325,9 @@ class OpenAILLMClient:
                     usage_prompt = getattr(u, "prompt_tokens", usage_prompt)
                     usage_completion = getattr(u, "completion_tokens", usage_completion)
                     usage_total = getattr(u, "total_tokens", usage_total)
+                    cached = self._cached_tokens_from_usage(u)
+                    if cached is not None:
+                        usage_cache = cached
                     usage_known = (
                         usage_prompt is not None
                         or usage_completion is not None
@@ -321,6 +383,7 @@ class OpenAILLMClient:
                 prompt_tokens=usage_prompt,
                 completion_tokens=usage_completion,
                 total_tokens=usage_total,
+                cache_tokens=usage_cache,
                 tokens_known=usage_known,
                 status="error",
                 error=str(e),
@@ -402,6 +465,7 @@ class OpenAILLMClient:
             prompt_tokens=usage_prompt,
             completion_tokens=usage_completion,
             total_tokens=usage_total,
+            cache_tokens=usage_cache,
             tokens_known=usage_known,
             status="ok",
             duration_ms=elapsed_ms,
@@ -426,7 +490,7 @@ class OpenAILLMClient:
                 batch = texts[i : i + batch_size]
                 resp = self._embed.embeddings.create(model=model, input=batch)
                 out.extend(d.embedding for d in resp.data)
-                pt, _, tt, known = self._usage_from_resp(resp)
+                pt, _, tt, _, known = self._usage_from_resp(resp)
                 if known:
                     any_known = True
                     if pt is not None:

@@ -169,7 +169,17 @@ export function Sidebar({
               )}
               {conversationGroups.map((group) => (
                 <div key={group.label} className="conversation-group">
-                  <div className="conversation-group-label">{group.label}</div>
+                  <div
+                    className={`conversation-group-label${
+                      group.label === "今天"
+                        ? " conversation-group-label--today"
+                        : group.label === "昨天"
+                          ? " conversation-group-label--yesterday"
+                          : ""
+                    }`}
+                  >
+                    {group.label}
+                  </div>
                   {group.items.map((c) => {
                     const active = activeConversationId === c.id;
                     const title =

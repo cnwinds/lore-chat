@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   formatDisplayDateTime,
   formatMessageTime,
+  formatSidebarConversationTime,
   parseStoredInstant,
   ymdInDisplayZone,
 } from "./displayTime";
@@ -19,8 +20,35 @@ describe("parseStoredInstant", () => {
 });
 
 describe("formatMessageTime", () => {
-  it("formats UTC instant as Beijing HH:mm", () => {
-    expect(formatMessageTime("2026-07-12T06:30:00.000Z")).toBe("14:30");
+  const now = new Date("2026-07-12T10:00:00+08:00");
+
+  it("formats same-day UTC instant as Beijing HH:mm", () => {
+    expect(formatMessageTime("2026-07-12T06:30:00.000Z", now)).toBe("14:30");
+  });
+
+  it("includes month/day when not today", () => {
+    expect(formatMessageTime("2026-07-10T06:30:00.000Z", now)).toBe(
+      "7月10日 14:30",
+    );
+  });
+
+  it("includes year when crossing year boundary", () => {
+    expect(formatMessageTime("2025-12-31T06:30:00.000Z", now)).toBe(
+      "2025年12月31日 14:30",
+    );
+  });
+});
+
+describe("formatSidebarConversationTime", () => {
+  const now = new Date("2026-08-07T16:00:00+08:00");
+
+  it("always includes date and time", () => {
+    expect(
+      formatSidebarConversationTime("2026-08-07T15:43:00+08:00", now),
+    ).toBe("8月7日 15:43");
+    expect(
+      formatSidebarConversationTime("2026-08-06T09:05:00+08:00", now),
+    ).toBe("8月6日 09:05");
   });
 });
 

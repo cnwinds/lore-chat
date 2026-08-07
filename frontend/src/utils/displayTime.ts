@@ -69,16 +69,40 @@ function sameCalendarDay(a: Date, b: Date): boolean {
   return ya.y === yb.y && ya.m === yb.m && ya.d === yb.d;
 }
 
-/** 消息气泡旁 HH:mm（24 小时制）。 */
-export function formatMessageTime(iso: string): string {
-  const d = parseStoredInstant(iso);
-  if (!d) return "";
+function formatClockHm(d: Date): string {
   return d.toLocaleTimeString(LOCALE, {
     timeZone: DISPLAY_TIME_ZONE,
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
   });
+}
+
+/** `M月D日 HH:mm`；跨年带年份。 */
+function formatDateAndTime(d: Date, now: Date): string {
+  const ymd = ymdInDisplayZone(d);
+  const today = ymdInDisplayZone(now);
+  const time = formatClockHm(d);
+  if (ymd.y !== today.y) {
+    return `${ymd.y}年${ymd.m}月${ymd.d}日 ${time}`;
+  }
+  return `${ymd.m}月${ymd.d}日 ${time}`;
+}
+
+/**
+ * 消息气泡旁时间（24 小时制）。
+ * 当天仅 HH:mm；跨日（翻出旧对话继续聊）带上日期。
+ */
+export function formatMessageTime(
+  iso: string,
+  now: Date = new Date(),
+): string {
+  const d = parseStoredInstant(iso);
+  if (!d) return "";
+  if (sameCalendarDay(d, now)) {
+    return formatClockHm(d);
+  }
+  return formatDateAndTime(d, now);
 }
 
 /** 月/日，用于来源芯片等。 */
@@ -92,17 +116,14 @@ export function formatMonthDay(iso: string): string {
   });
 }
 
-/** 侧栏会话列表：今天显示时刻，否则月/日。 */
+/** 侧栏会话列表：始终显示日期 + 时刻（跨年带年份）。 */
 export function formatSidebarConversationTime(
   iso: string,
   now: Date = new Date(),
 ): string {
   const d = parseStoredInstant(iso);
   if (!d) return "";
-  if (sameCalendarDay(d, now)) {
-    return formatMessageTime(iso);
-  }
-  return formatMonthDay(iso);
+  return formatDateAndTime(d, now);
 }
 
 /** 文档元数据等：`YYYY-MM-DD HH:mm:ss`（已是该格式则原样返回）。 */

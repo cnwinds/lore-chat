@@ -4,7 +4,7 @@ import {
   joinProgressChunks,
   normalizeStreamChunk,
 } from "./progressLog";
-import { sandboxTerminalBody } from "../components/SandboxTerminal";
+import { sandboxTerminalBody, parseSandboxExitCode, sandboxTerminalTone } from "../components/SandboxTerminal";
 
 describe("progressLog newlines", () => {
   it("inserts newline between line-oriented chunks", () => {
@@ -104,5 +104,56 @@ describe("progressLog newlines", () => {
       progress_log: ["$ 9.99\n", "[exit 0]"],
     });
     expect(body).toBe("$ cat price.txt\n$ 9.99\n[exit 0]");
+  });
+});
+
+describe("sandboxTerminalTone / exit code", () => {
+  const base = {
+    type: "tool" as const,
+    id: "1",
+    tool: "sandbox_run",
+    label: "run",
+    ts: "t",
+    query: "true",
+  };
+
+  it("parses [exit N] and exit=N, preferring the last", () => {
+    expect(
+      parseSandboxExitCode({
+        ...base,
+        status: "done",
+        progress_log: ["[exit 0]", "oops\n", "[exit 1]"],
+      }),
+    ).toBe(1);
+    expect(
+      parseSandboxExitCode({
+        ...base,
+        status: "done",
+        summary: "exit=0\nstdout",
+      }),
+    ).toBe(0);
+  });
+
+  it("tones: live while running, ok on 0, err on non-zero", () => {
+    expect(
+      sandboxTerminalTone({ ...base, status: "running", progress_log: [] }),
+    ).toBe("live");
+    expect(
+      sandboxTerminalTone({
+        ...base,
+        status: "done",
+        progress_log: ["[exit 0]"],
+      }),
+    ).toBe("ok");
+    expect(
+      sandboxTerminalTone({
+        ...base,
+        status: "done",
+        progress_log: ["[exit 2]"],
+      }),
+    ).toBe("err");
+    expect(
+      sandboxTerminalTone({ ...base, status: "done", summary: "no code" }),
+    ).toBe("");
   });
 });

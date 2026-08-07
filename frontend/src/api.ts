@@ -108,6 +108,7 @@ export type UsageAgg = {
   prompt_tokens: number;
   completion_tokens: number;
   total_tokens: number;
+  cache_tokens?: number;
   unknown_token_calls: number;
   cost: number;
   cost_known_calls: number;
@@ -135,6 +136,7 @@ export type UsageEvent = {
   prompt_tokens?: number | null;
   completion_tokens?: number | null;
   total_tokens?: number | null;
+  cache_tokens?: number | null;
   tokens_known: number | boolean;
   cost?: number | null;
   status: string;
@@ -146,9 +148,11 @@ export type UsageEvent = {
 
 export type UsagePrice = {
   model: string;
-  prompt_per_1k: number | null;
-  completion_per_1k: number | null;
-  embed_per_1k: number | null;
+  prompt_per_1m: number | null;
+  completion_per_1m: number | null;
+  cache_input_per_1m: number | null;
+  embed_per_1m: number | null;
+  kinds?: string[];
   updated_at: string;
 };
 
@@ -190,9 +194,10 @@ export function getUsagePrices() {
 
 export function putUsagePrice(body: {
   model: string;
-  prompt_per_1k?: number | null;
-  completion_per_1k?: number | null;
-  embed_per_1k?: number | null;
+  prompt_per_1m?: number | null;
+  completion_per_1m?: number | null;
+  cache_input_per_1m?: number | null;
+  embed_per_1m?: number | null;
 }) {
   return apiFetch<UsagePrice>("/api/usage/prices", {
     method: "PUT",

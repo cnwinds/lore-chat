@@ -28,9 +28,10 @@ class UsageService:
     def upsert_price(self, body: dict[str, Any]) -> dict[str, Any]:
         return self.store.upsert_price(
             body["model"],
-            prompt_per_1k=body.get("prompt_per_1k"),
-            completion_per_1k=body.get("completion_per_1k"),
-            embed_per_1k=body.get("embed_per_1k"),
+            prompt_per_1m=body.get("prompt_per_1m"),
+            completion_per_1m=body.get("completion_per_1m"),
+            cache_input_per_1m=body.get("cache_input_per_1m"),
+            embed_per_1m=body.get("embed_per_1m"),
         )
 
     def summary(
