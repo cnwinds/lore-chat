@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   confirmMemoryFact,
   editMemoryFact,
@@ -7,10 +7,94 @@ import {
   rejectMemoryFact,
   type MemoryFact,
 } from "../../api";
+import { useDismissOnOutsideClick } from "../../hooks/useDismissOnOutsideClick";
+import {
+  CheckIcon,
+  DocIconBtn,
+  EditIcon,
+  ExternalLinkIcon,
+  SaveIcon,
+  TrashIcon,
+  XIcon,
+} from "../DocToolbarIcons";
 
 type Props = {
   onOpenConversation?: (conversationId: string) => void;
 };
+
+function jumpLabel(conversationIds: string[], canOpen: boolean): string {
+  if (conversationIds.length === 0) return "无来源可跳转";
+  if (!canOpen) return "无法打开会话";
+  if (conversationIds.length > 1) return "选择来源会话";
+  return "打开来源会话";
+}
+
+function SourceJumpControl({
+  conversationIds,
+  disabled,
+  onOpenConversation,
+}: {
+  conversationIds: string[];
+  disabled?: boolean;
+  onOpenConversation?: (conversationId: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const canOpen = Boolean(onOpenConversation);
+  const hasSources = conversationIds.length > 0;
+  const canJump = canOpen && hasSources;
+  const multi = conversationIds.length > 1;
+
+  useDismissOnOutsideClick(rootRef, open, () => setOpen(false), {
+    escape: true,
+    pointerEvent: "mousedown",
+  });
+
+  function openOne(cid: string) {
+    onOpenConversation?.(cid);
+    setOpen(false);
+  }
+
+  return (
+    <div ref={rootRef} className="doc-overflow-anchor">
+      <DocIconBtn
+        label={jumpLabel(conversationIds, canOpen)}
+        className="memory-fact-icon-btn"
+        disabled={disabled || !canJump}
+        active={multi ? open : false}
+        onClick={() => {
+          if (!canJump) return;
+          if (!multi) {
+            openOne(conversationIds[0]);
+            return;
+          }
+          setOpen((v) => !v);
+        }}
+        aria-expanded={multi ? open : undefined}
+        aria-haspopup={multi ? "menu" : undefined}
+      >
+        <ExternalLinkIcon />
+      </DocIconBtn>
+      {open && multi ? (
+        <div className="doc-overflow-menu" role="menu" aria-label="来源会话">
+          {conversationIds.map((cid) => (
+            <button
+              key={cid}
+              type="button"
+              role="menuitem"
+              className="doc-overflow-item"
+              title={cid}
+              aria-label={`打开来源会话 ${cid}`}
+              onClick={() => openOne(cid)}
+            >
+              会话 {cid.length > 8 ? `${cid.slice(0, 8)}…` : cid}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 export function MemorySettingsTab({ onOpenConversation }: Props) {
   const [facts, setFacts] = useState<MemoryFact[]>([]);
@@ -63,7 +147,7 @@ export function MemorySettingsTab({ onOpenConversation }: Props) {
       aria-labelledby="settings-tab-memory"
     >
       <p className="settings-tab-hint">
-        已确认与待确认（candidate）的长期画像。可确认晋升、拒绝、编辑或遗忘；点击来源可打开会话。
+        已确认与待确认的长期画像。待确认可晋升或拒绝；已确认可编辑或遗忘。右侧图标可跳转到来源会话。
       </p>
       {error ? <p className="settings-panel-error">{error}</p> : null}
       {facts.length === 0 ? (
@@ -73,110 +157,108 @@ export function MemorySettingsTab({ onOpenConversation }: Props) {
           {facts.map((f) => {
             const busy = busyId === f.id;
             const editing = editingId === f.id;
+            const candidate = f.status === "candidate";
+            const conversationIds = f.conversation_ids || [];
             return (
-              <li key={f.id} className="memory-fact-item">
-                <div className="memory-fact-meta">
-                  <span className={`memory-fact-status memory-fact-status--${f.status || "unknown"}`}>
-                    {f.status === "candidate" ? "待确认" : "已确认"}
-                  </span>
-                  <span className="memory-fact-slot">{f.slot_key}</span>
-                  {f.origin ? <span className="memory-fact-origin">{f.origin}</span> : null}
+              <li
+                key={f.id}
+                className={`memory-fact-item${candidate ? " memory-fact-item--candidate" : ""}`}
+                title={f.slot_key}
+              >
+                <div className="memory-fact-main">
+                  {candidate ? (
+                    <span className="memory-fact-status memory-fact-status--candidate">待确认</span>
+                  ) : null}
+                  {editing ? (
+                    <textarea
+                      className="memory-fact-edit"
+                      value={draft}
+                      onChange={(e) => setDraft(e.target.value)}
+                      rows={Math.max(3, draft.split("\n").length)}
+                      disabled={busy}
+                      aria-label="编辑记忆内容"
+                    />
+                  ) : (
+                    <p className="memory-fact-statement">{f.statement}</p>
+                  )}
                 </div>
-                {editing ? (
-                  <textarea
-                    className="memory-fact-edit"
-                    value={draft}
-                    onChange={(e) => setDraft(e.target.value)}
-                    rows={3}
-                    disabled={busy}
-                  />
-                ) : (
-                  <p className="memory-fact-statement">{f.statement}</p>
-                )}
-                {f.conversation_ids?.length ? (
-                  <div className="memory-fact-sources">
-                    来源：
-                    {f.conversation_ids.map((cid) => (
-                      <button
-                        key={cid}
-                        type="button"
-                        className="memory-fact-source-btn"
-                        disabled={!onOpenConversation}
-                        onClick={() => onOpenConversation?.(cid)}
-                        title={cid}
-                      >
-                        {cid.slice(0, 8)}…
-                      </button>
-                    ))}
-                  </div>
-                ) : null}
                 <div className="memory-fact-actions">
                   {editing ? (
                     <>
-                      <button
-                        type="button"
-                        className="settings-btn settings-btn--primary"
+                      <DocIconBtn
+                        label="保存"
+                        className="memory-fact-icon-btn"
                         disabled={busy || !draft.trim()}
-                        onClick={() =>
-                          void run(f.id, () => editMemoryFact(f.id, draft.trim()))
-                        }
+                        onClick={() => void run(f.id, () => editMemoryFact(f.id, draft.trim()))}
                       >
-                        保存
-                      </button>
-                      <button
-                        type="button"
-                        className="settings-btn"
+                        <SaveIcon />
+                      </DocIconBtn>
+                      <DocIconBtn
+                        label="取消"
+                        className="memory-fact-icon-btn"
                         disabled={busy}
                         onClick={() => setEditingId(null)}
                       >
-                        取消
-                      </button>
+                        <XIcon />
+                      </DocIconBtn>
                     </>
                   ) : (
                     <>
-                      {f.status === "candidate" ? (
+                      <SourceJumpControl
+                        conversationIds={conversationIds}
+                        disabled={busy}
+                        onOpenConversation={onOpenConversation}
+                      />
+                      {candidate ? (
                         <>
-                          <button
-                            type="button"
-                            className="settings-btn settings-btn--primary"
+                          <DocIconBtn
+                            label="确认"
+                            className="memory-fact-icon-btn"
                             disabled={busy}
                             onClick={() => void run(f.id, () => confirmMemoryFact(f.id))}
                           >
-                            确认
-                          </button>
-                          <button
-                            type="button"
-                            className="settings-btn"
+                            <CheckIcon />
+                          </DocIconBtn>
+                          <DocIconBtn
+                            label="拒绝"
+                            className="memory-fact-icon-btn memory-fact-icon-btn--danger"
                             disabled={busy}
-                            onClick={() => void run(f.id, () => rejectMemoryFact(f.id))}
+                            onClick={() => {
+                              if (window.confirm("确定拒绝这条待确认记忆？")) {
+                                void run(f.id, () => rejectMemoryFact(f.id));
+                              }
+                            }}
                           >
-                            拒绝
-                          </button>
+                            <XIcon />
+                          </DocIconBtn>
                         </>
-                      ) : null}
-                      <button
-                        type="button"
-                        className="settings-btn"
-                        disabled={busy}
-                        onClick={() => {
-                          setEditingId(f.id);
-                          setDraft(f.statement);
-                        }}
-                      >
-                        编辑
-                      </button>
-                      <button
-                        type="button"
-                        className="settings-btn"
-                        disabled={busy}
-                        onClick={() => {
-                          if (window.confirm("确定遗忘这条记忆？")) {
-                            void run(f.id, () => forgetMemoryFact(f.id));
-                          }
-                        }}
-                      >
-                        遗忘
-                      </button>
+                      ) : (
+                        <>
+                          <DocIconBtn
+                            label="编辑"
+                            className="memory-fact-icon-btn"
+                            disabled={busy}
+                            onClick={() => {
+                              setEditingId(f.id);
+                              setDraft(f.statement);
+                            }}
+                          >
+                            <EditIcon />
+                          </DocIconBtn>
+                          <DocIconBtn
+                            label="遗忘"
+                            className="memory-fact-icon-btn memory-fact-icon-btn--danger"
+                            disabled={busy}
+                            onClick={() => {
+                              if (window.confirm("确定遗忘这条记忆？")) {
+                                void run(f.id, () => forgetMemoryFact(f.id));
+                              }
+                            }}
+                          >
+                            <TrashIcon />
+                          </DocIconBtn>
+                        </>
+                      )}
                     </>
                   )}
                 </div>

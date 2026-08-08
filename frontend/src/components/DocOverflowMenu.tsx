@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
+import { useDismissOnOutsideClick } from "../hooks/useDismissOnOutsideClick";
 import { ChatIcon, DiffIcon, DocIconBtn, EditIcon, MoreIcon } from "./DocToolbarIcons";
 
 export type OverflowItem =
@@ -24,25 +25,10 @@ export function DocOverflowMenu({ items, disabled = false }: Props) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (!open) return;
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") {
-        e.stopPropagation();
-        setOpen(false);
-      }
-    }
-    function onPointerDown(e: MouseEvent) {
-      const root = rootRef.current;
-      if (root && !root.contains(e.target as Node)) setOpen(false);
-    }
-    window.addEventListener("keydown", onKeyDown, true);
-    window.addEventListener("mousedown", onPointerDown);
-    return () => {
-      window.removeEventListener("keydown", onKeyDown, true);
-      window.removeEventListener("mousedown", onPointerDown);
-    };
-  }, [open]);
+  useDismissOnOutsideClick(rootRef, open, () => setOpen(false), {
+    escape: true,
+    pointerEvent: "mousedown",
+  });
 
   if (items.length === 0) return null;
 
