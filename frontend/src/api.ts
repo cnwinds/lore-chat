@@ -1,5 +1,16 @@
 // 生产环境经 nginx 同源代理时 VITE_API_BASE 留空；本地开发在 .env 中设为 http://localhost:8000
 
+import type {
+  ChatMessage,
+  ChatResult,
+  ChatStreamEvent,
+  Conversation,
+  ConversationSummary,
+  DocContextItem,
+  IngestResult,
+  Question,
+} from "./types/chat";
+
 const BASE = import.meta.env.VITE_API_BASE ?? "";
 
 export type ApiError = Error & {
@@ -324,273 +335,33 @@ export function reindexKb() {
   return apiFetch<ReindexResult>("/api/admin/reindex", { method: "POST" });
 }
 
-export type QuestionOption = { id: string; label: string };
-export type Question = {
-  id: string;
-  question: string;
-  options: QuestionOption[];
-  multi_select?: boolean;
-};
-
-export type IngestResult = {
-  status: "saved" | "question" | "continue" | "acknowledged" | string;
-  rel_path: string | null;
-  question_id: string | null;
-  message: string;
-  continue_prompt?: string | null;
-};
-
-export type ChatRecallResult = {
-  /** /api/ask 同步响应形状；产品 UI 使用 chatStream，不经此类型 */
-  intent: "recall";
-  text: string;
-  sources: string[];
-  attachments: string[];
-};
-
-export type ChatRememberResult = IngestResult & { intent: "remember" };
-
-export type ChatResult = ChatRecallResult | ChatRememberResult;
-
-export type SourceRef =
-  | { type: "kb"; path: string; excerpt?: string; line?: number }
-  | { type: "web"; url: string; title: string; snippet: string }
-  | {
-      type: "search";
-      provider: string;
-      url: string;
-      title: string;
-      snippet: string;
-    }
-  | {
-      type: "conversation";
-      cid: string;
-      excerpt?: string;
-      /** 消息级命中（ConversationFTS 桥接）才有；旧的整段会话兜底命中没有 */
-      message_id?: string;
-      start_char?: number;
-      end_char?: number;
-      offset_version?: string;
-      ts?: string;
-      role?: string;
-      conversation_title?: string;
-    };
-
-export type TimelineBlock =
-  | {
-      type: "tool";
-      id: string;
-      tool: string;
-      label: string;
-      ts: string;
-      status: "running" | "done" | "interrupted";
-      /** 检索/搜索关键词（search_kb、web_search） */
-      query?: string;
-      summary?: string;
-      /** 沙箱等长任务的关键节点日志 */
-      progress_log?: string[];
-      sources?: SourceRef[];
-      content?: string;
-      duration_ms?: number;
-      /** 前端本地：tool_start 时 Date.now()，供运行中秒表 */
-      started_at_ms?: number;
-      question_id?: string;
-      question?: string;
-      options?: QuestionOption[];
-      multi_select?: boolean;
-      choice_resolved?: string;
-      /** edit_doc 修改点上下文预览 */
-      preview?: string;
-      reindex_mode?: string;
-      applied?: number;
-    }
-  | {
-      type: "parallel";
-      batch_id: string;
-      ts: string;
-      children: TimelineBlock[];
-      duration_ms?: number;
-    }
-  | { type: "text"; ts: string; content: string }
-  | { type: "think"; ts: string; content: string }
-  | {
-      type: "user_inject";
-      inject_id: string;
-      ts: string;
-      text: string;
-      message_id?: string;
-      client_message_id?: string;
-      doc_context?: DocContextItem[];
-      primary_doc?: string;
-      attachments?: string[];
-    };
-
-export type DocContextItem = {
-  path: string;
-  kind: "document" | "skill_root";
-};
-
-export function normalizeDocContext(
-  raw: DocContextItem[] | string[] | undefined,
-): DocContextItem[] {
-  if (!raw?.length) return [];
-  return raw.map((item) => {
-    if (typeof item === "string") {
-      return { path: item, kind: "document" as const };
-    }
-    return {
-      path: item.path,
-      kind: item.kind === "skill_root" ? "skill_root" : "document",
-    };
-  });
-}
-
-export type ChatMessage = {
-  id?: string;
-  role: "user" | "assistant";
-  ts?: string;
-  text?: string;
-  timeline?: TimelineBlock[];
-  sources?: SourceRef[];
-  attachments?: string[];
-  doc_context?: DocContextItem[] | string[];
-  primary_doc?: string;
-  intent?: "recall" | "remember";
-  /** complete | interrupted — 来自持久化 turn 状态 */
-  status?: "complete" | "interrupted" | string;
-  /** 本轮回复总耗时（毫秒），来自 SSE done 事件 */
-  total_duration_ms?: number;
-  /** Mid-turn inject (client_message_id starts with inject:) */
-  injected?: boolean;
-  client_message_id?: string;
-};
-
-/** 提取消息可复制文本；助手仅含 timeline 中的结论文字 */
-export function getMessageCopyText(m: ChatMessage): string | null {
-  if (m.role === "user") {
-    const text = m.text?.trim();
-    return text || null;
-  }
-  if (m.timeline?.length) {
-    const parts = m.timeline
-      .filter((b): b is Extract<TimelineBlock, { type: "text" }> => b.type === "text")
-      .map((b) => b.content.trim())
-      .filter(Boolean);
-    if (parts.length) return parts.join("\n\n");
-  }
-  const text = m.text?.trim();
-  return text || null;
-}
-
-/** 将毫秒格式化为可读耗时 */
-export function formatDuration(ms: number): string {
-  if (ms < 1000) return `${Math.round(ms)}ms`;
-  const s = ms / 1000;
-  if (s < 60) return `${s.toFixed(1)}s`;
-  const m = Math.floor(s / 60);
-  const rem = Math.round(s % 60);
-  return `${m}m ${rem}s`;
-}
-
-export type CumulativeInfo = {
-  toolCumulative: Map<string, number>;
-  parallelCumulative: Map<string, number>;
-};
-
-/** 按时间线顺序计算各步骤完成时的累计耗时 */
-export function computeCumulative(timeline: TimelineBlock[]): CumulativeInfo {
-  const toolCumulative = new Map<string, number>();
-  const parallelCumulative = new Map<string, number>();
-  let cumulative = 0;
-
-  for (const block of timeline) {
-    if (block.type === "tool") {
-      if (block.status === "done" && block.duration_ms !== undefined) {
-        cumulative += block.duration_ms;
-      }
-      toolCumulative.set(block.id, cumulative);
-    } else if (block.type === "parallel") {
-      const batchStart = cumulative;
-      for (const child of block.children) {
-        if (child.type === "tool") {
-          const afterBatch =
-            block.duration_ms !== undefined
-              ? batchStart + block.duration_ms
-              : batchStart;
-          toolCumulative.set(child.id, afterBatch);
-        }
-      }
-      if (block.duration_ms !== undefined) {
-        cumulative = batchStart + block.duration_ms;
-      }
-      parallelCumulative.set(block.batch_id, cumulative);
-    }
-  }
-
-  return { toolCumulative, parallelCumulative };
-}
-
-/** 按 path/url 去重来源列表 */
-export function dedupeSources(sources: SourceRef[]): SourceRef[] {
-  const seen = new Set<string>();
-  const out: SourceRef[] = [];
-  for (const s of sources) {
-    const key =
-      s.type === "kb"
-        ? `kb:${s.path}`
-        : s.type === "conversation"
-          ? `conversation:${s.cid}:${s.message_id}:${s.start_char}:${s.end_char}`
-          : `${s.type}:${s.url}`;
-    if (!seen.has(key)) {
-      seen.add(key);
-      out.push(s);
-    }
-  }
-  return out;
-}
-
-export type ChatStreamEvent = { event: string; data: Record<string, unknown> };
-
+export type {
+  QuestionOption,
+  Question,
+  IngestResult,
+  ChatRecallResult,
+  ChatRememberResult,
+  ChatResult,
+  SourceRef,
+  TimelineBlock,
+  DocContextItem,
+  ChatMessage,
+  CumulativeInfo,
+  ChatStreamEvent,
+  ConversationSummary,
+  Conversation,
+} from "./types/chat";
+export { KB_MUTATING_TOOLS } from "./types/chat";
+export {
+  normalizeDocContext,
+  getMessageCopyText,
+  formatDuration,
+  computeCumulative,
+  dedupeSources,
+  titleFromText,
+} from "./utils/chatMessageFormat";
 export { TOOL_LABELS } from "./utils/toolLabels";
-
-// 会改动知识库、需要刷新侧栏的工具
-export const KB_MUTATING_TOOLS = [
-  "write_kb",
-  "delete_kb",
-  "summarize_conversation",
-  "edit_doc",
-  "move_entry",
-  "move_doc",
-  "publish_from_sandbox",
-] as const;
-
-export type ConversationSummary = {
-  id: string;
-  title: string;
-  created_at: string;
-  updated_at: string;
-  message_count: number;
-  summarized?: boolean;
-  summary_path?: string | null;
-};
-
-/** 与后端 `_title_from_text` 对齐：取首行，最长 40 字。 */
-export function titleFromText(text: string): string {
-  const line = text.trim().split("\n")[0] ?? "";
-  if (line.length > 40) return `${line.slice(0, 40)}…`;
-  return line || "新对话";
-}
-
-export type Conversation = ConversationSummary & {
-  messages: ChatMessage[];
-  summarized_at?: string | null;
-  active_turn_id?: string | null;
-  active_turn?: {
-    turn_id: string;
-    status: string;
-    started_at?: string;
-  } | null;
-};
+export { updateTimeline, mergeServerTimeline } from "./utils/timelineStream";
 
 /** @deprecated Use {@link chatStream} — /api/chat returns SSE; product UI only. */
 export async function chat(text: string, conversationId?: string | null) {
@@ -799,9 +570,6 @@ export function chatInject(body: ChatInjectBody) {
   });
 }
 
-// timeline reduce 见 utils/timelineStream；保留 re-export 兼容旧 import
-export { updateTimeline } from "./utils/timelineStream";
-
 /**
  * 强制落库（测试 / 脚本 API）。
  * 产品 UI 请用 {@link chatStream}；同步 JSON，语义等价于 Agent 必须 write_kb。
@@ -866,15 +634,7 @@ export async function kbDelete(path: string) {
   });
 }
 
-export function isMarkdownPath(path: string) {
-  return path.toLowerCase().endsWith(".md");
-}
-
-export function parentDirectory(relPath: string): string {
-  const norm = relPath.replace(/\\/g, "/");
-  const idx = norm.lastIndexOf("/");
-  return idx === -1 ? "" : norm.slice(0, idx);
-}
+export { isMarkdownPath, parentDirectory } from "./utils/kbPath";
 
 export async function getTree() {
   return apiFetch<{ docs: string[] }>("/api/tree");

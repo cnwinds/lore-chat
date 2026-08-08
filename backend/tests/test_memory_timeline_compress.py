@@ -1,4 +1,4 @@
-from app.engine.memory.session_extractor import (
+from app.engine.memory.dialogue_timeline_pack import (
     compress_dialogue_timeline,
     compress_to_self_timeline,
 )

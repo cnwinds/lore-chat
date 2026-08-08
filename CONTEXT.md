@@ -9,7 +9,7 @@
 | HTTP | `backend/app/api/routes.py` | 鉴权、DTO、StreamingResponse；**不**解析 Agent SSE |
 | 聊天 | `backend/app/engine/chat/` | `TurnExecutionHub`（begin/ensure/观测/stop 生命周期）、`ChatSessionRunner`（HTTP 薄 facade + ephemeral）、时间线、SSE；持久回合可发 `timeline_state` 投影 |
 | Agent | `backend/app/engine/agent/` | `AgentOrchestrator`（adapter）、`AgentToolLoop`（LLM+工具循环）、`tool_catalog`、`tool_impl/*`（执行）、`tools.py`（`ToolRegistry.execute` / `rebind` / `interrupt_runtime`） |
-| 会话 | `backend/app/engine/conversations.py` + `conversation/outbox.py` + `conversation/memory_schedule.py` | SQLite 消息/turn；派生 outbox；**记忆抽取调度**（dirty/CAS/idle/enqueue）在 `MemoryExtractSchedule` |
+| 会话 | `backend/app/engine/conversations.py` + `conversation/outbox.py` + `conversation/memory_schedule.py` + `conversation/transcript.py` | SQLite 消息/turn；派生 outbox；**记忆抽取调度**在 `MemoryExtractSchedule`；只读文本投影在 `ConversationTranscript`（store 兼容委托） |
 | 知识写入 | `backend/app/engine/knowledge_writer.py` | 路径 + git + 索引 + changelog **唯一写入 seam**；意图级 `persist_document` / `import_entry`（`allow_binary`）/ `read_entry_bytes` / `move_entry` / `delete_entry`；非 MD 准入经 `assert_non_md_asset_allowed`；Merge/Agent 勿自组 drop_index |
 | 沙箱 | `backend/app/engine/sandbox/` | `SandboxRuntime` 端口；`SandboxCommandGate`（高风险确认）；`KbSandboxExchange`（stage/publish）；`SandboxTools` 为薄 tool adapter |
 | 文档成文 | `backend/app/engine/document_synthesis.py` | 归档/合并/入库合并的 LLM 成文；Organizer 与 MergeWorkflow 共用 |
@@ -17,8 +17,10 @@
 | 记忆写入 | `backend/app/engine/memory/resolver.py` + `service.py` | 全部突变经 `MemoryService` → 唯一 `SlotResolver`（remember/confirm/edit/correct/forget） |
 | 知识库树 HTTP | `backend/app/engine/kb_tree_service.py` | import/move/delete + protected + `index_revision.bump` |
 | 归位 | `backend/app/engine/placement.py` | LLM 决定 new/merge 与 `rel_path` |
-| 整理 | `backend/app/engine/organizer.py` | 录入/归档正文合成 + `PlacementPlanner` + `KnowledgeWriter` |
+| 整理 | `backend/app/engine/organizer.py` | 录入编排 + `PlacementPlanner` + `KnowledgeWriter`；归档委托 `ConversationArchiveWorkflow` |
+| 会话归档 | `backend/app/engine/conversation_archive.py` | 通读 transcript → 分段合成 → 强制路径落库（镜像 `MergeWorkflow`） |
 | 文档合并 | `backend/app/engine/merge_workflow.py` | 多源合并、审阅会话；HTTP 经 `Container.merge_workflow` |
+| 记忆时间线压缩 | `backend/app/engine/memory/dialogue_timeline_pack.py` | 会话级抽取输入的预算/头尾打包；`session_extractor` 只做 SlotAction |
 | Pending 决议 | `backend/app/engine/pending_resolver.py` | `/questions/.../resolve` 编排 seam |
 | 存储 | `backend/app/storage/` | `KnowledgeRepo`、`kb_paths` |
 

@@ -6,10 +6,8 @@ from app.engine.memory.prompt_common import (
     SCOPE_FIDELITY_GATE,
     passes_owner_surface_gate,
 )
-from app.engine.memory.session_extractor import (
-    _SYSTEM_PROMPT as SESSION_PROMPT,
-    compress_dialogue_timeline,
-)
+from app.engine.memory.dialogue_timeline_pack import compress_dialogue_timeline
+from app.engine.memory.session_extractor import _SYSTEM_PROMPT as SESSION_PROMPT
 
 
 def test_durable_and_scope_gates_shared_by_extractors():

@@ -8,7 +8,16 @@ import {
   reindexKb,
 } from "../../api";
 import { AccountSettingsTab } from "./AccountSettingsTab";
+import { AgentSettingsTab } from "./AgentSettingsTab";
+import { KbBackupSettingsTab } from "./KbBackupSettingsTab";
 import { MemorySettingsTab } from "./MemorySettingsTab";
+import {
+  hasCustomEndpoint,
+  ModelSettingsTab,
+  SECRET_KEYS,
+  type ModelSlot,
+  type SecretKey,
+} from "./ModelSettingsTab";
 import { SearchSettingsTab } from "./SearchSettingsTab";
 import { UsageSettingsTab } from "./UsageSettingsTab";
 
@@ -17,18 +26,6 @@ type Props = {
   onClose: () => void;
   onOpenConversation?: (conversationId: string) => void;
 };
-
-const SECRET_KEYS = [
-  "openai_api_key",
-  "small_api_key",
-  "big_api_key",
-  "embed_api_key",
-  "tavily_api_key",
-  "serper_api_key",
-  "brave_search_api_key",
-] as const;
-
-type SecretKey = (typeof SECRET_KEYS)[number];
 
 type SettingsTab = "model" | "search" | "agent" | "kb" | "memory" | "usage" | "account";
 
@@ -41,16 +38,6 @@ const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
   { id: "usage", label: "用量" },
   { id: "account", label: "账户" },
 ];
-
-const SECRET_LABELS: Record<SecretKey, string> = {
-  openai_api_key: "OpenAI API Key（默认）",
-  small_api_key: "小模型 API Key",
-  big_api_key: "大模型 API Key",
-  embed_api_key: "嵌入模型 API Key",
-  tavily_api_key: "Tavily API Key",
-  serper_api_key: "Serper API Key",
-  brave_search_api_key: "Brave Search API Key",
-};
 
 function str(v: unknown): string {
   if (v === null || v === undefined) return "";
@@ -66,109 +53,6 @@ function num(v: unknown, fallback: number): number {
 function bool(v: unknown, fallback: boolean): boolean {
   if (typeof v === "boolean") return v;
   return fallback;
-}
-
-type ModelSlot = "small" | "big" | "embed";
-
-function hasCustomEndpoint(
-  baseUrl: string,
-  secretKey: SecretKey,
-  masked: Partial<Record<SecretKey, string>>,
-  input?: string,
-): boolean {
-  return Boolean(baseUrl.trim() || masked[secretKey] || input?.trim());
-}
-
-type ModelConfigGroupProps = {
-  title: string;
-  modelName: string;
-  onModelNameChange: (value: string) => void;
-  baseUrl: string;
-  onBaseUrlChange: (value: string) => void;
-  secretKey: SecretKey;
-  secretInput: string;
-  onSecretInputChange: (value: string) => void;
-  maskedSecret?: string;
-  endpointExpanded: boolean;
-  onEndpointExpandedChange: (expanded: boolean) => void;
-  saving: boolean;
-};
-
-function ModelConfigGroup({
-  title,
-  modelName,
-  onModelNameChange,
-  baseUrl,
-  onBaseUrlChange,
-  secretKey,
-  secretInput,
-  onSecretInputChange,
-  maskedSecret,
-  endpointExpanded,
-  onEndpointExpandedChange,
-  saving,
-}: ModelConfigGroupProps) {
-  const usesDefault = !hasCustomEndpoint(baseUrl, secretKey, { [secretKey]: maskedSecret }, secretInput);
-
-  return (
-    <div className="settings-group">
-      <h3 className="settings-group-title">{title}</h3>
-      <label className="settings-field">
-        <span>模型名称</span>
-        <input
-          value={modelName}
-          onChange={(e) => onModelNameChange(e.target.value)}
-          disabled={saving}
-        />
-      </label>
-
-      <button
-        type="button"
-        className="settings-endpoint-toggle"
-        aria-expanded={endpointExpanded}
-        onClick={() => onEndpointExpandedChange(!endpointExpanded)}
-      >
-        <span className="settings-endpoint-toggle-label">地址与密钥</span>
-        <span className="settings-endpoint-toggle-meta">
-          {endpointExpanded ? "收起" : usesDefault ? "使用默认" : "已自定义"}
-        </span>
-        <span className="settings-endpoint-toggle-icon" aria-hidden>
-          {endpointExpanded ? "▲" : "▼"}
-        </span>
-      </button>
-
-      {endpointExpanded ? (
-        <div className="settings-endpoint-fields">
-          <label className="settings-field">
-            <span>Base URL</span>
-            <input
-              value={baseUrl}
-              onChange={(e) => {
-                onBaseUrlChange(e.target.value);
-                if (e.target.value.trim()) onEndpointExpandedChange(true);
-              }}
-              disabled={saving}
-              placeholder="留空则使用默认"
-            />
-          </label>
-          <label className="settings-field">
-            <span>API Key</span>
-            <input
-              type="password"
-              autoComplete="off"
-              value={secretInput}
-              placeholder={maskedSecret ?? "未设置"}
-              onChange={(e) => {
-                onSecretInputChange(e.target.value);
-                if (e.target.value.trim()) onEndpointExpandedChange(true);
-              }}
-              disabled={saving}
-            />
-          </label>
-        </div>
-      ) : null}
-    </div>
-  );
 }
 
 export function SettingsPanel({ open, onClose, onOpenConversation }: Props) {
@@ -477,110 +361,28 @@ export function SettingsPanel({ open, onClose, onOpenConversation }: Props) {
                     aria-labelledby="settings-tab-model"
                   >
                     <p className="settings-tab-hint">密钥留空表示不修改；当前值已脱敏显示。</p>
-
-                    <div className="settings-group">
-                      <h3 className="settings-group-title">默认</h3>
-                      <p className="settings-group-hint">未单独配置的模型将使用此地址与密钥。</p>
-                      <label className="settings-field">
-                        <span>Base URL</span>
-                        <input
-                          value={openaiBaseUrl}
-                          onChange={(e) => setOpenaiBaseUrl(e.target.value)}
-                          disabled={saving}
-                          placeholder="https://api.openai.com/v1"
-                        />
-                      </label>
-                      <label className="settings-field">
-                        <span>API Key</span>
-                        <input
-                          type="password"
-                          autoComplete="off"
-                          value={secretInputs.openai_api_key ?? ""}
-                          placeholder={maskedSecrets.openai_api_key ?? "未设置"}
-                          onChange={(e) =>
-                            setSecretInputs((prev) => ({ ...prev, openai_api_key: e.target.value }))
-                          }
-                          disabled={saving}
-                        />
-                      </label>
-                    </div>
-
-                    <ModelConfigGroup
-                      title="小模型"
-                      modelName={smallModel}
-                      onModelNameChange={setSmallModel}
-                      baseUrl={smallBaseUrl}
-                      onBaseUrlChange={setSmallBaseUrl}
-                      secretKey="small_api_key"
-                      secretInput={secretInputs.small_api_key ?? ""}
-                      onSecretInputChange={(value) =>
-                        setSecretInputs((prev) => ({ ...prev, small_api_key: value }))
-                      }
-                      maskedSecret={maskedSecrets.small_api_key}
-                      endpointExpanded={endpointExpanded.small}
-                      onEndpointExpandedChange={(expanded) =>
-                        setEndpointExpanded((prev) => ({ ...prev, small: expanded }))
-                      }
+                    <ModelSettingsTab
+                      openaiBaseUrl={openaiBaseUrl}
+                      onOpenaiBaseUrlChange={setOpenaiBaseUrl}
+                      smallModel={smallModel}
+                      onSmallModelChange={setSmallModel}
+                      smallBaseUrl={smallBaseUrl}
+                      onSmallBaseUrlChange={setSmallBaseUrl}
+                      bigModel={bigModel}
+                      onBigModelChange={setBigModel}
+                      bigBaseUrl={bigBaseUrl}
+                      onBigBaseUrlChange={setBigBaseUrl}
+                      embedModel={embedModel}
+                      onEmbedModelChange={setEmbedModel}
+                      embedBaseUrl={embedBaseUrl}
+                      onEmbedBaseUrlChange={setEmbedBaseUrl}
+                      secretInputs={secretInputs}
+                      setSecretInputs={setSecretInputs}
+                      maskedSecrets={maskedSecrets}
+                      endpointExpanded={endpointExpanded}
+                      setEndpointExpanded={setEndpointExpanded}
                       saving={saving}
                     />
-
-                    <ModelConfigGroup
-                      title="大模型"
-                      modelName={bigModel}
-                      onModelNameChange={setBigModel}
-                      baseUrl={bigBaseUrl}
-                      onBaseUrlChange={setBigBaseUrl}
-                      secretKey="big_api_key"
-                      secretInput={secretInputs.big_api_key ?? ""}
-                      onSecretInputChange={(value) =>
-                        setSecretInputs((prev) => ({ ...prev, big_api_key: value }))
-                      }
-                      maskedSecret={maskedSecrets.big_api_key}
-                      endpointExpanded={endpointExpanded.big}
-                      onEndpointExpandedChange={(expanded) =>
-                        setEndpointExpanded((prev) => ({ ...prev, big: expanded }))
-                      }
-                      saving={saving}
-                    />
-
-                    <ModelConfigGroup
-                      title="嵌入模型"
-                      modelName={embedModel}
-                      onModelNameChange={setEmbedModel}
-                      baseUrl={embedBaseUrl}
-                      onBaseUrlChange={setEmbedBaseUrl}
-                      secretKey="embed_api_key"
-                      secretInput={secretInputs.embed_api_key ?? ""}
-                      onSecretInputChange={(value) =>
-                        setSecretInputs((prev) => ({ ...prev, embed_api_key: value }))
-                      }
-                      maskedSecret={maskedSecrets.embed_api_key}
-                      endpointExpanded={endpointExpanded.embed}
-                      onEndpointExpandedChange={(expanded) =>
-                        setEndpointExpanded((prev) => ({ ...prev, embed: expanded }))
-                      }
-                      saving={saving}
-                    />
-
-                    <div className="settings-group">
-                      <h3 className="settings-group-title">搜索密钥</h3>
-                      <p className="settings-group-hint">用于联网搜索工具，可选配置。</p>
-                      {SECRET_KEYS.slice(4).map((key) => (
-                        <label key={key} className="settings-field">
-                          <span>{SECRET_LABELS[key]}</span>
-                          <input
-                            type="password"
-                            autoComplete="off"
-                            value={secretInputs[key] ?? ""}
-                            placeholder={maskedSecrets[key] ?? "未设置"}
-                            onChange={(e) =>
-                              setSecretInputs((prev) => ({ ...prev, [key]: e.target.value }))
-                            }
-                            disabled={saving}
-                          />
-                        </label>
-                      ))}
-                    </div>
                   </div>
                 ) : null}
 
@@ -610,121 +412,20 @@ export function SettingsPanel({ open, onClose, onOpenConversation }: Props) {
                     id="settings-panel-agent"
                     aria-labelledby="settings-tab-agent"
                   >
-                    <div className="settings-group">
-                      <h3 className="settings-group-title">工具调用</h3>
-                      <p className="settings-group-hint">控制 Agent 执行工具时的并发与次数限制。</p>
-                      <label className="settings-field">
-                        <span>最大工具调用次数</span>
-                        <input
-                          type="number"
-                          min="1"
-                          value={agentMaxToolCalls}
-                          onChange={(e) => setAgentMaxToolCalls(Number(e.target.value))}
-                          disabled={saving}
-                        />
-                      </label>
-                      <label className="settings-field settings-field--checkbox">
-                        <input
-                          type="checkbox"
-                          checked={agentParallelTools}
-                          onChange={(e) => setAgentParallelTools(e.target.checked)}
-                          disabled={saving}
-                        />
-                        <span>允许并行工具调用</span>
-                      </label>
-                      <label className="settings-field">
-                        <span>最大并行数</span>
-                        <input
-                          type="number"
-                          min="1"
-                          value={agentMaxParallel}
-                          onChange={(e) => setAgentMaxParallel(Number(e.target.value))}
-                          disabled={!agentParallelTools || saving}
-                        />
-                      </label>
-                    </div>
-                    <div className="settings-group">
-                      <h3 className="settings-group-title">沙箱执行</h3>
-                      <p className="settings-group-hint">
-                        执行能力由部署决定（是否叠加 docker-compose.sandbox.yml）。默认信任模式：沙箱命令直接执行；关闭后高风险命令会先征询。软件源影响 apt / pip / npm 安装速度与可达性。
-                      </p>
-                      <label className="settings-field">
-                        <span>执行能力（只读）</span>
-                        <input
-                          value={sandboxEnabled ? "已启用" : "未启用"}
-                          readOnly
-                          className="settings-readonly"
-                        />
-                      </label>
-                      <label className="settings-field settings-field--checkbox">
-                        <input
-                          type="checkbox"
-                          checked={sandboxTrustMode}
-                          onChange={(e) => setSandboxTrustMode(e.target.checked)}
-                          disabled={saving || !sandboxEnabled}
-                        />
-                        <span>信任模式（跳过 sandbox_run 确认，默认开启）</span>
-                      </label>
-                      <div className="settings-field">
-                        <span>软件源</span>
-                        <div
-                          className="settings-option-list"
-                          role="radiogroup"
-                          aria-label="沙箱软件源"
-                        >
-                          <label
-                            className={`settings-option-card${
-                              sandboxMirrorRegion === "cn"
-                                ? " settings-option-card--active"
-                                : ""
-                            }${
-                              saving || !sandboxEnabled
-                                ? " settings-option-card--disabled"
-                                : ""
-                            }`}
-                          >
-                            <input
-                              type="radio"
-                              name="sandbox-mirror-region"
-                              value="cn"
-                              className="settings-option-card-input"
-                              checked={sandboxMirrorRegion === "cn"}
-                              onChange={() => setSandboxMirrorRegion("cn")}
-                              disabled={saving || !sandboxEnabled}
-                            />
-                            <span className="settings-option-card-title">国内</span>
-                            <span className="settings-option-card-desc">
-                              阿里云 / npmmirror，安装更快
-                            </span>
-                          </label>
-                          <label
-                            className={`settings-option-card${
-                              sandboxMirrorRegion === "global"
-                                ? " settings-option-card--active"
-                                : ""
-                            }${
-                              saving || !sandboxEnabled
-                                ? " settings-option-card--disabled"
-                                : ""
-                            }`}
-                          >
-                            <input
-                              type="radio"
-                              name="sandbox-mirror-region"
-                              value="global"
-                              className="settings-option-card-input"
-                              checked={sandboxMirrorRegion === "global"}
-                              onChange={() => setSandboxMirrorRegion("global")}
-                              disabled={saving || !sandboxEnabled}
-                            />
-                            <span className="settings-option-card-title">国外</span>
-                            <span className="settings-option-card-desc">
-                              官方源，适合海外网络
-                            </span>
-                          </label>
-                        </div>
-                      </div>
-                    </div>
+                    <AgentSettingsTab
+                      agentMaxToolCalls={agentMaxToolCalls}
+                      onAgentMaxToolCallsChange={setAgentMaxToolCalls}
+                      agentParallelTools={agentParallelTools}
+                      onAgentParallelToolsChange={setAgentParallelTools}
+                      agentMaxParallel={agentMaxParallel}
+                      onAgentMaxParallelChange={setAgentMaxParallel}
+                      sandboxEnabled={sandboxEnabled}
+                      sandboxTrustMode={sandboxTrustMode}
+                      onSandboxTrustModeChange={setSandboxTrustMode}
+                      sandboxMirrorRegion={sandboxMirrorRegion}
+                      onSandboxMirrorRegionChange={setSandboxMirrorRegion}
+                      saving={saving}
+                    />
                   </div>
                 ) : null}
 
@@ -735,149 +436,21 @@ export function SettingsPanel({ open, onClose, onOpenConversation }: Props) {
                     id="settings-panel-kb"
                     aria-labelledby="settings-tab-kb"
                   >
-                    <div className="settings-group">
-                      <h3 className="settings-group-title">存储位置</h3>
-                      <label className="settings-field">
-                        <span>知识库路径（只读）</span>
-                        <input value={kbPath} readOnly className="settings-readonly" />
-                      </label>
-                    </div>
-
-                    {backupError ? (
-                      <p className="settings-panel-error">{backupError}</p>
-                    ) : null}
-                    {backupMsg ? (
-                      <p className="settings-panel-success">{backupMsg}</p>
-                    ) : null}
-
-                    <div className="settings-group">
-                      <h3 className="settings-group-title">导出</h3>
-                      <p className="settings-group-hint">将当前知识库打包为 zip 文件下载到本地。</p>
-                      <div className="settings-action-row">
-                        <div className="settings-action-row-text">
-                          <span className="settings-action-row-title">导出知识库</span>
-                          <span className="settings-action-row-desc">包含文档、索引与会话数据</span>
-                        </div>
-                        <button
-                          type="button"
-                          className="settings-btn settings-btn--secondary settings-btn--compact"
-                          onClick={() => void handleExport()}
-                          disabled={backupBusy || saving}
-                        >
-                          {backupBusy ? "处理中…" : "导出"}
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="settings-group">
-                      <h3 className="settings-group-title">导入</h3>
-                      <p className="settings-group-hint">从 zip 备份包恢复知识库数据。</p>
-                      <div className="settings-import-block">
-                        <span className="settings-field-label">选择 zip 包</span>
-                        <input
-                          ref={importFileRef}
-                          type="file"
-                          accept=".zip,application/zip"
-                          className="settings-file-input-hidden"
-                          disabled={backupBusy || saving}
-                          onChange={(e) => setImportFile(e.target.files?.[0] ?? null)}
-                        />
-                        <div className="settings-file-zone-row">
-                          <button
-                            type="button"
-                            className={`settings-file-zone${importFile ? " settings-file-zone--selected" : ""}`}
-                            disabled={backupBusy || saving}
-                            onClick={() => importFileRef.current?.click()}
-                          >
-                            <span className="settings-file-zone-icon" aria-hidden />
-                            <span className="settings-file-zone-body">
-                              <span className="settings-file-zone-name">
-                                {importFile ? importFile.name : "选择 zip 文件"}
-                              </span>
-                              <span className="settings-file-zone-hint">
-                                {importFile
-                                  ? `${(importFile.size / 1024 / 1024).toFixed(2)} MB · 点击可重新选择`
-                                  : "点击选择知识库备份包"}
-                              </span>
-                            </span>
-                          </button>
-                          {importFile ? (
-                            <button
-                              type="button"
-                              className="settings-file-zone-clear"
-                              aria-label="清除已选文件"
-                              disabled={backupBusy || saving}
-                              onClick={() => {
-                                setImportFile(null);
-                                if (importFileRef.current) importFileRef.current.value = "";
-                              }}
-                            >
-                              ×
-                            </button>
-                          ) : null}
-                        </div>
-
-                        <div className="settings-option-list" role="radiogroup" aria-label="导入模式">
-                          <label
-                            className={`settings-option-card${importMode === "empty_only" ? " settings-option-card--active" : ""}`}
-                          >
-                            <input
-                              type="radio"
-                              name="import-mode"
-                              value="empty_only"
-                              className="settings-option-card-input"
-                              checked={importMode === "empty_only"}
-                              onChange={() => setImportMode("empty_only")}
-                              disabled={backupBusy || saving}
-                            />
-                            <span className="settings-option-card-title">仅空库导入</span>
-                            <span className="settings-option-card-desc">知识库为空时才允许导入</span>
-                          </label>
-                          <label
-                            className={`settings-option-card${importMode === "overwrite" ? " settings-option-card--active" : ""}`}
-                          >
-                            <input
-                              type="radio"
-                              name="import-mode"
-                              value="overwrite"
-                              className="settings-option-card-input"
-                              checked={importMode === "overwrite"}
-                              onChange={() => setImportMode("overwrite")}
-                              disabled={backupBusy || saving}
-                            />
-                            <span className="settings-option-card-title">覆盖导入</span>
-                            <span className="settings-option-card-desc">先自动备份，再覆盖现有数据</span>
-                          </label>
-                        </div>
-
-                        <button
-                          type="button"
-                          className="settings-btn settings-btn--primary"
-                          onClick={() => void handleImport()}
-                          disabled={backupBusy || saving || !importFile}
-                        >
-                          {backupBusy ? "导入中…" : "导入知识库"}
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="settings-group">
-                      <h3 className="settings-group-title">索引维护</h3>
-                      <div className="settings-action-row">
-                        <div className="settings-action-row-text">
-                          <span className="settings-action-row-title">重建索引</span>
-                          <span className="settings-action-row-desc">文档或会话变更后，可手动重建全文与向量索引</span>
-                        </div>
-                        <button
-                          type="button"
-                          className="settings-btn settings-btn--secondary settings-btn--compact"
-                          onClick={() => void handleReindex()}
-                          disabled={backupBusy || saving}
-                        >
-                          {backupBusy ? "重建中…" : "重建"}
-                        </button>
-                      </div>
-                    </div>
+                    <KbBackupSettingsTab
+                      kbPath={kbPath}
+                      backupError={backupError}
+                      backupMsg={backupMsg}
+                      backupBusy={backupBusy}
+                      saving={saving}
+                      importFile={importFile}
+                      importFileRef={importFileRef}
+                      importMode={importMode}
+                      onImportFileChange={setImportFile}
+                      onImportModeChange={setImportMode}
+                      onExport={() => void handleExport()}
+                      onImport={() => void handleImport()}
+                      onReindex={() => void handleReindex()}
+                    />
                   </div>
                 ) : null}
 

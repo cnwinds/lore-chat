@@ -12,7 +12,7 @@ import type {
   QuestionOption,
   SourceRef,
   TimelineBlock,
-} from "../api";
+} from "../types/chat";
 
 function toolQueryFromInput(input: unknown): string | undefined {
   if (!input || typeof input !== "object") return undefined;

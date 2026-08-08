@@ -7,7 +7,6 @@ from dataclasses import dataclass
 
 from app.config import Settings
 
-from app.engine.conversations import ConversationStore
 from app.storage.repo import KnowledgeRepo
 from app.engine.placement import PlacementDecision, PlacementPlanner
 from app.engine.intent import is_question_only
@@ -16,6 +15,7 @@ from app.engine.retriever import Retriever
 from app.engine.pending import PendingStore
 from app.engine.document_synthesis import DocumentSynthesis
 from app.engine.knowledge_writer import KnowledgeWriter
+from app.engine.conversation_archive import ConversationArchiveWorkflow
 from app.engine.merge_workflow import MergeResult, MergeWorkflow
 from app.engine.memory.constants import is_memory_projection_path
 from app.engine.write_policy import WriteMode, resolve_write_mode
@@ -47,6 +47,7 @@ class Organizer:
         knowledge_writer: KnowledgeWriter,
         settings: Settings | None = None,
         merge_workflow: MergeWorkflow | None = None,
+        archive_workflow: ConversationArchiveWorkflow | None = None,
         planner: PlacementPlanner | None = None,
     ):
         self.repo = repo
@@ -64,6 +65,14 @@ class Organizer:
             writer=knowledge_writer,
             planner=self.planner,
             pending=pending,
+            synthesis=self.synthesis,
+        )
+        self.archive = archive_workflow or ConversationArchiveWorkflow(
+            repo=repo,
+            llm=llm,
+            writer=knowledge_writer,
+            planner=self.planner,
+            settings=self.settings,
             synthesis=self.synthesis,
         )
 
@@ -120,52 +129,20 @@ class Organizer:
         conversation_id: str | None = None,
     ) -> IngestResult:
         """把整段会话通读后全局重构成一篇文档并归档（非逐轮拼接）。"""
-        if not transcript.strip():
-            return IngestResult(
-                status="rejected",
-                rel_path=None,
-                question_id=None,
-                message="会话为空，无可总结内容。",
-            )
-        if conv is None:
-            conv = {"messages": []}
-        if len(transcript) <= self.settings.summarize_segment_chars:
-            body = self.synthesis.archive_transcript(transcript, system_rules)
-        else:
-            segments = list(
-                ConversationStore.iter_transcript_segments(
-                    conv, max_chars=self.settings.summarize_segment_chars
-                )
-            )
-            partials = [
-                self.synthesis.archive_segment(seg["text"], system_rules, seg)
-                for seg in segments
-            ]
-            body = self.synthesis.merge_archive_segments(partials, system_rules)
-        if not (forced_rel_path or "").strip():
-            return IngestResult(
-                status="rejected",
-                rel_path=None,
-                question_id=None,
-                message="归档必须指定 directory 与 filename（由工具参数拼成目标路径）。",
-            )
-        if is_memory_projection_path(forced_rel_path):
-            return IngestResult(
-                status="rejected",
-                rel_path=None,
-                question_id=None,
-                message=_MEMORY_FILE_DISABLED_MSG,
-            )
-        decision = self.planner.decision_for_forced_path(forced_rel_path)
-        # 归档正文已是完整终稿，覆盖目标路径，避免再与旧稿 LLM 合并
-        self._apply(
-            decision, body, conversation_id=conversation_id, write_mode="replace"
+        r = self.archive.summarize(
+            transcript,
+            conv=conv,
+            forced_rel_path=forced_rel_path,
+            system_rules=system_rules,
+            conversation_id=conversation_id,
         )
         return IngestResult(
-            status="saved",
-            rel_path=decision.rel_path,
-            question_id=None,
-            message=f"已归档到 {decision.rel_path}",
+            status=r.status,
+            rel_path=r.rel_path,
+            question_id=r.question_id,
+            message=r.message,
+            continue_prompt=r.continue_prompt,
+            sandbox_run_args=r.sandbox_run_args,
         )
 
     def merge_documents(
