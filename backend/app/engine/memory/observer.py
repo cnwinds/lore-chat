@@ -27,6 +27,8 @@ class ObserveResult:
 
 
 class MemoryObserver:
+    """遗留：按条 observe（已废除）。生产用 MemoryWorker + SlotResolver。"""
+
     def __init__(self, store: MemoryStore, *, extractor=None):
         self.store = store
         self.extractor = extractor or RuleBasedMemoryExtractor()

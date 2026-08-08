@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import app.sqlite_compat  # noqa: F401
 import sqlite3
 import threading
 from pathlib import Path

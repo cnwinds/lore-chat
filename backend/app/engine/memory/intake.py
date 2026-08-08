@@ -5,7 +5,10 @@ from app.engine.memory.store import MemoryStore
 
 
 class MemoryIntake:
-    """自动记忆摄入：对外单一 interface，内部委托 MemoryObserver。"""
+    """遗留：按条消息摄入（已废除）。生产路径为 session_observe_memory + SessionExtractor。
+
+    仅测试 / 回退保留；新代码勿调用。
+    """
 
     def __init__(self, store: MemoryStore, *, observer: MemoryObserver | None = None):
         self.store = store

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import app.sqlite_compat  # noqa: F401 — FTS5 trigram 需较新 SQLite
 import sqlite3
 import threading
 from dataclasses import dataclass

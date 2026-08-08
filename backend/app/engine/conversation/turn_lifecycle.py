@@ -108,7 +108,8 @@ class TurnLifecycle:
             )
 
             store._enqueue_index_jobs(msg_id, turn_id)
-            store._enqueue_observe_memory(msg_id, turn_id)
+            # 会话级空闲抽取：只打 dirty（已持锁，用 unlocked 变体）
+            store._mark_memory_dirty_unlocked(cid, at=started_at)
             store._mark_dirty_and_stale(cid)
 
             title = conv_row["title"]
@@ -197,8 +198,9 @@ class TurnLifecycle:
 
             turn_status = "complete" if status == "complete" else "interrupted"
             finalized_at = now_iso()
+            # 兼容：若仍有历史 blocked observe_memory，按 observation_allowed 激活/取消
             store._activate_observe_jobs(
-                turn_id, observation_allowed=bool(turn["observation_allowed"])
+                turn_id, observation_allowed=False
             )
             store.conn.execute(
                 """

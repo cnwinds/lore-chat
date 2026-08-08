@@ -307,7 +307,14 @@ function AppMain() {
               source={snippetSource}
               onClose={() => setSnippetSource(null)}
             />
-            <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+            <SettingsPanel
+              open={settingsOpen}
+              onClose={() => setSettingsOpen(false)}
+              onOpenConversation={(id) => {
+                setSettingsOpen(false);
+                conversation.selectConversation(id);
+              }}
+            />
             <SkillPickModal
               open={skillPick !== null}
               folderLabel={skillPick?.folder ?? ""}

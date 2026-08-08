@@ -1384,3 +1384,51 @@ export async function resolveMergeSources(
   );
 }
 
+export type MemoryFact = {
+  id: string;
+  slot_key: string;
+  statement: string;
+  category?: string;
+  origin?: string;
+  status?: string;
+  confidence?: number;
+  conversation_ids: string[];
+  updated_at?: string;
+};
+
+export function listMemoryFacts() {
+  return apiFetch<{ facts: MemoryFact[]; count: number }>("/api/memory/facts");
+}
+
+export function confirmMemoryFact(factId: string) {
+  return apiFetch<{ ok: boolean; message?: string }>(
+    `/api/memory/facts/${encodeURIComponent(factId)}/confirm`,
+    { method: "POST" },
+  );
+}
+
+export function rejectMemoryFact(factId: string) {
+  return apiFetch<{ ok: boolean; message?: string }>(
+    `/api/memory/facts/${encodeURIComponent(factId)}/reject`,
+    { method: "POST" },
+  );
+}
+
+export function editMemoryFact(factId: string, statement: string) {
+  return apiFetch<{ ok: boolean; message?: string }>(
+    `/api/memory/facts/${encodeURIComponent(factId)}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ statement }),
+    },
+  );
+}
+
+export function forgetMemoryFact(factId: string) {
+  return apiFetch<{ ok: boolean; message?: string }>(
+    `/api/memory/facts/${encodeURIComponent(factId)}/forget`,
+    { method: "POST" },
+  );
+}
+

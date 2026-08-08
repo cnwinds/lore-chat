@@ -1,8 +1,8 @@
-"""为已保留用户消息回填 `observe_memory` outbox 任务（历史记忆观察）。
+"""为 dirty 会话回填 `session_observe_memory`（历史记忆观察）。
 
-幂等：已有 pending/running/blocked 的 observe_memory 任务不会重复入队。
+幂等：已有 pending/running 的 session 任务不会重复入队。
 
-可执行：
+用法：
   python -m app.engine.memory_backfill
   python -m app.engine.memory_backfill --conversation-id <cid>
 """
@@ -10,9 +10,33 @@
 from __future__ import annotations
 
 import argparse
-import json
 
+from app.config import Settings
+from app.deps import build_container
 from app.engine.conversations import ConversationStore
+
+
+def enqueue_session_observe_for_conversations(
+    store: ConversationStore,
+    *,
+    conversation_id: str | None = None,
+    mark_dirty: bool = True,
+) -> int:
+    """为指定或全部会话标记 dirty 并入队会话级观察。"""
+    with store._lock:
+        if conversation_id:
+            cids = [conversation_id]
+        else:
+            rows = store.conn.execute("SELECT id FROM conversations").fetchall()
+            cids = [r["id"] for r in rows]
+        n = 0
+        for cid in cids:
+            if mark_dirty:
+                store._mark_memory_dirty_unlocked(cid)
+            if store._enqueue_session_observe_unlocked(cid):
+                n += 1
+        store.conn.commit()
+        return n
 
 
 def enqueue_observe_for_retained_messages(
@@ -20,86 +44,21 @@ def enqueue_observe_for_retained_messages(
     *,
     conversation_id: str | None = None,
 ) -> int:
-    """为 retained 用户消息显式创建 observe_memory 任务（历史回填）。"""
-    with store._lock:
-        clauses = ["m.role = 'user'"]
-        params: list = []
-        if conversation_id:
-            clauses.append("m.conversation_id = ?")
-            params.append(conversation_id)
-        rows = store.conn.execute(
-            f"""
-            SELECT m.id AS message_id, t.id AS turn_id
-            FROM messages m
-            LEFT JOIN turns t ON t.user_message_id = m.id
-            WHERE {' AND '.join(clauses)}
-            ORDER BY m.conversation_id, m.seq
-            """,
-            params,
-        ).fetchall()
-        count = 0
-        now = store.conn.execute("SELECT datetime('now')").fetchone()[0]
-        for row in rows:
-            exists = store.conn.execute(
-                """
-                SELECT 1 FROM derivation_outbox
-                WHERE kind = 'observe_memory' AND source_message_id = ?
-                  AND status IN ('pending', 'running', 'blocked')
-                LIMIT 1
-                """,
-                (row["message_id"],),
-            ).fetchone()
-            if exists:
-                continue
-            rev_row = store.conn.execute(
-                """
-                SELECT COALESCE(MAX(source_revision), 0) + 1
-                FROM derivation_outbox
-                WHERE kind = 'observe_memory' AND source_message_id = ?
-                """,
-                (row["message_id"],),
-            ).fetchone()
-            revision = int(rev_row[0])
-            store.conn.execute(
-                """
-                INSERT INTO derivation_outbox(
-                    kind, source_message_id, source_revision, turn_id,
-                    status, attempts, next_run_at, created_at, updated_at
-                ) VALUES ('observe_memory', ?, ?, ?, 'pending', 0, ?, ?, ?)
-                """,
-                (row["message_id"], revision, row["turn_id"], now, now, now),
-            )
-            count += 1
-        store.conn.commit()
-        return count
+    """兼容旧名 → 会话级入队。"""
+    return enqueue_session_observe_for_conversations(
+        store, conversation_id=conversation_id, mark_dirty=True
+    )
 
 
 def main() -> None:
-    from app.config import get_settings
-
-    parser = argparse.ArgumentParser(
-        description="为已保留用户消息回填 observe_memory 派生任务"
-    )
-    parser.add_argument(
-        "--conversation-id",
-        type=str,
-        default=None,
-        help="仅处理指定会话（默认全部保留会话）",
-    )
+    parser = argparse.ArgumentParser(description="回填会话级记忆观察任务")
+    parser.add_argument("--conversation-id", default=None)
     args = parser.parse_args()
-
-    settings = get_settings()
-    conversations_dir = settings.kb_path / ".kb" / "conversations"
-    store = ConversationStore(conversations_dir)
-    enqueued = enqueue_observe_for_retained_messages(
-        store, conversation_id=args.conversation_id
+    container = build_container(Settings())
+    n = enqueue_session_observe_for_conversations(
+        container.conversations, conversation_id=args.conversation_id
     )
-    print(
-        json.dumps(
-            {"enqueued": enqueued, "conversation_id": args.conversation_id},
-            ensure_ascii=False,
-        )
-    )
+    print(f"enqueued session_observe_memory jobs: {n}")
 
 
 if __name__ == "__main__":

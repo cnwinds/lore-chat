@@ -36,3 +36,7 @@ def test_memory_context_returns_body_after_remember(tmp_path):
     svc.render_to_file()
     ctx = layer.memory_context()
     assert "中文" in ctx
+    assert "<!-- memory:" not in ctx
+    # 空 section 不注入
+    assert "## 身份与稳定背景" not in ctx
+    assert "## 关键约束" not in ctx

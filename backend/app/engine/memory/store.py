@@ -296,6 +296,26 @@ class MemoryStore:
             )
             conn.commit()
 
+    def add_session_evidence(self, fact_id: str, conversation_id: str) -> None:
+        """会话级出处：每会话每事实最多一条，不记录字级 span。
+
+        同会话重复追加时 INSERT OR IGNORE，仍刷新 last_seen（规格 §5.3 / §7.2）。
+        """
+        import hashlib
+
+        cid = (conversation_id or "").strip()
+        if not cid:
+            return
+        self.add_evidence(
+            fact_id=fact_id,
+            conversation_id=cid,
+            message_id=f"session:{cid}",
+            start_char=0,
+            end_char=0,
+            quote_hash=hashlib.sha256(f"session:{cid}".encode("utf-8")).hexdigest(),
+        )
+        self.set_last_seen_at(fact_id)
+
     def list_evidence(self, fact_id: str) -> list[dict]:
         with self._connect() as conn:
             rows = conn.execute(
@@ -372,6 +392,25 @@ class MemoryStore:
             )
             conn.commit()
 
+    def supersede_others_in_slot(
+        self, slot_key: str, *, keep_id: str | None = None
+    ) -> int:
+        """同槽仅保留 keep_id（confirmed+candidate）；keep_id 为空则全部 supersede。"""
+        n = 0
+        for fact in self.find_confirmed_by_slot(slot_key):
+            if keep_id and fact["id"] == keep_id:
+                continue
+            self.mark_superseded(fact["id"], supersedes_id=keep_id)
+            n += 1
+        for cand in self.list_candidates():
+            if cand["slot_key"] != slot_key:
+                continue
+            if keep_id and cand["id"] == keep_id:
+                continue
+            self.mark_superseded(cand["id"], supersedes_id=keep_id)
+            n += 1
+        return n
+
     def count_evidence(self, fact_id: str) -> int:
         with self._connect() as conn:
             row = conn.execute(
@@ -434,11 +473,78 @@ class MemoryStore:
             )
             conn.commit()
 
-    def set_last_seen_at(self, fact_id: str, ts: str) -> None:
+    def update_fact_content(
+        self,
+        fact_id: str,
+        *,
+        statement: str,
+        normalized_value_hash: str,
+        category: str | None = None,
+        origin: str | None = None,
+        confidence: float | None = None,
+        sensitivity: str | None = None,
+        status: str | None = None,
+    ) -> dict:
+        """就地更新 statement（merge/replace 保 id 与 evidence）。"""
+        now = _now()
+        fact = self.get_fact(fact_id)
+        if not fact:
+            return {}
+        with self._connect() as conn:
+            # 释放同槽上已失效行占用的唯一键，避免 hash 冲突
+            conn.execute(
+                """
+                UPDATE memory_facts
+                SET normalized_value_hash = normalized_value_hash || ':x:' || id,
+                    updated_at = ?
+                WHERE owner_key = ? AND slot_key = ? AND normalized_value_hash = ?
+                  AND id != ? AND status IN ('superseded', 'forgotten', 'rejected')
+                """,
+                (now, self.owner_key, fact["slot_key"], normalized_value_hash, fact_id),
+            )
+            conn.execute(
+                """
+                UPDATE memory_facts SET
+                    statement = ?,
+                    normalized_value_hash = ?,
+                    category = COALESCE(?, category),
+                    origin = COALESCE(?, origin),
+                    confidence = COALESCE(?, confidence),
+                    sensitivity = COALESCE(?, sensitivity),
+                    status = COALESCE(?, status),
+                    last_seen_at = ?,
+                    updated_at = ?,
+                    confirmed_at = CASE
+                        WHEN COALESCE(?, status) = 'confirmed'
+                        THEN COALESCE(confirmed_at, ?)
+                        ELSE confirmed_at
+                    END
+                WHERE id = ?
+                """,
+                (
+                    statement,
+                    normalized_value_hash,
+                    category,
+                    origin,
+                    confidence,
+                    sensitivity,
+                    status,
+                    now,
+                    now,
+                    status,
+                    now,
+                    fact_id,
+                ),
+            )
+            conn.commit()
+        return self.get_fact(fact_id) or {}
+
+    def set_last_seen_at(self, fact_id: str, ts: str | None = None) -> None:
+        stamp = ts or _now()
         with self._connect() as conn:
             conn.execute(
                 "UPDATE memory_facts SET last_seen_at = ?, updated_at = ? WHERE id = ?",
-                (ts, ts, fact_id),
+                (stamp, stamp, fact_id),
             )
             conn.commit()
 

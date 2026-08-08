@@ -56,6 +56,8 @@ class MemoryService:
         end_char: int | None = None,
         clear_tombstone: bool = False,
     ) -> dict:
+        from app.engine.memory.resolver import SlotResolver
+
         text = (statement or "").strip()
         if not text:
             return {"ok": False, "error": "empty_statement", "message": "记忆内容不能为空"}
@@ -65,29 +67,26 @@ class MemoryService:
                 "error": "secret_rejected",
                 "message": "检测到密钥或敏感凭据，不能写入长期记忆",
             }
-        category = infer_category(text)
-        slot = normalize_slot_key(category, text)
-        vhash = value_hash(text)
-        if self.store.has_tombstone(slot_key=slot, normalized_value_hash=vhash):
-            if clear_tombstone:
-                self.store.clear_tombstone(slot_key=slot, normalized_value_hash=vhash)
-            else:
-                return {
-                    "ok": False,
-                    "error": "tombstoned",
-                    "message": "该记忆已被用户遗忘，需显式重新记住",
-                }
-        sensitivity = infer_sensitivity(text)
-        fact = self.store.upsert_fact(
-            slot_key=slot,
-            category=category,
-            statement=text,
-            normalized_value_hash=vhash,
+        resolver = SlotResolver(self.store)
+        out = resolver.apply_statement(
+            text,
             origin=origin,
+            conversation_id=conversation_id,
+            action="merge",
             confidence=1.0,
-            sensitivity=sensitivity,
+            clear_tombstone=clear_tombstone,
         )
-        if conversation_id and message_id and start_char is not None and end_char is not None:
+        if not out.get("ok"):
+            return out
+        fact = out.get("fact") or {}
+        # 兼容旧调用方：若仍传入字级区间则额外记一条（会话级出处已由 Resolver 写入）
+        if (
+            fact.get("id")
+            and conversation_id
+            and message_id
+            and start_char is not None
+            and end_char is not None
+        ):
             msg_text = text
             if self.conversations:
                 msg = self.conversations.get_message(message_id)
@@ -122,7 +121,93 @@ class MemoryService:
         if not fact:
             return {"ok": False, "error": "not_found", "message": "未找到要遗忘的记忆"}
         self.store.mark_forgotten(fact["id"], reason="user_forget")
+        self.render_to_file()
         return {"ok": True, "fact_id": fact["id"], "message": "已遗忘"}
+
+    def list_panel_facts(self) -> dict:
+        """Phase 2：面板列表（confirmed + candidate + 会话出处）。"""
+        items = []
+        for f in self.store.list_confirmed() + self.store.list_candidates():
+            cids = sorted(
+                {
+                    ev["conversation_id"]
+                    for ev in self.store.list_evidence(f["id"])
+                    if ev.get("conversation_id")
+                }
+            )
+            items.append(
+                {
+                    "id": f["id"],
+                    "slot_key": f["slot_key"],
+                    "statement": f["statement"],
+                    "category": f.get("category"),
+                    "origin": f.get("origin"),
+                    "status": f.get("status"),
+                    "confidence": f.get("confidence"),
+                    "conversation_ids": cids,
+                    "updated_at": f.get("updated_at"),
+                }
+            )
+        items.sort(key=lambda x: x.get("updated_at") or "", reverse=True)
+        return {"facts": items, "count": len(items)}
+
+    def confirm_candidate(self, fact_id: str) -> dict:
+        fact = self.store.get_fact(fact_id)
+        if not fact:
+            return {"ok": False, "error": "not_found", "message": "未找到记忆"}
+        if fact.get("status") != "candidate":
+            return {
+                "ok": False,
+                "error": "invalid_status",
+                "message": "仅 candidate 可确认晋升",
+            }
+        slot = fact["slot_key"]
+        self.store.supersede_others_in_slot(slot, keep_id=fact_id)
+        updated = self.store.update_fact_content(
+            fact_id,
+            statement=fact["statement"],
+            normalized_value_hash=fact["normalized_value_hash"],
+            status="confirmed",
+        )
+        self.render_to_file()
+        return {"ok": True, "fact": updated, "message": "已确认晋升"}
+
+    def reject_candidate(self, fact_id: str) -> dict:
+        fact = self.store.get_fact(fact_id)
+        if not fact:
+            return {"ok": False, "error": "not_found", "message": "未找到记忆"}
+        if fact.get("status") != "candidate":
+            return {
+                "ok": False,
+                "error": "invalid_status",
+                "message": "仅 candidate 可拒绝",
+            }
+        self.store.set_status(fact_id, "rejected")
+        return {"ok": True, "fact_id": fact_id, "message": "已拒绝"}
+
+    def edit_fact(self, fact_id: str, statement: str) -> dict:
+        text = (statement or "").strip()
+        if not text:
+            return {"ok": False, "error": "empty_statement", "message": "内容不能为空"}
+        if scan_secrets(text):
+            return {
+                "ok": False,
+                "error": "secret_rejected",
+                "message": "检测到密钥或敏感凭据，不能写入长期记忆",
+            }
+        fact = self.store.get_fact(fact_id)
+        if not fact or fact.get("status") not in ("confirmed", "candidate"):
+            return {"ok": False, "error": "not_found", "message": "未找到可编辑记忆"}
+        updated = self.store.update_fact_content(
+            fact_id,
+            statement=text,
+            normalized_value_hash=value_hash(text),
+            origin="manual",
+            status=fact.get("status"),
+        )
+        if fact.get("status") == "confirmed":
+            self.render_to_file()
+        return {"ok": True, "fact": updated, "message": "已更新"}
 
     def correct(
         self,
@@ -242,21 +327,26 @@ class MemoryService:
         for item in parsed["items"]:
             stmt = item["statement"]
             cat = item["category"]
-            slot = normalize_slot_key(cat, stmt)
             vhash = value_hash(stmt)
             if scan_secrets(stmt):
                 return {"ok": False, "error": "secret_rejected", "message": "手动编辑含密钥，已拒绝"}
             sensitivity = infer_sensitivity(stmt)
-            if item.get("fact_id"):
-                self.store.upsert_fact(
-                    slot_key=slot,
-                    category=cat,
-                    statement=stmt,
-                    normalized_value_hash=vhash,
-                    origin="manual",
-                    fact_id=item["fact_id"],
-                    sensitivity=sensitivity,
-                )
+            fid = item.get("fact_id")
+            if fid:
+                existing = self.store.get_fact(fid)
+                if existing:
+                    # 有 marker：按 id 更新正文，不改 slot（规格 §5.4）
+                    self.store.update_fact_content(
+                        fid,
+                        statement=stmt,
+                        normalized_value_hash=vhash,
+                        category=cat or existing.get("category"),
+                        origin="manual",
+                        sensitivity=sensitivity,
+                        status="confirmed",
+                    )
+                else:
+                    self.remember(stmt, origin="manual")
             else:
                 self.remember(stmt, origin="manual")
         revision = int(meta.get("memory_revision") or state.get("revision") or 0)
@@ -275,9 +365,15 @@ class MemoryService:
     def _check_import_tombstones(self, items: list[dict]) -> dict | None:
         for item in items:
             stmt = item["statement"]
-            cat = infer_category(stmt)
-            slot = normalize_slot_key(cat, stmt)
             vhash = value_hash(stmt)
+            fid = item.get("fact_id")
+            if fid:
+                existing = self.store.get_fact(fid)
+                slot = existing["slot_key"] if existing else normalize_slot_key(
+                    infer_category(stmt), stmt
+                )
+            else:
+                slot = normalize_slot_key(infer_category(stmt), stmt)
             if self.store.has_tombstone(slot_key=slot, normalized_value_hash=vhash):
                 return {
                     "ok": False,

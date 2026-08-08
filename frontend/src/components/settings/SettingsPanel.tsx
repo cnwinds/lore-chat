@@ -7,11 +7,13 @@ import {
   putSettings,
   reindexKb,
 } from "../../api";
+import { MemorySettingsTab } from "./MemorySettingsTab";
 import { UsageSettingsTab } from "./UsageSettingsTab";
 
 type Props = {
   open: boolean;
   onClose: () => void;
+  onOpenConversation?: (conversationId: string) => void;
 };
 
 const SECRET_KEYS = [
@@ -26,13 +28,14 @@ const SECRET_KEYS = [
 
 type SecretKey = (typeof SECRET_KEYS)[number];
 
-type SettingsTab = "model" | "search" | "agent" | "kb" | "usage" | "account";
+type SettingsTab = "model" | "search" | "agent" | "kb" | "memory" | "usage" | "account";
 
 const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
   { id: "model", label: "模型" },
   { id: "search", label: "检索" },
   { id: "agent", label: "Agent" },
   { id: "kb", label: "知识库" },
+  { id: "memory", label: "记忆" },
   { id: "usage", label: "用量" },
   { id: "account", label: "账户" },
 ];
@@ -166,7 +169,7 @@ function ModelConfigGroup({
   );
 }
 
-export function SettingsPanel({ open, onClose }: Props) {
+export function SettingsPanel({ open, onClose, onOpenConversation }: Props) {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
@@ -687,21 +690,65 @@ export function SettingsPanel({ open, onClose }: Props) {
                         />
                         <span>信任模式（跳过 sandbox_run 确认，默认开启）</span>
                       </label>
-                      <label className="settings-field">
+                      <div className="settings-field">
                         <span>软件源</span>
-                        <select
-                          value={sandboxMirrorRegion}
-                          onChange={(e) =>
-                            setSandboxMirrorRegion(
-                              e.target.value === "global" ? "global" : "cn",
-                            )
-                          }
-                          disabled={saving || !sandboxEnabled}
+                        <div
+                          className="settings-option-list"
+                          role="radiogroup"
+                          aria-label="沙箱软件源"
                         >
-                          <option value="cn">国内（阿里云 / npmmirror）</option>
-                          <option value="global">国外（官方源）</option>
-                        </select>
-                      </label>
+                          <label
+                            className={`settings-option-card${
+                              sandboxMirrorRegion === "cn"
+                                ? " settings-option-card--active"
+                                : ""
+                            }${
+                              saving || !sandboxEnabled
+                                ? " settings-option-card--disabled"
+                                : ""
+                            }`}
+                          >
+                            <input
+                              type="radio"
+                              name="sandbox-mirror-region"
+                              value="cn"
+                              className="settings-option-card-input"
+                              checked={sandboxMirrorRegion === "cn"}
+                              onChange={() => setSandboxMirrorRegion("cn")}
+                              disabled={saving || !sandboxEnabled}
+                            />
+                            <span className="settings-option-card-title">国内</span>
+                            <span className="settings-option-card-desc">
+                              阿里云 / npmmirror，安装更快
+                            </span>
+                          </label>
+                          <label
+                            className={`settings-option-card${
+                              sandboxMirrorRegion === "global"
+                                ? " settings-option-card--active"
+                                : ""
+                            }${
+                              saving || !sandboxEnabled
+                                ? " settings-option-card--disabled"
+                                : ""
+                            }`}
+                          >
+                            <input
+                              type="radio"
+                              name="sandbox-mirror-region"
+                              value="global"
+                              className="settings-option-card-input"
+                              checked={sandboxMirrorRegion === "global"}
+                              onChange={() => setSandboxMirrorRegion("global")}
+                              disabled={saving || !sandboxEnabled}
+                            />
+                            <span className="settings-option-card-title">国外</span>
+                            <span className="settings-option-card-desc">
+                              官方源，适合海外网络
+                            </span>
+                          </label>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 ) : null}
@@ -868,6 +915,10 @@ export function SettingsPanel({ open, onClose }: Props) {
                 ) : null}
               </form>
 
+              {activeTab === "memory" ? (
+                <MemorySettingsTab onOpenConversation={onOpenConversation} />
+              ) : null}
+
               {activeTab === "usage" ? <UsageSettingsTab /> : null}
 
               {activeTab === "account" ? (
@@ -879,9 +930,19 @@ export function SettingsPanel({ open, onClose }: Props) {
                 >
                   <div className="settings-group">
                     <h3 className="settings-group-title">修改密码</h3>
-                    <form className="settings-form" onSubmit={handleChangePassword}>
-                      {pwdError ? <p className="settings-panel-error">{pwdError}</p> : null}
-                      {pwdMsg ? <p className="settings-panel-success">{pwdMsg}</p> : null}
+                    <p className="settings-group-hint">
+                      新密码至少 8 位。修改成功后需使用新密码登录。
+                    </p>
+                    <form
+                      className="settings-form settings-form--fields"
+                      onSubmit={handleChangePassword}
+                    >
+                      {pwdError ? (
+                        <p className="settings-panel-error">{pwdError}</p>
+                      ) : null}
+                      {pwdMsg ? (
+                        <p className="settings-panel-success">{pwdMsg}</p>
+                      ) : null}
                       <label className="settings-field">
                         <span>当前密码</span>
                         <input
@@ -917,9 +978,15 @@ export function SettingsPanel({ open, onClose }: Props) {
                           minLength={8}
                         />
                       </label>
-                      <button type="submit" className="settings-btn settings-btn--primary" disabled={pwdSaving}>
-                        {pwdSaving ? "提交中…" : "更新密码"}
-                      </button>
+                      <footer className="settings-form-footer settings-form-footer--inline">
+                        <button
+                          type="submit"
+                          className="settings-btn settings-btn--primary"
+                          disabled={pwdSaving}
+                        >
+                          {pwdSaving ? "提交中…" : "更新密码"}
+                        </button>
+                      </footer>
                     </form>
                   </div>
                 </div>

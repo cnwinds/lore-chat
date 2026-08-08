@@ -3,27 +3,27 @@
     sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Code", Consolas, monospace;
 
-  /* 三栏统一字号体系 */
-  --font-ui-xs: 10.5px;
-  --font-ui-sm: 12px;
-  --font-ui-base: 13.5px;
-  --font-ui-md: 14px;
+  /* 三栏统一字号体系（略放大，降低阅读负担） */
+  --font-ui-xs: 12px;
+  --font-ui-sm: 13px;
+  --font-ui-base: 14.5px;
+  --font-ui-md: 15px;
 
-  --font-h1: 20px;
-  --font-h2: 17px;
-  --font-h3: 15px;
-  --font-h4: 14px;
+  --font-h1: 21px;
+  --font-h2: 18px;
+  --font-h3: 16px;
+  --font-h4: 15px;
 
-  --leading-ui: 1.55;
-  --leading-content: 1.65;
-  --leading-tight: 1.4;
+  --leading-ui: 1.6;
+  --leading-content: 1.7;
+  --leading-tight: 1.45;
 
   /* 兼容旧变量名 */
   --text-xs: var(--font-ui-xs);
   --text-sm: var(--font-ui-sm);
   --text-base: var(--font-ui-base);
   --text-md: var(--font-ui-md);
-  --text-lg: 15px;
+  --text-lg: 16px;
 
   --radius-sm: 6px;
   --radius-md: 10px;
@@ -1404,6 +1404,10 @@ a:hover {
   gap: 0;
 }
 
+.settings-form--fields {
+  gap: 10px;
+}
+
 .settings-tab-panel {
   display: flex;
   flex-direction: column;
@@ -1415,6 +1419,96 @@ a:hover {
   font-size: var(--text-xs);
   color: var(--text-muted);
   line-height: 1.45;
+}
+
+.memory-fact-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.memory-fact-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-muted);
+}
+
+.memory-fact-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.memory-fact-status--confirmed {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.memory-fact-status--candidate {
+  color: var(--accent, #b45309);
+  font-weight: 600;
+}
+
+.memory-fact-slot {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.memory-fact-statement {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: 1.45;
+  color: var(--text);
+}
+
+.memory-fact-edit {
+  width: 100%;
+  resize: vertical;
+  font: inherit;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+}
+
+.memory-fact-sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.memory-fact-source-btn {
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  border-radius: var(--radius-sm);
+  padding: 2px 6px;
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.memory-fact-source-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.memory-fact-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .settings-group {
@@ -1737,7 +1831,7 @@ a:hover {
 }
 
 .usage-trend-label {
-  font-size: 9px;
+  font-size: 11px;
   line-height: 1;
   color: var(--text-muted);
   white-space: nowrap;
@@ -2054,15 +2148,44 @@ a:hover {
 .settings-field input[type="text"],
 .settings-field input[type="password"],
 .settings-field input[type="number"],
-.settings-field input:not([type="checkbox"]) {
+.settings-field input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+.settings-field select {
   width: 100%;
   padding: 8px 9px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  background: var(--bg-muted);
+  background: var(--bg-surface);
   color: var(--text);
   font-size: var(--text-sm);
   box-sizing: border-box;
+}
+
+.settings-field select {
+  cursor: pointer;
+  appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, var(--text-muted) 50%),
+    linear-gradient(135deg, var(--text-muted) 50%, transparent 50%);
+  background-position:
+    calc(100% - 14px) calc(50% - 2px),
+    calc(100% - 9px) calc(50% - 2px);
+  background-size:
+    5px 5px,
+    5px 5px;
+  background-repeat: no-repeat;
+  padding-right: 28px;
+}
+
+.settings-field select:disabled,
+.settings-field input:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.settings-field input:focus,
+.settings-field select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-focus);
 }
 
 .settings-field input.settings-readonly {
@@ -2075,6 +2198,19 @@ a:hover {
   flex-direction: row;
   align-items: center;
   gap: 8px;
+}
+
+.settings-field--checkbox input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  flex-shrink: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.settings-field--checkbox input[type="checkbox"]:disabled {
+  cursor: not-allowed;
 }
 
 .settings-field--checkbox span {
@@ -2103,6 +2239,15 @@ a:hover {
   bottom: 0;
   background: linear-gradient(to top, var(--bg-surface) 70%, transparent);
   padding-bottom: 4px;
+}
+
+.settings-form-footer--inline {
+  position: static;
+  margin-top: 4px;
+  padding-top: 8px;
+  padding-bottom: 0;
+  background: transparent;
+  border-top: 1px solid var(--border);
 }
 
 .settings-btn {
@@ -2360,6 +2505,12 @@ a:hover {
   border-color: var(--accent);
   background: var(--accent-soft);
   box-shadow: 0 0 0 1px var(--accent-border);
+}
+
+.settings-option-card--disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  pointer-events: none;
 }
 
 .settings-option-card-input {

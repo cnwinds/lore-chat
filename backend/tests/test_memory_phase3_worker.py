@@ -1,9 +1,12 @@
+from datetime import datetime, timedelta, timezone
+
 from app.deps import build_container
 from app.config import Settings
+from app.engine.memory.session_extractor import RuleBasedSessionExtractor
 from app.engine.memory_worker import MemoryWorker
 
 
-def test_worker_processes_observe_job_and_confirms_direct(tmp_path):
+def test_worker_processes_session_job_and_confirms_direct(tmp_path):
     kb = tmp_path / "knowledge"
     kb.mkdir()
     container = build_container(Settings(kb_path=kb))
@@ -17,7 +20,18 @@ def test_worker_processes_observe_job_and_confirms_direct(tmp_path):
         turn["turn_id"],
         assistant={"text": "好的", "timeline": [], "sources": [], "status": "complete"},
     )
-    worker = MemoryWorker(store, container.memory_service)
+    past = (datetime.now(timezone.utc) - timedelta(hours=25)).isoformat()
+    store.conn.execute(
+        "UPDATE conversations SET last_user_message_at = ? WHERE id = ?",
+        (past, cid),
+    )
+    store.conn.commit()
+    worker = MemoryWorker(
+        store,
+        container.memory_service,
+        extractor=RuleBasedSessionExtractor(),
+        idle_hours=0,
+    )
     assert worker.drain(max_jobs=5) >= 1
     assert container.memory_service.store.list_confirmed()
 
@@ -34,7 +48,18 @@ def test_memory_updated_event_after_confirm(tmp_path, client):
         turn["turn_id"],
         assistant={"text": "好的", "timeline": [], "sources": [], "status": "complete"},
     )
-    worker = MemoryWorker(store, container.memory_service)
+    past = (datetime.now(timezone.utc) - timedelta(hours=25)).isoformat()
+    store.conn.execute(
+        "UPDATE conversations SET last_user_message_at = ? WHERE id = ?",
+        (past, cid),
+    )
+    store.conn.commit()
+    worker = MemoryWorker(
+        store,
+        container.memory_service,
+        extractor=RuleBasedSessionExtractor(),
+        idle_hours=0,
+    )
     worker.drain(max_jobs=5)
     events = store.list_system_events(cid)
     assert events

@@ -43,8 +43,12 @@ def append_deletion_ledger(
         os.fsync(f.fileno())
 
 
+# session_observe：归档/显式即时入队标记（消费时跳过空闲校验）
+SESSION_OBSERVE_IMMEDIATE = "immediate"
+
+
 class DerivationOutbox:
-    """会话派生任务队列（index_fts / index_vector / observe_memory）。"""
+    """会话派生任务队列（index_fts / index_vector / session_observe_memory）。"""
 
     def __init__(self, conn: sqlite3.Connection, lock: threading.Lock):
         self.conn = conn
@@ -64,16 +68,94 @@ class DerivationOutbox:
             )
 
     def enqueue_observe_memory(self, message_id: str, turn_id: str) -> None:
+        """已废弃：按条观察不再入队；保留方法以免旧调用崩溃。"""
+        return
+
+    def cancel_session_observe(self, conversation_id: str) -> int:
+        """取消该会话未完成的 session_observe（续聊后须重新空闲再抽）。"""
         now = _now()
+        source = f"conv:{conversation_id}"
+        cur = self.conn.execute(
+            """
+            UPDATE derivation_outbox
+            SET status = 'cancelled', updated_at = ?
+            WHERE kind = 'session_observe_memory'
+              AND source_message_id = ?
+              AND status IN ('pending', 'blocked')
+            """,
+            (now, source),
+        )
+        return int(cur.rowcount or 0)
+
+    def enqueue_session_observe(
+        self, conversation_id: str, *, immediate: bool = False
+    ) -> bool:
+        """为会话入队 session_observe_memory。
+
+        immediate=True：归档/显式路径，turn_id=SESSION_OBSERVE_IMMEDIATE，消费时不校验空闲。
+        已有未完成任务：immediate 可升级标记；否则跳过。
+        """
+        now = _now()
+        source = f"conv:{conversation_id}"
+        existing = self.conn.execute(
+            """
+            SELECT id, turn_id, status FROM derivation_outbox
+            WHERE kind = 'session_observe_memory'
+              AND source_message_id = ?
+              AND status IN ('pending', 'running', 'blocked')
+            LIMIT 1
+            """,
+            (source,),
+        ).fetchone()
+        if existing:
+            if immediate and existing["status"] in ("pending", "blocked"):
+                self.conn.execute(
+                    """
+                    UPDATE derivation_outbox
+                    SET turn_id = ?, next_run_at = ?, updated_at = ?,
+                        status = 'pending'
+                    WHERE id = ?
+                    """,
+                    (SESSION_OBSERVE_IMMEDIATE, now, now, existing["id"]),
+                )
+                return True
+            if immediate and existing["status"] == "running":
+                # 本轮结束后由 memory_immediate_pending 再入队；先升级以免失败重试撞 idle 门闩
+                self.conn.execute(
+                    """
+                    UPDATE derivation_outbox
+                    SET turn_id = ?, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (SESSION_OBSERVE_IMMEDIATE, now, existing["id"]),
+                )
+                return False
+            return False
+        turn_id = SESSION_OBSERVE_IMMEDIATE if immediate else None
         self.conn.execute(
             """
             INSERT INTO derivation_outbox(
                 kind, source_message_id, source_revision, turn_id,
                 status, attempts, next_run_at, created_at, updated_at
-            ) VALUES ('observe_memory', ?, 1, ?, 'blocked', 0, ?, ?, ?)
+            ) VALUES ('session_observe_memory', ?, 1, ?, 'pending', 0, ?, ?, ?)
             """,
-            (message_id, turn_id, now, now, now),
+            (source, turn_id, now, now, now),
         )
+        return True
+
+    def cancel_legacy_observe_memory(self) -> int:
+        """取消未完成的按条 observe_memory（已废除，升级时清理）。"""
+        now = _now()
+        cur = self.conn.execute(
+            """
+            UPDATE derivation_outbox
+            SET status = 'cancelled', updated_at = ?
+            WHERE kind = 'observe_memory'
+              AND status IN ('pending', 'blocked', 'running')
+            """,
+            (now,),
+        )
+        return int(cur.rowcount or 0)
 
     def activate_observe_jobs(self, turn_id: str, *, observation_allowed: bool) -> None:
         status = "pending" if observation_allowed else "cancelled"
@@ -91,14 +173,15 @@ class DerivationOutbox:
         with self._lock:
             now = _now()
             if kind == "observe_memory":
+                # 按条观察已废除：不再 claim
+                rows = []
+            elif kind == "session_observe_memory":
                 rows = self.conn.execute(
                     """
                     SELECT * FROM derivation_outbox
-                    WHERE kind = 'observe_memory'
+                    WHERE kind = 'session_observe_memory'
                       AND (
-                            (status = 'pending' AND turn_id IN (
-                                SELECT id FROM turns WHERE finalized_at IS NOT NULL
-                            ))
+                            status = 'pending'
                             OR (status = 'running' AND (
                                 locked_until IS NULL OR locked_until <= ?
                             ))

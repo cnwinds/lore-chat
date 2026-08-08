@@ -1,0 +1,75 @@
+"""记忆抽取 prompt 共用片段——单一来源，避免会话级/按条双份漂移。"""
+
+from __future__ import annotations
+
+import json
+import re
+
+# 「关于主人」门槛（AGENTS.md §0 / §2）；两边抽取器必须引用，禁止各写一份黑名单式补丁。
+OWNER_MEMORY_GATE = """核心门槛（关于主人）：
+- 只记主人自身的身份、偏好、目标、工作方式、约束，或主人主动纳入画像的家庭/环境关系。
+- 制度、常识、规格、考试规则、新闻、文档摘要等与主人无关的信息一律不记——即使对话里出现了数字或专有名词。
+- 判定：删掉该句后主人画像是否变少？不变则不要输出。
+- 禁止把常识改写成第一人称伪自述。"""
+
+# 非耐久噪声（与「关于主人」正交：有主人指称也不该进长期画像的瞬时内容）
+NON_DURABLE_IGNORE = """还必须忽略：
+- 提问、命令、一次性任务、代码块、链接摘要
+- 提示词/模板/填空示例（含占位符、填空说明）
+- 无关第三方或虚构人物画像
+- 不确定的猜测（除非 origin=inferred 且仍在描述主人）"""
+
+# 主人指称：须有第一人称/「我家」归属。裸「孩子/父母」不放行（常识句可夹带）。
+_OWNER_DEIXIS_RE = re.compile(r"(我|咱|本人|吾|俺|我家|我的|我们家)")
+# 对助手的短偏好/约束指令；种子别名命中≠放行，须同时具备立场语气
+_OWNER_STANCE_RE = re.compile(
+    r"(偏好|喜欢|希望你|请你|不要|禁止|习惯|默认使用|默认用|"
+    r"用中文|中文交流|简洁回答|回答简洁|简短回答|偏好简洁|简洁直接|记住)"
+)
+
+
+def passes_owner_surface_gate(statement: str, *, slot_key: str = "") -> bool:
+    """语句是否具备「关于主人」的表面归属。
+
+    种子别名 / slot_key alone 不放行——避免常识句夹带别名落入画像。
+    ``slot_key`` 保留参数以兼容调用方，不参与放行判定。
+    """
+    del slot_key  # 显式忽略：抽象槽名不能证明语句关于主人
+    from app.engine.memory.normalize import match_seed_slot
+
+    text = (statement or "").strip()
+    if not text:
+        return False
+    if _OWNER_DEIXIS_RE.search(text):
+        return True
+    # 无指称：短偏好指令 + 种子（如「默认使用中文」）。
+    # 约束槽短禁令（「不要迟到」）不能单凭别名证明主人画像。
+    seeded = match_seed_slot(text)
+    if (
+        seeded
+        and not seeded.startswith("constraint.")
+        and len(text) <= 60
+        and _OWNER_STANCE_RE.search(text)
+    ):
+        return True
+    return False
+
+
+def parse_llm_json_list(raw: str, *, key: str) -> list[dict]:
+    """解析抽取器 JSON 对象中的列表字段（items / candidates）。"""
+    text = (raw or "").strip()
+    if text.startswith("```"):
+        text = text.strip("`")
+        if text.startswith("json"):
+            text = text[4:]
+    start, end = text.find("{"), text.rfind("}")
+    if start == -1 or end == -1:
+        return []
+    try:
+        data = json.loads(text[start : end + 1])
+    except json.JSONDecodeError:
+        return []
+    items = data.get(key)
+    if not isinstance(items, list):
+        return []
+    return [x for x in items if isinstance(x, dict)]

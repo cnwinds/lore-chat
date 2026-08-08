@@ -24,6 +24,23 @@ async def test_manage_memory_remember_renders_file(container):
 
 
 @pytest.mark.asyncio
+async def test_manage_memory_remember_records_conversation_evidence(container):
+    """显式记住须带会话出处（规格 §3#15 / §7.2）。"""
+    out = await container.agent.tools.execute(
+        "manage_memory",
+        {"action": "remember", "statement": "记住我偏好简洁回答"},
+        conversation_id="conv-remember-1",
+    )
+    assert out["ok"] is True
+    fact = out["fact"]
+    cids = {
+        ev["conversation_id"]
+        for ev in container.memory_service.store.list_evidence(fact["id"])
+    }
+    assert "conv-remember-1" in cids
+
+
+@pytest.mark.asyncio
 async def test_manage_memory_forget_by_fact_id(container):
     out = await container.agent.tools.execute(
         "manage_memory",

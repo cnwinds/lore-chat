@@ -37,3 +37,22 @@ def test_import_new_bullet_without_id_becomes_manual(tmp_path):
     svc.import_manual_document(doc.meta, new_body)
     confirmed = svc.store.list_confirmed()
     assert any("周五不发版" in f["statement"] for f in confirmed)
+
+
+def test_import_with_marker_keeps_slot_key(tmp_path):
+    repo = KnowledgeRepo(tmp_path / "knowledge", protected_dirs=("系统",))
+    svc = _service(tmp_path, repo)
+    f = svc.remember("我偏好用数据可视化替代插图")["fact"]
+    old_slot = f["slot_key"]
+    svc.render_to_file()
+    doc = repo.read_doc("系统/记忆.md")
+    marker = f"<!-- memory:{f['id']} -->"
+    new_body = doc.body.replace(
+        f"- {f['statement']}\n{marker}",
+        f"- 我偏好用数据可视化（榜单/词云）替代插图，不用 AI 图。\n{marker}",
+    )
+    out = svc.import_manual_document(doc.meta, new_body)
+    assert out["ok"] is True
+    updated = svc.store.get_fact(f["id"])
+    assert updated["slot_key"] == old_slot
+    assert "榜单" in updated["statement"]

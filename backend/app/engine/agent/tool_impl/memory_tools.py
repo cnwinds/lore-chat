@@ -8,7 +8,6 @@ class MemoryTools:
         self.memory_service = memory_service
 
     def manage_memory(self, args: dict, *, conversation_id: str | None = None) -> dict:
-        del conversation_id
         if not self.memory_service:
             return {
                 "summary": "记忆服务未配置",
@@ -19,9 +18,11 @@ class MemoryTools:
         action = args.get("action")
         statement = args.get("statement", "")
         if action == "remember":
+            # 规格 §3#15 / §7.2：显式记住也写会话级出处
             out = self.memory_service.remember(
                 statement,
                 origin="explicit_remember",
+                conversation_id=conversation_id,
                 clear_tombstone=bool(args.get("clear_tombstone", False)),
             )
             if out.get("ok"):

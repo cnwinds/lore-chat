@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import app.sqlite_compat  # noqa: F401 — 确保 SQLite ≥ 3.35
+
 from chromadb import PersistentClient
 from chromadb.config import Settings
 

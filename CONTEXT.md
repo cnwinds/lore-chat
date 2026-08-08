@@ -47,7 +47,8 @@
 1. `begin_turn` → 写入用户消息 + running turn  
 2. `TurnExecutionHub.ensure_running` → 进程内 Task 跑 Agent；SSE 仅 `subscribe` 观测（断开不取消执行）  
 3. `done` / 显式 `POST /api/chat/stop` / 启动孤儿回收 → `finalize_turn`  
-4. Outbox：`index_fts` / `index_vector` / `observe_memory`
+4. Outbox：`index_fts` / `index_vector` / `session_observe_memory`（会话级记忆；用户消息只打 `memory_dirty`，空闲或归档后入队；成功抽取递增 `memory_extract_revision`；已废除按条 `observe_memory`）
+5. 记忆面板 API：`/api/memory/facts`（列表 / confirm / reject / edit / forget）；设置页「记忆」页签
 
 无 `conversation_id` 时仅 `stream_ephemeral`，不落库（仍跟连接走）。
 

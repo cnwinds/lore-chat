@@ -74,6 +74,7 @@ class Settings(BaseSettings):
     memory_decay_inferred_days: int = 180
     memory_decay_candidate_days: int = 180
     memory_maintenance_interval_hours: int = 24
+    memory_session_idle_hours: float = 24.0
 
     # OpenSandbox 执行 Runtime（可选；默认关闭，见 docker-compose.sandbox.yml）
     sandbox_enabled: bool = False

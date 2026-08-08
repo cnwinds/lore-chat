@@ -1,4 +1,4 @@
-"""Phase 3: observe_memory outbox enqueue and finalize gating."""
+"""会话级记忆：begin_turn 只打 dirty，不再按条 enqueue observe_memory。"""
 
 from app.engine.conversations import ConversationStore
 
@@ -7,29 +7,18 @@ def _store(tmp_path):
     return ConversationStore(tmp_path / "knowledge" / ".kb" / "conversations")
 
 
-def test_begin_turn_enqueues_blocked_observe_memory(tmp_path):
+def test_begin_turn_marks_dirty_without_observe_outbox(tmp_path):
     store = _store(tmp_path)
     cid = store.create()
-    turn = store.begin_turn(cid, "我喜欢简洁", "c1", observation_allowed=True)
-    jobs = store.list_outbox(kind="observe_memory", message_id=turn["user_message"]["id"])
-    assert len(jobs) == 1
-    assert jobs[0]["status"] == "blocked"
+    store.begin_turn(cid, "我喜欢简洁", "c1", observation_allowed=True)
+    assert store.list_outbox(kind="observe_memory") == []
+    row = store.conn.execute(
+        "SELECT memory_dirty FROM conversations WHERE id = ?", (cid,)
+    ).fetchone()
+    assert row["memory_dirty"] == 1
 
 
-def test_finalize_cancels_observe_when_not_allowed(tmp_path):
-    store = _store(tmp_path)
-    cid = store.create()
-    turn = store.begin_turn(cid, "hi", "c1", observation_allowed=False)
-    store.finalize_turn(
-        cid,
-        turn["turn_id"],
-        assistant={"text": "ok", "timeline": [], "sources": [], "status": "complete"},
-    )
-    jobs = store.list_outbox(kind="observe_memory")
-    assert jobs[0]["status"] == "cancelled"
-
-
-def test_finalize_activates_observe_when_allowed(tmp_path):
+def test_finalize_does_not_create_per_message_observe(tmp_path):
     store = _store(tmp_path)
     cid = store.create()
     turn = store.begin_turn(cid, "我喜欢茶", "c1", observation_allowed=True)
@@ -38,20 +27,11 @@ def test_finalize_activates_observe_when_allowed(tmp_path):
         turn["turn_id"],
         assistant={"text": "好", "timeline": [], "sources": [], "status": "complete"},
     )
-    jobs = store.list_outbox(kind="observe_memory")
-    assert jobs[0]["status"] == "pending"
+    assert store.list_outbox(kind="observe_memory") == []
 
 
-def test_claim_skips_blocked_observe_before_finalize(tmp_path):
+def test_claim_legacy_observe_returns_empty(tmp_path):
     store = _store(tmp_path)
     cid = store.create()
-    turn = store.begin_turn(cid, "我喜欢茶", "c1", observation_allowed=True)
-    claimed = store.claim_outbox(kind="observe_memory", limit=5)
-    assert claimed == []
-    store.finalize_turn(
-        cid,
-        turn["turn_id"],
-        assistant={"text": "好", "timeline": [], "sources": [], "status": "complete"},
-    )
-    claimed = store.claim_outbox(kind="observe_memory", limit=5)
-    assert len(claimed) == 1
+    store.begin_turn(cid, "我喜欢茶", "c1", observation_allowed=True)
+    assert store.claim_outbox(kind="observe_memory", limit=5) == []
