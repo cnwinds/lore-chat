@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import asyncio
 
-from app.engine.chat.progress_log import ensure_line_chunk
 from app.engine.knowledge_writer import KnowledgeWriter
 from app.engine.pending import PendingStore
 from app.engine.sandbox.command_gate import SandboxCommandGate
+from app.engine.sandbox.job_runner import SandboxJobRunner
 from app.engine.sandbox.kb_exchange import KbSandboxExchange
 from app.engine.sandbox.progress import emit_progress
 from app.engine.sandbox.protocol import SandboxRuntime
@@ -31,9 +31,11 @@ class SandboxTools:
         self.pending = pending
         self.command_gate = SandboxCommandGate(pending, trust_mode=trust_mode)
         self.exchange = KbSandboxExchange(knowledge_writer)
+        self.job_runner = SandboxJobRunner(
+            poll_interval_sec=job_poll_interval_sec,
+            max_wait_sec=job_max_wait_sec,
+        )
         self.short_timeout_sec = short_timeout_sec
-        self.job_poll_interval_sec = job_poll_interval_sec
-        self.job_max_wait_sec = job_max_wait_sec
         self.read_max_chars = read_max_chars
 
     @property
@@ -81,56 +83,7 @@ class SandboxTools:
         await rt.ensure_ready()
 
         if background or timeout_sec > self.short_timeout_sec:
-            eid = await rt.start_job(command, cwd=cwd)
-            emit_progress(f"job started id={eid}\n", phase="job", execution_id=eid)
-            cursor: int | None = None
-            waited = 0.0
-            full_logs = ""
-            try:
-                while waited < self.job_max_wait_sec:
-                    status = await rt.poll_job(eid, log_cursor=cursor)
-                    chunk = status.logs or ""
-                    if chunk:
-                        full_logs += chunk
-                        emit_progress(
-                            ensure_line_chunk(chunk),
-                            phase="log",
-                            execution_id=eid,
-                        )
-                    if status.next_cursor is not None:
-                        cursor = status.next_cursor
-                    if not status.running:
-                        code = status.exit_code if status.exit_code is not None else 0
-                        emit_progress(f"\n[exit {code}]", phase="end", execution_id=eid)
-                        summary = (
-                            f"命令完成 exit={code}"
-                            + (f"\n{full_logs.strip()}" if full_logs.strip() else "")
-                        )
-                        out = {
-                            "summary": summary[:4000],
-                            "sources": [],
-                            "exit_code": code,
-                            "execution_id": eid,
-                            "stdout": full_logs,
-                        }
-                        if code != 0:
-                            out["error"] = f"exit_code={code}"
-                        return out
-                    await asyncio.sleep(self.job_poll_interval_sec)
-                    waited += self.job_poll_interval_sec
-            except asyncio.CancelledError:
-                await rt.interrupt(eid)
-                raise
-            return {
-                "summary": (
-                    f"命令仍在运行（已等待 {int(waited)}s），execution_id={eid}。"
-                    f"可用 sandbox_job_status 稍后查询。"
-                ),
-                "sources": [],
-                "execution_id": eid,
-                "running": True,
-                "error": "job timeout waiting",
-            }
+            return await self.job_runner.wait(rt, command, cwd=cwd)
 
         try:
             result = await rt.run(command, cwd=cwd, timeout_sec=timeout_sec)

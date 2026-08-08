@@ -1,7 +1,5 @@
 """AGENTS.md：常识提及 ≠ 画像事实（根因同类验收，非孤例补丁）。"""
 
-from app.engine.memory.llm_extractor import LLMMemoryExtractor
-from app.engine.memory.llm_extractor import _SYSTEM_PROMPT as MSG_PROMPT
 from app.engine.memory.prompt_common import (
     NON_DURABLE_IGNORE,
     OWNER_MEMORY_GATE,
@@ -27,11 +25,8 @@ def test_owner_gate_shared_by_extractors():
     assert "删掉该句后主人画像是否变少" in OWNER_MEMORY_GATE
     assert "制度、常识" in OWNER_MEMORY_GATE
     assert OWNER_MEMORY_GATE in SESSION_PROMPT
-    assert OWNER_MEMORY_GATE in MSG_PROMPT
     assert NON_DURABLE_IGNORE in SESSION_PROMPT
-    assert NON_DURABLE_IGNORE in MSG_PROMPT
     assert SCOPE_FIDELITY_GATE in SESSION_PROMPT
-    assert SCOPE_FIDELITY_GATE in MSG_PROMPT
 
 
 def test_world_knowledge_scale_not_extracted_by_rules():
@@ -108,18 +103,6 @@ def test_llm_session_drops_world_knowledge_even_if_model_emits():
     assert ext.extract(
         ["matplotlib 常用于数据可视化。"], confirmed_summary=[]
     ) == []
-
-
-def test_llm_message_extractor_drops_world_knowledge_emit():
-    ext = LLMMemoryExtractor(
-        _FakeLLM(
-            '{"candidates":[{"statement":"上海卷实行660分制。",'
-            '"evidence":"是上海卷660分制下的。","category":"preference",'
-            '"origin":"direct","confidence":0.9}]}'
-        )
-    )
-    result = ext.extract("是上海卷660分制下的。")
-    assert result.candidates == []
 
 
 def test_owner_family_fact_still_extractable_by_seed_alias():

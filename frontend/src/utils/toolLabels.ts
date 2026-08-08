@@ -1,0 +1,18 @@
+export const TOOL_LABELS: Record<string, string> = {
+  search_kb: "检索本地知识库",
+  read_doc: "读取文档",
+  fetch_url: "打开链接",
+  web_search: "搜索网页",
+  write_kb: "写入知识库文档",
+  summarize_conversation: "归档整段会话",
+  delete_kb: "删除知识库内容",
+  ask_user: "征询用户",
+  edit_doc: "局部编辑文档",
+  move_entry: "移动或重命名路径",
+  move_doc: "移动或重命名路径",
+  sandbox_run: "在沙箱执行命令",
+  sandbox_list_dir: "列出沙箱目录",
+  sandbox_read_file: "读取沙箱文件",
+  publish_from_sandbox: "从沙箱发布到知识库",
+  sandbox_job_status: "查询沙箱后台任务",
+};

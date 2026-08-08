@@ -109,7 +109,7 @@ class TurnLifecycle:
 
             store._enqueue_index_jobs(msg_id, turn_id)
             # 会话级空闲抽取：只打 dirty（已持锁，用 unlocked 变体）
-            store._mark_memory_dirty_unlocked(cid, at=started_at)
+            store.memory_schedule.mark_dirty_unlocked(cid, at=started_at)
             store._mark_dirty_and_stale(cid)
 
             title = conv_row["title"]

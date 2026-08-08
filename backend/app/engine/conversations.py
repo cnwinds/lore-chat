@@ -9,6 +9,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Protocol
 
+from app.engine.conversation.memory_schedule import MemoryExtractSchedule
 from app.engine.conversation.outbox import (
     DerivationOutbox,
     append_deletion_ledger,
@@ -181,6 +182,9 @@ class ConversationStore:
             migrate_json_shards(self.dir)
 
         self._outbox = DerivationOutbox(self.conn, self._lock)
+        self.memory_schedule = MemoryExtractSchedule(
+            self.conn, self._lock, self._outbox
+        )
         self._turn_lifecycle = TurnLifecycle(self)
 
     # ------------------------------------------------------------------
@@ -222,65 +226,18 @@ class ConversationStore:
         ).fetchone()
         return row is not None
 
-    @staticmethod
-    def _bump_cas_timestamp(prev: str) -> str:
-        """保证 CAS 键相对 prev 严格前进（秒级时钟同秒续聊/归档时必需）。"""
-        try:
-            dt = datetime.fromisoformat(prev)
-        except ValueError:
-            return f"{prev}+1"
-        from datetime import timedelta
-
-        return (dt + timedelta(microseconds=1)).isoformat(timespec="microseconds")
-
-    @classmethod
-    def _ensure_cas_advances(cls, prev: str, ts: str) -> str:
-        """新 dirty 时间戳必须 > prev，防止写回更旧秒级时间导致 CAS 误清。"""
-        if not prev:
-            return ts
-        try:
-            dt_prev = datetime.fromisoformat(prev)
-            dt_ts = datetime.fromisoformat(ts)
-        except ValueError:
-            return cls._bump_cas_timestamp(prev) if ts == prev else ts
-        if dt_ts <= dt_prev:
-            return cls._bump_cas_timestamp(prev)
-        return ts
+    # ------------------------------------------------------------------
+    # 记忆抽取调度（委托 MemoryExtractSchedule）
+    # ------------------------------------------------------------------
 
     def _mark_memory_dirty_unlocked(self, cid: str, *, at: str | None = None) -> None:
-        ts = at or _now()
-        row = self.conn.execute(
-            "SELECT last_user_message_at FROM conversations WHERE id = ?",
-            (cid,),
-        ).fetchone()
-        prev = (row["last_user_message_at"] if row else None) or ""
-        if prev:
-            ts = self._ensure_cas_advances(prev, ts)
-        self.conn.execute(
-            """
-            UPDATE conversations
-            SET memory_dirty = 1, last_user_message_at = ?, updated_at = ?
-            WHERE id = ?
-            """,
-            (ts, ts, cid),
-        )
-        # 续聊：取消已排队的空闲抽取，须再次空闲后重抽（规格 §6.2）
-        self._outbox.cancel_session_observe(cid)
+        self.memory_schedule.mark_dirty_unlocked(cid, at=at)
 
     def mark_memory_dirty(self, cid: str, *, at: str | None = None) -> None:
-        with self._lock:
-            self._mark_memory_dirty_unlocked(cid, at=at)
-            self.conn.commit()
+        self.memory_schedule.mark_dirty(cid, at=at)
 
     def get_last_user_message_at(self, cid: str) -> str | None:
-        with self._lock:
-            row = self.conn.execute(
-                "SELECT last_user_message_at FROM conversations WHERE id = ?",
-                (cid,),
-            ).fetchone()
-            if not row:
-                return None
-            return row["last_user_message_at"]
+        return self.memory_schedule.get_last_user_message_at(cid)
 
     def clear_memory_dirty(
         self,
@@ -289,75 +246,28 @@ class ConversationStore:
         at: str | None = None,
         expected_last_user_message_at: str | None = None,
     ) -> int | None:
-        """成功抽取后清 dirty，并递增 memory_extract_revision。
-
-        若传入 ``expected_last_user_message_at``，则 CAS：仅当该时间戳未变才清 dirty
-        （防止 running 任务结束时抹掉续聊后的 dirty，规格 §6.2）。
-        成功返回新 revision；CAS 失败返回 None。
-        """
-        ts = at or _now()
-        with self._lock:
-            if expected_last_user_message_at is not None:
-                cur = self.conn.execute(
-                    """
-                    UPDATE conversations
-                    SET memory_dirty = 0,
-                        last_memory_extract_at = ?,
-                        memory_extract_revision = memory_extract_revision + 1,
-                        updated_at = ?
-                    WHERE id = ?
-                      AND last_user_message_at IS ?
-                    """,
-                    (ts, ts, cid, expected_last_user_message_at),
-                )
-                if cur.rowcount == 0:
-                    self.conn.commit()
-                    return None
-            else:
-                self.conn.execute(
-                    """
-                    UPDATE conversations
-                    SET memory_dirty = 0,
-                        last_memory_extract_at = ?,
-                        memory_extract_revision = memory_extract_revision + 1,
-                        updated_at = ?
-                    WHERE id = ?
-                    """,
-                    (ts, ts, cid),
-                )
-            row = self.conn.execute(
-                "SELECT memory_extract_revision FROM conversations WHERE id = ?",
-                (cid,),
-            ).fetchone()
-            self.conn.commit()
-            return int(row["memory_extract_revision"]) if row else 0
+        return self.memory_schedule.clear_dirty(
+            cid,
+            at=at,
+            expected_last_user_message_at=expected_last_user_message_at,
+        )
 
     def get_memory_extract_revision(self, cid: str) -> int:
-        with self._lock:
-            row = self.conn.execute(
-                "SELECT memory_extract_revision FROM conversations WHERE id = ?",
-                (cid,),
-            ).fetchone()
-            if not row:
-                return 0
-            return int(row["memory_extract_revision"] or 0)
+        return self.memory_schedule.get_extract_revision(cid)
 
     def _enqueue_session_observe_unlocked(
         self, conversation_id: str, *, immediate: bool = False
     ) -> bool:
-        return self._outbox.enqueue_session_observe(
+        return self.memory_schedule.enqueue_session_observe_unlocked(
             conversation_id, immediate=immediate
         )
 
     def enqueue_session_observe(
         self, conversation_id: str, *, immediate: bool = False
     ) -> bool:
-        with self._lock:
-            ok = self._enqueue_session_observe_unlocked(
-                conversation_id, immediate=immediate
-            )
-            self.conn.commit()
-            return ok
+        return self.memory_schedule.enqueue_session_observe(
+            conversation_id, immediate=immediate
+        )
 
     def batch_mark_dirty_and_enqueue_session_observe(
         self,
@@ -366,140 +276,40 @@ class ConversationStore:
         mark_dirty: bool = True,
         immediate: bool = False,
     ) -> int:
-        """批量标 dirty 并入队 session_observe（供 backfill，不暴露 lock）。"""
-        with self._lock:
-            n = 0
-            for cid in conversation_ids:
-                if mark_dirty:
-                    self._mark_memory_dirty_unlocked(cid)
-                if self._enqueue_session_observe_unlocked(cid, immediate=immediate):
-                    n += 1
-            self.conn.commit()
-            return n
+        return self.memory_schedule.batch_mark_dirty_and_enqueue(
+            conversation_ids,
+            mark_dirty=mark_dirty,
+            immediate=immediate,
+        )
+
+    def cancel_legacy_observe_memory(self) -> int:
+        return self.memory_schedule.cancel_legacy_observe_memory()
+
+    def is_memory_extract_idle(self, cid: str, *, idle_hours: float = 24.0) -> bool:
+        return self.memory_schedule.is_extract_idle(cid, idle_hours=idle_hours)
+
+    def _request_immediate_memory_extract_unlocked(
+        self, cid: str, *, at: str | None = None
+    ) -> bool:
+        return self.memory_schedule.request_immediate_unlocked(cid, at=at)
+
+    def request_immediate_memory_extract(self, cid: str) -> bool:
+        return self.memory_schedule.request_immediate(cid)
+
+    def consume_memory_immediate_pending_if_dirty(self, cid: str) -> bool:
+        return self.memory_schedule.consume_immediate_pending(cid)
+
+    def list_idle_dirty_conversations(
+        self, *, idle_hours: float = 24.0, limit: int = 20
+    ) -> list[dict]:
+        return self.memory_schedule.list_idle_dirty(
+            idle_hours=idle_hours, limit=limit
+        )
 
     def list_conversation_ids(self) -> list[str]:
         with self._lock:
             rows = self.conn.execute("SELECT id FROM conversations").fetchall()
             return [r["id"] for r in rows]
-
-    def cancel_legacy_observe_memory(self) -> int:
-        """取消未完成的按条 observe_memory（供 MemoryWorker 经 store API 调用）。"""
-        with self._lock:
-            n = self._outbox.cancel_legacy_observe_memory()
-            self.conn.commit()
-            return n
-
-    def is_memory_extract_idle(self, cid: str, *, idle_hours: float = 24.0) -> bool:
-        """是否满足「最后用户消息后已空闲」——消费时再核一次。"""
-        from datetime import datetime, timedelta, timezone
-
-        with self._lock:
-            row = self.conn.execute(
-                """
-                SELECT memory_dirty, last_user_message_at
-                FROM conversations WHERE id = ?
-                """,
-                (cid,),
-            ).fetchone()
-        if not row or not row["memory_dirty"]:
-            return False
-        ts = row["last_user_message_at"]
-        if not ts:
-            return False
-        try:
-            last = datetime.fromisoformat(ts)
-        except ValueError:
-            return False
-        if last.tzinfo is None:
-            last = last.replace(tzinfo=timezone.utc)
-        return datetime.now(timezone.utc) - last >= timedelta(hours=idle_hours)
-
-    def _request_immediate_memory_extract_unlocked(
-        self, cid: str, *, at: str | None = None
-    ) -> bool:
-        self._mark_memory_dirty_unlocked(cid, at=at)
-        ok = self._enqueue_session_observe_unlocked(cid, immediate=True)
-        if not ok:
-            # 已有 running：升级其 turn_id 后仍须在本轮结束后再抽（规格：归档即时）
-            self.conn.execute(
-                """
-                UPDATE conversations
-                SET memory_immediate_pending = 1, updated_at = ?
-                WHERE id = ?
-                """,
-                (at or _now(), cid),
-            )
-        return ok
-
-    def request_immediate_memory_extract(self, cid: str) -> bool:
-        """归档/显式路径：标 dirty 并立刻入队（不等空闲）。"""
-        with self._lock:
-            ok = self._request_immediate_memory_extract_unlocked(cid)
-            self.conn.commit()
-            return ok
-
-    def consume_memory_immediate_pending_if_dirty(self, cid: str) -> bool:
-        """清除归档即时待办；若曾挂起则返回 True（应再入队 immediate）。
-
-        不要求仍 dirty：同秒归档时 CAS 可能已清 dirty，但即时重抽仍须执行。
-        """
-        with self._lock:
-            row = self.conn.execute(
-                """
-                SELECT memory_immediate_pending
-                FROM conversations WHERE id = ?
-                """,
-                (cid,),
-            ).fetchone()
-            if not row or not int(row["memory_immediate_pending"] or 0):
-                return False
-            self.conn.execute(
-                """
-                UPDATE conversations
-                SET memory_immediate_pending = 0, updated_at = ?
-                WHERE id = ?
-                """,
-                (_now(), cid),
-            )
-            self.conn.commit()
-            return True
-
-    def list_idle_dirty_conversations(
-        self, *, idle_hours: float = 24.0, limit: int = 20
-    ) -> list[dict]:
-        """最后用户消息已空闲 idle_hours 且仍 dirty 的会话。"""
-        from datetime import datetime, timedelta, timezone
-
-        def _parse(ts: str) -> datetime | None:
-            try:
-                dt = datetime.fromisoformat(ts)
-            except ValueError:
-                return None
-            if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=timezone.utc)
-            return dt
-
-        now = datetime.now(timezone.utc)
-        with self._lock:
-            rows = self.conn.execute(
-                """
-                SELECT id, last_user_message_at, memory_dirty
-                FROM conversations
-                WHERE memory_dirty = 1
-                  AND last_user_message_at IS NOT NULL
-                ORDER BY last_user_message_at ASC
-                """
-            ).fetchall()
-        out: list[dict] = []
-        for r in rows:
-            last = _parse(r["last_user_message_at"] or "")
-            if last is None:
-                continue
-            if now - last.astimezone(timezone.utc) >= timedelta(hours=idle_hours):
-                out.append(dict(r))
-            if len(out) >= limit:
-                break
-        return out
 
     def list_user_messages_text(self, cid: str) -> list[str]:
         with self._lock:

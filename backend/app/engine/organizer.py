@@ -226,71 +226,12 @@ class Organizer:
         conversation_id: str | None = None,
         write_mode: WriteMode = "merge",
     ) -> None:
-        rel_path = decision.rel_path
-        exists = False
-        try:
-            self.repo.read_doc(rel_path)
-            exists = True
-        except FileNotFoundError:
-            exists = False
-
-        body = content if content.endswith("\n") else f"{content}\n"
-
-        if write_mode == "replace" and exists:
-            doc = self.repo.read_doc(rel_path)
-            meta = {
-                **doc.meta,
-                "title": decision.title or doc.meta.get("title", ""),
-            }
-            if decision.tags:
-                existing_tags = doc.meta.get("tags") or []
-                meta["tags"] = list(dict.fromkeys(existing_tags + decision.tags))
-            meta = _conversation_ids_meta(meta, conversation_id)
-            self.writer.persist_document(
-                rel_path,
-                meta,
-                body,
-                commit_msg=f"replace: {rel_path}",
-                changelog_line=f"覆盖写入 {rel_path}：{decision.reason or decision.title}",
-            )
-            return
-
-        if write_mode == "merge" and decision.action in ("merge", "append") and exists:
-            doc = self.repo.read_doc(rel_path)
-            merged_meta = {
-                **doc.meta,
-                "title": decision.title or doc.meta.get("title", ""),
-            }
-            if decision.tags:
-                existing_tags = doc.meta.get("tags") or []
-                merged_meta["tags"] = list(
-                    dict.fromkeys(existing_tags + decision.tags)
-                )
-            merged_meta = _conversation_ids_meta(merged_meta, conversation_id)
-            merged_body = self.synthesis.reorganize_existing(
-                doc.body, content, decision.title
-            )
-            self.writer.persist_document(
-                rel_path,
-                merged_meta,
-                merged_body,
-                commit_msg=f"merge: 整理合并 {rel_path}",
-                changelog_line=f"整理合并到 {rel_path}：{decision.reason or decision.title}",
-            )
-            return
-
-        meta: dict = {
-            "title": decision.title,
-            "tags": decision.tags,
-            "source": "conversation" if conversation_id else "chat",
-        }
-        meta = _conversation_ids_meta(meta, conversation_id)
-        self.writer.persist_document(
-            rel_path,
-            meta,
-            body,
-            commit_msg=f"add: 新建 {rel_path}",
-            changelog_line=f"创建 {rel_path}：{decision.reason or decision.title}",
+        self.writer.apply_placement(
+            decision,
+            content,
+            write_mode=write_mode,
+            conversation_id=conversation_id,
+            reorganize_existing=self.synthesis.reorganize_existing,
         )
 
     def resolve_agent_choices(
@@ -383,17 +324,3 @@ class Organizer:
             continue_prompt="\n".join(parts),
         )
 
-
-def _conversation_ids_meta(meta: dict, conversation_id: str | None) -> dict:
-    if not conversation_id:
-        return meta
-    existing = meta.get("conversation_ids")
-    if isinstance(existing, list):
-        ids = list(dict.fromkeys([*existing, conversation_id]))
-    else:
-        legacy = meta.get("conversation_id")
-        ids = list(dict.fromkeys([x for x in (legacy, conversation_id) if x]))
-    meta = {k: v for k, v in meta.items() if k not in ("conversation_id",)}
-    meta["conversation_ids"] = ids
-    meta["source"] = "conversation"
-    return meta

@@ -22,7 +22,7 @@ class PlacementDecision:
 
 
 class PlacementPlanner:
-    """LLM 归位决策；落盘由 KnowledgeWriter / Organizer._apply 负责。"""
+    """LLM 归位决策；落盘由 KnowledgeWriter.apply_placement 负责。"""
 
     def __init__(self, repo: KnowledgeRepo, retriever: Retriever, llm: LLMClient):
         self.repo = repo

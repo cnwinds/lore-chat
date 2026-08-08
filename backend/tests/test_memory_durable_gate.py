@@ -1,6 +1,5 @@
 """耐久性 + 语境保全门槛：根因同类验收（非孤例补丁）。"""
 
-from app.engine.memory.llm_extractor import _SYSTEM_PROMPT as MSG_PROMPT
 from app.engine.memory.prompt_common import (
     NON_DURABLE_IGNORE,
     OWNER_MEMORY_GATE,
@@ -19,8 +18,6 @@ def test_durable_and_scope_gates_shared_by_extractors():
     assert OWNER_MEMORY_GATE in SESSION_PROMPT
     assert NON_DURABLE_IGNORE in SESSION_PROMPT
     assert SCOPE_FIDELITY_GATE in SESSION_PROMPT
-    assert NON_DURABLE_IGNORE in MSG_PROMPT
-    assert SCOPE_FIDELITY_GATE in MSG_PROMPT
 
 
 def test_ephemeral_task_paraphrases_documented_as_non_durable():

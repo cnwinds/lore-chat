@@ -29,6 +29,7 @@ class SessionMemoryObserve:
         idle_hours: float = 24.0,
     ):
         self.conversations = conversations
+        self.schedule = conversations.memory_schedule
         self.memory_service = memory_service
         self.extractor = extractor or RuleBasedSessionExtractor()
         self.idle_hours = idle_hours
@@ -36,12 +37,12 @@ class SessionMemoryObserve:
         self._resolver = memory_service.resolver
 
     def mark_dirty(self, conversation_id: str, *, at: str | None = None) -> None:
-        self.conversations.mark_memory_dirty(conversation_id, at=at)
+        self.schedule.mark_dirty(conversation_id, at=at)
 
     def enqueue(
         self, conversation_id: str, *, immediate: bool = False
     ) -> bool:
-        return self.conversations.enqueue_session_observe(
+        return self.schedule.enqueue_session_observe(
             conversation_id, immediate=immediate
         )
 
@@ -53,7 +54,7 @@ class SessionMemoryObserve:
         immediate: bool = False,
     ) -> int:
         """批量标 dirty 并入队（backfill / 维护入口）。"""
-        return self.conversations.batch_mark_dirty_and_enqueue_session_observe(
+        return self.schedule.batch_mark_dirty_and_enqueue(
             conversation_ids,
             mark_dirty=mark_dirty,
             immediate=immediate,
@@ -61,7 +62,7 @@ class SessionMemoryObserve:
 
     def schedule_idle(self, *, limit: int = 20) -> int:
         n = 0
-        for row in self.conversations.list_idle_dirty_conversations(
+        for row in self.schedule.list_idle_dirty(
             idle_hours=self.idle_hours, limit=limit
         ):
             if self.enqueue(row["id"]):
@@ -69,7 +70,7 @@ class SessionMemoryObserve:
         return n
 
     def cancel_legacy_jobs(self) -> int:
-        return self.conversations.cancel_legacy_observe_memory()
+        return self.schedule.cancel_legacy_observe_memory()
 
     def process_session_job(self, job: dict) -> None:
         """兼容旧名 → run_job。"""
@@ -85,15 +86,15 @@ class SessionMemoryObserve:
                 self.conversations.complete_outbox(job_id)
                 return
             immediate = (job.get("turn_id") or "") == SESSION_OBSERVE_IMMEDIATE
-            if not immediate and not self.conversations.is_memory_extract_idle(
+            if not immediate and not self.schedule.is_extract_idle(
                 cid, idle_hours=self.idle_hours
             ):
                 self._complete_and_requeue_immediate(job_id, cid)
                 return
-            started_last_user_at = self.conversations.get_last_user_message_at(cid)
+            started_last_user_at = self.schedule.get_last_user_message_at(cid)
             turns = self.conversations.list_dialogue_turns(cid)
             if not any(role == "user" and t.strip() for role, t in turns):
-                self.conversations.clear_memory_dirty(
+                self.schedule.clear_dirty(
                     cid, expected_last_user_message_at=started_last_user_at
                 )
                 self._complete_and_requeue_immediate(job_id, cid)
@@ -130,7 +131,7 @@ class SessionMemoryObserve:
                     },
                 )
             if hard_failures == 0:
-                self.conversations.clear_memory_dirty(
+                self.schedule.clear_dirty(
                     cid, expected_last_user_message_at=started_last_user_at
                 )
             self._complete_and_requeue_immediate(job_id, cid)
@@ -143,7 +144,7 @@ class SessionMemoryObserve:
                 exc_info=True,
             )
             self.conversations.fail_outbox(job_id, str(exc), backoff=1.0)
-            if cid and self.conversations.consume_memory_immediate_pending_if_dirty(cid):
+            if cid and self.schedule.consume_immediate_pending(cid):
                 self.enqueue(cid, immediate=True)
 
     def drain(self, max_jobs: int = 20) -> int:
@@ -173,7 +174,7 @@ class SessionMemoryObserve:
 
     def _complete_and_requeue_immediate(self, job_id: str, cid: str) -> None:
         self.conversations.complete_outbox(job_id)
-        if cid and self.conversations.consume_memory_immediate_pending_if_dirty(cid):
+        if cid and self.schedule.consume_immediate_pending(cid):
             self.enqueue(cid, immediate=True)
 
 

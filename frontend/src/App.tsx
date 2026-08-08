@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { getAuthStatus, type SourceRef, isMarkdownPath, downloadUrl, discoverSkills } from "./api";
+import { getAuthStatus, type SourceRef, isMarkdownPath, downloadUrl } from "./api";
 import { LoginPage } from "./components/auth/LoginPage";
 import { SetupPage } from "./components/auth/SetupPage";
 import { Chat } from "./components/Chat";
@@ -14,9 +14,9 @@ import { useAppEscapeKey } from "./hooks/app/useAppEscapeKey";
 import { useConversationShell } from "./hooks/app/useConversationShell";
 import { useDocPreviewLayout } from "./hooks/app/useDocPreviewLayout";
 import { useComposerDocState } from "./hooks/useComposerDocState";
+import { useSkillTrayAttach } from "./hooks/useSkillTrayAttach";
 import type { JumpTarget } from "./hooks/chat/useConversationJump";
 import { SkillPickModal } from "./components/SkillPickModal";
-import { COMPOSER_TRAY_MAX } from "./types/composer";
 import { isInsideSkillPackage } from "./utils/kbSkill";
 
 type Gate = "loading" | "setup" | "login" | "app";
@@ -57,12 +57,14 @@ function AppMain() {
   const refreshSidebar = () => setSidebarRefreshKey((k) => k + 1);
   const doc = useDocPreviewLayout(refreshSidebar);
   const composer = useComposerDocState();
+  const {
+    skillPick,
+    openSkillPickForFolder,
+    handleSkillPickConfirm,
+    cancelSkillPick,
+  } = useSkillTrayAttach(composer);
   const pinAddedTrayRef = useRef<string | null>(null);
   const [kbDocs, setKbDocs] = useState<string[]>([]);
-  const [skillPick, setSkillPick] = useState<{
-    folder: string;
-    candidates: string[];
-  } | null>(null);
 
   function addDocToComposer(path: string) {
     const title = path.split("/").pop() ?? path;
@@ -130,49 +132,10 @@ function AppMain() {
     refreshSidebar();
   }
 
-  function addSkillsToTray(selected: string[]) {
-    const room = composer.trayRemaining;
-    if (room <= 0) {
-      window.alert(`托盘已满（最多 ${COMPOSER_TRAY_MAX} 项）。`);
-      return;
-    }
-    const toAdd = selected.slice(0, room);
-    if (toAdd.length < selected.length) {
-      window.alert(`托盘最多 ${COMPOSER_TRAY_MAX} 项，已加入前 ${toAdd.length} 个 Skill。`);
-    }
-    composer.addSkillRoots(toAdd);
-  }
-
-  function openSkillPickForFolder(folderPath: string) {
-    void (async () => {
-      try {
-        const { roots } = await discoverSkills(folderPath);
-        if (roots.length === 0) {
-          window.alert(
-            "该目录及子目录下未发现 Skill 包（每个包须为直接包含 SKILL.md 的文件夹）。",
-          );
-          return;
-        }
-        if (roots.length === 1) {
-          addSkillsToTray(roots);
-          return;
-        }
-        setSkillPick({ folder: folderPath, candidates: roots });
-      } catch (err) {
-        window.alert(err instanceof Error ? err.message : "发现 Skill 失败");
-      }
-    })();
-  }
-
   function handleSelectFolder(path: string, mods?: { ctrlKey?: boolean; metaKey?: boolean }) {
     if (mods?.ctrlKey || mods?.metaKey) {
       openSkillPickForFolder(path);
     }
-  }
-
-  function handleSkillPickConfirm(selected: string[]) {
-    addSkillsToTray(selected);
-    setSkillPick(null);
   }
 
   function handleKbPathsDeleted(paths: string[]) {
@@ -321,7 +284,7 @@ function AppMain() {
               candidates={skillPick?.candidates ?? []}
               maxSelectable={composer.trayRemaining}
               onConfirm={handleSkillPickConfirm}
-              onCancel={() => setSkillPick(null)}
+              onCancel={cancelSkillPick}
             />
           </>
         }

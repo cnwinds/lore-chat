@@ -1,6 +1,4 @@
 // 生产环境经 nginx 同源代理时 VITE_API_BASE 留空；本地开发在 .env 中设为 http://localhost:8000
-import { appendProgressChunk } from "./utils/progressLog";
-import { clipToolQuery } from "./utils/toolQuery";
 
 const BASE = import.meta.env.VITE_API_BASE ?? "";
 
@@ -378,18 +376,6 @@ export type SourceRef =
       conversation_title?: string;
     };
 
-function toolQueryFromInput(input: unknown): string | undefined {
-  if (!input || typeof input !== "object") return undefined;
-  const o = input as Record<string, unknown>;
-  for (const key of ["query", "command", "path", "sandbox_path"]) {
-    const v = o[key];
-    if (typeof v === "string" && v.trim()) {
-      return clipToolQuery(v);
-    }
-  }
-  return undefined;
-}
-
 export type TimelineBlock =
   | {
       type: "tool";
@@ -565,24 +551,7 @@ export function dedupeSources(sources: SourceRef[]): SourceRef[] {
 
 export type ChatStreamEvent = { event: string; data: Record<string, unknown> };
 
-export const TOOL_LABELS: Record<string, string> = {
-  search_kb: "检索本地知识库",
-  read_doc: "读取文档",
-  fetch_url: "打开链接",
-  web_search: "搜索网页",
-  write_kb: "写入知识库文档",
-  summarize_conversation: "归档整段会话",
-  delete_kb: "删除知识库内容",
-  ask_user: "征询用户",
-  edit_doc: "局部编辑文档",
-  move_entry: "移动或重命名路径",
-  move_doc: "移动或重命名路径",
-  sandbox_run: "在沙箱执行命令",
-  sandbox_list_dir: "列出沙箱目录",
-  sandbox_read_file: "读取沙箱文件",
-  publish_from_sandbox: "从沙箱发布到知识库",
-  sandbox_job_status: "查询沙箱后台任务",
-};
+export { TOOL_LABELS } from "./utils/toolLabels";
 
 // 会改动知识库、需要刷新侧栏的工具
 export const KB_MUTATING_TOOLS = [
@@ -830,207 +799,8 @@ export function chatInject(body: ChatInjectBody) {
   });
 }
 
-function findActiveParallelIndex(timeline: TimelineBlock[]): number {
-  for (let i = timeline.length - 1; i >= 0; i--) {
-    const block = timeline[i];
-    if (block.type === "parallel" && block.duration_ms === undefined) {
-      return i;
-    }
-  }
-  return -1;
-}
-
-function updateToolBlock(
-  blocks: TimelineBlock[],
-  id: string,
-  updater: (block: Extract<TimelineBlock, { type: "tool" }>) => TimelineBlock,
-): TimelineBlock[] {
-  return blocks.map((block) => {
-    if (block.type === "tool" && block.id === id) {
-      return updater(block);
-    }
-    if (block.type === "parallel") {
-      return {
-        ...block,
-        children: updateToolBlock(block.children, id, updater),
-      };
-    }
-    return block;
-  });
-}
-
-export function updateTimeline(
-  timeline: TimelineBlock[],
-  event: string,
-  data: Record<string, unknown>,
-): TimelineBlock[] {
-  if (event === "tool_start") {
-    const query = toolQueryFromInput(data.input);
-    const toolBlock: TimelineBlock = {
-      type: "tool",
-      id: data.id as string,
-      tool: data.tool as string,
-      label: (data.label as string) || TOOL_LABELS[data.tool as string] || (data.tool as string),
-      ts: data.ts as string,
-      status: "running",
-      started_at_ms: Date.now(),
-      ...(query ? { query } : {}),
-    };
-    const parallelIdx = findActiveParallelIndex(timeline);
-    if (parallelIdx >= 0) {
-      return timeline.map((block, i) =>
-        i === parallelIdx && block.type === "parallel"
-          ? { ...block, children: [...block.children, toolBlock] }
-          : block,
-      );
-    }
-    return [...timeline, toolBlock];
-  }
-
-  if (event === "tool_progress") {
-    const id = data.id as string;
-    const message = typeof data.message === "string" ? data.message : "";
-    if (!message) return timeline;
-    return updateToolBlock(timeline, id, (block) => {
-      const next = appendProgressChunk(block.progress_log, message);
-      if (next === block.progress_log) {
-        return block;
-      }
-      const previewSrc = message.trim();
-      const preview =
-        previewSrc.length > 0
-          ? previewSrc.length < 200
-            ? previewSrc
-            : `${previewSrc.slice(0, 200)}…`
-          : block.summary;
-      return {
-        ...block,
-        progress_log: next,
-        ...(preview ? { summary: preview } : {}),
-      };
-    });
-  }
-
-  if (event === "tool_result") {
-    const id = data.id as string;
-    return updateToolBlock(timeline, id, (block) => ({
-      ...block,
-      status: "done",
-      summary: (data.summary as string) || "",
-      sources: (data.sources as SourceRef[]) || [],
-      ...(data.content ? { content: data.content as string } : {}),
-      ...(data.duration_ms !== undefined
-        ? { duration_ms: data.duration_ms as number }
-        : {}),
-      ...(typeof data.query === "string" && data.query.trim()
-        ? { query: (data.query as string).trim() }
-        : {}),
-      ...(data.question_id
-        ? { question_id: data.question_id as string }
-        : {}),
-      ...(data.question ? { question: data.question as string } : {}),
-      ...(data.options
-        ? { options: data.options as QuestionOption[] }
-        : {}),
-      ...(data.multi_select !== undefined
-        ? { multi_select: data.multi_select as boolean }
-        : {}),
-      ...(typeof data.preview === "string" && data.preview
-        ? { preview: data.preview as string }
-        : {}),
-      ...(typeof data.reindex_mode === "string" && data.reindex_mode
-        ? { reindex_mode: data.reindex_mode as string }
-        : {}),
-      ...(data.applied !== undefined
-        ? { applied: data.applied as number }
-        : {}),
-    }));
-  }
-
-  if (event === "parallel_batch_start") {
-    const parallelBlock: TimelineBlock = {
-      type: "parallel",
-      batch_id: data.batch_id as string,
-      ts: data.ts as string,
-      children: [],
-    };
-    return [...timeline, parallelBlock];
-  }
-
-  if (event === "parallel_batch_end") {
-    const batchId = data.batch_id as string;
-    return timeline.map((block) =>
-      block.type === "parallel" && block.batch_id === batchId
-        ? {
-            ...block,
-            ...(data.duration_ms !== undefined
-              ? { duration_ms: data.duration_ms as number }
-              : {}),
-          }
-        : block,
-    );
-  }
-
-  if (event === "think_delta") {
-    const delta = (data.delta as string) || "";
-    const last = timeline[timeline.length - 1];
-    if (last?.type === "think") {
-      return [
-        ...timeline.slice(0, -1),
-        { ...last, content: last.content + delta },
-      ];
-    }
-    return [
-      ...timeline,
-      { type: "think", ts: data.ts as string, content: delta },
-    ];
-  }
-
-  if (event === "text_delta") {
-    const delta = (data.delta as string) || "";
-    const last = timeline[timeline.length - 1];
-    if (last?.type === "text") {
-      return [
-        ...timeline.slice(0, -1),
-        { ...last, content: last.content + delta },
-      ];
-    }
-    return [
-      ...timeline,
-      { type: "text", ts: data.ts as string, content: delta },
-    ];
-  }
-
-  if (event === "user_inject") {
-    const injectId = (data.inject_id as string) || "";
-    return [
-      ...timeline,
-      {
-        type: "user_inject",
-        inject_id: injectId,
-        ts: (data.ts as string) || new Date().toISOString(),
-        text: (data.text as string) || "",
-        ...(typeof data.message_id === "string"
-          ? { message_id: data.message_id }
-          : {}),
-        ...(typeof data.client_message_id === "string"
-          ? { client_message_id: data.client_message_id }
-          : {}),
-        ...(Array.isArray(data.doc_context)
-          ? { doc_context: data.doc_context as DocContextItem[] }
-          : {}),
-        ...(typeof data.primary_doc === "string"
-          ? { primary_doc: data.primary_doc }
-          : {}),
-        ...(Array.isArray(data.attachments)
-          ? { attachments: data.attachments as string[] }
-          : {}),
-      },
-    ];
-  }
-
-  return timeline;
-}
+// timeline reduce 见 utils/timelineStream；保留 re-export 兼容旧 import
+export { updateTimeline } from "./utils/timelineStream";
 
 /**
  * 强制落库（测试 / 脚本 API）。

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from pathlib import PurePosixPath
+from typing import TYPE_CHECKING
 
 from app.index.extract import extract_text
 from app.index.indexer import Indexer
@@ -14,8 +16,12 @@ from app.storage.kb_paths import (
     title_from_rel_path,
 )
 from app.engine.memory.constants import is_memory_projection_path
+from app.engine.write_policy import WriteMode
 from app.storage.kb_text_files import is_kb_text_file
 from app.storage.repo import KnowledgeRepo
+
+if TYPE_CHECKING:
+    from app.engine.placement import PlacementDecision
 
 _MEMORY_FILE_DISABLED_MSG = (
     "记忆已改由数据库管理，请到设置 → 记忆中编辑，或使用 manage_memory"
@@ -388,3 +394,95 @@ class KnowledgeWriter:
             self.drop_from_index(deleted)
             self.record_deletion(norm, deleted)
         return deleted
+
+    def apply_placement(
+        self,
+        decision: PlacementDecision,
+        content: str,
+        *,
+        write_mode: WriteMode = "merge",
+        conversation_id: str | None = None,
+        reorganize_existing: Callable[[str, str, str], str] | None = None,
+    ) -> None:
+        """按 PlacementDecision 落盘（replace / merge / new）。"""
+        rel_path = decision.rel_path
+        exists = False
+        try:
+            self.repo.read_doc(rel_path)
+            exists = True
+        except FileNotFoundError:
+            exists = False
+
+        body = content if content.endswith("\n") else f"{content}\n"
+
+        if write_mode == "replace" and exists:
+            doc = self.repo.read_doc(rel_path)
+            meta = {
+                **doc.meta,
+                "title": decision.title or doc.meta.get("title", ""),
+            }
+            if decision.tags:
+                existing_tags = doc.meta.get("tags") or []
+                meta["tags"] = list(dict.fromkeys(existing_tags + decision.tags))
+            meta = _conversation_ids_meta(meta, conversation_id)
+            self.persist_document(
+                rel_path,
+                meta,
+                body,
+                commit_msg=f"replace: {rel_path}",
+                changelog_line=f"覆盖写入 {rel_path}：{decision.reason or decision.title}",
+            )
+            return
+
+        if write_mode == "merge" and decision.action in ("merge", "append") and exists:
+            if reorganize_existing is None:
+                raise ValueError("merge 需要 reorganize_existing")
+            doc = self.repo.read_doc(rel_path)
+            merged_meta = {
+                **doc.meta,
+                "title": decision.title or doc.meta.get("title", ""),
+            }
+            if decision.tags:
+                existing_tags = doc.meta.get("tags") or []
+                merged_meta["tags"] = list(
+                    dict.fromkeys(existing_tags + decision.tags)
+                )
+            merged_meta = _conversation_ids_meta(merged_meta, conversation_id)
+            merged_body = reorganize_existing(doc.body, content, decision.title)
+            self.persist_document(
+                rel_path,
+                merged_meta,
+                merged_body,
+                commit_msg=f"merge: 整理合并 {rel_path}",
+                changelog_line=f"整理合并到 {rel_path}：{decision.reason or decision.title}",
+            )
+            return
+
+        meta: dict = {
+            "title": decision.title,
+            "tags": decision.tags,
+            "source": "conversation" if conversation_id else "chat",
+        }
+        meta = _conversation_ids_meta(meta, conversation_id)
+        self.persist_document(
+            rel_path,
+            meta,
+            body,
+            commit_msg=f"add: 新建 {rel_path}",
+            changelog_line=f"创建 {rel_path}：{decision.reason or decision.title}",
+        )
+
+
+def _conversation_ids_meta(meta: dict, conversation_id: str | None) -> dict:
+    if not conversation_id:
+        return meta
+    existing = meta.get("conversation_ids")
+    if isinstance(existing, list):
+        ids = list(dict.fromkeys([*existing, conversation_id]))
+    else:
+        legacy = meta.get("conversation_id")
+        ids = list(dict.fromkeys([x for x in (legacy, conversation_id) if x]))
+    meta = {k: v for k, v in meta.items() if k not in ("conversation_id",)}
+    meta["conversation_ids"] = ids
+    meta["source"] = "conversation"
+    return meta
