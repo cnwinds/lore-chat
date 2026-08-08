@@ -8,6 +8,7 @@ import {
   reindexKb,
 } from "../../api";
 import { MemorySettingsTab } from "./MemorySettingsTab";
+import { SearchSettingsTab } from "./SearchSettingsTab";
 import { UsageSettingsTab } from "./UsageSettingsTab";
 
 type Props = {
@@ -589,42 +590,15 @@ export function SettingsPanel({ open, onClose, onOpenConversation }: Props) {
                     id="settings-panel-search"
                     aria-labelledby="settings-tab-search"
                   >
-                    <div className="settings-group">
-                      <h3 className="settings-group-title">检索参数</h3>
-                      <p className="settings-group-hint">控制知识库混合检索的召回与融合策略。</p>
-                      <label className="settings-field">
-                        <span>向量相似度下限</span>
-                        <input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          max="1"
-                          value={minVectorScore}
-                          onChange={(e) => setMinVectorScore(Number(e.target.value))}
-                          disabled={saving}
-                        />
-                      </label>
-                      <label className="settings-field">
-                        <span>RRF K</span>
-                        <input
-                          type="number"
-                          min="1"
-                          value={rrfK}
-                          onChange={(e) => setRrfK(Number(e.target.value))}
-                          disabled={saving}
-                        />
-                      </label>
-                      <label className="settings-field">
-                        <span>通道候选数</span>
-                        <input
-                          type="number"
-                          min="1"
-                          value={laneCandidateK}
-                          onChange={(e) => setLaneCandidateK(Number(e.target.value))}
-                          disabled={saving}
-                        />
-                      </label>
-                    </div>
+                    <SearchSettingsTab
+                      minVectorScore={minVectorScore}
+                      onMinVectorScoreChange={setMinVectorScore}
+                      rrfK={rrfK}
+                      onRrfKChange={setRrfK}
+                      laneCandidateK={laneCandidateK}
+                      onLaneCandidateKChange={setLaneCandidateK}
+                      saving={saving}
+                    />
                   </div>
                 ) : null}
 

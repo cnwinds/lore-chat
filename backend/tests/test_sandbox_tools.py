@@ -124,7 +124,7 @@ async def test_publish_from_sandbox_batch(tmp_path):
     registry, runtime = _make_registry(tmp_path)
     assert runtime is not None
     await runtime.write_file("/workspace/a.md", b"# A\n")
-    await runtime.write_file("/workspace/out/b.png", b"\x89PNG\r\n")
+    await runtime.write_file("/workspace/out/b.sh", b"#!/bin/sh\necho hi\n")
     pub = await registry.execute(
         "publish_from_sandbox",
         {
@@ -135,9 +135,9 @@ async def test_publish_from_sandbox_batch(tmp_path):
                     "filename": "a.md",
                 },
                 {
-                    "sandbox_path": "/workspace/out/b.png",
-                    "directory": "图",
-                    "filename": "b.png",
+                    "sandbox_path": "/workspace/out/b.sh",
+                    "directory": "scripts",
+                    "filename": "b.sh",
                 },
             ]
         },
@@ -146,9 +146,9 @@ async def test_publish_from_sandbox_batch(tmp_path):
     assert pub.get("failed") == 0
     assert pub.get("error") is None
     paths = {it["rel_path"] for it in pub["items"]}
-    assert paths == {"备忘/a.md", "图/b.png"}
+    assert paths == {"备忘/a.md", "scripts/b.sh"}
     assert registry.repo.abs_path("备忘/a.md").is_file()
-    assert registry.repo.abs_path("图/b.png").read_bytes().startswith(b"\x89PNG")
+    assert b"echo hi" in registry.repo.abs_path("scripts/b.sh").read_bytes()
 
 
 @pytest.mark.asyncio
@@ -182,7 +182,8 @@ async def test_publish_from_sandbox_batch_partial(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_publish_binary_file_roundtrip(tmp_path):
+async def test_publish_rejects_binary_asset(tmp_path):
+    """Agent publish 走严格准入；二进制请经 HTTP 树导入。"""
     registry, runtime = _make_registry(tmp_path)
     assert runtime is not None
     png = b"\x89PNG\r\n\x1a\n" + bytes(range(256))
@@ -195,11 +196,31 @@ async def test_publish_binary_file_roundtrip(tmp_path):
             "filename": "shot.png",
         },
     )
+    assert pub.get("ok") in (0, None) or pub.get("failed") == 1 or pub.get("error")
+    assert "shot.png" not in (pub.get("rel_path") or "")
+    items = pub.get("items") or []
+    if items:
+        assert items[0].get("ok") is False
+
+
+@pytest.mark.asyncio
+async def test_publish_text_asset_roundtrip(tmp_path):
+    registry, runtime = _make_registry(tmp_path)
+    assert runtime is not None
+    body = b"print('hi')\n"
+    await runtime.write_file("/workspace/run.py", body)
+    pub = await registry.execute(
+        "publish_from_sandbox",
+        {
+            "sandbox_path": "/workspace/run.py",
+            "directory": "scripts",
+            "filename": "run.py",
+        },
+    )
     assert pub.get("error") is None, pub
     assert pub.get("kind") == "file"
-    assert pub.get("rel_path") == "图/shot.png"
-    abs_p = registry.repo.abs_path(pub["rel_path"])
-    assert abs_p.read_bytes() == png
+    assert pub.get("rel_path") == "scripts/run.py"
+    assert registry.repo.abs_path(pub["rel_path"]).read_bytes() == body
 
 
 @pytest.mark.asyncio

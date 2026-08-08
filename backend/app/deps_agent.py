@@ -30,6 +30,16 @@ class AgentSubgraph:
     agent: AgentOrchestrator
     chat_runner: ChatSessionRunner
 
+    def publish(self, container) -> None:
+        """将子图运行时指针同步到 Container / PendingResolver facade。"""
+        container.chat_runner = self.chat_runner
+        container.agent = self.agent
+        container.organizer = self.organizer
+        container.merge_workflow = self.organizer.merge
+        container.pending_resolver.organizer = self.organizer
+        container.pending_resolver.merge_workflow = self.organizer.merge
+        container.pending_resolver.sandbox_tools = self.tools.sandbox
+
     def rebind_llm(self, settings: Settings, llm: LLMClient) -> None:
         self.organizer.llm = llm
         self.organizer.synthesis.llm = llm

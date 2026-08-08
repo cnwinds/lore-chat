@@ -186,12 +186,32 @@ class KnowledgeWriter:
             }
         return rel, None
 
+    def read_entry_bytes(self, rel_path: str) -> bytes:
+        """读取 KB 文件字节（stage / 工具读侧对称入口）。"""
+        norm = rel_path.replace("\\", "/").lstrip("/")
+        abs_kb = self.repo.abs_path(norm)
+        if not abs_kb.exists() or not abs_kb.is_file():
+            raise FileNotFoundError(norm)
+        return self.repo.read_bytes(norm)
+
+    def assert_non_md_asset_allowed(self, filename: str, *, allow_binary: bool) -> None:
+        """非 Markdown 资产准入：Agent/publish 默认仅文本白名单；HTTP 可放行二进制。"""
+        fn = _safe_basename(filename)
+        if is_markdown_path(fn):
+            return
+        if allow_binary or is_kb_text_file(fn):
+            return
+        raise ValueError(
+            f"不支持的文件类型：{fn}（仅允许 Markdown 或文本代码/配置类扩展名）"
+        )
+
     def import_entry(
         self,
         *,
         directory: str,
         filename: str,
         data: bytes,
+        allow_binary: bool = True,
     ) -> dict:
         fn = _safe_basename(filename)
         if is_markdown_path(fn):
@@ -215,6 +235,7 @@ class KnowledgeWriter:
             )
             return {"rel_path": rel, "kind": "markdown", "indexed": True}
 
+        self.assert_non_md_asset_allowed(fn, allow_binary=allow_binary)
         rel = _file_rel(directory, fn)
         if self.repo.abs_path(rel).exists():
             raise KbPathExistsError(rel)
@@ -239,10 +260,7 @@ class KnowledgeWriter:
         fn = _safe_basename(filename)
         if is_markdown_path(fn):
             raise ValueError("Markdown 请使用 write_kb，勿用 write_kb_file")
-        if not is_kb_text_file(fn):
-            raise ValueError(
-                f"不支持的文件类型：{fn}（仅允许文本代码/配置类扩展名）"
-            )
+        self.assert_non_md_asset_allowed(fn, allow_binary=False)
         rel = _file_rel(directory, fn)
         if not self.repo.is_writable(rel):
             raise ValueError(f"禁止写入：{rel}")

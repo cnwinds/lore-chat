@@ -13,7 +13,6 @@ import {
   observeActiveTurnStream,
   stopChat,
   titleFromText,
-  updateTimeline,
   KB_MUTATING_TOOLS,
   type ChatMessage,
   type ChatStreamEvent,
@@ -27,6 +26,10 @@ import {
   timelineAwaitsUserAnswer,
 } from "../../utils/chatMessage";
 import { nowIsoDisplay } from "../../utils/displayTime";
+import {
+  applyTimelineEvent,
+  mergeServerTimeline,
+} from "../../utils/timelineStream";
 
 export type DocContext = {
   documentPaths: string[];
@@ -196,38 +199,9 @@ export function useAgentStream({
         const incoming = (data.timeline as ChatMessage["timeline"]) || [];
         const assistantText =
           typeof data.assistant_text === "string" ? data.assistant_text : undefined;
-        patchAssistant((prevMsg) => {
-          // 保留客户端 tool started_at_ms（后端投影不含该字段）
-          const prevById = new Map<string, number>();
-          const walk = (blocks: NonNullable<ChatMessage["timeline"]>) => {
-            for (const b of blocks) {
-              if (b.type === "tool" && typeof b.started_at_ms === "number") {
-                prevById.set(b.id, b.started_at_ms);
-              } else if (b.type === "parallel") {
-                walk(b.children);
-              }
-            }
-          };
-          walk(prevMsg.timeline ?? []);
-          const merge = (
-            blocks: NonNullable<ChatMessage["timeline"]>,
-          ): NonNullable<ChatMessage["timeline"]> =>
-            blocks.map((b) => {
-              if (b.type === "tool") {
-                const started = prevById.get(b.id) ?? b.started_at_ms ?? Date.now();
-                return { ...b, started_at_ms: started };
-              }
-              if (b.type === "parallel") {
-                return { ...b, children: merge(b.children) };
-              }
-              return b;
-            });
-          return {
-            ...prevMsg,
-            timeline: merge(incoming),
-            ...(assistantText !== undefined ? { text: assistantText } : {}),
-          };
-        });
+        patchAssistant((prevMsg) =>
+          mergeServerTimeline(prevMsg, incoming, assistantText),
+        );
         continue;
       }
 
@@ -236,7 +210,7 @@ export function useAgentStream({
         if (!serverTimeline) {
           patchAssistant((prevMsg) => ({
             ...prevMsg,
-            timeline: updateTimeline(prevMsg.timeline ?? [], event, data),
+            timeline: applyTimelineEvent(prevMsg.timeline ?? [], event, data),
           }));
         }
         onUserInjectedRef.current?.(injectId);
@@ -251,7 +225,7 @@ export function useAgentStream({
       patchAssistant((prevMsg) => {
         const msg = { ...prevMsg };
         if (event !== "done" && !serverTimeline) {
-          msg.timeline = updateTimeline(msg.timeline ?? [], event, data);
+          msg.timeline = applyTimelineEvent(msg.timeline ?? [], event, data);
         }
         if (event === "done") {
           msg.sources = (data.sources as SourceRef[]) || [];

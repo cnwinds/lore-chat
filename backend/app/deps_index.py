@@ -33,6 +33,14 @@ class IndexSubgraph:
         if derivation_worker is not None:
             derivation_worker.llm = llm
 
+    def apply_settings(self, settings: Settings) -> None:
+        """热应用检索 tunables（与构造时 Settings 同源）。"""
+        self.retriever.min_score = settings.min_vector_score
+        self.retriever.rrf_k = settings.rrf_k
+        self.retriever.lane_candidate_k = settings.lane_candidate_k
+        if hasattr(self.indexer, "reindex_full_threshold"):
+            self.indexer.reindex_full_threshold = settings.reindex_full_threshold
+
 
 def build_index_subgraph(
     settings: Settings,

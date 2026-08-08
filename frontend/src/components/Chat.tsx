@@ -4,14 +4,9 @@ import { useChatScroll } from "../hooks/chat/useChatScroll";
 import { useAgentStream } from "../hooks/chat/useAgentStream";
 import { useConversationMemoryEvents } from "../hooks/chat/useConversationMemoryEvents";
 import { useSendQueue } from "../hooks/chat/useSendQueue";
-import {
-  applyInjectDeferred,
-  applyStreamEnd,
-  applyUserInjected,
-} from "../hooks/chat/outboundQueue";
+import { useOutboundOrchestrator } from "../hooks/chat/useOutboundOrchestrator";
 import type { JumpTarget } from "../hooks/chat/useConversationJump";
 import {
-  chatInject,
   kbImport,
   summarizeConversation,
   type DocContextItem,
@@ -23,7 +18,6 @@ import { markToolBlockResolved } from "../utils/chatMessage";
 import { nowIsoDisplay } from "../utils/displayTime";
 import {
   mergeGroupText,
-  takeNextGroup,
   SEND_QUEUE_MAX,
   type SendQueueItem,
 } from "../utils/sendQueue";
@@ -113,64 +107,15 @@ export function Chat({
   });
 
   const sendQueue = useSendQueue(conversationId);
-  const itemsRef = useRef(sendQueue.items);
-  const pausedRef = useRef(sendQueue.paused);
-  const flushingRef = useRef(false);
-  const pendingGroupRef = useRef<SendQueueItem[] | null>(null);
-  itemsRef.current = sendQueue.items;
-  pausedRef.current = sendQueue.paused;
 
-  const flushQueueRef = useRef<() => Promise<void>>(async () => {});
-  const maybeInjectFrontRef = useRef<() => Promise<void>>(async () => {});
-
-  const handleStreamEnd = useCallback(
-    (info: {
-      failed: boolean;
-      aborted: boolean;
-      detached?: boolean;
-      awaitingUser?: boolean;
-    }) => {
-      const next = applyStreamEnd(
-        {
-          items: itemsRef.current,
-          paused: pausedRef.current,
-          pendingGroup: pendingGroupRef.current,
-          flushing: flushingRef.current,
-        },
-        info,
-      );
-      itemsRef.current = next.items;
-      pendingGroupRef.current = next.pendingGroup;
-      flushingRef.current = next.flushing;
-      sendQueue.setPaused(next.paused);
-      sendQueue.setItems(next.items);
-      if (next.shouldFlush) {
-        queueMicrotask(() => {
-          void flushQueueRef.current();
-        });
-      }
-    },
-    [sendQueue],
-  );
-
-  const handleInjectDeferred = useCallback(
-    (injectId: string) => {
-      const next = applyInjectDeferred(itemsRef.current, injectId);
-      itemsRef.current = next;
-      sendQueue.setItems(next);
-      console.info("本轮无法插入，已改为回合后再发", injectId);
-    },
-    [sendQueue],
-  );
-
-  const handleUserInjected = useCallback(
-    (injectId: string) => {
-      const next = applyUserInjected(itemsRef.current, injectId);
-      itemsRef.current = next;
-      sendQueue.setItems(next);
-    },
-    [sendQueue],
-  );
+  const streamEndRef = useRef<(info: {
+    failed: boolean;
+    aborted: boolean;
+    detached?: boolean;
+    awaitingUser?: boolean;
+  }) => void>(() => {});
+  const injectDeferredRef = useRef<(id: string) => void>(() => {});
+  const userInjectedRef = useRef<(id: string) => void>(() => {});
 
   const {
     streaming,
@@ -201,11 +146,50 @@ export function Chat({
     onFirstQuestionTitle,
     onSidebarRefresh,
     onKbChanged: refreshKb,
-    onStreamEnd: handleStreamEnd,
-    onInjectDeferred: handleInjectDeferred,
-    onUserInjected: handleUserInjected,
+    onStreamEnd: (info) => streamEndRef.current(info),
+    onInjectDeferred: (id) => injectDeferredRef.current(id),
+    onUserInjected: (id) => userInjectedRef.current(id),
   });
   resumeActiveTurnRef.current = resumeActiveTurn;
+
+  const runOutbound = useCallback(
+    async (group: SendQueueItem[]) => {
+      const text = mergeGroupText(group);
+      const first = group[0];
+      const docContext = first.doc_context ?? [];
+      const documentPathsForRun = docContext
+        .filter((d) => d.kind !== "skill_root")
+        .map((d) => d.path);
+      return runAgentStream(
+        text,
+        text,
+        {
+          attachments: first.attachments?.length ? first.attachments : undefined,
+          doc_context: docContext.length ? docContext : undefined,
+          primary_doc: first.primary_doc ?? undefined,
+        },
+        {
+          documentPaths: documentPathsForRun,
+          docContext,
+          primary: first.primary_doc ?? null,
+        },
+        { webEnabled: first.webEnabled },
+      );
+    },
+    [runAgentStream],
+  );
+
+  const outbound = useOutboundOrchestrator({
+    sendQueue,
+    streaming,
+    streamingRef,
+    conversationIdRef,
+    runOutbound,
+  });
+  streamEndRef.current = outbound.handleStreamEnd;
+  injectDeferredRef.current = outbound.handleInjectDeferred;
+  userInjectedRef.current = outbound.handleUserInjected;
+
   const { messagesContainerRef } = useChatScroll(
     [msgs, loadingHistory, streaming],
     stickToBottomRef,
@@ -236,144 +220,6 @@ export function Chat({
       return next;
     });
   }
-
-  const runOutbound = useCallback(
-    async (group: SendQueueItem[]) => {
-      const text = mergeGroupText(group);
-      const first = group[0];
-      const docContext = first.doc_context ?? [];
-      const documentPathsForRun = docContext
-        .filter((d) => d.kind !== "skill_root")
-        .map((d) => d.path);
-      return runAgentStream(
-        text,
-        text,
-        {
-          attachments: first.attachments?.length ? first.attachments : undefined,
-          doc_context: docContext.length ? docContext : undefined,
-          primary_doc: first.primary_doc ?? undefined,
-        },
-        {
-          documentPaths: documentPathsForRun,
-          docContext,
-          primary: first.primary_doc ?? null,
-        },
-        { webEnabled: first.webEnabled },
-      );
-    },
-    [runAgentStream],
-  );
-
-  const flushQueue = useCallback(async () => {
-    if (flushingRef.current || streamingRef.current || pausedRef.current) return;
-    const taken = takeNextGroup(itemsRef.current);
-    if (!taken) return;
-    flushingRef.current = true;
-    const { group, rest } = taken;
-    pendingGroupRef.current = group;
-    itemsRef.current = rest;
-    sendQueue.setItems(rest);
-    try {
-      const started = await runOutbound(group);
-      if (!started) {
-        pendingGroupRef.current = null;
-        const restored = [...group, ...itemsRef.current];
-        itemsRef.current = restored;
-        sendQueue.setItems(restored);
-        flushingRef.current = false;
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "发送失败";
-      pendingGroupRef.current = null;
-      sendQueue.setPaused(true);
-      const restored = [
-        ...group.map((g, i) => ({
-          ...g,
-          locked: false,
-          error: i === 0 ? msg : null,
-        })),
-        ...itemsRef.current,
-      ];
-      itemsRef.current = restored;
-      sendQueue.setItems(restored);
-      flushingRef.current = false;
-    }
-  }, [runOutbound, sendQueue]);
-
-  flushQueueRef.current = flushQueue;
-
-  const maybeInjectFront = useCallback(async () => {
-    if (!streamingRef.current || pausedRef.current) return;
-    const items = itemsRef.current;
-    const taken = takeNextGroup(items);
-    if (!taken || taken.group[0].timing !== "inject") return;
-    if (taken.group.some((g) => g.locked)) return;
-    const cid = conversationIdRef.current;
-    if (!cid) return;
-
-    const { group, rest } = taken;
-    const injectId = group[0].id;
-    const locked = [
-      ...group.map((g) => ({ ...g, locked: true })),
-      ...rest,
-    ];
-    itemsRef.current = locked;
-    sendQueue.setItems(locked);
-    try {
-      await chatInject({
-        conversationId: cid,
-        text: mergeGroupText(group),
-        injectId,
-        clientMessageId: `inject:${injectId}`,
-        docContext: group[0].doc_context,
-        primaryDocPath: group[0].primary_doc,
-        attachments: group[0].attachments,
-      });
-    } catch (err) {
-      const status = (err as { status?: number }).status;
-      const deferred = [
-        ...group.map((g) => ({
-          ...g,
-          locked: false,
-          timing: "defer" as const,
-          error: null as string | null,
-        })),
-        ...rest,
-      ];
-      if (status === 409) {
-        itemsRef.current = deferred;
-        sendQueue.setItems(deferred);
-        console.info("本轮无法插入，已改为回合后再发");
-      } else {
-        const msg = err instanceof Error ? err.message : "注入失败";
-        const failed = [
-          {
-            ...group[0],
-            locked: false,
-            timing: "defer" as const,
-            error: msg,
-          },
-          ...group.slice(1).map((g) => ({
-            ...g,
-            locked: false,
-            timing: "defer" as const,
-          })),
-          ...rest,
-        ];
-        itemsRef.current = failed;
-        sendQueue.setItems(failed);
-        sendQueue.setPaused(true);
-      }
-    }
-  }, [sendQueue]);
-
-  maybeInjectFrontRef.current = maybeInjectFront;
-
-  useEffect(() => {
-    if (streaming) {
-      void maybeInjectFrontRef.current();
-    }
-  }, [streaming, sendQueue.items]);
 
   async function send() {
     if (!input.trim() && pendingFiles.length === 0) return;
@@ -457,54 +303,29 @@ export function Chat({
       locked: false,
       error: null,
     };
-    if (itemsRef.current.length >= SEND_QUEUE_MAX) {
+    if (outbound.itemsRef.current.length >= SEND_QUEUE_MAX) {
       window.alert(`发送队列最多 ${SEND_QUEUE_MAX} 条`);
       setInput(text);
       return;
     }
-    sendQueue.setItems([...itemsRef.current, newItem]);
-    itemsRef.current = [...itemsRef.current, newItem];
-
-    if (!streaming && !sendQueue.paused) {
-      void flushQueue();
-    } else if (streaming) {
-      void maybeInjectFront();
-    }
+    outbound.enqueueAndKick(newItem);
   }
 
   function handleStop() {
     stopStreaming();
-    sendQueue.setPaused(true);
+    outbound.handleStop();
   }
 
   function handleContinue() {
-    sendQueue.setPaused(false);
-    sendQueue.setItems(
-      itemsRef.current.map((x) => ({ ...x, error: null, locked: false })),
-    );
-    queueMicrotask(() => {
-      void flushQueueRef.current();
-    });
+    outbound.handleContinue();
   }
 
   function handleRetry() {
-    sendQueue.setItems(
-      itemsRef.current.map((x) => ({ ...x, error: null })),
-    );
-    sendQueue.setPaused(false);
-    queueMicrotask(() => {
-      void flushQueueRef.current();
-    });
+    outbound.handleRetry();
   }
 
   function handleSkipFailed() {
-    const items = itemsRef.current;
-    const next = items[0]?.error ? items.slice(1) : items.filter((x) => !x.error);
-    sendQueue.setItems(next);
-    sendQueue.setPaused(false);
-    queueMicrotask(() => {
-      void flushQueueRef.current();
-    });
+    outbound.handleSkipFailed();
   }
 
   function openArchiveModal() {
@@ -570,26 +391,22 @@ export function Chat({
     if (result.status === "continue" && result.continue_prompt) {
       // Answering unpauses; the follow-up stream will auto-flush on done
       // unless it asks another question.
+      outbound.pausedRef.current = false;
       sendQueue.setPaused(false);
-      pausedRef.current = false;
       if (streaming || sendQueue.items.length > 0) {
         sendQueue.enqueue({
           text: result.continue_prompt,
           timing: "defer",
           webEnabled,
         });
-        if (!streaming) void flushQueue();
+        if (!streaming) void outbound.flushQueue();
       } else {
         void runAgentStream(result.continue_prompt, choiceLabel);
       }
       return;
     }
     // Resume deferred queue after the user answered.
-    sendQueue.setPaused(false);
-    pausedRef.current = false;
-    queueMicrotask(() => {
-      void flushQueueRef.current();
-    });
+    outbound.unpauseAndFlush();
     if (result.status === "saved" && result.message) {
       setMsgs((m) => [
         ...m,

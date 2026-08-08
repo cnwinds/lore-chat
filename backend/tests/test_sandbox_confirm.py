@@ -55,7 +55,10 @@ def _make_org(tmp_path):
 
 
 def test_resolve_sandbox_confirm_approve(tmp_path):
-    org, pending = _make_org(tmp_path)
+    from app.engine.sandbox.command_gate import SandboxCommandGate
+
+    _, pending = _make_org(tmp_path)
+    gate = SandboxCommandGate(pending, trust_mode=False)
     qid = pending.create(
         "run?",
         [{"id": "approve", "label": "执行"}, {"id": "deny", "label": "取消"}],
@@ -66,7 +69,7 @@ def test_resolve_sandbox_confirm_approve(tmp_path):
             "background": False,
         },
     )
-    result = org.resolve_agent_choices(qid, ["approve"])
+    result = gate.resolve(qid, ["approve"])
     assert result.status == "sandbox_execute"
     assert result.sandbox_run_args is not None
     assert result.sandbox_run_args["command"] == "pip install edge-tts"
@@ -74,13 +77,16 @@ def test_resolve_sandbox_confirm_approve(tmp_path):
 
 
 def test_resolve_sandbox_confirm_deny(tmp_path):
-    org, pending = _make_org(tmp_path)
+    from app.engine.sandbox.command_gate import SandboxCommandGate
+
+    _, pending = _make_org(tmp_path)
+    gate = SandboxCommandGate(pending, trust_mode=False)
     qid = pending.create(
         "run?",
         [{"id": "approve", "label": "执行"}, {"id": "deny", "label": "取消"}],
         {"kind": "sandbox_confirm", "command": "rm -rf /"},
     )
-    result = org.resolve_agent_choices(qid, ["deny"])
+    result = gate.resolve(qid, ["deny"])
     assert result.status == "acknowledged"
     assert "取消" in result.message
 

@@ -230,6 +230,7 @@ def apply_settings(
         new_llm.usage_recorder = recorder
     container.llm = new_llm
     if container._index_subgraph is not None:
+        container._index_subgraph.apply_settings(settings)
         container._index_subgraph.rebind_llm(
             new_llm, derivation_worker=container.derivation_worker
         )
@@ -237,12 +238,4 @@ def apply_settings(
         container._memory_subgraph.rebind_llm(new_llm)
     if container._agent_subgraph is not None:
         container._agent_subgraph.rebind_llm(settings, new_llm)
-        # 热应用后同步 HTTP facade（subgraph 为真正 rebind seam）
-        ag = container._agent_subgraph
-        container.chat_runner = ag.chat_runner
-        container.agent = ag.agent
-        container.organizer = ag.organizer
-        container.merge_workflow = ag.organizer.merge
-        container.pending_resolver.organizer = ag.organizer
-        container.pending_resolver.merge_workflow = ag.organizer.merge
-        container.pending_resolver.sandbox_tools = ag.tools.sandbox
+        container._agent_subgraph.publish(container)

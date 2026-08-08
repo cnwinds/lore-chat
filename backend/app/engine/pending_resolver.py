@@ -79,6 +79,12 @@ class PendingResolver:
                 list(body.choices),
                 merge_sessions=self.merge_sessions,
             )
+        elif payload.get("kind") == "sandbox_confirm":
+            if not chosen_ids:
+                raise ValueError("请提供 choice 或 choices")
+            if self.sandbox_tools is None:
+                raise RuntimeError("沙箱未启用，无法决议沙箱确认")
+            result = self.sandbox_tools.command_gate.resolve(body.qid, list(chosen_ids))
         elif body.choices:
             if not self._is_agent_question(q):
                 raise ValueError("该问题不支持多选")

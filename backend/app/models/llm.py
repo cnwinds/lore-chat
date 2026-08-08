@@ -105,70 +105,17 @@ class OpenAILLMClient:
 
     @staticmethod
     def _cached_tokens_from_usage(usage: Any) -> int | None:
-        """从 OpenAI / 兼容网关 usage 中解析 cache hit tokens。"""
-        if usage is None:
-            return None
+        from app.engine.usage.normalize import cached_tokens_from_usage
 
-        def _as_int(v: Any) -> int | None:
-            if v is None:
-                return None
-            try:
-                return int(v)
-            except (TypeError, ValueError):
-                return None
-
-        # OpenAI: prompt_tokens_details.cached_tokens
-        details = getattr(usage, "prompt_tokens_details", None)
-        if details is not None:
-            cached = _as_int(getattr(details, "cached_tokens", None))
-            if cached is not None:
-                return cached
-            if isinstance(details, dict):
-                cached = _as_int(details.get("cached_tokens"))
-                if cached is not None:
-                    return cached
-
-        # DeepSeek 等: prompt_cache_hit_tokens
-        cached = _as_int(getattr(usage, "prompt_cache_hit_tokens", None))
-        if cached is not None:
-            return cached
-
-        # 部分网关: input_tokens_details.cached_tokens
-        input_details = getattr(usage, "input_tokens_details", None)
-        if input_details is not None:
-            cached = _as_int(getattr(input_details, "cached_tokens", None))
-            if cached is not None:
-                return cached
-            if isinstance(input_details, dict):
-                cached = _as_int(input_details.get("cached_tokens"))
-                if cached is not None:
-                    return cached
-
-        if isinstance(usage, dict):
-            details = usage.get("prompt_tokens_details")
-            if isinstance(details, dict):
-                cached = _as_int(details.get("cached_tokens"))
-                if cached is not None:
-                    return cached
-            cached = _as_int(usage.get("prompt_cache_hit_tokens"))
-            if cached is not None:
-                return cached
-
-        return None
+        return cached_tokens_from_usage(usage)
 
     @staticmethod
     def _usage_from_resp(
         resp: Any,
     ) -> tuple[int | None, int | None, int | None, int | None, bool]:
-        usage = getattr(resp, "usage", None)
-        if usage is None:
-            return None, None, None, None, False
-        pt = getattr(usage, "prompt_tokens", None)
-        ct = getattr(usage, "completion_tokens", None)
-        tt = getattr(usage, "total_tokens", None)
-        cache = OpenAILLMClient._cached_tokens_from_usage(usage)
-        known = pt is not None or ct is not None or tt is not None
-        return pt, ct, tt, cache, known
+        from app.engine.usage.normalize import usage_from_resp
+
+        return usage_from_resp(resp)
 
     def chat(self, messages: list[dict], *, big: bool = False, temperature: float = 0.2) -> str:
         client = self._big if big else self._small

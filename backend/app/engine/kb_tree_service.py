@@ -29,7 +29,10 @@ class KbTreeService:
         if d and self.repo.is_protected(f"{d}/.md"):
             raise PermissionError("禁止写入该目录")
         result = self.writer.import_entry(
-            directory=d, filename=filename.strip(), data=data
+            directory=d,
+            filename=filename.strip(),
+            data=data,
+            allow_binary=True,
         )
         self.index_revision.bump()
         return result
