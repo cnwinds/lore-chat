@@ -4,6 +4,11 @@ import { useChatScroll } from "../hooks/chat/useChatScroll";
 import { useAgentStream } from "../hooks/chat/useAgentStream";
 import { useConversationMemoryEvents } from "../hooks/chat/useConversationMemoryEvents";
 import { useSendQueue } from "../hooks/chat/useSendQueue";
+import {
+  applyInjectDeferred,
+  applyStreamEnd,
+  applyUserInjected,
+} from "../hooks/chat/outboundQueue";
 import type { JumpTarget } from "../hooks/chat/useConversationJump";
 import {
   chatInject,
@@ -125,64 +130,34 @@ export function Chat({
       detached?: boolean;
       awaitingUser?: boolean;
     }) => {
-      // Observation-only disconnect: turn still runs; do not pause the queue.
-      if (info.detached) {
-        flushingRef.current = false;
-        return;
-      }
-      if (info.failed || info.aborted) {
-        sendQueue.setPaused(true);
-        const pending = pendingGroupRef.current;
-        pendingGroupRef.current = null;
-        sendQueue.setItems((prev) => {
-          let next = prev.map((x) =>
-            x.locked
-              ? { ...x, locked: false, timing: "defer" as const, error: null }
-              : x,
-          );
-          if (pending?.length) {
-            next = [
-              ...pending.map((g, i) => ({
-                ...g,
-                locked: false,
-                error: info.failed && i === 0 ? "发送失败" : null,
-              })),
-              ...next,
-            ];
-          }
-          return next;
+      const next = applyStreamEnd(
+        {
+          items: itemsRef.current,
+          paused: pausedRef.current,
+          pendingGroup: pendingGroupRef.current,
+          flushing: flushingRef.current,
+        },
+        info,
+      );
+      itemsRef.current = next.items;
+      pendingGroupRef.current = next.pendingGroup;
+      flushingRef.current = next.flushing;
+      sendQueue.setPaused(next.paused);
+      sendQueue.setItems(next.items);
+      if (next.shouldFlush) {
+        queueMicrotask(() => {
+          void flushQueueRef.current();
         });
-        flushingRef.current = false;
-        return;
       }
-      pendingGroupRef.current = null;
-      flushingRef.current = false;
-      if (info.awaitingUser) {
-        // Model asked the user a question — hold the queue until they answer.
-        sendQueue.setPaused(true);
-        return;
-      }
-      queueMicrotask(() => {
-        void flushQueueRef.current();
-      });
     },
     [sendQueue],
   );
 
   const handleInjectDeferred = useCallback(
     (injectId: string) => {
-      sendQueue.setItems((prev) =>
-        prev.map((x) =>
-          x.id === injectId || x.locked
-            ? {
-                ...x,
-                locked: false,
-                timing: "defer" as const,
-                error: null,
-              }
-            : x,
-        ),
-      );
+      const next = applyInjectDeferred(itemsRef.current, injectId);
+      itemsRef.current = next;
+      sendQueue.setItems(next);
       console.info("本轮无法插入，已改为回合后再发", injectId);
     },
     [sendQueue],
@@ -190,9 +165,9 @@ export function Chat({
 
   const handleUserInjected = useCallback(
     (injectId: string) => {
-      sendQueue.setItems((prev) =>
-        prev.filter((x) => x.id !== injectId && !x.locked),
-      );
+      const next = applyUserInjected(itemsRef.current, injectId);
+      itemsRef.current = next;
+      sendQueue.setItems(next);
     },
     [sendQueue],
   );

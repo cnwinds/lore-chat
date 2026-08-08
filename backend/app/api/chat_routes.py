@@ -78,17 +78,19 @@ async def chat(body: ChatBody, request: Request):
         )
 
     cid = body.conversation_id
-    history = c.conversations.llm_history(c.conversations.get(cid))
     client_message_id = body.client_message_id or uuid.uuid4().hex
     try:
-        turn = c.conversations.begin_turn(
-            cid,
+        turn = c.chat_runner.begin_persisted_turn(
+            conversation_id=cid,
             user_text=body.text,
             client_message_id=client_message_id,
             observation_allowed=body.observation_allowed,
             doc_context=doc_items or None,
             primary_doc=primary,
             attachments=body.attachments or None,
+            doc_paths=paths,
+            skill_roots=skill_roots or None,
+            web_enabled=body.web_enabled,
         )
     except TurnInProgress as e:
         raise HTTPException(
@@ -106,16 +108,7 @@ async def chat(body: ChatBody, request: Request):
 
     return StreamingResponse(
         with_sse_keepalive(
-            c.chat_runner.stream_and_persist(
-                body.text,
-                conversation_id=cid,
-                turn=turn,
-                history=history,
-                doc_paths=paths,
-                skill_roots=skill_roots or None,
-                primary_doc=primary,
-                web_enabled=body.web_enabled,
-            )
+            c.chat_runner.observe_turn(cid, turn["turn_id"], after_seq=0)
         ),
         media_type="text/event-stream",
         headers=headers,

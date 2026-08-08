@@ -5,17 +5,13 @@ from collections.abc import AsyncIterator
 from app.engine.agent.events import done, error_event, text_delta, think_delta
 from app.engine.agent.prompts import MODE_DEFAULT, MODE_FORCE_WRITE, MODE_NO_WRITE
 from app.engine.chat.sse import parse_agent_sse_event
-from app.engine.chat.turn_hub import TurnExecutionHub, TurnRunSpec
+from app.engine.chat.turn_hub import TurnExecutionHub
 from app.engine.chat.turn_inject import PendingInject, TurnInjectBroker
 from app.engine.knowledge_writer import is_markdown_path
 
 
 class ChatSessionRunner:
-    """Agent 运行与观测通道的 deep module；HTTP 层只做 adapter。
-
-    有 conversation_id 的回合由 TurnExecutionHub 在后台 Task 中执行；
-    SSE 仅 subscribe，断开不影响执行。
-    """
+    """HTTP 侧薄 facade：持久回合委托 TurnExecutionHub；ephemeral 直跑 agent。"""
 
     def __init__(
         self,
@@ -30,16 +26,41 @@ class ChatSessionRunner:
         self.turn_hub = turn_hub or TurnExecutionHub(
             agent, conversations, inject_broker=self.inject_broker
         )
-        # Keep broker shared if hub was injected with a different one
         if turn_hub is not None:
             self.inject_broker = self.turn_hub.inject_broker
 
     def enqueue_inject(self, conversation_id: str, item: PendingInject) -> str:
-        """Queue a mid-turn user inject for the active turn. Raises KeyError if none."""
-        return self.inject_broker.enqueue(conversation_id, item)
+        return self.turn_hub.enqueue_inject(conversation_id, item)
 
     def request_stop(self, conversation_id: str) -> bool:
         return self.turn_hub.request_stop(conversation_id)
+
+    def begin_persisted_turn(
+        self,
+        *,
+        conversation_id: str,
+        user_text: str,
+        client_message_id: str,
+        observation_allowed: bool,
+        doc_context: list | None,
+        primary_doc: str | None,
+        attachments: list | None,
+        doc_paths: list[str],
+        skill_roots: list[str] | None,
+        web_enabled: bool,
+    ) -> dict:
+        return self.turn_hub.begin_and_ensure(
+            conversation_id=conversation_id,
+            user_text=user_text,
+            client_message_id=client_message_id,
+            observation_allowed=observation_allowed,
+            doc_context=doc_context,
+            primary_doc=primary_doc,
+            attachments=attachments,
+            doc_paths=doc_paths,
+            skill_roots=skill_roots,
+            web_enabled=web_enabled,
+        )
 
     async def stream_ephemeral(
         self,
@@ -75,6 +96,18 @@ class ChatSessionRunner:
                 yield text_delta(block["content"])
         yield done(assistant.get("sources") or [], assistant.get("total_duration_ms") or 0)
 
+    async def observe_turn(
+        self,
+        conversation_id: str,
+        turn_id: str,
+        *,
+        after_seq: int = 0,
+    ) -> AsyncIterator[str]:
+        async for ev in self.turn_hub.subscribe(
+            conversation_id, turn_id, after_seq=after_seq
+        ):
+            yield ev
+
     async def stream_and_persist(
         self,
         text: str,
@@ -87,7 +120,9 @@ class ChatSessionRunner:
         primary_doc: str | None,
         web_enabled: bool,
     ) -> AsyncIterator[str]:
-        """Start (or attach to) background turn execution and observe SSE events."""
+        """兼容：ensure + subscribe（begin 已由 begin_persisted_turn 完成时可不经此路径）。"""
+        from app.engine.chat.turn_hub import TurnRunSpec
+
         spec = TurnRunSpec(
             text=text,
             history=history,
@@ -108,7 +143,6 @@ class ChatSessionRunner:
         *,
         after_seq: int = 0,
     ) -> AsyncIterator[str]:
-        """Observe the in-memory active (or retained) turn without starting a new one."""
         turn_id = self.turn_hub.resolve_turn_id(conversation_id)
         if not turn_id:
             return

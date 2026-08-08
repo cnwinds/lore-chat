@@ -181,6 +181,8 @@ export function useAgentStream({
   ): Promise<{ streamFailed: boolean; awaitingUser: boolean }> {
     let streamFailed = false;
     let awaitingUser = false;
+    /** Persisted turns publish timeline_state; skip client reduce once seen. */
+    let serverTimeline = false;
     for await (const { event, data } of events) {
       if (event === "error") {
         const message = (data.message as string) || "请求失败";
@@ -189,12 +191,54 @@ export function useAgentStream({
         break;
       }
 
+      if (event === "timeline_state") {
+        serverTimeline = true;
+        const incoming = (data.timeline as ChatMessage["timeline"]) || [];
+        const assistantText =
+          typeof data.assistant_text === "string" ? data.assistant_text : undefined;
+        patchAssistant((prevMsg) => {
+          // 保留客户端 tool started_at_ms（后端投影不含该字段）
+          const prevById = new Map<string, number>();
+          const walk = (blocks: NonNullable<ChatMessage["timeline"]>) => {
+            for (const b of blocks) {
+              if (b.type === "tool" && typeof b.started_at_ms === "number") {
+                prevById.set(b.id, b.started_at_ms);
+              } else if (b.type === "parallel") {
+                walk(b.children);
+              }
+            }
+          };
+          walk(prevMsg.timeline ?? []);
+          const merge = (
+            blocks: NonNullable<ChatMessage["timeline"]>,
+          ): NonNullable<ChatMessage["timeline"]> =>
+            blocks.map((b) => {
+              if (b.type === "tool") {
+                const started = prevById.get(b.id) ?? b.started_at_ms ?? Date.now();
+                return { ...b, started_at_ms: started };
+              }
+              if (b.type === "parallel") {
+                return { ...b, children: merge(b.children) };
+              }
+              return b;
+            });
+          return {
+            ...prevMsg,
+            timeline: merge(incoming),
+            ...(assistantText !== undefined ? { text: assistantText } : {}),
+          };
+        });
+        continue;
+      }
+
       if (event === "user_inject") {
         const injectId = data.inject_id as string;
-        patchAssistant((prevMsg) => ({
-          ...prevMsg,
-          timeline: updateTimeline(prevMsg.timeline ?? [], event, data),
-        }));
+        if (!serverTimeline) {
+          patchAssistant((prevMsg) => ({
+            ...prevMsg,
+            timeline: updateTimeline(prevMsg.timeline ?? [], event, data),
+          }));
+        }
         onUserInjectedRef.current?.(injectId);
         continue;
       }
@@ -206,7 +250,7 @@ export function useAgentStream({
 
       patchAssistant((prevMsg) => {
         const msg = { ...prevMsg };
-        if (event !== "done") {
+        if (event !== "done" && !serverTimeline) {
           msg.timeline = updateTimeline(msg.timeline ?? [], event, data);
         }
         if (event === "done") {

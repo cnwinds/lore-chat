@@ -9,7 +9,7 @@ from app.engine.memory.service import MemoryService
 from app.engine.memory.session_extractor import LLMSessionExtractor
 from app.engine.memory.store import MemoryStore
 from app.engine.memory_maintenance import MemoryMaintenanceJob
-from app.engine.memory_worker import MemoryWorker
+from app.engine.memory.session_observe import SessionMemoryObserve
 from app.models.llm import LLMClient
 from app.storage.repo import KnowledgeRepo
 
@@ -18,7 +18,7 @@ from app.storage.repo import KnowledgeRepo
 class MemorySubgraph:
     store: MemoryStore
     service: MemoryService
-    worker: MemoryWorker
+    worker: SessionMemoryObserve
     maintenance: MemoryMaintenanceJob
 
     def wire_conversations(self, conversations: ConversationStore) -> None:
@@ -36,7 +36,7 @@ def build_memory_subgraph(
     *,
     memory_service: MemoryService,
 ) -> MemorySubgraph:
-    memory_worker = MemoryWorker(
+    memory_worker = SessionMemoryObserve(
         conversations,
         memory_service,
         extractor=LLMSessionExtractor(llm),

@@ -14,7 +14,7 @@ from app.engine.pending import PendingStore
 from app.engine.merge_sessions import MergeSessionStore
 from app.engine.conversations import ConversationStore
 from app.engine.derivation_worker import DerivationWorker
-from app.engine.memory_worker import MemoryWorker
+from app.engine.memory.session_observe import SessionMemoryObserve
 from app.engine.memory_maintenance import MemoryMaintenanceJob
 from app.engine.pending_resolver import PendingResolver
 from app.engine.merge_workflow import MergeWorkflow
@@ -49,7 +49,7 @@ class Container:
     conversation_vector: ConversationVector
     index_revision: IndexRevision
     derivation_worker: DerivationWorker
-    memory_worker: MemoryWorker
+    memory_worker: SessionMemoryObserve
     memory_maintenance: MemoryMaintenanceJob
     knowledge_writer: KnowledgeWriter
     merge_workflow: MergeWorkflow
@@ -237,4 +237,12 @@ def apply_settings(
         container._memory_subgraph.rebind_llm(new_llm)
     if container._agent_subgraph is not None:
         container._agent_subgraph.rebind_llm(settings, new_llm)
-        container.chat_runner = container._agent_subgraph.chat_runner
+        # 热应用后同步 HTTP facade（subgraph 为真正 rebind seam）
+        ag = container._agent_subgraph
+        container.chat_runner = ag.chat_runner
+        container.agent = ag.agent
+        container.organizer = ag.organizer
+        container.merge_workflow = ag.organizer.merge
+        container.pending_resolver.organizer = ag.organizer
+        container.pending_resolver.merge_workflow = ag.organizer.merge
+        container.pending_resolver.sandbox_tools = ag.tools.sandbox

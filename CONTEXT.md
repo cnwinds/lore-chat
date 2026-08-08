@@ -7,12 +7,13 @@
 | 层 | 路径 | 职责 |
 |----|------|------|
 | HTTP | `backend/app/api/routes.py` | 鉴权、DTO、StreamingResponse；**不**解析 Agent SSE |
-| 聊天 | `backend/app/engine/chat/` | `TurnExecutionHub`（后台执行）、`ChatSessionRunner`（观测/注入 facade）、时间线、SSE |
-| Agent | `backend/app/engine/agent/` | `AgentOrchestrator`（adapter）、`AgentToolLoop`（LLM+工具循环）、`tool_catalog`、`tool_impl/*`（执行）、`tools.py`（ToolRegistry 组装） |
+| 聊天 | `backend/app/engine/chat/` | `TurnExecutionHub`（begin/ensure/观测/stop 生命周期）、`ChatSessionRunner`（HTTP 薄 facade + ephemeral）、时间线、SSE；持久回合可发 `timeline_state` 投影 |
+| Agent | `backend/app/engine/agent/` | `AgentOrchestrator`（adapter）、`AgentToolLoop`（LLM+工具循环）、`tool_catalog`、`tool_impl/*`（执行）、`tools.py`（`ToolRegistry.execute` / `rebind` / `interrupt_runtime`） |
 | 会话 | `backend/app/engine/conversations.py` + `conversation/outbox.py` | SQLite 消息/turn；派生任务队列 |
-| 知识写入 | `backend/app/engine/knowledge_writer.py` | 路径 + git + 索引 + changelog **唯一写入 seam**；`import_entry` / `move_entry` / `delete_entry`（含附件） |
-| 条目变更 | `backend/app/engine/kb_entry_ops.py` | Agent/HTTP 共用的写/移/删 facade（`write_mode`：auto/merge/replace；`SKILL.md` 默认 replace） |
+| 知识写入 | `backend/app/engine/knowledge_writer.py` | 路径 + git + 索引 + changelog **唯一写入 seam**；意图级 `persist_document` / `import_entry` / `move_entry` / `delete_entry`（含附件）；Merge/Agent 勿自组 drop_index |
 | 文档成文 | `backend/app/engine/document_synthesis.py` | 归档/合并/入库合并的 LLM 成文；Organizer 与 MergeWorkflow 共用 |
+| 会话定稿观察 | `backend/app/engine/memory/session_observe.py` | dirty / idle / extract / SlotResolver / CAS **deep module**（`SessionMemoryObserve`；`MemoryWorker` 为兼容别名） |
+| 记忆写入 | `backend/app/engine/memory/resolver.py` + `service.py` | 全部突变经 `MemoryService` → 唯一 `SlotResolver`（remember/confirm/edit/correct/forget） |
 | 知识库树 HTTP | `backend/app/engine/kb_tree_service.py` | import/move/delete + protected + `index_revision.bump` |
 | 归位 | `backend/app/engine/placement.py` | LLM 决定 new/merge 与 `rel_path` |
 | 整理 | `backend/app/engine/organizer.py` | 录入/归档正文合成 + `PlacementPlanner` + `KnowledgeWriter` |
@@ -25,8 +26,8 @@
 `backend/app/deps.py` 的 `Container` 持有各运行时模块；构图拆为子图（`deps_index.py` / `deps_memory.py` / `deps_agent.py`），`apply_settings` 经子图 `rebind_llm` 热更新。
 
 - `knowledge_writer` → 注入 `Organizer`、`ToolRegistry`、`MemoryService`（记忆投影不入 KB 检索）；**须为同一实例**
-- `chat_runner: ChatSessionRunner` → 持有 `turn_hub` + `agent` + `conversations`；路由用 `c.chat_runner`（观测/stop/inject）
-- `derivation_worker` / `memory_worker` → 消费 `ConversationStore.claim_outbox`
+- `chat_runner: ChatSessionRunner` → 持有 `turn_hub`；`POST /chat` 经 `begin_persisted_turn` + `observe_turn`（生命周期在 hub）
+- `derivation_worker` / `memory_worker`（`SessionMemoryObserve`）→ 消费 `ConversationStore.claim_outbox`
 
 `apply_settings()` 会重建 `chat_runner`（agent/llm 热更新后仍指向同一 conversations）。
 
@@ -47,8 +48,8 @@
 1. `begin_turn` → 写入用户消息 + running turn  
 2. `TurnExecutionHub.ensure_running` → 进程内 Task 跑 Agent；SSE 仅 `subscribe` 观测（断开不取消执行）  
 3. `done` / 显式 `POST /api/chat/stop` / 启动孤儿回收 → `finalize_turn`  
-4. Outbox：`index_fts` / `index_vector` / `session_observe_memory`（会话级记忆；用户消息只打 `memory_dirty`，空闲或归档后入队；成功抽取递增 `memory_extract_revision`；已废除按条 `observe_memory`）
-5. 记忆面板 API：`/api/memory/facts`（列表 / confirm / reject / edit / forget）；设置页「记忆」页签
+4. Outbox：`index_fts` / `index_vector` / `session_observe_memory`（经 `SessionMemoryObserve`；用户消息只打 `memory_dirty`，空闲或归档后入队；成功抽取递增 `memory_extract_revision`；按条 `observe_memory` / `MemoryIntake` 已废除）
+5. 记忆面板 API：`/api/memory/facts`（列表 / confirm / reject / edit / forget）；设置页「记忆」页签；写路径与自动抽取共用 `SlotResolver`
 
 无 `conversation_id` 时仅 `stream_ephemeral`，不落库（仍跟连接走）。
 

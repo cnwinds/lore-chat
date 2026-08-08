@@ -23,20 +23,13 @@ def enqueue_session_observe_for_conversations(
     mark_dirty: bool = True,
 ) -> int:
     """为指定或全部会话标记 dirty 并入队会话级观察。"""
-    with store._lock:
-        if conversation_id:
-            cids = [conversation_id]
-        else:
-            rows = store.conn.execute("SELECT id FROM conversations").fetchall()
-            cids = [r["id"] for r in rows]
-        n = 0
-        for cid in cids:
-            if mark_dirty:
-                store._mark_memory_dirty_unlocked(cid)
-            if store._enqueue_session_observe_unlocked(cid):
-                n += 1
-        store.conn.commit()
-        return n
+    if conversation_id:
+        cids = [conversation_id]
+    else:
+        cids = store.list_conversation_ids()
+    return store.batch_mark_dirty_and_enqueue_session_observe(
+        cids, mark_dirty=mark_dirty
+    )
 
 
 def enqueue_observe_for_retained_messages(

@@ -359,6 +359,29 @@ class ConversationStore:
             self.conn.commit()
             return ok
 
+    def batch_mark_dirty_and_enqueue_session_observe(
+        self,
+        conversation_ids: list[str],
+        *,
+        mark_dirty: bool = True,
+        immediate: bool = False,
+    ) -> int:
+        """批量标 dirty 并入队 session_observe（供 backfill，不暴露 lock）。"""
+        with self._lock:
+            n = 0
+            for cid in conversation_ids:
+                if mark_dirty:
+                    self._mark_memory_dirty_unlocked(cid)
+                if self._enqueue_session_observe_unlocked(cid, immediate=immediate):
+                    n += 1
+            self.conn.commit()
+            return n
+
+    def list_conversation_ids(self) -> list[str]:
+        with self._lock:
+            rows = self.conn.execute("SELECT id FROM conversations").fetchall()
+            return [r["id"] for r in rows]
+
     def cancel_legacy_observe_memory(self) -> int:
         """取消未完成的按条 observe_memory（供 MemoryWorker 经 store API 调用）。"""
         with self._lock:

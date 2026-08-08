@@ -90,3 +90,11 @@ def inject_deferred(inject_id: str, reason: str = "no_tool_boundary"):
 
 def error_event(message):
     return sse_event("error", {"message": message})
+
+
+def timeline_state(timeline: list, *, assistant_text: str = "") -> str:
+    """后端 TimelineAccumulator 投影；观测端只 apply，不必再 reduce。"""
+    return sse_event(
+        "timeline_state",
+        {"timeline": timeline, "assistant_text": assistant_text},
+    )

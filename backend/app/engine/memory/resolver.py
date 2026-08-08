@@ -243,6 +243,158 @@ class SlotResolver:
             conversation_id=conversation_id,
         )
 
+    def confirm_candidate(self, fact_id: str) -> dict:
+        fact = self.store.get_fact(fact_id)
+        if not fact:
+            return {"ok": False, "error": "not_found", "message": "未找到记忆"}
+        if fact.get("status") != "candidate":
+            return {
+                "ok": False,
+                "error": "invalid_status",
+                "message": "仅 candidate 可确认晋升",
+            }
+        slot = fact["slot_key"]
+        self.store.supersede_others_in_slot(slot, keep_id=fact_id)
+        updated = self.store.update_fact_content(
+            fact_id,
+            statement=fact["statement"],
+            normalized_value_hash=fact["normalized_value_hash"],
+            status="confirmed",
+        )
+        return {"ok": True, "fact": updated, "message": "已确认晋升"}
+
+    def reject_candidate(self, fact_id: str) -> dict:
+        fact = self.store.get_fact(fact_id)
+        if not fact:
+            return {"ok": False, "error": "not_found", "message": "未找到记忆"}
+        if fact.get("status") != "candidate":
+            return {
+                "ok": False,
+                "error": "invalid_status",
+                "message": "仅 candidate 可拒绝",
+            }
+        self.store.set_status(fact_id, "rejected")
+        return {"ok": True, "fact_id": fact_id, "message": "已拒绝"}
+
+    def edit_fact(self, fact_id: str, statement: str) -> dict:
+        text = (statement or "").strip()
+        if not text:
+            return {"ok": False, "error": "empty_statement", "message": "内容不能为空"}
+        if scan_secrets(text):
+            return {
+                "ok": False,
+                "error": "secret_rejected",
+                "message": "检测到密钥或敏感凭据，不能写入长期记忆",
+            }
+        fact = self.store.get_fact(fact_id)
+        if not fact or fact.get("status") not in ("confirmed", "candidate"):
+            return {"ok": False, "error": "not_found", "message": "未找到可编辑记忆"}
+        old_hash = fact["normalized_value_hash"]
+        new_hash = value_hash(text)
+        self.store.clear_tombstone(
+            slot_key=fact["slot_key"], normalized_value_hash=new_hash
+        )
+        self.store.clear_topic_fingerprint_tombstones(
+            normalized_value_hash=new_hash
+        )
+        updated = self.store.update_fact_content(
+            fact_id,
+            statement=text,
+            normalized_value_hash=new_hash,
+            origin="manual",
+            status=fact.get("status"),
+        )
+        updated = self.store.get_fact(fact_id) or updated
+        self.store.supersede_others_in_slot(
+            updated.get("slot_key") or fact["slot_key"], keep_id=fact_id
+        )
+        if new_hash != old_hash:
+            self.store.block_value(
+                slot_key=fact["slot_key"],
+                normalized_value_hash=old_hash,
+                reason="superseded",
+            )
+        return {"ok": True, "fact": updated, "message": "已更新"}
+
+    def correct(
+        self,
+        *,
+        fact_id: str | None = None,
+        statement: str = "",
+        replacement: str,
+    ) -> dict:
+        rep = (replacement or "").strip()
+        if not rep:
+            return {"ok": False, "error": "empty_replacement", "message": "更正内容不能为空"}
+        if scan_secrets(rep):
+            return {"ok": False, "error": "secret_rejected", "message": "更正内容含密钥，已拒绝"}
+        fact = self.store.get_fact(fact_id) if fact_id else None
+        if not fact and statement.strip():
+            hits = self.store.search_confirmed(statement.strip(), limit=2)
+            if len(hits) == 1:
+                fact = hits[0]
+        if not fact:
+            return {"ok": False, "error": "not_found", "message": "未找到要更正的记忆"}
+        if fact.get("status") not in ("confirmed", "candidate", "stale"):
+            return {"ok": False, "error": "not_found", "message": "未找到要更正的记忆"}
+        old_hash = fact["normalized_value_hash"]
+        new_hash = value_hash(rep)
+        if new_hash == old_hash and fact.get("statement") == rep:
+            return {"ok": True, "fact": fact, "message": "无需更正"}
+        self.store.clear_tombstone(
+            slot_key=fact["slot_key"], normalized_value_hash=new_hash
+        )
+        self.store.clear_topic_fingerprint_tombstones(
+            normalized_value_hash=new_hash
+        )
+        updated = self.store.update_fact_content(
+            fact["id"],
+            statement=rep,
+            normalized_value_hash=new_hash,
+            category=fact.get("category"),
+            origin="manual",
+            status="confirmed",
+        )
+        if not updated:
+            return {"ok": False, "error": "update_failed", "message": "更正失败"}
+        updated = self.store.get_fact(fact["id"]) or updated
+        self.store.supersede_others_in_slot(
+            updated.get("slot_key") or fact["slot_key"], keep_id=fact["id"]
+        )
+        if new_hash != old_hash:
+            self.store.block_value(
+                slot_key=fact["slot_key"],
+                normalized_value_hash=old_hash,
+                reason="superseded",
+            )
+        return {
+            "ok": True,
+            "fact": self.store.get_fact(fact["id"]) or updated,
+            "message": "已更正记忆",
+        }
+
+    def forget(self, *, fact_id: str | None = None, statement: str = "") -> dict:
+        fact = None
+        if fact_id:
+            fact = self.store.get_fact(fact_id)
+        elif statement.strip():
+            hits = self.store.search_confirmed(statement.strip(), limit=2)
+            if len(hits) == 1:
+                fact = hits[0]
+            elif len(hits) > 1:
+                return {
+                    "ok": False,
+                    "error": "ambiguous",
+                    "candidates": [
+                        {"fact_id": h["id"], "statement": h["statement"]} for h in hits
+                    ],
+                    "message": "匹配到多条记忆，请指定 fact_id",
+                }
+        if not fact:
+            return {"ok": False, "error": "not_found", "message": "未找到要遗忘的记忆"}
+        self.store.mark_forgotten(fact["id"], reason="user_forget")
+        return {"ok": True, "fact_id": fact["id"], "message": "已遗忘"}
+
     def _maybe_promote(self, fact_id: str) -> dict | None:
         fact = self.store.get_fact(fact_id)
         if not fact:

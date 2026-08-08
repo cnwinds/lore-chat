@@ -78,7 +78,11 @@ def test_summarize_long_conversation_calls_merge(tmp_path):
     transcript = ConversationStore.full_transcript(conv)
     assert len(transcript) > 5000
     result = org.summarize_conversation(
-        transcript, conv=conv, conversation_id=cid, system_rules=""
+        transcript,
+        conv=conv,
+        conversation_id=cid,
+        system_rules="",
+        forced_rel_path="归档/长会话摘要.md",
     )
     assert result.status == "saved"
     assert len(calls) >= 2

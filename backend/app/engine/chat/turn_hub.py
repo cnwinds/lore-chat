@@ -10,7 +10,7 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any
 
-from app.engine.agent.events import done, error_event
+from app.engine.agent.events import done, error_event, timeline_state
 from app.engine.agent.prompts import MODE_DEFAULT
 from app.engine.agent.run_report import AgentRunReport
 from app.engine.chat.sse import parse_agent_sse_event
@@ -158,6 +158,54 @@ class TurnExecutionHub:
         at.task.cancel()
         return True
 
+    def enqueue_inject(self, conversation_id: str, item: PendingInject) -> str:
+        return self.inject_broker.enqueue(conversation_id, item)
+
+    def begin_and_ensure(
+        self,
+        *,
+        conversation_id: str,
+        user_text: str,
+        client_message_id: str,
+        observation_allowed: bool,
+        doc_context: list | None,
+        primary_doc: str | None,
+        attachments: list | None,
+        doc_paths: list[str],
+        skill_roots: list[str] | None,
+        web_enabled: bool,
+        history: list[dict] | None = None,
+    ) -> dict:
+        """回合生命周期：begin_turn +（若 running）启动 Task。观测另走 subscribe。"""
+        hist = history
+        if hist is None:
+            hist = self.conversations.llm_history(
+                self.conversations.get(conversation_id)
+            )
+        turn = self.conversations.begin_turn(
+            conversation_id,
+            user_text=user_text,
+            client_message_id=client_message_id,
+            observation_allowed=observation_allowed,
+            doc_context=doc_context,
+            primary_doc=primary_doc,
+            attachments=attachments,
+        )
+        if turn.get("status", "running") == "running":
+            self.ensure_running(
+                conversation_id,
+                turn,
+                TurnRunSpec(
+                    text=user_text,
+                    history=hist,
+                    doc_paths=doc_paths,
+                    skill_roots=skill_roots,
+                    primary_doc=primary_doc,
+                    web_enabled=web_enabled,
+                ),
+            )
+        return turn
+
     def recover_orphan_turns(self) -> int:
         """Mark DB running turns with no live Task as interrupted (e.g. after restart)."""
         n = 0
@@ -297,6 +345,24 @@ class TurnExecutionHub:
                         stop_reason = "turn_complete"
                         turn_status = "complete"
                         _finalize("complete")
+                    # 时间线投影：后端为 source of truth；UI 只 apply
+                    if parsed[0] in (
+                        "tool_start",
+                        "tool_progress",
+                        "tool_result",
+                        "parallel_batch_start",
+                        "parallel_batch_end",
+                        "text_delta",
+                        "think_delta",
+                        "user_inject",
+                    ):
+                        await self._publish(
+                            at,
+                            timeline_state(
+                                acc.timeline,
+                                assistant_text=acc.assistant_text,
+                            ),
+                        )
                 await self._publish(at, ev)
             if not done_seen and stop_reason == "unknown":
                 stop_reason = "agent_finished_without_done"
@@ -307,12 +373,10 @@ class TurnExecutionHub:
             detail = "turn cancelled via stop API or task cancel"
 
             async def _interrupt_sandbox() -> None:
-                rt = getattr(getattr(self.agent.tools, "sandbox", None), "runtime", None)
-                if rt is not None and hasattr(rt, "interrupt_all"):
-                    try:
-                        await rt.interrupt_all()
-                    except Exception:
-                        _log.warning("interrupt sandbox on stop failed", exc_info=True)
+                try:
+                    await self.agent.tools.interrupt_runtime()
+                except Exception:
+                    _log.warning("interrupt sandbox on stop failed", exc_info=True)
 
             def _finalize_partial() -> None:
                 if acc.timeline or acc.assistant_text:

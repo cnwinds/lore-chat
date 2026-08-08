@@ -27,7 +27,11 @@ class ObserveResult:
 
 
 class MemoryObserver:
-    """遗留：按条 observe（已废除）。生产用 MemoryWorker + SlotResolver。"""
+    """test-legacy only：按条 observe，生产已废除。
+
+    生产路径为 SessionMemoryObserve + SlotResolver / MemoryService.resolver。
+    测试已迁走后本类可视为 deprecated unused；请勿在新代码或新测试中引用。
+    """
 
     def __init__(self, store: MemoryStore, *, extractor=None):
         self.store = store

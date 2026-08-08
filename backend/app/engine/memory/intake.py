@@ -1,36 +1,17 @@
-from __future__ import annotations
+"""已废除：按条消息 MemoryIntake。
 
-from app.engine.memory.observer import MemoryObserver, ObserveResult
-from app.engine.memory.store import MemoryStore
+生产路径请用 SessionMemoryObserve（session_observe_memory）或 MemoryService.resolver。
+"""
+
+from __future__ import annotations
 
 
 class MemoryIntake:
-    """遗留：按条消息摄入（已废除）。生产路径为 session_observe_memory + SessionExtractor。
+    """遗留入口：构造即失败，勿在新代码中调用。"""
 
-    仅测试 / 回退保留；新代码勿调用。
-    """
-
-    def __init__(self, store: MemoryStore, *, observer: MemoryObserver | None = None):
-        self.store = store
-        self._observer = observer or MemoryObserver(store)
-
-    @property
-    def observer(self) -> MemoryObserver:
-        return self._observer
-
-    def observe_user_message(
-        self,
-        text: str,
-        *,
-        conversation_id: str,
-        message_id: str,
-        context_messages: list[dict] | None = None,
-    ) -> ObserveResult:
-        return self._observer.observe_message(
-            text,
-            conversation_id=conversation_id,
-            message_id=message_id,
-            context_messages=context_messages,
+    def __init__(self, *args, **kwargs):
+        raise RuntimeError(
+            "MemoryIntake 已废除：请使用 SessionMemoryObserve 或 MemoryService.resolver"
         )
 
 

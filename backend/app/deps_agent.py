@@ -37,15 +37,18 @@ class AgentSubgraph:
         self.organizer.merge.synthesis = self.organizer.synthesis
         self.agent.settings = settings
         self.agent.llm = llm
-        self.agent.tools.web_search = WebSearch(settings)
-        self.agent.tools.fetcher = WebFetcher(
-            settings.fetch_url_timeout, settings.fetch_url_max_bytes
+        self.agent.tools.rebind(
+            web_search=WebSearch(settings),
+            fetcher=WebFetcher(
+                settings.fetch_url_timeout, settings.fetch_url_max_bytes
+            ),
         )
         from app.engine.sandbox.factory import apply_sandbox_settings
 
         apply_sandbox_settings(
             settings,
-            runtime=getattr(self.agent.tools.sandbox, "runtime", None),
+            runtime=self.agent.tools.sandbox_runtime
+            or getattr(self.agent.tools.sandbox, "runtime", None),
             sandbox_tools=self.agent.tools.sandbox,
         )
         hub = self.chat_runner.turn_hub

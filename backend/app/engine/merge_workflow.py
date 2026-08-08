@@ -231,16 +231,10 @@ class MergeWorkflow:
             )
         rel_path = session.get("new_path")
         if rel_path:
-            deleted: list[str] = []
             try:
-                deleted = self.repo.delete_path(
-                    rel_path, commit_msg=f"merge: 拒绝并删除 {rel_path}"
-                )
+                self.writer.delete_entry(rel_path)
             except (FileNotFoundError, ValueError):
                 pass
-            if deleted:
-                self.writer.drop_from_index(deleted)
-                self.writer.record_deletion(rel_path, deleted)
         merge_sessions.update(merge_id, status="rejected")
         return MergeResult(
             status="rejected",
@@ -315,14 +309,11 @@ class MergeWorkflow:
             if self.repo.is_protected(path):
                 continue
             try:
-                deleted_files = self.repo.delete_path(
-                    path, commit_msg=f"merge: 删除源文档 {path}"
-                )
+                removed = self.writer.delete_entry(path)
             except (FileNotFoundError, ValueError):
                 continue
-            self.writer.drop_from_index(deleted_files)
-            self.writer.record_deletion(path, deleted_files)
-            deleted.append(path)
+            if removed:
+                deleted.append(path)
 
         if deleted:
             msg = f"已删除源文档：{', '.join(deleted)}"

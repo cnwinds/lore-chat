@@ -1,10 +1,10 @@
-from app.engine.memory.models import ExtractionResult, MemoryCandidate
-from app.engine.memory.observer import MemoryObserver
+from app.engine.memory.models import MemoryCandidate
 from app.engine.memory.policy import (
     extraction_after_evidence_gate,
     rewrite_supported_by_evidence,
     validate_evidence,
 )
+from app.engine.memory.resolver import SlotAction, SlotResolver
 from app.engine.memory.store import MemoryStore
 
 
@@ -31,15 +31,25 @@ def test_extraction_after_evidence_gate_counts_rejects():
     assert out.rejected_evidence_count == 1
 
 
-def test_observer_includes_extractor_rejected_count(tmp_path):
-    class FakeExtractor:
-        def extract(self, text, *, context_messages=None):
-            return ExtractionResult(candidates=[], rejected_evidence_count=2)
-
+def test_resolver_rejects_sensitive_without_auth(tmp_path):
+    """原 observer 抽取拒计已废弃；敏感门槛由 SlotResolver + policy 覆盖。"""
     store = MemoryStore(tmp_path / "memory.db", owner_key="test")
-    obs = MemoryObserver(store, extractor=FakeExtractor())
-    r = obs.observe_message("hello", conversation_id="c1", message_id="m1")
-    assert r.rejected_count == 2
+    resolver = SlotResolver(store)
+    out = resolver.apply(
+        SlotAction(
+            slot_key="identity.address",
+            action="new",
+            statement="我住在北京市朝阳区某某路100号",
+            category="identity",
+            origin="direct",
+            confidence=0.9,
+        ),
+        conversation_id="c1",
+    )
+    assert out["ok"] is False
+    assert out.get("error") == "rejected"
+    assert store.list_confirmed() == []
+    assert store.list_candidates() == []
 
 
 def test_validate_evidence_accepts_rewritten_with_overlap():

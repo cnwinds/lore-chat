@@ -34,7 +34,7 @@ __all__ = [
 
 
 class ToolRegistry:
-    """Agent 工具 adapter：组装各执行 module，经 dispatch 对外暴露 execute。"""
+    """Agent 工具 deep module：组装 tool_impl，对外仅 execute / rebind / interrupt。"""
 
     def __init__(
         self,
@@ -109,6 +109,7 @@ class ToolRegistry:
     @fetcher.setter
     def fetcher(self, value) -> None:
         self.web.fetcher = value
+        self._dispatch_handlers = None
 
     @property
     def web_search(self):
@@ -117,6 +118,7 @@ class ToolRegistry:
     @web_search.setter
     def web_search(self, value) -> None:
         self.web.searcher = value
+        self._dispatch_handlers = None
 
     @property
     def memory_service(self):
@@ -125,6 +127,36 @@ class ToolRegistry:
     @memory_service.setter
     def memory_service(self, value) -> None:
         self.memory.memory_service = value
+        self._dispatch_handlers = None
+
+    def rebind(
+        self,
+        *,
+        fetcher=None,
+        web_search=None,
+        memory_service=None,
+        sandbox_runtime: SandboxRuntime | None = None,
+        sandbox_trust_mode: bool | None = None,
+    ) -> None:
+        """热更新依赖；调用方不必摸 tool_impl 字段。"""
+        if fetcher is not None:
+            self.fetcher = fetcher
+        if web_search is not None:
+            self.web_search = web_search
+        if memory_service is not None:
+            self.memory_service = memory_service
+        if sandbox_runtime is not None:
+            self.sandbox_runtime = sandbox_runtime
+            self.sandbox.runtime = sandbox_runtime
+        if sandbox_trust_mode is not None:
+            self.sandbox.trust_mode = sandbox_trust_mode
+        self._dispatch_handlers = None
+
+    async def interrupt_runtime(self) -> None:
+        """停止沙箱运行时（回合显式 stop）；不暴露 .sandbox.runtime。"""
+        rt = self.sandbox_runtime or getattr(self.sandbox, "runtime", None)
+        if rt is not None and hasattr(rt, "interrupt_all"):
+            await rt.interrupt_all()
 
     async def execute(
         self,
@@ -141,70 +173,3 @@ class ToolRegistry:
             active_doc_path=active_doc_path,
             conversation_id=conversation_id,
         )
-
-    def _search_kb(self, args: dict, *, conversation_id: str | None = None) -> dict:
-        return self.kb_read.search_kb(args, conversation_id=conversation_id)
-
-    def _read_doc(self, args: dict, *, conversation_id: str | None = None) -> dict:
-        return self.kb_read.read_doc(args, conversation_id=conversation_id)
-
-    def _list_kb_structure(self, args: dict) -> dict:
-        return self.kb_read.list_kb_structure(args)
-
-    def _read_conversation_context(self, args: dict) -> dict:
-        return self.kb_read.read_conversation_context(args)
-
-    async def _fetch_url(self, args: dict) -> dict:
-        return await self.web.fetch_url(args)
-
-    async def _web_search(self, args: dict) -> dict:
-        return await self.web.web_search(args)
-
-    def _write_kb(self, args: dict) -> dict:
-        return self.kb_mutate.write_kb(args)
-
-    def _write_kb_file(self, args: dict) -> dict:
-        return self.kb_mutate.write_kb_file(args)
-
-    def _summarize_conversation(
-        self, args: dict, *, conversation_id: str | None = None
-    ) -> dict:
-        return self.kb_mutate.summarize_conversation(
-            args, conversation_id=conversation_id
-        )
-
-    def _move_entry(self, args: dict) -> dict:
-        return self.kb_mutate.move_entry(args)
-
-    def _delete_kb(self, args: dict) -> dict:
-        return self.kb_mutate.delete_kb(args)
-
-    def _edit_doc(self, args: dict, *, conversation_id: str | None = None) -> dict:
-        return self.kb_mutate.edit_doc(args, conversation_id=conversation_id)
-
-    def _manage_memory(self, args: dict, *, conversation_id: str | None = None) -> dict:
-        return self.memory.manage_memory(args, conversation_id=conversation_id)
-
-    def _recall_memory(self, args: dict) -> dict:
-        return self.memory.recall_memory(args)
-
-    def _ask_user(self, args: dict) -> dict:
-        return self.interaction.ask_user(args)
-
-    async def _sandbox_run(self, args: dict) -> dict:
-        return await self.sandbox.sandbox_run(args)
-
-    async def _sandbox_job_status(self, args: dict) -> dict:
-        return await self.sandbox.sandbox_job_status(args)
-
-    async def _sandbox_list_dir(self, args: dict) -> dict:
-        return await self.sandbox.sandbox_list_dir(args)
-
-    async def _sandbox_read_file(self, args: dict) -> dict:
-        return await self.sandbox.sandbox_read_file(args)
-
-    async def _publish_from_sandbox(self, args: dict) -> dict:
-        return await self.sandbox.publish_from_sandbox(args)
-
-    async def _stage_to_sandbox(self, args: dict) -> dict:
-        return await self.sandbox.stage_to_sandbox(args)
