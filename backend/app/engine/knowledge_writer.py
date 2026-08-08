@@ -13,8 +13,13 @@ from app.storage.kb_paths import (
     normalize_directory,
     title_from_rel_path,
 )
+from app.engine.memory.constants import is_memory_projection_path
 from app.storage.kb_text_files import is_kb_text_file
 from app.storage.repo import KnowledgeRepo
+
+_MEMORY_FILE_DISABLED_MSG = (
+    "记忆已改由数据库管理，请到设置 → 记忆中编辑，或使用 manage_memory"
+)
 
 
 class KbPathExistsError(FileExistsError):
@@ -71,6 +76,8 @@ class KnowledgeWriter:
         changelog_line: str,
     ) -> str:
         norm = rel_path.replace("\\", "/").lstrip("/")
+        if is_memory_projection_path(norm):
+            raise ValueError(_MEMORY_FILE_DISABLED_MSG)
         self.repo.write_doc(norm, meta, body, commit_msg=commit_msg)
         if self.indexer is not None:
             self.indexer.reindex_doc(norm, body)

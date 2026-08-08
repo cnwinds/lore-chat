@@ -208,8 +208,8 @@ def test_worker_skips_extract_when_not_idle(tmp_path):
     assert row["memory_dirty"] == 1
 
 
-def test_noop_promote_renders_memory_file(tmp_path):
-    """noop 路径晋升为 confirmed 也必须 render（验收 inferred→confirmed）。"""
+def test_noop_promote_updates_db_context(tmp_path):
+    """noop 路径晋升为 confirmed 后，DB 直出上下文须可见。"""
     conv = ConversationStore(tmp_path / "conversations")
     repo = KnowledgeRepo(tmp_path / "knowledge", protected_dirs=("系统",))
     mem = MemoryStore(tmp_path / "memory.db", owner_key="ws1")
@@ -252,40 +252,12 @@ def test_noop_promote_renders_memory_file(tmp_path):
     conv.conn.commit()
     worker.drain(max_jobs=5)
     assert mem.list_confirmed()
-    body = repo.read_doc("系统/记忆.md").body
-    assert "简洁" in body
+    assert "简洁" in svc.render_context()
+    assert not repo.abs_path("系统/记忆.md").exists()
     row = conv.conn.execute(
         "SELECT memory_dirty FROM conversations WHERE id = ?", (cid,)
     ).fetchone()
     assert row["memory_dirty"] == 0
-
-
-def test_render_failure_keeps_memory_dirty(tmp_path):
-    conv = ConversationStore(tmp_path / "conversations")
-    repo = KnowledgeRepo(tmp_path / "knowledge", protected_dirs=("系统",))
-    mem = MemoryStore(tmp_path / "memory.db", owner_key="ws1")
-    svc = MemoryService(mem, repo, knowledge_writer=make_writer(repo, tmp_path))
-
-    def boom():
-        raise RuntimeError("render boom")
-
-    svc.render_to_file = boom  # type: ignore[method-assign]
-    worker = MemoryWorker(
-        conv, svc, extractor=RuleBasedSessionExtractor(), idle_hours=0
-    )
-    cid = conv.create()
-    conv.begin_turn(cid, "我偏好简洁回答", "c1", observation_allowed=True)
-    past = (datetime.now(timezone.utc) - timedelta(hours=25)).isoformat()
-    conv.conn.execute(
-        "UPDATE conversations SET last_user_message_at = ? WHERE id = ?",
-        (past, cid),
-    )
-    conv.conn.commit()
-    worker.drain(max_jobs=5)
-    row = conv.conn.execute(
-        "SELECT memory_dirty FROM conversations WHERE id = ?", (cid,)
-    ).fetchone()
-    assert row["memory_dirty"] == 1
 
 
 def test_failed_apply_keeps_memory_dirty(tmp_path):
@@ -321,8 +293,8 @@ def test_failed_apply_keeps_memory_dirty(tmp_path):
     assert row["memory_dirty"] == 1
 
 
-def test_partial_failure_still_renders_confirmed(tmp_path):
-    """同批有成功 confirmed 与失败项时仍投影成功项，并保留 dirty。"""
+def test_partial_failure_still_keeps_confirmed_in_context(tmp_path):
+    """同批有成功 confirmed 与失败项时，成功项进入 DB 直出上下文，并保留 dirty。"""
 
     class MixedExtractor:
         def extract(self, user_messages, *, confirmed_summary):
@@ -359,7 +331,7 @@ def test_partial_failure_still_renders_confirmed(tmp_path):
     conv.conn.commit()
     worker.drain(max_jobs=5)
     assert any("简洁" in f["statement"] for f in mem.list_confirmed())
-    assert "简洁" in repo.read_doc("系统/记忆.md").body
+    assert "简洁" in svc.render_context()
     row = conv.conn.execute(
         "SELECT memory_dirty FROM conversations WHERE id = ?", (cid,)
     ).fetchone()

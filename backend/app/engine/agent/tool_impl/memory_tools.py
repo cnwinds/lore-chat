@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from app.engine.memory.constants import MEMORY_DOC_REL
-
 
 class MemoryTools:
     def __init__(self, memory_service) -> None:
@@ -25,19 +23,15 @@ class MemoryTools:
                 conversation_id=conversation_id,
                 clear_tombstone=bool(args.get("clear_tombstone", False)),
             )
-            if out.get("ok"):
-                self.memory_service.render_to_file()
             return {
                 "summary": out.get("message", ""),
-                "sources": [{"type": "kb", "path": MEMORY_DOC_REL}],
+                "sources": [],
                 **out,
             }
         if action == "forget":
             out = self.memory_service.forget(
                 fact_id=args.get("fact_id"), statement=statement
             )
-            if out.get("ok"):
-                self.memory_service.render_to_file()
             return {"summary": out.get("message", ""), "sources": [], **out}
         if action == "correct":
             out = self.memory_service.correct(
@@ -45,11 +39,9 @@ class MemoryTools:
                 statement=statement,
                 replacement=args.get("replacement", ""),
             )
-            if out.get("ok"):
-                self.memory_service.render_to_file()
             return {
                 "summary": out.get("message", ""),
-                "sources": [{"type": "kb", "path": MEMORY_DOC_REL}],
+                "sources": [],
                 **out,
             }
         return {

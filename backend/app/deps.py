@@ -121,10 +121,6 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
     )
     memory.wire_conversations(conversations)
 
-    from app.engine.memory.renderer import MemoryRenderer
-
-    MemoryRenderer(repo).ensure_seed()
-
     agent = build_agent_subgraph(
         settings,
         llm,

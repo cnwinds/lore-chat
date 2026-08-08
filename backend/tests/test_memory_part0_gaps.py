@@ -1,8 +1,7 @@
-"""Phase 2 gap fixes: clear_tombstone, import tombstone, sensitive recall, doc sync order."""
+"""Phase 2 gap fixes: clear_tombstone, sensitive recall, tombstone remember gate."""
 
 from app.engine.memory.service import MemoryService
 from app.engine.memory.store import MemoryStore
-from app.engine.memory.normalize import value_hash, normalize_slot_key
 from app.storage.repo import KnowledgeRepo
 from tests.helpers import make_writer
 
@@ -29,20 +28,6 @@ def test_clear_tombstone_allows_remember_after_forget(tmp_path):
     assert svc.store.list_confirmed()
 
 
-def test_import_manual_upsert_blocked_by_tombstone(tmp_path):
-    repo = KnowledgeRepo(tmp_path / "knowledge", protected_dirs=("系统",))
-    svc = _service(tmp_path, repo)
-    f = svc.remember("记住我用 uv")["fact"]
-    svc.forget(fact_id=f["id"])
-    svc.render_to_file()
-    doc = repo.read_doc("系统/记忆.md")
-    new_body = doc.body + "\n- 记住我用 uv\n"
-    out = svc.import_manual_document(doc.meta, new_body)
-    assert out["ok"] is False
-    assert out["error"] == "tombstoned"
-    assert svc.store.list_confirmed() == []
-
-
 def test_sensitive_fact_omits_quote_in_recall_sources(tmp_path):
     svc = _service(tmp_path)
     stmt = "我住在北京市朝阳区某某路100号"
@@ -65,26 +50,10 @@ def test_sensitive_fact_omits_quote_in_recall_sources(tmp_path):
     assert sources[0]["quote"] is None
 
 
-def test_import_manual_dry_run_validates_without_persisting(tmp_path):
-    repo = KnowledgeRepo(tmp_path / "knowledge", protected_dirs=("系统",))
-    svc = _service(tmp_path, repo)
-    svc.render_to_file()
-    doc = repo.read_doc("系统/记忆.md")
-    invalid = doc.body + "\n```code block```\n"
-    out = svc.import_manual_document(doc.meta, invalid, dry_run=True)
-    assert out["ok"] is False
-    before = repo.read_doc("系统/记忆.md").body
-    assert before == doc.body
-
-
-def test_validate_manual_import_checks_tombstone(tmp_path):
-    repo = KnowledgeRepo(tmp_path / "knowledge", protected_dirs=("系统",))
-    svc = _service(tmp_path, repo)
+def test_tombstone_blocks_remember_without_clear_flag(tmp_path):
+    svc = _service(tmp_path)
     f = svc.remember("记住我用 uv")["fact"]
     svc.forget(fact_id=f["id"])
-    svc.render_to_file()
-    doc = repo.read_doc("系统/记忆.md")
-    new_body = doc.body + "\n- 记住我用 uv\n"
-    out = svc.import_manual_document(doc.meta, new_body, dry_run=True)
+    out = svc.remember("记住我用 uv")
     assert out["ok"] is False
     assert out["error"] == "tombstoned"

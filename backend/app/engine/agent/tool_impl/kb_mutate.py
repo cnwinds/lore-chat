@@ -10,7 +10,11 @@ from app.engine.knowledge_writer import (
     KnowledgeWriter,
     is_markdown_path,
 )
-from app.engine.memory.constants import MEMORY_DOC_REL
+from app.engine.memory.constants import is_memory_projection_path
+
+_MEMORY_FILE_DISABLED_MSG = (
+    "记忆已改由数据库管理，请到设置 → 记忆中编辑，或使用 manage_memory"
+)
 from app.engine.organizer import Organizer
 from app.engine.patch import Edit, Insert, apply_edits, apply_insert
 from app.storage.kb_paths import KbPathError
@@ -49,6 +53,13 @@ class KbMutateTools:
         rel_path, err = resolve_kb_location(args)
         if err:
             return err
+        if is_memory_projection_path(rel_path):
+            return {
+                "summary": _MEMORY_FILE_DISABLED_MSG,
+                "sources": [],
+                "error": "memory_file_disabled",
+                "status": "failed",
+            }
         text = args["text"]
         if args.get("context"):
             text = args["context"] + "\n\n" + text
@@ -152,6 +163,13 @@ class KbMutateTools:
         rel_path, err = resolve_kb_location(args)
         if err:
             return err
+        if is_memory_projection_path(rel_path):
+            return {
+                "summary": _MEMORY_FILE_DISABLED_MSG,
+                "sources": [],
+                "error": "memory_file_disabled",
+                "status": "failed",
+            }
         result = self.organizer.summarize_conversation(
             transcript,
             conv=conv,
@@ -251,6 +269,9 @@ class KbMutateTools:
         if not edits_raw and not insert_raw:
             return self._edit_doc_error("INVALID", "必须提供 edits 或 insert")
 
+        if is_memory_projection_path(path):
+            return self._edit_doc_error("MEMORY_FILE_DISABLED", _MEMORY_FILE_DISABLED_MSG)
+
         if not is_markdown_path(path):
             return self._edit_doc_error(
                 "NOT_MARKDOWN",
@@ -336,11 +357,6 @@ class KbMutateTools:
                 out["suggestion"] = err.suggestion
             return out
 
-        if path.replace("\\", "/") == MEMORY_DOC_REL and self.memory_service:
-            out = self._finalize_memory_edit(path, doc, result)
-            self.read_guard.mark(conversation_id, path)
-            return out
-
         reindex_mode = self.knowledge_writer.save_edit(
             path,
             doc.meta,
@@ -358,24 +374,4 @@ class KbMutateTools:
             "applied": result.applied,
             "preview": result.preview,
             "reindex_mode": reindex_mode,
-        }
-
-    def _finalize_memory_edit(self, path: str, doc, result) -> dict:
-        sync = self.memory_service.import_manual_document(doc.meta, result.body)
-        if not sync.get("ok"):
-            return {
-                "summary": sync.get("message", "记忆同步失败"),
-                "sources": [{"type": "kb", "path": path}],
-                "status": "failed",
-                "error": sync.get("error"),
-            }
-        self.repo.write_doc(
-            path, doc.meta, result.body, commit_msg=f"edit memory: {path}"
-        )
-        self.knowledge_writer.drop_from_index([path])
-        return {
-            "summary": f"已更新 {path} 并同步记忆库",
-            "sources": [{"type": "kb", "path": path}],
-            "status": "saved",
-            "reindex_mode": "skipped_memory",
         }

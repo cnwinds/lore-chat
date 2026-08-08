@@ -1,19 +1,15 @@
 from __future__ import annotations
 
 import hashlib
-import re
 from dataclasses import dataclass
-from datetime import datetime, timezone
 
 from app.engine.memory.constants import MEMORY_DOC_REL
-from app.engine.memory.normalize import infer_category, normalize_slot_key, value_hash
-from app.engine.memory.policy import infer_sensitivity
+from app.engine.memory.normalize import value_hash
+from app.engine.memory.renderer import MemoryRenderer
 from app.engine.memory.store import MemoryStore
 from app.engine.secrets import scan_secrets
 from app.engine.knowledge_writer import KnowledgeWriter
 from app.storage.repo import KnowledgeRepo
-
-_MARKER_RE = re.compile(r"<!--\s*memory:([A-Za-z0-9_-]+)\s*-->")
 
 
 @dataclass
@@ -41,9 +37,32 @@ class MemoryService:
         self.memory_max_chars = memory_max_chars
         self.conversations = conversations
         self.knowledge_writer = knowledge_writer
+        self._purge_legacy_projection_file()
 
     def _drop_memory_from_search_index(self) -> None:
         self.knowledge_writer.drop_from_index([self.memory_rel])
+
+    def _purge_legacy_projection_file(self) -> None:
+        """一次性移除旧版「系统/记忆.md」投影（git commit），避免与 DB 双写漂移。"""
+        try:
+            removed = self.repo.remove_file(
+                self.memory_rel,
+                commit_msg="memory: remove legacy projection file",
+                allow_protected=True,
+            )
+        except ValueError:
+            return
+        if removed:
+            self._drop_memory_from_search_index()
+
+    def render_context(self) -> str:
+        """从 DB 渲染容量裁剪后的注入文本（不落盘）。"""
+        facts = self.store.list_confirmed()
+        if not facts:
+            return ""
+        renderer = MemoryRenderer(max_chars=self.memory_max_chars)
+        body = renderer.render(facts)
+        return MemoryRenderer.strip_for_injection(body)
 
     def remember(
         self,
@@ -121,7 +140,6 @@ class MemoryService:
         if not fact:
             return {"ok": False, "error": "not_found", "message": "未找到要遗忘的记忆"}
         self.store.mark_forgotten(fact["id"], reason="user_forget")
-        self.render_to_file()
         return {"ok": True, "fact_id": fact["id"], "message": "已遗忘"}
 
     def list_panel_facts(self) -> dict:
@@ -169,7 +187,6 @@ class MemoryService:
             normalized_value_hash=fact["normalized_value_hash"],
             status="confirmed",
         )
-        self.render_to_file()
         return {"ok": True, "fact": updated, "message": "已确认晋升"}
 
     def reject_candidate(self, fact_id: str) -> dict:
@@ -205,8 +222,6 @@ class MemoryService:
             origin="manual",
             status=fact.get("status"),
         )
-        if fact.get("status") == "confirmed":
-            self.render_to_file()
         return {"ok": True, "fact": updated, "message": "已更新"}
 
     def correct(
@@ -273,115 +288,3 @@ class MemoryService:
                 }
             )
         return sources
-
-    def render_to_file(self) -> str:
-        from app.engine.memory.renderer import MemoryRenderer
-
-        renderer = MemoryRenderer(self.repo, memory_rel=self.memory_rel, max_chars=self.memory_max_chars)
-        facts = self.store.list_confirmed()
-        state = self.store.get_render_state()
-        revision = int(state.get("revision") or 0) + 1
-        body = renderer.render(facts, revision=revision)
-        meta = {
-            "title": "记忆 · 关于用户",
-            "source": "system",
-            "schema_version": 1,
-            "memory_revision": revision,
-        }
-        try:
-            self.repo.write_doc(self.memory_rel, meta, body, commit_msg="memory: render projection")
-        except FileNotFoundError:
-            self.repo.write_doc(self.memory_rel, meta, body, commit_msg="memory: seed projection")
-        rendered_ids = [f["id"] for f in facts if f["id"] in _extract_rendered_ids(body)]
-        abs_p = self.repo.abs_path(self.memory_rel)
-        fh = hashlib.sha256(body.encode("utf-8")).hexdigest()
-        self.store.save_render_state(
-            revision=revision,
-            file_hash=fh,
-            file_mtime=abs_p.stat().st_mtime,
-            rendered_fact_ids=rendered_ids,
-            valid_snapshot_body=body,
-        )
-        self._drop_memory_from_search_index()
-        return body
-
-    def import_manual_document(self, meta: dict, body: str, *, dry_run: bool = False) -> dict:
-        from app.engine.memory.renderer import MemoryRenderer
-
-        renderer = MemoryRenderer(self.repo, memory_rel=self.memory_rel, max_chars=self.memory_max_chars)
-        parsed = renderer.parse(body)
-        if not parsed["valid"]:
-            return {"ok": False, "error": "invalid_structure", "message": parsed.get("error", "结构校验失败")}
-        tombstone_err = self._check_import_tombstones(parsed["items"])
-        if tombstone_err:
-            return tombstone_err
-        if dry_run:
-            return {"ok": True, "message": "校验通过"}
-        state = self.store.get_render_state()
-        prev_ids = set(renderer.loads_rendered_ids(state.get("rendered_fact_ids_json") or "[]"))
-        current_ids = {item["fact_id"] for item in parsed["items"] if item.get("fact_id")}
-        for fid in prev_ids - current_ids:
-            fact = self.store.get_fact(fid)
-            if fact and fact["status"] == "confirmed":
-                self.store.mark_forgotten(fid, reason="manual_delete")
-        for item in parsed["items"]:
-            stmt = item["statement"]
-            cat = item["category"]
-            vhash = value_hash(stmt)
-            if scan_secrets(stmt):
-                return {"ok": False, "error": "secret_rejected", "message": "手动编辑含密钥，已拒绝"}
-            sensitivity = infer_sensitivity(stmt)
-            fid = item.get("fact_id")
-            if fid:
-                existing = self.store.get_fact(fid)
-                if existing:
-                    # 有 marker：按 id 更新正文，不改 slot（规格 §5.4）
-                    self.store.update_fact_content(
-                        fid,
-                        statement=stmt,
-                        normalized_value_hash=vhash,
-                        category=cat or existing.get("category"),
-                        origin="manual",
-                        sensitivity=sensitivity,
-                        status="confirmed",
-                    )
-                else:
-                    self.remember(stmt, origin="manual")
-            else:
-                self.remember(stmt, origin="manual")
-        revision = int(meta.get("memory_revision") or state.get("revision") or 0)
-        abs_p = self.repo.abs_path(self.memory_rel)
-        fh = hashlib.sha256(body.encode("utf-8")).hexdigest()
-        self.store.save_render_state(
-            revision=revision,
-            file_hash=fh,
-            file_mtime=abs_p.stat().st_mtime if abs_p.exists() else None,
-            rendered_fact_ids=list(current_ids),
-            valid_snapshot_body=body,
-        )
-        self._drop_memory_from_search_index()
-        return {"ok": True, "message": "手动编辑已同步"}
-
-    def _check_import_tombstones(self, items: list[dict]) -> dict | None:
-        for item in items:
-            stmt = item["statement"]
-            vhash = value_hash(stmt)
-            fid = item.get("fact_id")
-            if fid:
-                existing = self.store.get_fact(fid)
-                slot = existing["slot_key"] if existing else normalize_slot_key(
-                    infer_category(stmt), stmt
-                )
-            else:
-                slot = normalize_slot_key(infer_category(stmt), stmt)
-            if self.store.has_tombstone(slot_key=slot, normalized_value_hash=vhash):
-                return {
-                    "ok": False,
-                    "error": "tombstoned",
-                    "message": "该记忆已被遗忘，无法通过编辑复活",
-                }
-        return None
-
-
-def _extract_rendered_ids(body: str) -> set[str]:
-    return set(_MARKER_RE.findall(body))

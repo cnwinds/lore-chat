@@ -1,6 +1,29 @@
 from __future__ import annotations
 
+from pathlib import PurePosixPath
+
 MEMORY_DOC_REL = "系统/记忆.md"
+
+
+def normalize_kb_rel(path: str) -> str:
+    """折叠 . / .. 与多余斜杠，得到稳定相对路径。"""
+    raw = (path or "").replace("\\", "/").lstrip("/")
+    parts: list[str] = []
+    for part in PurePosixPath(raw).parts:
+        if part in ("", "."):
+            continue
+        if part == "..":
+            if parts:
+                parts.pop()
+            continue
+        parts.append(part)
+    return "/".join(parts)
+
+
+def is_memory_projection_path(path: str | None) -> bool:
+    if not path:
+        return False
+    return normalize_kb_rel(path) == MEMORY_DOC_REL
 
 ORIGIN_RANK = {
     "inferred": 0,

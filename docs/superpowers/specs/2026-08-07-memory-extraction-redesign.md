@@ -4,7 +4,9 @@
 状态：设计已确认；Phase 1 核心与 Phase 2 轻量面板 API/设置页已落地（迁移 LLM 可选 `--use-llm`）  
 前置文档：[第二大脑记忆系统](./2026-07-13-memory-layer-design.md)
 
-本文件修正记忆**自动抽取与合并**路径；情景召回、`记忆.md` 投影定位、tombstone、敏感分级、衰减天数等与前置文档一致的部分仍然有效。冲突时以本文件为准。
+本文件修正记忆**自动抽取与合并**路径；情景召回、tombstone、敏感分级、衰减天数等与前置文档一致的部分仍然有效。冲突时以本文件为准。
+
+**投影修订（相对前置文档）：** 取消持久化 `系统/记忆.md` 双写。`memory.db` 为唯一权威源；每轮由 `MemoryService.render_context()` 从 confirmed 直出容量裁剪文本注入。编辑入口为设置页记忆面板与 `manage_memory`；知识库写入该路径须拒绝。
 
 ## 0. 提示词开发规范（见仓库根目录 `AGENTS.md`）
 
@@ -39,7 +41,7 @@
 | 4 | 同槽 canonical merge；真冲突 replace/supersede |
 | 5 | 新槽在 `direct` 下可直接 confirmed；不为「新谓词」另设 candidate 门槛 |
 | 6 | 合并只在抽取时；不做事后跨槽维护 job |
-| 7 | observe / `manage_memory` / 无 id 手改 共用 SlotResolver；有 `<!-- memory:id -->` 的手改按 id 更新 |
+| 7 | observe / `manage_memory` / 面板编辑 共用 SlotResolver；不再经 `记忆.md` 手改回灌 |
 | 8 | 观察单元 = 整段会话（非每条消息） |
 | 9 | 自动触发 = 该会话**最后一条消息**后空闲且 `dirty`；纯浏览/切换会话不触发 |
 | 10 | 空闲默认 **24h**（可配） |
@@ -47,8 +49,8 @@
 | 12 | 重抽 = 全量再推导 + 与**全局**画像 merge/replace；本次未提及不删除旧槽 |
 | 13 | 上线一次性迁移合并近义旧条（可审计日志） |
 | 14 | 种子 = 手写核心 + 迁移中升格稳定新槽 |
-| 15 | 出处仅 `conversation_id`（+ 时间）；`记忆.md` / 注入零来源 |
-| 16 | 注入剥离 `<!-- memory:… -->`；磁盘文件可保留 marker |
+| 15 | 出处仅 `conversation_id`（+ 时间）；注入零来源 |
+| 16 | 注入剥离 `<!-- memory:… -->`；不再落盘投影文件 |
 | 17 | 废除按条 `observe_memory` outbox |
 | 18 | 保留 inferred：同表 `status=candidate`；`distinct(conversation_id) ≥ 2` 且置信度 ≥ 0.80 晋升；不进投影 |
 | 19 | Phase 2：轻量记忆面板（列表 confirmed+candidate；确认/拒绝/编辑/遗忘；跳转来源会话） |
@@ -67,16 +69,16 @@ flowchart LR
     READ --> EXT[SessionMemoryExtractor]
     EXT --> RES[SlotResolver]
     RES --> MDB[(memory.db)]
-    MDB --> RENDER[MemoryRenderer]
-    RENDER --> MFILE[系统/记忆.md]
-    MFILE --> INJECT[memory_context 剥离 marker]
+    MDB --> RENDER[MemoryRenderer.render_context]
+    RENDER --> INJECT[每轮 memory_context 注入]
 ```
 
 三层记忆含义不变。变更点：
 
 - Job 粒度从 **message** 改为 **conversation**。
 - Extractor 输入从单条消息改为会话用户消息集（+ 全局已确认摘要 + 种子谓词）。
-- Evidence 从字级 span 降为 **会话级** `conversation_id`（解释时打开该会话，不在投影中展示）。
+- Evidence 从字级 span 降为 **会话级** `conversation_id`（解释时打开该会话，不在注入中展示）。
+- **无**持久化 `系统/记忆.md`；启动时清理遗留投影文件。
 
 ## 5. Slot 模型
 
@@ -126,9 +128,8 @@ slot_key = "{category}.{predicate}"
 | 入口 | 行为 |
 |---|---|
 | 会话空闲抽取 | SessionExtractor → Resolver |
-| `manage_memory` | 单条 statement → 同一 Resolver（即时 render） |
-| 手改 `记忆.md` 有 marker | 按 fact id 更新 statement/category，不改 slot（除非显式迁移工具） |
-| 手改无 marker 新行 | 视为手动确认 → Resolver（`origin=manual`） |
+| `manage_memory` | 单条 statement → 同一 Resolver（下一轮注入立即可见） |
+| 设置页记忆面板 | confirm / reject / edit / forget → Store（不经文件） |
 
 ## 6. 触发与生命周期
 
@@ -161,7 +162,7 @@ slot_key = "{category}.{predicate}"
 ### 7.1 存储
 
 - 仍在 `memory_facts`，`status='candidate'`，`origin='inferred'`。
-- **不**写入 `记忆.md`，**不**进入 `memory_context()` / `recall_memory` 默认结果。
+- **不**进入 `memory_context()` / `recall_memory` 默认结果。
 
 ### 7.2 出处
 
@@ -176,7 +177,7 @@ status == candidate
 AND origin == inferred
 AND distinct(conversation_id) >= 2
 AND confidence >= 0.80
-→ confirmed → render
+→ confirmed（下一轮注入可见）
 ```
 
 对外文案：**至少两个不同会话出现一致推断**。
@@ -187,11 +188,12 @@ AND confidence >= 0.80
 
 沿用前置文档：candidate 长期无新证据 → `rejected`（maintenance）。
 
-## 8. 投影与注入
+## 8. 注入（DB 直出）
 
-- Renderer 仍可写 `<!-- memory:{id} -->` 供手改同步。
-- `SystemLayer.memory_context()` **必须剥离** marker 与空 section 噪音，只注入人类可读列表。
-- 禁止在投影中写入 conversation_id、confidence、status、slot_key（slot 仅存 db）。
+- `MemoryService.render_context()`：`list_confirmed()` → `MemoryRenderer.render(max_chars)` → 剥离 marker 与空 section。
+- `SystemLayer.memory_context()` 仅调用上述方法，**不读不写**知识库文件。
+- 禁止在注入中写入 conversation_id、confidence、status、slot_key（slot 仅存 db）。
+- 对 `系统/记忆.md` 的 KB API / `write_kb` / `edit_doc` 硬拒，提示改用设置 → 记忆或 `manage_memory`。
 
 ## 9. 迁移
 
@@ -200,7 +202,7 @@ AND confidence >= 0.80
 1. 列出全部 `confirmed`（及可选 candidate）。
 2. 用 SlotResolver/迁移专用 LLM 调用：分配抽象 slot、合并近义、产出 canonical statement。
 3. 写回 memory.db（supersede 被合并项），打审计日志。
-4. `render_to_file()`。
+4. （可选）打印 `render_context()` 预览；不再写 `记忆.md`。
 5. 将稳定新谓词候选列表输出，供升格种子表。
 
 验收金样例：原「数据可视化」两条 → **同一** `preference.illustration_style`（或等价种子名）一条 confirmed。
@@ -213,7 +215,7 @@ AND confidence >= 0.80
 - 操作：确认晋升、拒绝、编辑 statement、遗忘（tombstone）。
 - 跳转：打开来源会话（会话级出处即可）。
 
-本期无面板期间，candidate 按规则自动晋升/衰减；confirmed 仍可通过 `记忆.md` 与 `manage_memory` 修改。
+candidate 按规则自动晋升/衰减；confirmed 通过设置页记忆面板与 `manage_memory` 修改。
 
 ## 11. 非目标（本期）
 
@@ -248,6 +250,6 @@ AND confidence >= 0.80
 2. 同会话中途改口、24h 后抽取 → 以终局 `replace/merge` 为准。
 3. 隔天续聊 → dirty → 再空闲后重抽，全局槽正确更新且未聊到的槽仍在。
 4. 仅切换浏览其他会话 → 不入队抽取。
-5. inferred 单会话 → 仅 candidate；第二会话一致 → confirmed 并出现在 `记忆.md`。
+5. inferred 单会话 → 仅 candidate；第二会话一致 → confirmed 并出现在下一轮 `memory_context()`。
 6. `memory_context()` 不含 `<!-- memory:` 与 conversation_id。
-7. `manage_memory` 立即可见于 `记忆.md`。
+7. `manage_memory` 后下一轮注入立即可见，且知识库无 `系统/记忆.md`。

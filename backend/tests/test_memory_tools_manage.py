@@ -2,6 +2,7 @@ import pytest
 
 from app.deps import build_container
 from app.config import Settings
+from app.engine.memory.constants import MEMORY_DOC_REL
 
 
 @pytest.fixture
@@ -13,14 +14,16 @@ def container(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_manage_memory_remember_renders_file(container):
+async def test_manage_memory_remember_updates_db_context(container):
     out = await container.agent.tools.execute(
         "manage_memory",
         {"action": "remember", "statement": "记住我偏好中文"},
     )
     assert out["ok"] is True
-    doc = container.repo.read_doc("系统/记忆.md")
-    assert "中文" in doc.body
+    assert out.get("sources") == []
+    ctx = container.memory_service.render_context()
+    assert "中文" in ctx
+    assert not container.repo.abs_path(MEMORY_DOC_REL).exists()
 
 
 @pytest.mark.asyncio

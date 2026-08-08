@@ -20,7 +20,11 @@ def _effective_settings() -> Settings:
 def main() -> None:
     parser = argparse.ArgumentParser(description="将旧记忆 slot 合并为抽象谓词")
     parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument("--render", action="store_true", help="迁移后重写 记忆.md")
+    parser.add_argument(
+        "--render",
+        action="store_true",
+        help="迁移后打印 DB 直出注入预览（不再写 记忆.md）",
+    )
     parser.add_argument(
         "--use-llm",
         action="store_true",
@@ -42,8 +46,9 @@ def main() -> None:
     )
     print(json.dumps(result, ensure_ascii=False, indent=2))
     if args.render and not args.dry_run:
-        container.memory_service.render_to_file()
-        print("rendered", container.memory_service.memory_rel)
+        preview = container.memory_service.render_context()
+        print("context_preview_chars", len(preview))
+        print(preview[:2000])
 
 
 if __name__ == "__main__":

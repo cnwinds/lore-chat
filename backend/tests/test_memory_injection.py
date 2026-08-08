@@ -33,10 +33,17 @@ def test_build_system_prompt_wraps_user_memory():
 def test_memory_context_returns_body_after_remember(tmp_path):
     layer, svc = _layer(tmp_path)
     svc.remember("记住我偏好中文交流")
-    svc.render_to_file()
     ctx = layer.memory_context()
     assert "中文" in ctx
     assert "<!-- memory:" not in ctx
     # 空 section 不注入
     assert "## 身份与稳定背景" not in ctx
     assert "## 关键约束" not in ctx
+
+
+def test_memory_context_does_not_require_projection_file(tmp_path):
+    layer, svc = _layer(tmp_path)
+    svc.remember("记住我偏好简洁")
+    mem_path = svc.repo.abs_path(svc.memory_rel)
+    assert not mem_path.exists()
+    assert "简洁" in layer.memory_context()

@@ -17,8 +17,13 @@ from app.engine.pending import PendingStore
 from app.engine.document_synthesis import DocumentSynthesis
 from app.engine.knowledge_writer import KnowledgeWriter
 from app.engine.merge_workflow import MergeResult, MergeWorkflow
+from app.engine.memory.constants import is_memory_projection_path
 from app.engine.write_policy import WriteMode, resolve_write_mode
 from app.models.llm import LLMClient
+
+_MEMORY_FILE_DISABLED_MSG = (
+    "记忆已改由数据库管理，请到设置 → 记忆中编辑，或使用 manage_memory"
+)
 
 
 @dataclass
@@ -85,6 +90,13 @@ class Organizer:
                 question_id=None,
                 message="缺少目标路径。请通过 write_kb 指定 directory 与 filename。",
             )
+        if is_memory_projection_path(forced_rel_path):
+            return IngestResult(
+                status="rejected",
+                rel_path=None,
+                question_id=None,
+                message=_MEMORY_FILE_DISABLED_MSG,
+            )
 
         decision = self.planner.decision_for_forced_path(forced_rel_path)
         mode = resolve_write_mode(decision.rel_path, write_mode)
@@ -136,6 +148,13 @@ class Organizer:
                 rel_path=None,
                 question_id=None,
                 message="归档必须指定 directory 与 filename（由工具参数拼成目标路径）。",
+            )
+        if is_memory_projection_path(forced_rel_path):
+            return IngestResult(
+                status="rejected",
+                rel_path=None,
+                question_id=None,
+                message=_MEMORY_FILE_DISABLED_MSG,
             )
         decision = self.planner.decision_for_forced_path(forced_rel_path)
         # 归档正文已是完整终稿，覆盖目标路径，避免再与旧稿 LLM 合并

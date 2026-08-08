@@ -82,7 +82,7 @@ class MemoryWorker:
             ]
             actions = self.extractor.extract(user_texts, confirmed_summary=confirmed)
             resolver = SlotResolver(self.memory_service.store)
-            needs_render = False
+            confirmed_landed = False
             failures = 0
             for action in actions:
                 out = resolver.apply(action, conversation_id=cid)
@@ -90,21 +90,19 @@ class MemoryWorker:
                     failures += 1
                     continue
                 fact = out.get("fact") or {}
-                # noop 晋升、merge/replace/new 凡落地 confirmed 都要投影
+                # noop 晋升、merge/replace/new 凡落地 confirmed 都发事件
                 if fact.get("status") == "confirmed":
-                    needs_render = True
+                    confirmed_landed = True
 
-            # 有 confirmed 落地就先投影（含部分失败），避免记忆.md 陈旧；
+            # 有 confirmed 落地则通知前端；注入改为每轮从 DB 直出，无需落盘。
             # 仅零失败且未续聊才清 dirty（规格 §6.1 / §6.2）。
-            if needs_render:
-                self.memory_service.render_to_file()
+            if confirmed_landed:
                 self.conversations.append_system_event(
                     cid,
                     "memory_updated",
                     {
                         "type": "memory_updated",
                         "conversation_id": cid,
-                        "path": self.memory_service.memory_rel,
                     },
                 )
             if failures == 0:

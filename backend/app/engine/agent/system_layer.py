@@ -1,23 +1,7 @@
 from __future__ import annotations
 
-import re
-
 from app.engine.memory.constants import MEMORY_DOC_REL
 from app.storage.repo import KnowledgeRepo
-
-_MEMORY_MARKER_RE = re.compile(r"\n?<!--\s*memory:[A-Za-z0-9_-]+\s*-->")
-
-
-def _strip_memory_markers(body: str) -> str:
-    """注入用：剥 marker，并去掉仅剩标题的空 section 噪音（规格 §8）。"""
-    text = _MEMORY_MARKER_RE.sub("", body or "")
-    # 标题后可无换行（body.strip() 后末节常见）；有正文子弹时不删
-    text = re.sub(
-        r"(?ms)^(##\s+[^\n]+)(?:[ \t]*\n)*(?=(##\s+)|\Z)",
-        "",
-        text,
-    )
-    return re.sub(r"\n{3,}", "\n\n", text).strip()
 
 _PRECEPTS_BODY = """# 戒律 · 行为规约
 
@@ -192,28 +176,4 @@ class SystemLayer:
     def memory_context(self) -> str:
         if not self.memory_service:
             return ""
-        if not self.memory_service.store.list_confirmed():
-            return ""
-        from app.engine.memory.renderer import MemoryRenderer
-
-        renderer = MemoryRenderer(self.repo, memory_rel=self.memory_rel)
-        try:
-            doc = self.repo.read_doc(self.memory_rel)
-            abs_p = self.repo.abs_path(self.memory_rel)
-            state = self.memory_service.store.get_render_state()
-            if abs_p.exists() and state.get("file_mtime") != abs_p.stat().st_mtime:
-                parsed = renderer.parse(doc.body)
-                if parsed["valid"]:
-                    self.memory_service.import_manual_document(doc.meta, doc.body)
-                    doc = self.repo.read_doc(self.memory_rel)
-            body = doc.body.strip()
-            parsed = renderer.parse(body)
-            if not parsed["valid"]:
-                snap = state.get("valid_snapshot_body")
-                return _strip_memory_markers((snap or "").strip())
-            if not parsed["items"]:
-                return ""
-            return _strip_memory_markers(body)
-        except FileNotFoundError:
-            renderer.ensure_seed()
-            return ""
+        return self.memory_service.render_context()

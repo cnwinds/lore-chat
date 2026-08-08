@@ -14,6 +14,7 @@ from app.api.http_deps import (
     kb_path_exists_detail,
     kb_tree_service,
 )
+from app.engine.memory.constants import is_memory_projection_path
 from app.engine.patch import diff_affected_range
 
 router = APIRouter()
@@ -174,6 +175,11 @@ async def doc(path: str, request: Request):
 @router.put("/doc")
 async def update_doc(body: UpdateDocBody, request: Request):
     c = container(request)
+    if is_memory_projection_path(body.path):
+        raise HTTPException(
+            400,
+            "记忆已改由数据库管理，请到设置 → 记忆中编辑，或使用 manage_memory",
+        )
     if not c.repo.is_writable(body.path):
         raise HTTPException(403, "禁止编辑该路径")
     try:
@@ -181,40 +187,22 @@ async def update_doc(body: UpdateDocBody, request: Request):
     except FileNotFoundError:
         raise HTTPException(404, "文档不存在")
     old_body = doc.body
-    norm_path = body.path.replace("\\", "/")
-    if norm_path == "系统/记忆.md":
-        sync = c.memory_service.import_manual_document(
-            doc.meta, body.body, dry_run=True
+    if old_body != body.body:
+        affected_start, affected_end = diff_affected_range(old_body, body.body)
+        c.knowledge_writer.save_edit(
+            body.path,
+            doc.meta,
+            old_body,
+            body.body,
+            affected_start=affected_start,
+            affected_end=affected_end,
+            commit_msg=f"edit: {body.path}",
+            changelog_line=f"用户编辑 {body.path}",
         )
-        if not sync.get("ok"):
-            raise HTTPException(400, sync.get("message", "记忆同步失败"))
+    else:
         c.repo.write_doc(
             body.path, doc.meta, body.body, commit_msg=f"edit: {body.path}"
         )
-        sync = c.memory_service.import_manual_document(doc.meta, body.body)
-        if not sync.get("ok"):
-            c.repo.write_doc(
-                body.path, doc.meta, old_body, commit_msg=f"rollback: {body.path}"
-            )
-            raise HTTPException(400, sync.get("message", "记忆同步失败"))
-        c.knowledge_writer.drop_from_index([body.path])
-    else:
-        if old_body != body.body:
-            affected_start, affected_end = diff_affected_range(old_body, body.body)
-            c.knowledge_writer.save_edit(
-                body.path,
-                doc.meta,
-                old_body,
-                body.body,
-                affected_start=affected_start,
-                affected_end=affected_end,
-                commit_msg=f"edit: {body.path}",
-                changelog_line=f"用户编辑 {body.path}",
-            )
-        else:
-            c.repo.write_doc(
-                body.path, doc.meta, body.body, commit_msg=f"edit: {body.path}"
-            )
-            c.repo.log_change(f"用户编辑 {body.path}")
+        c.repo.log_change(f"用户编辑 {body.path}")
     d = c.repo.read_doc(body.path)
     return {"rel_path": d.rel_path, "meta": d.meta, "body": d.body}

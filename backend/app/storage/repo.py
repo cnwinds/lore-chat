@@ -187,6 +187,30 @@ class KnowledgeRepo:
             parent = PurePosixPath(norm).parent.as_posix()
             norm = "" if parent in ("", ".") else parent
 
+    def remove_file(
+        self, rel_path: str, *, commit_msg: str, allow_protected: bool = False
+    ) -> bool:
+        """删除单个已跟踪/未跟踪文件并尽量 git commit。用于系统层遗留文件清理。"""
+        norm = rel_path.replace("\\", "/").lstrip("/")
+        if self._is_internal(norm):
+            raise ValueError(f"禁止删除内部路径: {rel_path}")
+        if self._is_protected(norm) and not allow_protected:
+            raise ValueError(f"禁止删除: {rel_path}")
+        abs_p = self._abs(norm)
+        if not abs_p.exists() or not abs_p.is_file():
+            return False
+        abs_p.unlink()
+        try:
+            self.repo.index.remove([norm])
+            self.repo.index.commit(commit_msg)
+        except Exception:
+            # 未跟踪文件：工作区已删即可
+            pass
+        parent = PurePosixPath(norm).parent.as_posix()
+        if parent not in ("", "."):
+            self._prune_empty_directories(parent)
+        return True
+
     def delete_path(self, rel_path: str, *, commit_msg: str) -> list[str]:
         norm = rel_path.replace("\\", "/").rstrip("/")
         if self._is_protected(norm):
