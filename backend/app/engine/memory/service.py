@@ -38,6 +38,17 @@ class MemoryService:
         self.conversations = conversations
         self.knowledge_writer = knowledge_writer
         self._purge_legacy_projection_file()
+        # 迁移/换槽后出处曾留在 superseded 上，导致面板跳转全禁用
+        try:
+            self.store.repair_evidence_following_supersede()
+        except Exception as exc:  # noqa: BLE001
+            from app.logging_config import get_logger
+
+            get_logger("memory").warning(
+                "repair_evidence_following_supersede failed: %s",
+                exc,
+                exc_info=True,
+            )
 
     def _drop_memory_from_search_index(self) -> None:
         self.knowledge_writer.drop_from_index([self.memory_rel])
@@ -215,13 +226,33 @@ class MemoryService:
         fact = self.store.get_fact(fact_id)
         if not fact or fact.get("status") not in ("confirmed", "candidate"):
             return {"ok": False, "error": "not_found", "message": "未找到可编辑记忆"}
+        old_hash = fact["normalized_value_hash"]
+        new_hash = value_hash(text)
+        # 与 correct 对齐：允许写回曾遗忘后用户明确编辑的值
+        self.store.clear_tombstone(
+            slot_key=fact["slot_key"], normalized_value_hash=new_hash
+        )
+        self.store.clear_topic_fingerprint_tombstones(
+            normalized_value_hash=new_hash
+        )
         updated = self.store.update_fact_content(
             fact_id,
             statement=text,
-            normalized_value_hash=value_hash(text),
+            normalized_value_hash=new_hash,
             origin="manual",
             status=fact.get("status"),
         )
+        updated = self.store.get_fact(fact_id) or updated
+        # 编辑后灭活最终槽上其它条；旧值打 tombstone 防回潮
+        self.store.supersede_others_in_slot(
+            updated.get("slot_key") or fact["slot_key"], keep_id=fact_id
+        )
+        if new_hash != old_hash:
+            self.store.block_value(
+                slot_key=fact["slot_key"],
+                normalized_value_hash=old_hash,
+                reason="superseded",
+            )
         return {"ok": True, "fact": updated, "message": "已更新"}
 
     def correct(
@@ -243,11 +274,44 @@ class MemoryService:
                 fact = hits[0]
         if not fact:
             return {"ok": False, "error": "not_found", "message": "未找到要更正的记忆"}
-        self.store.mark_forgotten(fact["id"], reason="superseded")
-        out = self.remember(rep, origin="manual")
-        if out.get("ok") and out.get("fact"):
-            return {"ok": True, "fact": out["fact"], "message": "已更正记忆"}
-        return out
+        if fact.get("status") not in ("confirmed", "candidate", "stale"):
+            return {"ok": False, "error": "not_found", "message": "未找到要更正的记忆"}
+        old_hash = fact["normalized_value_hash"]
+        new_hash = value_hash(rep)
+        if new_hash == old_hash and fact.get("statement") == rep:
+            return {"ok": True, "fact": fact, "message": "无需更正"}
+        # 就地改写目标 fact（不经 Resolver 选 primary，避免改错同槽其它条）
+        self.store.clear_tombstone(
+            slot_key=fact["slot_key"], normalized_value_hash=new_hash
+        )
+        self.store.clear_topic_fingerprint_tombstones(
+            normalized_value_hash=new_hash
+        )
+        updated = self.store.update_fact_content(
+            fact["id"],
+            statement=rep,
+            normalized_value_hash=new_hash,
+            category=fact.get("category"),
+            origin="manual",
+            status="confirmed",
+        )
+        if not updated:
+            return {"ok": False, "error": "update_failed", "message": "更正失败"}
+        updated = self.store.get_fact(fact["id"]) or updated
+        self.store.supersede_others_in_slot(
+            updated.get("slot_key") or fact["slot_key"], keep_id=fact["id"]
+        )
+        if new_hash != old_hash:
+            self.store.block_value(
+                slot_key=fact["slot_key"],
+                normalized_value_hash=old_hash,
+                reason="superseded",
+            )
+        return {
+            "ok": True,
+            "fact": self.store.get_fact(fact["id"]) or updated,
+            "message": "已更正记忆",
+        }
 
     def recall(self, query: str, *, include_sources: bool = False, limit: int = 10) -> dict:
         facts = self.store.search_confirmed(query, limit=limit)

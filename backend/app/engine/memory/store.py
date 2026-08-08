@@ -149,7 +149,12 @@ class MemoryStore:
                     ),
                 )
                 conn.commit()
-                return self.get_fact(existing["id"]) or {}
+                out = self.get_fact(existing["id"]) or {}
+                if out and out.get("status") in ("confirmed", "candidate", "stale"):
+                    self.supersede_others_with_value_hash(
+                        out["normalized_value_hash"], keep_id=out["id"]
+                    )
+                return out
 
             fid = fact_id or str(uuid.uuid4())
             conn.execute(
@@ -179,7 +184,12 @@ class MemoryStore:
                 ),
             )
             conn.commit()
-            return self.get_fact(fid) or {}
+            out = self.get_fact(fid) or {}
+            if out and out.get("status") in ("confirmed", "candidate", "stale"):
+                self.supersede_others_with_value_hash(
+                    out["normalized_value_hash"], keep_id=out["id"]
+                )
+            return out
 
     def get_fact(self, fact_id: str) -> dict | None:
         with self._connect() as conn:
@@ -201,6 +211,22 @@ class MemoryStore:
             ).fetchall()
             return [_row_to_fact(r) for r in rows]
 
+    def block_value(
+        self, *, slot_key: str, normalized_value_hash: str, reason: str = "user_forget"
+    ) -> None:
+        """将某槽位下的值写入 tombstone（不改 fact 行）。"""
+        now = _now()
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO memory_tombstones (
+                    owner_key, slot_key, blocked_value_hash, reason, forgotten_at
+                ) VALUES (?, ?, ?, ?, ?)
+                """,
+                (self.owner_key, slot_key, normalized_value_hash, reason, now),
+            )
+            conn.commit()
+
     def mark_forgotten(self, fact_id: str, *, reason: str = "user_forget") -> None:
         now = _now()
         fact = self.get_fact(fact_id)
@@ -211,21 +237,12 @@ class MemoryStore:
                 "UPDATE memory_facts SET status = 'forgotten', updated_at = ? WHERE id = ?",
                 (now, fact_id),
             )
-            conn.execute(
-                """
-                INSERT INTO memory_tombstones (
-                    owner_key, slot_key, blocked_value_hash, reason, forgotten_at
-                ) VALUES (?, ?, ?, ?, ?)
-                """,
-                (
-                    self.owner_key,
-                    fact["slot_key"],
-                    fact["normalized_value_hash"],
-                    reason,
-                    now,
-                ),
-            )
             conn.commit()
+        self.block_value(
+            slot_key=fact["slot_key"],
+            normalized_value_hash=fact["normalized_value_hash"],
+            reason=reason,
+        )
 
     def clear_tombstone(self, *, slot_key: str, normalized_value_hash: str) -> bool:
         now = _now()
@@ -265,6 +282,71 @@ class MemoryStore:
                 (self.owner_key, slot_key),
             ).fetchone()
             return row is not None
+
+    def has_topic_fingerprint_tombstone(self, *, normalized_value_hash: str) -> bool:
+        """任意类目下 ``*.topic_{hash[:12]}`` 是否仍阻止该值（防类目漂移绕过）。"""
+        return self.has_value_tombstone(normalized_value_hash)
+
+    def clear_topic_fingerprint_tombstones(self, *, normalized_value_hash: str) -> bool:
+        """清除该值在任意槽上的 tombstone（显式重新记住）。"""
+        return self.clear_value_tombstones(normalized_value_hash)
+
+    def has_value_tombstone(self, normalized_value_hash: str) -> bool:
+        """该值在任意槽是否仍被阻止（遗忘后不得经 topic_* 等旁路回潮）。"""
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT 1 FROM memory_tombstones
+                WHERE owner_key = ? AND blocked_value_hash = ?
+                  AND cleared_at IS NULL
+                LIMIT 1
+                """,
+                (self.owner_key, normalized_value_hash),
+            ).fetchone()
+            return row is not None
+
+    def clear_value_tombstones(self, normalized_value_hash: str) -> bool:
+        now = _now()
+        with self._connect() as conn:
+            cur = conn.execute(
+                """
+                UPDATE memory_tombstones
+                SET cleared_at = ?
+                WHERE owner_key = ? AND blocked_value_hash = ?
+                  AND cleared_at IS NULL
+                """,
+                (now, self.owner_key, normalized_value_hash),
+            )
+            conn.commit()
+            return cur.rowcount > 0
+
+    def reassign_slot_key(self, fact_id: str, new_slot: str) -> dict:
+        """将存活条迁到目标槽（migrate 升格 / 同值收敛），保留 id 与出处。"""
+        fact = self.get_fact(fact_id)
+        if not fact:
+            return {}
+        new_slot = (new_slot or "").strip()
+        if not new_slot or new_slot == fact.get("slot_key"):
+            return fact
+        self.supersede_others_in_slot(new_slot, keep_id=fact_id)
+        now = _now()
+        with self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE memory_facts
+                SET normalized_value_hash = normalized_value_hash || ':x:' || id,
+                    updated_at = ?
+                WHERE owner_key = ? AND slot_key = ? AND normalized_value_hash = ?
+                  AND id != ?
+                """,
+                (now, self.owner_key, new_slot, fact["normalized_value_hash"], fact_id),
+            )
+            conn.execute(
+                "UPDATE memory_facts SET slot_key = ?, updated_at = ? WHERE id = ?",
+                (new_slot, now, fact_id),
+            )
+            conn.commit()
+        return self.get_fact(fact_id) or {}
 
     def add_evidence(
         self,
@@ -380,6 +462,94 @@ class MemoryStore:
             )
             conn.commit()
 
+    def rebind_evidence(self, from_fact_id: str, to_fact_id: str) -> int:
+        """将出处从旧 fact 迁到存活 fact（INSERT OR IGNORE 后删旧行）。"""
+        src = (from_fact_id or "").strip()
+        dst = (to_fact_id or "").strip()
+        if not src or not dst or src == dst:
+            return 0
+        if not self.get_fact(dst):
+            return 0
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM memory_evidence WHERE fact_id = ?",
+                (src,),
+            ).fetchall()
+            moved = 0
+            for r in rows:
+                # UPSERT：主键冲突时仍迁入 quote_hash，避免 OR IGNORE 后删源丢摘录
+                conn.execute(
+                    """
+                    INSERT INTO memory_evidence (
+                        fact_id, conversation_id, message_id, start_char, end_char,
+                        quote_hash, observed_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(fact_id, message_id, start_char, end_char) DO UPDATE SET
+                        conversation_id = excluded.conversation_id,
+                        quote_hash = excluded.quote_hash,
+                        observed_at = excluded.observed_at
+                    """,
+                    (
+                        dst,
+                        r["conversation_id"],
+                        r["message_id"],
+                        r["start_char"],
+                        r["end_char"],
+                        r["quote_hash"],
+                        r["observed_at"],
+                    ),
+                )
+                moved += 1
+            if moved:
+                conn.execute(
+                    "DELETE FROM memory_evidence WHERE fact_id = ?",
+                    (src,),
+                )
+            conn.commit()
+            return moved
+
+    def resolve_supersede_survivor(self, fact_id: str) -> str:
+        """沿 supersedes_id 链走到最终存活 id；悬空/环则返回空串。"""
+        cur = (fact_id or "").strip()
+        if not cur:
+            return ""
+        seen: set[str] = set()
+        while cur and cur not in seen:
+            seen.add(cur)
+            fact = self.get_fact(cur)
+            if not fact:
+                return ""
+            nxt = (fact.get("supersedes_id") or "").strip()
+            if fact.get("status") == "superseded" and nxt:
+                cur = nxt
+                continue
+            return cur
+        return ""
+
+    def repair_evidence_following_supersede(self) -> int:
+        """存量修复：被 supersede 的 fact 若仍挂 evidence，迁到最终存活 id。"""
+        moved = 0
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, supersedes_id FROM memory_facts
+                WHERE owner_key = ?
+                  AND status = 'superseded'
+                  AND supersedes_id IS NOT NULL
+                  AND supersedes_id != ''
+                """,
+                (self.owner_key,),
+            ).fetchall()
+        for r in rows:
+            try:
+                survivor = self.resolve_supersede_survivor(r["supersedes_id"])
+                if not survivor or survivor == r["id"]:
+                    continue
+                moved += self.rebind_evidence(r["id"], survivor)
+            except Exception:  # noqa: BLE001 — 单行失败不阻断其余
+                continue
+        return moved
+
     def mark_superseded(self, fact_id: str, *, supersedes_id: str | None = None) -> None:
         now = _now()
         with self._connect() as conn:
@@ -391,11 +561,26 @@ class MemoryStore:
                 (supersedes_id, now, fact_id),
             )
             conn.commit()
+        # 出处必须跟着存活画像走，否则面板 conversation_ids 为空、跳转全禁用
+        keep = (supersedes_id or "").strip()
+        if keep:
+            self.rebind_evidence(fact_id, keep)
+
+    def find_stale_by_slot(self, slot_key: str) -> list[dict]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM memory_facts
+                WHERE owner_key = ? AND slot_key = ? AND status = 'stale'
+                """,
+                (self.owner_key, slot_key),
+            ).fetchall()
+            return [_row_to_fact(r) for r in rows]
 
     def supersede_others_in_slot(
         self, slot_key: str, *, keep_id: str | None = None
     ) -> int:
-        """同槽仅保留 keep_id（confirmed+candidate）；keep_id 为空则全部 supersede。"""
+        """同槽仅保留 keep_id（confirmed+candidate+stale）；keep_id 为空则全部 supersede。"""
         n = 0
         for fact in self.find_confirmed_by_slot(slot_key):
             if keep_id and fact["id"] == keep_id:
@@ -408,6 +593,34 @@ class MemoryStore:
             if keep_id and cand["id"] == keep_id:
                 continue
             self.mark_superseded(cand["id"], supersedes_id=keep_id)
+            n += 1
+        for stale in self.find_stale_by_slot(slot_key):
+            if keep_id and stale["id"] == keep_id:
+                continue
+            self.mark_superseded(stale["id"], supersedes_id=keep_id)
+            n += 1
+        return n
+
+    def supersede_others_with_value_hash(
+        self, normalized_value_hash: str, *, keep_id: str
+    ) -> int:
+        """同值最多一条存活：灭活其它 confirmed/candidate/stale 并迁出处。"""
+        keep = (keep_id or "").strip()
+        if not keep or not normalized_value_hash:
+            return 0
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT id FROM memory_facts
+                WHERE owner_key = ? AND normalized_value_hash = ?
+                  AND status IN ('confirmed', 'candidate', 'stale')
+                  AND id != ?
+                """,
+                (self.owner_key, normalized_value_hash, keep),
+            ).fetchall()
+        n = 0
+        for r in rows:
+            self.mark_superseded(r["id"], supersedes_id=keep)
             n += 1
         return n
 
@@ -452,6 +665,27 @@ class MemoryStore:
             ).fetchone()
             return _row_to_fact(row) if row else None
 
+    def find_active_by_value_hash(self, normalized_value_hash: str) -> dict | None:
+        """任意槽上同值存活条（含跨类目 topic 迁槽后），供并入防平行开槽。"""
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT * FROM memory_facts
+                WHERE owner_key = ? AND normalized_value_hash = ?
+                  AND status IN ('confirmed', 'candidate', 'stale')
+                ORDER BY
+                    CASE status
+                        WHEN 'confirmed' THEN 0
+                        WHEN 'candidate' THEN 1
+                        ELSE 2
+                    END,
+                    updated_at DESC
+                LIMIT 1
+                """,
+                (self.owner_key, normalized_value_hash),
+            ).fetchone()
+            return _row_to_fact(row) if row else None
+
     def list_candidates(self) -> list[dict]:
         with self._connect() as conn:
             rows = conn.execute(
@@ -491,14 +725,14 @@ class MemoryStore:
         if not fact:
             return {}
         with self._connect() as conn:
-            # 释放同槽上已失效行占用的唯一键，避免 hash 冲突
+            # 释放同槽其它行占用的唯一键（含 stale/candidate），避免 hash 冲突
             conn.execute(
                 """
                 UPDATE memory_facts
                 SET normalized_value_hash = normalized_value_hash || ':x:' || id,
                     updated_at = ?
                 WHERE owner_key = ? AND slot_key = ? AND normalized_value_hash = ?
-                  AND id != ? AND status IN ('superseded', 'forgotten', 'rejected')
+                  AND id != ?
                 """,
                 (now, self.owner_key, fact["slot_key"], normalized_value_hash, fact_id),
             )
@@ -535,6 +769,55 @@ class MemoryStore:
                     now,
                     fact_id,
                 ),
+            )
+            conn.commit()
+        # topic_* 槽名嵌入内容指纹：statement 变更后须迁槽，避免平行开第二条
+        updated = self.sync_topic_slot_key(fact_id)
+        # 任意槽改句后旧值必须 tombstone，否则会话 replace/merge 后旧表述
+        # 可再对齐回原槽并覆盖更正结果（手动 edit/correct 亦 block，幂等）
+        if fact["normalized_value_hash"] != normalized_value_hash:
+            self.block_value(
+                slot_key=fact.get("slot_key") or "",
+                normalized_value_hash=fact["normalized_value_hash"],
+                reason="superseded",
+            )
+        if updated and updated.get("status") in ("confirmed", "candidate", "stale"):
+            self.supersede_others_with_value_hash(
+                updated["normalized_value_hash"], keep_id=fact_id
+            )
+        return updated
+
+    def sync_topic_slot_key(self, fact_id: str) -> dict:
+        """若为 ``*.topic_*`` 开放槽，使 slot_key 与当前 statement 指纹一致。"""
+        from app.engine.memory.normalize import value_hash
+
+        fact = self.get_fact(fact_id)
+        if not fact:
+            return {}
+        sk = fact.get("slot_key") or ""
+        if ".topic_" not in sk:
+            return fact
+        cat = (fact.get("category") or sk.split(".", 1)[0] or "preference").strip().lower()
+        new_slot = f"{cat}.topic_{value_hash(fact['statement'])[:12]}"
+        if new_slot == sk:
+            return fact
+        # 目标槽若已有其它存活条，先灭活并迁出处
+        self.supersede_others_in_slot(new_slot, keep_id=fact_id)
+        now = _now()
+        with self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE memory_facts
+                SET normalized_value_hash = normalized_value_hash || ':x:' || id,
+                    updated_at = ?
+                WHERE owner_key = ? AND slot_key = ? AND normalized_value_hash = ?
+                  AND id != ?
+                """,
+                (now, self.owner_key, new_slot, fact["normalized_value_hash"], fact_id),
+            )
+            conn.execute(
+                "UPDATE memory_facts SET slot_key = ?, updated_at = ? WHERE id = ?",
+                (new_slot, now, fact_id),
             )
             conn.commit()
         return self.get_fact(fact_id) or {}

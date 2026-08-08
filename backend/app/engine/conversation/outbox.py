@@ -132,14 +132,24 @@ class DerivationOutbox:
                 return False
             return False
         turn_id = SESSION_OBSERVE_IMMEDIATE if immediate else None
+        # 不可写死 revision=1：done 行仍占唯一键，二次入队会 IntegrityError
+        rev_row = self.conn.execute(
+            """
+            SELECT COALESCE(MAX(source_revision), 0) AS m
+            FROM derivation_outbox
+            WHERE kind = 'session_observe_memory' AND source_message_id = ?
+            """,
+            (source,),
+        ).fetchone()
+        next_rev = int(rev_row["m"] or 0) + 1
         self.conn.execute(
             """
             INSERT INTO derivation_outbox(
                 kind, source_message_id, source_revision, turn_id,
                 status, attempts, next_run_at, created_at, updated_at
-            ) VALUES ('session_observe_memory', ?, 1, ?, 'pending', 0, ?, ?, ?)
+            ) VALUES ('session_observe_memory', ?, ?, ?, 'pending', 0, ?, ?, ?)
             """,
-            (source, turn_id, now, now, now),
+            (source, next_rev, turn_id, now, now, now),
         )
         return True
 
@@ -231,19 +241,21 @@ class DerivationOutbox:
 
     def cancel_pending_for_conversation(self, cid: str, updated_at: str) -> None:
         """在 ConversationStore 已持有 lock 的同一事务内调用；不在此 commit。"""
+        session_source = f"conv:{cid}"
         self.conn.execute(
             """
             UPDATE derivation_outbox
             SET status = 'cancelled', updated_at = ?
-            WHERE status IN ('pending', 'running')
+            WHERE status IN ('pending', 'running', 'blocked')
               AND (
                     turn_id IN (SELECT id FROM turns WHERE conversation_id = ?)
                     OR source_message_id IN (
                         SELECT id FROM messages WHERE conversation_id = ?
                     )
+                    OR source_message_id = ?
               )
             """,
-            (updated_at, cid, cid),
+            (updated_at, cid, cid, session_source),
         )
 
     def complete(self, job_id: int) -> None:
@@ -261,9 +273,13 @@ class DerivationOutbox:
     def fail(self, job_id: int, error: str, backoff: float = 1.0) -> None:
         with self._lock:
             row = self.conn.execute(
-                "SELECT attempts FROM derivation_outbox WHERE id = ?", (job_id,)
+                "SELECT attempts, status FROM derivation_outbox WHERE id = ?",
+                (job_id,),
             ).fetchone()
             if row is None:
+                return
+            # 会话已删除等路径可能先 cancelled；勿把终态任务救回 pending
+            if row["status"] not in ("running", "pending", "blocked"):
                 return
             attempts = int(row["attempts"]) + 1
             if attempts >= MAX_OUTBOX_ATTEMPTS:
@@ -277,7 +293,7 @@ class DerivationOutbox:
                 UPDATE derivation_outbox
                 SET attempts = ?, status = ?, next_run_at = ?, last_error = ?,
                     locked_until = NULL, updated_at = ?
-                WHERE id = ?
+                WHERE id = ? AND status IN ('running', 'pending', 'blocked')
                 """,
                 (attempts, status, next_run_at, error, _now(), job_id),
             )

@@ -45,7 +45,7 @@
 | 8 | 观察单元 = 整段会话（非每条消息） |
 | 9 | 自动触发 = 该会话**最后一条消息**后空闲且 `dirty`；纯浏览/切换会话不触发 |
 | 10 | 空闲默认 **24h**（可配） |
-| 11 | 输入以**用户消息**为主；过长则先压成自述时间线再抽 |
+| 11 | 输入以**用户消息**为主，保留截断后的 **assistant** 轮作指代/限定消歧；过长则压成对话时间线再抽 |
 | 12 | 重抽 = 全量再推导 + 与**全局**画像 merge/replace；本次未提及不删除旧槽 |
 | 13 | 上线一次性迁移合并近义旧条（可审计日志） |
 | 14 | 种子 = 手写核心 + 迁移中升格稳定新槽 |
@@ -65,7 +65,7 @@ flowchart LR
     DIRTY --> IDLE[空闲 24h 且仍 dirty]
     IDLE --> JOB[session_observe_memory]
     EXPLICIT[manage_memory / 归档] --> JOB
-    JOB --> READ[读用户消息 + 可选压缩]
+    JOB --> READ[读对话轮次 + 可选压缩]
     READ --> EXT[SessionMemoryExtractor]
     EXT --> RES[SlotResolver]
     RES --> MDB[(memory.db)]
@@ -146,7 +146,7 @@ slot_key = "{category}.{predicate}"
 
 ### 6.3 重抽语义
 
-- 输入：本会话全部用户消息（过长则压缩）+ 全局已确认 slot→statement + 种子表。
+- 输入：本会话对话轮次（用户为主、assistant 截断消歧；过长则压缩）+ 全局已确认 slot→statement + 种子表。
 - 输出动作作用于**全局** memory.db。
 - **不**因「本轮 items 未包含某槽」而删除或遗忘该槽。
 - 改口依赖模型输出 `replace`（或变化信号）。

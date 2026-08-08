@@ -39,8 +39,8 @@ CATEGORIES = frozenset(
 SECTION_BY_CATEGORY: dict[str, str] = {
     "identity": "身份与稳定背景",
     "preference": "偏好与沟通方式",
-    "goal": "长期目标与正在做的事",
-    "project": "长期目标与正在做的事",
+    "goal": "长期目标与持续方向",
+    "project": "长期目标与持续方向",
     "workflow": "工作方式与工具环境",
     "constraint": "关键约束",
 }

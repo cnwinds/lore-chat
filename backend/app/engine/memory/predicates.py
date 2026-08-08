@@ -73,7 +73,7 @@ SEED_PREDICATES: tuple[SeedPredicate, ...] = (
         "goal.active_project",
         "goal",
         ("正在做", "长期项目", "目标是"),
-        "活跃项目/目标",
+        "跨会话持续的方向/主线（非本会话交付清单）",
     ),
     SeedPredicate(
         "constraint.hard_rule",

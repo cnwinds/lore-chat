@@ -21,6 +21,25 @@ def test_clear_memory_dirty_increments_extract_revision(tmp_path):
     assert store.get_memory_extract_revision(cid) == 2
 
 
+def test_enqueue_session_observe_after_done_uses_new_revision(tmp_path):
+    """首轮 done 后二次入队不得撞唯一键。"""
+    store = ConversationStore(tmp_path / "conversations")
+    cid = store.create()
+    store.begin_turn(cid, "我偏好简洁回答", "c1", observation_allowed=True)
+    assert store.enqueue_session_observe(cid) is True
+    jobs = store.claim_outbox(kind="session_observe_memory", limit=1, lease_seconds=60)
+    assert len(jobs) == 1
+    store.complete_outbox(jobs[0]["id"])
+    assert store.enqueue_session_observe(cid) is True
+    pending = [
+        j
+        for j in store.list_outbox(kind="session_observe_memory")
+        if j["status"] == "pending"
+    ]
+    assert len(pending) == 1
+    assert int(pending[0]["source_revision"]) >= 2
+
+
 def test_session_worker_bumps_revision_on_success(tmp_path):
     conv = ConversationStore(tmp_path / "conversations")
     repo = KnowledgeRepo(tmp_path / "knowledge", protected_dirs=("系统",))

@@ -14,7 +14,7 @@ _KIND_SESSION_OBSERVE = "session_observe_memory"
 
 
 class MemoryWorker:
-    """消费会话级 `session_observe_memory`：整段用户消息 → SlotResolver。"""
+    """消费会话级 `session_observe_memory`：整段对话（用户为主）→ SlotResolver。"""
 
     def __init__(
         self,
@@ -64,8 +64,8 @@ class MemoryWorker:
                 return
             # 抽取开始快照：结束后 CAS，避免 running 期间续聊被 clear_dirty 抹掉
             started_last_user_at = self.conversations.get_last_user_message_at(cid)
-            user_texts = self.conversations.list_user_messages_text(cid)
-            if not any(t.strip() for t in user_texts):
+            turns = self.conversations.list_dialogue_turns(cid)
+            if not any(role == "user" and t.strip() for role, t in turns):
                 self.conversations.clear_memory_dirty(
                     cid, expected_last_user_message_at=started_last_user_at
                 )
@@ -80,14 +80,20 @@ class MemoryWorker:
                 }
                 for f in self.memory_service.store.list_confirmed()
             ]
-            actions = self.extractor.extract(user_texts, confirmed_summary=confirmed)
+            actions = self.extractor.extract(turns, confirmed_summary=confirmed)
             resolver = SlotResolver(self.memory_service.store)
             confirmed_landed = False
-            failures = 0
+            # 用户永久拒绝/密钥等确定性失败：重试无益，不阻塞清 dirty
+            soft_reject = frozenset(
+                {"tombstoned", "secret_rejected", "rejected", "inactive"}
+            )
+            hard_failures = 0
             for action in actions:
                 out = resolver.apply(action, conversation_id=cid)
                 if not out.get("ok"):
-                    failures += 1
+                    # 确定性拒绝不应卡住 dirty 永久不清
+                    if out.get("error") not in soft_reject:
+                        hard_failures += 1
                     continue
                 fact = out.get("fact") or {}
                 # noop 晋升、merge/replace/new 凡落地 confirmed 都发事件
@@ -95,7 +101,7 @@ class MemoryWorker:
                     confirmed_landed = True
 
             # 有 confirmed 落地则通知前端；注入改为每轮从 DB 直出，无需落盘。
-            # 仅零失败且未续聊才清 dirty（规格 §6.1 / §6.2）。
+            # 仅无硬失败且未续聊才清 dirty（规格 §6.1 / §6.2）。
             if confirmed_landed:
                 self.conversations.append_system_event(
                     cid,
@@ -105,7 +111,7 @@ class MemoryWorker:
                         "conversation_id": cid,
                     },
                 )
-            if failures == 0:
+            if hard_failures == 0:
                 self.conversations.clear_memory_dirty(
                     cid, expected_last_user_message_at=started_last_user_at
                 )
@@ -119,6 +125,9 @@ class MemoryWorker:
                 exc_info=True,
             )
             self.conversations.fail_outbox(job_id, str(exc), backoff=1.0)
+            # 失败不会走 complete+requeue；若归档已挂起即时，升级/重入队 immediate
+            if cid and self.conversations.consume_memory_immediate_pending_if_dirty(cid):
+                self.conversations.enqueue_session_observe(cid, immediate=True)
 
     def drain(self, max_jobs: int = 20) -> int:
         self.cancel_legacy_observe_jobs()

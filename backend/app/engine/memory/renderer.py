@@ -12,7 +12,7 @@ _INJECTION_MARKER_RE = re.compile(r"\n?<!--\s*memory:[A-Za-z0-9_-]+\s*-->")
 _SECTION_ORDER = [
     "身份与稳定背景",
     "偏好与沟通方式",
-    "长期目标与正在做的事",
+    "长期目标与持续方向",
     "工作方式与工具环境",
     "关键约束",
 ]

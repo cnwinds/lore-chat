@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.engine.memory.normalize import resolve_slot_key, value_hash
+from app.engine.memory.normalize import (
+    is_abstract_slot_key,
+    resolve_slot_key,
+    value_hash,
+)
 from app.engine.memory.policy import (
     allows_automatic_save,
     has_change_signal,
@@ -65,12 +69,30 @@ class SlotResolver:
             return {"ok": False, "error": "rejected", "message": "敏感内容未获授权，已拒绝"}
 
         vhash = value_hash(statement)
-        if self.store.has_tombstone(slot_key=slot, normalized_value_hash=vhash):
-            return {
-                "ok": False,
-                "error": "tombstoned",
-                "message": "该记忆已被用户遗忘，需显式重新记住",
-            }
+        # 同值最多一条存活：并入已有条；目标槽位阶更高时可升格迁槽（migrate）
+        active_same = self.store.find_active_by_value_hash(vhash)
+        slot_promoted = False
+        if active_same:
+            live = active_same.get("slot_key") or ""
+            if live != slot:
+                if _slot_rank(slot, vhash) > _slot_rank(live, vhash):
+                    active_same = (
+                        self.store.reassign_slot_key(active_same["id"], slot)
+                        or active_same
+                    )
+                    slot = active_same.get("slot_key") or slot
+                    slot_promoted = True
+                else:
+                    slot = live
+        else:
+            if self.store.has_value_tombstone(vhash) or self.store.has_tombstone(
+                slot_key=slot, normalized_value_hash=vhash
+            ):
+                return {
+                    "ok": False,
+                    "error": "tombstoned",
+                    "message": "该记忆已被用户遗忘，需显式重新记住",
+                }
         if self.store.has_tombstone(slot_key=slot, normalized_value_hash=None):
             return {
                 "ok": False,
@@ -81,32 +103,66 @@ class SlotResolver:
         status = _initial_status(origin, statement)
         existing_same = self.store.find_by_slot_and_hash(slot, vhash)
         confirmed_in_slot = self.store.find_confirmed_by_slot(slot)
-        active_primary = _pick_primary(confirmed_in_slot, self.store.list_candidates(), slot)
+        stale_in_slot = self.store.find_stale_by_slot(slot)
+        active_primary = _pick_primary(
+            confirmed_in_slot,
+            self.store.list_candidates(),
+            slot,
+            stale=stale_in_slot,
+        )
 
         if act == "noop" and active_primary:
+            fact = _apply_noop_touch(
+                self.store,
+                active_primary,
+                incoming_origin=origin,
+                incoming_confidence=float(action.confidence),
+            )
+            # 升格迁槽后 noop 不走 merge，须单独写回 category
+            if slot_promoted and category != (fact.get("category") or ""):
+                fact = (
+                    self.store.update_fact_content(
+                        fact["id"],
+                        statement=fact["statement"],
+                        normalized_value_hash=fact["normalized_value_hash"],
+                        category=category,
+                        status=fact.get("status"),
+                    )
+                    or fact
+                )
             if conversation_id:
-                self.store.add_session_evidence(active_primary["id"], conversation_id)
-                self._maybe_promote(active_primary["id"])
+                self.store.add_session_evidence(fact["id"], conversation_id)
+                fact = self._maybe_promote(fact["id"]) or self.store.get_fact(fact["id"]) or fact
             else:
-                self.store.set_last_seen_at(active_primary["id"])
-            return {
-                "ok": True,
-                "fact": self.store.get_fact(active_primary["id"]),
-                "action": "noop",
-            }
+                self.store.set_last_seen_at(fact["id"])
+                fact = self.store.get_fact(fact["id"]) or fact
+            return {"ok": True, "fact": fact, "action": "noop"}
 
-        # 同槽已有 confirmed 或 candidate：new 改为 merge/replace，避免平行开槽
+        # 同槽已有 confirmed / candidate / stale：new 改为 merge/replace，避免平行开槽
         if act == "new" and active_primary:
             act = "replace" if has_change_signal(statement) else "merge"
 
         # 同槽就地更新，保留 fact id 与既有会话出处
         if act in ("merge", "replace") and active_primary:
             if not _may_overwrite(origin, active_primary.get("origin", "inferred")):
+                fact = active_primary
                 if conversation_id:
                     self.store.add_session_evidence(active_primary["id"], conversation_id)
+                if active_primary.get("status") == "stale":
+                    # 不能改写内容时仍应复活，避免衰减后永久不可见
+                    revive = _initial_status(
+                        active_primary.get("origin") or "inferred",
+                        active_primary.get("statement") or statement,
+                    )
+                    fact = self.store.update_fact_content(
+                        active_primary["id"],
+                        statement=active_primary["statement"],
+                        normalized_value_hash=active_primary["normalized_value_hash"],
+                        status=revive,
+                    ) or active_primary
                 return {
                     "ok": True,
-                    "fact": active_primary,
+                    "fact": fact,
                     "action": "noop",
                     "message": "低优先级来源未覆盖现有记忆",
                 }
@@ -114,6 +170,7 @@ class SlotResolver:
             merged_origin = active_primary["origin"]
             if ORIGIN_RANK.get(origin, 0) > ORIGIN_RANK.get(merged_origin, 0):
                 merged_origin = origin
+            next_status = _status_after_touch(active_primary, status)
             fact = self.store.update_fact_content(
                 active_primary["id"],
                 statement=statement,
@@ -122,7 +179,7 @@ class SlotResolver:
                 origin=merged_origin,
                 confidence=max(float(active_primary.get("confidence") or 0), float(action.confidence)),
                 sensitivity=sensitivity,
-                status="confirmed" if status == "confirmed" else active_primary.get("status"),
+                status=next_status,
             )
             if conversation_id:
                 self.store.add_session_evidence(fact["id"], conversation_id)
@@ -133,10 +190,7 @@ class SlotResolver:
             if origin not in ("manual", "explicit_remember"):
                 return {"ok": False, "error": "inactive", "message": "事实已失效"}
 
-        # 无主 fact：新建；若同槽有其他 confirmed/candidate 则先 supersede
-        if status == "confirmed":
-            self.store.supersede_others_in_slot(slot, keep_id=None)
-
+        # 无主 fact：先新建，再以新 id 为 keep supersede，以便出处 rebind 到存活条
         fact = self.store.upsert_fact(
             slot_key=slot,
             category=category,
@@ -147,6 +201,8 @@ class SlotResolver:
             sensitivity=sensitivity,
             status=status,
         )
+        if status == "confirmed":
+            self.store.supersede_others_in_slot(slot, keep_id=fact["id"])
         if conversation_id:
             self.store.add_session_evidence(fact["id"], conversation_id)
             fact = self._maybe_promote(fact["id"]) or fact
@@ -173,6 +229,7 @@ class SlotResolver:
         )
         vhash = value_hash(statement)
         if clear_tombstone:
+            self.store.clear_value_tombstones(vhash)
             self.store.clear_tombstone(slot_key=slot, normalized_value_hash=vhash)
         return self.apply(
             SlotAction(
@@ -205,18 +262,21 @@ class SlotResolver:
         return fact
 
 
+def _slot_rank(slot_key: str, vhash: str) -> int:
+    """槽位阶：命名抽象/种子 > topic 指纹 > 旧 stem/open。用于同值升格。"""
+    sk = slot_key or ""
+    tip = f".topic_{vhash[:12]}"
+    if is_abstract_slot_key(sk) and not sk.endswith(tip):
+        return 2
+    if sk.endswith(tip):
+        return 1
+    return 0
+
+
 def _align_view(store: MemoryStore) -> list[dict]:
-    """confirmed + candidate，供近义对齐（晋升前也要并到同槽）。"""
+    """confirmed + candidate + stale，供近义对齐（衰减后仍并到同槽）。"""
     rows: list[dict] = []
-    for f in store.list_confirmed():
-        rows.append(
-            {
-                "slot_key": f["slot_key"],
-                "statement": f["statement"],
-                "category": f.get("category"),
-            }
-        )
-    for f in store.list_candidates():
+    for f in store.list_active_facts():
         rows.append(
             {
                 "slot_key": f["slot_key"],
@@ -228,6 +288,7 @@ def _align_view(store: MemoryStore) -> list[dict]:
 
 
 def _initial_status(origin: str, statement: str) -> str:
+    del statement  # 保留签名；status 仅由 origin 决定
     if origin in ("manual", "explicit_remember"):
         return "confirmed"
     if origin == "direct":
@@ -235,14 +296,28 @@ def _initial_status(origin: str, statement: str) -> str:
     return "candidate"
 
 
+def _merge_origin(old: str | None, new: str | None) -> str:
+    o = (old or "inferred").strip()
+    n = (new or "inferred").strip()
+    if ORIGIN_RANK.get(n, 0) > ORIGIN_RANK.get(o, 0):
+        return n
+    return o
+
+
 def _pick_primary(
-    confirmed: list[dict], candidates: list[dict], slot: str
+    confirmed: list[dict],
+    candidates: list[dict],
+    slot: str,
+    *,
+    stale: list[dict] | None = None,
 ) -> dict | None:
     if confirmed:
         return sorted(confirmed, key=lambda f: f.get("updated_at") or "", reverse=True)[0]
     slot_cands = [c for c in candidates if c["slot_key"] == slot]
     if slot_cands:
         return sorted(slot_cands, key=lambda f: f.get("updated_at") or "", reverse=True)[0]
+    if stale:
+        return sorted(stale, key=lambda f: f.get("updated_at") or "", reverse=True)[0]
     return None
 
 
@@ -253,3 +328,43 @@ def _may_overwrite(new_origin: str, old_origin: str) -> bool:
         return True
     # direct 可更新同级；inferred 不可覆盖 direct/manual
     return ORIGIN_RANK.get(new_origin, 0) >= ORIGIN_RANK.get(old_origin, 0)
+
+
+def _status_after_touch(primary: dict, incoming_status: str) -> str:
+    """触碰主键后的目标 status：stale 必须按合并后的抽取结果复活，不得保留 stale。"""
+    if primary.get("status") == "stale":
+        return incoming_status
+    if incoming_status == "confirmed":
+        return "confirmed"
+    return primary.get("status") or incoming_status
+
+
+def _apply_noop_touch(
+    store: MemoryStore,
+    primary: dict,
+    *,
+    incoming_origin: str,
+    incoming_confidence: float,
+) -> dict:
+    """noop：可升级 origin/status、复活 stale，但不改 statement。"""
+    merged_origin = _merge_origin(primary.get("origin"), incoming_origin)
+    incoming_status = _initial_status(merged_origin, primary.get("statement") or "")
+    next_status = _status_after_touch(primary, incoming_status)
+    need_update = (
+        primary.get("status") == "stale"
+        or merged_origin != (primary.get("origin") or "")
+        or next_status != (primary.get("status") or "")
+    )
+    if not need_update:
+        return primary
+    return (
+        store.update_fact_content(
+            primary["id"],
+            statement=primary["statement"],
+            normalized_value_hash=primary["normalized_value_hash"],
+            origin=merged_origin,
+            confidence=max(float(primary.get("confidence") or 0), incoming_confidence),
+            status=next_status,
+        )
+        or primary
+    )

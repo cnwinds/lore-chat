@@ -222,8 +222,40 @@ class ConversationStore:
         ).fetchone()
         return row is not None
 
+    @staticmethod
+    def _bump_cas_timestamp(prev: str) -> str:
+        """保证 CAS 键相对 prev 严格前进（秒级时钟同秒续聊/归档时必需）。"""
+        try:
+            dt = datetime.fromisoformat(prev)
+        except ValueError:
+            return f"{prev}+1"
+        from datetime import timedelta
+
+        return (dt + timedelta(microseconds=1)).isoformat(timespec="microseconds")
+
+    @classmethod
+    def _ensure_cas_advances(cls, prev: str, ts: str) -> str:
+        """新 dirty 时间戳必须 > prev，防止写回更旧秒级时间导致 CAS 误清。"""
+        if not prev:
+            return ts
+        try:
+            dt_prev = datetime.fromisoformat(prev)
+            dt_ts = datetime.fromisoformat(ts)
+        except ValueError:
+            return cls._bump_cas_timestamp(prev) if ts == prev else ts
+        if dt_ts <= dt_prev:
+            return cls._bump_cas_timestamp(prev)
+        return ts
+
     def _mark_memory_dirty_unlocked(self, cid: str, *, at: str | None = None) -> None:
         ts = at or _now()
+        row = self.conn.execute(
+            "SELECT last_user_message_at FROM conversations WHERE id = ?",
+            (cid,),
+        ).fetchone()
+        prev = (row["last_user_message_at"] if row else None) or ""
+        if prev:
+            ts = self._ensure_cas_advances(prev, ts)
         self.conn.execute(
             """
             UPDATE conversations
@@ -384,11 +416,14 @@ class ConversationStore:
             return ok
 
     def consume_memory_immediate_pending_if_dirty(self, cid: str) -> bool:
-        """清除归档即时待办；若仍 dirty 则返回 True（应再入队 immediate）。"""
+        """清除归档即时待办；若曾挂起则返回 True（应再入队 immediate）。
+
+        不要求仍 dirty：同秒归档时 CAS 可能已清 dirty，但即时重抽仍须执行。
+        """
         with self._lock:
             row = self.conn.execute(
                 """
-                SELECT memory_immediate_pending, memory_dirty
+                SELECT memory_immediate_pending
                 FROM conversations WHERE id = ?
                 """,
                 (cid,),
@@ -404,7 +439,7 @@ class ConversationStore:
                 (_now(), cid),
             )
             self.conn.commit()
-            return bool(int(row["memory_dirty"] or 0))
+            return True
 
     def list_idle_dirty_conversations(
         self, *, idle_hours: float = 24.0, limit: int = 20
@@ -454,6 +489,24 @@ class ConversationStore:
                 (cid,),
             ).fetchall()
             return [(r["text"] or "") for r in rows]
+
+    def list_dialogue_turns(self, cid: str) -> list[tuple[str, str]]:
+        """按序返回 (role, text)，仅 user/assistant，供会话级记忆抽取消歧。"""
+        with self._lock:
+            rows = self.conn.execute(
+                """
+                SELECT role, text FROM messages
+                WHERE conversation_id = ? AND role IN ('user', 'assistant')
+                ORDER BY seq ASC
+                """,
+                (cid,),
+            ).fetchall()
+            out: list[tuple[str, str]] = []
+            for r in rows:
+                text = (r["text"] or "").strip()
+                if text:
+                    out.append((r["role"], text))
+            return out
 
     def _next_seq(self, cid: str) -> int:
         row = self.conn.execute(

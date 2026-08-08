@@ -9,6 +9,7 @@ from app.engine.memory.policy import extraction_after_evidence_gate, is_template
 from app.engine.memory.prompt_common import (
     NON_DURABLE_IGNORE,
     OWNER_MEMORY_GATE,
+    SCOPE_FIDELITY_GATE,
     parse_llm_json_list,
     passes_owner_surface_gate,
 )
@@ -18,19 +19,22 @@ from app.models.llm import LLMClient
 # 遗留按条抽取器（仅测试/回退）。生产路径：session_extractor.LLMSessionExtractor。
 # 「关于主人」门槛与会话级共用 prompt_common，禁止各写一份。
 
-_SYSTEM_PROMPT = f"""你是用户长期记忆抽取器。只分析「用户本条消息」，提取关于「知识库主人（当前用户）」的稳定画像（身份、偏好、长期目标、工作方式、约束）。
+_SYSTEM_PROMPT = f"""你是用户长期记忆抽取器。只分析「用户本条消息」，提取关于「知识库主人（当前用户）」的稳定画像（身份、偏好、跨会话长期方向、工作方式、约束）。
 
 {OWNER_MEMORY_GATE}
 
 {NON_DURABLE_IGNORE}
 
+{SCOPE_FIDELITY_GATE}
+
 规则：
-1. statement：写入记忆文件的表述。可理解用户原意后整理改写，要求完整、简洁、可读（优先第一人称「我…」），适合长期画像；不要占位符、不要只留半句标签（如仅「我是一名工程师」而省略职责与专长）。同一消息内若有多条独立事实，拆成多条 candidate，每条 statement 自洽完整。
+1. statement：写入记忆文件的表述。可理解用户原意后整理改写，要求完整、简洁、可读（优先第一人称「我…」），适合长期画像；整理时不得删掉使命题为真的限定语；不要占位符、不要只留半句标签（如仅「我是一名工程师」而省略职责与专长）。同一消息内若有多条独立事实，拆成多条 candidate，每条 statement 自洽完整。
 2. evidence：必须是用户本条消息中的连续子串，逐字一致，不得改写；用于证明该事实出自用户原话，应覆盖 statement 所依据的原文（可一句或多句，不必与 statement 字面相同）。
 3. category 取其一：identity / preference / goal / workflow / constraint
 4. origin：用户明确自述用 direct；从上下文合理推断用 inferred
 5. confidence：direct 通常 0.85–1.0；inferred 通常 0.5–0.75
-6. 无合适事实时返回空数组
+6. 近期对话中的 assistant 行仅供消歧，不得写成主人画像。
+7. 无合适事实时返回空数组
 
 只输出 JSON，不要 markdown 围栏：
 {{"candidates":[{{"statement":"...","evidence":"...","category":"preference","origin":"direct","confidence":0.9}}]}}"""

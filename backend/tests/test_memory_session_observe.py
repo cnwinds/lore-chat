@@ -165,6 +165,172 @@ def test_archive_during_running_requeues_immediate(tmp_path):
     assert follow[0]["turn_id"] == SESSION_OBSERVE_IMMEDIATE
 
 
+def test_archive_same_second_still_requeues_immediate(tmp_path):
+    """同秒归档：CAS 可能清 dirty，但仍须再入队 immediate。"""
+    from app.engine.conversation.outbox import SESSION_OBSERVE_IMMEDIATE
+
+    conv = ConversationStore(tmp_path / "conversations")
+    repo = KnowledgeRepo(tmp_path / "knowledge", protected_dirs=("系统",))
+    mem = MemoryStore(tmp_path / "memory.db", owner_key="ws1")
+    svc = MemoryService(mem, repo, knowledge_writer=make_writer(repo, tmp_path))
+    inner = RuleBasedSessionExtractor()
+    snap_holder: dict[str, str | None] = {"ts": None}
+
+    class _ArchiveSameSecond:
+        def extract(self, user_texts, confirmed_summary=None):
+            # 使用与抽取快照相同的时间戳，模拟秒级精度撞车
+            with conv._lock:
+                ok = conv._request_immediate_memory_extract_unlocked(
+                    cid, at=snap_holder["ts"]
+                )
+                conv.conn.commit()
+            assert ok is False
+            return inner.extract(user_texts, confirmed_summary=confirmed_summary)
+
+    worker = MemoryWorker(conv, svc, extractor=_ArchiveSameSecond(), idle_hours=0)
+    cid = conv.create()
+    conv.begin_turn(cid, "我偏好简洁回答", "c1", observation_allowed=True)
+    snap_holder["ts"] = conv.get_last_user_message_at(cid)
+    assert conv.enqueue_session_observe(cid, immediate=True) is True
+    jobs = conv.claim_outbox(kind="session_observe_memory", limit=1, lease_seconds=120)
+    worker.process_session_job(jobs[0])
+    pending = conv.conn.execute(
+        "SELECT memory_immediate_pending FROM conversations WHERE id = ?", (cid,)
+    ).fetchone()
+    assert int(pending["memory_immediate_pending"] or 0) == 0
+    follow = [
+        j
+        for j in conv.list_outbox(kind="session_observe_memory")
+        if j["status"] == "pending"
+    ]
+    assert len(follow) == 1
+    assert follow[0]["turn_id"] == SESSION_OBSERVE_IMMEDIATE
+
+
+def test_job_failure_with_immediate_pending_rearms_immediate(tmp_path):
+    from app.engine.conversation.outbox import SESSION_OBSERVE_IMMEDIATE
+
+    conv = ConversationStore(tmp_path / "conversations")
+    repo = KnowledgeRepo(tmp_path / "knowledge", protected_dirs=("系统",))
+    mem = MemoryStore(tmp_path / "memory.db", owner_key="ws1")
+    svc = MemoryService(mem, repo, knowledge_writer=make_writer(repo, tmp_path))
+
+    class Boom:
+        def extract(self, user_messages, *, confirmed_summary):
+            with conv._lock:
+                conv._request_immediate_memory_extract_unlocked(cid)
+                conv.conn.commit()
+            raise RuntimeError("boom")
+
+    worker = MemoryWorker(conv, svc, extractor=Boom(), idle_hours=0)
+    cid = conv.create()
+    conv.begin_turn(cid, "我偏好简洁回答", "c1", observation_allowed=True)
+    assert conv.enqueue_session_observe(cid, immediate=True) is True
+    jobs = conv.claim_outbox(kind="session_observe_memory", limit=1, lease_seconds=120)
+    worker.process_session_job(jobs[0])
+    row = conv.conn.execute(
+        "SELECT memory_immediate_pending FROM conversations WHERE id = ?", (cid,)
+    ).fetchone()
+    assert int(row["memory_immediate_pending"] or 0) == 0
+    follow = [
+        j
+        for j in conv.list_outbox(kind="session_observe_memory")
+        if j["status"] == "pending"
+    ]
+    assert follow
+    assert any(j.get("turn_id") == SESSION_OBSERVE_IMMEDIATE for j in follow)
+
+
+def test_same_second_continue_chat_keeps_dirty_after_extract(tmp_path):
+    """同秒续聊：秒级时钟撞车时仍须保留 dirty，避免新用户句丢失。"""
+    conv = ConversationStore(tmp_path / "conversations")
+    repo = KnowledgeRepo(tmp_path / "knowledge", protected_dirs=("系统",))
+    mem = MemoryStore(tmp_path / "memory.db", owner_key="ws1")
+    svc = MemoryService(mem, repo, knowledge_writer=make_writer(repo, tmp_path))
+    inner = RuleBasedSessionExtractor()
+    snap_holder: dict[str, str | None] = {"ts": None}
+
+    class _ContinueSameSecond:
+        def extract(self, user_messages, *, confirmed_summary):
+            # 模拟同秒 begin_turn：脏标记时间与抽取快照相同
+            with conv._lock:
+                conv._mark_memory_dirty_unlocked(cid, at=snap_holder["ts"])
+                conv.conn.commit()
+            return inner.extract(user_messages, confirmed_summary=confirmed_summary)
+
+    worker = MemoryWorker(conv, svc, extractor=_ContinueSameSecond(), idle_hours=0)
+    cid = conv.create()
+    conv.begin_turn(cid, "我偏好简洁回答", "c1", observation_allowed=True)
+    snap_holder["ts"] = conv.get_last_user_message_at(cid)
+    assert conv.enqueue_session_observe(cid, immediate=True) is True
+    jobs = conv.claim_outbox(kind="session_observe_memory", limit=1, lease_seconds=120)
+    worker.process_session_job(jobs[0])
+    row = conv.conn.execute(
+        "SELECT memory_dirty FROM conversations WHERE id = ?", (cid,)
+    ).fetchone()
+    assert row["memory_dirty"] == 1
+    assert conv.get_last_user_message_at(cid) != snap_holder["ts"]
+
+
+def test_cas_timestamp_never_rewinds_on_repeated_same_second_dirty(tmp_path):
+    """同秒多次 dirty 不得把 CAS 键写回更旧秒级时间。"""
+    conv = ConversationStore(tmp_path / "conversations")
+    cid = conv.create()
+    conv.begin_turn(cid, "我偏好简洁回答", "c1", observation_allowed=True)
+    base = conv.get_last_user_message_at(cid)
+    assert base
+    conv.mark_memory_dirty(cid, at=base)  # -> base+1µs
+    mid = conv.get_last_user_message_at(cid)
+    assert mid != base
+    conv.mark_memory_dirty(cid, at=base)  # 不得回到 base
+    assert conv.get_last_user_message_at(cid) != base
+    assert conv.get_last_user_message_at(cid) >= mid
+    # worker 若持有 base 快照，不得误清 dirty
+    assert conv.clear_memory_dirty(cid, expected_last_user_message_at=base) is None
+    row = conv.conn.execute(
+        "SELECT memory_dirty FROM conversations WHERE id = ?", (cid,)
+    ).fetchone()
+    assert row["memory_dirty"] == 1
+
+
+def test_delete_conversation_cancels_session_observe_jobs(tmp_path):
+    conv = ConversationStore(tmp_path / "conversations")
+    cid = conv.create()
+    conv.begin_turn(cid, "我偏好简洁回答", "c1", observation_allowed=True)
+    assert conv.enqueue_session_observe(cid) is True
+    pending_before = [
+        j
+        for j in conv.list_outbox(kind="session_observe_memory")
+        if j["status"] == "pending"
+    ]
+    assert pending_before
+    conv.delete(cid)
+    active = [
+        j
+        for j in conv.list_outbox(kind="session_observe_memory")
+        if j["status"] in ("pending", "running", "blocked")
+    ]
+    assert active == []
+
+
+def test_fail_outbox_does_not_revive_cancelled_job(tmp_path):
+    conv = ConversationStore(tmp_path / "conversations")
+    cid = conv.create()
+    conv.begin_turn(cid, "我偏好简洁回答", "c1", observation_allowed=True)
+    assert conv.enqueue_session_observe(cid, immediate=True) is True
+    jobs = conv.claim_outbox(kind="session_observe_memory", limit=1, lease_seconds=60)
+    assert len(jobs) == 1
+    job_id = jobs[0]["id"]
+    conv.delete(cid)
+    assert conv.conn.execute(
+        "SELECT status FROM derivation_outbox WHERE id = ?", (job_id,)
+    ).fetchone()["status"] == "cancelled"
+    conv.fail_outbox(job_id, "boom", backoff=0.01)
+    assert conv.conn.execute(
+        "SELECT status FROM derivation_outbox WHERE id = ?", (job_id,)
+    ).fetchone()["status"] == "cancelled"
+
+
 def test_clear_dirty_cas_keeps_dirty_after_mid_extract_chat(tmp_path):
     """running 抽取期间续聊：结束后不得清掉新的 dirty。"""
     conv = ConversationStore(tmp_path / "conversations")

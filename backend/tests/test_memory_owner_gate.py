@@ -5,6 +5,7 @@ from app.engine.memory.llm_extractor import _SYSTEM_PROMPT as MSG_PROMPT
 from app.engine.memory.prompt_common import (
     NON_DURABLE_IGNORE,
     OWNER_MEMORY_GATE,
+    SCOPE_FIDELITY_GATE,
     passes_owner_surface_gate,
 )
 from app.engine.memory.session_extractor import (
@@ -29,6 +30,8 @@ def test_owner_gate_shared_by_extractors():
     assert OWNER_MEMORY_GATE in MSG_PROMPT
     assert NON_DURABLE_IGNORE in SESSION_PROMPT
     assert NON_DURABLE_IGNORE in MSG_PROMPT
+    assert SCOPE_FIDELITY_GATE in SESSION_PROMPT
+    assert SCOPE_FIDELITY_GATE in MSG_PROMPT
 
 
 def test_world_knowledge_scale_not_extracted_by_rules():

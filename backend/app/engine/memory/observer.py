@@ -87,8 +87,6 @@ class MemoryObserver:
         if existing and existing["status"] in ("forgotten", "superseded", "rejected"):
             return "rejected"
 
-        self._resolve_slot_conflicts(cand, slot=slot, vhash=vhash)
-
         if existing and existing["status"] == "candidate":
             evidence_n = self.store.count_evidence(existing["id"]) + 1
             merged_conf = min(1.0, max(float(existing["confidence"]), cand.confidence) + 0.1 * evidence_n)
@@ -127,6 +125,9 @@ class MemoryObserver:
                 status=status,
             )
 
+        # 先落存活 fact，再 supersede，以便出处 rebind 到 keep_id
+        self._resolve_slot_conflicts(cand, slot=slot, vhash=vhash, keep_id=fact["id"])
+
         qh = quote_hash_for(text, cand.start_char, cand.end_char)
         self.store.add_evidence(
             fact_id=fact["id"],
@@ -152,14 +153,17 @@ class MemoryObserver:
                 sensitivity=sensitivity,
                 status="confirmed",
             )
+            self._resolve_slot_conflicts(cand, slot=slot, vhash=vhash, keep_id=fact["id"])
             return "confirmed"
 
         return fact["status"]
 
     def _resolve_slot_conflicts(
-        self, cand: MemoryCandidate, *, slot: str, vhash: str
+        self, cand: MemoryCandidate, *, slot: str, vhash: str, keep_id: str | None = None
     ) -> None:
         for old in self.store.find_confirmed_by_slot(slot):
+            if keep_id and old["id"] == keep_id:
+                continue
             if old["normalized_value_hash"] == vhash:
                 continue
             if cand.origin == "inferred" and old["origin"] == "inferred":
@@ -167,4 +171,4 @@ class MemoryObserver:
             if origin_wins_conflict(cand.origin, old["origin"]) or (
                 cand.origin == old["origin"] and cand.origin == "direct"
             ):
-                self.store.mark_superseded(old["id"])
+                self.store.mark_superseded(old["id"], supersedes_id=keep_id)
