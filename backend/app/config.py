@@ -2,6 +2,8 @@ from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.engine.web.limits import FETCH_URL_PDF_MAX_BYTES
+
 _BACKEND_DIR = Path(__file__).resolve().parent.parent
 _ENV_FILE = _BACKEND_DIR / ".env"
 
@@ -46,6 +48,7 @@ class Settings(BaseSettings):
     agent_max_parallel: int = 4
     fetch_url_timeout: int = 15
     fetch_url_max_bytes: int = 102400
+    fetch_url_pdf_max_bytes: int = FETCH_URL_PDF_MAX_BYTES
 
     # 向量检索余弦相似度下限
     min_vector_score: float = 0.45

@@ -50,7 +50,9 @@ class AgentSubgraph:
         self.agent.tools.rebind(
             web_search=WebSearch(settings),
             fetcher=WebFetcher(
-                settings.fetch_url_timeout, settings.fetch_url_max_bytes
+                settings.fetch_url_timeout,
+                settings.fetch_url_max_bytes,
+                settings.fetch_url_pdf_max_bytes,
             ),
         )
         from app.engine.sandbox.factory import apply_sandbox_settings
@@ -102,7 +104,11 @@ def build_agent_subgraph(
         planner=planner_host,
         merge_workflow=merge_workflow,
     )
-    fetcher = WebFetcher(settings.fetch_url_timeout, settings.fetch_url_max_bytes)
+    fetcher = WebFetcher(
+        settings.fetch_url_timeout,
+        settings.fetch_url_max_bytes,
+        settings.fetch_url_pdf_max_bytes,
+    )
     web_search = WebSearch(settings)
     sandbox_runtime = build_sandbox_runtime(settings)
     tool_registry = ToolRegistry(

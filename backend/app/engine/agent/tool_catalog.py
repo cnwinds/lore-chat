@@ -166,13 +166,16 @@ TOOL_DEFINITIONS: list[dict] = [
         "function": {
             "name": "fetch_url",
             "description": (
-                "抓取并解析网页为 Markdown，按渐进式披露返回：默认前 3000 字。"
+                "抓取并解析网页或 PDF 为 Markdown，按渐进式披露返回：默认前 3000 字。"
                 "同一链接会缓存，需要更多时用 offset 继续，不会重复抓取。"
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "url": {"type": "string", "description": "要抓取的 HTTP/HTTPS 链接"},
+                    "url": {
+                        "type": "string",
+                        "description": "要抓取的 HTTP/HTTPS 链接（支持 HTML 与 PDF）",
+                    },
                     "offset": {"type": "integer", "description": "从第几个字符开始，默认 0；用返回的 next_offset 继续", "default": 0},
                     "limit": {"type": "integer", "description": "本次最多返回字符数，默认 3000", "default": 3000},
                 },

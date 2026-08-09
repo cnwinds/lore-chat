@@ -152,6 +152,7 @@ Lore Chat 使用**统一 Agent**：直接聊天即可，无需说「记录」或
 | `AGENT_MAX_TOOL_CALLS` | `8` | 单轮最多工具调用次数 |
 | `AGENT_PARALLEL_TOOLS` | `true` | 只读工具是否并行 |
 | `AGENT_MAX_PARALLEL` | `4` | 单批最多并行数 |
-| `FETCH_URL_TIMEOUT` | `15` | URL 抓取超时（秒） |
-| `FETCH_URL_MAX_BYTES` | `102400` | URL 抓取最大字节 |
+| `FETCH_URL_TIMEOUT` | `15` | URL 抓取超时（秒）；实际生效为 `max(该值, 60)`，避免大 PDF 被掐断 |
+| `FETCH_URL_MAX_BYTES` | `102400` | HTML 抓取最大字节 |
+| `FETCH_URL_PDF_MAX_BYTES` | `20971520` | PDF 抓取最大字节（默认 20MB，与代码单源） |
 | `SEARCH_PROVIDER_ORDER` | `tavily,serper,brave` | 搜索提供商优先级 |
