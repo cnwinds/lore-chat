@@ -1,12 +1,6 @@
 from __future__ import annotations
 
-from app.engine.disclosure import (
-    DEEP_DISCLOSURE_CHARS,
-    MAX_DISCLOSURE_CHARS,
-    disclose,
-    disclosure_summary,
-    resolve_disclosure_limit_from_args,
-)
+from app.engine.disclosure import DisclosureWindows, disclose, disclosure_summary
 
 
 class WebReadTools:
@@ -15,15 +9,11 @@ class WebReadTools:
         *,
         fetcher,
         web_search,
-        disclosure_chars: int,
-        disclosure_deep_chars: int = DEEP_DISCLOSURE_CHARS,
-        disclosure_max_chars: int = MAX_DISCLOSURE_CHARS,
+        disclosure_windows: DisclosureWindows | None = None,
     ) -> None:
         self.fetcher = fetcher
         self.searcher = web_search
-        self.disclosure_chars = disclosure_chars
-        self.disclosure_deep_chars = disclosure_deep_chars
-        self.disclosure_max_chars = disclosure_max_chars
+        self.disclosure = disclosure_windows or DisclosureWindows()
         self._fetch_cache: dict[str, object] = {}
 
     async def fetch_url(self, args: dict) -> dict:
@@ -48,18 +38,13 @@ class WebReadTools:
             }
         ]
         offset = args.get("offset", 0)
-        limit = resolve_disclosure_limit_from_args(
-            args,
-            default_chars=self.disclosure_chars,
-            deep_chars=self.disclosure_deep_chars,
-            max_chars=self.disclosure_max_chars,
-        )
+        limit = self.disclosure.resolve_args(args)
         info = disclose(
             result.markdown,
             offset=offset,
             limit=limit,
             with_outline=True,
-            max_chars=self.disclosure_max_chars,
+            max_chars=self.disclosure.max_chars,
         )
         label = result.title or result.url
         out = {

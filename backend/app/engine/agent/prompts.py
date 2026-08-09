@@ -51,7 +51,7 @@ SYSTEM_PROMPT = """你是 lorechat 知识库助手。用户只管聊天解决问
 | publish_from_sandbox | 多文件用 **files**`[{sandbox_path,directory,filename},…]`（重型，勿逐文件）；单文件可继续传三项 |
 | stage_to_sandbox | 多文件用 **files**`[{kb_path,sandbox_path?},…]`（重型，勿逐文件）；单文件可 kb_path；默认 /workspace/{kb_path} |
 | search_kb | query；跨会话回忆时默认不含当前会话（见下节） |
-| read_doc / fetch_url | 取证用小窗（spot）；深读/核对/成文用 deep；limit 受意图天花板与硬上限约束；用 offset 续读（见《戒律》四）；fetch_url 支持 HTML/PDF；.sh/.py 等亦可读 |
+| read_doc / fetch_url | 披露节奏见《戒律》四；参数以本轮工具定义为准；fetch_url 支持 HTML/PDF；.sh/.py 等亦可读 |
 
 其余工具以当前轮下发的 function 定义为准。
 

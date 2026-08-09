@@ -5,6 +5,7 @@ import pytest
 from app.config import Settings
 from app.engine.agent.prompts import MODE_DEFAULT, MODE_FORCE_WRITE, MODE_NO_WRITE
 from app.engine.agent.tools import ToolRegistry, can_parallelize, select_tools
+from app.engine.disclosure import DisclosureWindows
 from app.engine.organizer import Organizer
 from app.engine.pending import PendingStore
 from app.engine.retriever import Retriever
@@ -569,6 +570,23 @@ async def test_web_search_tool_invokes_searcher(tmp_path):
     assert "搜索到 1 条" in result["summary"]
     assert result["sources"][0]["url"] == "https://a.example"
     mock.search.assert_awaited_once_with("DeepSeek API 涨价", k=3)
+
+
+def test_select_tools_injects_disclosure_window_numbers():
+    tools = select_tools(
+        MODE_DEFAULT,
+        web_enabled=True,
+        disclosure_windows=DisclosureWindows(spot=1111, deep=2222, max_chars=3333),
+    )
+    by_name = {t["function"]["name"]: t for t in tools}
+    read_desc = by_name["read_doc"]["function"]["description"]
+    assert "1111" in read_desc and "2222" in read_desc and "3333" in read_desc
+    limit_desc = by_name["read_doc"]["function"]["parameters"]["properties"]["limit"][
+        "description"
+    ]
+    assert "1111" in limit_desc and "3333" in limit_desc
+    fetch_desc = by_name["fetch_url"]["function"]["description"]
+    assert "1111" in fetch_desc
 
 
 def test_select_tools_web_disabled_drops_web_search():

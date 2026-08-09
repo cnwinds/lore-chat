@@ -5,9 +5,6 @@ from app.engine.agent.tool_catalog import (
     TOOL_LABELS,
     WRITE_TOOLS,
     READ_ONLY_TOOLS,
-    _DEFAULT_DISCLOSURE_CHARS,
-    _DEEP_DISCLOSURE_CHARS,
-    _MAX_DISCLOSURE_CHARS,
     can_parallelize,
     select_tools,
 )
@@ -21,6 +18,7 @@ from app.engine.agent.tool_impl import (
     WebReadTools,
 )
 from app.engine.agent.tool_impl.sandbox_tools import SandboxTools
+from app.engine.disclosure import DisclosureWindows
 from app.engine.knowledge_writer import KnowledgeWriter
 from app.engine.sandbox.protocol import SandboxRuntime
 
@@ -50,9 +48,7 @@ class ToolRegistry:
         conversations=None,
         system_layer=None,
         indexer=None,
-        disclosure_chars: int = _DEFAULT_DISCLOSURE_CHARS,
-        disclosure_deep_chars: int = _DEEP_DISCLOSURE_CHARS,
-        disclosure_max_chars: int = _MAX_DISCLOSURE_CHARS,
+        disclosure_windows: DisclosureWindows | None = None,
         edit_doc_max_edits: int = 10,
         edit_doc_max_patch_chars: int = 8192,
         edit_doc_require_read: bool = True,
@@ -67,9 +63,7 @@ class ToolRegistry:
         self.conversations = conversations
         self.system_layer = system_layer
         self.knowledge_writer = knowledge_writer
-        self.disclosure_chars = disclosure_chars
-        self.disclosure_deep_chars = disclosure_deep_chars
-        self.disclosure_max_chars = disclosure_max_chars
+        self.disclosure_windows = disclosure_windows or DisclosureWindows()
         self.edit_doc_require_read = edit_doc_require_read
         self.sandbox_runtime = sandbox_runtime
 
@@ -78,9 +72,7 @@ class ToolRegistry:
             repo=repo,
             retriever=retriever,
             read_guard=read_guard,
-            disclosure_chars=disclosure_chars,
-            disclosure_deep_chars=disclosure_deep_chars,
-            disclosure_max_chars=disclosure_max_chars,
+            disclosure_windows=self.disclosure_windows,
             conversations=conversations,
             conversation_context_max_chars=conversation_context_max_chars,
         )
@@ -98,9 +90,7 @@ class ToolRegistry:
         self.web = WebReadTools(
             fetcher=fetcher,
             web_search=web_search,
-            disclosure_chars=disclosure_chars,
-            disclosure_deep_chars=disclosure_deep_chars,
-            disclosure_max_chars=disclosure_max_chars,
+            disclosure_windows=self.disclosure_windows,
         )
         self.memory = MemoryTools(memory_service)
         self.interaction = InteractionTools(pending)
@@ -111,6 +101,11 @@ class ToolRegistry:
             trust_mode=True,
         )
         self._dispatch_handlers = None
+
+    @property
+    def disclosure_chars(self) -> int:
+        """Skill 首窗等仍按 spot 默认窗对齐。"""
+        return self.disclosure_windows.spot
 
     @property
     def fetcher(self):

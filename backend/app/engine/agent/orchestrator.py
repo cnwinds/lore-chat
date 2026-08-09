@@ -94,6 +94,7 @@ class AgentOrchestrator:
             sandbox_enabled=bool(
                 self.settings.sandbox_enabled and self.tools.sandbox_runtime is not None
             ),
+            disclosure_windows=self.tools.disclosure_windows,
         )
         primary = primary_doc_path or active_doc_path
         start = time.monotonic()

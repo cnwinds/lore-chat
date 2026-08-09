@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 import re
 
 _HEADING_RE = re.compile(r"^(#{1,6})[ \t]+(.+?)[ \t]*$", re.MULTILINE)
 
-# 默认窗口 / 深读窗口 / 硬上限（Settings 默认值应引用此处，避免双源）
+# 默认窗口 / 深读窗口 / 硬上限（Settings 默认值应引用此处）
 DEFAULT_DISCLOSURE_CHARS = 3000
 DEEP_DISCLOSURE_CHARS = 16000
 MAX_DISCLOSURE_CHARS = 32000
@@ -29,7 +30,7 @@ def resolve_disclosure_limit(
 ) -> int:
     """按意图解析单次披露字数。
 
-    - spot（默认）：默认小窗；显式 limit 也不得超过小窗（防名义取证、实际灌大窗）。
+    - spot（默认）：默认小窗；显式 limit 也不得超过小窗。
     - deep：默认深读窗；显式 limit 可放大，但不超过硬上限。
     """
     max_n = _as_positive_int(max_chars, MAX_DISCLOSURE_CHARS)
@@ -52,21 +53,25 @@ def resolve_disclosure_limit(
     return max(1, min(chosen, ceiling))
 
 
-def resolve_disclosure_limit_from_args(
-    args: dict,
-    *,
-    default_chars: int = DEFAULT_DISCLOSURE_CHARS,
-    deep_chars: int = DEEP_DISCLOSURE_CHARS,
-    max_chars: int = MAX_DISCLOSURE_CHARS,
-) -> int:
-    """从工具参数 dict 解析披露窗口。"""
-    return resolve_disclosure_limit(
-        limit=args.get("limit"),
-        intent=args.get("intent"),
-        default_chars=default_chars,
-        deep_chars=deep_chars,
-        max_chars=max_chars,
-    )
+@dataclass(frozen=True)
+class DisclosureWindows:
+    """渐进式披露窗口配置（spot / deep / 硬上限）。"""
+
+    spot: int = DEFAULT_DISCLOSURE_CHARS
+    deep: int = DEEP_DISCLOSURE_CHARS
+    max_chars: int = MAX_DISCLOSURE_CHARS
+
+    def resolve(self, *, limit: object = None, intent: object = None) -> int:
+        return resolve_disclosure_limit(
+            limit=limit,
+            intent=intent,
+            default_chars=self.spot,
+            deep_chars=self.deep,
+            max_chars=self.max_chars,
+        )
+
+    def resolve_args(self, args: dict) -> int:
+        return self.resolve(limit=args.get("limit"), intent=args.get("intent"))
 
 
 def build_outline(text: str, *, max_items: int = 50) -> list[str]:

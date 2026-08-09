@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-from app.engine.disclosure import (
-    DEFAULT_DISCLOSURE_CHARS as _DEFAULT_DISCLOSURE_CHARS,
-    DEEP_DISCLOSURE_CHARS as _DEEP_DISCLOSURE_CHARS,
-    MAX_DISCLOSURE_CHARS as _MAX_DISCLOSURE_CHARS,
-)
+import copy
+
+from app.engine.disclosure import DisclosureWindows
 from app.engine.knowledge_writer import KnowledgeWriter
 
 resolve_kb_location = KnowledgeWriter.resolve_location
@@ -22,26 +20,67 @@ WRITE_TOOLS = frozenset({
     "sandbox_run", "publish_from_sandbox", "stage_to_sandbox",
 })
 
-_DISCLOSURE_INTENT_LIMIT_PROPS: dict = {
-    "intent": {
-        "type": "string",
-        "enum": ["spot", "deep"],
-        "description": (
-            "读取意图：spot=问答取证（默认小窗，limit 也不得超过小窗）；"
-            f"deep=深读/核对/成文（默认约 {_DEEP_DISCLOSURE_CHARS} 字，"
-            f"limit 可放大至硬上限 {_MAX_DISCLOSURE_CHARS}）。"
-        ),
-        "default": "spot",
-    },
-    "limit": {
-        "type": "integer",
-        "description": (
-            f"本次最多字符数；省略则按 intent（spot≈{_DEFAULT_DISCLOSURE_CHARS}，"
-            f"deep≈{_DEEP_DISCLOSURE_CHARS}）。spot 上限为小窗；"
-            f"deep 硬上限 {_MAX_DISCLOSURE_CHARS}。"
-        ),
-    },
-}
+# 兼容旧导入（默认窗数值）
+_DEFAULT_DISCLOSURE_CHARS = DisclosureWindows().spot
+_DEEP_DISCLOSURE_CHARS = DisclosureWindows().deep
+_MAX_DISCLOSURE_CHARS = DisclosureWindows().max_chars
+
+
+def disclosure_intent_limit_props(windows: DisclosureWindows) -> dict:
+    """intent / limit 参数 schema；字数来自传入窗口配置。"""
+    return {
+        "intent": {
+            "type": "string",
+            "enum": ["spot", "deep"],
+            "description": (
+                "读取意图：spot=问答取证（可先 search_kb，再小窗阅读；"
+                f"默认约 {windows.spot} 字，limit 也不得超过该小窗）；"
+                f"deep=深读/核对/成文（默认约 {windows.deep} 字，"
+                f"limit 可放大至硬上限 {windows.max_chars}）。"
+            ),
+            "default": "spot",
+        },
+        "limit": {
+            "type": "integer",
+            "description": (
+                f"本次最多字符数；省略则按 intent（spot≈{windows.spot}，"
+                f"deep≈{windows.deep}）。spot 上限为小窗；"
+                f"deep 硬上限 {windows.max_chars}。"
+            ),
+        },
+    }
+
+
+def _read_doc_description(windows: DisclosureWindows) -> str:
+    return (
+        "按渐进式披露读取知识库文档或文本资产："
+        "Markdown 返回正文并附结构大纲；白名单文本文件（.sh/.py 等）按纯文本读取。"
+        f"默认 intent=spot（约 {windows.spot} 字，可先 search_kb）；"
+        f"深读/核对/成文用 intent=deep（默认约 {windows.deep} 字，硬上限 {windows.max_chars}）。"
+        "内容不足时用 offset 续读，不要盲目全量读取。"
+    )
+
+
+def _fetch_url_description(windows: DisclosureWindows) -> str:
+    return (
+        "抓取并解析网页或 PDF 为 Markdown，按渐进式披露返回。"
+        f"默认 intent=spot（约 {windows.spot} 字）；"
+        f"深读/核对/成文用 intent=deep（默认约 {windows.deep} 字，硬上限 {windows.max_chars}）。"
+        "同一链接会缓存，需要更多时用 offset 继续，不会重复抓取。"
+    )
+
+
+def apply_disclosure_windows(tool_def: dict, windows: DisclosureWindows) -> dict:
+    """返回注入当前窗口配置后的工具定义副本。"""
+    out = copy.deepcopy(tool_def)
+    name = out["function"]["name"]
+    props = out["function"]["parameters"]["properties"]
+    props.update(disclosure_intent_limit_props(windows))
+    if name == "read_doc":
+        out["function"]["description"] = _read_doc_description(windows)
+    elif name == "fetch_url":
+        out["function"]["description"] = _fetch_url_description(windows)
+    return out
 
 
 def can_parallelize(tool_names: list[str]) -> bool:
@@ -140,18 +179,13 @@ TOOL_DEFINITIONS: list[dict] = [
         "type": "function",
         "function": {
             "name": "read_doc",
-            "description": (
-                "按渐进式披露读取知识库文档或文本资产："
-                "Markdown 返回正文并附结构大纲；白名单文本文件（.sh/.py 等）按纯文本读取。"
-                "默认 intent=spot（约 3000 字）；深读/核对/成文用 intent=deep（更大窗口）。"
-                "内容不足时用 offset 续读；单次有硬上限，不要盲目全量读取。"
-            ),
+            "description": _read_doc_description(DisclosureWindows()),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "path": {"type": "string", "description": "文档相对路径，如 技术/docker/常用命令.md"},
                     "offset": {"type": "integer", "description": "从第几个字符开始读取，默认 0；可用返回的 next_offset 或大纲中的 @位置", "default": 0},
-                    **_DISCLOSURE_INTENT_LIMIT_PROPS,
+                    **disclosure_intent_limit_props(DisclosureWindows()),
                 },
                 "required": ["path"],
             },
@@ -190,11 +224,7 @@ TOOL_DEFINITIONS: list[dict] = [
         "type": "function",
         "function": {
             "name": "fetch_url",
-            "description": (
-                "抓取并解析网页或 PDF 为 Markdown，按渐进式披露返回。"
-                "默认 intent=spot（约 3000 字）；深读/核对/成文用 intent=deep。"
-                "同一链接会缓存，需要更多时用 offset 继续，不会重复抓取；单次有硬上限。"
-            ),
+            "description": _fetch_url_description(DisclosureWindows()),
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -203,7 +233,7 @@ TOOL_DEFINITIONS: list[dict] = [
                         "description": "要抓取的 HTTP/HTTPS 链接（支持 HTML 与 PDF）",
                     },
                     "offset": {"type": "integer", "description": "从第几个字符开始，默认 0；用返回的 next_offset 继续", "default": 0},
-                    **_DISCLOSURE_INTENT_LIMIT_PROPS,
+                    **disclosure_intent_limit_props(DisclosureWindows()),
                 },
                 "required": ["url"],
             },
@@ -733,6 +763,7 @@ def select_tools(
     *,
     search_configured: bool = True,
     sandbox_enabled: bool = False,
+    disclosure_windows: DisclosureWindows | None = None,
 ) -> list[dict]:
     """按 mode / 联网 / 沙箱能力硬门过滤下发给模型的工具集。
 
@@ -740,6 +771,7 @@ def select_tools(
     - mode=no_write：移除 write_kb / write_kb_file / manage_memory / publish_from_sandbox（保留 stage_to_sandbox）。
     - mode=force_write：保留 write_kb（/api/ingest 依赖 prompt 强制调用）。
     - sandbox_enabled=False：移除全部沙箱工具。
+    - disclosure_windows：注入 read_doc / fetch_url 的实际窗口字数（与 Settings 一致）。
 
     /api/chat 使用 mode=default。ingest/ask 为测试与脚本同步 API，见
     docs/superpowers/specs/2026-07-12-ingest-ask-api-design.md
@@ -754,4 +786,14 @@ def select_tools(
         excluded.add("publish_from_sandbox")
     if not sandbox_enabled:
         excluded |= SANDBOX_TOOLS
-    return [d for d in TOOL_DEFINITIONS if d["function"]["name"] not in excluded]
+    windows = disclosure_windows or DisclosureWindows()
+    selected: list[dict] = []
+    for d in TOOL_DEFINITIONS:
+        name = d["function"]["name"]
+        if name in excluded:
+            continue
+        if name in ("read_doc", "fetch_url"):
+            selected.append(apply_disclosure_windows(d, windows))
+        else:
+            selected.append(d)
+    return selected

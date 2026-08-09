@@ -1,6 +1,7 @@
 from app.engine.disclosure import (
     DEEP_DISCLOSURE_CHARS,
     MAX_DISCLOSURE_CHARS,
+    DisclosureWindows,
     build_outline,
     disclose,
     disclosure_summary,
@@ -73,3 +74,11 @@ def test_disclose_hard_caps_limit():
     info = disclose(text, offset=0, limit=999999)
     assert info["returned_chars"] == MAX_DISCLOSURE_CHARS
     assert info["has_more"] is True
+
+
+def test_disclosure_windows_resolve_args():
+    windows = DisclosureWindows(spot=2000, deep=8000, max_chars=12000)
+    assert windows.resolve(intent="spot") == 2000
+    assert windows.resolve(intent="deep") == 8000
+    assert windows.resolve_args({"intent": "deep", "limit": 99999}) == 12000
+    assert windows.resolve_args({"intent": "spot", "limit": 9000}) == 2000

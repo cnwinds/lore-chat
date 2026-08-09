@@ -8,6 +8,7 @@ from app.engine.agent.system_layer import SystemLayer
 from app.engine.agent.tools import ToolRegistry
 from app.engine.chat.session_runner import ChatSessionRunner
 from app.engine.conversations import ConversationStore
+from app.engine.disclosure import DisclosureWindows
 from app.engine.knowledge_writer import KnowledgeWriter
 from app.engine.merge_workflow import MergeWorkflow
 from app.engine.organizer import Organizer
@@ -122,9 +123,11 @@ def build_agent_subgraph(
         conversations=conversations,
         system_layer=system_layer,
         indexer=indexer,
-        disclosure_chars=settings.read_disclosure_chars,
-        disclosure_deep_chars=settings.read_disclosure_deep_chars,
-        disclosure_max_chars=settings.read_disclosure_max_chars,
+        disclosure_windows=DisclosureWindows(
+            spot=settings.read_disclosure_chars,
+            deep=settings.read_disclosure_deep_chars,
+            max_chars=settings.read_disclosure_max_chars,
+        ),
         edit_doc_max_edits=settings.edit_doc_max_edits,
         edit_doc_max_patch_chars=settings.edit_doc_max_patch_chars,
         edit_doc_require_read=settings.edit_doc_require_read,
