@@ -1,6 +1,7 @@
 """会话级记忆抽取：整段对话（用户为主、助手摘要消歧）→ SlotAction 列表。
 
 生产路径仅 LLM；未配置抽取器或调用失败时不落库，保留 dirty 待下次。
+槽位最终身份只在 SlotResolver 解析；此处只透传 LLM hint。
 """
 
 from __future__ import annotations
@@ -8,16 +9,10 @@ from __future__ import annotations
 from typing import Protocol
 
 from app.engine.memory.dialogue_timeline_pack import (
-    _compress_messages,
-    _normalize_turns,
-)
-
-# 兼容：旧测试/调用方可从本模块再导出
-from app.engine.memory.dialogue_timeline_pack import (  # noqa: F401
     compress_dialogue_timeline,
-    compress_to_self_timeline,
+    normalize_dialogue_turns,
 )
-from app.engine.memory.normalize import infer_category, resolve_slot_key
+from app.engine.memory.normalize import infer_category
 from app.engine.memory.predicates import seed_prompt_block
 from app.engine.memory.prompt_common import (
     NON_DURABLE_IGNORE,
@@ -67,14 +62,14 @@ class SessionMemoryExtractor(Protocol):
 def _to_action(
     *,
     statement: str,
-    slot: str,
+    slot_hint: str,
     category: str,
     action: str,
     origin: str,
     confidence: float,
 ) -> SlotAction:
     return SlotAction(
-        slot_key=slot,
+        slot_hint=slot_hint,
         action=action,
         statement=statement,
         category=category,
@@ -93,7 +88,7 @@ class LLMSessionExtractor:
         *,
         confirmed_summary: list[dict],
     ) -> list[SlotAction]:
-        turns = _normalize_turns(messages)  # type: ignore[arg-type]
+        turns = normalize_dialogue_turns(messages)  # type: ignore[arg-type]
         if not turns:
             return []
         # 仅跳过含密钥的用户句，勿整段否决同会话其它自述
@@ -104,7 +99,7 @@ class LLMSessionExtractor:
         ]
         if not any(role == "user" for role, _ in safe_turns):
             return []
-        body = _compress_messages(safe_turns)
+        body = compress_dialogue_timeline(safe_turns)
         confirmed_lines = []
         for f in confirmed_summary[:40]:
             confirmed_lines.append(f"- {f.get('slot_key')}: {f.get('statement')}")
@@ -131,14 +126,6 @@ class LLMSessionExtractor:
         items = parse_llm_json_list(raw, key="items")[:_MAX_ITEMS]
         # 长句优先，便于同批近义对齐到同一 topic_/种子
         items.sort(key=lambda x: len(str(x.get("statement") or "")), reverse=True)
-        batch_existing = [
-            {
-                "slot_key": f.get("slot_key"),
-                "statement": f.get("statement"),
-                "category": f.get("category"),
-            }
-            for f in confirmed_summary
-        ]
         actions: list[SlotAction] = []
         for item in items:
             statement = str(item.get("statement", "")).strip()
@@ -146,14 +133,8 @@ class LLMSessionExtractor:
                 continue
             if not passes_owner_surface_gate(statement):
                 continue
-            slot_raw = str(item.get("slot_key") or "").strip()
+            slot_hint = str(item.get("slot_key") or "").strip()
             category = str(item.get("category") or infer_category(statement)).strip()
-            slot = resolve_slot_key(
-                category,
-                statement,
-                slot_hint=slot_raw,
-                existing=batch_existing,
-            )
             action = str(item.get("action") or "new").strip().lower()
             if action not in ("merge", "replace", "noop", "new"):
                 action = "new"
@@ -167,18 +148,11 @@ class LLMSessionExtractor:
             actions.append(
                 _to_action(
                     statement=statement,
-                    slot=slot,
+                    slot_hint=slot_hint,
                     category=category,
                     action=action,
                     origin=origin,
                     confidence=confidence,
                 )
-            )
-            batch_existing.append(
-                {
-                    "slot_key": slot,
-                    "statement": statement,
-                    "category": category,
-                }
             )
         return actions

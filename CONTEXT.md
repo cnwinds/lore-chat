@@ -9,7 +9,7 @@
 | HTTP | `backend/app/api/routes.py` | 鉴权、DTO、StreamingResponse；**不**解析 Agent SSE |
 | 聊天 | `backend/app/engine/chat/` | `TurnExecutionHub`（begin/ensure/观测/stop 生命周期）、`ChatSessionRunner`（HTTP 薄 facade + ephemeral）、时间线、SSE；持久回合可发 `timeline_state` 投影 |
 | Agent | `backend/app/engine/agent/` | `AgentOrchestrator`（adapter）、`AgentToolLoop`（LLM+工具循环）、`tool_catalog`、`tool_impl/*`（执行）、`tools.py`（`ToolRegistry.execute` / `rebind` / `interrupt_runtime`） |
-| 会话 | `conversations.py` + `conversation/*` | SQLite 消息/turn；outbox；`MemoryExtractSchedule`；`ConversationTranscript`；`ConversationDeletionWorkflow`；`ConversationMessageGraph`（store 兼容委托） |
+| 会话 | `conversations.py` + `conversation/*` | SQLite 消息/turn；outbox；`MemoryExtractSchedule`；`ConversationTranscript`；`ConversationDeletionWorkflow`；`ConversationMessageGraph`；`ConversationSummaryLedger`（`store.summaries`）；`ConversationSystemEvents`（`store.system_events`）；其余 store 兼容委托逐步收口 |
 | 知识写入 | `backend/app/engine/knowledge_writer.py` | 路径 + git + 索引 + changelog **唯一写入 seam**；意图级 `persist_document` / `import_entry`（`allow_binary`）/ `read_entry_bytes` / `move_entry` / `delete_entry`；非 MD 准入经 `assert_non_md_asset_allowed`；Merge/Agent 勿自组 drop_index |
 | 沙箱 | `backend/app/engine/sandbox/` | `SandboxRuntime` 端口；`SandboxCommandGate`（高风险确认）；`KbSandboxExchange`（stage/publish）；`SandboxTools` 为薄 tool adapter |
 | 文档成文 | `backend/app/engine/document_synthesis.py` | 归档/合并/入库合并的 LLM 成文；Organizer 与 MergeWorkflow 共用 |
@@ -77,8 +77,8 @@ _Avoid_: 流式中锁死输入；同会话并行多个 running turn；inject 打
 **沙箱确认**：高风险 `sandbox_run` 在 trust_mode 关闭时经 `SandboxCommandGate` 建 Pending；用户批准后由 `PendingResolver` 后端代跑（不依赖模型再调工具）。
 _Avoid_: 在 Organizer / KB 摄入路径解析 `sandbox_confirm`
 
-**文档托盘**：用户在发送前选中的知识库上下文集合；项为带类型的 `{ path, kind }`，持久化在消息的 `doc_context` 中。可含普通文档与 Skill 根等。
-_Avoid_: 附件托盘（与 `attachments/` 二进制附件区分）；仅用无类型路径列表表达 Skill
+**文档托盘**：用户在发送前选中的知识库上下文集合；项为带类型的 `{ path, kind }`，持久化在消息的 `doc_context` 中。可含普通文档与 Skill 根等。托盘 ↔ float/pin 预览编排在 `useComposerPreviewBridge`。
+_Avoid_: 附件托盘（与 `attachments/` 二进制附件区分）；仅用无类型路径列表表达 Skill；在 `App.tsx` 再堆 pin/tray/路径同步状态机
 
 **主文档**：托盘内用于默认 `edit_doc` 目标的普通 Markdown 文档。Skill 包（`skill_root`）不可作主文档；用户明确指定路径时仍可 `edit_doc`（含某 Skill 的 `SKILL.md`）。
 _Avoid_: 把 Skill 根当作可编辑文档
@@ -88,6 +88,9 @@ _Avoid_: 全量注入；对普通 `document` 路径做 Skill 激活
 
 **Skill 包发现**：用户点选侧栏某文件夹后，自该目录起**递归**找出所有「目录内直接含 `SKILL.md`」的包根；经**勾选确认层**（列出候选路径，用户选择）后以若干 `skill_root` 写入托盘。点选目录自身含 `SKILL.md` 时，候选列表须包含该目录。未发现任何包时提示用户，不写入托盘。前端编排在 `useSkillTrayAttach`。
 _Avoid_: 不经确认自动塞满托盘；只扫描一层；在 `App.tsx` 再堆发现/确认状态机
+
+**知识库树 viewport UI**：侧栏目录的展开态与滚动位置（hydrate / 临时露出 / 恢复 / 落盘）收在 `useKbTreeViewportUi`；`FileTree` 只渲染受控展开；存储细节在 `kbTreeUiStorage`。
+_Avoid_: 用 `onExpandReady` 跨组件握手；在 `FileTree` / `Sidebar` 再拆一套展开或滚动状态机
 
 **托盘项类型（kind）**：`document`（普通 Markdown）与 `skill_root`（Skill 包根目录）。**仅 `skill_root` 触发 Skill 激活**；`document` 永不因 Skill 规则激活。历史纯字符串路径读作 `document`；不重放补做 Skill 激活。
 _Avoid_: 单文件 Skill；对旧会话做全库迁移

@@ -13,6 +13,7 @@ from app.engine.memory.policy import (
     allows_automatic_save,
     has_change_signal,
     infer_sensitivity,
+    initial_status,
     origin_wins_conflict,
     should_promote,
 )
@@ -21,14 +22,40 @@ from app.engine.secrets import scan_secrets
 from app.engine.memory.constants import ORIGIN_RANK
 
 
-@dataclass
+@dataclass(init=False)
 class SlotAction:
-    slot_key: str
+    """抽取/调用方只填 slot_hint；canonical slot_key 由 SlotResolver.apply 解析。"""
+
     action: str  # merge | replace | noop | new
     statement: str
     category: str
     origin: str
-    confidence: float = 0.9
+    confidence: float
+    slot_hint: str
+
+    def __init__(
+        self,
+        *,
+        action: str,
+        statement: str,
+        category: str,
+        origin: str,
+        confidence: float = 0.9,
+        slot_hint: str = "",
+        slot_key: str = "",
+    ) -> None:
+        self.action = action
+        self.statement = statement
+        self.category = category
+        self.origin = origin
+        self.confidence = confidence
+        # slot_key= 为旧调用方别名，语义同 slot_hint（未解析）
+        self.slot_hint = slot_hint or slot_key
+
+    @property
+    def slot_key(self) -> str:
+        """未解析 hint 的兼容别名；勿当成库内最终槽位。"""
+        return self.slot_hint
 
 
 class SlotResolver:
@@ -55,7 +82,7 @@ class SlotResolver:
         slot = resolve_slot_key(
             action.category,
             statement,
-            slot_hint=action.slot_key,
+            slot_hint=action.slot_hint,
             existing=existing,
         )
         category = (action.category or "preference").strip().lower()
@@ -100,7 +127,7 @@ class SlotResolver:
                 "message": "该记忆槽位已被阻止",
             }
 
-        status = _initial_status(origin, statement)
+        status = initial_status(origin, statement)
         existing_same = self.store.find_by_slot_and_hash(slot, vhash)
         confirmed_in_slot = self.store.find_confirmed_by_slot(slot)
         stale_in_slot = self.store.find_stale_by_slot(slot)
@@ -150,7 +177,7 @@ class SlotResolver:
                     self.store.add_session_evidence(active_primary["id"], conversation_id)
                 if active_primary.get("status") == "stale":
                     # 不能改写内容时仍应复活，避免衰减后永久不可见
-                    revive = _initial_status(
+                    revive = initial_status(
                         active_primary.get("origin") or "inferred",
                         active_primary.get("statement") or statement,
                     )
@@ -439,15 +466,6 @@ def _align_view(store: MemoryStore) -> list[dict]:
     return rows
 
 
-def _initial_status(origin: str, statement: str) -> str:
-    del statement  # 保留签名；status 仅由 origin 决定
-    if origin in ("manual", "explicit_remember"):
-        return "confirmed"
-    if origin == "direct":
-        return "confirmed"
-    return "candidate"
-
-
 def _merge_origin(old: str | None, new: str | None) -> str:
     o = (old or "inferred").strip()
     n = (new or "inferred").strip()
@@ -500,7 +518,7 @@ def _apply_noop_touch(
 ) -> dict:
     """noop：可升级 origin/status、复活 stale，但不改 statement。"""
     merged_origin = _merge_origin(primary.get("origin"), incoming_origin)
-    incoming_status = _initial_status(merged_origin, primary.get("statement") or "")
+    incoming_status = initial_status(merged_origin, primary.get("statement") or "")
     next_status = _status_after_touch(primary, incoming_status)
     need_update = (
         primary.get("status") == "stale"

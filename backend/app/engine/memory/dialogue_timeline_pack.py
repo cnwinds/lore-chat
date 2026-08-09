@@ -9,7 +9,7 @@ _MAX_ASSISTANT_CHARS = 280
 # 兼容旧名
 _MAX_USER_CHARS = _MAX_DIALOGUE_CHARS
 
-def _normalize_turns(
+def normalize_dialogue_turns(
     messages: list[str] | list[tuple[str, str]],
 ) -> list[tuple[str, str]]:
     """list[str] 视为纯用户消息；list[tuple[role, text]] 为对话轮次。"""
@@ -196,7 +196,7 @@ def compress_dialogue_timeline(
     """压缩对话时间线：用户尽量完整；助手强截断（保留尾部），仅作消歧（规格 §3 #11）。"""
     if max_chars <= 0:
         return ""
-    norm = _normalize_turns(turns)  # type: ignore[arg-type]
+    norm = normalize_dialogue_turns(turns)  # type: ignore[arg-type]
     entries: list[tuple[int, str, str, bool]] = []
     for i, (role, text) in enumerate(norm, 1):
         if role == "assistant":
@@ -259,11 +259,5 @@ def compress_to_self_timeline(
         max_chars=max_chars,
         assistant_max=_MAX_ASSISTANT_CHARS,
     )
-
-
-def _compress_messages(
-    messages: list[str] | list[tuple[str, str]], *, max_chars: int = _MAX_DIALOGUE_CHARS
-) -> str:
-    return compress_dialogue_timeline(messages, max_chars=max_chars)
 
 

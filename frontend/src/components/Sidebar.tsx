@@ -15,7 +15,7 @@ import { useKbTreeActions } from "../hooks/useKbTreeActions";
 import { useFileTreeInteraction } from "../hooks/useFileTreeInteraction";
 import { useDragAutoScroll } from "../hooks/useDragAutoScroll";
 import { useDismissOnOutsideClick } from "../hooks/useDismissOnOutsideClick";
-import { useKbTreeScrollUi } from "../hooks/useKbTreeScrollUi";
+import { useKbTreeViewportUi } from "../hooks/useKbTreeViewportUi";
 import { isSystemLayerPath } from "../utils/fileTree";
 
 type SelectMods = { ctrlKey?: boolean; metaKey?: boolean; shiftKey?: boolean };
@@ -63,9 +63,11 @@ export function Sidebar({
   const kbHintRef = useRef<HTMLDivElement>(null);
   const treeScrollRef = useRef<HTMLDivElement>(null);
   const { onDragOverAutoScroll } = useDragAutoScroll(treeScrollRef);
-  const { onExpandReady } = useKbTreeScrollUi(treeScrollRef, {
+  const viewport = useKbTreeViewportUi({
+    paths: docs,
+    activePaths,
     collapsed,
-    scrollEnabled: docs.length > 0,
+    scrollRef: treeScrollRef,
   });
 
   const conversationGroups = useMemo(
@@ -296,11 +298,12 @@ export function Sidebar({
             >
               <div ref={treeScrollRef} className="sidebar-tree-scroll">
                 <FileTree
-                  paths={docs}
+                  tree={viewport.tree}
                   activePaths={activePaths}
                   onSelectFile={onSelectFile}
                   onSelectFolder={onSelectFolder}
-                  onExpandReady={onExpandReady}
+                  expanded={viewport.expanded}
+                  onToggleFolder={viewport.toggleFolder}
                   {...tree.fileTreeProps}
                 />
               </div>

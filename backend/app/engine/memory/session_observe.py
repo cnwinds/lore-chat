@@ -128,7 +128,7 @@ class SessionMemoryObserve:
                     confirmed_landed = True
 
             if confirmed_landed:
-                self.conversations.append_system_event(
+                self.conversations.system_events.append(
                     cid,
                     "memory_updated",
                     {

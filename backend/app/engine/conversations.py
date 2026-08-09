@@ -11,6 +11,8 @@ from pathlib import Path
 from app.engine.conversation.deletion import ConversationDeletionWorkflow
 from app.engine.conversation.memory_schedule import MemoryExtractSchedule
 from app.engine.conversation.message_graph import ConversationMessageGraph
+from app.engine.conversation.summary_ledger import ConversationSummaryLedger
+from app.engine.conversation.system_events import ConversationSystemEvents
 from app.engine.conversation.transcript import ConversationTranscript
 from app.engine.conversation.outbox import DerivationOutbox
 from app.engine.conversation.shared import (
@@ -170,6 +172,8 @@ class ConversationStore:
         self._turn_lifecycle = TurnLifecycle(self)
         self.message_graph = ConversationMessageGraph(self)
         self.deletion = ConversationDeletionWorkflow(self)
+        self.summaries = ConversationSummaryLedger(self)
+        self.system_events = ConversationSystemEvents(self)
 
     # ------------------------------------------------------------------
     # 内部辅助
@@ -409,17 +413,7 @@ class ConversationStore:
         return [self._message_row_to_dict(r) for r in rows]
 
     def _summary_state(self, cid: str) -> tuple[bool, str | None, str | None]:
-        row = self.conn.execute(
-            """
-            SELECT doc_path, created_at FROM conversation_summaries
-            WHERE conversation_id = ? AND status = 'current' AND is_primary = 1
-            ORDER BY revision DESC LIMIT 1
-            """,
-            (cid,),
-        ).fetchone()
-        if row is None:
-            return False, None, None
-        return True, row["doc_path"], row["created_at"]
+        return self.summaries.summary_state(cid)
 
     def _conversation_row(self, cid: str) -> sqlite3.Row:
         row = self.conn.execute(
@@ -431,8 +425,8 @@ class ConversationStore:
 
     def _conv_to_dict(self, row: sqlite3.Row) -> dict:
         cid = row["id"]
-        summarized, summary_path, summarized_at = self._summary_state(cid)
-        summaries = self._list_summaries_unlocked(cid)
+        summarized, summary_path, summarized_at = self.summaries.summary_state(cid)
+        summaries = self.summaries.list_unlocked(cid)
         active_turn_id = row["active_turn_id"]
         active_turn = None
         if active_turn_id:
@@ -465,13 +459,7 @@ class ConversationStore:
         self.conn.execute(
             "UPDATE conversations SET indexed_dirty = 1 WHERE id = ?", (cid,)
         )
-        self.conn.execute(
-            """
-            UPDATE conversation_summaries SET status = 'stale'
-            WHERE conversation_id = ? AND status = 'current'
-            """,
-            (cid,),
-        )
+        self.summaries.mark_stale_unlocked(cid)
 
     # ------------------------------------------------------------------
     # CRUD
@@ -662,78 +650,31 @@ class ConversationStore:
         """把某条 ask_user 征询块标记为已选择，持久化用户的选择（便于重载后展示）。"""
         self.message_graph.mark_question_resolved(cid, question_id, choice_label)
 
-    def mark_summarized(self, cid: str, summary_path: str) -> None:
-        with self._lock:
-            self._conversation_row(cid)
-            self.conn.execute(
-                """
-                UPDATE conversation_summaries SET is_primary = 0
-                WHERE conversation_id = ? AND is_primary = 1
-                """,
-                (cid,),
-            )
-            last_msg = self.conn.execute(
-                """
-                SELECT id FROM messages WHERE conversation_id = ?
-                ORDER BY seq DESC LIMIT 1
-                """,
-                (cid,),
-            ).fetchone()
-            max_rev = self.conn.execute(
-                """
-                SELECT COALESCE(MAX(revision), 0) AS n FROM conversation_summaries
-                WHERE conversation_id = ? AND doc_path = ?
-                """,
-                (cid, summary_path),
-            ).fetchone()["n"]
-            self.conn.execute(
-                """
-                INSERT INTO conversation_summaries(
-                    conversation_id, doc_path, revision, covered_through_message_id,
-                    status, is_primary, created_at
-                ) VALUES (?, ?, ?, ?, 'current', 1, ?)
-                """,
-                (
-                    cid,
-                    summary_path,
-                    int(max_rev) + 1,
-                    last_msg["id"] if last_msg else None,
-                    _now(),
-                ),
-            )
-            now = _now()
-            self.conn.execute(
-                "UPDATE conversations SET indexed_dirty = 0, updated_at = ? WHERE id = ?",
-                (now, cid),
-            )
-            # 归档完成：立刻调度会话级记忆抽取（规格：归档即时）
-            self._request_immediate_memory_extract_unlocked(cid, at=now)
-            self.conn.commit()
-
-    def _list_summaries_unlocked(self, cid: str) -> list[dict]:
-        rows = self.conn.execute(
+    def latest_message_id_unlocked(self, cid: str) -> str | None:
+        """当前会话最新消息 id（摘要覆盖终点）；调用方已持锁。"""
+        row = self.conn.execute(
             """
-            SELECT * FROM conversation_summaries
-            WHERE conversation_id = ? ORDER BY revision ASC
+            SELECT id FROM messages WHERE conversation_id = ?
+            ORDER BY seq DESC LIMIT 1
             """,
             (cid,),
-        ).fetchall()
-        return [
-            {
-                "conversation_id": r["conversation_id"],
-                "doc_path": r["doc_path"],
-                "revision": r["revision"],
-                "covered_through_message_id": r["covered_through_message_id"],
-                "status": r["status"],
-                "is_primary": bool(r["is_primary"]),
-            }
-            for r in rows
-        ]
+        ).fetchone()
+        return row["id"] if row else None
+
+    def notify_archived_unlocked(self, cid: str) -> None:
+        """归档落库后的记忆即时调度钩子；调用方已持锁。
+
+        不传用户消息时钟：立即重抽不得推进 last_user_message_at。
+        """
+        self.memory_schedule.request_immediate_unlocked(cid)
+
+    def mark_summarized(self, cid: str, summary_path: str) -> None:
+        """兼容委托 → summaries.mark_summarized。"""
+        self.summaries.mark_summarized(cid, summary_path)
 
     def list_summaries(self, cid: str) -> list[dict]:
-        with self._lock:
-            self._conversation_row(cid)
-            return self._list_summaries_unlocked(cid)
+        """兼容委托 → summaries.list_summaries。"""
+        return self.summaries.list_summaries(cid)
 
     def clear_dirty(self, cid: str) -> None:
         with self._lock:
@@ -773,59 +714,16 @@ class ConversationStore:
         return self._outbox.list_jobs(kind=kind, message_id=message_id)
 
     def append_system_event(self, conversation_id: str, event_type: str, payload: dict) -> dict:
-        event_id = _new_id()
-        created_at = _now()
-        with self._lock:
-            self.conn.execute(
-                """
-                INSERT INTO conversation_system_events(
-                    id, conversation_id, event_type, payload_json, created_at
-                ) VALUES (?, ?, ?, ?, ?)
-                """,
-                (event_id, conversation_id, event_type, _dumps(payload), created_at),
-            )
-            self.conn.commit()
-        return {"id": event_id, "event_type": event_type, "payload": payload, "created_at": created_at}
+        """兼容委托 → system_events.append。"""
+        return self.system_events.append(conversation_id, event_type, payload)
 
     def list_system_events(
         self, conversation_id: str, *, after_event_id: str | None = None, limit: int = 50
     ) -> list[dict]:
-        with self._lock:
-            if after_event_id:
-                anchor = self.conn.execute(
-                    "SELECT rowid FROM conversation_system_events WHERE id = ?",
-                    (after_event_id,),
-                ).fetchone()
-                if anchor is None:
-                    return []
-                rows = self.conn.execute(
-                    """
-                    SELECT * FROM conversation_system_events
-                    WHERE conversation_id = ? AND rowid > ?
-                    ORDER BY rowid ASC LIMIT ?
-                    """,
-                    (conversation_id, anchor["rowid"], limit),
-                ).fetchall()
-            else:
-                rows = self.conn.execute(
-                    """
-                    SELECT * FROM conversation_system_events
-                    WHERE conversation_id = ?
-                    ORDER BY created_at ASC LIMIT ?
-                    """,
-                    (conversation_id, limit),
-                ).fetchall()
-            out = []
-            for row in rows:
-                out.append(
-                    {
-                        "id": row["id"],
-                        "event_type": row["event_type"],
-                        "payload": _loads(row["payload_json"], {}),
-                        "created_at": row["created_at"],
-                    }
-                )
-            return out
+        """兼容委托 → system_events.list。"""
+        return self.system_events.list(
+            conversation_id, after_event_id=after_event_id, limit=limit
+        )
 
     def get_message(self, message_id: str) -> dict | None:
         """加载消息及所属会话标题，供派生索引使用。"""

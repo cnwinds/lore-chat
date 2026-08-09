@@ -93,8 +93,11 @@ def test_llm_session_keeps_owner_preference():
     assert actions[0].slot_key == "preference.illustration_style"
 
 
-def test_llm_session_cold_start_paraphrases_share_slot():
-    """同批冷启动近义（无种子）应对齐到同一抽象槽。"""
+def test_llm_session_cold_start_paraphrases_share_slot(tmp_path):
+    """同批冷启动近义：抽取器透传 hint；SlotResolver 写入时对齐到同一抽象槽。"""
+    from app.engine.memory.resolver import SlotResolver
+    from app.engine.memory.store import MemoryStore
+
     a = "我喜欢在周五下午整理笔记并归档到知识库。"
     b = "我偏好周五下午把笔记整理好再归档进知识库。"
     ext = LLMSessionExtractor(
@@ -109,5 +112,18 @@ def test_llm_session_cold_start_paraphrases_share_slot():
     )
     actions = ext.extract([a, b], confirmed_summary=[])
     assert len(actions) == 2
-    assert actions[0].slot_key == actions[1].slot_key
-    assert "周五" not in actions[0].slot_key
+    # 抽取器不再做批内对齐，hint 可不同
+    assert actions[0].slot_key != actions[1].slot_key
+
+    store = MemoryStore(tmp_path / "memory.db", owner_key="test")
+    resolver = SlotResolver(store)
+    out_a = resolver.apply(actions[0], conversation_id="c1")
+    out_b = resolver.apply(actions[1], conversation_id="c1")
+    assert out_a["ok"] and out_b["ok"]
+    # merge 后可能 sync topic_* 指纹；最终应并成一条存活事实
+    confirmed = store.list_confirmed()
+    assert len(confirmed) == 1
+    assert out_a["fact"]["id"] == out_b["fact"]["id"] or out_b["fact"][
+        "id"
+    ] == confirmed[0]["id"]
+    assert "周五" not in confirmed[0]["slot_key"]

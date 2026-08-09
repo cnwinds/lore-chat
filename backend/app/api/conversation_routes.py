@@ -68,7 +68,7 @@ async def list_conversation_events(
         c.conversations.get(cid)
     except KeyError as e:
         raise HTTPException(404, "对话不存在") from e
-    events = c.conversations.list_system_events(
+    events = c.conversations.system_events.list(
         cid, after_event_id=after_event_id, limit=limit
     )
     return {"events": events}
@@ -117,7 +117,7 @@ async def summarize_conversation(cid: str, body: SummarizeBody, request: Request
     except Exception as e:
         raise HTTPException(502, f"归档失败: {e}") from e
     if result.status == "saved" and result.rel_path:
-        c.conversations.mark_summarized(cid, result.rel_path)
+        c.conversations.summaries.mark_summarized(cid, result.rel_path)
     return result.__dict__
 
 

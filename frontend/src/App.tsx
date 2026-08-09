@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { getAuthStatus, type SourceRef, isMarkdownPath, downloadUrl } from "./api";
+import { useEffect, useState } from "react";
+import { getAuthStatus, type SourceRef } from "./api";
 import { LoginPage } from "./components/auth/LoginPage";
 import { SetupPage } from "./components/auth/SetupPage";
 import { Chat } from "./components/Chat";
@@ -14,10 +14,10 @@ import { useAppEscapeKey } from "./hooks/app/useAppEscapeKey";
 import { useConversationShell } from "./hooks/app/useConversationShell";
 import { useDocPreviewLayout } from "./hooks/app/useDocPreviewLayout";
 import { useComposerDocState } from "./hooks/useComposerDocState";
+import { useComposerPreviewBridge } from "./hooks/useComposerPreviewBridge";
 import { useSkillTrayAttach } from "./hooks/useSkillTrayAttach";
 import type { JumpTarget } from "./hooks/chat/useConversationJump";
 import { SkillPickModal } from "./components/SkillPickModal";
-import { isInsideSkillPackage } from "./utils/kbSkill";
 
 type Gate = "loading" | "setup" | "login" | "app";
 
@@ -63,74 +63,12 @@ function AppMain() {
     handleSkillPickConfirm,
     cancelSkillPick,
   } = useSkillTrayAttach(composer);
-  const pinAddedTrayRef = useRef<string | null>(null);
-  const [kbDocs, setKbDocs] = useState<string[]>([]);
-
-  function addDocToComposer(path: string) {
-    const title = path.split("/").pop() ?? path;
-    if (!composer.items.some((i) => i.path === path)) {
-      composer.addDocumentToTray(path, title);
-    }
-    composer.setPrimary(path);
-  }
-
-  function openDocWithComposer(
-    path: string,
-    excerpt?: string,
-    options?: { pin?: boolean },
-  ) {
-    addDocToComposer(path);
-    doc.openDocPreview(path, excerpt, options);
-  }
-
-  function handlePinDoc() {
-    const path = doc.floatPath;
-    if (!path) return;
-    const wasInTray = composer.items.some((i) => i.path === path);
-    if (!wasInTray) {
-      pinAddedTrayRef.current = path;
-      addDocToComposer(path);
-    } else {
-      pinAddedTrayRef.current = null;
-      composer.setPrimary(path);
-    }
-    doc.pinDocPreview();
-  }
-
-  function handleUnpinDoc() {
-    const path = doc.pinnedPath;
-    if (path && pinAddedTrayRef.current === path) {
-      composer.removeFromTray(path);
-      pinAddedTrayRef.current = null;
-    }
-    doc.unpinDocPreview();
-  }
-
-  function handleSelectFile(
-    path: string,
-    mods?: { ctrlKey?: boolean; metaKey?: boolean; shiftKey?: boolean },
-  ) {
-    const title = path.split("/").pop() ?? path;
-    if (!isMarkdownPath(path)) {
-      window.open(downloadUrl(path), "_blank", "noopener,noreferrer");
-      return;
-    }
-    if (mods?.ctrlKey || mods?.metaKey || mods?.shiftKey) {
-      if (isInsideSkillPackage(path, kbDocs)) {
-        window.alert("Skill 包内文档请点文件夹附加 Skill；此处仅可打开阅读。");
-        return;
-      }
-      composer.addDocumentToTray(path, title);
-    } else {
-      doc.openDocPreview(path, undefined, { pin: false });
-    }
-  }
-
-  function handleKbPathChanged(fromPath: string, toPath: string) {
-    composer.remapPath(fromPath, toPath);
-    doc.remapOpenPath(fromPath, toPath);
-    refreshSidebar();
-  }
+  const bridge = useComposerPreviewBridge({
+    composer,
+    doc,
+    refreshSidebar,
+    onSearchSource: setSnippetSource,
+  });
 
   function handleSelectFolder(path: string, mods?: { ctrlKey?: boolean; metaKey?: boolean }) {
     if (mods?.ctrlKey || mods?.metaKey) {
@@ -138,40 +76,17 @@ function AppMain() {
     }
   }
 
-  function handleKbPathsDeleted(paths: string[]) {
-    const deleted = new Set(paths);
-    for (const p of composer.items.map((i) => i.path)) {
-      if (deleted.has(p)) composer.removeFromTray(p);
-    }
-    if (doc.floatPath && deleted.has(doc.floatPath)) doc.closeFloatPreview();
-    if (doc.pinnedPath && deleted.has(doc.pinnedPath)) doc.closePinnedPreview();
-    refreshSidebar();
-  }
-
-  function handleTraySetPrimary(path: string) {
-    const item = composer.items.find((i) => i.path === path);
-    if (!item || item.kind !== "document") return;
-    composer.setPrimary(path);
-    openDocWithComposer(path, undefined, { pin: true });
-  }
-
-  function handleTrayRemove(path: string) {
-    const wasPinned = doc.pinnedPath === path;
-    composer.removeFromTray(path);
-    if (wasPinned) doc.closePinnedPreview();
-  }
-
   const conversation = useConversationShell({
     sidebarRefreshKey,
     refreshSidebar,
     doc,
     composerPrimaryPath: composer.primaryPath,
-    onSelectFile: handleSelectFile,
+    onSelectFile: bridge.handleSelectFile,
     onSelectFolder: handleSelectFolder,
     onAttachSkillsFolder: openSkillPickForFolder,
-    onDocsLoaded: setKbDocs,
-    onKbPathChanged: handleKbPathChanged,
-    onKbPathsDeleted: handleKbPathsDeleted,
+    onDocsLoaded: bridge.setKbDocs,
+    onKbPathChanged: bridge.handleKbPathChanged,
+    onKbPathsDeleted: bridge.handleKbPathsDeleted,
   });
 
   useAppEscapeKey(doc, snippetSource, () => setSnippetSource(null));
@@ -182,15 +97,6 @@ function AppMain() {
     }
     conversation.requestJump(target);
     doc.closeAllPreviews();
-  }
-
-  function handleOpenSource(src: SourceRef) {
-    if (src.type === "kb") openDocWithComposer(src.path, src.excerpt, { pin: true });
-    else if (src.type === "web") {
-      window.open(src.url, "_blank", "noopener,noreferrer");
-    } else if (src.type === "search") {
-      setSnippetSource(src);
-    }
   }
 
   const floatDocHandlers = buildDocViewerHandlers(doc, "float", (id) => {
@@ -224,7 +130,7 @@ function AppMain() {
               conversation.setTitleOverrides((prev) => ({ ...prev, [id]: title }))
             }
             onSidebarRefresh={refreshSidebar}
-            onOpenSource={handleOpenSource}
+            onOpenSource={bridge.handleOpenSource}
             onJumpToConversation={handleJumpToConversation}
             pendingJump={conversation.pendingJump}
             onJumpHandled={conversation.clearPendingJump}
@@ -232,8 +138,8 @@ function AppMain() {
             primaryDocPath={composer.primaryPath}
             documentPaths={composer.documentPaths}
             docContextItems={composer.docContextItems}
-            onTraySetPrimary={handleTraySetPrimary}
-            onTrayRemove={handleTrayRemove}
+            onTraySetPrimary={bridge.handleTraySetPrimary}
+            onTrayRemove={bridge.handleTrayRemove}
           />
         }
         docFloat={
@@ -246,7 +152,7 @@ function AppMain() {
               docFocus={doc.floatFocus}
               showBackdrop={!doc.floatFocus}
               onRequestClose={doc.requestCloseFloatPreview}
-              onPin={handlePinDoc}
+              onPin={bridge.handlePinDoc}
               {...floatDocHandlers}
             />
           ) : null
@@ -259,7 +165,7 @@ function AppMain() {
               highlightText={doc.pinnedHighlight}
               docWidth={doc.pinnedWidth}
               docFocus={doc.pinnedFocus}
-              onUnpin={handleUnpinDoc}
+              onUnpin={bridge.handleUnpinDoc}
               {...pinnedDocHandlers}
             />
           ) : null

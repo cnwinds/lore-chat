@@ -40,7 +40,9 @@ class MemoryMaintenanceJob:
             if self.conversations:
                 cid = self._latest_conversation_for_fact(fact["id"])
                 if cid:
-                    self.conversations.append_system_event(cid, "memory_decayed", payload)
+                    self.conversations.system_events.append(
+                        cid, "memory_decayed", payload
+                    )
         if changed:
             get_logger("memory_maintenance").info("memory decay applied count=%s", changed)
         return {"changed": changed, "events": events}

@@ -176,7 +176,9 @@ class KbMutateTools:
             [{"type": "kb", "path": result.rel_path}] if result.rel_path else []
         )
         if result.status == "saved" and result.rel_path:
-            self.conversations.mark_summarized(conversation_id, result.rel_path)
+            self.conversations.summaries.mark_summarized(
+                conversation_id, result.rel_path
+            )
         return {"summary": result.message, "sources": sources}
 
     def move_entry(self, args: dict) -> dict:
