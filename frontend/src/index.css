@@ -630,25 +630,13 @@ a:hover {
 .conversation-group-label {
   padding: 6px 10px 4px;
   font-size: var(--font-ui-xs);
-  font-weight: 600;
+  font-weight: 500;
   color: var(--text-muted);
   background: var(--bg-muted);
   border-bottom: 1px solid var(--border);
   position: sticky;
   top: 0;
   z-index: 1;
-}
-
-.conversation-group-label--today {
-  color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 14%, var(--bg-muted));
-  border-bottom-color: var(--accent-border);
-}
-
-.conversation-group-label--yesterday {
-  color: var(--system-layer);
-  background: color-mix(in srgb, var(--system-layer) 14%, var(--bg-muted));
-  border-bottom-color: color-mix(in srgb, var(--system-layer) 28%, var(--border));
 }
 
 .conversation-group .conversation-item:last-child {
@@ -661,15 +649,29 @@ a:hover {
   border-bottom: 1px solid var(--border);
   /* 避开分组 sticky 标题，保证定位后标题完整可见 */
   scroll-margin-top: 28px;
+  border-left: 2px solid transparent;
 }
 
 .conversation-item:last-child {
   border-bottom: none;
 }
 
-.conversation-item.active .conversation-select {
+.conversation-item.active {
   background: var(--accent-soft);
+  border-left-color: var(--accent);
+}
+
+.conversation-item.active .conversation-select {
   color: var(--accent-hover);
+}
+
+.conversation-item.active .conversation-title {
+  color: var(--accent-hover);
+  font-weight: 600;
+}
+
+.conversation-item.active .conversation-meta {
+  color: color-mix(in srgb, var(--accent-hover) 72%, var(--text-muted));
 }
 
 .conversation-select {
@@ -689,6 +691,10 @@ a:hover {
 
 .conversation-select:hover {
   background: var(--bg-hover);
+}
+
+.conversation-item.active .conversation-select:hover {
+  background: transparent;
 }
 
 .conversation-title {
@@ -3187,6 +3193,22 @@ button.memory-fact-statement--jump:focus-visible {
   margin-left: auto;
   margin-right: auto;
   line-height: 1.6;
+}
+
+.chat-welcome {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.chat-welcome-logo {
+  width: 88px;
+  height: 88px;
+  color: var(--accent);
 }
 
 .chat-row {

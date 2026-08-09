@@ -1,6 +1,7 @@
 import type { MutableRefObject, RefObject } from "react";
 import { formatDuration, type ChatMessage, type IngestResult, type SourceRef } from "../../api";
 import { expandMessagesForDisplay } from "../../utils/chatMessage";
+import { LoreLogo } from "../LoreLogo";
 import { ChatMessageRow, messageHasBody } from "./ChatMessageRow";
 import { ConversationOutline } from "./ConversationOutline";
 
@@ -38,18 +39,19 @@ export function ChatMessageList({
   onQuestionResolved,
 }: ChatMessageListProps) {
   const rows = expandMessagesForDisplay(msgs);
+  const showWelcome = !loadingHistory && msgs.length === 0;
 
   return (
     <>
       <div className="chat-messages-shell">
+        {showWelcome && (
+          <div className="chat-welcome">
+            <LoreLogo className="chat-welcome-logo" />
+          </div>
+        )}
         <div className="chat-messages" ref={messagesContainerRef}>
           <div className="chat-messages-inner">
             {loadingHistory && <div className="chat-empty">加载对话中…</div>}
-            {!loadingHistory && msgs.length === 0 && (
-              <div className="chat-empty">
-                直接输入即可。Agent 会自动检索知识库、搜索网页并整理到知识库。
-              </div>
-            )}
             {rows.map((row) => {
               const isLiveStreaming =
                 streaming &&
