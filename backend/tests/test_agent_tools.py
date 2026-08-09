@@ -286,9 +286,17 @@ async def test_read_doc_deep_intent_larger_window(tmp_path):
     assert deep["returned_chars"] <= 16000
 
     capped = await registry.execute(
-        "read_doc", {"path": "技术/long.md", "limit": 999999}
+        "read_doc",
+        {"path": "技术/long.md", "intent": "deep", "limit": 999999},
     )
     assert capped["returned_chars"] == 32000
+
+    # 问答取证不得借大 limit 绕过小窗
+    spot = await registry.execute(
+        "read_doc",
+        {"path": "技术/long.md", "intent": "spot", "limit": 20000},
+    )
+    assert spot["returned_chars"] <= 3000
 
 
 @pytest.mark.asyncio

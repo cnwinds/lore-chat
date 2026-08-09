@@ -6,7 +6,7 @@ from app.engine.disclosure import (
     MAX_DISCLOSURE_CHARS,
     disclose,
     disclosure_summary,
-    resolve_disclosure_limit,
+    resolve_disclosure_limit_from_args,
 )
 from app.engine.kb_structure import summarize_kb_structure
 from app.engine.agent.tool_impl.doc_read_guard import DocReadGuard
@@ -37,9 +37,8 @@ class KbReadTools:
         self.conversation_context_max_chars = conversation_context_max_chars
 
     def _window_limit(self, args: dict) -> int:
-        return resolve_disclosure_limit(
-            limit=args.get("limit"),
-            intent=args.get("intent"),
+        return resolve_disclosure_limit_from_args(
+            args,
             default_chars=self.disclosure_chars,
             deep_chars=self.disclosure_deep_chars,
             max_chars=self.disclosure_max_chars,

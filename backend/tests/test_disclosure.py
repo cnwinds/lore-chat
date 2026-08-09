@@ -61,7 +61,10 @@ def test_resolve_disclosure_limit_by_intent():
     assert resolve_disclosure_limit(intent="spot") == 3000
     assert resolve_disclosure_limit(intent="deep") == DEEP_DISCLOSURE_CHARS
     assert resolve_disclosure_limit(intent="deep", limit=12000) == 12000
-    assert resolve_disclosure_limit(limit=999999) == MAX_DISCLOSURE_CHARS
+    assert resolve_disclosure_limit(intent="deep", limit=999999) == MAX_DISCLOSURE_CHARS
+    # 取证不得借 limit 拉大窗口
+    assert resolve_disclosure_limit(intent="spot", limit=20000) == 3000
+    assert resolve_disclosure_limit(limit=999999) == 3000
     assert resolve_disclosure_limit(intent="nope") == 3000
 
 

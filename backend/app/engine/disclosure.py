@@ -4,12 +4,19 @@ import re
 
 _HEADING_RE = re.compile(r"^(#{1,6})[ \t]+(.+?)[ \t]*$", re.MULTILINE)
 
-# 默认窗口 / 深读窗口 / 硬上限（与 Settings 默认值对齐；运行时以注入值为准）
+# 默认窗口 / 深读窗口 / 硬上限（Settings 默认值应引用此处，避免双源）
 DEFAULT_DISCLOSURE_CHARS = 3000
 DEEP_DISCLOSURE_CHARS = 16000
 MAX_DISCLOSURE_CHARS = 32000
 
 _VALID_INTENTS = frozenset({"spot", "deep"})
+
+
+def _as_positive_int(value: object, fallback: int) -> int:
+    try:
+        return max(1, int(value))  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return max(1, fallback)
 
 
 def resolve_disclosure_limit(
@@ -20,19 +27,19 @@ def resolve_disclosure_limit(
     deep_chars: int = DEEP_DISCLOSURE_CHARS,
     max_chars: int = MAX_DISCLOSURE_CHARS,
 ) -> int:
-    """按意图解析单次披露字数：显式 limit 优先，否则 spot→default、deep→deep；最后硬封顶。"""
-    try:
-        max_n = max(1, int(max_chars))
-    except (TypeError, ValueError):
-        max_n = MAX_DISCLOSURE_CHARS
-    try:
-        default_n = max(1, int(default_chars))
-    except (TypeError, ValueError):
-        default_n = DEFAULT_DISCLOSURE_CHARS
-    try:
-        deep_n = max(1, int(deep_chars))
-    except (TypeError, ValueError):
-        deep_n = DEEP_DISCLOSURE_CHARS
+    """按意图解析单次披露字数。
+
+    - spot（默认）：默认小窗；显式 limit 也不得超过小窗（防名义取证、实际灌大窗）。
+    - deep：默认深读窗；显式 limit 可放大，但不超过硬上限。
+    """
+    max_n = _as_positive_int(max_chars, MAX_DISCLOSURE_CHARS)
+    default_n = min(_as_positive_int(default_chars, DEFAULT_DISCLOSURE_CHARS), max_n)
+    deep_n = min(_as_positive_int(deep_chars, DEEP_DISCLOSURE_CHARS), max_n)
+
+    intent_key = str(intent or "spot").strip().lower()
+    if intent_key not in _VALID_INTENTS:
+        intent_key = "spot"
+    ceiling = max_n if intent_key == "deep" else default_n
 
     chosen: int | None = None
     if limit is not None and limit != "":
@@ -41,11 +48,25 @@ def resolve_disclosure_limit(
         except (TypeError, ValueError):
             chosen = None
     if chosen is None:
-        intent_key = str(intent or "spot").strip().lower()
-        if intent_key not in _VALID_INTENTS:
-            intent_key = "spot"
         chosen = deep_n if intent_key == "deep" else default_n
-    return max(1, min(chosen, max_n))
+    return max(1, min(chosen, ceiling))
+
+
+def resolve_disclosure_limit_from_args(
+    args: dict,
+    *,
+    default_chars: int = DEFAULT_DISCLOSURE_CHARS,
+    deep_chars: int = DEEP_DISCLOSURE_CHARS,
+    max_chars: int = MAX_DISCLOSURE_CHARS,
+) -> int:
+    """从工具参数 dict 解析披露窗口。"""
+    return resolve_disclosure_limit(
+        limit=args.get("limit"),
+        intent=args.get("intent"),
+        default_chars=default_chars,
+        deep_chars=deep_chars,
+        max_chars=max_chars,
+    )
 
 
 def build_outline(text: str, *, max_items: int = 50) -> list[str]:
@@ -68,15 +89,23 @@ def disclose(
     with_outline: bool = False,
     max_chars: int = MAX_DISCLOSURE_CHARS,
 ) -> dict:
-    """渐进式披露：返回 [offset, offset+limit) 窗口与翻页元信息。"""
+    """渐进式披露：返回 [offset, offset+limit) 窗口与翻页元信息。
+
+    limit 视为已选定的窗口大小；此处只做硬上限截断（意图解析在工具层完成）。
+    """
     total = len(text)
     try:
         offset = int(offset)
     except (TypeError, ValueError):
         offset = 0
-    limit = resolve_disclosure_limit(limit=limit, max_chars=max_chars)
+    max_n = _as_positive_int(max_chars, MAX_DISCLOSURE_CHARS)
+    try:
+        limit_n = int(limit)
+    except (TypeError, ValueError):
+        limit_n = DEFAULT_DISCLOSURE_CHARS
+    limit_n = max(1, min(limit_n, max_n))
     offset = max(0, min(offset, total))
-    window = text[offset : offset + limit]
+    window = text[offset : offset + limit_n]
     end = offset + len(window)
     result: dict = {
         "body": window,

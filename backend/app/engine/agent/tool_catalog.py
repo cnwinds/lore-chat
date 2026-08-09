@@ -22,6 +22,26 @@ WRITE_TOOLS = frozenset({
     "sandbox_run", "publish_from_sandbox", "stage_to_sandbox",
 })
 
+_DISCLOSURE_INTENT_LIMIT_PROPS: dict = {
+    "intent": {
+        "type": "string",
+        "enum": ["spot", "deep"],
+        "description": (
+            "读取意图：spot=问答取证（默认小窗，limit 也不得超过小窗）；"
+            f"deep=深读/核对/成文（默认约 {_DEEP_DISCLOSURE_CHARS} 字，"
+            f"limit 可放大至硬上限 {_MAX_DISCLOSURE_CHARS}）。"
+        ),
+        "default": "spot",
+    },
+    "limit": {
+        "type": "integer",
+        "description": (
+            f"本次最多字符数；省略则按 intent（spot≈{_DEFAULT_DISCLOSURE_CHARS}，"
+            f"deep≈{_DEEP_DISCLOSURE_CHARS}）。spot 上限为小窗；"
+            f"deep 硬上限 {_MAX_DISCLOSURE_CHARS}。"
+        ),
+    },
+}
 
 
 def can_parallelize(tool_names: list[str]) -> bool:
@@ -131,23 +151,7 @@ TOOL_DEFINITIONS: list[dict] = [
                 "properties": {
                     "path": {"type": "string", "description": "文档相对路径，如 技术/docker/常用命令.md"},
                     "offset": {"type": "integer", "description": "从第几个字符开始读取，默认 0；可用返回的 next_offset 或大纲中的 @位置", "default": 0},
-                    "intent": {
-                        "type": "string",
-                        "enum": ["spot", "deep"],
-                        "description": (
-                            "读取意图：spot=问答取证（默认小窗）；"
-                            f"deep=深读/核对/成文（默认约 {_DEEP_DISCLOSURE_CHARS} 字）。"
-                            "显式 limit 优先于 intent 默认窗。"
-                        ),
-                        "default": "spot",
-                    },
-                    "limit": {
-                        "type": "integer",
-                        "description": (
-                            f"本次最多读取字符数；省略则按 intent（spot≈{_DEFAULT_DISCLOSURE_CHARS}，"
-                            f"deep≈{_DEEP_DISCLOSURE_CHARS}）；硬上限 {_MAX_DISCLOSURE_CHARS}"
-                        ),
-                    },
+                    **_DISCLOSURE_INTENT_LIMIT_PROPS,
                 },
                 "required": ["path"],
             },
@@ -199,23 +203,7 @@ TOOL_DEFINITIONS: list[dict] = [
                         "description": "要抓取的 HTTP/HTTPS 链接（支持 HTML 与 PDF）",
                     },
                     "offset": {"type": "integer", "description": "从第几个字符开始，默认 0；用返回的 next_offset 继续", "default": 0},
-                    "intent": {
-                        "type": "string",
-                        "enum": ["spot", "deep"],
-                        "description": (
-                            "读取意图：spot=问答取证（默认小窗）；"
-                            f"deep=深读/核对/成文（默认约 {_DEEP_DISCLOSURE_CHARS} 字）。"
-                            "显式 limit 优先于 intent 默认窗。"
-                        ),
-                        "default": "spot",
-                    },
-                    "limit": {
-                        "type": "integer",
-                        "description": (
-                            f"本次最多返回字符数；省略则按 intent（spot≈{_DEFAULT_DISCLOSURE_CHARS}，"
-                            f"deep≈{_DEEP_DISCLOSURE_CHARS}）；硬上限 {_MAX_DISCLOSURE_CHARS}"
-                        ),
-                    },
+                    **_DISCLOSURE_INTENT_LIMIT_PROPS,
                 },
                 "required": ["url"],
             },

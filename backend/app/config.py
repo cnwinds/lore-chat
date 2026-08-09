@@ -2,6 +2,11 @@ from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.engine.disclosure import (
+    DEFAULT_DISCLOSURE_CHARS,
+    DEEP_DISCLOSURE_CHARS,
+    MAX_DISCLOSURE_CHARS,
+)
 from app.engine.web.limits import FETCH_URL_PDF_MAX_BYTES
 
 _BACKEND_DIR = Path(__file__).resolve().parent.parent
@@ -40,9 +45,9 @@ class Settings(BaseSettings):
     embed_api_key: str | None = None
 
     # 渐进式披露：spot 默认窗 / deep 默认窗 / 单次硬上限（防一次灌爆上下文）
-    read_disclosure_chars: int = 3000
-    read_disclosure_deep_chars: int = 16000
-    read_disclosure_max_chars: int = 32000
+    read_disclosure_chars: int = DEFAULT_DISCLOSURE_CHARS
+    read_disclosure_deep_chars: int = DEEP_DISCLOSURE_CHARS
+    read_disclosure_max_chars: int = MAX_DISCLOSURE_CHARS
 
     # Agent
     agent_max_tool_calls: int = 25
