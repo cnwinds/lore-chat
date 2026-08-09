@@ -1,7 +1,13 @@
 from __future__ import annotations
 
 from app.engine.conversation_context import read_conversation_context
-from app.engine.disclosure import disclose, disclosure_summary
+from app.engine.disclosure import (
+    DEEP_DISCLOSURE_CHARS,
+    MAX_DISCLOSURE_CHARS,
+    disclose,
+    disclosure_summary,
+    resolve_disclosure_limit,
+)
 from app.engine.kb_structure import summarize_kb_structure
 from app.engine.agent.tool_impl.doc_read_guard import DocReadGuard
 from app.storage.kb_text_files import is_kb_text_file
@@ -16,6 +22,8 @@ class KbReadTools:
         retriever,
         read_guard: DocReadGuard,
         disclosure_chars: int,
+        disclosure_deep_chars: int = DEEP_DISCLOSURE_CHARS,
+        disclosure_max_chars: int = MAX_DISCLOSURE_CHARS,
         conversations=None,
         conversation_context_max_chars: int = 12000,
     ) -> None:
@@ -23,8 +31,19 @@ class KbReadTools:
         self.retriever = retriever
         self.read_guard = read_guard
         self.disclosure_chars = disclosure_chars
+        self.disclosure_deep_chars = disclosure_deep_chars
+        self.disclosure_max_chars = disclosure_max_chars
         self.conversations = conversations
         self.conversation_context_max_chars = conversation_context_max_chars
+
+    def _window_limit(self, args: dict) -> int:
+        return resolve_disclosure_limit(
+            limit=args.get("limit"),
+            intent=args.get("intent"),
+            default_chars=self.disclosure_chars,
+            deep_chars=self.disclosure_deep_chars,
+            max_chars=self.disclosure_max_chars,
+        )
 
     def search_kb(self, args: dict, *, conversation_id: str | None = None) -> dict:
         query = args["query"]
@@ -105,8 +124,14 @@ class KbReadTools:
                 "error": f"FileNotFoundError: {path}",
             }
         offset = args.get("offset", 0)
-        limit = args.get("limit", self.disclosure_chars)
-        info = disclose(doc.body, offset=offset, limit=limit, with_outline=True)
+        limit = self._window_limit(args)
+        info = disclose(
+            doc.body,
+            offset=offset,
+            limit=limit,
+            with_outline=True,
+            max_chars=self.disclosure_max_chars,
+        )
         out = {
             "summary": disclosure_summary(f"读取 {path}", info),
             "sources": [{"type": "kb", "path": doc.rel_path}],
@@ -136,8 +161,14 @@ class KbReadTools:
             }
         text = data.decode("utf-8", errors="replace")
         offset = args.get("offset", 0)
-        limit = args.get("limit", self.disclosure_chars)
-        info = disclose(text, offset=offset, limit=limit, with_outline=False)
+        limit = self._window_limit(args)
+        info = disclose(
+            text,
+            offset=offset,
+            limit=limit,
+            with_outline=False,
+            max_chars=self.disclosure_max_chars,
+        )
         out = {
             "summary": disclosure_summary(f"读取 {path}", info),
             "sources": [{"type": "kb", "path": path}],

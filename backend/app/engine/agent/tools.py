@@ -6,6 +6,8 @@ from app.engine.agent.tool_catalog import (
     WRITE_TOOLS,
     READ_ONLY_TOOLS,
     _DEFAULT_DISCLOSURE_CHARS,
+    _DEEP_DISCLOSURE_CHARS,
+    _MAX_DISCLOSURE_CHARS,
     can_parallelize,
     select_tools,
 )
@@ -49,6 +51,8 @@ class ToolRegistry:
         system_layer=None,
         indexer=None,
         disclosure_chars: int = _DEFAULT_DISCLOSURE_CHARS,
+        disclosure_deep_chars: int = _DEEP_DISCLOSURE_CHARS,
+        disclosure_max_chars: int = _MAX_DISCLOSURE_CHARS,
         edit_doc_max_edits: int = 10,
         edit_doc_max_patch_chars: int = 8192,
         edit_doc_require_read: bool = True,
@@ -64,6 +68,8 @@ class ToolRegistry:
         self.system_layer = system_layer
         self.knowledge_writer = knowledge_writer
         self.disclosure_chars = disclosure_chars
+        self.disclosure_deep_chars = disclosure_deep_chars
+        self.disclosure_max_chars = disclosure_max_chars
         self.edit_doc_require_read = edit_doc_require_read
         self.sandbox_runtime = sandbox_runtime
 
@@ -73,6 +79,8 @@ class ToolRegistry:
             retriever=retriever,
             read_guard=read_guard,
             disclosure_chars=disclosure_chars,
+            disclosure_deep_chars=disclosure_deep_chars,
+            disclosure_max_chars=disclosure_max_chars,
             conversations=conversations,
             conversation_context_max_chars=conversation_context_max_chars,
         )
@@ -91,6 +99,8 @@ class ToolRegistry:
             fetcher=fetcher,
             web_search=web_search,
             disclosure_chars=disclosure_chars,
+            disclosure_deep_chars=disclosure_deep_chars,
+            disclosure_max_chars=disclosure_max_chars,
         )
         self.memory = MemoryTools(memory_service)
         self.interaction = InteractionTools(pending)

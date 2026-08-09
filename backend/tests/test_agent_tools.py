@@ -274,6 +274,24 @@ async def test_read_doc_progressive_disclosure(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_read_doc_deep_intent_larger_window(tmp_path):
+    registry, repo, _ = _make_registry(tmp_path)
+    body = "# 大标题\n" + ("段落内容。" * 8000)
+    repo.write_doc("技术/long.md", {"title": "长文"}, body, commit_msg="seed")
+
+    deep = await registry.execute(
+        "read_doc", {"path": "技术/long.md", "intent": "deep"}
+    )
+    assert deep["returned_chars"] > 3000
+    assert deep["returned_chars"] <= 16000
+
+    capped = await registry.execute(
+        "read_doc", {"path": "技术/long.md", "limit": 999999}
+    )
+    assert capped["returned_chars"] == 32000
+
+
+@pytest.mark.asyncio
 async def test_delete_kb_doc(tmp_path):
     registry, repo, idx = _make_registry(tmp_path)
     repo.write_doc(

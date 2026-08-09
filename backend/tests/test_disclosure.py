@@ -1,4 +1,11 @@
-from app.engine.disclosure import build_outline, disclose, disclosure_summary
+from app.engine.disclosure import (
+    DEEP_DISCLOSURE_CHARS,
+    MAX_DISCLOSURE_CHARS,
+    build_outline,
+    disclose,
+    disclosure_summary,
+    resolve_disclosure_limit,
+)
 
 
 def test_disclose_first_window_has_more():
@@ -47,3 +54,19 @@ def test_disclosure_summary_wording():
     msg = disclosure_summary("读取 x.md", info)
     assert "3000" in msg
     assert "offset=3000" in msg
+
+
+def test_resolve_disclosure_limit_by_intent():
+    assert resolve_disclosure_limit() == 3000
+    assert resolve_disclosure_limit(intent="spot") == 3000
+    assert resolve_disclosure_limit(intent="deep") == DEEP_DISCLOSURE_CHARS
+    assert resolve_disclosure_limit(intent="deep", limit=12000) == 12000
+    assert resolve_disclosure_limit(limit=999999) == MAX_DISCLOSURE_CHARS
+    assert resolve_disclosure_limit(intent="nope") == 3000
+
+
+def test_disclose_hard_caps_limit():
+    text = "a" * 50_000
+    info = disclose(text, offset=0, limit=999999)
+    assert info["returned_chars"] == MAX_DISCLOSURE_CHARS
+    assert info["has_more"] is True

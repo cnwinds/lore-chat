@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+from app.engine.disclosure import (
+    DEFAULT_DISCLOSURE_CHARS as _DEFAULT_DISCLOSURE_CHARS,
+    DEEP_DISCLOSURE_CHARS as _DEEP_DISCLOSURE_CHARS,
+    MAX_DISCLOSURE_CHARS as _MAX_DISCLOSURE_CHARS,
+)
 from app.engine.knowledge_writer import KnowledgeWriter
 
 resolve_kb_location = KnowledgeWriter.resolve_location
@@ -17,7 +22,6 @@ WRITE_TOOLS = frozenset({
     "sandbox_run", "publish_from_sandbox", "stage_to_sandbox",
 })
 
-_DEFAULT_DISCLOSURE_CHARS = 3000
 
 
 def can_parallelize(tool_names: list[str]) -> bool:
@@ -119,14 +123,31 @@ TOOL_DEFINITIONS: list[dict] = [
             "description": (
                 "按渐进式披露读取知识库文档或文本资产："
                 "Markdown 返回正文并附结构大纲；白名单文本文件（.sh/.py 等）按纯文本读取。"
-                "默认返回前 3000 字；内容不足时用 offset 续读，不要盲目全量读取。"
+                "默认 intent=spot（约 3000 字）；深读/核对/成文用 intent=deep（更大窗口）。"
+                "内容不足时用 offset 续读；单次有硬上限，不要盲目全量读取。"
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "path": {"type": "string", "description": "文档相对路径，如 技术/docker/常用命令.md"},
                     "offset": {"type": "integer", "description": "从第几个字符开始读取，默认 0；可用返回的 next_offset 或大纲中的 @位置", "default": 0},
-                    "limit": {"type": "integer", "description": "本次最多读取字符数，默认 3000", "default": 3000},
+                    "intent": {
+                        "type": "string",
+                        "enum": ["spot", "deep"],
+                        "description": (
+                            "读取意图：spot=问答取证（默认小窗）；"
+                            f"deep=深读/核对/成文（默认约 {_DEEP_DISCLOSURE_CHARS} 字）。"
+                            "显式 limit 优先于 intent 默认窗。"
+                        ),
+                        "default": "spot",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": (
+                            f"本次最多读取字符数；省略则按 intent（spot≈{_DEFAULT_DISCLOSURE_CHARS}，"
+                            f"deep≈{_DEEP_DISCLOSURE_CHARS}）；硬上限 {_MAX_DISCLOSURE_CHARS}"
+                        ),
+                    },
                 },
                 "required": ["path"],
             },
@@ -166,8 +187,9 @@ TOOL_DEFINITIONS: list[dict] = [
         "function": {
             "name": "fetch_url",
             "description": (
-                "抓取并解析网页或 PDF 为 Markdown，按渐进式披露返回：默认前 3000 字。"
-                "同一链接会缓存，需要更多时用 offset 继续，不会重复抓取。"
+                "抓取并解析网页或 PDF 为 Markdown，按渐进式披露返回。"
+                "默认 intent=spot（约 3000 字）；深读/核对/成文用 intent=deep。"
+                "同一链接会缓存，需要更多时用 offset 继续，不会重复抓取；单次有硬上限。"
             ),
             "parameters": {
                 "type": "object",
@@ -177,7 +199,23 @@ TOOL_DEFINITIONS: list[dict] = [
                         "description": "要抓取的 HTTP/HTTPS 链接（支持 HTML 与 PDF）",
                     },
                     "offset": {"type": "integer", "description": "从第几个字符开始，默认 0；用返回的 next_offset 继续", "default": 0},
-                    "limit": {"type": "integer", "description": "本次最多返回字符数，默认 3000", "default": 3000},
+                    "intent": {
+                        "type": "string",
+                        "enum": ["spot", "deep"],
+                        "description": (
+                            "读取意图：spot=问答取证（默认小窗）；"
+                            f"deep=深读/核对/成文（默认约 {_DEEP_DISCLOSURE_CHARS} 字）。"
+                            "显式 limit 优先于 intent 默认窗。"
+                        ),
+                        "default": "spot",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": (
+                            f"本次最多返回字符数；省略则按 intent（spot≈{_DEFAULT_DISCLOSURE_CHARS}，"
+                            f"deep≈{_DEEP_DISCLOSURE_CHARS}）；硬上限 {_MAX_DISCLOSURE_CHARS}"
+                        ),
+                    },
                 },
                 "required": ["url"],
             },

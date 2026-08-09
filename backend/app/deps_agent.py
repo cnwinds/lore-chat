@@ -123,6 +123,8 @@ def build_agent_subgraph(
         system_layer=system_layer,
         indexer=indexer,
         disclosure_chars=settings.read_disclosure_chars,
+        disclosure_deep_chars=settings.read_disclosure_deep_chars,
+        disclosure_max_chars=settings.read_disclosure_max_chars,
         edit_doc_max_edits=settings.edit_doc_max_edits,
         edit_doc_max_patch_chars=settings.edit_doc_max_patch_chars,
         edit_doc_require_read=settings.edit_doc_require_read,
