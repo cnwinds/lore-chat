@@ -5,27 +5,37 @@ backend/.venv/
 
 .superpowers/
 
-# Local runtime data
+# Local runtime data (private knowledge base — do not commit)
 backend/knowledge/
-docker/data/knowledge/*
-!docker/data/knowledge/.gitkeep
+# Entire tree: runtime KB is often its own git repo (nested .git)
+docker/data/knowledge/
 docker/data/backups/*
 !docker/data/backups/.gitkeep
 **/.pytest_cache/
 __pycache__/
 *.pyc
+*.pyo
 
-# Secrets
+# Secrets and local env (keep *.example tracked)
 .env
-backend/.env
+**/.env
+.env.local
+.env.*.local
+*.pem
+id_rsa
+id_rsa.pub
 
 # Frontend
 frontend/node_modules/
 frontend/dist/
+*.local
 
 # OS / IDE
 .DS_Store
 Thumbs.db
+.idea/
+*.swp
+*.swo
 
 # Runtime / local control
 .lorechat/

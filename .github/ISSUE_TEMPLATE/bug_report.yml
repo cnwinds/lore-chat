@@ -1,0 +1,54 @@
+name: Bug report
+description: Report a bug so we can reproduce and fix it
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. **Do not** include API keys or personal knowledge-base contents.
+        Security issues → see [SECURITY.md](https://github.com/cnwinds/lore-chat/blob/master/SECURITY.md).
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Clear description of the bug.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. …
+        2. …
+        3. …
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: dropdown
+    id: environment
+    attributes:
+      label: How are you running Lore Chat?
+      options:
+        - Docker Compose
+        - Local dev (lorechat.sh)
+        - Local dev (lorechat.bat)
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Commit SHA or tag
+      description: `git rev-parse --short HEAD` if possible
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / screenshots
+      description: Redact secrets before pasting.
