@@ -39,6 +39,27 @@ const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
   { id: "account", label: "账户" },
 ];
 
+const SETTINGS_TAB_STORAGE_KEY = "lorechat.settingsTab";
+const SETTINGS_TAB_IDS = new Set<string>(SETTINGS_TABS.map((t) => t.id));
+
+function readStoredSettingsTab(): SettingsTab {
+  try {
+    const stored = localStorage.getItem(SETTINGS_TAB_STORAGE_KEY);
+    if (stored && SETTINGS_TAB_IDS.has(stored)) return stored as SettingsTab;
+  } catch {
+    /* ignore */
+  }
+  return "model";
+}
+
+function writeStoredSettingsTab(tab: SettingsTab) {
+  try {
+    localStorage.setItem(SETTINGS_TAB_STORAGE_KEY, tab);
+  } catch {
+    /* ignore */
+  }
+}
+
 function str(v: unknown): string {
   if (v === null || v === undefined) return "";
   return String(v);
@@ -60,7 +81,7 @@ export function SettingsPanel({ open, onClose, onOpenConversation }: Props) {
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<SettingsTab>("model");
+  const [activeTab, setActiveTab] = useState<SettingsTab>(readStoredSettingsTab);
 
   const [kbPath, setKbPath] = useState("");
   const [maskedSecrets, setMaskedSecrets] = useState<Partial<Record<SecretKey, string>>>({});
@@ -158,7 +179,6 @@ export function SettingsPanel({ open, onClose, onOpenConversation }: Props) {
   useEffect(() => {
     if (open) {
       void load();
-      setActiveTab("model");
       setOldPassword("");
       setNewPassword("");
       setConfirmPassword("");
@@ -171,6 +191,10 @@ export function SettingsPanel({ open, onClose, onOpenConversation }: Props) {
       if (importFileRef.current) importFileRef.current.value = "";
     }
   }, [open, load]);
+
+  useEffect(() => {
+    writeStoredSettingsTab(activeTab);
+  }, [activeTab]);
 
   useEffect(() => {
     if (!open) return;

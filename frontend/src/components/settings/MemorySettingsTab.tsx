@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   confirmMemoryFact,
   editMemoryFact,
@@ -12,7 +12,7 @@ import {
   CheckIcon,
   DocIconBtn,
   EditIcon,
-  ExternalLinkIcon,
+  MoreIcon,
   SaveIcon,
   TrashIcon,
   XIcon,
@@ -22,60 +22,120 @@ type Props = {
   onOpenConversation?: (conversationId: string) => void;
 };
 
-function jumpLabel(conversationIds: string[], canOpen: boolean): string {
-  if (conversationIds.length === 0) return "无来源可跳转";
-  if (!canOpen) return "无法打开会话";
-  if (conversationIds.length > 1) return "选择来源会话";
-  return "打开来源会话";
-}
+type MenuAction = {
+  id: string;
+  label: string;
+  icon: ReactNode;
+  danger?: boolean;
+  onClick: () => void;
+};
 
-function SourceJumpControl({
-  conversationIds,
+function MemoryFactMenu({
+  actions,
   disabled,
-  onOpenConversation,
 }: {
-  conversationIds: string[];
+  actions: MenuAction[];
   disabled?: boolean;
-  onOpenConversation?: (conversationId: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
-  const canOpen = Boolean(onOpenConversation);
-  const hasSources = conversationIds.length > 0;
-  const canJump = canOpen && hasSources;
-  const multi = conversationIds.length > 1;
 
   useDismissOnOutsideClick(rootRef, open, () => setOpen(false), {
     escape: true,
     pointerEvent: "mousedown",
   });
 
-  function openOne(cid: string) {
-    onOpenConversation?.(cid);
-    setOpen(false);
-  }
+  if (actions.length === 0) return null;
 
   return (
     <div ref={rootRef} className="doc-overflow-anchor">
       <DocIconBtn
-        label={jumpLabel(conversationIds, canOpen)}
+        label="更多操作"
         className="memory-fact-icon-btn"
-        disabled={disabled || !canJump}
-        active={multi ? open : false}
+        disabled={disabled}
+        active={open}
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        aria-haspopup="menu"
+      >
+        <MoreIcon />
+      </DocIconBtn>
+      {open ? (
+        <div className="doc-overflow-menu" role="menu" aria-label="记忆操作">
+          {actions.map((action) => (
+            <button
+              key={action.id}
+              type="button"
+              role="menuitem"
+              className={`doc-overflow-item${action.danger ? " doc-overflow-item--danger" : ""}`}
+              disabled={disabled}
+              title={action.label}
+              onClick={() => {
+                action.onClick();
+                setOpen(false);
+              }}
+            >
+              {action.icon}
+              <span>{action.label}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function MemoryStatement({
+  statement,
+  conversationIds,
+  disabled,
+  onOpenConversation,
+}: {
+  statement: string;
+  conversationIds: string[];
+  disabled?: boolean;
+  onOpenConversation?: (conversationId: string) => void;
+}) {
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const canJump =
+    Boolean(onOpenConversation) && conversationIds.length > 0 && !disabled;
+  const multi = conversationIds.length > 1;
+
+  useDismissOnOutsideClick(rootRef, pickerOpen, () => setPickerOpen(false), {
+    escape: true,
+    pointerEvent: "mousedown",
+  });
+
+  if (!canJump) {
+    return <p className="memory-fact-statement">{statement}</p>;
+  }
+
+  function openOne(cid: string) {
+    onOpenConversation?.(cid);
+    setPickerOpen(false);
+  }
+
+  return (
+    <div ref={rootRef} className="memory-fact-statement-anchor">
+      <button
+        type="button"
+        className="memory-fact-statement memory-fact-statement--jump"
+        title={multi ? "选择来源会话" : "打开来源会话"}
+        aria-label={multi ? "选择来源会话" : "打开来源会话"}
+        aria-expanded={multi ? pickerOpen : undefined}
+        aria-haspopup={multi ? "menu" : undefined}
         onClick={() => {
-          if (!canJump) return;
           if (!multi) {
             openOne(conversationIds[0]);
             return;
           }
-          setOpen((v) => !v);
+          setPickerOpen((v) => !v);
         }}
-        aria-expanded={multi ? open : undefined}
-        aria-haspopup={multi ? "menu" : undefined}
       >
-        <ExternalLinkIcon />
-      </DocIconBtn>
-      {open && multi ? (
+        {statement}
+      </button>
+      {pickerOpen && multi ? (
         <div className="doc-overflow-menu" role="menu" aria-label="来源会话">
           {conversationIds.map((cid) => (
             <button
@@ -94,6 +154,47 @@ function SourceJumpControl({
       ) : null}
     </div>
   );
+}
+
+function buildActions(
+  fact: MemoryFact,
+  onEdit: () => void,
+  onConfirm: () => void,
+  onReject: () => void,
+  onForget: () => void,
+): MenuAction[] {
+  if (fact.status === "candidate") {
+    return [
+      {
+        id: "confirm",
+        label: "确认",
+        icon: <CheckIcon size={14} />,
+        onClick: onConfirm,
+      },
+      {
+        id: "reject",
+        label: "拒绝",
+        icon: <XIcon size={14} />,
+        danger: true,
+        onClick: onReject,
+      },
+    ];
+  }
+  return [
+    {
+      id: "edit",
+      label: "编辑",
+      icon: <EditIcon size={14} />,
+      onClick: onEdit,
+    },
+    {
+      id: "forget",
+      label: "遗忘",
+      icon: <TrashIcon size={14} />,
+      danger: true,
+      onClick: onForget,
+    },
+  ];
 }
 
 export function MemorySettingsTab({ onOpenConversation }: Props) {
@@ -147,7 +248,7 @@ export function MemorySettingsTab({ onOpenConversation }: Props) {
       aria-labelledby="settings-tab-memory"
     >
       <p className="settings-tab-hint">
-        已确认与待确认的长期画像。待确认可晋升或拒绝；已确认可编辑或遗忘。右侧图标可跳转到来源会话。
+        已确认与待确认的长期画像。待确认可晋升或拒绝；已确认可编辑或遗忘。点击记忆正文可跳转到来源会话。
       </p>
       {error ? <p className="settings-panel-error">{error}</p> : null}
       {facts.length === 0 ? (
@@ -179,7 +280,12 @@ export function MemorySettingsTab({ onOpenConversation }: Props) {
                       aria-label="编辑记忆内容"
                     />
                   ) : (
-                    <p className="memory-fact-statement">{f.statement}</p>
+                    <MemoryStatement
+                      statement={f.statement}
+                      conversationIds={conversationIds}
+                      disabled={busy}
+                      onOpenConversation={onOpenConversation}
+                    />
                   )}
                 </div>
                 <div className="memory-fact-actions">
@@ -203,63 +309,27 @@ export function MemorySettingsTab({ onOpenConversation }: Props) {
                       </DocIconBtn>
                     </>
                   ) : (
-                    <>
-                      <SourceJumpControl
-                        conversationIds={conversationIds}
-                        disabled={busy}
-                        onOpenConversation={onOpenConversation}
-                      />
-                      {candidate ? (
-                        <>
-                          <DocIconBtn
-                            label="确认"
-                            className="memory-fact-icon-btn"
-                            disabled={busy}
-                            onClick={() => void run(f.id, () => confirmMemoryFact(f.id))}
-                          >
-                            <CheckIcon />
-                          </DocIconBtn>
-                          <DocIconBtn
-                            label="拒绝"
-                            className="memory-fact-icon-btn memory-fact-icon-btn--danger"
-                            disabled={busy}
-                            onClick={() => {
-                              if (window.confirm("确定拒绝这条待确认记忆？")) {
-                                void run(f.id, () => rejectMemoryFact(f.id));
-                              }
-                            }}
-                          >
-                            <XIcon />
-                          </DocIconBtn>
-                        </>
-                      ) : (
-                        <>
-                          <DocIconBtn
-                            label="编辑"
-                            className="memory-fact-icon-btn"
-                            disabled={busy}
-                            onClick={() => {
-                              setEditingId(f.id);
-                              setDraft(f.statement);
-                            }}
-                          >
-                            <EditIcon />
-                          </DocIconBtn>
-                          <DocIconBtn
-                            label="遗忘"
-                            className="memory-fact-icon-btn memory-fact-icon-btn--danger"
-                            disabled={busy}
-                            onClick={() => {
-                              if (window.confirm("确定遗忘这条记忆？")) {
-                                void run(f.id, () => forgetMemoryFact(f.id));
-                              }
-                            }}
-                          >
-                            <TrashIcon />
-                          </DocIconBtn>
-                        </>
+                    <MemoryFactMenu
+                      disabled={busy}
+                      actions={buildActions(
+                        f,
+                        () => {
+                          setEditingId(f.id);
+                          setDraft(f.statement);
+                        },
+                        () => void run(f.id, () => confirmMemoryFact(f.id)),
+                        () => {
+                          if (window.confirm("确定拒绝这条待确认记忆？")) {
+                            void run(f.id, () => rejectMemoryFact(f.id));
+                          }
+                        },
+                        () => {
+                          if (window.confirm("确定遗忘这条记忆？")) {
+                            void run(f.id, () => forgetMemoryFact(f.id));
+                          }
+                        },
                       )}
-                    </>
+                    />
                   )}
                 </div>
               </li>
