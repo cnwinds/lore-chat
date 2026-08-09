@@ -94,8 +94,11 @@ export function FileTree({
   }, [userExpanded, sessionReveal]);
   const didHydrateRef = useRef(false);
   const didNotifyExpandReadyRef = useRef(false);
-  /** hydrate 当下的 activePaths 不触发 sessionReveal，避免覆盖已恢复的折叠 */
-  const suppressInitialRevealRef = useRef(true);
+  /**
+   * 仅在用户于本页主动选文件后，才允许 sessionReveal。
+   * 避免刷新/新窗口时 activePaths 异步恢复把已折叠目录再次展开。
+   */
+  const allowSessionRevealRef = useRef(false);
   const [dragPath, setDragPath] = useState<string | null>(null);
   const dragPathRef = useRef<string | null>(null);
 
@@ -129,7 +132,7 @@ export function FileTree({
 
     if (!didHydrateRef.current) {
       didHydrateRef.current = true;
-      suppressInitialRevealRef.current = true;
+      allowSessionRevealRef.current = false;
       const stored = loadKbTreeUi();
       setUserExpanded(
         new Set(resolveExpandedFolderPaths(tree, stored?.expandedPaths)),
@@ -163,13 +166,15 @@ export function FileTree({
   }, [userExpanded, onExpandReady]);
 
   useEffect(() => {
-    if (!didHydrateRef.current) return;
-    if (suppressInitialRevealRef.current) {
-      suppressInitialRevealRef.current = false;
-      return;
-    }
+    if (!didHydrateRef.current || !allowSessionRevealRef.current) return;
     setSessionReveal(new Set(collectAncestorFolderPaths(activePaths)));
   }, [activePaths]);
+
+  function handleSelectFile(path: string, mods?: SelectMods) {
+    allowSessionRevealRef.current = true;
+    setSessionReveal(new Set(collectAncestorFolderPaths([path])));
+    onSelectFile(path, mods);
+  }
 
   function toggleFolder(path: string) {
     const closing = expanded.has(path);
@@ -228,7 +233,7 @@ export function FileTree({
           readDragSource={readDragSource}
           setDragPayload={setDragPayload}
           onToggleFolder={toggleFolder}
-          onSelectFile={onSelectFile}
+          onSelectFile={handleSelectFile}
           onSelectFolder={onSelectFolder}
           onFolderDrop={handleFolderDrop}
           onFolderDragOver={allowDrop}
