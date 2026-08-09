@@ -1,26 +1,31 @@
-import { useEffect, useMemo, useRef, useState, type DragEvent } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type DragEvent,
+} from "react";
 import {
   buildFileTree,
-  collectDefaultExpandedFolderPaths,
+  collectAncestorFolderPaths,
   isSystemLayerPath,
+  nextUserExpandedAfterTreeChange,
+  resolveExpandedFolderPaths,
   type TreeNode,
 } from "../utils/fileTree";
 import { isMarkdownPath } from "../api";
 import { dropEffectForTransfer } from "../utils/droppedFiles";
+import {
+  hasPersistedExpanded,
+  loadKbTreeUi,
+  saveKbTreeExpanded,
+  saveKbTreeExpandedIfPersisted,
+} from "../utils/kbTreeUiStorage";
 
 function parentDirectoryFromPath(path: string): string {
   const idx = path.lastIndexOf("/");
   return idx === -1 ? "" : path.slice(0, idx);
-}
-
-function folderPathsContainingFile(filePath: string): string[] {
-  const parts = filePath.split("/").filter(Boolean);
-  if (parts.length <= 1) return [];
-  const folders: string[] = [];
-  for (let i = 0; i < parts.length - 1; i++) {
-    folders.push(parts.slice(0, i + 1).join("/"));
-  }
-  return folders;
 }
 
 type SelectMods = { ctrlKey?: boolean; metaKey?: boolean; shiftKey?: boolean };
@@ -51,6 +56,8 @@ type Props = {
   onRenameCancel: () => void;
   onStartRename: (path: string, currentName: string) => void;
   disabled?: boolean;
+  /** 首次展开状态已应用到 DOM 后回调（用于恢复滚动） */
+  onExpandReady?: () => void;
 };
 
 export function FileTree({
@@ -72,10 +79,23 @@ export function FileTree({
   onRenameCancel,
   onStartRename,
   disabled,
+  onExpandReady,
 }: Props) {
   const tree = useMemo(() => buildFileTree(paths), [paths]);
   const activePathSet = useMemo(() => new Set(activePaths), [activePaths]);
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  /** 用户手势 / 默认规则 / 持久化恢复的展开态（唯一落盘来源） */
+  const [userExpanded, setUserExpanded] = useState<Set<string>>(new Set());
+  /** 会话中打开文件时的临时露出，不落盘 */
+  const [sessionReveal, setSessionReveal] = useState<Set<string>>(new Set());
+  const expanded = useMemo(() => {
+    const next = new Set(userExpanded);
+    for (const p of sessionReveal) next.add(p);
+    return next;
+  }, [userExpanded, sessionReveal]);
+  const didHydrateRef = useRef(false);
+  const didNotifyExpandReadyRef = useRef(false);
+  /** hydrate 当下的 activePaths 不触发 sessionReveal，避免覆盖已恢复的折叠 */
+  const suppressInitialRevealRef = useRef(true);
   const [dragPath, setDragPath] = useState<string | null>(null);
   const dragPathRef = useRef<string | null>(null);
 
@@ -105,31 +125,69 @@ export function FileTree({
   }
 
   useEffect(() => {
-    if (tree.length > 0) {
-      setExpanded(new Set(collectDefaultExpandedFolderPaths(tree)));
+    if (tree.length === 0) return;
+
+    if (!didHydrateRef.current) {
+      didHydrateRef.current = true;
+      suppressInitialRevealRef.current = true;
+      const stored = loadKbTreeUi();
+      setUserExpanded(
+        new Set(resolveExpandedFolderPaths(tree, stored?.expandedPaths)),
+      );
+      setSessionReveal(new Set());
+      return;
     }
+
+    const persisted = hasPersistedExpanded();
+    setUserExpanded((prev) => {
+      const nextPaths = nextUserExpandedAfterTreeChange(tree, prev, persisted);
+      if (
+        nextPaths.length === prev.size &&
+        nextPaths.every((p) => prev.has(p))
+      ) {
+        return prev;
+      }
+      if (persisted) saveKbTreeExpandedIfPersisted(nextPaths);
+      return new Set(nextPaths);
+    });
+    setSessionReveal((prev) => {
+      if (prev.size === 0) return prev;
+      return new Set(resolveExpandedFolderPaths(tree, [...prev]));
+    });
   }, [tree]);
 
+  useLayoutEffect(() => {
+    if (!didHydrateRef.current || didNotifyExpandReadyRef.current) return;
+    didNotifyExpandReadyRef.current = true;
+    onExpandReady?.();
+  }, [userExpanded, onExpandReady]);
+
   useEffect(() => {
-    if (!activePaths.length) return;
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      for (const filePath of activePaths) {
-        for (const folder of folderPathsContainingFile(filePath)) {
-          next.add(folder);
-        }
-      }
-      return next;
-    });
+    if (!didHydrateRef.current) return;
+    if (suppressInitialRevealRef.current) {
+      suppressInitialRevealRef.current = false;
+      return;
+    }
+    setSessionReveal(new Set(collectAncestorFolderPaths(activePaths)));
   }, [activePaths]);
 
   function toggleFolder(path: string) {
-    setExpanded((prev) => {
+    const closing = expanded.has(path);
+    setUserExpanded((prev) => {
       const next = new Set(prev);
-      if (next.has(path)) next.delete(path);
+      if (closing) next.delete(path);
       else next.add(path);
+      saveKbTreeExpanded([...next]);
       return next;
     });
+    if (closing) {
+      setSessionReveal((prev) => {
+        if (!prev.has(path)) return prev;
+        const next = new Set(prev);
+        next.delete(path);
+        return next;
+      });
+    }
   }
 
   function handleFolderDrop(e: DragEvent, directory: string) {

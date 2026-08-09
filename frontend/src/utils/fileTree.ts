@@ -87,3 +87,43 @@ export function collectDefaultExpandedFolderPaths(nodes: TreeNode[]): string[] {
     return depth <= 2;
   });
 }
+
+/**
+ * 首次无持久化记录时用默认规则；否则恢复已存路径并剔除已不存在的目录。
+ */
+export function resolveExpandedFolderPaths(
+  nodes: TreeNode[],
+  storedPaths: string[] | null | undefined,
+): string[] {
+  if (storedPaths == null) {
+    return collectDefaultExpandedFolderPaths(nodes);
+  }
+  const valid = new Set(collectFolderPaths(nodes));
+  return storedPaths.filter((p) => valid.has(p));
+}
+
+/**
+ * 树变更后的用户展开态：尚未持久化则按默认规则重算；已持久化则只剪枝。
+ */
+export function nextUserExpandedAfterTreeChange(
+  nodes: TreeNode[],
+  prevUserExpanded: Iterable<string>,
+  hasPersistedUserExpanded: boolean,
+): string[] {
+  if (!hasPersistedUserExpanded) {
+    return collectDefaultExpandedFolderPaths(nodes);
+  }
+  return resolveExpandedFolderPaths(nodes, [...prevUserExpanded]);
+}
+
+/** 打开文件时用于临时露出的祖先目录（不应当作用户展开态持久化）。 */
+export function collectAncestorFolderPaths(filePaths: string[]): string[] {
+  const folders = new Set<string>();
+  for (const filePath of filePaths) {
+    const parts = filePath.split("/").filter(Boolean);
+    for (let i = 0; i < parts.length - 1; i++) {
+      folders.add(parts.slice(0, i + 1).join("/"));
+    }
+  }
+  return [...folders];
+}
