@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-
-import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 
@@ -15,6 +13,7 @@ from app.engine.retriever import Retriever
 from app.engine.pending import PendingStore
 from app.engine.document_synthesis import DocumentSynthesis
 from app.engine.knowledge_writer import KnowledgeWriter
+from app.engine.agent_choice import AgentChoiceResolution
 from app.engine.conversation_archive import ConversationArchiveWorkflow
 from app.engine.merge_workflow import MergeResult, MergeWorkflow
 from app.engine.memory.constants import is_memory_projection_path
@@ -75,6 +74,7 @@ class Organizer:
             settings=self.settings,
             synthesis=self.synthesis,
         )
+        self.choices = AgentChoiceResolution(pending)
 
     def ingest_text(
         self,
@@ -188,13 +188,6 @@ class Organizer:
             merge_id, delete_paths, merge_sessions=merge_sessions
         )
 
-    @staticmethod
-    def _extract_written_path(context: str) -> str | None:
-        if not context:
-            return None
-        match = re.search(r"保存在\s+(\S+?)(?:\s|$|[，。])", context)
-        return match.group(1) if match else None
-
     def _apply(
         self,
         decision: PlacementDecision,
@@ -218,86 +211,15 @@ class Organizer:
         *,
         conversation_context: str = "",
     ) -> IngestResult:
-        q = self.pending.get(qid)
-        payload = q.get("payload", {})
-        if payload.get("kind") == "sandbox_confirm":
-            return IngestResult(
-                status="rejected",
-                rel_path=None,
-                question_id=qid,
-                message="沙箱确认请经 SandboxCommandGate 决议",
-            )
-        options = {o["id"]: o["label"] for o in q["options"]}
-        labels = [options[cid] for cid in choice_ids if cid in options]
-        if not labels:
-            return IngestResult(
-                status="rejected",
-                rel_path=None,
-                question_id=qid,
-                message="未选择有效选项",
-            )
-        context = payload.get("context", "")
-        self.pending.resolve_many(qid, choice_ids)
-
-        if payload.get("kind") == "agent":
-            if choice_ids == ["done"]:
-                written_path = payload.get("written_path") or self._extract_written_path(
-                    context
-                )
-                if written_path:
-                    return IngestResult(
-                        status="saved",
-                        rel_path=written_path,
-                        question_id=None,
-                        message=f"已记录到 {written_path}",
-                    )
-                return IngestResult(
-                    status="acknowledged",
-                    rel_path=None,
-                    question_id=None,
-                    message="好的，已确认。",
-                )
-            parts = [f"用户确认选择：{'、'.join(labels)}"]
-            if conversation_context.strip():
-                parts.append(f"\n对话上下文：\n{conversation_context.strip()}")
-            if context:
-                parts.append(f"\n背景：{context}")
-            parts.append(
-                "\n请结合以上对话与选择，继续完成知识库整理（必要时先 list_kb_structure，再 write_kb）。"
-            )
-            return IngestResult(
-                status="continue",
-                rel_path=None,
-                question_id=None,
-                message="正在根据你的选择继续处理…",
-                continue_prompt="\n".join(parts),
-            )
-
-        if not payload.get("kind"):
-            return IngestResult(
-                status="saved",
-                rel_path=None,
-                question_id=None,
-                message=f"已确认：{'、'.join(labels)}",
-            )
-
-        parts = [
-            "用户通过选项确认了要记录的内容：",
-            "\n".join(f"- {label}" for label in labels),
-        ]
-        if conversation_context.strip():
-            parts.append(f"\n对话上下文：\n{conversation_context.strip()}")
-        if context:
-            parts.append(f"\n背景：{context}")
-        parts.append(
-            "\n请先调用 list_kb_structure 查看目录，再调用 write_kb（必填 directory、filename、text）写入；"
-            "禁止无路径自动落库。"
+        r = self.choices.resolve(
+            qid, choice_ids, conversation_context=conversation_context
         )
         return IngestResult(
-            status="continue",
-            rel_path=None,
-            question_id=None,
-            message="请按目录规划写入知识库。",
-            continue_prompt="\n".join(parts),
+            status=r.status,
+            rel_path=r.rel_path,
+            question_id=r.question_id,
+            message=r.message,
+            continue_prompt=r.continue_prompt,
+            sandbox_run_args=r.sandbox_run_args,
         )
 

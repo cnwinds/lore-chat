@@ -13,23 +13,19 @@ import {
   observeActiveTurnStream,
   stopChat,
   titleFromText,
-  KB_MUTATING_TOOLS,
   type ChatMessage,
   type ChatStreamEvent,
   type DocContextItem,
-  type SourceRef,
 } from "../../api";
 import {
   isInjectedUserMessage,
-  kbPathFromToolResult,
   normalizeLoadedMessage,
-  timelineAwaitsUserAnswer,
 } from "../../utils/chatMessage";
 import { nowIsoDisplay } from "../../utils/displayTime";
 import {
-  applyTimelineEvent,
-  mergeServerTimeline,
-} from "../../utils/timelineStream";
+  reduceStreamEvent,
+  shouldReloadConversation,
+} from "../../utils/agentStreamProjection";
 
 export type DocContext = {
   documentPaths: string[];
@@ -184,75 +180,36 @@ export function useAgentStream({
   ): Promise<{ streamFailed: boolean; awaitingUser: boolean }> {
     let streamFailed = false;
     let awaitingUser = false;
-    /** Persisted turns publish timeline_state; skip client reduce once seen. */
     let serverTimeline = false;
     for await (const { event, data } of events) {
-      if (event === "error") {
-        const message = (data.message as string) || "请求失败";
-        patchAssistant((msg) => ({ ...msg, text: `错误：${message}` }));
-        streamFailed = true;
-        break;
-      }
-
-      if (event === "timeline_state") {
-        serverTimeline = true;
-        const incoming = (data.timeline as ChatMessage["timeline"]) || [];
-        const assistantText =
-          typeof data.assistant_text === "string" ? data.assistant_text : undefined;
-        patchAssistant((prevMsg) =>
-          mergeServerTimeline(prevMsg, incoming, assistantText),
-        );
-        continue;
-      }
-
-      if (event === "user_inject") {
-        const injectId = data.inject_id as string;
-        if (!serverTimeline) {
-          patchAssistant((prevMsg) => ({
-            ...prevMsg,
-            timeline: applyTimelineEvent(prevMsg.timeline ?? [], event, data),
-          }));
-        }
-        onUserInjectedRef.current?.(injectId);
-        continue;
-      }
-
-      if (event === "inject_deferred") {
-        onInjectDeferredRef.current?.(data.inject_id as string);
-        continue;
-      }
-
+      let userInjectId: string | undefined;
+      let injectDeferredId: string | undefined;
+      let kbNotify: string | null | undefined;
+      let stop = false;
       patchAssistant((prevMsg) => {
-        const msg = { ...prevMsg };
-        if (event !== "done" && !serverTimeline) {
-          msg.timeline = applyTimelineEvent(msg.timeline ?? [], event, data);
-        }
-        if (event === "done") {
-          msg.sources = (data.sources as SourceRef[]) || [];
-          if (data.total_duration_ms !== undefined) {
-            msg.total_duration_ms = data.total_duration_ms as number;
-          }
-          msg.ts = nowIsoDisplay();
-          awaitingUser = timelineAwaitsUserAnswer(msg.timeline);
-        }
-        return msg;
+        const result = reduceStreamEvent(
+          {
+            streamFailed,
+            awaitingUser,
+            serverTimeline,
+            assistant: prevMsg,
+          },
+          event,
+          data,
+        );
+        streamFailed = result.state.streamFailed;
+        awaitingUser = result.state.awaitingUser;
+        serverTimeline = result.state.serverTimeline;
+        userInjectId = result.state.userInjectId;
+        injectDeferredId = result.state.injectDeferredId;
+        kbNotify = result.state.kbNotify;
+        stop = result.stop;
+        return result.state.assistant;
       });
-
-      if (event === "tool_result") {
-        if (
-          (KB_MUTATING_TOOLS as readonly string[]).includes(data.tool as string)
-        ) {
-          onKbChanged?.(kbPathFromToolResult(data));
-        }
-        if (
-          (data.tool === "ask_user" || data.tool === "sandbox_run") &&
-          data.question_id &&
-          Array.isArray(data.options) &&
-          (data.options as unknown[]).length > 0
-        ) {
-          awaitingUser = true;
-        }
-      }
+      if (userInjectId) onUserInjectedRef.current?.(userInjectId);
+      if (injectDeferredId) onInjectDeferredRef.current?.(injectDeferredId);
+      if (kbNotify !== undefined) onKbChanged?.(kbNotify ?? undefined);
+      if (streamFailed || stop) break;
     }
     return { streamFailed, awaitingUser };
   }
@@ -281,39 +238,26 @@ export function useAgentStream({
         !info.streamFailed && !info.aborted && !info.detached && info.awaitingUser,
       conversationId: endCid,
     });
-    if (endCid && !info.streamFailed && !info.aborted && !info.detached) {
-      getConversation(endCid)
-        .then((conv) => {
-          if (conversationIdRef.current !== endCid) return;
-          if (streamingRef.current) return;
-          setMsgs(
-            conv.messages.map((m) =>
-              normalizeLoadedMessage({
-                ...m,
-                injected: isInjectedUserMessage(m),
-              }),
-            ),
-          );
+    const reload = shouldReloadConversation(info);
+    if (!endCid || reload === "none") return;
+    getConversation(endCid)
+      .then((conv) => {
+        if (conversationIdRef.current !== endCid) return;
+        if (streamingRef.current) return;
+        setMsgs(
+          conv.messages.map((m) =>
+            normalizeLoadedMessage({
+              ...m,
+              injected: isInjectedUserMessage(m),
+            }),
+          ),
+        );
+        if (reload === "full") {
           setSummarized(!!conv.summarized);
           setSummaryPath(conv.summary_path ?? null);
-        })
-        .catch(() => {});
-    } else if (endCid && info.aborted) {
-      getConversation(endCid)
-        .then((conv) => {
-          if (conversationIdRef.current !== endCid) return;
-          if (streamingRef.current) return;
-          setMsgs(
-            conv.messages.map((m) =>
-              normalizeLoadedMessage({
-                ...m,
-                injected: isInjectedUserMessage(m),
-              }),
-            ),
-          );
-        })
-        .catch(() => {});
-    }
+        }
+      })
+      .catch(() => {});
   }
 
   async function runAgentStream(

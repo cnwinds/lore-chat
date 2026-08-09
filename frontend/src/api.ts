@@ -10,64 +10,16 @@ import type {
   IngestResult,
   Question,
 } from "./types/chat";
+import {
+  apiBase,
+  openJson as apiFetch,
+  openSse,
+  readSseResponse,
+  type ApiError,
+  type PathExistsDetail,
+} from "./lib/httpTransport";
 
-const BASE = import.meta.env.VITE_API_BASE ?? "";
-
-export type ApiError = Error & {
-  status?: number;
-  pathExists?: PathExistsDetail;
-};
-
-export type PathExistsDetail = {
-  code: "PATH_EXISTS";
-  path: string;
-  message: string;
-  suggested_filename: string;
-};
-
-async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const r = await fetch(`${BASE}${path}`, {
-    credentials: "include",
-    ...init,
-  });
-  if (!r.ok) {
-    let detail = r.statusText;
-    let pathExists: PathExistsDetail | undefined;
-    try {
-      const body = await r.json();
-      if (
-        r.status === 409 &&
-        body.detail &&
-        typeof body.detail === "object" &&
-        body.detail.code === "PATH_EXISTS"
-      ) {
-        pathExists = body.detail as PathExistsDetail;
-        detail = pathExists.message;
-      } else {
-        detail =
-          typeof body.detail === "string"
-            ? body.detail
-            : typeof body.message === "string"
-              ? body.message
-              : JSON.stringify(body);
-      }
-    } catch {
-      try {
-        detail = (await r.text()) || detail;
-      } catch {
-        /* ignore */
-      }
-    }
-    const err = new Error(detail || `请求失败 (${r.status})`) as ApiError;
-    err.status = r.status;
-    err.pathExists = pathExists;
-    if (r.status === 401) {
-      window.dispatchEvent(new CustomEvent("auth:unauthorized"));
-    }
-    throw err;
-  }
-  return r.json() as Promise<T>;
-}
+export type { ApiError, PathExistsDetail };
 
 export type AuthStatus = {
   setup_required: boolean;
@@ -243,7 +195,7 @@ export function changePassword(old_password: string, new_password: string) {
 }
 
 export async function downloadExport() {
-  const r = await fetch(`${BASE}/api/admin/export`, { credentials: "include" });
+  const r = await fetch(`${apiBase()}/api/admin/export`, { credentials: "include" });
   if (!r.ok) {
     let detail = r.statusText;
     try {
@@ -290,7 +242,7 @@ export async function importKb(
   const fd = new FormData();
   fd.append("file", file);
   fd.append("mode", mode);
-  const r = await fetch(`${BASE}/api/admin/import`, {
+  const r = await fetch(`${apiBase()}/api/admin/import`, {
     method: "POST",
     credentials: "include",
     body: fd,
@@ -414,92 +366,15 @@ export async function* chatStream(
   } else if (activeDocPaths.length) {
     body.active_doc_paths = activeDocPaths;
   }
-  const r = await fetch(`${BASE}/api/chat`, {
+  const r = await openSse("/api/chat", {
     method: "POST",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "text/event-stream",
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
     signal,
   });
-  if (!r.ok) {
-    let detail = r.statusText;
-    try {
-      detail = (await r.text()) || detail;
-    } catch {
-      /* ignore */
-    }
-    const err = new Error(detail || `请求失败 (${r.status})`) as ApiError;
-    err.status = r.status;
-    if (r.status === 401) {
-      window.dispatchEvent(new CustomEvent("auth:unauthorized"));
-    }
-    throw err;
-  }
-  if (!r.body) {
-    throw new Error("响应缺少可读流");
-  }
   yield* readSseResponse(r);
 }
 
-async function* readSseResponse(
-  r: Response,
-): AsyncGenerator<ChatStreamEvent> {
-  if (!r.body) {
-    throw new Error("响应缺少可读流");
-  }
-  const reader = r.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-
-  function parseEventBlock(part: string): ChatStreamEvent | undefined {
-    if (!part.trim()) return undefined;
-    const lines = part.split("\n");
-    const eventLine = lines.find((l) => l.startsWith("event: "));
-    const dataLine = lines.find((l) => l.startsWith("data: "));
-    if (!eventLine || !dataLine) {
-      console.warn("跳过无法识别的 SSE 事件块", part);
-      return undefined;
-    }
-    try {
-      return {
-        event: eventLine.slice(7).trim(),
-        data: JSON.parse(dataLine.slice(6)) as Record<string, unknown>,
-      };
-    } catch (err) {
-      console.warn("跳过无法解析的 SSE 事件", err, dataLine);
-      return undefined;
-    }
-  }
-
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const parts = buffer.split("\n\n");
-      buffer = parts.pop() ?? "";
-      for (const part of parts) {
-        const evt = parseEventBlock(part);
-        if (evt) yield evt;
-      }
-    }
-
-    buffer += decoder.decode();
-    if (buffer.trim()) {
-      const evt = parseEventBlock(buffer);
-      if (evt) yield evt;
-    }
-  } finally {
-    try {
-      reader.releaseLock();
-    } catch {
-      /* ignore */
-    }
-  }
-}
 
 export async function* observeActiveTurnStream(
   conversationId: string,
@@ -510,29 +385,10 @@ export async function* observeActiveTurnStream(
     params.set("after_seq", String(options.afterSeq));
   }
   const qs = params.toString();
-  const r = await fetch(
-    `${BASE}/api/conversations/${encodeURIComponent(conversationId)}/turns/active/stream${qs ? `?${qs}` : ""}`,
-    {
-      method: "GET",
-      credentials: "include",
-      headers: { Accept: "text/event-stream" },
-      signal: options.signal,
-    },
+  const r = await openSse(
+    `/api/conversations/${encodeURIComponent(conversationId)}/turns/active/stream${qs ? `?${qs}` : ""}`,
+    { method: "GET", signal: options.signal },
   );
-  if (!r.ok) {
-    let detail = r.statusText;
-    try {
-      detail = (await r.text()) || detail;
-    } catch {
-      /* ignore */
-    }
-    const err = new Error(detail || `请求失败 (${r.status})`) as ApiError;
-    err.status = r.status;
-    if (r.status === 401) {
-      window.dispatchEvent(new CustomEvent("auth:unauthorized"));
-    }
-    throw err;
-  }
   yield* readSseResponse(r);
 }
 
@@ -684,12 +540,12 @@ export function downloadUrl(
 ) {
   const q = new URLSearchParams({ path });
   if (opts?.download) q.set("download", "1");
-  return `${BASE}/api/download?${q.toString()}`;
+  return `${apiBase()}/api/download?${q.toString()}`;
 }
 
 export async function downloadKbDirectory(directory: string) {
   const r = await fetch(
-    `${BASE}/api/download-zip?path=${encodeURIComponent(directory)}`,
+    `${apiBase()}/api/download-zip?path=${encodeURIComponent(directory)}`,
     { credentials: "include" },
   );
   if (!r.ok) {
@@ -847,7 +703,7 @@ export async function getMergeSession(id: string): Promise<MergeSession> {
 
 export async function getActiveMerge(path: string): Promise<MergeSession | null> {
   const r = await fetch(
-    `${BASE}/api/docs/merge/active?path=${encodeURIComponent(path)}`,
+    `${apiBase()}/api/docs/merge/active?path=${encodeURIComponent(path)}`,
     { credentials: "include" },
   );
   if (r.status === 404) return null;

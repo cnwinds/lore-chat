@@ -7,15 +7,12 @@ import threading
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Protocol
 
+from app.engine.conversation.deletion import ConversationDeletionWorkflow
 from app.engine.conversation.memory_schedule import MemoryExtractSchedule
+from app.engine.conversation.message_graph import ConversationMessageGraph
 from app.engine.conversation.transcript import ConversationTranscript
-from app.engine.conversation.outbox import (
-    DerivationOutbox,
-    append_deletion_ledger,
-    default_deletion_ledger_path,
-)
+from app.engine.conversation.outbox import DerivationOutbox
 from app.engine.conversation.shared import (
     TurnInProgress,
     dumps_json as _dumps,
@@ -25,22 +22,6 @@ from app.engine.conversation.shared import (
     title_from_text as _title_from_text,
 )
 from app.engine.conversation.turn_lifecycle import TurnLifecycle
-
-
-class _ConversationFTSLike(Protocol):
-    def delete_conversation(self, conversation_id: str) -> None: ...
-
-
-class _ConversationVectorLike(Protocol):
-    def delete_conversation(self, conversation_id: str) -> None: ...
-
-
-class _IndexRevisionLike(Protocol):
-    def bump(self) -> int: ...
-
-
-class _IndexerLike(Protocol):
-    def remove_conversation(self, cid: str) -> None: ...
 
 
 _SCHEMA = """
@@ -187,6 +168,8 @@ class ConversationStore:
             self.conn, self._lock, self._outbox
         )
         self._turn_lifecycle = TurnLifecycle(self)
+        self.message_graph = ConversationMessageGraph(self)
+        self.deletion = ConversationDeletionWorkflow(self)
 
     # ------------------------------------------------------------------
     # 内部辅助
@@ -537,79 +520,27 @@ class ConversationStore:
                 )
         return sorted(items, key=lambda c: c["updated_at"], reverse=True)
 
-    def _default_deletion_ledger_path(self) -> Path:
-        return default_deletion_ledger_path(self.dir)
-
     def delete(
         self,
         cid: str,
         *,
-        conversation_fts: "_ConversationFTSLike | None" = None,
-        conversation_vector: "_ConversationVectorLike | None" = None,
-        indexer: "_IndexerLike | None" = None,
-        index_revision: "_IndexRevisionLike | None" = None,
+        conversation_fts=None,
+        conversation_vector=None,
+        indexer=None,
+        index_revision=None,
         ledger_path: str | Path | None = None,
         delete_summary: bool = True,
     ) -> None:
-        """删除会话事务顺序（spec §16）：
-
-        0. 先校验会话存在，缺失的 cid 直接抛出 KeyError，不写入任何凭据——
-           避免为不存在的会话产生幽灵 ledger 记录。
-        1. 存在性确认后，追加并 fsync 删除凭据（跨版本 JSONL ledger）——即使后续
-           步骤崩溃，回填/审计也能从 ledger 得知该会话已被判定删除。
-        2. 在同一 SQLite 事务内取消该会话尚未完成的 outbox 派生任务。
-        3. 删除消息/turns/摘要关系/会话行本身。
-        4. 通知 `ConversationFTS` 清理消息级 FTS（`conversation_chunks_v2`）。
-        5. 通知 `ConversationVector` 清理消息级向量索引。
-        6. 通知旧版文档级 `Indexer` 清理遗留的 `conv:{cid}` FTS 记录。
-        """
-        with self._lock:
-            self._conversation_row(cid)
-
-        deletion_id = _new_id()
-        deleted_at = _now()
-        options = {"delete_summary": delete_summary}
-        ledger_file = Path(ledger_path) if ledger_path else self._default_deletion_ledger_path()
-        append_deletion_ledger(ledger_file, cid, deletion_id, deleted_at, options)
-
-        with self._lock:
-            self._conversation_row(cid)
-            self.conn.execute(
-                """
-                INSERT INTO conversation_deletion_ledger(
-                    conversation_id, deletion_id, deleted_at, options_json
-                ) VALUES (?, ?, ?, ?)
-                """,
-                (cid, deletion_id, deleted_at, _dumps(options)),
-            )
-            self._outbox.cancel_pending_for_conversation(cid, deleted_at)
-            self.conn.execute("DELETE FROM turns WHERE conversation_id = ?", (cid,))
-            if delete_summary:
-                self.conn.execute(
-                    "DELETE FROM conversation_summaries WHERE conversation_id = ?", (cid,)
-                )
-            self.conn.execute("DELETE FROM messages WHERE conversation_id = ?", (cid,))
-            self.conn.execute("DELETE FROM conversations WHERE id = ?", (cid,))
-            self.conn.commit()
-
-        index_cleared = False
-        if conversation_fts is not None:
-            conversation_fts.delete_conversation(cid)
-            index_cleared = True
-        if conversation_vector is not None:
-            try:
-                conversation_vector.delete_conversation(cid)
-            except Exception:
-                from app.logging_config import get_logger
-
-                get_logger("conversations").warning(
-                    "会话向量索引清理失败 conversation_id=%s", cid, exc_info=True
-                )
-            index_cleared = True
-        if index_revision is not None and index_cleared:
-            index_revision.bump()
-        if indexer is not None:
-            indexer.remove_conversation(cid)
+        """兼容委托：协议见 ConversationDeletionWorkflow。"""
+        self.deletion.delete(
+            cid,
+            conversation_fts=conversation_fts,
+            conversation_vector=conversation_vector,
+            indexer=indexer,
+            index_revision=index_revision,
+            ledger_path=ledger_path,
+            delete_summary=delete_summary,
+        )
 
     # ------------------------------------------------------------------
     # Turn-based 持久化
@@ -703,35 +634,7 @@ class ConversationStore:
         return self.get(cid)
 
     def append_messages(self, cid: str, messages: list[dict]) -> dict:
-        with self._lock:
-            self._conversation_row(cid)
-            now = _now()
-            for m in messages:
-                seq = self._next_seq(cid)
-                self.conn.execute(
-                    """
-                    INSERT INTO messages(
-                        id, conversation_id, seq, role, text, ts, status,
-                        timeline_json, sources_json, total_duration_ms
-                    ) VALUES (?, ?, ?, ?, ?, ?, 'complete', ?, ?, ?)
-                    """,
-                    (
-                        _new_id(),
-                        cid,
-                        seq,
-                        m.get("role", "assistant"),
-                        m.get("text", ""),
-                        m.get("ts") or now,
-                        _dumps(m.get("timeline")) if "timeline" in m else None,
-                        _dumps(m.get("sources")) if "sources" in m else None,
-                        m.get("total_duration_ms"),
-                    ),
-                )
-            self.conn.execute(
-                "UPDATE conversations SET updated_at = ? WHERE id = ?", (now, cid)
-            )
-            self.conn.commit()
-            return self._conv_to_dict(self._conversation_row(cid))
+        return self.message_graph.append_messages(cid, messages)
 
     def append_injected_user_message(
         self,
@@ -744,85 +647,20 @@ class ConversationStore:
         attachments: list[str] | None = None,
     ) -> dict:
         """Persist a mid-turn injected user message (seq before finalize assistant)."""
-        with self._lock:
-            self._conversation_row(cid)
-            msg_id = _new_id()
-            seq = self._next_seq(cid)
-            now = _now()
-            self.conn.execute(
-                """
-                INSERT INTO messages(
-                    id, conversation_id, seq, role, text, ts, status,
-                    client_message_id, doc_context_json, attachments_json, primary_doc
-                ) VALUES (?, ?, ?, 'user', ?, ?, 'complete', ?, ?, ?, ?)
-                """,
-                (
-                    msg_id,
-                    cid,
-                    seq,
-                    text,
-                    now,
-                    client_message_id,
-                    _dumps(doc_context),
-                    _dumps(attachments),
-                    primary_doc,
-                ),
-            )
-            self.conn.execute(
-                "UPDATE conversations SET updated_at = ? WHERE id = ?", (now, cid)
-            )
-            self.conn.commit()
-            row = self.conn.execute(
-                "SELECT * FROM messages WHERE id = ?", (msg_id,)
-            ).fetchone()
-            return self._message_row_to_dict(row)
+        return self.message_graph.append_injected_user_message(
+            cid,
+            text=text,
+            client_message_id=client_message_id,
+            doc_context=doc_context,
+            primary_doc=primary_doc,
+            attachments=attachments,
+        )
+
     def mark_question_resolved(
         self, cid: str, question_id: str, choice_label: str
     ) -> None:
         """把某条 ask_user 征询块标记为已选择，持久化用户的选择（便于重载后展示）。"""
-        with self._lock:
-            try:
-                self._conversation_row(cid)
-            except KeyError:
-                return
-            rows = self.conn.execute(
-                """
-                SELECT id, timeline_json FROM messages
-                WHERE conversation_id = ? AND timeline_json IS NOT NULL
-                """,
-                (cid,),
-            ).fetchall()
-            changed = False
-
-            def patch(blocks: list) -> bool:
-                local_changed = False
-                for block in blocks:
-                    if (
-                        block.get("type") == "tool"
-                        and block.get("tool") in ("ask_user", "sandbox_run")
-                        and block.get("question_id") == question_id
-                    ):
-                        block["choice_resolved"] = choice_label
-                        local_changed = True
-                    elif block.get("type") == "parallel":
-                        if patch(block.get("children", [])):
-                            local_changed = True
-                return local_changed
-
-            for row in rows:
-                timeline = _loads(row["timeline_json"], [])
-                if patch(timeline):
-                    changed = True
-                    self.conn.execute(
-                        "UPDATE messages SET timeline_json = ? WHERE id = ?",
-                        (_dumps(timeline), row["id"]),
-                    )
-            if changed:
-                self.conn.execute(
-                    "UPDATE conversations SET updated_at = ? WHERE id = ?",
-                    (_now(), cid),
-                )
-                self.conn.commit()
+        self.message_graph.mark_question_resolved(cid, question_id, choice_label)
 
     def mark_summarized(self, cid: str, summary_path: str) -> None:
         with self._lock:

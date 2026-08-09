@@ -28,7 +28,7 @@ from app.engine.agent.tools import (
     ToolRegistry,
     can_parallelize,
 )
-from app.engine.sandbox.progress import bind_progress_queue, reset_progress_queue
+from app.engine.agent.tool_progress import ToolProgressExecutor
 from app.engine.source_key import extend_sources
 from app.engine.usage.context import usage_context
 from app.logging_config import get_logger
@@ -56,6 +56,7 @@ class AgentToolLoop:
         self.settings = settings
         self.llm = llm
         self.tools = tools
+        self._tool_progress = ToolProgressExecutor(tools.execute)
 
     async def stream(
         self,
@@ -288,17 +289,11 @@ class AgentToolLoop:
         active_doc_path: str | None = None,
         conversation_id: str | None = None,
     ) -> tuple[dict, int]:
-        out = None
-        duration_ms = 0
-        async for kind, payload in self._execute_tool_stream(
+        return await self._tool_progress.run(
             tc,
             active_doc_path=active_doc_path,
             conversation_id=conversation_id,
-        ):
-            if kind == "result":
-                out, duration_ms = payload
-        assert out is not None
-        return out, duration_ms
+        )
 
     async def _execute_tool_stream(
         self,
@@ -307,63 +302,12 @@ class AgentToolLoop:
         active_doc_path: str | None = None,
         conversation_id: str | None = None,
     ) -> AsyncIterator[tuple[str, object]]:
-        """Yield ('progress', dict) then ('result', (out, duration_ms))."""
-        t0 = time.monotonic()
-        queue: asyncio.Queue = asyncio.Queue()
-        token = bind_progress_queue(queue)
-
-        async def _run() -> dict:
-            try:
-                return await self.tools.execute(
-                    tc.name,
-                    tc.arguments,
-                    active_doc_path=active_doc_path,
-                    conversation_id=conversation_id,
-                )
-            except Exception as e:
-                return {
-                    "summary": f"工具执行失败：{e}",
-                    "sources": [],
-                    "error": str(e),
-                }
-
-        task = asyncio.create_task(_run())
-        duration_ms = 0
-        out: dict | None = None
-        try:
-            while True:
-                if task.done() and queue.empty():
-                    break
-                try:
-                    item = await asyncio.wait_for(queue.get(), timeout=0.15)
-                    yield "progress", item
-                except asyncio.TimeoutError:
-                    if task.done():
-                        # drain remaining
-                        while not queue.empty():
-                            yield "progress", queue.get_nowait()
-                        break
-            out = await task
-            # 在工具任务完成瞬间取耗时，避免后续 yield/消费拖长
-            duration_ms = int((time.monotonic() - t0) * 1000)
-        except asyncio.CancelledError:
-            if not task.done():
-                task.cancel()
-                try:
-                    await task
-                except (asyncio.CancelledError, Exception):
-                    pass
-            raise
-        finally:
-            if not task.done():
-                task.cancel()
-                try:
-                    await task
-                except (asyncio.CancelledError, Exception):
-                    pass
-            reset_progress_queue(token)
-        assert out is not None
-        yield "result", (out, duration_ms)
+        async for item in self._tool_progress.stream(
+            tc,
+            active_doc_path=active_doc_path,
+            conversation_id=conversation_id,
+        ):
+            yield item
 
     async def _run_parallel_batch(
         self,
