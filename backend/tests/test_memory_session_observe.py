@@ -159,9 +159,7 @@ def test_archive_during_running_requeues_immediate(tmp_path):
 
         def extract(self, user_texts, confirmed_summary=None):
             with conv._lock:
-                ok = conv._request_immediate_memory_extract_unlocked(
-                    cid, at="2099-01-01T00:00:00+00:00"
-                )
+                ok = conv._request_immediate_memory_extract_unlocked(cid)
                 conv.conn.commit()
             assert ok is False
             return inner.extract(user_texts, confirmed_summary=confirmed_summary)
@@ -169,16 +167,23 @@ def test_archive_during_running_requeues_immediate(tmp_path):
     worker = MemoryWorker(conv, svc, extractor=_ArchiveMidExtract(), idle_hours=24)
     cid = conv.create()
     conv.begin_turn(cid, "我偏好简洁回答", "c1", observation_allowed=True)
+    activity_before = conv.conn.execute(
+        "SELECT updated_at, last_user_message_at FROM conversations WHERE id = ?",
+        (cid,),
+    ).fetchone()
     assert conv.enqueue_session_observe(cid, immediate=True) is True
     jobs = conv.claim_outbox(kind="session_observe_memory", limit=1, lease_seconds=120)
     assert len(jobs) == 1
     worker.process_session_job(jobs[0])
     dirty = conv.conn.execute(
-        "SELECT memory_dirty, memory_immediate_pending FROM conversations WHERE id = ?",
+        "SELECT memory_dirty, memory_immediate_pending, updated_at, last_user_message_at "
+        "FROM conversations WHERE id = ?",
         (cid,),
     ).fetchone()
-    assert dirty["memory_dirty"] == 1
+    # 即时请求不得靠污染 CAS 时钟保 dirty；须再入队 immediate
     assert dirty["memory_immediate_pending"] == 0
+    assert dirty["updated_at"] == activity_before["updated_at"]
+    assert dirty["last_user_message_at"] == activity_before["last_user_message_at"]
     follow = [
         j
         for j in conv.list_outbox(kind="session_observe_memory")
@@ -197,15 +202,12 @@ def test_archive_same_second_still_requeues_immediate(tmp_path):
     mem = MemoryStore(tmp_path / "memory.db", owner_key="ws1")
     svc = MemoryService(mem, repo, knowledge_writer=make_writer(repo, tmp_path))
     inner = scripted_memory_extractor(preference_action("我偏好简洁回答"))
-    snap_holder: dict[str, str | None] = {"ts": None}
 
     class _ArchiveSameSecond:
         def extract(self, user_texts, confirmed_summary=None):
-            # 使用与抽取快照相同的时间戳，模拟秒级精度撞车
+            # 抽取中途归档即时请求：不得入队（已有 running），靠 pending 再入队
             with conv._lock:
-                ok = conv._request_immediate_memory_extract_unlocked(
-                    cid, at=snap_holder["ts"]
-                )
+                ok = conv._request_immediate_memory_extract_unlocked(cid)
                 conv.conn.commit()
             assert ok is False
             return inner.extract(user_texts, confirmed_summary=confirmed_summary)
@@ -213,7 +215,6 @@ def test_archive_same_second_still_requeues_immediate(tmp_path):
     worker = MemoryWorker(conv, svc, extractor=_ArchiveSameSecond(), idle_hours=0)
     cid = conv.create()
     conv.begin_turn(cid, "我偏好简洁回答", "c1", observation_allowed=True)
-    snap_holder["ts"] = conv.get_last_user_message_at(cid)
     assert conv.enqueue_session_observe(cid, immediate=True) is True
     jobs = conv.claim_outbox(kind="session_observe_memory", limit=1, lease_seconds=120)
     worker.process_session_job(jobs[0])

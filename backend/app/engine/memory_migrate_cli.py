@@ -5,16 +5,10 @@ from __future__ import annotations
 import argparse
 import json
 
-from app.config import Settings, get_settings
+from app.config import get_settings
 from app.deps import build_container
 from app.engine.memory.migrate_slots import migrate_abstract_slots
-from app.settings_store import SettingsStore
-
-
-def _effective_settings() -> Settings:
-    """与线上一致：.env/环境变量为底，再叠知识库 .kb/settings.json（设置页写入的 Key）。"""
-    base = get_settings()
-    return SettingsStore(base.kb_path, base).get()
+from app.settings_store import load_effective_settings
 
 
 def main() -> None:
@@ -31,7 +25,7 @@ def main() -> None:
         help="调用迁移专用 LLM 分配抽象槽与 canonical（失败回退启发式）",
     )
     args = parser.parse_args()
-    settings = _effective_settings()
+    settings = load_effective_settings(get_settings())
     container = build_container(settings)
     llm = container.llm if args.use_llm else None
     if args.use_llm:

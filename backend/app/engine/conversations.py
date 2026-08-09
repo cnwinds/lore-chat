@@ -276,10 +276,8 @@ class ConversationStore:
     def is_memory_extract_idle(self, cid: str, *, idle_hours: float = 24.0) -> bool:
         return self.memory_schedule.is_extract_idle(cid, idle_hours=idle_hours)
 
-    def _request_immediate_memory_extract_unlocked(
-        self, cid: str, *, at: str | None = None
-    ) -> bool:
-        return self.memory_schedule.request_immediate_unlocked(cid, at=at)
+    def _request_immediate_memory_extract_unlocked(self, cid: str) -> bool:
+        return self.memory_schedule.request_immediate_unlocked(cid)
 
     def request_immediate_memory_extract(self, cid: str) -> bool:
         return self.memory_schedule.request_immediate(cid)

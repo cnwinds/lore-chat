@@ -11,7 +11,12 @@ from app.config import (
     Settings,
 )
 
-__all__ = ["EDITABLE_SETTING_KEYS", "SECRET_SETTING_KEYS", "SettingsStore"]
+__all__ = [
+    "EDITABLE_SETTING_KEYS",
+    "SECRET_SETTING_KEYS",
+    "SettingsStore",
+    "load_effective_settings",
+]
 
 
 def _mask(value: str | None) -> str | None:
@@ -20,6 +25,12 @@ def _mask(value: str | None) -> str | None:
     if len(value) <= 4:
         return "****"
     return f"{value[:2]}***{value[-4:]}"
+
+
+def load_effective_settings(base: Settings | None = None) -> Settings:
+    """.env / 环境变量为底，再叠知识库 `.kb/settings.json`。"""
+    root = base if base is not None else Settings()
+    return SettingsStore(root.kb_path, root).get()
 
 
 class SettingsStore:
