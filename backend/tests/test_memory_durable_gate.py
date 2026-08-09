@@ -4,10 +4,16 @@ from app.engine.memory.prompt_common import (
     NON_DURABLE_IGNORE,
     OWNER_MEMORY_GATE,
     SCOPE_FIDELITY_GATE,
+    MemoryExtractParseError,
     passes_owner_surface_gate,
+    parse_llm_json_list,
 )
 from app.engine.memory.dialogue_timeline_pack import compress_dialogue_timeline
-from app.engine.memory.session_extractor import _SYSTEM_PROMPT as SESSION_PROMPT
+from app.engine.memory.session_extractor import (
+    LLMSessionExtractor,
+    _SYSTEM_PROMPT as SESSION_PROMPT,
+)
+from tests.helpers import make_idle_observe_fixture
 
 
 def test_durable_and_scope_gates_shared_by_extractors():
@@ -16,6 +22,7 @@ def test_durable_and_scope_gates_shared_by_extractors():
     assert OWNER_MEMORY_GATE in SESSION_PROMPT
     assert NON_DURABLE_IGNORE in SESSION_PROMPT
     assert SCOPE_FIDELITY_GATE in SESSION_PROMPT
+    assert "不得把助手陈述写成主人自述" in SCOPE_FIDELITY_GATE
 
 
 def test_ephemeral_task_paraphrases_documented_as_non_durable():
@@ -52,12 +59,14 @@ def test_dialogue_timeline_keeps_assistant_summary_for_disambiguation():
     assert "时间不多" in out
 
 
-def test_dialogue_timeline_does_not_treat_assistant_as_owner_statement_for_rules():
-    """规则路径只扫 user；纯助手断言不得单独构成画像输入。"""
-    from app.engine.memory.session_extractor import RuleBasedSessionExtractor
+def test_assistant_only_session_does_not_call_llm_or_extract():
+    """无用户轮：不得调用 LLM，不得产出画像（助手≠主人输入）。"""
 
-    ext = RuleBasedSessionExtractor()
-    actions = ext.extract(
+    class BoomLLM:
+        def chat(self, _messages, **_kwargs):
+            raise AssertionError("assistant-only 不得调用 LLM")
+
+    actions = LLMSessionExtractor(BoomLLM()).extract(
         [("assistant", "用户每周可支配时间不多，这是硬约束。")],
         confirmed_summary=[],
     )
@@ -65,22 +74,6 @@ def test_dialogue_timeline_does_not_treat_assistant_as_owner_statement_for_rules
 
 
 def test_assistant_secret_like_text_does_not_block_user_extract():
-    from app.engine.memory.session_extractor import (
-        LLMSessionExtractor,
-        RuleBasedSessionExtractor,
-    )
-
-    ext = RuleBasedSessionExtractor()
-    actions = ext.extract(
-        [
-            ("user", "我偏好用数据可视化替代插图。"),
-            ("assistant", "示例 key=sk-abcdefghijklmnopqrstuvwxyz012345"),
-        ],
-        confirmed_summary=[],
-    )
-    assert len(actions) == 1
-    assert actions[0].slot_key == "preference.illustration_style"
-
     class _FakeLLM:
         def chat(self, _messages, **_kwargs):
             return (
@@ -101,8 +94,6 @@ def test_assistant_secret_like_text_does_not_block_user_extract():
 
 def test_llm_extractor_skips_secret_user_turn_not_whole_session():
     """含密钥的用户句应跳过，不得否决同会话其它自述。"""
-    from app.engine.memory.session_extractor import LLMSessionExtractor
-
     seen: list[str] = []
 
     class _FakeLLM:
@@ -125,3 +116,47 @@ def test_llm_extractor_skips_secret_user_turn_not_whole_session():
     assert len(actions) == 1
     assert "sk-" not in seen[0]
     assert "数据可视化" in seen[0]
+
+
+def test_parse_llm_json_list_empty_items_ok_bad_json_raises():
+    assert parse_llm_json_list('{"items":[]}', key="items") == []
+    try:
+        parse_llm_json_list("not-json", key="items")
+        raise AssertionError("expected MemoryExtractParseError")
+    except MemoryExtractParseError:
+        pass
+    try:
+        parse_llm_json_list('{"candidates":[]}', key="items")
+        raise AssertionError("expected MemoryExtractParseError")
+    except MemoryExtractParseError:
+        pass
+
+
+def test_llm_parse_failure_keeps_memory_dirty(tmp_path):
+    """坏 JSON / 解析失败：不清 dirty，等待下次抽取。"""
+
+    class BadLLM:
+        def chat(self, _messages, **_kwargs):
+            return "sorry, cannot comply"
+
+    fx = make_idle_observe_fixture(
+        tmp_path, extractor=LLMSessionExtractor(BadLLM())
+    )
+    fx.worker.drain(max_jobs=5)
+    assert fx.mem.list_confirmed() == []
+    assert fx.memory_dirty() == 1
+
+
+def test_llm_empty_items_clears_memory_dirty(tmp_path):
+    """合法空抽取 {\"items\":[]}：视为成功，可清 dirty。"""
+
+    class EmptyLLM:
+        def chat(self, _messages, **_kwargs):
+            return '{"items":[]}'
+
+    fx = make_idle_observe_fixture(
+        tmp_path, extractor=LLMSessionExtractor(EmptyLLM())
+    )
+    assert fx.worker.drain(max_jobs=5) >= 1
+    assert fx.mem.list_confirmed() == []
+    assert fx.memory_dirty() == 0

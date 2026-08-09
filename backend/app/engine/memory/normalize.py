@@ -66,10 +66,14 @@ def match_seed_slot(statement: str, *, category: str | None = None) -> str | Non
         if category and pred.category != category.strip().lower():
             continue
         score = 0
+        text_compact = text.replace(" ", "")
         for alias in pred.aliases:
             a = normalize_text(alias)
-            if a and a in text:
-                score += max(len(a), 1)
+            if not a:
+                continue
+            a_compact = a.replace(" ", "")
+            if a in text or (a_compact and a_compact in text_compact):
+                score += max(len(a_compact or a), 1)
         if score > best_score:
             best_score = score
             best_key = pred.slot_key

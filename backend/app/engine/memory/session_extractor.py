@@ -1,4 +1,7 @@
-"""会话级记忆抽取：整段对话（用户为主、助手摘要消歧）→ SlotAction 列表。"""
+"""会话级记忆抽取：整段对话（用户为主、助手摘要消歧）→ SlotAction 列表。
+
+生产路径仅 LLM；未配置抽取器或调用失败时不落库，保留 dirty 待下次。
+"""
 
 from __future__ import annotations
 
@@ -7,7 +10,6 @@ from typing import Protocol
 from app.engine.memory.dialogue_timeline_pack import (
     _compress_messages,
     _normalize_turns,
-    _user_texts,
 )
 
 # 兼容：旧测试/调用方可从本模块再导出
@@ -15,7 +17,7 @@ from app.engine.memory.dialogue_timeline_pack import (  # noqa: F401
     compress_dialogue_timeline,
     compress_to_self_timeline,
 )
-from app.engine.memory.normalize import infer_category, match_seed_slot, resolve_slot_key
+from app.engine.memory.normalize import infer_category, resolve_slot_key
 from app.engine.memory.predicates import seed_prompt_block
 from app.engine.memory.prompt_common import (
     NON_DURABLE_IGNORE,
@@ -79,40 +81,6 @@ def _to_action(
         origin=origin,
         confidence=max(0.0, min(1.0, confidence)),
     )
-
-
-class RuleBasedSessionExtractor:
-    """无 LLM：按种子别名从用户消息启发式抽 direct 事实。"""
-
-    def extract(
-        self,
-        messages: list[str] | list[tuple[str, str]],
-        *,
-        confirmed_summary: list[dict],
-    ) -> list[SlotAction]:
-        existing = {f["slot_key"]: f["statement"] for f in confirmed_summary}
-        found: dict[str, SlotAction] = {}
-        for text in _user_texts(_normalize_turns(messages)):  # type: ignore[arg-type]
-            if len(text) < 4 or scan_secrets(text):
-                continue
-            slot = match_seed_slot(text)
-            if not slot:
-                continue
-            cat = infer_category(text)
-            stmt = text if len(text) <= 200 else text[:200].rstrip() + "…"
-            if not passes_owner_surface_gate(stmt, slot_key=slot):
-                continue
-            action = "merge" if slot in existing else "new"
-            found[slot] = _to_action(
-                statement=stmt,
-                slot=slot,
-                category=cat,
-                action=action,
-                origin="direct",
-                confidence=0.9,
-            )
-            existing[slot] = stmt
-        return list(found.values())[:_MAX_ITEMS]
 
 
 class LLMSessionExtractor:

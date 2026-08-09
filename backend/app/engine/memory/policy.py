@@ -28,9 +28,8 @@ _CHANGE_MARKERS = ("现在", "以后", "改为", "不再", "改成")
 _PROMOTION_CONFIDENCE = 0.80
 _PROMOTION_MIN_CONVERSATIONS = 2
 
-_TEMPLATE_RE = re.compile(
-    r"_{3,}|______|\(职业\)|（职业）|填入你的|填入职业|我读这本书的目的"
-)
+# 通用填空占位；不枚举具体技能/模板原文（那是孤例补丁）
+_TEMPLATE_RE = re.compile(r"_{3,}|______")
 _MIN_EVIDENCE_QUOTE_LEN = 8
 _MIN_EVIDENCE_CORE_LEN = 8
 _REWRITE_STMT_EVIDENCE_OVERLAP = 0.35

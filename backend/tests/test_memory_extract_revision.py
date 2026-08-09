@@ -2,11 +2,10 @@ from datetime import datetime, timedelta, timezone
 
 from app.engine.conversations import ConversationStore
 from app.engine.memory.service import MemoryService
-from app.engine.memory.session_extractor import RuleBasedSessionExtractor
 from app.engine.memory.store import MemoryStore
 from app.engine.memory_worker import MemoryWorker
 from app.storage.repo import KnowledgeRepo
-from tests.helpers import make_writer
+from tests.helpers import make_writer, preference_action, scripted_memory_extractor
 
 
 def test_clear_memory_dirty_increments_extract_revision(tmp_path):
@@ -46,7 +45,10 @@ def test_session_worker_bumps_revision_on_success(tmp_path):
     mem = MemoryStore(tmp_path / "memory.db", owner_key="ws1")
     svc = MemoryService(mem, repo, knowledge_writer=make_writer(repo, tmp_path))
     worker = MemoryWorker(
-        conv, svc, extractor=RuleBasedSessionExtractor(), idle_hours=0
+        conv,
+        svc,
+        extractor=scripted_memory_extractor(preference_action("我偏好简洁回答")),
+        idle_hours=0,
     )
     cid = conv.create()
     conv.begin_turn(cid, "我偏好简洁回答", "c1", observation_allowed=True)

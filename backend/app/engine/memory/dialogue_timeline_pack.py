@@ -33,11 +33,8 @@ def _user_texts(turns: list[tuple[str, str]]) -> list[str]:
 
 
 def _looks_self_narrative(text: str) -> bool:
-    """是否像主人自述/偏好指令（用于时间线压缩取舍）。"""
-    if passes_owner_surface_gate(text):
-        return True
-    # 短指令或含第一人称片段但未过完整门禁时，仍优先保留
-    return any(k in text for k in ("我", "咱", "偏好", "习惯", "不要", "默认"))
+    """是否像主人自述（与写入表面门禁同一判定，供时间线压缩取舍）。"""
+    return passes_owner_surface_gate(text)
 
 
 def _clip_text(text: str, max_chars: int, *, keep_tail: bool) -> str:

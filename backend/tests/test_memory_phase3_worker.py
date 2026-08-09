@@ -2,8 +2,8 @@ from datetime import datetime, timedelta, timezone
 
 from app.deps import build_container
 from app.config import Settings
-from app.engine.memory.session_extractor import RuleBasedSessionExtractor
 from app.engine.memory_worker import MemoryWorker
+from tests.helpers import preference_action, scripted_memory_extractor
 
 
 def test_worker_processes_session_job_and_confirms_direct(tmp_path):
@@ -29,7 +29,7 @@ def test_worker_processes_session_job_and_confirms_direct(tmp_path):
     worker = MemoryWorker(
         store,
         container.memory_service,
-        extractor=RuleBasedSessionExtractor(),
+        extractor=scripted_memory_extractor(preference_action("我偏好简洁回答")),
         idle_hours=0,
     )
     assert worker.drain(max_jobs=5) >= 1
@@ -57,7 +57,7 @@ def test_memory_updated_event_after_confirm(tmp_path, client):
     worker = MemoryWorker(
         store,
         container.memory_service,
-        extractor=RuleBasedSessionExtractor(),
+        extractor=scripted_memory_extractor(preference_action("我偏好简洁回答")),
         idle_hours=0,
     )
     worker.drain(max_jobs=5)

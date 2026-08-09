@@ -13,7 +13,8 @@ class SeedPredicate:
     description: str = ""
 
 
-# 核心种子：半开放词表的稳定底座。别名用于无 LLM 时的启发式对齐。
+# 核心种子：半开放词表的稳定底座。
+# 别名供 LLM 产出后的 match_seed_slot / resolve_slot_key 对齐；slot 列表注入抽取 prompt。
 SEED_PREDICATES: tuple[SeedPredicate, ...] = (
     SeedPredicate(
         "preference.response_language",
@@ -30,31 +31,19 @@ SEED_PREDICATES: tuple[SeedPredicate, ...] = (
     SeedPredicate(
         "preference.illustration_style",
         "preference",
-        (
-            "数据可视化",
-            "替代插图",
-            "榜单、词云",
-            "词云、分布",
-            "不用ai生成",
-            "不用 ai 生成",
-            "不使用ai生成",
-            "不使用 ai 生成",
-            "ai生成的图片",
-            "ai 生成的图片",
-            "matplotlib",
-        ),
+        ("数据可视化", "替代插图", "不用ai生成"),
         "配图/可视化偏好",
     ),
     SeedPredicate(
         "preference.cli_preparedness",
         "preference",
-        ("提前准备好命令行", "临时查帮助", "命令行", "浪费token", "浪费 token"),
+        ("提前准备好命令行", "临时查帮助"),
         "工具/CLI 使用偏好",
     ),
     SeedPredicate(
         "workflow.script_layout",
         "workflow",
-        ("scripts目录", "scripts 目录", "脚本文件放在", "用法说明则放在"),
+        ("scripts目录", "scripts 目录", "脚本文件放在"),
         "脚本与文档布局",
     ),
     SeedPredicate(

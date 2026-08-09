@@ -1,6 +1,54 @@
 from app.engine.memory.normalize import value_hash
 
 
+def test_memory_panel_lists_candidates_before_confirmed(client):
+    """待确认须整块置顶；两组内均按 updated_at 倒序。"""
+    store = client.app.state.container.memory_service.store
+    old_cand = store.upsert_fact(
+        slot_key="preference.old_candidate",
+        category="preference",
+        statement="我似乎偏好旧待确认",
+        normalized_value_hash=value_hash("我似乎偏好旧待确认"),
+        origin="inferred",
+        confidence=0.8,
+        status="candidate",
+    )
+    old_confirmed = store.upsert_fact(
+        slot_key="preference.old_confirmed",
+        category="preference",
+        statement="我偏好旧已确认",
+        normalized_value_hash=value_hash("我偏好旧已确认"),
+        origin="direct",
+        confidence=0.9,
+        status="confirmed",
+    )
+    new_cand = store.upsert_fact(
+        slot_key="preference.new_candidate",
+        category="preference",
+        statement="我似乎偏好新待确认",
+        normalized_value_hash=value_hash("我似乎偏好新待确认"),
+        origin="inferred",
+        confidence=0.85,
+        status="candidate",
+    )
+    new_confirmed = store.upsert_fact(
+        slot_key="preference.new_confirmed",
+        category="preference",
+        statement="我偏好新已确认",
+        normalized_value_hash=value_hash("我偏好新已确认"),
+        origin="direct",
+        confidence=0.9,
+        status="confirmed",
+    )
+
+    facts = client.get("/api/memory/facts").json()["facts"]
+    ids = [f["id"] for f in facts]
+    # 待确认整块在前；组内新→旧
+    assert ids.index(new_cand["id"]) < ids.index(old_cand["id"])
+    assert ids.index(old_cand["id"]) < ids.index(new_confirmed["id"])
+    assert ids.index(new_confirmed["id"]) < ids.index(old_confirmed["id"])
+
+
 def test_memory_panel_list_confirm_reject_edit_forget(client):
     store = client.app.state.container.memory_service.store
     stmt = "我似乎偏好简洁回答"

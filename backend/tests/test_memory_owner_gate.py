@@ -8,7 +8,6 @@ from app.engine.memory.prompt_common import (
 )
 from app.engine.memory.session_extractor import (
     LLMSessionExtractor,
-    RuleBasedSessionExtractor,
     _SYSTEM_PROMPT as SESSION_PROMPT,
 )
 
@@ -29,26 +28,6 @@ def test_owner_gate_shared_by_extractors():
     assert SCOPE_FIDELITY_GATE in SESSION_PROMPT
 
 
-def test_world_knowledge_scale_not_extracted_by_rules():
-    """与主人无关的制度说明不得落入启发式抽取。"""
-    ext = RuleBasedSessionExtractor()
-    actions = ext.extract(
-        ["是上海卷660分制下的。 政史地。"],
-        confirmed_summary=[],
-    )
-    assert actions == []
-
-
-def test_seed_alias_in_world_knowledge_not_extracted_by_rules():
-    """含种子别名的常识句不得因别名命中而落槽。"""
-    ext = RuleBasedSessionExtractor()
-    actions = ext.extract(
-        ["matplotlib 常用于数据可视化，榜单和词云都很常见。"],
-        confirmed_summary=[],
-    )
-    assert actions == []
-
-
 def test_world_knowledge_paraphrase_fails_surface_gate():
     """换一种常识措辞、无主人归属 → 表面门禁仍挡住（根因同类）。"""
     samples = [
@@ -58,6 +37,9 @@ def test_world_knowledge_paraphrase_fails_surface_gate():
         "人民币对美元今日汇率波动。",
         "matplotlib 常用于数据可视化。",
         "数据可视化可以用榜单、词云展示。",
+        "默认使用中文",  # 无第一人称：归属由 LLM 写成「我…」后再过门禁
+        "不要迟到",
+        "禁止吸烟",
     ]
     for s in samples:
         assert not passes_owner_surface_gate(s), s
@@ -66,7 +48,8 @@ def test_world_knowledge_paraphrase_fails_surface_gate():
 def test_owner_side_facts_pass_surface_gate():
     assert passes_owner_surface_gate("我孩子高考考了500分")
     assert passes_owner_surface_gate("我偏好用数据可视化替代插图")
-    assert passes_owner_surface_gate("默认使用中文")
+    assert passes_owner_surface_gate("我默认使用中文")
+    assert passes_owner_surface_gate("我不要你用 AI 生成插图")
 
 
 def test_bare_kinship_word_does_not_pass_gate():
@@ -75,20 +58,10 @@ def test_bare_kinship_word_does_not_pass_gate():
     assert not passes_owner_surface_gate("父母应关注孩子睡眠")
 
 
-def test_constraint_alias_without_deixis_does_not_pass_gate():
-    """无主人指称时，约束别名短禁令不得当画像（根因：种子≠关于主人）。"""
-    assert not passes_owner_surface_gate("不要迟到")
-    assert not passes_owner_surface_gate("禁止吸烟")
-    # 有指称的主人约束仍可过
-    assert passes_owner_surface_gate("我不要你用 AI 生成插图")
-
-
-def test_seed_slot_key_alone_does_not_bypass_gate():
-    """抽象种子 slot 名不能证明语句关于主人。"""
-    assert not passes_owner_surface_gate(
-        "matplotlib 常用于数据可视化。",
-        slot_key="preference.illustration_style",
-    )
+def test_seed_alias_text_without_deixis_does_not_pass_gate():
+    """含种子别名的常识句、无主人指称 → 不得放行。"""
+    assert not passes_owner_surface_gate("matplotlib 常用于数据可视化。")
+    assert not passes_owner_surface_gate("数据可视化可以用榜单、词云展示。")
 
 
 def test_llm_session_drops_world_knowledge_even_if_model_emits():
@@ -105,13 +78,17 @@ def test_llm_session_drops_world_knowledge_even_if_model_emits():
     ) == []
 
 
-def test_owner_family_fact_still_extractable_by_seed_alias():
-    """对照：主人侧偏好仍可经种子对齐抽出（同类根因下的正例侧）。"""
-    ext = RuleBasedSessionExtractor()
-    actions = ext.extract(
-        ["我偏好用数据可视化（榜单、词云）替代插图。"],
-        confirmed_summary=[],
+def test_llm_session_keeps_owner_preference():
+    """对照：带主人指称的偏好经 LLM 路径可抽出。"""
+    stmt = "我偏好用数据可视化（榜单、词云）替代插图。"
+    ext = LLMSessionExtractor(
+        _FakeLLM(
+            '{"items":[{"slot_key":"preference.illustration_style","action":"new",'
+            f'"statement":"{stmt}","category":"preference",'
+            '"origin":"direct","confidence":0.9}]}'
+        )
     )
+    actions = ext.extract([stmt], confirmed_summary=[])
     assert len(actions) == 1
     assert actions[0].slot_key == "preference.illustration_style"
 

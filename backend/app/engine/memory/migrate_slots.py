@@ -200,7 +200,7 @@ def _llm_refine_groups(
             continue
         # 用 LLM canonical 覆盖主 statement（须过主人表面门禁，AGENTS §1.3）
         stmt = str(g.get("statement") or "").strip()
-        if stmt and not passes_owner_surface_gate(stmt, slot_key=slot):
+        if stmt and not passes_owner_surface_gate(stmt):
             continue
         if stmt:
             items = sorted(

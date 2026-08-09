@@ -30,56 +30,49 @@ SCOPE_FIDELITY_GATE = """语境保全：
 - 可借助手轮次消歧指代与限定，但画像 statement 只能来自主人立场，不得把助手陈述写成主人自述。"""
 
 # 主人指称：须有第一人称/「我家」归属。裸「孩子/父母」不放行（常识句可夹带）。
+# 语义判断（耐久性、语境保全、短指令是否属画像）交给抽取 prompt / LLM；
+# 此处只做确定性表面过滤，避免无归属伪自述落入写入路径。
 _OWNER_DEIXIS_RE = re.compile(r"(我|咱|本人|吾|俺|我家|我的|我们家)")
-# 对助手的短偏好/约束指令；种子别名命中≠放行，须同时具备立场语气
-_OWNER_STANCE_RE = re.compile(
-    r"(偏好|喜欢|希望你|请你|不要|禁止|习惯|默认使用|默认用|"
-    r"用中文|中文交流|简洁回答|回答简洁|简短回答|偏好简洁|简洁直接|记住)"
-)
 
 
-def passes_owner_surface_gate(statement: str, *, slot_key: str = "") -> bool:
-    """语句是否具备「关于主人」的表面归属。
+def passes_owner_surface_gate(statement: str) -> bool:
+    """语句是否具备「关于主人」的表面归属（第一人称/家庭指称）。
 
-    种子别名 / slot_key alone 不放行——避免常识句夹带别名落入画像。
-    ``slot_key`` 保留参数以兼容调用方，不参与放行判定。
+    种子别名 / 抽象槽名不参与放行——不能证明语句关于主人。
     """
-    del slot_key  # 显式忽略：抽象槽名不能证明语句关于主人
-    from app.engine.memory.normalize import match_seed_slot
-
     text = (statement or "").strip()
     if not text:
         return False
-    if _OWNER_DEIXIS_RE.search(text):
-        return True
-    # 无指称：短偏好指令 + 种子（如「默认使用中文」）。
-    # 约束槽短禁令（「不要迟到」）不能单凭别名证明主人画像。
-    seeded = match_seed_slot(text)
-    if (
-        seeded
-        and not seeded.startswith("constraint.")
-        and len(text) <= 60
-        and _OWNER_STANCE_RE.search(text)
-    ):
-        return True
-    return False
+    return bool(_OWNER_DEIXIS_RE.search(text))
+
+
+class MemoryExtractParseError(ValueError):
+    """LLM 抽取响应无法解析为约定 JSON（应保留 dirty 待重试）。"""
 
 
 def parse_llm_json_list(raw: str, *, key: str) -> list[dict]:
-    """解析抽取器 JSON 对象中的列表字段（items / candidates）。"""
+    """解析抽取器 JSON 对象中的列表字段（items / candidates）。
+
+    合法空数组 ``{"items":[]}`` 返回 ``[]``；缺对象/坏 JSON/缺列表字段则抛错。
+    """
     text = (raw or "").strip()
+    if not text:
+        raise MemoryExtractParseError("empty LLM response")
     if text.startswith("```"):
         text = text.strip("`")
         if text.startswith("json"):
             text = text[4:]
+        text = text.strip()
     start, end = text.find("{"), text.rfind("}")
-    if start == -1 or end == -1:
-        return []
+    if start == -1 or end == -1 or end <= start:
+        raise MemoryExtractParseError("no JSON object in LLM response")
     try:
         data = json.loads(text[start : end + 1])
-    except json.JSONDecodeError:
-        return []
+    except json.JSONDecodeError as exc:
+        raise MemoryExtractParseError("invalid JSON in LLM response") from exc
+    if not isinstance(data, dict):
+        raise MemoryExtractParseError("LLM JSON root must be an object")
     items = data.get(key)
     if not isinstance(items, list):
-        return []
+        raise MemoryExtractParseError(f"missing list field {key!r}")
     return [x for x in items if isinstance(x, dict)]

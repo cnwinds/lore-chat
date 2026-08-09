@@ -6,10 +6,7 @@ from app.engine.conversation.outbox import SESSION_OBSERVE_IMMEDIATE
 from app.engine.conversations import ConversationStore
 from app.engine.memory.resolver import SlotResolver
 from app.engine.memory.service import MemoryService
-from app.engine.memory.session_extractor import (
-    RuleBasedSessionExtractor,
-    SessionMemoryExtractor,
-)
+from app.engine.memory.session_extractor import SessionMemoryExtractor
 from app.logging_config import get_logger
 
 _KIND_SESSION_OBSERVE = "session_observe_memory"
@@ -31,7 +28,8 @@ class SessionMemoryObserve:
         self.conversations = conversations
         self.schedule = conversations.memory_schedule
         self.memory_service = memory_service
-        self.extractor = extractor or RuleBasedSessionExtractor()
+        # 无 LLM 抽取器时跳过落库，保留 dirty 待下次（不回退启发式）
+        self.extractor = extractor
         self.idle_hours = idle_hours
         # 与 MemoryService 共用同一 Resolver（写不变式 locality）
         self._resolver = memory_service.resolver
@@ -96,6 +94,14 @@ class SessionMemoryObserve:
             if not any(role == "user" and t.strip() for role, t in turns):
                 self.schedule.clear_dirty(
                     cid, expected_last_user_message_at=started_last_user_at
+                )
+                self._complete_and_requeue_immediate(job_id, cid)
+                return
+
+            if self.extractor is None:
+                _log.info(
+                    "session_observe 跳过：未配置 LLM 抽取器 cid=%s",
+                    cid,
                 )
                 self._complete_and_requeue_immediate(job_id, cid)
                 return

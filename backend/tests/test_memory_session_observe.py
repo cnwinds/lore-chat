@@ -3,11 +3,16 @@ from datetime import datetime, timedelta, timezone
 from app.engine.conversations import ConversationStore
 from app.engine.memory.resolver import SlotAction
 from app.engine.memory.service import MemoryService
-from app.engine.memory.session_extractor import RuleBasedSessionExtractor
+from app.engine.memory.session_extractor import LLMSessionExtractor
 from app.engine.memory.store import MemoryStore
 from app.engine.memory_worker import MemoryWorker
 from app.storage.repo import KnowledgeRepo
-from tests.helpers import make_writer
+from tests.helpers import (
+    make_idle_observe_fixture,
+    make_writer,
+    preference_action,
+    scripted_memory_extractor,
+)
 
 
 def test_begin_turn_marks_memory_dirty_without_per_message_observe(tmp_path):
@@ -31,17 +36,32 @@ def test_session_worker_merges_visualization_preference(tmp_path):
     repo = KnowledgeRepo(tmp_path / "knowledge", protected_dirs=("系统",))
     mem = MemoryStore(tmp_path / "memory.db", owner_key="ws1")
     svc = MemoryService(mem, repo, knowledge_writer=make_writer(repo, tmp_path))
+
+    first = (
+        "我偏好只用数据可视化元素（如榜单、词云、分布图）来替代插图，而不是使用AI生成的图片。"
+    )
+    second = "我偏好用数据可视化（如榜单、词云等）替代插图。"
+
+    class _VizLLM:
+        def __init__(self):
+            self.n = 0
+
+        def chat(self, _messages, **_kwargs):
+            self.n += 1
+            stmt = first if self.n == 1 else second
+            return (
+                '{"items":[{"slot_key":"preference.illustration_style","action":"'
+                + ("new" if self.n == 1 else "merge")
+                + f'","statement":"{stmt}","category":"preference",'
+                '"origin":"direct","confidence":0.9}]}'
+            )
+
     worker = MemoryWorker(
-        conv, svc, extractor=RuleBasedSessionExtractor(), idle_hours=0
+        conv, svc, extractor=LLMSessionExtractor(_VizLLM()), idle_hours=0
     )
 
     cid = conv.create()
-    conv.begin_turn(
-        cid,
-        "我偏好只用数据可视化元素（如榜单、词云、分布图）来替代插图，而不是使用AI生成的图片。",
-        "c1",
-        observation_allowed=True,
-    )
+    conv.begin_turn(cid, first, "c1", observation_allowed=True)
     # 模拟已空闲：把 last_user_message_at 拨到过去
     past = (datetime.now(timezone.utc) - timedelta(hours=25)).isoformat()
     conv.conn.execute(
@@ -58,12 +78,7 @@ def test_session_worker_merges_visualization_preference(tmp_path):
 
     # 第二会话近义表述 → merge 仍一条
     cid2 = conv.create()
-    conv.begin_turn(
-        cid2,
-        "我偏好用数据可视化（如榜单、词云等）替代插图。",
-        "c2",
-        observation_allowed=True,
-    )
+    conv.begin_turn(cid2, second, "c2", observation_allowed=True)
     conv.conn.execute(
         "UPDATE conversations SET last_user_message_at = ? WHERE id = ?",
         (past, cid2),
@@ -73,6 +88,14 @@ def test_session_worker_merges_visualization_preference(tmp_path):
     confirmed = mem.list_confirmed()
     assert len(confirmed) == 1
     assert confirmed[0]["slot_key"] == "preference.illustration_style"
+
+
+def test_worker_skips_extract_without_llm_keeps_dirty(tmp_path):
+    """未配置抽取器：不落库、保留 dirty 待下次。"""
+    fx = make_idle_observe_fixture(tmp_path, extractor=None)
+    assert fx.worker.drain(max_jobs=5) >= 1
+    assert fx.mem.list_confirmed() == []
+    assert fx.memory_dirty() == 1
 
 
 def test_mark_summarized_enqueues_immediate_session_observe(tmp_path):
@@ -129,7 +152,7 @@ def test_archive_during_running_requeues_immediate(tmp_path):
     repo = KnowledgeRepo(tmp_path / "knowledge", protected_dirs=("系统",))
     mem = MemoryStore(tmp_path / "memory.db", owner_key="ws1")
     svc = MemoryService(mem, repo, knowledge_writer=make_writer(repo, tmp_path))
-    inner = RuleBasedSessionExtractor()
+    inner = scripted_memory_extractor(preference_action("我偏好简洁回答"))
 
     class _ArchiveMidExtract:
         """在快照之后、定稿之前触发归档即时请求。"""
@@ -173,7 +196,7 @@ def test_archive_same_second_still_requeues_immediate(tmp_path):
     repo = KnowledgeRepo(tmp_path / "knowledge", protected_dirs=("系统",))
     mem = MemoryStore(tmp_path / "memory.db", owner_key="ws1")
     svc = MemoryService(mem, repo, knowledge_writer=make_writer(repo, tmp_path))
-    inner = RuleBasedSessionExtractor()
+    inner = scripted_memory_extractor(preference_action("我偏好简洁回答"))
     snap_holder: dict[str, str | None] = {"ts": None}
 
     class _ArchiveSameSecond:
@@ -247,7 +270,7 @@ def test_same_second_continue_chat_keeps_dirty_after_extract(tmp_path):
     repo = KnowledgeRepo(tmp_path / "knowledge", protected_dirs=("系统",))
     mem = MemoryStore(tmp_path / "memory.db", owner_key="ws1")
     svc = MemoryService(mem, repo, knowledge_writer=make_writer(repo, tmp_path))
-    inner = RuleBasedSessionExtractor()
+    inner = scripted_memory_extractor(preference_action("我偏好简洁回答"))
     snap_holder: dict[str, str | None] = {"ts": None}
 
     class _ContinueSameSecond:
@@ -359,7 +382,10 @@ def test_worker_skips_extract_when_not_idle(tmp_path):
     mem = MemoryStore(tmp_path / "memory.db", owner_key="ws1")
     svc = MemoryService(mem, repo, knowledge_writer=make_writer(repo, tmp_path))
     worker = MemoryWorker(
-        conv, svc, extractor=RuleBasedSessionExtractor(), idle_hours=24
+        conv,
+        svc,
+        extractor=scripted_memory_extractor(preference_action("我偏好简洁回答")),
+        idle_hours=24,
     )
     cid = conv.create()
     conv.begin_turn(cid, "我偏好简洁回答", "c1", observation_allowed=True)

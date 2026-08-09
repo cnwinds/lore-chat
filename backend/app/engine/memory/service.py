@@ -158,8 +158,15 @@ class MemoryService:
                     "updated_at": f.get("updated_at"),
                 }
             )
-        items.sort(key=lambda x: x.get("updated_at") or "", reverse=True)
-        return {"facts": items, "count": len(items)}
+        # 待确认置顶（审阅优先）；组内按更新时间倒序
+        def updated_at(row: dict) -> str:
+            return row.get("updated_at") or ""
+
+        candidates = [x for x in items if x.get("status") == "candidate"]
+        others = [x for x in items if x.get("status") != "candidate"]
+        candidates.sort(key=updated_at, reverse=True)
+        others.sort(key=updated_at, reverse=True)
+        return {"facts": candidates + others, "count": len(items)}
 
     def confirm_candidate(self, fact_id: str) -> dict:
         return self.resolver.confirm_candidate(fact_id)
