@@ -14,7 +14,10 @@ type Options = {
   scrollEnabled: boolean;
 };
 
-const RESTORE_MAX_FRAMES = 12;
+/** 恢复阶段：pending → restoring → idle */
+type RestorePhase = "pending" | "restoring" | "idle";
+
+const RESTORE_TIMEOUT_MS = 2000;
 
 /**
  * 知识库目录滚动：防抖持久化 + 展开就绪后恢复。
@@ -26,8 +29,7 @@ export function useKbTreeScrollUi(
   scrollRef: RefObject<HTMLElement | null>,
   { collapsed, scrollEnabled }: Options,
 ) {
-  const pendingRestoreRef = useRef(true);
-  const restoringRef = useRef(false);
+  const phaseRef = useRef<RestorePhase>("pending");
   /** 仅用户滚动（非程序恢复）后才允许落盘 */
   const allowPersistRef = useRef(false);
   const [expandReady, setExpandReady] = useState(false);
@@ -38,8 +40,7 @@ export function useKbTreeScrollUi(
 
   useEffect(() => {
     if (collapsed) {
-      pendingRestoreRef.current = true;
-      restoringRef.current = false;
+      phaseRef.current = "pending";
       allowPersistRef.current = false;
       setExpandReady(false);
     }
@@ -52,18 +53,12 @@ export function useKbTreeScrollUi(
 
     let timer: ReturnType<typeof setTimeout> | undefined;
     const persist = () => {
-      if (
-        pendingRestoreRef.current ||
-        restoringRef.current ||
-        !allowPersistRef.current
-      ) {
-        return;
-      }
+      if (phaseRef.current !== "idle" || !allowPersistRef.current) return;
       saveKbTreeScrollTop(el.scrollTop);
     };
     const onScroll = () => {
-      // 程序化恢复触发的 scroll 忽略；之后的才算用户滚动
-      if (pendingRestoreRef.current || restoringRef.current) return;
+      // 程序化恢复触发的 scroll 忽略；idle 之后的才算用户滚动
+      if (phaseRef.current !== "idle") return;
       allowPersistRef.current = true;
       if (timer) clearTimeout(timer);
       timer = setTimeout(persist, 120);
@@ -77,48 +72,72 @@ export function useKbTreeScrollUi(
   }, [collapsed, scrollEnabled, scrollRef]);
 
   useLayoutEffect(() => {
-    if (collapsed || !expandReady || !pendingRestoreRef.current) return;
+    if (collapsed || !expandReady || phaseRef.current !== "pending") return;
     const el = scrollRef.current;
     if (!el) return;
 
     const storedTop = loadKbTreeUi()?.scrollTop;
     if (storedTop == null || storedTop <= 0) {
-      pendingRestoreRef.current = false;
-      restoringRef.current = false;
+      phaseRef.current = "idle";
       return;
     }
 
     let cancelled = false;
-    let frames = 0;
-    restoringRef.current = true;
+    phaseRef.current = "restoring";
     allowPersistRef.current = false;
+    const startedAt = performance.now();
 
     const finish = (top: number) => {
+      if (cancelled || phaseRef.current !== "restoring") return;
       el.scrollTop = top;
-      pendingRestoreRef.current = false;
-      restoringRef.current = false;
+      phaseRef.current = "idle";
     };
 
-    const tryRestore = () => {
-      if (cancelled) return;
-      frames += 1;
+    const tryApply = (): boolean => {
+      if (cancelled || phaseRef.current !== "restoring") return true;
       const maxScroll = Math.max(0, el.scrollHeight - el.clientHeight);
       if (maxScroll >= storedTop) {
         finish(storedTop);
-        return;
+        return true;
       }
-      if (frames >= RESTORE_MAX_FRAMES) {
-        // 尽力露出；不落盘，避免把夹紧后的偏小值写入 storage
-        finish(maxScroll);
-        return;
-      }
-      requestAnimationFrame(tryRestore);
+      return false;
     };
 
-    requestAnimationFrame(tryRestore);
+    if (tryApply()) return;
+
+    const ro =
+      typeof ResizeObserver !== "undefined"
+        ? new ResizeObserver(() => {
+            if (tryApply()) ro?.disconnect();
+          })
+        : null;
+    ro?.observe(el);
+
+    const tick = () => {
+      if (cancelled || phaseRef.current !== "restoring") {
+        ro?.disconnect();
+        return;
+      }
+      if (tryApply()) {
+        ro?.disconnect();
+        return;
+      }
+      if (performance.now() - startedAt >= RESTORE_TIMEOUT_MS) {
+        // 尽力露出；不落盘（allowPersist 仍为 false）
+        finish(Math.max(0, el.scrollHeight - el.clientHeight));
+        ro?.disconnect();
+        return;
+      }
+      requestAnimationFrame(tick);
+    };
+
+    requestAnimationFrame(tick);
     return () => {
       cancelled = true;
-      restoringRef.current = false;
+      ro?.disconnect();
+      if (phaseRef.current === "restoring") {
+        phaseRef.current = "pending";
+      }
     };
   }, [collapsed, expandReady, scrollRef]);
 

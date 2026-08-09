@@ -94,13 +94,17 @@ export function FileTree({
   }, [userExpanded, sessionReveal]);
   const didHydrateRef = useRef(false);
   const didNotifyExpandReadyRef = useRef(false);
-  /**
-   * 仅在用户于本页主动选文件后，才允许 sessionReveal。
-   * 避免刷新/新窗口时 activePaths 异步恢复把已折叠目录再次展开。
-   */
-  const allowSessionRevealRef = useRef(false);
   const [dragPath, setDragPath] = useState<string | null>(null);
   const dragPathRef = useRef<string | null>(null);
+
+  /** 打开文件时的临时露出：已有用户展开偏好时不覆盖已折叠目录。 */
+  function revealForOpenFiles(filePaths: string[]) {
+    if (hasPersistedExpanded()) {
+      setSessionReveal((prev) => (prev.size === 0 ? prev : new Set()));
+      return;
+    }
+    setSessionReveal(new Set(collectAncestorFolderPaths(filePaths)));
+  }
 
   function setDragSource(path: string | null) {
     dragPathRef.current = path;
@@ -132,7 +136,6 @@ export function FileTree({
 
     if (!didHydrateRef.current) {
       didHydrateRef.current = true;
-      allowSessionRevealRef.current = false;
       const stored = loadKbTreeUi();
       setUserExpanded(
         new Set(resolveExpandedFolderPaths(tree, stored?.expandedPaths)),
@@ -166,15 +169,9 @@ export function FileTree({
   }, [userExpanded, onExpandReady]);
 
   useEffect(() => {
-    if (!didHydrateRef.current || !allowSessionRevealRef.current) return;
-    setSessionReveal(new Set(collectAncestorFolderPaths(activePaths)));
+    if (!didHydrateRef.current) return;
+    revealForOpenFiles(activePaths);
   }, [activePaths]);
-
-  function handleSelectFile(path: string, mods?: SelectMods) {
-    allowSessionRevealRef.current = true;
-    setSessionReveal(new Set(collectAncestorFolderPaths([path])));
-    onSelectFile(path, mods);
-  }
 
   function toggleFolder(path: string) {
     const closing = expanded.has(path);
@@ -233,7 +230,7 @@ export function FileTree({
           readDragSource={readDragSource}
           setDragPayload={setDragPayload}
           onToggleFolder={toggleFolder}
-          onSelectFile={handleSelectFile}
+          onSelectFile={onSelectFile}
           onSelectFolder={onSelectFolder}
           onFolderDrop={handleFolderDrop}
           onFolderDragOver={allowDrop}
