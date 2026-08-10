@@ -47,8 +47,13 @@ async def download(
 
 @router.get("/attachments/signed/{path:path}")
 async def signed_attachment(path: str, token: str, request: Request):
-    """短时签名附件 URL，供 url_wire 识图模型拉取。"""
-    from app.models.vision import attachment_signing_secret, verify_attachment_token
+    """短时签名附件 URL，供 url_wire 识图模型拉取（仅图片）。"""
+    from app.models.vision import (
+        attachment_signing_secret,
+        guess_mime,
+        is_signed_image_file,
+        verify_attachment_token,
+    )
 
     c = container(request)
     norm = path.replace("\\", "/").lstrip("/")
@@ -60,7 +65,9 @@ async def signed_attachment(path: str, token: str, request: Request):
     abs_p = c.repo.abs_path(norm)
     if not abs_p.is_file():
         raise HTTPException(404, "文件不存在")
-    media = media_type_for_filename(abs_p.name)
+    if not is_signed_image_file(abs_p):
+        raise HTTPException(403, "signed attachments are image-only")
+    media = guess_mime(str(abs_p))
     return FileResponse(
         path=abs_p,
         media_type=media,

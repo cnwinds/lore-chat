@@ -11,6 +11,7 @@ from app.backup.import_kb import ImportResult, import_kb
 from app.backup.lock import MaintenanceActiveError
 from app.backup.reindex import reindex_all
 from app.deps import apply_settings, dispose_container, remount_container
+from app.models.candidate import model_routing_changed
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -52,26 +53,14 @@ def get_settings(request: Request) -> dict[str, Any]:
 @router.put("/settings")
 def put_settings(body: dict[str, Any], request: Request) -> dict[str, Any]:
     store = request.app.state.settings_store
+    container = request.app.state.container
+    prev = container.settings
     try:
         new_settings = store.update(body)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    container = request.app.state.container
-    # 模型/密钥/端点配置变更 → 解除 disabled（共识：改配置可恢复）
-    chain_keys = {
-        "chat_models",
-        "utility_models",
-        "openai_api_key",
-        "openai_base_url",
-        "big_api_key",
-        "big_base_url",
-        "big_model",
-        "small_api_key",
-        "small_base_url",
-        "small_model",
-        "public_base_url",
-    }
-    if chain_keys & set(body.keys()):
+    # 模型/密钥/端点配置实际变更 → 解除 disabled（共识：改配置可恢复）
+    if model_routing_changed(prev, new_settings):
         container.model_cooldown.clear_disabled()
     apply_settings(container, new_settings)
     data = store.public_dict()

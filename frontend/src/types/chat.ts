@@ -123,7 +123,7 @@ export type ChatMessage = {
   total_duration_ms?: number;
   /** 本轮实际使用的模型名 */
   model_name?: string;
-  /** 是否因高优先级不可用而切换 */
+  /** 是否因冷却/禁用/本轮失败排除而切换到更低优先级 */
   model_failover?: boolean;
   /** Mid-turn inject (client_message_id starts with inject:) */
   injected?: boolean;

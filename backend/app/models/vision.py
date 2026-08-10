@@ -14,13 +14,6 @@ from urllib.parse import quote
 from app.models.candidate import ImageWire, ModelCandidate
 
 _IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tif", ".tiff", ".ico"}
-_IMAGE_MAGIC = (
-    (b"\x89PNG\r\n\x1a\n", "image/png"),
-    (b"\xff\xd8\xff", "image/jpeg"),
-    (b"GIF87a", "image/gif"),
-    (b"GIF89a", "image/gif"),
-    (b"RIFF", "image/webp"),  # need WEBP at 8
-)
 
 
 def is_image_path(path: str) -> bool:
@@ -48,18 +41,24 @@ def sniff_image_mime(path: Path) -> str | None:
 
 
 def is_image_file(path: Path) -> bool:
+    """路径启发式或 magic；注入附件等宽松场景用。"""
     if is_image_path(str(path)):
         return True
     return sniff_image_mime(path) is not None
 
 
+def is_signed_image_file(path: Path) -> bool:
+    """签名 URL 出口：必须 magic 命中，禁止仅靠后缀伪装。"""
+    return sniff_image_mime(path) is not None
+
+
 def guess_mime(path: str) -> str:
-    mime, _ = mimetypes.guess_type(path)
-    if mime and mime.startswith("image/"):
-        return mime
     sniffed = sniff_image_mime(Path(path))
     if sniffed:
         return sniffed
+    mime, _ = mimetypes.guess_type(path)
+    if mime and mime.startswith("image/"):
+        return mime
     return "image/jpeg"
 
 

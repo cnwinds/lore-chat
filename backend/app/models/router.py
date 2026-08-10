@@ -8,11 +8,15 @@ from app.models.candidate import ModelCandidate, ModelChain, resolve_chain_candi
 from app.models.cooldown import CooldownStore
 
 
+# 可用性跳过 → 对用户展示「已切换」；能力/配置过滤不算故障 failover
+_FAILOVER_SKIP_REASONS = frozenset({"cooling", "disabled", "excluded"})
+
+
 @dataclass
 class Selection:
     candidate: ModelCandidate
     skipped: list[tuple[str, str]]  # (candidate_id, reason)
-    failover: bool  # True if not the first eligible by priority alone
+    failover: bool  # 因冷却/禁用/本轮排除而落到更低优先级
 
 
 class NoCandidateAvailable(Exception):
@@ -33,7 +37,6 @@ def select_candidate(
 ) -> Selection:
     candidates = resolve_chain_candidates(settings, chain)
     skipped: list[tuple[str, str]] = []
-    first_priority_id = candidates[0].id if candidates else ""
     excluded = exclude_ids or frozenset()
 
     eligible: list[ModelCandidate] = []
@@ -60,5 +63,5 @@ def select_candidate(
         raise NoCandidateAvailable(chain, skipped)
 
     chosen = eligible[0]
-    failover = chosen.id != first_priority_id
+    failover = any(reason in _FAILOVER_SKIP_REASONS for _, reason in skipped)
     return Selection(candidate=chosen, skipped=skipped, failover=failover)

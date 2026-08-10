@@ -46,10 +46,19 @@ def test_resolve_chain_from_legacy_settings(tmp_path):
 
 def test_classify_error():
     assert classify_error("rate limit exceeded") == ErrorClass.RATE_LIMIT
+    assert classify_error("Error code: rate_limit_exceeded") == ErrorClass.RATE_LIMIT
+    assert classify_error("RateLimitError: …") == ErrorClass.RATE_LIMIT
     assert classify_error("Invalid API Key") == ErrorClass.AUTH
     assert classify_error("connection timeout") == ErrorClass.TRANSIENT
     assert classify_error("model does not support image") == ErrorClass.CAPABILITY
     assert classify_error("model_not_found") == ErrorClass.CONFIG
+    assert classify_error("The model `foo` does not exist") == ErrorClass.CONFIG
+    # 勿把泛化文案误判
+    assert classify_error("unsupported protocol") == ErrorClass.UNKNOWN
+    assert classify_error("see image docs") == ErrorClass.UNKNOWN
+    assert classify_error("insufficient permissions") == ErrorClass.UNKNOWN
+    assert classify_error("file does not exist") == ErrorClass.UNKNOWN
+    assert classify_error("insufficient_quota") == ErrorClass.RATE_LIMIT
 
 
 def test_cooldown_exponential_and_independent(tmp_path):
@@ -101,10 +110,26 @@ def test_select_skips_no_image_and_failover(tmp_path):
     )
     sel = select_candidate(s, "chat", store, require_image=True)
     assert sel.candidate.id == "vision"
-    assert sel.failover is True
+    # 仅因缺识图能力过滤，不算故障 failover
+    assert sel.failover is False
     store.record_failure("vision", ErrorClass.RATE_LIMIT, now=time.time())
     with pytest.raises(NoCandidateAvailable):
         select_candidate(s, "chat", store, require_image=True)
+
+
+def test_select_cooling_marks_failover(tmp_path):
+    store = CooldownStore(tmp_path / "cd.json")
+    s = Settings(
+        kb_path=tmp_path,
+        chat_models=[
+            {"id": "a", "model": "m-a", "image": True, "thinking": False},
+            {"id": "b", "model": "m-b", "image": True, "thinking": False},
+        ],
+    )
+    store.record_failure("a", ErrorClass.TRANSIENT, now=time.time())
+    sel = select_candidate(s, "chat", store)
+    assert sel.candidate.id == "b"
+    assert sel.failover is True
 
 
 def test_url_wire_requires_public_base(tmp_path):
@@ -127,6 +152,35 @@ def test_url_wire_requires_public_base(tmp_path):
     s2 = s.model_copy(update={"public_base_url": "https://example.com"})
     sel = select_candidate(s2, "chat", store, require_image=True)
     assert sel.candidate.id == "agnes"
+    assert sel.failover is False
+
+
+def test_url_wire_skip_then_data_wire_not_failover(tmp_path):
+    """首候选缺 public_base_url 时落到 data wire，不算故障 failover。"""
+    store = CooldownStore(tmp_path / "cd.json")
+    s = Settings(
+        kb_path=tmp_path,
+        public_base_url=None,
+        chat_models=[
+            {
+                "id": "agnes",
+                "model": "agnes-2.5-pro",
+                "image": True,
+                "image_wire": "url",
+                "thinking": True,
+            },
+            {
+                "id": "local",
+                "model": "gpt-4o",
+                "image": True,
+                "image_wire": "data",
+                "thinking": False,
+            },
+        ],
+    )
+    sel = select_candidate(s, "chat", store, require_image=True)
+    assert sel.candidate.id == "local"
+    assert sel.failover is False
 
 
 def test_signed_token_roundtrip():
@@ -246,6 +300,57 @@ def test_attachment_is_image_by_magic_without_suffix(tmp_path):
     raw.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 8)
     assert attachment_is_image("noext", kb_path=tmp_path) is True
     assert attachment_is_image("readme.txt", kb_path=tmp_path) is False
+
+
+def test_signed_image_requires_magic_not_suffix(tmp_path):
+    from app.models.vision import is_image_file, is_signed_image_file
+
+    fake = tmp_path / "evil.png"
+    fake.write_text("not an image")
+    assert is_image_file(fake) is True  # 后缀启发式
+    assert is_signed_image_file(fake) is False  # 签名出口必须 magic
+    real = tmp_path / "ok.png"
+    real.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 8)
+    assert is_signed_image_file(real) is True
+
+
+def test_model_routing_changed_ignores_effort_only():
+    from app.models.candidate import model_routing_changed
+
+    a = Settings(
+        kb_path="/tmp",
+        chat_models=[
+            {
+                "id": "a",
+                "model": "m",
+                "image": True,
+                "image_wire": "data",
+                "effort": "medium",
+                "thinking": True,
+                "thinking_protocol": "none",
+            }
+        ],
+    )
+    b = a.model_copy(
+        update={
+            "chat_models": [
+                {
+                    **a.chat_models[0],
+                    "effort": "high",
+                    "thinking_protocol": "deepseek",
+                }
+            ]
+        }
+    )
+    assert model_routing_changed(a, b) is False
+    c = a.model_copy(
+        update={
+            "chat_models": [
+                {**a.chat_models[0], "model": "m2"},
+            ]
+        }
+    )
+    assert model_routing_changed(a, c) is True
 
 
 def test_shared_cooldown_store_same_instance(tmp_path):

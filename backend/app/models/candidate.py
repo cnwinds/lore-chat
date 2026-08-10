@@ -164,3 +164,43 @@ def mask_candidates(raw: Any) -> list[dict[str, Any]]:
                 d["api_key"] = f"{key[:2]}***{key[-4:]}"
         masked.append(d)
     return masked
+
+
+# 改配置清 disabled：只比「路由身份」字段，不含 effort/thinking*（enrich 默认易误触）
+_ROUTING_CANDIDATE_KEYS = ("id", "model", "base_url", "api_key", "image", "image_wire")
+_ROUTING_SETTINGS_KEYS = (
+    "openai_api_key",
+    "openai_base_url",
+    "big_api_key",
+    "big_base_url",
+    "big_model",
+    "small_api_key",
+    "small_base_url",
+    "small_model",
+    "public_base_url",
+)
+
+
+def model_routing_fingerprint(settings: Any) -> str:
+    """链身份 + 密钥/端点/公网基址指纹（供配置变更是否清 disabled）。"""
+    import json
+
+    def chain_rows(items: list | None) -> list[dict[str, Any]]:
+        rows: list[dict[str, Any]] = []
+        for c in items or []:
+            if not isinstance(c, dict):
+                continue
+            rows.append({k: c.get(k) for k in _ROUTING_CANDIDATE_KEYS})
+        return rows
+
+    payload: dict[str, Any] = {
+        "chat_models": chain_rows(getattr(settings, "chat_models", None)),
+        "utility_models": chain_rows(getattr(settings, "utility_models", None)),
+    }
+    for k in _ROUTING_SETTINGS_KEYS:
+        payload[k] = getattr(settings, k, None)
+    return json.dumps(payload, sort_keys=True, ensure_ascii=False)
+
+
+def model_routing_changed(prev: Any, new: Any) -> bool:
+    return model_routing_fingerprint(prev) != model_routing_fingerprint(new)

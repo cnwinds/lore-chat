@@ -271,7 +271,7 @@ export function ChatMessageRow({
       <div className={`chat-bubble chat-bubble-${m.role}`}>
         {m.role === "assistant" && m.model_failover ? (
           <div className="chat-failover-banner" role="status">
-            高优先级模型不可用，已切换至 {m.model_name || "备胎模型"}
+            高优先级模型暂不可用，已切换至 {m.model_name || "备胎模型"}
           </div>
         ) : null}
         {m.role === "user" && isInjectedUserMessage(m) && (

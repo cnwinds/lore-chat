@@ -67,9 +67,25 @@ def classify_error(exc: BaseException | str, *, message: str | None = None) -> E
 
     if status == 401 or "invalid api key" in lower or "authentication" in lower:
         return ErrorClass.AUTH
-    if status == 404 or "model_not_found" in lower or "does not exist" in lower:
+    # 模型不存在：须绑定 model 语义，禁止裸 "does not exist"
+    if status == 404 or "model_not_found" in lower or "model not found" in lower:
         return ErrorClass.CONFIG
-    if status == 429 or "rate limit" in lower or "quota" in lower or "insufficient" in lower:
+    if "model" in lower and "does not exist" in lower:
+        return ErrorClass.CONFIG
+    # 限流：429 或明确配额/速率文案（含无 status 的 RateLimitError 文案）
+    if (
+        status == 429
+        or "rate limit" in lower
+        or "rate_limit" in lower
+        or "ratelimit" in lower
+        or "too many requests" in lower
+    ):
+        return ErrorClass.RATE_LIMIT
+    if (
+        "insufficient_quota" in lower
+        or "quota exceeded" in lower
+        or "exceeded your current quota" in lower
+    ):
         return ErrorClass.RATE_LIMIT
     if status is not None and status >= 500:
         return ErrorClass.TRANSIENT
@@ -84,15 +100,20 @@ def classify_error(exc: BaseException | str, *, message: str | None = None) -> E
         )
     ):
         return ErrorClass.TRANSIENT
+    # 缺能力：须与识图/多模态能力相关，禁止裸 "image"/"unsupported"
     if any(
         k in lower
         for k in (
-            "image",
-            "vision",
-            "multimodal",
-            "does not support",
-            "unsupported",
+            "does not support image",
+            "does not support vision",
+            "does not support multimodal",
+            "image input is not supported",
+            "vision is not supported",
+            "not a vision model",
+            "cannot process image",
             "invalid_image",
+            "unsupported image",
+            "images are not supported",
         )
     ):
         return ErrorClass.CAPABILITY
