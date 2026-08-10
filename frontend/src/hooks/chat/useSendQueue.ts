@@ -9,6 +9,7 @@ import {
   type QueueTiming,
   type SendQueueItem,
 } from "../../utils/sendQueue";
+import { newId } from "../../utils/id";
 
 export function useSendQueue(conversationId: string | null) {
   const [items, setItemsState] = useState<SendQueueItem[]>(() =>
@@ -47,7 +48,7 @@ export function useSendQueue(conversationId: string | null) {
         return [
           ...prev,
           {
-            id: crypto.randomUUID(),
+            id: newId(),
             text: partial.text,
             timing: partial.timing ?? "defer",
             mergeWithNext: false,

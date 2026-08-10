@@ -16,6 +16,7 @@ import {
 import { useDocPreview } from "../contexts/DocPreviewContext";
 import { markToolBlockResolved } from "../utils/chatMessage";
 import { nowIsoDisplay } from "../utils/displayTime";
+import { newId } from "../utils/id";
 import {
   mergeGroupText,
   SEND_QUEUE_MAX,
@@ -292,7 +293,7 @@ export function Chat({
     }
 
     const newItem: SendQueueItem = {
-      id: crypto.randomUUID(),
+      id: newId(),
       text,
       timing: "defer",
       mergeWithNext: false,

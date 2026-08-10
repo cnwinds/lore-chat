@@ -22,6 +22,7 @@ import {
   normalizeLoadedMessage,
 } from "../../utils/chatMessage";
 import { nowIsoDisplay } from "../../utils/displayTime";
+import { newId } from "../../utils/id";
 import {
   reduceStreamEvent,
   shouldReloadConversation,
@@ -317,7 +318,7 @@ export function useAgentStream({
         onFirstQuestionTitle?.(cid, titleFromText(display));
       }
       const ctx = docCtx ?? resolveDocContext();
-      const clientMessageId = crypto.randomUUID();
+      const clientMessageId = newId();
       const useWeb = opts?.webEnabled ?? webEnabled;
       const result = await consumeEvents(
         chatStream(apiText, {
