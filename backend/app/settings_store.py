@@ -150,9 +150,7 @@ class SettingsStore:
                 continue
             if key in SECRET_SETTING_KEYS:
                 if value == "" or value is None:
-                    # "" = 不修改；None = 显式清空（如关闭独立端点）
-                    if value is None:
-                        filtered[key] = None
+                    # "" / null = 不修改（前端未改密钥时常传 null）
                     continue
                 filtered[key] = value
                 continue
