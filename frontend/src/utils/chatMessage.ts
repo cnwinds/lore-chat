@@ -10,8 +10,8 @@ export function kbPathFromToolResult(
 }
 
 /** @deprecated 使用 formatMessageTime；保留别名避免大范围重命名 */
-export function formatMessageTs(ts: string): string {
-  return formatMessageTime(ts);
+export function formatMessageTs(ts: string, now?: Date): string {
+  return formatMessageTime(ts, now);
 }
 
 export function isInjectedUserMessage(m: ChatMessage): boolean {
