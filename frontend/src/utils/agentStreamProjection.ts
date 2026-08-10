@@ -78,7 +78,7 @@ export function reduceStreamEvent(
     };
   }
 
-  let assistant = { ...state.assistant };
+  const assistant = { ...state.assistant };
   let awaitingUser = state.awaitingUser;
   let kbNotify: string | null | undefined;
 

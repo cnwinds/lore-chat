@@ -3,10 +3,15 @@ export function isNoiseProgressLine(line: string): boolean {
   return /^仍在运行…/.test((line || "").trim());
 }
 
-const ANSI_OSC = /\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g;
-const ANSI_CSI = /\x1b\[[0-9;?]*[ -/]*[@-~]/g;
-const ANSI_OTHER = /\x1b./g;
-const REDRAW_CSI = /\x1b\[[0-9;]*[GJK]/g;
+const ESC = String.fromCharCode(0x1b);
+const BEL = String.fromCharCode(0x07);
+const ANSI_OSC = new RegExp(
+  `${ESC}\\][^${BEL}${ESC}]*(?:${BEL}|${ESC}\\\\)`,
+  "g",
+);
+const ANSI_CSI = new RegExp(`${ESC}\\[[0-9;?]*[ -/]*[@-~]`, "g");
+const ANSI_OTHER = new RegExp(`${ESC}.`, "g");
+const REDRAW_CSI = new RegExp(`${ESC}\\[[0-9;]*[GJK]`, "g");
 const PROGRESS_LINE =
   /(?:Downloading|Rendering|Uploading|Progress|◐|◓|◑|◒|█|░|\d+(?:\.\d+)?%)/i;
 
