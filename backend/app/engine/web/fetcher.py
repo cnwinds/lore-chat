@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import ipaddress
+import logging
 import re
-from dataclasses import dataclass
 from urllib.parse import unquote, urlparse
 
 import httpx
@@ -12,17 +12,23 @@ from app.engine.web.limits import (
     FETCH_URL_PDF_MAX_BYTES,
     FETCH_URL_PDF_TIMEOUT_FLOOR,
 )
+from app.engine.web.types import FetchResult
+from app.engine.web.x_status import fetch_status_via_fxembed, parse_x_status_id
 from app.index.extract import extract_text_from_bytes
 
+# 兼容旧导入路径
+__all__ = [
+    "FetchResult",
+    "WebFetcher",
+    "content_type_is_pdf",
+    "extract_page_title",
+    "html_to_markdown",
+    "is_safe_url",
+    "title_from_url",
+    "url_looks_like_pdf",
+]
 
-@dataclass
-class FetchResult:
-    url: str
-    title: str = ""
-    markdown: str = ""
-    snippet: str = ""
-    error: str | None = None
-
+_log = logging.getLogger(__name__)
 
 _BLOCKED_HOSTS = frozenset({
     "localhost",
@@ -114,20 +120,37 @@ class WebFetcher:
         self.max_bytes = max_bytes
         self.pdf_max_bytes = pdf_max_bytes
 
-    def _request_timeout(self) -> int:
+    def _request_timeout(self) -> float:
         # 响应头/魔数才知 PDF；下载前统一给足下限，避免大 PDF 被 HTML 超时掐断
         return max(self.timeout, FETCH_URL_PDF_TIMEOUT_FLOOR)
+
+    def _client(self, *, timeout: float, accept: str | None = None) -> httpx.AsyncClient:
+        headers = {"User-Agent": "LorechatBot/1.0"}
+        if accept:
+            headers["Accept"] = accept
+        return httpx.AsyncClient(
+            timeout=timeout,
+            follow_redirects=True,
+            headers=headers,
+        )
 
     async def fetch(self, url: str) -> FetchResult:
         if not is_safe_url(url):
             return FetchResult(url=url, error=_unsafe_reason(url))
+        status_id = parse_x_status_id(url)
+        if status_id:
+            embed = await fetch_status_via_fxembed(
+                status_id, original_url=url, timeout=float(self.timeout)
+            )
+            if embed is not None:
+                return embed
+            _log.debug("X status embed unavailable; falling back to HTML url=%s", url)
+        return await self._fetch_http(url)
+
+    async def _fetch_http(self, url: str) -> FetchResult:
         prefer_pdf = url_looks_like_pdf(url)
         try:
-            async with httpx.AsyncClient(
-                timeout=self._request_timeout(),
-                follow_redirects=True,
-                headers={"User-Agent": "LorechatBot/1.0"},
-            ) as client:
+            async with self._client(timeout=self._request_timeout()) as client:
                 async with client.stream("GET", url) as resp:
                     resp.raise_for_status()
                     encoding = resp.encoding
