@@ -12,24 +12,20 @@
 
 ## 开发环境
 
-### 推荐：Docker（任意平台）
-
-见 [README.md](README.md) 的 Docker 章节。适合验证部署与联调，不替代单元测试。
-
 ### 本地开发
 
-前置：Python **3.12+**、Node.js **20+**、npm；可选 Docker。
+前置：Python **3.12+**、Node.js **20+**。
 
-**Linux / macOS：**
+**Linux / macOS**
 
 ```bash
-cp backend/.env.example backend/.env   # OPENAI_API_KEY 可稍后在网页「设置 → 模型」填写
-cp frontend/.env.example frontend/.env # 开发可保持 VITE_API_BASE 为空
+cp backend/.env.example backend/.env
+cp frontend/.env.example frontend/.env
 ./lorechat.sh setup
 ./lorechat.sh dev
 ```
 
-**Windows：**
+**Windows**
 
 ```powershell
 Copy-Item backend\.env.example backend\.env
@@ -40,6 +36,8 @@ Copy-Item frontend\.env.example frontend\.env
 
 - 前端：http://localhost:5173
 - 后端：http://localhost:8000
+
+源码 Docker 构建：`cp .env.docker.example .env && ./lorechat.sh start`（沙箱见 [ADR](docs/adr/2026-08-06-opensandbox-runtime.md)）。
 
 ## 测试
 
