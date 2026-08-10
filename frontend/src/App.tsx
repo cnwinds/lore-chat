@@ -13,6 +13,7 @@ import { buildDocViewerHandlers } from "./hooks/app/buildDocViewerHandlers";
 import { useAppEscapeKey } from "./hooks/app/useAppEscapeKey";
 import { useConversationShell } from "./hooks/app/useConversationShell";
 import { useDocPreviewLayout } from "./hooks/app/useDocPreviewLayout";
+import { useLlmSetupGuide } from "./hooks/app/useLlmSetupGuide";
 import { useComposerDocState } from "./hooks/useComposerDocState";
 import { useComposerPreviewBridge } from "./hooks/useComposerPreviewBridge";
 import { useSkillTrayAttach } from "./hooks/useSkillTrayAttach";
@@ -48,7 +49,12 @@ export default function App() {
 
 function AppMain() {
   const [sidebarRefreshKey, setSidebarRefreshKey] = useState(0);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const {
+    settingsOpen,
+    setSettingsOpen,
+    llmSetupGuide,
+    clearLlmSetupGuide,
+  } = useLlmSetupGuide();
   const [snippetSource, setSnippetSource] = useState<Extract<
     SourceRef,
     { type: "search" }
@@ -178,9 +184,15 @@ function AppMain() {
             />
             <SettingsPanel
               open={settingsOpen}
-              onClose={() => setSettingsOpen(false)}
+              onClose={() => {
+                setSettingsOpen(false);
+                clearLlmSetupGuide();
+              }}
+              showLlmSetupGuide={llmSetupGuide}
+              onLlmConfigured={clearLlmSetupGuide}
               onOpenConversation={(id) => {
                 setSettingsOpen(false);
+                clearLlmSetupGuide();
                 conversation.selectConversation(id);
               }}
             />

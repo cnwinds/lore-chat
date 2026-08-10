@@ -1429,6 +1429,17 @@ a:hover {
   line-height: 1.45;
 }
 
+.settings-setup-guide {
+  margin: 0 0 4px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--accent, #3b82f6) 35%, transparent);
+  background: color-mix(in srgb, var(--accent, #3b82f6) 12%, transparent);
+  font-size: var(--text-sm);
+  color: var(--text);
+  line-height: 1.5;
+}
+
 .memory-fact-list {
   list-style: none;
   margin: 0;

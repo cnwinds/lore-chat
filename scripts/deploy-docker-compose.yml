@@ -1,0 +1,48 @@
+name: lore-chat
+
+services:
+  backend:
+    image: ${LORECHAT_BACKEND_IMAGE:-ghcr.io/cnwinds/lore-chat-backend:latest}
+    container_name: lorechat-backend
+    env_file:
+      - .env
+    environment:
+      KB_PATH: /data/knowledge
+      BACKUP_DIR: /data/backups
+      SANDBOX_ENABLED: ${SANDBOX_ENABLED:-false}
+      HTTP_PROXY: ${HTTP_PROXY:-}
+      HTTPS_PROXY: ${HTTPS_PROXY:-}
+      http_proxy: ${http_proxy:-${HTTP_PROXY:-}}
+      https_proxy: ${https_proxy:-${HTTPS_PROXY:-}}
+      NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1}
+      no_proxy: ${no_proxy:-${NO_PROXY:-localhost,127.0.0.1}}
+    volumes:
+      - ./data/knowledge:/data/knowledge
+      - ./data/backups:/data/backups
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    networks:
+      - lorechat
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  web:
+    image: ${LORECHAT_WEB_IMAGE:-ghcr.io/cnwinds/lore-chat-web:latest}
+    container_name: lorechat-web
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - lorechat
+
+networks:
+  lorechat:
+    name: lorechat-net

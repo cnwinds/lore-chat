@@ -27,7 +27,16 @@ def test_public_dict_masks_secrets(tmp_path: Path):
     pub = store.public_dict()
     assert pub["openai_api_key"] != "sk-abcdefghijklmnop"
     assert pub["openai_api_key"].endswith("mnop")
+    assert pub["llm_api_key_configured"] is True
     assert "kb_path" in pub
+
+
+def test_public_dict_placeholder_not_configured(tmp_path: Path):
+    base = Settings(kb_path=tmp_path, openai_api_key="sk-none")
+    store = SettingsStore(tmp_path, base)
+    pub = store.public_dict()
+    assert pub["llm_api_key_configured"] is False
+    assert pub["openai_api_key"] is None
 
 
 def test_update_rejects_kb_path(tmp_path: Path):

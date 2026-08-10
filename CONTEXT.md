@@ -58,10 +58,11 @@
 
 ## 运行数据（Docker）
 
-- Compose：`docker/docker-compose.yml`（项目根执行：`docker compose -f docker/docker-compose.yml --project-directory docker --env-file .env`）
-- **可选执行能力**：叠加 `docker/docker-compose.sandbox.yml` 启动 OpenSandbox；`SANDBOX_ENABLED` / `GET /api/health` → `capabilities.sandbox`。启用后 Agent 可调用 `sandbox_run` / `sandbox_list_dir` / `sandbox_read_file` / `publish_from_sandbox`（SSE `tool_progress`）。见 [ADR 2026-08-06](docs/adr/2026-08-06-opensandbox-runtime.md)
-- 知识库卷：`docker/data/knowledge/`
-- 备份卷：`docker/data/backups/`
+- **一键拉取（小白）**：单文件启动器 [`deploy/lorechat.sh`](deploy/lorechat.sh) / [`deploy/lorechat.ps1`](deploy/lorechat.ps1)（由 [`scripts/gen-deploy-launchers.py`](scripts/gen-deploy-launchers.py) 生成；运行时在脚本旁写出 compose / 沙箱配置）。数据默认 `./data/knowledge/`、`./data/backups/`
+- **源码构建（开发者）**：`docker/docker-compose.yml` + 根 `./lorechat.sh start --chat|--work`（共用 [`scripts/lorechat-compose-lib.sh`](scripts/lorechat-compose-lib.sh)）
+- **可选执行能力**：叠加 sandbox compose；`SANDBOX_ENABLED` / `GET /api/health` → `capabilities.sandbox`。见 [ADR 2026-08-06](docs/adr/2026-08-06-opensandbox-runtime.md)
+- OpenSandbox 配置源：`docker/opensandbox/config.toml`（嵌入预构建启动器；开发路径挂载 `docker/opensandbox/`）
+- 镜像 pin：`scripts/opensandbox-pins.sh` 由 `gen-deploy-launchers.py` 从 config.toml + sandbox compose 生成；根 `lorechat-compose-lib.sh` source 该文件
 
 ## 进一步阅读
 

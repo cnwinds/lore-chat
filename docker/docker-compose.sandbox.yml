@@ -1,5 +1,6 @@
 # 带执行能力（OpenSandbox）的叠加编排。
 # 默认 docker-compose.yml 不含沙箱；需要执行能力时额外 -f 本文件。
+# 预构建单文件启动器由 scripts/gen-deploy-launchers.py 嵌入本文件（并把 SANDBOX_IMAGE 默认改为 GHCR）。
 #
 # 启动示例（项目根）：
 #   docker compose --project-directory docker --env-file .env \

@@ -8,7 +8,7 @@
 2. 相关架构决策见 [`docs/adr/`](docs/adr/)
 3. 提示词相关改动须遵守根目录 [AGENTS.md](AGENTS.md)（根因治理，禁止孤例补丁）
 
-**请勿提交**：API 密钥、本机 `.env`、以及 `docker/data/` / `backend/knowledge/` 下的运行时知识库与备份（这些目录为本地私有数据）。
+**请勿提交**：API 密钥、本机 `.env`、以及 `docker/data/` / `deploy/data/` / 启动器旁 `data/` / `backend/knowledge/` 下的运行时知识库与备份（这些目录为本地私有数据）。
 
 ## 开发环境
 
@@ -23,7 +23,7 @@
 **Linux / macOS：**
 
 ```bash
-cp backend/.env.example backend/.env   # 填入 OPENAI_API_KEY
+cp backend/.env.example backend/.env   # OPENAI_API_KEY 可稍后在网页「设置 → 模型」填写
 cp frontend/.env.example frontend/.env # 开发可保持 VITE_API_BASE 为空
 ./lorechat.sh setup
 ./lorechat.sh dev
@@ -59,7 +59,7 @@ npm test
 npm run build
 ```
 
-CI 在每次 push / PR 上跑同样的 backend pytest 与 frontend lint / test / build（见 `.github/workflows/ci.yml`）。
+CI：PR 跑 [ci.yml](.github/workflows/ci.yml)；推送到 `master`/`main` 或 `v*` tag 时由 [publish-images.yml](.github/workflows/publish-images.yml) 先跑同一套检查再推镜像（检查步骤见 [ci-checks.yml](.github/workflows/ci-checks.yml)）。
 
 ## Pull Request
 

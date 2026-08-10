@@ -25,6 +25,9 @@ type Props = {
   open: boolean;
   onClose: () => void;
   onOpenConversation?: (conversationId: string) => void;
+  /** 首次进入且未配置主 API Key 时：打开设置并切到「模型」Tab，展示引导文案 */
+  showLlmSetupGuide?: boolean;
+  onLlmConfigured?: () => void;
 };
 
 type SettingsTab = "model" | "search" | "agent" | "kb" | "memory" | "usage" | "account";
@@ -76,7 +79,13 @@ function bool(v: unknown, fallback: boolean): boolean {
   return fallback;
 }
 
-export function SettingsPanel({ open, onClose, onOpenConversation }: Props) {
+export function SettingsPanel({
+  open,
+  onClose,
+  onOpenConversation,
+  showLlmSetupGuide = false,
+  onLlmConfigured,
+}: Props) {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
@@ -193,6 +202,12 @@ export function SettingsPanel({ open, onClose, onOpenConversation }: Props) {
   }, [open, load]);
 
   useEffect(() => {
+    if (open && showLlmSetupGuide) {
+      setActiveTab("model");
+    }
+  }, [open, showLlmSetupGuide]);
+
+  useEffect(() => {
     writeStoredSettingsTab(activeTab);
   }, [activeTab]);
 
@@ -234,9 +249,12 @@ export function SettingsPanel({ open, onClose, onOpenConversation }: Props) {
         if (input) patch[key] = input;
       }
 
-      await putSettings(patch);
+      const saved = await putSettings(patch);
       setSaveMsg("已保存并生效");
       await load();
+      if (saved.llm_api_key_configured === true) {
+        onLlmConfigured?.();
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "保存失败");
     } finally {
@@ -384,6 +402,12 @@ export function SettingsPanel({ open, onClose, onOpenConversation }: Props) {
                     id="settings-panel-model"
                     aria-labelledby="settings-tab-model"
                   >
+                    {showLlmSetupGuide ? (
+                      <p className="settings-setup-guide" role="status">
+                        尚未配置 API Key。请填写下方默认 API Key（OpenAI 兼容）；也可修改 Base
+                        URL 指向其它兼容网关。保存后即可开始对话。
+                      </p>
+                    ) : null}
                     <p className="settings-tab-hint">密钥留空表示不修改；当前值已脱敏显示。</p>
                     <ModelSettingsTab
                       openaiBaseUrl={openaiBaseUrl}

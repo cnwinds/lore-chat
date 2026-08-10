@@ -7,7 +7,7 @@
 
 对话式知识库：你说内容，系统自动组织并保存为 Markdown；提问时混合检索并带来源回答。数据落在 `knowledge/` 目录，可直接浏览、编辑，并由 git 记录历史。
 
-支持 **Linux / macOS / Windows**。推荐用 Docker 部署；本地开发可用 `lorechat.sh`（Unix）或 `lorechat.bat`（Windows）。
+支持 **Linux / macOS / Windows**。小白推荐拉取预构建镜像一键启动；开发者可 clone 后本地 build。
 
 ## 功能要点
 
@@ -21,34 +21,66 @@
 
 **显式口令（可选）：**「帮我记录」「别保存」「只搜不写」「搜一下」等可覆盖默认行为。
 
-## 快速开始（推荐：Docker）
+## 快速开始（推荐：一键拉取镜像）
 
-适用于 Linux、macOS、Windows（需 [Docker](https://docs.docker.com/get-docker/) / Docker Desktop）。
+只需安装 [Docker](https://docs.docker.com/get-docker/) / Docker Desktop，**不必安装 Python / Node，不必先填 API Key**。  
+**单文件即可启动**（脚本会在旁边自动写出 compose / 沙箱配置；数据目录也在旁边）。
+
+### Linux / macOS
 
 ```bash
-# 1. 配置环境变量
-cp .env.docker.example .env
-# 编辑 .env，填入 OPENAI_API_KEY
+# 一行安装并启动（下载单个 lorechat.sh）
+curl -fsSL https://raw.githubusercontent.com/cnwinds/lore-chat/master/deploy/get-lorechat.sh | bash
 
-# 2. 启动
-./lorechat.sh start          # Linux / macOS
+# 或只下载启动器后自行启动
+curl -fsSL -o lorechat.sh https://raw.githubusercontent.com/cnwinds/lore-chat/master/deploy/lorechat.sh
+chmod +x lorechat.sh
+./lorechat.sh start
+```
+
+### Windows PowerShell
+
+```powershell
+# 一行安装并启动（下载单个 lorechat.ps1）
+irm https://raw.githubusercontent.com/cnwinds/lore-chat/master/deploy/get-lorechat.ps1 | iex
+
+# 或只下载启动器
+Invoke-WebRequest -Uri https://raw.githubusercontent.com/cnwinds/lore-chat/master/deploy/lorechat.ps1 -OutFile lorechat.ps1
+.\lorechat.ps1 start
+```
+
+仓库根亦可：`.\lorechat.bat start --chat` / `.\lorechat.bat start --work`（转发到 `deploy\lorechat.ps1`）。
+
+启动时可选：
+
+| 模式 | 说明 |
+|------|------|
+| **聊天模式**（默认） | 对话 + 知识库 |
+| **Work 模式** | 额外启用 OpenSandbox；首次会拉取较大镜像，脚本会提示 |
+
+非交互：`./lorechat.sh start --chat` 或 `./lorechat.sh start --work`（Windows 对等 `.\lorechat.ps1`）。
+
+默认访问 **http://localhost:8080**（可在同目录 `.env` 修改 `WEB_PORT`）。
+
+- 数据落在启动器旁的 `data/`（知识库、备份）——**本地私有，请勿提交到 git**。
+- 若未配置 API Key，进入应用后会**自动打开「设置 → 模型」**引导填写。
+- 镜像默认 `ghcr.io/cnwinds/lore-chat-*`；Work 默认沙箱镜像亦为 GHCR。国内拉取慢时，可将 [docker/daemon.json.example](docker/daemon.json.example) 合并进 Docker 引擎配置。
+- 维护者改了 `docker/` 编排后请运行：`python3 scripts/gen-deploy-launchers.py`
+
+常用命令：`stop` / `log` / `update` / `prepare`（见 `./lorechat.sh help`）。
+
+源码树内开发者本地 build：`./lorechat.sh start --chat` / `--work`（仓库根脚本，会 `--build`）。
+
+### 从源码 Docker 构建（开发者）
+
+```bash
+cp .env.docker.example .env
+./lorechat.sh start          # Linux / macOS：本地 build 后启动
 # 或
 docker compose --project-directory docker --env-file .env -f docker/docker-compose.yml up -d --build
 ```
 
-Windows PowerShell：
-
-```powershell
-Copy-Item .env.docker.example .env
-# 编辑 .env，填入 OPENAI_API_KEY
-docker compose --project-directory docker --env-file .env -f docker/docker-compose.yml up -d --build
-```
-
-默认访问 **http://localhost:8080**（可在 `.env` 中修改 `WEB_PORT`）。
-
-架构：`web`（Nginx 静态前端 + 反向代理 `/api`）→ `backend`（FastAPI）。运行数据在 `docker/data/`（知识库、备份）——**本地私有，请勿提交到 git**。
-
-### 可选：OpenSandbox 执行能力
+带沙箱的源码构建：
 
 ```bash
 docker compose --project-directory docker --env-file .env \
@@ -57,8 +89,6 @@ docker compose --project-directory docker --env-file .env \
 
 `GET /api/health` 的 `capabilities.sandbox` 为 `true` 时表示已启用执行 Runtime。详见 [ADR：OpenSandbox Runtime](docs/adr/2026-08-06-opensandbox-runtime.md)。
 
-构建已配置国内 apt / PyPI / npm 源。若拉取基础镜像仍慢，可将 [docker/daemon.json.example](docker/daemon.json.example) 中的 `registry-mirrors` 合并进 Docker 引擎配置后重启。
-
 ## 本地开发
 
 前置：Python **3.12+**、Node.js **20+**。
@@ -66,7 +96,7 @@ docker compose --project-directory docker --env-file .env \
 ### Linux / macOS
 
 ```bash
-cp backend/.env.example backend/.env   # 填入 OPENAI_API_KEY
+cp backend/.env.example backend/.env   # OPENAI_API_KEY 可稍后在网页设置中填写
 ./lorechat.sh setup
 ./lorechat.sh dev
 ```
@@ -88,7 +118,7 @@ Copy-Item backend\.env.example backend\.env
 |------|-------------|---------|------|
 | `setup` | `./lorechat.sh setup` | `.\lorechat.bat setup` | 安装依赖 / 准备环境 |
 | `dev` | `./lorechat.sh dev` | `.\lorechat.bat dev` | 开发模式（热更新） |
-| `start` | `./lorechat.sh start` | 见上方 Docker | Unix 脚本走 Docker Compose；Windows bat 为本地生产 uvicorn |
+| `start` | `./lorechat.sh start [--chat\|--work]` | `.\lorechat.bat start` 本地生产；`.\lorechat.bat start --chat\|--work` 转 Docker 单文件启动器 | Unix 根脚本：源码 compose + build；预构建见 `deploy/lorechat.sh` |
 | `stop` | `./lorechat.sh stop` | `.\lorechat.bat stop` | 停止服务 |
 | `restart` | `./lorechat.sh restart` | `.\lorechat.bat restart` | 重启 |
 | `log` | `./lorechat.sh log` | `.\lorechat.bat log` | 查看日志 |
@@ -149,18 +179,21 @@ npm run dev
 
 ## 数据目录
 
-**Docker：** `docker/data/knowledge/`（容器内 `KB_PATH=/data/knowledge`），备份在 `docker/data/backups/`。
+**一键启动：** 启动器旁的 `data/knowledge/`、`data/backups/`（由 `lorechat.sh` / `lorechat.ps1` 创建）。
+
+**源码 Docker：** `docker/data/knowledge/`、`docker/data/backups/`。
 
 **本地开发：** `KB_PATH` 指定知识库根（默认 `backend/knowledge`）。
 
 ```
-docker/data/knowledge/     ← Docker 运行时知识库（可直接浏览/编辑）
+data/knowledge/            ← 一键启动运行时知识库（可直接浏览/编辑）
 ├── …/
-├── attachments/           ← 附件原件
+├── attachments/
 └── .kb/
-    ├── index/             ← 向量/全文索引（可删除后重建）
-    ├── pending.json       ← 待用户确认的归置问题
-    └── changelog.md       ← AI 整理操作记录
+    ├── index/
+    ├── settings.json      ← 网页设置（含 API Key 等，本地私有）
+    ├── pending.json
+    └── changelog.md
 ```
 
 - **Markdown** 是唯一事实来源；索引仅为加速缓存。

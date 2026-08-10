@@ -42,6 +42,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
 exit /b %ERRORLEVEL%
 
 :do_start
+REM Docker chat/work → deploy\lorechat.ps1；无模式参数则本地 uvicorn（历史行为）
+if /i "%~2"=="--chat" goto :do_docker_start
+if /i "%~2"=="--work" goto :do_docker_start
+if /i "%~2"=="chat" goto :do_docker_start
+if /i "%~2"=="work" goto :do_docker_start
 cd /d "%ROOT%"
 if not exist "%RUNTIME%" mkdir "%RUNTIME%"
 if not exist "%PYTHON%" (
@@ -75,6 +80,15 @@ echo [Lore Chat] Started on %LORECHAT_WEB_HOST%:%LORECHAT_WEB_PORT%. Log: %LOG%
 echo start> "%MODE_FILE%"
 goto :eof
 
+:do_docker_start
+cd /d "%ROOT%"
+if not exist "%ROOT%\deploy\lorechat.ps1" (
+    echo Missing deploy\lorechat.ps1
+    exit /b 1
+)
+powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%\deploy\lorechat.ps1" start %~2
+exit /b %ERRORLEVEL%
+
 :do_dev
 cd /d "%ROOT%"
 if not exist "%RUNTIME%" mkdir "%RUNTIME%"
@@ -104,6 +118,10 @@ exit /b !DEV_EXIT!
 
 :do_stop
 cd /d "%ROOT%"
+REM 若曾用 Docker chat/work 启动，一并拆除
+if exist "%ROOT%\deploy\lorechat.ps1" (
+    powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%\deploy\lorechat.ps1" stop >nul 2>&1
+)
 call :check_ports_busy
 if errorlevel 1 goto :stop_not_running
 call :collect_pids
@@ -148,6 +166,14 @@ cd /d "%ROOT%"
 set "RESTART_MODE=start"
 if exist "%MODE_FILE%" (
     set /p RESTART_MODE=<"%MODE_FILE%"
+)
+REM Docker 栈：deploy\.lorechat\run-mode 存在则按该模式重启
+if exist "%ROOT%\deploy\.lorechat\run-mode" (
+    set /p DOCKER_MODE=<"%ROOT%\deploy\.lorechat\run-mode"
+    call :do_stop
+    powershell -NoProfile -Command "Start-Sleep -Seconds 1" >nul 2>&1
+    powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%\deploy\lorechat.ps1" start !DOCKER_MODE!
+    exit /b %ERRORLEVEL%
 )
 call :do_stop
 powershell -NoProfile -Command "Start-Sleep -Seconds 1" >nul 2>&1
@@ -262,12 +288,14 @@ goto :eof
 echo.
 echo Lore Chat
 echo.
-echo   lorechat.bat setup     Detect / install Python, Node, dependencies
-echo   lorechat.bat start     Production: build frontend, serve on :%LORECHAT_WEB_PORT%
-echo   lorechat.bat dev       Development: API :%LORECHAT_BACKEND_PORT% + Vite :%LORECHAT_FRONTEND_PORT% (foreground)
-echo   lorechat.bat stop      Stop production or dev stack
-echo   lorechat.bat restart   Restart last mode (start or dev)
-echo   lorechat.bat log       Tail production log
+echo   lorechat.bat setup              Detect / install Python, Node, dependencies
+echo   lorechat.bat start              Local production: build frontend, serve on :%LORECHAT_WEB_PORT%
+echo   lorechat.bat start --chat       Docker pull/start ^(chat mode via deploy\lorechat.ps1^)
+echo   lorechat.bat start --work       Docker pull/start ^(Work / sandbox via deploy\lorechat.ps1^)
+echo   lorechat.bat dev                Development: API :%LORECHAT_BACKEND_PORT% + Vite :%LORECHAT_FRONTEND_PORT%
+echo   lorechat.bat stop               Stop local and Docker stacks
+echo   lorechat.bat restart            Restart last mode
+echo   lorechat.bat log                Tail production log
 echo.
 echo Env: LORECHAT_WEB_HOST, LORECHAT_WEB_PORT, LORECHAT_BACKEND_PORT, LORECHAT_FRONTEND_PORT
 echo.

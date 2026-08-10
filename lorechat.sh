@@ -8,25 +8,36 @@ BACKEND_DIR="${ROOT}/backend"
 FRONTEND_DIR="${ROOT}/frontend"
 LOG="${RUNTIME}/web.log"
 MODE_FILE="${RUNTIME}/mode.txt"
-COMPOSE_FILE="${ROOT}/docker/docker-compose.yml"
 
 LORECHAT_BACKEND_PORT="${LORECHAT_BACKEND_PORT:-8000}"
 LORECHAT_FRONTEND_PORT="${LORECHAT_FRONTEND_PORT:-5173}"
-
 PYTHON="${BACKEND_DIR}/.venv/bin/python"
+
+# shellcheck source=scripts/lorechat-compose-lib.sh
+source "${ROOT}/scripts/lorechat-compose-lib.sh"
+LORECHAT_RUNTIME="${RUNTIME}"
+LORECHAT_COMPOSE_DIR="${ROOT}/docker"
+LORECHAT_COMPOSE_ENV="${ROOT}/.env"
+LORECHAT_COMPOSE_BASE="${ROOT}/docker/docker-compose.yml"
+LORECHAT_COMPOSE_SANDBOX="${ROOT}/docker/docker-compose.sandbox.yml"
+LORECHAT_DEFAULT_SANDBOX_IMAGE="lorechat-sandbox-agent:local"
 
 usage() {
   cat <<'EOF'
-Usage: ./lorechat.sh <command>
+Usage: ./lorechat.sh <command> [options]
 
 Commands:
-  setup     Create backend venv, install deps, copy env examples
-  dev       Development mode (uvicorn --reload + Vite HMR)
-  start     Production via Docker Compose
-  stop      Stop Docker Compose stack (or local dev helpers)
-  restart   stop then start (or re-run last mode)
-  log|logs  Tail Docker Compose logs (or local .lorechat/web.log)
-  help      Show this help
+  setup                   Create backend venv, install deps, copy env examples
+  dev                     Development mode (uvicorn --reload + Vite HMR)
+  start [--chat|--work]   Production via Docker Compose (local build)
+  stop                    Stop Docker Compose stack (or local dev helpers)
+  restart                 stop then start (or re-run last mode)
+  log|logs                Tail Docker Compose logs (or local .lorechat/web.log)
+  help                    Show this help
+
+Modes (start):
+  --chat   Core stack only (default)
+  --work   Core + OpenSandbox (first run may pull large images)
 
 Environment:
   LORECHAT_BACKEND_PORT   default 8000
@@ -68,7 +79,7 @@ do_setup() {
 
   if [[ ! -f "${BACKEND_DIR}/.env" ]]; then
     cp "${BACKEND_DIR}/.env.example" "${BACKEND_DIR}/.env"
-    echo "[Lore Chat] Created backend/.env from .env.example — set OPENAI_API_KEY"
+    echo "[Lore Chat] Created backend/.env from .env.example — set OPENAI_API_KEY (or use web Settings)"
   fi
 
   if [[ ! -f "${FRONTEND_DIR}/.env" ]]; then
@@ -104,24 +115,31 @@ do_dev() {
   exec node scripts/dev.mjs
 }
 
-compose() {
+ensure_docker_compose() {
   need_cmd docker
   if ! docker compose version >/dev/null 2>&1; then
     echo "[Lore Chat] Docker Compose plugin required (docker compose)" >&2
     exit 1
   fi
   if [[ ! -f "${ROOT}/.env" ]]; then
-    echo "[Lore Chat] Root .env missing. Copy .env.docker.example → .env and set OPENAI_API_KEY" >&2
+    echo "[Lore Chat] Root .env missing. Copy .env.docker.example → .env (API Key optional; web Settings OK)" >&2
     exit 1
   fi
-  docker compose --project-directory "${ROOT}/docker" --env-file "${ROOT}/.env" -f "${COMPOSE_FILE}" "$@"
 }
 
 do_start() {
   ensure_runtime
+  ensure_docker_compose
+  local stack_mode
+  stack_mode="$(lorechat_resolve_stack_mode "${1:-}")" || exit 1
+  if [[ "${stack_mode}" == "work" ]]; then
+    lorechat_warn_work_images
+  fi
   echo "start" >"${MODE_FILE}"
-  echo "[Lore Chat] Starting Docker Compose ..."
-  compose up -d --build
+  lorechat_save_stack_mode "${stack_mode}"
+  echo "[Lore Chat] Starting Docker Compose (mode: ${stack_mode}, local --build) ..."
+  lorechat_teardown_stack
+  lorechat_compose "${stack_mode}" up -d --build
   local port
   port="$(grep -E '^WEB_PORT=' "${ROOT}/.env" 2>/dev/null | cut -d= -f2- || true)"
   port="${port:-8080}"
@@ -132,9 +150,8 @@ do_start() {
 do_stop() {
   ensure_runtime
   if [[ -f "${ROOT}/.env" ]] && command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
-    compose down || true
+    lorechat_teardown_stack
   fi
-  # Best-effort: stop lingering local dev listeners
   if command -v lsof >/dev/null 2>&1; then
     for port in "${LORECHAT_BACKEND_PORT}" "${LORECHAT_FRONTEND_PORT}"; do
       local pids
@@ -151,6 +168,8 @@ do_stop() {
 
 do_restart() {
   local mode="start"
+  local stack_mode
+  stack_mode="$(lorechat_read_stack_mode)"
   if [[ -f "${MODE_FILE}" ]]; then
     mode="$(tr -d '[:space:]' <"${MODE_FILE}")"
   fi
@@ -159,13 +178,14 @@ do_restart() {
   if [[ "${mode}" == "dev" ]]; then
     do_dev
   else
-    do_start
+    do_start "${stack_mode}"
   fi
 }
 
 do_log() {
   if [[ -f "${ROOT}/.env" ]] && command -v docker >/dev/null 2>&1; then
-    compose logs -f --tail=50
+    ensure_docker_compose
+    lorechat_compose "$(lorechat_read_stack_mode)" logs -f --tail=50
     return
   fi
   if [[ -f "${LOG}" ]]; then
@@ -177,10 +197,11 @@ do_log() {
 }
 
 cmd="${1:-help}"
+shift || true
 case "${cmd}" in
   setup) do_setup ;;
   dev) do_dev ;;
-  start) do_start ;;
+  start) do_start "${1:-}" ;;
   stop) do_stop ;;
   restart) do_restart ;;
   log|logs) do_log ;;

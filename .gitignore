@@ -11,6 +11,10 @@ backend/knowledge/
 docker/data/knowledge/
 docker/data/backups/*
 !docker/data/backups/.gitkeep
+deploy/data/knowledge/
+deploy/data/backups/*
+!deploy/data/backups/.gitkeep
+deploy/.lorechat/
 **/.pytest_cache/
 __pycache__/
 *.pyc
@@ -39,6 +43,12 @@ Thumbs.db
 
 # Runtime / local control
 .lorechat/
+
+# Materialized by deploy single-file launchers (do not commit)
+/deploy/docker-compose.yml
+/deploy/docker-compose.sandbox.yml
+/deploy/.env.example
+/deploy/opensandbox/
 
 # Git worktrees
 .worktrees/

@@ -13,10 +13,19 @@ from app.config import (
 
 __all__ = [
     "EDITABLE_SETTING_KEYS",
+    "PLACEHOLDER_API_KEYS",
     "SECRET_SETTING_KEYS",
     "SettingsStore",
+    "is_llm_api_key_configured",
     "load_effective_settings",
 ]
+
+# 与历史 .env.example / 默认 Settings 占位一致；勿把真实密钥形态写进此处
+PLACEHOLDER_API_KEYS = frozenset({"", "sk-none", "sk-your-key"})
+
+
+def is_llm_api_key_configured(key: str | None) -> bool:
+    return (key or "").strip() not in PLACEHOLDER_API_KEYS
 
 
 def _mask(value: str | None) -> str | None:
@@ -64,8 +73,15 @@ class SettingsStore:
 
     def public_dict(self) -> dict:
         data = self._current.model_dump(mode="json")
+        configured = is_llm_api_key_configured(self._current.openai_api_key)
+        data["llm_api_key_configured"] = configured
         for key in SECRET_SETTING_KEYS:
-            if key in data:
+            if key not in data:
+                continue
+            if key == "openai_api_key" and not configured:
+                # 占位符勿脱敏成「看似已配置」；前端靠 llm_api_key_configured + 空值引导填写
+                data[key] = None
+            else:
                 data[key] = _mask(data[key])
         return data
 
