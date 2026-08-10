@@ -423,8 +423,8 @@ function Resolve-Mode([string]$Flag) {{
       $saved = Read-SavedMode
       $default = if ($saved -eq "work") {{ "2" }} else {{ "1" }}
       Write-Host "[Lore Chat] Choose mode:"
-      Write-Host "  1) Chat — knowledge base conversation"
-      Write-Host "  2) Work — plus sandbox execution"
+      Write-Host "  1) Chat - knowledge base conversation"
+      Write-Host "  2) Work - plus sandbox execution"
       $choice = Read-Host "Enter 1 or 2 [default $default]"
       if ([string]::IsNullOrWhiteSpace($choice)) {{ $choice = $default }}
       if ($choice -eq "2") {{ return "work" }}
@@ -558,7 +558,9 @@ def main() -> None:
     ps_path = DEPLOY / "lorechat.ps1"
     sh_path.write_text(build_bash(compose, sandbox, config, env_example, pins), encoding="utf-8")
     sh_path.chmod(sh_path.stat().st_mode | 0o111)
-    ps_path.write_text(build_ps1(compose, sandbox, config, env_example, pins), encoding="utf-8")
+    # UTF-8 BOM: Windows PowerShell 5.1 otherwise reads as system ANSI (e.g. GBK)
+    # and mangling punctuation like em dash into mojibake.
+    ps_path.write_text(build_ps1(compose, sandbox, config, env_example, pins), encoding="utf-8-sig")
     print(f"pins: server={pins['server']} execd={pins['execd']} egress={pins['egress']}")
     print(f"wrote {SCRIPTS.relative_to(ROOT)}/opensandbox-pins.sh")
     print(f"wrote {sh_path.relative_to(ROOT)} ({sh_path.stat().st_size} bytes)")

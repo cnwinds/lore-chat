@@ -1,4 +1,4 @@
-# Lore Chat 单文件启动器（Windows PowerShell）
+﻿# Lore Chat 单文件启动器（Windows PowerShell）
 # 用法: .\lorechat.ps1 start [--chat|--work]
 # 自包含：运行时在脚本旁写出 compose / 沙箱配置。
 # 生成: python3 scripts/gen-deploy-launchers.py
@@ -223,8 +223,8 @@ function Resolve-Mode([string]$Flag) {
       $saved = Read-SavedMode
       $default = if ($saved -eq "work") { "2" } else { "1" }
       Write-Host "[Lore Chat] Choose mode:"
-      Write-Host "  1) Chat — knowledge base conversation"
-      Write-Host "  2) Work — plus sandbox execution"
+      Write-Host "  1) Chat - knowledge base conversation"
+      Write-Host "  2) Work - plus sandbox execution"
       $choice = Read-Host "Enter 1 or 2 [default $default]"
       if ([string]::IsNullOrWhiteSpace($choice)) { $choice = $default }
       if ($choice -eq "2") { return "work" }
