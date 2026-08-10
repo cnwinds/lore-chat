@@ -84,6 +84,14 @@ function bool(v: unknown, fallback: boolean): boolean {
   return fallback;
 }
 
+/** 浏览器当前访问源，用作 Public Base URL（无尾斜杠）。 */
+function clientAccessOrigin(): string {
+  if (typeof window === "undefined") return "";
+  const { protocol, host } = window.location;
+  if (!protocol || !host) return "";
+  return `${protocol}//${host}`.replace(/\/$/, "");
+}
+
 export function SettingsPanel({
   open,
   onClose,
@@ -152,7 +160,21 @@ export function SettingsPanel({
 
       setEmbedModel(str(data.embed_model));
       setOpenaiBaseUrl(str(data.openai_base_url));
-      setPublicBaseUrl(str(data.public_base_url));
+      const existingPublic = str(data.public_base_url).trim();
+      if (existingPublic) {
+        setPublicBaseUrl(existingPublic);
+      } else {
+        const auto = clientAccessOrigin();
+        setPublicBaseUrl(auto);
+        if (auto) {
+          try {
+            await putSettings({ public_base_url: auto });
+            setSaveMsg("已根据当前访问地址自动填写并保存 Public Base URL");
+          } catch {
+            /* 仍保留表单预填，用户可手动保存 */
+          }
+        }
+      }
       setEmbedBaseUrl(str(data.embed_base_url));
       const chat = parseCandidates(data.chat_models);
       const util = parseCandidates(data.utility_models);
@@ -239,28 +261,28 @@ export function SettingsPanel({
         embed_model: embedModel,
         openai_base_url: openaiBaseUrl,
         public_base_url: publicBaseUrl.trim() || null,
-        embed_base_url: embedBaseUrl || null,
+        embed_base_url: endpointExpanded.embed ? embedBaseUrl.trim() || null : null,
         chat_models: chatModels.map((c) => ({
           id: c.id,
           model: c.model,
-          base_url: c.base_url.trim() || null,
-          api_key: c.api_key.trim() || null,
+          base_url: c.use_custom_endpoint ? c.base_url.trim() || null : null,
+          api_key: c.use_custom_endpoint ? c.api_key.trim() || null : null,
+          use_custom_endpoint: c.use_custom_endpoint,
           image: c.image,
           thinking: c.thinking,
           effort: c.effort,
           image_wire: c.image_wire,
-          thinking_protocol: c.thinking_protocol,
         })),
         utility_models: utilityModels.map((c) => ({
           id: c.id,
           model: c.model,
-          base_url: c.base_url.trim() || null,
-          api_key: c.api_key.trim() || null,
+          base_url: c.use_custom_endpoint ? c.base_url.trim() || null : null,
+          api_key: c.use_custom_endpoint ? c.api_key.trim() || null : null,
+          use_custom_endpoint: c.use_custom_endpoint,
           image: c.image,
           thinking: c.thinking,
           effort: c.effort,
           image_wire: c.image_wire,
-          thinking_protocol: c.thinking_protocol,
         })),
         min_vector_score: minVectorScore,
         rrf_k: rrfK,
@@ -272,7 +294,12 @@ export function SettingsPanel({
         sandbox_mirror_region: sandboxMirrorRegion,
       };
 
+      if (!endpointExpanded.embed) {
+        patch.embed_api_key = null;
+      }
+
       for (const key of SECRET_KEYS) {
+        if (key === "embed_api_key" && !endpointExpanded.embed) continue;
         const input = secretInputs[key]?.trim();
         if (input) patch[key] = input;
       }
@@ -391,8 +418,16 @@ export function SettingsPanel({
         aria-labelledby="settings-panel-title"
       >
         <header className="settings-panel-header">
-          <h2 id="settings-panel-title">设置</h2>
-          <button type="button" className="settings-panel-close" onClick={onClose}>
+          <div className="settings-panel-heading">
+            <h2 id="settings-panel-title">设置</h2>
+            <p className="settings-panel-subtitle">模型、检索与账户</p>
+          </div>
+          <button
+            type="button"
+            className="settings-panel-close"
+            onClick={onClose}
+            aria-label="关闭设置"
+          >
             ×
           </button>
         </header>

@@ -148,7 +148,13 @@ class SettingsStore:
         for key, value in patch.items():
             if key not in EDITABLE_SETTING_KEYS:
                 continue
-            if key in SECRET_SETTING_KEYS and (value is None or value == ""):
+            if key in SECRET_SETTING_KEYS:
+                if value == "" or value is None:
+                    # "" = 不修改；None = 显式清空（如关闭独立端点）
+                    if value is None:
+                        filtered[key] = None
+                    continue
+                filtered[key] = value
                 continue
             if key in CHAIN_MODEL_SETTING_KEYS and isinstance(value, list):
                 prev = self._overrides.get(key) or self._current.model_dump().get(key) or []
@@ -162,14 +168,20 @@ class SettingsStore:
                     if not isinstance(item, dict):
                         continue
                     item = enrich_candidate_dict(dict(item))
+                    use_custom = item.pop("use_custom_endpoint", None)
                     old = prev_by_id.get(item.get("id"))
-                    api_key = item.get("api_key")
-                    if old and (
-                        api_key is None
-                        or api_key == ""
-                        or (isinstance(api_key, str) and "***" in api_key)
-                    ):
-                        item["api_key"] = old.get("api_key")
+                    if use_custom is False:
+                        # 回到默认端点：清空候选级 URL / Key
+                        item["base_url"] = None
+                        item["api_key"] = None
+                    else:
+                        api_key = item.get("api_key")
+                        if old and (
+                            api_key is None
+                            or api_key == ""
+                            or (isinstance(api_key, str) and "***" in api_key)
+                        ):
+                            item["api_key"] = old.get("api_key")
                     merged_list.append(item)
                 filtered[key] = merged_list
                 continue

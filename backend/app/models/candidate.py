@@ -7,10 +7,20 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, field_validator
 
-Effort = Literal["low", "medium", "high"]
+from app.models.effort import Effort, coerce_effort, default_effort
+
 ImageWire = Literal["data", "url"]
 ThinkingProtocol = Literal["none", "openai_kwargs", "deepseek", "qwen", "agnes"]
 ModelChain = Literal["chat", "utility"]
+
+# 兼容旧 import：from app.models.candidate import Effort
+__all__ = [
+    "Effort",
+    "ImageWire",
+    "ThinkingProtocol",
+    "ModelChain",
+    "ModelCandidate",
+]
 
 
 class ModelCandidate(BaseModel):
@@ -20,9 +30,9 @@ class ModelCandidate(BaseModel):
     api_key: str | None = None
     image: bool = False
     thinking: bool = False
-    effort: Effort = "medium"
     image_wire: ImageWire = "data"
     thinking_protocol: ThinkingProtocol = "none"
+    effort: Effort = "medium"
 
     @field_validator("id", mode="before")
     @classmethod
@@ -30,6 +40,14 @@ class ModelCandidate(BaseModel):
         if v is None or (isinstance(v, str) and not v.strip()):
             return ""
         return str(v).strip()
+
+    @field_validator("effort", mode="before")
+    @classmethod
+    def _coerce_effort_field(cls, v: Any, info) -> str:
+        data = info.data if hasattr(info, "data") else {}
+        model = str((data or {}).get("model") or "")
+        protocol = str((data or {}).get("thinking_protocol") or "none")
+        return coerce_effort(str(v) if v is not None else None, model=model, protocol=protocol)
 
     def ensure_id(self) -> ModelCandidate:
         if self.id:
@@ -54,7 +72,7 @@ def _legacy_candidate(
         api_key=api_key,
         image=caps.image,
         thinking=caps.thinking,
-        effort="medium",
+        effort=default_effort(model, caps.thinking_protocol),
         image_wire=caps.image_wire,
         thinking_protocol=caps.thinking_protocol,
     ).ensure_id()

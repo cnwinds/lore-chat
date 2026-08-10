@@ -5,6 +5,12 @@ from dataclasses import dataclass, field
 from app.config import Settings
 from app.models.llm import LLMClient, OpenAILLMClient
 from app.models.cooldown import CooldownStore, cooldown_path_for_kb, shared_cooldown_store
+from app.models.catalog import set_active_models_dev_store
+from app.models.models_dev import (
+    ModelsDevStore,
+    models_dev_cache_path_for_kb,
+    shared_models_dev_store,
+)
 from app.storage.repo import KnowledgeRepo
 from app.index.conversation_fts import ConversationFTS
 from app.index.conversation_vector import ConversationVector
@@ -40,6 +46,7 @@ class Container:
     workspace_id: str
     llm: LLMClient
     model_cooldown: CooldownStore
+    models_dev: ModelsDevStore
     usage: UsageService
     repo: KnowledgeRepo
     indexer: Indexer
@@ -73,6 +80,8 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
     usage_recorder = UsageRecorder(usage_store)
     usage = UsageService(usage_store)
     model_cooldown = shared_cooldown_store(cooldown_path_for_kb(settings.kb_path))
+    models_dev = shared_models_dev_store(models_dev_cache_path_for_kb(settings.kb_path))
+    set_active_models_dev_store(models_dev)
     llm = llm or OpenAILLMClient(
         settings, usage_recorder=usage_recorder, cooldown=model_cooldown
     )
@@ -155,6 +164,7 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
         workspace_id=workspace_id,
         llm=llm,
         model_cooldown=model_cooldown,
+        models_dev=models_dev,
         usage=usage,
         repo=repo,
         indexer=index.indexer,
@@ -222,6 +232,7 @@ def remount_container(app, llm: LLMClient | None = None) -> None:
     app.state.settings_store = SettingsStore(kb_path, old_store._base)
     settings = app.state.settings_store.get()
     app.state.container = build_container(settings, llm=llm)
+    set_active_models_dev_store(app.state.container.models_dev)
     app.state.auth_store = AuthStore(kb_path)
     app.state.session_store = SessionStore(kb_path)
 

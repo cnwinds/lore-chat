@@ -56,10 +56,30 @@ def create_app(settings: Settings | None = None, llm: LLMClient | None = None) -
                 "orphan turn recovery failed"
             )
 
+        from app.models.models_dev import DEFAULT_TTL_SEC
+
+        models_dev = app.state.container.models_dev
+
         stop_event = threading.Event()
         worker_thread: threading.Thread | None = None
         maintenance_thread: threading.Thread | None = None
+        catalog_thread: threading.Thread | None = None
         if not _under_pytest():
+            def _run_models_dev_refresh() -> None:
+                while not stop_event.is_set():
+                    try:
+                        models_dev.ensure_fresh(force=models_dev.is_stale())
+                    except Exception:
+                        logging.getLogger("uvicorn.error").exception(
+                            "models.dev refresh failed"
+                        )
+                    stop_event.wait(max(3600.0, DEFAULT_TTL_SEC / 2))
+
+            catalog_thread = threading.Thread(
+                target=_run_models_dev_refresh, name="models-dev-refresh", daemon=True
+            )
+            catalog_thread.start()
+
             worker = app.state.container.derivation_worker
 
             def _run_derivation_worker() -> None:
@@ -99,6 +119,8 @@ def create_app(settings: Settings | None = None, llm: LLMClient | None = None) -
             yield
         finally:
             stop_event.set()
+            if catalog_thread is not None:
+                catalog_thread.join(timeout=2)
             if worker_thread is not None:
                 worker_thread.join(timeout=2)
             if maintenance_thread is not None:

@@ -12,6 +12,8 @@ from app.backup.lock import MaintenanceActiveError
 from app.backup.reindex import reindex_all
 from app.deps import apply_settings, dispose_container, remount_container
 from app.models.candidate import model_routing_changed
+from app.models.catalog import get_active_models_dev_store, set_active_models_dev_store
+from app.models.models_dev import models_dev_cache_path_for_kb, shared_models_dev_store
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -80,6 +82,48 @@ def clear_model_cooldown(body: dict[str, Any], request: Request) -> dict[str, An
             raise HTTPException(status_code=422, detail="candidate_id or all required")
         store.reenable(str(cid))
     return {"ok": True, "model_cooldown": store.public_status()}
+
+
+def _models_dev_for_request(request: Request):
+    """与 Container.models_dev 同一实例；禁止 HTTP 旁路自建。"""
+    container = getattr(request.app.state, "container", None)
+    store = getattr(container, "models_dev", None) if container is not None else None
+    if store is not None:
+        set_active_models_dev_store(store)
+        return store
+    # 启动极早期兜底：与 cooldown 一样走 path 共享单例
+    active = get_active_models_dev_store()
+    if active is not None:
+        return active
+    kb = request.app.state.settings_store.get().kb_path
+    store = shared_models_dev_store(models_dev_cache_path_for_kb(kb))
+    set_active_models_dev_store(store)
+    return store
+
+
+@router.get("/model-catalog")
+def get_model_catalog(
+    request: Request,
+    q: str = "",
+    limit: int = 40,
+    refresh: bool = False,
+    kind: str = "all",
+) -> dict[str, Any]:
+    """搜索 models.dev 缓存目录；可带 refresh=1 强制拉取。
+
+    kind: all | llm | embedding（嵌入选模时用 embedding）
+    """
+    store = _models_dev_for_request(request)
+    source = store.ensure_fresh(force=refresh)
+    items = [h.to_dict() for h in store.search(q, limit=limit, kind=kind)]
+    return {"ok": True, "source": source, "status": store.status(), "items": items}
+
+
+@router.post("/model-catalog/refresh")
+def refresh_model_catalog(request: Request) -> dict[str, Any]:
+    store = _models_dev_for_request(request)
+    source = store.ensure_fresh(force=True)
+    return {"ok": True, "source": source, "status": store.status()}
 
 
 @router.get("/export")

@@ -73,6 +73,47 @@ export function clearModelCooldown(body: { candidate_id?: string; all?: boolean 
   );
 }
 
+export type ModelCatalogItem = {
+  provider: string;
+  id: string;
+  name: string;
+  image: boolean;
+  thinking: boolean;
+  effort: string;
+  effort_options: string[];
+  image_wire: "data" | "url";
+  thinking_protocol: string;
+  embedding?: boolean;
+};
+
+export type ModelCatalogResponse = {
+  ok: boolean;
+  source: string;
+  status: {
+    source?: string;
+    fetched_at?: number;
+    stale?: boolean;
+    count?: number;
+    error?: string | null;
+  };
+  items: ModelCatalogItem[];
+};
+
+export function searchModelCatalog(
+  q: string,
+  opts?: { limit?: number; refresh?: boolean; kind?: "all" | "llm" | "embedding" },
+) {
+  const params = new URLSearchParams();
+  if (q.trim()) params.set("q", q.trim());
+  if (opts?.limit != null) params.set("limit", String(opts.limit));
+  if (opts?.refresh) params.set("refresh", "1");
+  if (opts?.kind && opts.kind !== "all") params.set("kind", opts.kind);
+  const qs = params.toString();
+  return apiFetch<ModelCatalogResponse>(
+    `/api/admin/model-catalog${qs ? `?${qs}` : ""}`,
+  );
+}
+
 export type UsageAgg = {
   calls: number;
   ok_calls: number;

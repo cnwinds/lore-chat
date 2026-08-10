@@ -25,6 +25,19 @@ def test_catalog_agnes_and_deepseek():
     unknown = lookup_capabilities("totally-unknown-model-xyz")
     assert unknown.image is False
     assert unknown.thinking is False
+    o = lookup_capabilities("o3-mini")
+    assert o.thinking_protocol == "openai_kwargs"
+
+
+def test_enrich_always_adapts_thinking_protocol():
+    from app.models.catalog import enrich_candidate_dict
+
+    out = enrich_candidate_dict(
+        {"model": "deepseek-v4-pro", "thinking_protocol": "agnes", "thinking": True}
+    )
+    assert out["thinking_protocol"] == "deepseek"
+    out2 = enrich_candidate_dict({"model": "custom-x", "thinking_protocol": "qwen"})
+    assert out2["thinking_protocol"] == "none"
 
 
 def test_migrate_settings_dict_from_legacy():
