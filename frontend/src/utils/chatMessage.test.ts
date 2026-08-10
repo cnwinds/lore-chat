@@ -10,8 +10,9 @@ import {
 import type { ChatMessage } from "../api";
 
 describe("formatMessageTs", () => {
-  it("formats UTC instant as Beijing HH:mm", () => {
-    const out = formatMessageTs("2026-07-12T06:30:00.000Z");
+  it("formats UTC instant as Beijing HH:mm on same calendar day", () => {
+    const now = new Date("2026-07-12T10:00:00+08:00");
+    const out = formatMessageTs("2026-07-12T06:30:00.000Z", now);
     expect(out).toBe("14:30");
   });
 
