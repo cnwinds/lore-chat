@@ -56,7 +56,27 @@ export function saveSendQueue(
 ): void {
   if (!conversationId || typeof localStorage === "undefined") return;
   try {
-    const persistable = items.map(({ locked: _l, error: _e, ...rest }) => rest);
+    const persistable = items.map(
+      ({
+        id,
+        text,
+        timing,
+        mergeWithNext,
+        doc_context,
+        primary_doc,
+        attachments,
+        webEnabled,
+      }) => ({
+        id,
+        text,
+        timing,
+        mergeWithNext,
+        doc_context,
+        primary_doc,
+        attachments,
+        webEnabled,
+      }),
+    );
     localStorage.setItem(
       queueStorageKey(conversationId),
       JSON.stringify(persistable),
