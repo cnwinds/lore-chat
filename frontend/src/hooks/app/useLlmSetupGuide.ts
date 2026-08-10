@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { getSettings } from "../api";
+import { getSettings } from "../../api";
 
 /**
  * 进入应用后若主 API Key 未配置，打开设置并展示引导（同会话只自动弹一次）。
