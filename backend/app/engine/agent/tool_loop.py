@@ -11,6 +11,7 @@ from app.config import Settings
 from app.engine.agent.events import (
     done,
     inject_deferred,
+    model_selected,
     parallel_batch_end,
     parallel_batch_start,
     text_delta,
@@ -110,6 +111,18 @@ class AgentToolLoop:
                         chunk = await asyncio.to_thread(next, stream_iter, sentinel)
                         if chunk is sentinel:
                             break
+                        if (
+                            chunk.model_name
+                            and chunk.result is None
+                            and not chunk.text_delta
+                            and not chunk.think_delta
+                        ):
+                            yield model_selected(
+                                chunk.model_name,
+                                candidate_id=chunk.candidate_id,
+                                failover=bool(chunk.failover),
+                                skipped=chunk.skipped,
+                            )
                         if chunk.think_delta:
                             yield think_delta(chunk.think_delta)
                         if chunk.text_delta:
@@ -352,7 +365,19 @@ class AgentToolLoop:
         pending = inject_broker.drain(turn_id)
         for item in pending:
             content = self._format_inject_content(item)
-            messages.append({"role": "user", "content": content})
+            msg: dict = {"role": "user", "content": content}
+            if item.attachments:
+                from pathlib import Path
+
+                from app.models.vision import attachment_is_image
+
+                kb = Path(self.settings.kb_path)
+                imgs = [
+                    p for p in item.attachments if attachment_is_image(p, kb_path=kb)
+                ]
+                if imgs:
+                    msg["attachments"] = imgs
+            messages.append(msg)
             message_id = None
             if on_inject_applied is not None:
                 message_id = on_inject_applied(item)
@@ -377,8 +402,11 @@ class AgentToolLoop:
         for item in inject_broker.drain(turn_id):
             yield inject_deferred(item.inject_id)
 
-    @staticmethod
-    def _format_inject_content(item: PendingInject) -> str:
+    def _format_inject_content(self, item: PendingInject) -> str:
+        from pathlib import Path
+
+        from app.models.vision import attachment_is_image
+
         parts: list[str] = []
         docs = item.doc_context or []
         if docs:
@@ -390,7 +418,12 @@ class AgentToolLoop:
                     labels.append(str(d))
             parts.append("（补充文档上下文：" + "、".join(labels) + "）")
         if item.attachments:
-            parts.append("（附件：" + "、".join(item.attachments) + "）")
+            kb = Path(self.settings.kb_path)
+            non_img = [
+                p for p in item.attachments if not attachment_is_image(p, kb_path=kb)
+            ]
+            if non_img:
+                parts.append("（附件：" + "、".join(non_img) + "）")
         parts.append(item.text)
         return "\n\n".join(parts)
 

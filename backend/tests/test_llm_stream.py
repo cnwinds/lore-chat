@@ -24,8 +24,10 @@ def test_stream_yields_think_delta_from_reasoning_content():
         _chunk(reasoning="问题"),
         _chunk(content="结论", finish_reason="stop"),
     ]
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.return_value = iter(stream)
 
-    with patch.object(llm._big.chat.completions, "create", return_value=iter(stream)):
+    with patch.object(llm, "_client_for", return_value=mock_client):
         chunks = list(
             llm.stream_chat_with_tools(
                 [{"role": "user", "content": "hi"}],
@@ -36,7 +38,8 @@ def test_stream_yields_think_delta_from_reasoning_content():
 
     think = [c.think_delta for c in chunks if c.think_delta]
     text = [c.text_delta for c in chunks if c.text_delta]
-    final = chunks[-1].result
+    finals = [c for c in chunks if c.result is not None]
+    final = finals[-1].result
 
     assert think == ["分析", "问题"]
     assert text == ["结论"]
@@ -58,8 +61,10 @@ def test_stream_logs_truncated_tool_calls(caplog):
     stream = [
         _chunk(tool_calls=[partial_tc]),
     ]
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.return_value = iter(stream)
 
-    with patch.object(llm._big.chat.completions, "create", return_value=iter(stream)):
+    with patch.object(llm, "_client_for", return_value=mock_client):
         chunks = list(
             llm.stream_chat_with_tools(
                 [{"role": "user", "content": "hi"}],

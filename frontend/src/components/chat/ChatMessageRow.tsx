@@ -101,13 +101,24 @@ function renderMessageMeta(
 
   const durationMs = isLive ? liveElapsedMs : getMessageDuration(m);
   const timeStr = !isLive && m.ts ? formatMessageTs(m.ts) : null;
-  if (!timeStr && (durationMs === undefined || durationMs <= 0) && !copyText) {
+  if (
+    !timeStr &&
+    (durationMs === undefined || durationMs <= 0) &&
+    !copyText &&
+    !m.model_name
+  ) {
     return null;
   }
 
   return (
     <div className="chat-meta chat-meta-assistant">
       <div className="chat-meta-info">
+        {m.model_name && (
+          <span title={m.model_failover ? "已切换至备胎模型" : undefined}>
+            {m.model_name}
+            {m.model_failover ? " · 已切换" : ""}
+          </span>
+        )}
         {timeStr && <span>{timeStr}</span>}
         {!isLive && durationMs !== undefined && durationMs > 0 && (
           <span>用时 {formatDuration(durationMs)}</span>
@@ -258,6 +269,11 @@ export function ChatMessageRow({
       {...(m.id ? { "data-message-id": m.id } : {})}
     >
       <div className={`chat-bubble chat-bubble-${m.role}`}>
+        {m.role === "assistant" && m.model_failover ? (
+          <div className="chat-failover-banner" role="status">
+            高优先级模型不可用，已切换至 {m.model_name || "备胎模型"}
+          </div>
+        ) : null}
         {m.role === "user" && isInjectedUserMessage(m) && (
             <div className="chat-inject-tag">已插入本轮</div>
           )}

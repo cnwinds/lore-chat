@@ -52,6 +52,14 @@ def text_delta(delta):
 def think_delta(delta):
     return sse_event("think_delta", {"delta": delta})
 
+def model_selected(model: str, *, candidate_id: str | None = None, failover: bool = False, skipped=None):
+    payload = {"model": model, "failover": failover}
+    if candidate_id:
+        payload["candidate_id"] = candidate_id
+    if skipped:
+        payload["skipped"] = [{"id": i, "reason": r} for i, r in skipped]
+    return sse_event("model_selected", payload)
+
 def done(sources, total_duration_ms):
     return sse_event("done", {"sources": sources, "total_duration_ms": total_duration_ms})
 

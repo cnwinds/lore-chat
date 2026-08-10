@@ -1,5 +1,7 @@
 from pathlib import Path
+from typing import Any
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.engine.disclosure import (
@@ -33,6 +35,7 @@ class Settings(BaseSettings):
     openai_api_key: str = "sk-none"
     openai_base_url: str = "https://api.openai.com/v1"
 
+    # Legacy 别名：迁移后与 chat/utility 链首同步；新配置以 *_models 为准
     small_model: str = "gpt-4o-mini"
     big_model: str = "gpt-4o"
     embed_model: str = "text-embedding-3-small"
@@ -43,6 +46,24 @@ class Settings(BaseSettings):
     big_api_key: str | None = None
     embed_base_url: str | None = None
     embed_api_key: str | None = None
+
+    # chat = 对话/Agent；utility = 辅助（记忆抽取等）；列表顺序即优先级
+    chat_models: list[dict[str, Any]] = []
+    utility_models: list[dict[str, Any]] = []
+
+    # Agnes 等 url_only 识图：签名附件 URL 的公网可达前缀（必填才启用 URL 识图）
+    public_base_url: str | None = None
+
+    @field_validator("chat_models", "utility_models", mode="before")
+    @classmethod
+    def _parse_model_lists(cls, v: Any) -> list:
+        if v is None or v == "":
+            return []
+        if isinstance(v, str):
+            import json
+
+            return json.loads(v)
+        return v
 
     # 渐进式披露：spot 默认窗 / deep 默认窗 / 单次硬上限（防一次灌爆上下文）
     read_disclosure_chars: int = DEFAULT_DISCLOSURE_CHARS
@@ -130,6 +151,9 @@ SECRET_SETTING_KEYS: frozenset[str] = frozenset(
         "opensandbox_api_key",
     }
 )
+
+# 嵌套在 chat_models / utility_models[].api_key 内，由 SettingsStore 单独脱敏
+CHAIN_MODEL_SETTING_KEYS: frozenset[str] = frozenset({"chat_models", "utility_models"})
 
 
 def get_settings() -> "Settings":

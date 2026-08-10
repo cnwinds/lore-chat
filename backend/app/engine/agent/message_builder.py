@@ -16,6 +16,7 @@ def build_agent_messages(
     primary_doc_path: str | None,
     skill_roots: list[str] | None = None,
     extra_system_messages: list[dict] | None = None,
+    attachments: list[str] | None = None,
 ) -> list[dict]:
     messages: list[dict] = [
         {
@@ -48,5 +49,8 @@ def build_agent_messages(
         messages.extend(extra_system_messages)
     if history:
         messages.extend(history)
-    messages.append({"role": "user", "content": user_text})
+    user_msg: dict = {"role": "user", "content": user_text}
+    if attachments:
+        user_msg["attachments"] = list(attachments)
+    messages.append(user_msg)
     return messages

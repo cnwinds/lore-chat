@@ -45,6 +45,30 @@ async def download(
     )
 
 
+@router.get("/attachments/signed/{path:path}")
+async def signed_attachment(path: str, token: str, request: Request):
+    """短时签名附件 URL，供 url_wire 识图模型拉取。"""
+    from app.models.vision import attachment_signing_secret, verify_attachment_token
+
+    c = container(request)
+    norm = path.replace("\\", "/").lstrip("/")
+    if norm.startswith(".kb/") or norm.startswith(".git/"):
+        raise HTTPException(404, "文件不存在")
+    secret = attachment_signing_secret(c.settings)
+    if not verify_attachment_token(rel_path=norm, token=token, secret=secret):
+        raise HTTPException(403, "invalid or expired token")
+    abs_p = c.repo.abs_path(norm)
+    if not abs_p.is_file():
+        raise HTTPException(404, "文件不存在")
+    media = media_type_for_filename(abs_p.name)
+    return FileResponse(
+        path=abs_p,
+        media_type=media,
+        filename=abs_p.name,
+        content_disposition_type="inline",
+    )
+
+
 @router.get("/download-zip")
 async def download_zip(path: str, request: Request):
     from app.backup.export_kb import build_directory_zip

@@ -32,6 +32,7 @@ class TurnRunSpec:
     skill_roots: list[str] | None
     primary_doc: str | None
     web_enabled: bool
+    attachments: list[str] | None = None
 
 
 @dataclass
@@ -202,6 +203,7 @@ class TurnExecutionHub:
                     skill_roots=skill_roots,
                     primary_doc=primary_doc,
                     web_enabled=web_enabled,
+                    attachments=list(attachments) if attachments else None,
                 ),
             )
         return turn
@@ -336,6 +338,7 @@ class TurnExecutionHub:
                 web_enabled=spec.web_enabled,
                 inject_broker=self.inject_broker,
                 on_inject_applied=_on_inject_applied,
+                attachments=spec.attachments,
             ):
                 parsed = parse_agent_sse_event(ev)
                 if parsed:

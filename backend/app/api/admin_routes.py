@@ -40,7 +40,13 @@ def _import_failure_http(result: ImportResult) -> HTTPException:
 
 @router.get("/settings")
 def get_settings(request: Request) -> dict[str, Any]:
-    return request.app.state.settings_store.public_dict()
+    data = request.app.state.settings_store.public_dict()
+    container = getattr(request.app.state, "container", None)
+    if container is not None and getattr(container, "model_cooldown", None) is not None:
+        data["model_cooldown"] = container.model_cooldown.public_status()
+    else:
+        data["model_cooldown"] = {}
+    return data
 
 
 @router.put("/settings")
@@ -50,8 +56,41 @@ def put_settings(body: dict[str, Any], request: Request) -> dict[str, Any]:
         new_settings = store.update(body)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    apply_settings(request.app.state.container, new_settings)
-    return store.public_dict()
+    container = request.app.state.container
+    # 模型/密钥/端点配置变更 → 解除 disabled（共识：改配置可恢复）
+    chain_keys = {
+        "chat_models",
+        "utility_models",
+        "openai_api_key",
+        "openai_base_url",
+        "big_api_key",
+        "big_base_url",
+        "big_model",
+        "small_api_key",
+        "small_base_url",
+        "small_model",
+        "public_base_url",
+    }
+    if chain_keys & set(body.keys()):
+        container.model_cooldown.clear_disabled()
+    apply_settings(container, new_settings)
+    data = store.public_dict()
+    data["model_cooldown"] = container.model_cooldown.public_status()
+    return data
+
+
+@router.post("/model-cooldown/clear")
+def clear_model_cooldown(body: dict[str, Any], request: Request) -> dict[str, Any]:
+    """清除冷却或重新启用候选。body: {candidate_id?: str, all?: bool}"""
+    store = request.app.state.container.model_cooldown
+    if body.get("all"):
+        store.clear()
+    else:
+        cid = body.get("candidate_id")
+        if not cid:
+            raise HTTPException(status_code=422, detail="candidate_id or all required")
+        store.reenable(str(cid))
+    return {"ok": True, "model_cooldown": store.public_status()}
 
 
 @router.get("/export")

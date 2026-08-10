@@ -13,6 +13,8 @@ class TimelineAccumulator:
         self.all_sources: list[dict] = []
         self.total_duration_ms: int | None = None
         self.assistant_text: str = ""
+        self.model_name: str | None = None
+        self.model_failover: bool = False
         self._tools: dict[str, dict] = {}
         self._parallel: dict[str, dict] = {}
         self._active_parallel: str | None = None
@@ -20,6 +22,12 @@ class TimelineAccumulator:
         self._think_block: dict | None = None
 
     def accumulate(self, event_type: str, data: dict) -> None:
+        if event_type == "model_selected":
+            if isinstance(data.get("model"), str):
+                self.model_name = data["model"]
+            self.model_failover = bool(data.get("failover"))
+            return
+
         if event_type == "tool_start":
             block = {
                 "type": "tool",
@@ -168,6 +176,10 @@ class TimelineAccumulator:
             "total_duration_ms": self.total_duration_ms,
             "status": status,
         }
+        if self.model_name:
+            assistant["model_name"] = self.model_name
+        if self.model_failover:
+            assistant["model_failover"] = True
         if error is not None:
             assistant["error"] = error
         return assistant

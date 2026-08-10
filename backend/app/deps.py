@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 
 from app.config import Settings
 from app.models.llm import LLMClient, OpenAILLMClient
+from app.models.cooldown import CooldownStore, cooldown_path_for_kb, shared_cooldown_store
 from app.storage.repo import KnowledgeRepo
 from app.index.conversation_fts import ConversationFTS
 from app.index.conversation_vector import ConversationVector
@@ -38,6 +39,7 @@ class Container:
     settings: Settings
     workspace_id: str
     llm: LLMClient
+    model_cooldown: CooldownStore
     usage: UsageService
     repo: KnowledgeRepo
     indexer: Indexer
@@ -70,9 +72,14 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
     usage_store = UsageStore(settings.kb_path / ".kb" / "usage" / "usage.db")
     usage_recorder = UsageRecorder(usage_store)
     usage = UsageService(usage_store)
-    llm = llm or OpenAILLMClient(settings, usage_recorder=usage_recorder)
-    if isinstance(llm, OpenAILLMClient) and llm.usage_recorder is None:
-        llm.usage_recorder = usage_recorder
+    model_cooldown = shared_cooldown_store(cooldown_path_for_kb(settings.kb_path))
+    llm = llm or OpenAILLMClient(
+        settings, usage_recorder=usage_recorder, cooldown=model_cooldown
+    )
+    if isinstance(llm, OpenAILLMClient):
+        if llm.usage_recorder is None:
+            llm.usage_recorder = usage_recorder
+        llm.cooldown = model_cooldown
     repo = KnowledgeRepo(settings.kb_path, protected_dirs=(settings.system_layer_dir,))
 
     memory_store = MemoryStore(
@@ -147,6 +154,7 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
         settings=settings,
         workspace_id=workspace_id,
         llm=llm,
+        model_cooldown=model_cooldown,
         usage=usage,
         repo=repo,
         indexer=index.indexer,
@@ -225,9 +233,21 @@ def apply_settings(
     recorder = None
     if container._usage_store is not None:
         recorder = UsageRecorder(container._usage_store)
-    new_llm = llm or OpenAILLMClient(settings, usage_recorder=recorder)
-    if isinstance(new_llm, OpenAILLMClient) and new_llm.usage_recorder is None and recorder:
-        new_llm.usage_recorder = recorder
+    cooldown = container.model_cooldown
+    if llm is None and isinstance(container.llm, OpenAILLMClient):
+        container.llm.rebind_settings(settings)
+        container.llm.cooldown = cooldown
+        if container.llm.usage_recorder is None and recorder:
+            container.llm.usage_recorder = recorder
+        new_llm = container.llm
+    else:
+        new_llm = llm or OpenAILLMClient(
+            settings, usage_recorder=recorder, cooldown=cooldown
+        )
+        if isinstance(new_llm, OpenAILLMClient):
+            if new_llm.usage_recorder is None and recorder:
+                new_llm.usage_recorder = recorder
+            new_llm.cooldown = cooldown
     container.llm = new_llm
     if container._index_subgraph is not None:
         container._index_subgraph.apply_settings(settings)

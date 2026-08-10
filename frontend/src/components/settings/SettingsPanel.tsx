@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import {
   changePassword,
+  clearModelCooldown,
   downloadExport,
   getSettings,
   importKb,
@@ -12,9 +13,13 @@ import { AgentSettingsTab } from "./AgentSettingsTab";
 import { KbBackupSettingsTab } from "./KbBackupSettingsTab";
 import { MemorySettingsTab } from "./MemorySettingsTab";
 import {
+  emptyCandidate,
   hasCustomEndpoint,
   ModelSettingsTab,
+  parseCandidates,
   SECRET_KEYS,
+  type CooldownStatus,
+  type ModelCandidateDraft,
   type ModelSlot,
   type SecretKey,
 } from "./ModelSettingsTab";
@@ -96,17 +101,17 @@ export function SettingsPanel({
   const [maskedSecrets, setMaskedSecrets] = useState<Partial<Record<SecretKey, string>>>({});
   const [secretInputs, setSecretInputs] = useState<Partial<Record<SecretKey, string>>>({});
 
-  const [smallModel, setSmallModel] = useState("");
-  const [bigModel, setBigModel] = useState("");
   const [embedModel, setEmbedModel] = useState("");
   const [openaiBaseUrl, setOpenaiBaseUrl] = useState("");
-  const [smallBaseUrl, setSmallBaseUrl] = useState("");
-  const [bigBaseUrl, setBigBaseUrl] = useState("");
+  const [publicBaseUrl, setPublicBaseUrl] = useState("");
   const [embedBaseUrl, setEmbedBaseUrl] = useState("");
+  const [chatModels, setChatModels] = useState<ModelCandidateDraft[]>([emptyCandidate()]);
+  const [utilityModels, setUtilityModels] = useState<ModelCandidateDraft[]>([
+    emptyCandidate(),
+  ]);
+  const [cooldown, setCooldown] = useState<CooldownStatus>({});
 
   const [endpointExpanded, setEndpointExpanded] = useState<Record<ModelSlot, boolean>>({
-    small: false,
-    big: false,
     embed: false,
   });
 
@@ -145,13 +150,19 @@ export function SettingsPanel({
       const data = await getSettings();
       setKbPath(str(data.kb_path));
 
-      setSmallModel(str(data.small_model));
-      setBigModel(str(data.big_model));
       setEmbedModel(str(data.embed_model));
       setOpenaiBaseUrl(str(data.openai_base_url));
-      setSmallBaseUrl(str(data.small_base_url));
-      setBigBaseUrl(str(data.big_base_url));
+      setPublicBaseUrl(str(data.public_base_url));
       setEmbedBaseUrl(str(data.embed_base_url));
+      const chat = parseCandidates(data.chat_models);
+      const util = parseCandidates(data.utility_models);
+      setChatModels(chat.length ? chat : [emptyCandidate()]);
+      setUtilityModels(util.length ? util : [emptyCandidate()]);
+      setCooldown(
+        data.model_cooldown && typeof data.model_cooldown === "object"
+          ? (data.model_cooldown as CooldownStatus)
+          : {},
+      );
 
       setMinVectorScore(num(data.min_vector_score, 0.45));
       setRrfK(num(data.rrf_k, 60));
@@ -174,8 +185,6 @@ export function SettingsPanel({
       setMaskedSecrets(masked);
       setSecretInputs({});
       setEndpointExpanded({
-        small: hasCustomEndpoint(str(data.small_base_url), "small_api_key", masked),
-        big: hasCustomEndpoint(str(data.big_base_url), "big_api_key", masked),
         embed: hasCustomEndpoint(str(data.embed_base_url), "embed_api_key", masked),
       });
     } catch (err) {
@@ -227,13 +236,32 @@ export function SettingsPanel({
     setSaveMsg(null);
     try {
       const patch: Record<string, unknown> = {
-        small_model: smallModel,
-        big_model: bigModel,
         embed_model: embedModel,
         openai_base_url: openaiBaseUrl,
-        small_base_url: smallBaseUrl || null,
-        big_base_url: bigBaseUrl || null,
+        public_base_url: publicBaseUrl.trim() || null,
         embed_base_url: embedBaseUrl || null,
+        chat_models: chatModels.map((c) => ({
+          id: c.id,
+          model: c.model,
+          base_url: c.base_url.trim() || null,
+          api_key: c.api_key.trim() || null,
+          image: c.image,
+          thinking: c.thinking,
+          effort: c.effort,
+          image_wire: c.image_wire,
+          thinking_protocol: c.thinking_protocol,
+        })),
+        utility_models: utilityModels.map((c) => ({
+          id: c.id,
+          model: c.model,
+          base_url: c.base_url.trim() || null,
+          api_key: c.api_key.trim() || null,
+          image: c.image,
+          thinking: c.thinking,
+          effort: c.effort,
+          image_wire: c.image_wire,
+          thinking_protocol: c.thinking_protocol,
+        })),
         min_vector_score: minVectorScore,
         rrf_k: rrfK,
         lane_candidate_k: laneCandidateK,
@@ -412,14 +440,12 @@ export function SettingsPanel({
                     <ModelSettingsTab
                       openaiBaseUrl={openaiBaseUrl}
                       onOpenaiBaseUrlChange={setOpenaiBaseUrl}
-                      smallModel={smallModel}
-                      onSmallModelChange={setSmallModel}
-                      smallBaseUrl={smallBaseUrl}
-                      onSmallBaseUrlChange={setSmallBaseUrl}
-                      bigModel={bigModel}
-                      onBigModelChange={setBigModel}
-                      bigBaseUrl={bigBaseUrl}
-                      onBigBaseUrlChange={setBigBaseUrl}
+                      publicBaseUrl={publicBaseUrl}
+                      onPublicBaseUrlChange={setPublicBaseUrl}
+                      chatModels={chatModels}
+                      onChatModelsChange={setChatModels}
+                      utilityModels={utilityModels}
+                      onUtilityModelsChange={setUtilityModels}
                       embedModel={embedModel}
                       onEmbedModelChange={setEmbedModel}
                       embedBaseUrl={embedBaseUrl}
@@ -429,6 +455,17 @@ export function SettingsPanel({
                       maskedSecrets={maskedSecrets}
                       endpointExpanded={endpointExpanded}
                       setEndpointExpanded={setEndpointExpanded}
+                      cooldown={cooldown}
+                      onClearCooldown={async (candidateId) => {
+                        try {
+                          const res = await clearModelCooldown({ candidate_id: candidateId });
+                          if (res.model_cooldown && typeof res.model_cooldown === "object") {
+                            setCooldown(res.model_cooldown as CooldownStatus);
+                          }
+                        } catch (err) {
+                          setError(err instanceof Error ? err.message : "清除冷却失败");
+                        }
+                      }}
                       saving={saving}
                     />
                   </div>

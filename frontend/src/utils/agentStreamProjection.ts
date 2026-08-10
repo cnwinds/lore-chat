@@ -78,6 +78,21 @@ export function reduceStreamEvent(
     };
   }
 
+  if (event === "model_selected") {
+    const model = typeof data.model === "string" ? data.model : undefined;
+    return {
+      state: {
+        ...state,
+        assistant: {
+          ...state.assistant,
+          model_name: model,
+          model_failover: Boolean(data.failover),
+        },
+      },
+      stop: false,
+    };
+  }
+
   const assistant = { ...state.assistant };
   let awaitingUser = state.awaitingUser;
   let kbNotify: string | null | undefined;

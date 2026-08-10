@@ -121,6 +121,10 @@ export type ChatMessage = {
   status?: "complete" | "interrupted" | string;
   /** 本轮回复总耗时（毫秒），来自 SSE done 事件 */
   total_duration_ms?: number;
+  /** 本轮实际使用的模型名 */
+  model_name?: string;
+  /** 是否因高优先级不可用而切换 */
+  model_failover?: boolean;
   /** Mid-turn inject (client_message_id starts with inject:) */
   injected?: boolean;
   client_message_id?: string;

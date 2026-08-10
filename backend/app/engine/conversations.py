@@ -51,7 +51,9 @@ CREATE TABLE IF NOT EXISTS messages (
     total_duration_ms INTEGER,
     doc_context_json TEXT,
     attachments_json TEXT,
-    primary_doc TEXT
+    primary_doc TEXT,
+    model_name TEXT,
+    model_failover INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_messages_conversation_seq
     ON messages(conversation_id, seq);
@@ -155,6 +157,7 @@ class ConversationStore:
             self.conn.execute("PRAGMA foreign_keys=ON")
             self.conn.executescript(_SCHEMA)
             self._ensure_memory_schedule_columns()
+            self._ensure_message_model_columns()
             self.conn.commit()
 
         if legacy_single.exists():
@@ -207,6 +210,18 @@ class ConversationStore:
             )
         for sql in alters:
             self.conn.execute(sql)
+
+    def _ensure_message_model_columns(self) -> None:
+        cols = {
+            r[1]
+            for r in self.conn.execute("PRAGMA table_info(messages)").fetchall()
+        }
+        if "model_name" not in cols:
+            self.conn.execute("ALTER TABLE messages ADD COLUMN model_name TEXT")
+        if "model_failover" not in cols:
+            self.conn.execute(
+                "ALTER TABLE messages ADD COLUMN model_failover INTEGER NOT NULL DEFAULT 0"
+            )
 
     def _json_shards_migrated(self) -> bool:
         row = self.conn.execute(
@@ -372,6 +387,16 @@ class ConversationStore:
             msg["attachments"] = _loads(row["attachments_json"], [])
         if row["primary_doc"]:
             msg["primary_doc"] = row["primary_doc"]
+        try:
+            if row["model_name"]:
+                msg["model_name"] = row["model_name"]
+        except (KeyError, IndexError):
+            pass
+        try:
+            if row["model_failover"]:
+                msg["model_failover"] = True
+        except (KeyError, IndexError):
+            pass
         return msg
 
     def _load_messages(self, cid: str) -> list[dict]:

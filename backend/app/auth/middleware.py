@@ -15,6 +15,10 @@ PUBLIC_ROUTES = frozenset(
     }
 )
 
+PUBLIC_PREFIXES = (
+    ("GET", "/api/attachments/signed/"),
+)
+
 
 class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
@@ -23,6 +27,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
         if (request.method, path) in PUBLIC_ROUTES:
             return await call_next(request)
+        for method, prefix in PUBLIC_PREFIXES:
+            if request.method == method and path.startswith(prefix):
+                return await call_next(request)
         sid = request.cookies.get(COOKIE)
         if not request.app.state.session_store.validate(sid):
             return JSONResponse(

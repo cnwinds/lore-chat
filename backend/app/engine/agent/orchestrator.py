@@ -57,6 +57,7 @@ class AgentOrchestrator:
         web_enabled: bool = False,
         inject_broker=None,
         on_inject_applied=None,
+        attachments: list[str] | None = None,
     ) -> AsyncIterator[str]:
         system_layer_text = (
             self.system_layer.compose_rules() if self.system_layer else ""
@@ -86,6 +87,7 @@ class AgentOrchestrator:
             primary_doc_path=primary_doc_path,
             skill_roots=skill_roots,
             extra_system_messages=skill_msgs or None,
+            attachments=attachments,
         )
         tools_for_run = select_tools(
             mode,

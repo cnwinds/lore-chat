@@ -62,6 +62,17 @@ export function putSettings(patch: Record<string, unknown>) {
   });
 }
 
+export function clearModelCooldown(body: { candidate_id?: string; all?: boolean }) {
+  return apiFetch<{ ok: boolean; model_cooldown: Record<string, unknown> }>(
+    "/api/admin/model-cooldown/clear",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
+}
+
 export type UsageAgg = {
   calls: number;
   ok_calls: number;
