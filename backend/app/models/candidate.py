@@ -5,9 +5,9 @@ from __future__ import annotations
 import uuid
 from typing import Any, Literal
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
-from app.models.effort import Effort, coerce_effort, default_effort
+from app.models.effort import Effort, coerce_effort, coerce_to_options, default_effort
 
 ImageWire = Literal["data", "url"]
 ThinkingProtocol = Literal["none", "openai_kwargs", "deepseek", "qwen", "agnes"]
@@ -32,6 +32,8 @@ class ModelCandidate(BaseModel):
     thinking: bool = False
     image_wire: ImageWire = "data"
     thinking_protocol: ThinkingProtocol = "none"
+    # 空列表 = 无对外强度档（如 Agnes）；展示/校验以此为准，勿仅靠 live 目录
+    effort_options: list[str] = Field(default_factory=list)
     effort: Effort = "medium"
 
     @field_validator("id", mode="before")
@@ -41,12 +43,28 @@ class ModelCandidate(BaseModel):
             return ""
         return str(v).strip()
 
+    @field_validator("effort_options", mode="before")
+    @classmethod
+    def _coerce_effort_options(cls, v: Any) -> list[str]:
+        if not v:
+            return []
+        if isinstance(v, (list, tuple)):
+            return [str(x).strip() for x in v if str(x).strip()]
+        return []
+
     @field_validator("effort", mode="before")
     @classmethod
     def _coerce_effort_field(cls, v: Any, info) -> str:
         data = info.data if hasattr(info, "data") else {}
         model = str((data or {}).get("model") or "")
         protocol = str((data or {}).get("thinking_protocol") or "none")
+        opts = (data or {}).get("effort_options") or []
+        if opts:
+            return coerce_to_options(
+                str(v) if v is not None else None,
+                tuple(opts),
+                model=model,
+            )
         return coerce_effort(str(v) if v is not None else None, model=model, protocol=protocol)
 
     def ensure_id(self) -> ModelCandidate:
@@ -73,6 +91,7 @@ def _legacy_candidate(
         image=caps.image,
         thinking=caps.thinking,
         effort=default_effort(model, caps.thinking_protocol),
+        effort_options=list(caps.effort_options),
         image_wire=caps.image_wire,
         thinking_protocol=caps.thinking_protocol,
     ).ensure_id()

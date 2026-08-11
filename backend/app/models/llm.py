@@ -15,6 +15,7 @@ from app.config import Settings
 from app.logging_config import get_logger
 from app.models.candidate import ModelCandidate, ModelChain
 from app.models.cooldown import CooldownStore, classify_error, shared_cooldown_store
+from app.models.effort import format_model_label
 from app.models.router import NoCandidateAvailable, Selection, select_candidate
 from app.models.thinking import thinking_request_kwargs
 from app.models.vision import (
@@ -30,6 +31,16 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from app.engine.usage.recorder import UsageRecorder
+
+
+def _display_model_label(cand: ModelCandidate) -> str:
+    """用候选已保存/enrich 的 effort_options（空 = 无强度档），不覆盖为 live 目录。"""
+    return format_model_label(
+        cand.model,
+        thinking=bool(cand.thinking),
+        effort=str(cand.effort or ""),
+        effort_options=tuple(cand.effort_options or ()),
+    )
 
 
 @dataclass
@@ -378,9 +389,10 @@ class OpenAILLMClient:
                     raise last_exc
                 raise
             cand = sel.candidate
+            label = _display_model_label(cand)
 
             yield ChatStreamChunk(
-                model_name=cand.model,
+                model_name=label,
                 candidate_id=cand.id,
                 failover=sel.failover,
                 skipped=list(sel.skipped),
@@ -584,7 +596,7 @@ class OpenAILLMClient:
             )
             yield ChatStreamChunk(
                 result=ChatWithToolsResult(content=content, tool_calls=tool_calls),
-                model_name=model,
+                model_name=label,
                 candidate_id=cand.id,
                 failover=sel.failover,
             )

@@ -12,7 +12,12 @@ from app.backup.lock import MaintenanceActiveError
 from app.backup.reindex import reindex_all
 from app.deps import apply_settings, dispose_container, remount_container
 from app.models.candidate import model_routing_changed
-from app.models.catalog import get_active_models_dev_store, set_active_models_dev_store
+from app.models.catalog import (
+    get_active_models_dev_store,
+    merge_catalog_hits,
+    search_supplement,
+    set_active_models_dev_store,
+)
 from app.models.models_dev import models_dev_cache_path_for_kb, shared_models_dev_store
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -109,13 +114,20 @@ def get_model_catalog(
     refresh: bool = False,
     kind: str = "all",
 ) -> dict[str, Any]:
-    """搜索 models.dev 缓存目录；可带 refresh=1 强制拉取。
+    """搜索 models.dev 缓存目录，并合并本地补充；可带 refresh=1 强制拉取。
 
     kind: all | llm | embedding（嵌入选模时用 embedding）
     """
     store = _models_dev_for_request(request)
     source = store.ensure_fresh(force=refresh)
-    items = [h.to_dict() for h in store.search(q, limit=limit, kind=kind)]
+    remote = store.search(q, limit=limit, kind=kind)
+    local = search_supplement(q, limit=limit, kind=kind)
+    items = [
+        h.to_dict()
+        for h in merge_catalog_hits(
+            remote, local, limit=limit, prefer_extra=bool(q.strip())
+        )
+    ]
     return {"ok": True, "source": source, "status": store.status(), "items": items}
 
 

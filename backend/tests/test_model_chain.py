@@ -19,9 +19,12 @@ def test_catalog_agnes_and_deepseek():
     assert a.image is True
     assert a.image_wire == "url"
     assert a.thinking is True
+    assert a.source == "supplement"
+    assert a.effort_options == ()
     d = lookup_capabilities("deepseek-v4-pro")
     assert d.image is False
     assert d.thinking is True
+    assert d.source == "supplement"
     unknown = lookup_capabilities("totally-unknown-model-xyz")
     assert unknown.image is False
     assert unknown.thinking is False

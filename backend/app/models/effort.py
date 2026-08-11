@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 # 跨厂商并集；具体模型只暴露自己支持的子集
 Effort = Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"]
@@ -16,6 +16,7 @@ ALL_EFFORTS: tuple[Effort, ...] = (
     "xhigh",
     "max",
 )
+_ALL_EFFORT_SET = frozenset(ALL_EFFORTS)
 
 _GENERIC_THREE: tuple[Effort, ...] = ("low", "medium", "high")
 _OPENAI_GPT52: tuple[Effort, ...] = ("none", "low", "medium", "high", "xhigh")
@@ -29,13 +30,68 @@ def _norm_id(model: str) -> str:
     return (model or "").strip().lower()
 
 
+def parse_reasoning_options(raw: Any) -> tuple[Effort, ...]:
+    """从 models.dev / 补充文件的 reasoning_options 提取 effort 档位；不臆造。
+
+    只认 type=effort 的 values；toggle / budget_tokens 不映射成假档位。
+    """
+    if not isinstance(raw, list):
+        return ()
+    out: list[Effort] = []
+    seen: set[str] = set()
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("type") or "").strip().lower() != "effort":
+            continue
+        values = item.get("values")
+        if not isinstance(values, (list, tuple)):
+            continue
+        for v in values:
+            s = str(v).strip().lower()
+            if s in _ALL_EFFORT_SET and s not in seen:
+                seen.add(s)
+                out.append(s)  # type: ignore[arg-type]
+    return tuple(out)
+
+
+def pick_default_effort(options: tuple[Effort, ...], *, model: str = "") -> Effort:
+    """在给定 options 内选默认；options 为空时回落 medium（仅供请求侧预算）。"""
+    if not options:
+        return "medium"
+    mid = _norm_id(model)
+    if mid.startswith("gpt-5.2") or mid.startswith("gpt-5.1"):
+        if "none" in options:
+            return "none"
+    if "medium" in options:
+        return "medium"
+    return options[len(options) // 2]
+
+
+def coerce_to_options(
+    value: str | None,
+    options: tuple[Effort, ...],
+    *,
+    model: str = "",
+) -> Effort:
+    if not options:
+        return "medium"
+    raw = (value or "").strip().lower()
+    if raw in options:
+        return raw  # type: ignore[return-value]
+    return pick_default_effort(options, model=model)
+
+
 def supported_efforts(model: str, protocol: str | None = None) -> tuple[Effort, ...]:
-    """返回该模型可选的推理强度（有序）。"""
+    """无目录命中时的前缀启发档位（不覆盖 models.dev / 补充文件）。"""
     mid = _norm_id(model)
     proto = (protocol or "").strip().lower()
 
-    if proto in {"deepseek", "qwen", "agnes"}:
+    if proto in {"deepseek", "qwen"}:
         return _GENERIC_THREE
+    # Agnes：可思考，但无对外暴露的强度档
+    if proto == "agnes" or mid.startswith("agnes-"):
+        return ()
 
     # OpenAI GPT-5.x 家族（含 codex / pro / instant 等后缀）
     if mid.startswith("gpt-5.2") or "/gpt-5.2" in mid:
@@ -53,7 +109,7 @@ def supported_efforts(model: str, protocol: str | None = None) -> tuple[Effort, 
     if proto == "openai_kwargs":
         return _OPENAI_BROAD
 
-    if mid.startswith(("agnes-", "deepseek-", "qwen")):
+    if mid.startswith(("deepseek-", "qwen")):
         return _GENERIC_THREE
 
     # 未知：保守三档，避免下拉过宽
@@ -61,19 +117,30 @@ def supported_efforts(model: str, protocol: str | None = None) -> tuple[Effort, 
 
 
 def default_effort(model: str, protocol: str | None = None) -> Effort:
-    mid = _norm_id(model)
-    opts = supported_efforts(model, protocol)
-    # GPT-5.2 / 5.1 官方默认偏 none
-    if mid.startswith("gpt-5.2") or mid.startswith("gpt-5.1"):
-        return "none" if "none" in opts else opts[0]
-    if "medium" in opts:
-        return "medium"
-    return opts[len(opts) // 2]
+    return pick_default_effort(supported_efforts(model, protocol), model=model)
 
 
 def coerce_effort(value: str | None, *, model: str, protocol: str | None = None) -> Effort:
-    opts = supported_efforts(model, protocol)
-    raw = (value or "").strip().lower()
-    if raw in opts:
-        return raw  # type: ignore[return-value]
-    return default_effort(model, protocol)
+    return coerce_to_options(value, supported_efforts(model, protocol), model=model)
+
+
+def format_model_label(
+    model: str,
+    *,
+    thinking: bool,
+    effort: str | None,
+    effort_options: tuple[str, ...] | list[str] | None,
+) -> str:
+    """会话展示：开启思考且有可选强度档时为「模型 - 档位」，否则仅模型名。
+
+    thinking 门槛：关思考时未使用推理强度，即使 settings 里仍残留档位也不展示。
+    """
+    name = (model or "").strip()
+    if not name:
+        return name
+    if not thinking or not effort_options:
+        return name
+    ev = (effort or "").strip()
+    if not ev:
+        return name
+    return f"{name} - {ev}"

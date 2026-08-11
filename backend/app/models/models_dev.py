@@ -13,7 +13,7 @@ from typing import Any
 import httpx
 
 from app.models.candidate import ImageWire, ThinkingProtocol
-from app.models.effort import Effort, default_effort, supported_efforts
+from app.models.effort import Effort, parse_reasoning_options, pick_default_effort
 
 @dataclass(frozen=True)
 class CatalogHit:
@@ -126,10 +126,28 @@ def parse_remote_model(provider: str, model_id: str, raw: dict[str, Any]) -> Cat
         # 部分条目用 attachment 表示可挂多媒体
         image = True
     thinking = False if embedding else _as_bool(raw.get("reasoning"))
-    protocol = "none" if embedding else infer_thinking_protocol(model_id)
-    wire = infer_image_wire(model_id, protocol)
-    opts = ("medium",) if embedding else supported_efforts(model_id, protocol)
-    effort = "medium" if embedding else default_effort(model_id, protocol)
+
+    proto_raw = str(raw.get("thinking_protocol") or "").strip().lower()
+    if proto_raw in {"none", "openai_kwargs", "deepseek", "qwen", "agnes"}:
+        protocol: ThinkingProtocol = proto_raw  # type: ignore[assignment]
+    else:
+        protocol = "none" if embedding else infer_thinking_protocol(model_id)
+
+    wire_raw = str(raw.get("image_wire") or "").strip().lower()
+    if wire_raw in {"data", "url"}:
+        wire: ImageWire = wire_raw  # type: ignore[assignment]
+    else:
+        wire = infer_image_wire(model_id, protocol)
+
+    if embedding:
+        opts: tuple[Effort, ...] = ("medium",)
+    elif not thinking:
+        opts = ()
+    else:
+        # 严格使用 JSON 的 reasoning_options；空列表 = 无可选强度，不启发式补档
+        opts = parse_reasoning_options(raw.get("reasoning_options"))
+
+    effort = pick_default_effort(opts, model=model_id)
     return CatalogHit(
         provider=provider,
         id=model_id,
@@ -167,6 +185,55 @@ def index_payload(payload: dict[str, Any]) -> dict[str, CatalogHit]:
             # 也索引 provider/id
             out[f"{str(provider).lower()}/{key}"] = hit
     return out
+
+
+def unique_hits_by_id(index: dict[str, CatalogHit]) -> list[CatalogHit]:
+    """同一 id 只留一条；跳过 provider/id 双键（模型 id 本身可含斜杠）。"""
+    seen: dict[str, CatalogHit] = {}
+    for key, hit in index.items():
+        if key != hit.id.lower():
+            continue
+        seen[hit.id.lower()] = hit
+    return list(seen.values())
+
+
+def filter_catalog_hits(
+    items: list[CatalogHit],
+    query: str,
+    *,
+    limit: int = 40,
+    kind: str | None = None,
+) -> list[CatalogHit]:
+    """按 kind / 子串查询过滤并排序截断（models.dev 与本地补充共用）。"""
+    q = (query or "").strip().lower()
+    limit = max(1, min(int(limit), 100))
+    kind_n = (kind or "all").strip().lower()
+    if kind_n not in {"all", "llm", "embedding", "embed"}:
+        kind_n = "all"
+    out = list(items)
+    if kind_n in {"embedding", "embed"}:
+        out = [h for h in out if h.embedding]
+    elif kind_n == "llm":
+        out = [h for h in out if not h.embedding]
+    if q:
+        scored: list[tuple[int, CatalogHit]] = []
+        for h in out:
+            blob = f"{h.provider} {h.id} {h.name}".lower()
+            if q not in blob:
+                continue
+            if h.id.lower() == q:
+                score = 0
+            elif h.id.lower().startswith(q):
+                score = 1
+            elif q in h.id.lower():
+                score = 2
+            else:
+                score = 3
+            scored.append((score, h))
+        scored.sort(key=lambda t: (t[0], t[1].id.lower()))
+        return [h for _, h in scored[:limit]]
+    out.sort(key=lambda h: h.id.lower())
+    return out[:limit]
 
 
 class ModelsDevStore:
@@ -255,13 +322,7 @@ class ModelsDevStore:
         mid = (model or "").strip().lower()
         if not mid:
             return None
-        hit = self._index.get(mid)
-        if hit:
-            return hit
-        # 允许 openai/gpt-4o 形式
-        if "/" in mid:
-            return self._index.get(mid)
-        return None
+        return self._index.get(mid)
 
     def search(
         self,
@@ -270,43 +331,12 @@ class ModelsDevStore:
         limit: int = 40,
         kind: str | None = None,
     ) -> list[CatalogHit]:
-        q = (query or "").strip().lower()
-        limit = max(1, min(int(limit), 100))
-        kind_n = (kind or "all").strip().lower()
-        if kind_n not in {"all", "llm", "embedding", "embed"}:
-            kind_n = "all"
-        # 去重：同一 id 只留一条（优先无 provider 前缀的键）
-        seen: dict[str, CatalogHit] = {}
-        for key, hit in self._index.items():
-            if "/" in key:
-                continue
-            seen[hit.id.lower()] = hit
-        items = list(seen.values())
-        if kind_n in {"embedding", "embed"}:
-            items = [h for h in items if h.embedding]
-        elif kind_n == "llm":
-            items = [h for h in items if not h.embedding]
-        if q:
-            scored: list[tuple[int, CatalogHit]] = []
-            for h in items:
-                blob = f"{h.provider} {h.id} {h.name}".lower()
-                if q not in blob:
-                    continue
-                # 前缀/精确更靠前
-                score = 0
-                if h.id.lower() == q:
-                    score = 0
-                elif h.id.lower().startswith(q):
-                    score = 1
-                elif q in h.id.lower():
-                    score = 2
-                else:
-                    score = 3
-                scored.append((score, h))
-            scored.sort(key=lambda t: (t[0], t[1].id.lower()))
-            return [h for _, h in scored[:limit]]
-        items.sort(key=lambda h: h.id.lower())
-        return items[:limit]
+        return filter_catalog_hits(
+            unique_hits_by_id(self._index),
+            query,
+            limit=limit,
+            kind=kind,
+        )
 
     def status(self) -> dict[str, Any]:
         unique = {h.id.lower() for h in self._index.values()}

@@ -271,6 +271,7 @@ export function SettingsPanel({
           image: c.image,
           thinking: c.thinking,
           effort: c.effort,
+          effort_options: c.effort_options,
           image_wire: c.image_wire,
         })),
         utility_models: utilityModels.map((c) => ({
@@ -282,6 +283,7 @@ export function SettingsPanel({
           image: c.image,
           thinking: c.thinking,
           effort: c.effort,
+          effort_options: c.effort_options,
           image_wire: c.image_wire,
         })),
         min_vector_score: minVectorScore,

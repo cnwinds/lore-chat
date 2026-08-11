@@ -62,7 +62,10 @@ export function hasCustomEndpoint(
 export function supportedEfforts(model: string, protocol?: string): string[] {
   const mid = model.trim().toLowerCase();
   const proto = (protocol || "").trim().toLowerCase();
-  if (proto === "deepseek" || proto === "qwen" || proto === "agnes") {
+  if (proto === "agnes" || mid.startsWith("agnes-")) {
+    return [];
+  }
+  if (proto === "deepseek" || proto === "qwen") {
     return ["low", "medium", "high"];
   }
   if (mid.startsWith("gpt-5.2")) return ["none", "low", "medium", "high", "xhigh"];
@@ -79,6 +82,7 @@ export function supportedEfforts(model: string, protocol?: string): string[] {
 
 export function defaultEffort(model: string, protocol?: string): string {
   const opts = supportedEfforts(model, protocol);
+  if (!opts.length) return "medium";
   const mid = model.trim().toLowerCase();
   if (mid.startsWith("gpt-5.2") || mid.startsWith("gpt-5.1")) {
     return opts.includes("none") ? "none" : opts[0];
@@ -92,6 +96,13 @@ export function coerceEffort(value: string | undefined, model: string, protocol?
   return defaultEffort(model, protocol);
 }
 
+export function pickEffortInOptions(effort: string, opts: string[]): string {
+  if (!opts.length) return effort || "medium";
+  if (opts.includes(effort)) return effort;
+  if (opts.includes("medium")) return "medium";
+  return opts[0];
+}
+
 export function emptyCandidate(): ModelCandidateDraft {
   return {
     id: newId().slice(0, 12),
@@ -101,7 +112,7 @@ export function emptyCandidate(): ModelCandidateDraft {
     image: false,
     thinking: false,
     effort: "medium",
-    effort_options: ["low", "medium", "high"],
+    effort_options: [],
     image_wire: "data",
     thinking_protocol: "none",
     use_custom_endpoint: false,
@@ -115,10 +126,11 @@ export function parseCandidates(raw: unknown): ModelCandidateDraft[] {
     .map((x) => {
       const model = str(x.model);
       const protocol = str(x.thinking_protocol) || "none";
-      const opts =
-        Array.isArray(x.effort_options) && x.effort_options.length
-          ? x.effort_options.map(String)
-          : supportedEfforts(model, protocol);
+      // 空数组 = 目录声明无强度档，不得回落启发式臆造
+      const opts = Array.isArray(x.effort_options)
+        ? x.effort_options.map(String)
+        : supportedEfforts(model, protocol);
+      const effort = pickEffortInOptions(str(x.effort), opts);
       const base = str(x.base_url);
       const hadKey = typeof x.api_key === "string" && Boolean(x.api_key.trim());
       return {
@@ -128,7 +140,7 @@ export function parseCandidates(raw: unknown): ModelCandidateDraft[] {
         api_key: "",
         image: Boolean(x.image),
         thinking: Boolean(x.thinking),
-        effort: coerceEffort(str(x.effort) || undefined, model, protocol),
+        effort,
         effort_options: opts,
         image_wire: x.image_wire === "url" ? "url" : "data",
         thinking_protocol: protocol,
@@ -247,15 +259,14 @@ function capsFromCatalogItem(
   | "image_wire"
   | "thinking_protocol"
 > {
-  const opts =
-    item.effort_options?.length > 0
-      ? item.effort_options
-      : supportedEfforts(item.id, item.thinking_protocol);
+  const opts = Array.isArray(item.effort_options)
+    ? item.effort_options.map(String)
+    : supportedEfforts(item.id, item.thinking_protocol);
   return {
     model: item.id,
     image: item.image,
     thinking: item.thinking,
-    effort: coerceEffort(item.effort, item.id, item.thinking_protocol),
+    effort: pickEffortInOptions(String(item.effort || ""), opts),
     effort_options: opts,
     image_wire: item.image_wire,
     thinking_protocol: item.thinking_protocol,
@@ -446,6 +457,82 @@ function ModelNameField({
   );
 }
 
+function ImageCapIcon({ size = 15 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <rect x="3" y="5" width="18" height="14" rx="2" />
+      <circle cx="9" cy="11" r="2" />
+      <path d="m21 15-4.5-4.5L9 18" />
+    </svg>
+  );
+}
+
+function ThinkingCapIcon({ size = 15 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z" />
+      <path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z" />
+      <path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4" />
+      <path d="M17.599 6.5a3 3 0 0 0 .399-1.375" />
+      <path d="M6.003 5.125A3 3 0 0 0 6.401 6.5" />
+      <path d="M3.337 7.5a4 4 0 0 0-.2 2.4" />
+      <path d="M20.863 9.9a4 4 0 0 0-.2-2.4" />
+      <path d="M20.863 14.1a4 4 0 0 1-.2 2.4" />
+      <path d="M3.337 16.5a4 4 0 0 1-.2-2.4" />
+      <path d="M8.664 20.5a4 4 0 0 0 6.672 0" />
+    </svg>
+  );
+}
+
+function ImageWireSwitch({
+  value,
+  disabled,
+  onChange,
+}: {
+  value: "data" | "url";
+  disabled?: boolean;
+  onChange: (v: "data" | "url") => void;
+}) {
+  const isData = value === "data";
+  return (
+    <button
+      type="button"
+      className={`settings-wire-switch${isData ? " is-data" : " is-url"}`}
+      disabled={disabled}
+      onClick={() => onChange(isData ? "url" : "data")}
+      title={isData ? "识图传输：data（点击改为 url）" : "识图传输：url（点击改为 data）"}
+      aria-label={isData ? "识图传输：data" : "识图传输：url"}
+      aria-pressed={!isData}
+    >
+      <span className="settings-wire-switch-track" aria-hidden>
+        <span className="settings-wire-switch-label settings-wire-switch-label--data">data</span>
+        <span className="settings-wire-switch-label settings-wire-switch-label--url">url</span>
+        <span className="settings-wire-switch-knob" />
+      </span>
+    </button>
+  );
+}
+
 type ChainEditorProps = {
   title: string;
   hint: string;
@@ -575,67 +662,55 @@ function ChainEditor({
 
               <div className="settings-model-toolbar">
                 <div className="settings-model-caps">
-                  <label className={`settings-cap-chip${c.image ? " settings-cap-chip--on" : ""}`}>
-                    <input
-                      type="checkbox"
-                      checked={c.image}
-                      onChange={(e) =>
-                        updateAt(i, { image: e.target.checked, caps_user_edited: true })
-                      }
-                      disabled={saving}
-                    />
-                    识图
-                  </label>
-                  <label
-                    className={`settings-cap-chip${c.thinking ? " settings-cap-chip--on" : ""}`}
+                  <button
+                    type="button"
+                    className={`settings-cap-icon-btn${c.image ? " settings-cap-icon-btn--on" : ""}`}
+                    disabled={saving}
+                    aria-pressed={c.image}
+                    aria-label={c.image ? "识图：开" : "识图：关"}
+                    title={c.image ? "识图：开" : "识图：关"}
+                    onClick={() =>
+                      updateAt(i, { image: !c.image, caps_user_edited: true })
+                    }
                   >
-                    <input
-                      type="checkbox"
-                      checked={c.thinking}
-                      onChange={(e) =>
-                        updateAt(i, { thinking: e.target.checked, caps_user_edited: true })
-                      }
-                      disabled={saving}
-                    />
-                    思考
-                  </label>
-                  <label className="settings-cap-select">
-                    <span>强度</span>
-                    <select
-                      value={
-                        (c.effort_options || []).includes(c.effort)
-                          ? c.effort
-                          : coerceEffort(c.effort, c.model, c.thinking_protocol)
-                      }
-                      onChange={(e) => updateAt(i, { effort: e.target.value })}
-                      disabled={saving || !c.thinking}
-                    >
-                      {(c.effort_options?.length
-                        ? c.effort_options
-                        : supportedEfforts(c.model, c.thinking_protocol)
-                      ).map((lv) => (
-                        <option key={lv} value={lv}>
-                          {lv}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="settings-cap-select">
-                    <span>识图传输</span>
-                    <select
-                      value={c.image_wire}
-                      onChange={(e) =>
-                        updateAt(i, {
-                          image_wire: e.target.value as ModelCandidateDraft["image_wire"],
-                          caps_user_edited: true,
-                        })
-                      }
-                      disabled={saving || !c.image}
-                    >
-                      <option value="data">data</option>
-                      <option value="url">url</option>
-                    </select>
-                  </label>
+                    <ImageCapIcon />
+                  </button>
+                  <ImageWireSwitch
+                    value={c.image_wire}
+                    disabled={saving || !c.image}
+                    onChange={(image_wire) =>
+                      updateAt(i, { image_wire, caps_user_edited: true })
+                    }
+                  />
+                  <button
+                    type="button"
+                    className={`settings-cap-icon-btn${c.thinking ? " settings-cap-icon-btn--on" : ""}`}
+                    disabled={saving}
+                    aria-pressed={c.thinking}
+                    aria-label={c.thinking ? "思考：开" : "思考：关"}
+                    title={c.thinking ? "思考：开" : "思考：关"}
+                    onClick={() =>
+                      updateAt(i, { thinking: !c.thinking, caps_user_edited: true })
+                    }
+                  >
+                    <ThinkingCapIcon />
+                  </button>
+                  {c.effort_options.length > 0 ? (
+                    <label className="settings-cap-select">
+                      <span>强度</span>
+                      <select
+                        value={pickEffortInOptions(c.effort, c.effort_options)}
+                        onChange={(e) => updateAt(i, { effort: e.target.value })}
+                        disabled={saving || !c.thinking}
+                      >
+                        {c.effort_options.map((lv) => (
+                          <option key={lv} value={lv}>
+                            {lv}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : null}
                 </div>
               </div>
 

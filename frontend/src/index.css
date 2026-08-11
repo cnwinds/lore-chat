@@ -1880,28 +1880,109 @@ button.memory-fact-statement--jump:focus-visible {
   color: var(--text-secondary);
 }
 
-.settings-cap-chip {
+.settings-cap-icon-btn {
+  width: 28px;
+  height: 28px;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 5px 10px;
-  border-radius: 999px;
+  justify-content: center;
+  padding: 0;
+  border-radius: 8px;
   border: 1px solid var(--border);
   background: var(--bg-muted);
+  color: var(--text-muted);
   cursor: pointer;
-  user-select: none;
+  line-height: 1;
+  box-sizing: border-box;
+  flex-shrink: 0;
   transition: background 0.15s, border-color 0.15s, color 0.15s;
 }
 
-.settings-cap-chip input {
-  margin: 0;
-  accent-color: var(--accent);
+.settings-cap-icon-btn:hover:not(:disabled) {
+  color: var(--text-secondary);
+  background: var(--bg-subtle);
 }
 
-.settings-cap-chip--on {
+.settings-cap-icon-btn--on {
   color: var(--accent);
   background: var(--accent-soft);
   border-color: var(--accent-border);
+}
+
+.settings-cap-icon-btn--on:hover:not(:disabled) {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.settings-cap-icon-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.settings-wire-switch {
+  position: relative;
+  flex-shrink: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.settings-wire-switch:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.settings-wire-switch-track {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: center;
+  width: 72px;
+  height: 26px;
+  padding: 2px;
+  border-radius: 999px;
+  background: var(--bg-muted);
+  border: 1px solid var(--border);
+  box-sizing: border-box;
+}
+
+.settings-wire-switch-label {
+  position: relative;
+  z-index: 1;
+  font-size: 10px;
+  font-weight: 650;
+  text-align: center;
+  color: var(--text-muted);
+  transition: color 0.15s ease;
+  user-select: none;
+}
+
+.settings-wire-switch.is-data .settings-wire-switch-label--data,
+.settings-wire-switch.is-url .settings-wire-switch-label--url {
+  color: var(--text);
+}
+
+.settings-wire-switch-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: calc(50% - 2px);
+  height: calc(100% - 4px);
+  border-radius: 999px;
+  background: var(--bg-surface);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+  transition: transform 0.18s cubic-bezier(0.2, 0.8, 0.2, 1), background 0.18s ease;
+  z-index: 0;
+}
+
+.settings-wire-switch.is-url .settings-wire-switch-knob {
+  transform: translateX(100%);
+}
+
+.settings-wire-switch:not(:disabled).is-data .settings-wire-switch-knob,
+.settings-wire-switch:not(:disabled).is-url .settings-wire-switch-knob {
+  background: color-mix(in srgb, var(--accent-soft) 80%, var(--bg-surface));
 }
 
 .settings-cap-select {
