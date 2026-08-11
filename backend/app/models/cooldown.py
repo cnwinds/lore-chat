@@ -117,6 +117,9 @@ def classify_error(exc: BaseException | str, *, message: str | None = None) -> E
         )
     ):
         return ErrorClass.CAPABILITY
+    # 本地 SDK/参数拼装错误：不应冷却远程模型
+    if isinstance(exc, TypeError) and "unexpected keyword argument" in lower:
+        return ErrorClass.CAPABILITY
     return ErrorClass.UNKNOWN
 
 

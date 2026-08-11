@@ -41,9 +41,12 @@ def thinking_request_kwargs(candidate: ModelCandidate, *, enable: bool) -> dict[
     if proto == "none":
         return {}
     if proto == "deepseek":
+        # OpenAI SDK 不接受顶层 thinking=；经 extra_body 写入兼容网关
         return {
-            "thinking": {"type": "enabled"},
-            "reasoning_effort": _DEEPSEEK_EFFORT.get(effort, "high"),
+            "extra_body": {
+                "thinking": {"type": "enabled"},
+                "reasoning_effort": _DEEPSEEK_EFFORT.get(effort, "high"),
+            }
         }
     if proto == "qwen":
         if budget <= 0:
@@ -60,10 +63,10 @@ def thinking_request_kwargs(candidate: ModelCandidate, *, enable: bool) -> dict[
         return {
             "extra_body": {
                 "chat_template_kwargs": {"enable_thinking": True},
-            },
-            "thinking": {"type": "enabled", "budget_tokens": budget},
+                "thinking": {"type": "enabled", "budget_tokens": budget},
+            }
         }
     if proto == "openai_kwargs":
-        # GPT-5.2 等：原样传递 none|minimal|low|medium|high|xhigh
+        # GPT-5.2 等：SDK 原生支持 reasoning_effort
         return {"reasoning_effort": effort}
     return {}

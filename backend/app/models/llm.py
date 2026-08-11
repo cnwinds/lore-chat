@@ -429,8 +429,25 @@ class OpenAILLMClient:
             try:
                 try:
                     stream = client.chat.completions.create(**kwargs)
+                except TypeError as e:
+                    # 仅当确为 stream_options 不被接受时剥掉重试；其它 TypeError 原样抛出
+                    err = str(e)
+                    if "stream_options" in kwargs and "stream_options" in err:
+                        _log.warning(
+                            "llm stream include_usage unsupported id=%s model=%s err=%s; retry without",
+                            stream_id,
+                            model,
+                            e,
+                        )
+                        kwargs.pop("stream_options", None)
+                        stream = client.chat.completions.create(**kwargs)
+                    else:
+                        raise
                 except Exception as e:
-                    if "stream_options" in kwargs:
+                    err = str(e)
+                    if "stream_options" in kwargs and (
+                        "stream_options" in err or "include_usage" in err
+                    ):
                         _log.warning(
                             "llm stream include_usage unsupported id=%s model=%s err=%s; retry without",
                             stream_id,

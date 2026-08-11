@@ -72,6 +72,12 @@ def test_classify_error():
     assert classify_error("insufficient permissions") == ErrorClass.UNKNOWN
     assert classify_error("file does not exist") == ErrorClass.UNKNOWN
     assert classify_error("insufficient_quota") == ErrorClass.RATE_LIMIT
+    assert (
+        classify_error(
+            TypeError("Completions.create() got an unexpected keyword argument 'thinking'")
+        )
+        == ErrorClass.CAPABILITY
+    )
 
 
 def test_cooldown_exponential_and_independent(tmp_path):

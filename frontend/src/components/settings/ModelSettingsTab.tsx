@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { searchModelCatalog, type ModelCatalogItem } from "../../api";
+import { newId } from "../../utils/id";
 
 const SECRET_KEYS = [
   "openai_api_key",
@@ -93,7 +94,7 @@ export function coerceEffort(value: string | undefined, model: string, protocol?
 
 export function emptyCandidate(): ModelCandidateDraft {
   return {
-    id: crypto.randomUUID().slice(0, 12),
+    id: newId().slice(0, 12),
     model: "",
     base_url: "",
     api_key: "",
@@ -121,7 +122,7 @@ export function parseCandidates(raw: unknown): ModelCandidateDraft[] {
       const base = str(x.base_url);
       const hadKey = typeof x.api_key === "string" && Boolean(x.api_key.trim());
       return {
-        id: str(x.id) || crypto.randomUUID().slice(0, 12),
+        id: str(x.id) || newId().slice(0, 12),
         model,
         base_url: base,
         api_key: "",
