@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { copyTextToClipboard } from "../utils/clipboard";
 
 type Props = {
   text: string;
@@ -9,20 +10,19 @@ export function CopyButton({ text, className }: Props) {
   const [copied, setCopied] = useState(false);
 
   async function copy() {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1500);
-    } catch {
-      /* ignore */
-    }
+    const ok = await copyTextToClipboard(text);
+    if (!ok) return;
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1500);
   }
 
   return (
     <button
       type="button"
       className={`chat-copy-btn${className ? ` ${className}` : ""}`}
-      onClick={copy}
+      onClick={() => {
+        void copy();
+      }}
       title={copied ? "已复制" : "复制"}
       aria-label={copied ? "已复制" : "复制"}
     >
