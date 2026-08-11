@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from app.config import Settings
+from app.models.cooldown import CooldownStore
 from app.engine.agent.tool_loop import AgentToolLoop, tool_awaits_user
 from app.engine.agent.tools import ToolRegistry
 from app.engine.organizer import Organizer
@@ -52,7 +53,7 @@ def _build_loop(tmp_path, llm: FakeLLMClient) -> AgentToolLoop:
         repo,
         org,
         WebFetcher(5, 1000),
-        WebSearch(settings),
+        WebSearch(settings, cooldown=CooldownStore(settings.kb_path / '.kb' / 'search_cd.json')),
         pending,
         writer,
     )

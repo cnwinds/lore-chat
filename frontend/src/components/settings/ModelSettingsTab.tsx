@@ -1,24 +1,19 @@
 import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { searchModelCatalog, type ModelCatalogItem } from "../../api";
 import { newId } from "../../utils/id";
+import {
+  SearchProviderEditor,
+  type SearchProviderDraft,
+} from "./SearchProviderEditor";
+import type { CooldownStatus } from "./settingsTypes";
 
-const SECRET_KEYS = [
-  "openai_api_key",
-  "embed_api_key",
-  "tavily_api_key",
-  "serper_api_key",
-  "brave_search_api_key",
-] as const;
+const SECRET_KEYS = ["openai_api_key", "embed_api_key"] as const;
 
 type SecretKey = (typeof SECRET_KEYS)[number];
 
-const SECRET_LABELS: Record<SecretKey, string> = {
-  openai_api_key: "OpenAI API Key（默认）",
-  embed_api_key: "嵌入模型 API Key",
-  tavily_api_key: "Tavily API Key",
-  serper_api_key: "Serper API Key",
-  brave_search_api_key: "Brave Search API Key",
-};
+export type { SearchProviderDraft, SearchProviderId } from "./SearchProviderEditor";
+export { SEARCH_PROVIDER_OPTIONS } from "./SearchProviderEditor";
+export type { CooldownStatus } from "./settingsTypes";
 
 export type ModelCandidateDraft = {
   id: string;
@@ -38,16 +33,6 @@ export type ModelCandidateDraft = {
 };
 
 type ModelSlot = "embed";
-
-export type CooldownStatus = Record<
-  string,
-  {
-    available?: boolean;
-    disabled?: boolean;
-    cooldown_remaining_sec?: number;
-    last_error?: string | null;
-  }
->;
 
 export function hasCustomEndpoint(
   baseUrl: string,
@@ -802,6 +787,10 @@ type Props = {
   setEndpointExpanded: Dispatch<SetStateAction<Record<ModelSlot, boolean>>>;
   cooldown: CooldownStatus;
   onClearCooldown: (candidateId: string) => void;
+  searchProviders: SearchProviderDraft[];
+  onSearchProvidersChange: (v: SearchProviderDraft[]) => void;
+  searchCooldown: CooldownStatus;
+  onClearSearchCooldown: (providerId: string) => void;
   saving: boolean;
 };
 
@@ -828,6 +817,10 @@ export function ModelSettingsTab({
   setEndpointExpanded,
   cooldown,
   onClearCooldown,
+  searchProviders,
+  onSearchProvidersChange,
+  searchCooldown,
+  onClearSearchCooldown,
   saving,
 }: Props) {
   return (
@@ -961,27 +954,13 @@ export function ModelSettingsTab({
         ) : null}
       </div>
 
-      <div className="settings-group">
-        <header className="settings-group-header">
-          <h3 className="settings-group-title">搜索密钥</h3>
-          <p className="settings-group-hint">用于联网搜索工具，可选配置。</p>
-        </header>
-        {SECRET_KEYS.slice(2).map((key) => (
-          <label key={key} className="settings-field">
-            <span>{SECRET_LABELS[key]}</span>
-            <input
-              type="password"
-              autoComplete="off"
-              value={secretInputs[key] ?? ""}
-              placeholder={maskedSecrets[key] ?? "未设置"}
-              onChange={(e) =>
-                setSecretInputs((prev) => ({ ...prev, [key]: e.target.value }))
-              }
-              disabled={saving}
-            />
-          </label>
-        ))}
-      </div>
+      <SearchProviderEditor
+        providers={searchProviders}
+        onChange={onSearchProvidersChange}
+        cooldown={searchCooldown}
+        onClearCooldown={onClearSearchCooldown}
+        saving={saving}
+      />
     </>
   );
 }

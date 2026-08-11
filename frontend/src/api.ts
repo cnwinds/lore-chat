@@ -73,6 +73,21 @@ export function clearModelCooldown(body: { candidate_id?: string; all?: boolean 
   );
 }
 
+export function clearSearchCooldown(body: {
+  provider_id?: string;
+  candidate_id?: string;
+  all?: boolean;
+}) {
+  return apiFetch<{ ok: boolean; search_cooldown: Record<string, unknown> }>(
+    "/api/admin/search-cooldown/clear",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
+}
+
 export type ModelCatalogItem = {
   provider: string;
   id: string;

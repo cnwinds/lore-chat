@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from app.engine.chat.turn_inject import PendingInject, TurnInjectBroker
+from app.models.cooldown import CooldownStore
 
 
 def test_broker_enqueue_requires_active_turn():
@@ -101,7 +102,7 @@ async def test_tool_loop_applies_inject_after_tools(tmp_path):
         repo,
         org,
         WebFetcher(5, 1000),
-        WebSearch(settings),
+        WebSearch(settings, cooldown=CooldownStore(settings.kb_path / '.kb' / 'search_cd.json')),
         pending,
         writer,
     )
@@ -185,7 +186,7 @@ async def test_tool_loop_defers_inject_without_tools(tmp_path):
         repo,
         org,
         WebFetcher(5, 1000),
-        WebSearch(settings),
+        WebSearch(settings, cooldown=CooldownStore(settings.kb_path / '.kb' / 'search_cd.json')),
         pending,
         writer,
     )

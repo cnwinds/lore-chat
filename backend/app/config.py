@@ -81,11 +81,23 @@ class Settings(BaseSettings):
     # 向量检索余弦相似度下限
     min_vector_score: float = 0.45
 
-    # Web search（配哪个用哪个）
+    # Web search：有序链（列表顺序即优先级）；None=未配置链（可从旧三密钥迁移）
+    search_providers: list[dict[str, Any]] | None = None
     tavily_api_key: str | None = None
     serper_api_key: str | None = None
     brave_search_api_key: str | None = None
     search_provider_order: str = "tavily,serper,brave"
+
+    @field_validator("search_providers", mode="before")
+    @classmethod
+    def _parse_search_providers(cls, v: Any) -> list | None:
+        if v is None or v == "":
+            return None
+        if isinstance(v, str):
+            import json
+
+            return json.loads(v)
+        return v
 
     # edit_doc 局部编辑
     edit_doc_max_edits: int = 10
@@ -145,15 +157,24 @@ SECRET_SETTING_KEYS: frozenset[str] = frozenset(
         "small_api_key",
         "big_api_key",
         "embed_api_key",
+        "opensandbox_api_key",
+    }
+)
+
+# 旧三搜索密钥：仅迁移/回写兼容，public API 仍脱敏；新配置以 search_providers 为准
+LEGACY_SEARCH_SECRET_KEYS: frozenset[str] = frozenset(
+    {
         "tavily_api_key",
         "serper_api_key",
         "brave_search_api_key",
-        "opensandbox_api_key",
     }
 )
 
 # 嵌套在 chat_models / utility_models[].api_key 内，由 SettingsStore 单独脱敏
 CHAIN_MODEL_SETTING_KEYS: frozenset[str] = frozenset({"chat_models", "utility_models"})
+
+# 嵌套在 search_providers[].api_key 内
+CHAIN_SEARCH_SETTING_KEYS: frozenset[str] = frozenset({"search_providers"})
 
 
 def get_settings() -> "Settings":

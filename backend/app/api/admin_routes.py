@@ -12,6 +12,10 @@ from app.backup.lock import MaintenanceActiveError
 from app.backup.reindex import reindex_all
 from app.deps import apply_settings, dispose_container, remount_container
 from app.models.candidate import model_routing_changed
+from app.engine.web.search_providers import (
+    DuplicateSearchProviderError,
+    search_routing_changed,
+)
 from app.models.catalog import (
     get_active_models_dev_store,
     merge_catalog_hits,
@@ -54,6 +58,10 @@ def get_settings(request: Request) -> dict[str, Any]:
         data["model_cooldown"] = container.model_cooldown.public_status()
     else:
         data["model_cooldown"] = {}
+    if container is not None and getattr(container, "search_cooldown", None) is not None:
+        data["search_cooldown"] = container.search_cooldown.public_status()
+    else:
+        data["search_cooldown"] = {}
     return data
 
 
@@ -64,14 +72,19 @@ def put_settings(body: dict[str, Any], request: Request) -> dict[str, Any]:
     prev = container.settings
     try:
         new_settings = store.update(body)
+    except DuplicateSearchProviderError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     # 模型/密钥/端点配置实际变更 → 解除 disabled（共识：改配置可恢复）
     if model_routing_changed(prev, new_settings):
         container.model_cooldown.clear_disabled()
+    if search_routing_changed(prev, new_settings):
+        container.search_cooldown.clear_disabled()
     apply_settings(container, new_settings)
     data = store.public_dict()
     data["model_cooldown"] = container.model_cooldown.public_status()
+    data["search_cooldown"] = container.search_cooldown.public_status()
     return data
 
 
@@ -87,6 +100,20 @@ def clear_model_cooldown(body: dict[str, Any], request: Request) -> dict[str, An
             raise HTTPException(status_code=422, detail="candidate_id or all required")
         store.reenable(str(cid))
     return {"ok": True, "model_cooldown": store.public_status()}
+
+
+@router.post("/search-cooldown/clear")
+def clear_search_cooldown(body: dict[str, Any], request: Request) -> dict[str, Any]:
+    """清除搜索提供商冷却或重新启用。body: {provider_id?: str, all?: bool}"""
+    store = request.app.state.container.search_cooldown
+    if body.get("all"):
+        store.clear()
+    else:
+        pid = body.get("provider_id") or body.get("candidate_id")
+        if not pid:
+            raise HTTPException(status_code=422, detail="provider_id or all required")
+        store.reenable(str(pid))
+    return {"ok": True, "search_cooldown": store.public_status()}
 
 
 def _models_dev_for_request(request: Request):

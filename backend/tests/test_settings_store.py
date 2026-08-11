@@ -71,3 +71,58 @@ def test_missing_secret_key_keeps_previous(tmp_path: Path):
     store.update({"openai_api_key": "sk-keep-me-1234"})
     store.update({"small_model": "z"})
     assert store.get().openai_api_key == "sk-keep-me-1234"
+
+
+def test_search_providers_empty_clears_legacy(tmp_path: Path):
+    base = Settings(kb_path=tmp_path, tavily_api_key="tv-secret-xxxx")
+    store = SettingsStore(tmp_path, base)
+    # 启动迁移后应有链
+    assert any(p.get("provider") == "tavily" for p in store.get().search_providers)
+    store.update({"search_providers": []})
+    assert store.get().search_providers == []
+    assert store.get().tavily_api_key is None
+    # 再次加载不应从 legacy 复活
+    store2 = SettingsStore(tmp_path, Settings(kb_path=tmp_path))
+    assert store2.get().search_providers == []
+
+
+def test_search_providers_mask_and_keep_key(tmp_path: Path):
+    base = Settings(kb_path=tmp_path)
+    store = SettingsStore(tmp_path, base)
+    store.update(
+        {
+            "search_providers": [
+                {"id": "tavily", "provider": "tavily", "api_key": "tv-abcdefghijklmnop"},
+            ]
+        }
+    )
+    pub = store.public_dict()
+    assert pub["search_providers"][0]["api_key"] != "tv-abcdefghijklmnop"
+    assert "***" in pub["search_providers"][0]["api_key"]
+    store.update(
+        {
+            "search_providers": [
+                {"id": "tavily", "provider": "tavily", "api_key": "tv***mnop"},
+            ]
+        }
+    )
+    assert store.get().search_providers[0]["api_key"] == "tv-abcdefghijklmnop"
+
+
+def test_search_providers_reject_duplicate(tmp_path: Path):
+    from app.engine.web.search_providers import DuplicateSearchProviderError
+
+    base = Settings(kb_path=tmp_path)
+    store = SettingsStore(tmp_path, base)
+    try:
+        store.update(
+            {
+                "search_providers": [
+                    {"id": "tavily", "provider": "tavily", "api_key": "a"},
+                    {"id": "t2", "provider": "tavily", "api_key": "b"},
+                ]
+            }
+        )
+        assert False, "expected DuplicateSearchProviderError"
+    except DuplicateSearchProviderError:
+        pass

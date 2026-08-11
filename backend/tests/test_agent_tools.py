@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from app.config import Settings
+from app.models.cooldown import CooldownStore
 from app.engine.agent.prompts import MODE_DEFAULT, MODE_FORCE_WRITE, MODE_NO_WRITE
 from app.engine.agent.tools import ToolRegistry, can_parallelize, select_tools
 from app.engine.disclosure import DisclosureWindows
@@ -42,7 +43,7 @@ def _make_registry(tmp_path, chat_responses=None, conversation_fts=None, convers
         knowledge_writer=writer,
     )
     fetcher = WebFetcher()
-    web_search = WebSearch(settings)
+    web_search = WebSearch(settings, cooldown=CooldownStore(settings.kb_path / '.kb' / 'search_cd.json'))
     registry = ToolRegistry(
         retr,
         repo,

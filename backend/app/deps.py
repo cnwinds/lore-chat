@@ -4,7 +4,12 @@ from dataclasses import dataclass, field
 
 from app.config import Settings
 from app.models.llm import LLMClient, OpenAILLMClient
-from app.models.cooldown import CooldownStore, cooldown_path_for_kb, shared_cooldown_store
+from app.models.cooldown import (
+    CooldownStore,
+    cooldown_path_for_kb,
+    search_cooldown_path_for_kb,
+    shared_cooldown_store,
+)
 from app.models.catalog import set_active_models_dev_store
 from app.models.models_dev import (
     ModelsDevStore,
@@ -46,6 +51,7 @@ class Container:
     workspace_id: str
     llm: LLMClient
     model_cooldown: CooldownStore
+    search_cooldown: CooldownStore
     models_dev: ModelsDevStore
     usage: UsageService
     repo: KnowledgeRepo
@@ -80,6 +86,7 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
     usage_recorder = UsageRecorder(usage_store)
     usage = UsageService(usage_store)
     model_cooldown = shared_cooldown_store(cooldown_path_for_kb(settings.kb_path))
+    search_cooldown = shared_cooldown_store(search_cooldown_path_for_kb(settings.kb_path))
     models_dev = shared_models_dev_store(models_dev_cache_path_for_kb(settings.kb_path))
     set_active_models_dev_store(models_dev)
     llm = llm or OpenAILLMClient(
@@ -148,6 +155,7 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
         system_layer=system_layer,
         knowledge_writer=knowledge_writer,
         memory_service=memory.service,
+        search_cooldown=search_cooldown,
     )
 
     pending_resolver = PendingResolver(
@@ -164,6 +172,7 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
         workspace_id=workspace_id,
         llm=llm,
         model_cooldown=model_cooldown,
+        search_cooldown=search_cooldown,
         models_dev=models_dev,
         usage=usage,
         repo=repo,
@@ -245,6 +254,7 @@ def apply_settings(
     if container._usage_store is not None:
         recorder = UsageRecorder(container._usage_store)
     cooldown = container.model_cooldown
+    search_cooldown = container.search_cooldown
     if llm is None and isinstance(container.llm, OpenAILLMClient):
         container.llm.rebind_settings(settings)
         container.llm.cooldown = cooldown
@@ -268,5 +278,7 @@ def apply_settings(
     if container._memory_subgraph is not None:
         container._memory_subgraph.rebind_llm(new_llm)
     if container._agent_subgraph is not None:
-        container._agent_subgraph.rebind_llm(settings, new_llm)
+        container._agent_subgraph.rebind_llm(
+            settings, new_llm, search_cooldown=search_cooldown
+        )
         container._agent_subgraph.publish(container)

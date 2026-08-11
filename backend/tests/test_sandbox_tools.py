@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from app.config import Settings
+from app.models.cooldown import CooldownStore
 from app.engine.agent.prompts import MODE_DEFAULT, MODE_NO_WRITE
 from app.engine.agent.tool_catalog import SANDBOX_TOOLS, select_tools
 from app.engine.agent.tools import ToolRegistry
@@ -51,7 +52,7 @@ def _make_registry(tmp_path, *, sandbox=True):
         repo,
         org,
         WebFetcher(),
-        WebSearch(settings),
+        WebSearch(settings, cooldown=CooldownStore(settings.kb_path / '.kb' / 'search_cd.json')),
         pending,
         writer,
         indexer=idx,

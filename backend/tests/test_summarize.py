@@ -3,6 +3,7 @@ import json
 import pytest
 
 from app.config import Settings
+from app.models.cooldown import CooldownStore
 from app.engine.agent.system_layer import SystemLayer
 from app.engine.agent.tools import ToolRegistry
 from app.engine.conversations import ConversationStore
@@ -61,7 +62,7 @@ def _make(tmp_path, chat_responses):
         repo,
         org,
         WebFetcher(),
-        WebSearch(settings),
+        WebSearch(settings, cooldown=CooldownStore(settings.kb_path / '.kb' / 'search_cd.json')),
         pending,
         writer,
         conversations=conversations,

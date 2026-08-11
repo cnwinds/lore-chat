@@ -20,6 +20,7 @@ from app.engine.memory.service import MemoryService
 from app.engine.web.fetcher import WebFetcher
 from app.engine.web.search import WebSearch
 from app.engine.sandbox.factory import build_sandbox_runtime
+from app.models.cooldown import CooldownStore
 from app.models.llm import LLMClient
 from app.storage.repo import KnowledgeRepo
 
@@ -30,6 +31,7 @@ class AgentSubgraph:
     tools: ToolRegistry
     agent: AgentOrchestrator
     chat_runner: ChatSessionRunner
+    search_cooldown: CooldownStore
 
     def publish(self, container) -> None:
         """将子图运行时指针同步到 Container / PendingResolver facade。"""
@@ -41,15 +43,22 @@ class AgentSubgraph:
         container.pending_resolver.merge_workflow = self.organizer.merge
         container.pending_resolver.sandbox_tools = self.tools.sandbox
 
-    def rebind_llm(self, settings: Settings, llm: LLMClient) -> None:
+    def rebind_llm(
+        self,
+        settings: Settings,
+        llm: LLMClient,
+        *,
+        search_cooldown: CooldownStore,
+    ) -> None:
         self.organizer.llm = llm
         self.organizer.synthesis.llm = llm
         self.organizer.merge.llm = llm
         self.organizer.merge.synthesis = self.organizer.synthesis
         self.agent.settings = settings
         self.agent.llm = llm
+        self.search_cooldown = search_cooldown
         self.agent.tools.rebind(
-            web_search=WebSearch(settings),
+            web_search=WebSearch(settings, cooldown=search_cooldown),
             fetcher=WebFetcher(
                 settings.fetch_url_timeout,
                 settings.fetch_url_max_bytes,
@@ -86,6 +95,7 @@ def build_agent_subgraph(
     system_layer: SystemLayer,
     knowledge_writer: KnowledgeWriter,
     memory_service: MemoryService,
+    search_cooldown: CooldownStore,
 ) -> AgentSubgraph:
     planner_host = PlacementPlanner(repo, retriever, llm)
     merge_workflow = MergeWorkflow(
@@ -110,7 +120,7 @@ def build_agent_subgraph(
         settings.fetch_url_max_bytes,
         settings.fetch_url_pdf_max_bytes,
     )
-    web_search = WebSearch(settings)
+    web_search = WebSearch(settings, cooldown=search_cooldown)
     sandbox_runtime = build_sandbox_runtime(settings)
     tool_registry = ToolRegistry(
         retriever,
@@ -149,4 +159,5 @@ def build_agent_subgraph(
         tools=tool_registry,
         agent=agent,
         chat_runner=chat_runner,
+        search_cooldown=search_cooldown,
     )

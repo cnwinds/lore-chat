@@ -3,6 +3,7 @@ import json
 import pytest
 
 from app.config import Settings
+from app.models.cooldown import CooldownStore
 from app.engine.agent.orchestrator import AgentOrchestrator
 from app.engine.source_key import extend_sources, source_dedupe_key
 from app.engine.agent.tools import ToolRegistry
@@ -38,7 +39,7 @@ def _make_orchestrator(tmp_path, tool_responses, *, agent_parallel_tools=True):
         knowledge_writer=writer,
     )
     fetcher = WebFetcher(settings.fetch_url_timeout, settings.fetch_url_max_bytes)
-    web_search = WebSearch(settings)
+    web_search = WebSearch(settings, cooldown=CooldownStore(settings.kb_path / '.kb' / 'search_cd.json'))
     registry = ToolRegistry(
         retr, repo, org, fetcher, web_search, pending, writer
     )

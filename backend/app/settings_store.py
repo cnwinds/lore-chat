@@ -7,9 +7,16 @@ from pydantic import ValidationError
 
 from app.config import (
     CHAIN_MODEL_SETTING_KEYS,
+    CHAIN_SEARCH_SETTING_KEYS,
     EDITABLE_SETTING_KEYS,
+    LEGACY_SEARCH_SECRET_KEYS,
     SECRET_SETTING_KEYS,
     Settings,
+)
+from app.engine.web.search_providers import (
+    mask_search_providers,
+    migrate_search_providers,
+    validate_search_providers_unique,
 )
 from app.models.candidate import (
     mask_candidates,
@@ -56,10 +63,11 @@ def _enrich_chains(data: dict) -> dict:
 
 
 def _normalize_model_settings(data: dict) -> dict:
-    """migrate → enrich → sync_legacy 单一管线。"""
+    """migrate → enrich → sync_legacy 单一管线（含搜索链）。"""
     out = migrate_settings_dict(dict(data))
     out = _enrich_chains(out)
-    return sync_legacy_aliases(out)
+    out = sync_legacy_aliases(out)
+    return migrate_search_providers(out)
 
 
 def load_effective_settings(base: Settings | None = None) -> Settings:
@@ -74,25 +82,42 @@ class SettingsStore:
         self._base = base
         self._path = self._kb_path / ".kb" / "settings.json"
         self._overrides: dict = self._load_overrides()
-        # 启动时若仅有 legacy 字段，迁移进 chat/utility 链并落盘
+        # 启动时若仅有 legacy 字段，迁移进 chat/utility/search 链并落盘
         migrated = migrate_settings_dict(dict(self._overrides))
+        migrated = migrate_search_providers({**self._base.model_dump(), **migrated})
+        need_write = False
         if migrated != self._overrides and (
             "chat_models" in migrated or "utility_models" in migrated
         ):
-            # 仅当 overrides 里还没有链、但有 legacy 或需要从 base 合成时写入
-            need_write = False
             if not self._overrides.get("chat_models") and migrated.get("chat_models"):
                 need_write = True
             if not self._overrides.get("utility_models") and migrated.get("utility_models"):
                 need_write = True
-            if need_write:
-                # 用 base+overrides 合成完整视角再迁移
-                full = _normalize_model_settings({**self._base.model_dump(), **self._overrides})
-                for key in ("chat_models", "utility_models", "big_model", "small_model",
-                            "big_base_url", "small_base_url", "big_api_key", "small_api_key"):
-                    if key in full and key in EDITABLE_SETTING_KEYS:
-                        self._overrides[key] = full[key]
-                self._write_overrides(self._overrides)
+        if (
+            "search_providers" not in self._overrides
+            and migrated.get("search_providers")
+        ):
+            need_write = True
+        if need_write:
+            full = _normalize_model_settings({**self._base.model_dump(), **self._overrides})
+            for key in (
+                "chat_models",
+                "utility_models",
+                "big_model",
+                "small_model",
+                "big_base_url",
+                "small_base_url",
+                "big_api_key",
+                "small_api_key",
+                "search_providers",
+                "tavily_api_key",
+                "serper_api_key",
+                "brave_search_api_key",
+                "search_provider_order",
+            ):
+                if key in full and key in EDITABLE_SETTING_KEYS:
+                    self._overrides[key] = full[key]
+            self._write_overrides(self._overrides)
         self._current = self._build_settings(self._overrides)
 
     def _load_overrides(self) -> dict:
@@ -119,7 +144,7 @@ class SettingsStore:
         data = self._current.model_dump(mode="json")
         configured = is_llm_api_key_configured(self._current.openai_api_key)
         data["llm_api_key_configured"] = configured
-        for key in SECRET_SETTING_KEYS:
+        for key in SECRET_SETTING_KEYS | LEGACY_SEARCH_SECRET_KEYS:
             if key not in data:
                 continue
             if key == "openai_api_key" and not configured:
@@ -129,6 +154,9 @@ class SettingsStore:
         for key in CHAIN_MODEL_SETTING_KEYS:
             if key in data:
                 data[key] = mask_candidates(data[key])
+        for key in CHAIN_SEARCH_SETTING_KEYS:
+            if key in data:
+                data[key] = mask_search_providers(data[key])
         return data
 
     def _write_overrides(self, overrides: dict) -> None:
@@ -148,7 +176,7 @@ class SettingsStore:
         for key, value in patch.items():
             if key not in EDITABLE_SETTING_KEYS:
                 continue
-            if key in SECRET_SETTING_KEYS:
+            if key in SECRET_SETTING_KEYS | LEGACY_SEARCH_SECRET_KEYS:
                 if value == "" or value is None:
                     # "" / null = 不修改（前端未改密钥时常传 null）
                     continue
@@ -183,6 +211,38 @@ class SettingsStore:
                     merged_list.append(item)
                 filtered[key] = merged_list
                 continue
+            if key in CHAIN_SEARCH_SETTING_KEYS and isinstance(value, list):
+                validate_search_providers_unique(value)
+                prev = self._overrides.get(key) or self._current.model_dump().get(key) or []
+                prev_by_id = {
+                    (c.get("id") if isinstance(c, dict) else None): c
+                    for c in prev
+                    if isinstance(c, dict)
+                }
+                prev_by_provider = {
+                    (c.get("provider") if isinstance(c, dict) else None): c
+                    for c in prev
+                    if isinstance(c, dict)
+                }
+                merged_list = []
+                for item in value:
+                    if not isinstance(item, dict):
+                        continue
+                    item = dict(item)
+                    provider = str(item.get("provider") or "").strip().lower()
+                    item["provider"] = provider
+                    item["id"] = str(item.get("id") or provider).strip() or provider
+                    old = prev_by_id.get(item.get("id")) or prev_by_provider.get(provider)
+                    api_key = item.get("api_key")
+                    if old and (
+                        api_key is None
+                        or api_key == ""
+                        or (isinstance(api_key, str) and "***" in api_key)
+                    ):
+                        item["api_key"] = old.get("api_key")
+                    merged_list.append(item)
+                filtered[key] = merged_list
+                continue
             filtered[key] = value
 
         merged_overrides = {**self._overrides, **filtered}
@@ -194,7 +254,11 @@ class SettingsStore:
         merged_overrides = {
             k: v for k, v in full.items() if k in EDITABLE_SETTING_KEYS
         }
-        for k in SECRET_SETTING_KEYS:
+        search_chain_updated = "search_providers" in filtered
+        for k in SECRET_SETTING_KEYS | LEGACY_SEARCH_SECRET_KEYS:
+            # 搜索链已更新：以 sync_legacy 结果为准，勿用旧 overrides 复活密钥
+            if search_chain_updated and k in LEGACY_SEARCH_SECRET_KEYS:
+                continue
             if k not in filtered and k in self._overrides:
                 merged_overrides[k] = self._overrides[k]
 

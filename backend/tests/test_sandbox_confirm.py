@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from app.engine.organizer import Organizer
+from app.models.cooldown import CooldownStore
 from app.engine.pending import PendingStore
 from app.engine.retriever import Retriever
 from app.engine.sandbox.fake_runtime import FakeSandboxRuntime
@@ -109,7 +110,7 @@ def _registry(tmp_path, *, trust=False):
         repo,
         org,
         WebFetcher(),
-        WebSearch(settings),
+        WebSearch(settings, cooldown=CooldownStore(settings.kb_path / '.kb' / 'search_cd.json')),
         pending,
         writer,
         indexer=idx,

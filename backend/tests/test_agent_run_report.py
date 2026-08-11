@@ -3,6 +3,7 @@ import logging
 import pytest
 
 from app.engine.agent.run_report import AgentRunReport
+from app.models.cooldown import CooldownStore
 
 
 def test_run_report_emit_formats_key_fields(caplog):
@@ -84,7 +85,7 @@ async def test_tool_loop_logs_complete_stop_reason(tmp_path, caplog):
         repo,
         org,
         WebFetcher(5, 1000),
-        WebSearch(settings),
+        WebSearch(settings, cooldown=CooldownStore(settings.kb_path / '.kb' / 'search_cd.json')),
         pending,
         writer,
     )
@@ -151,7 +152,7 @@ async def test_tool_loop_logs_cancelled_stop_reason(tmp_path, caplog):
         knowledge_writer=writer,
     )
     registry = ToolRegistry(
-        retr, repo, org, None, WebSearch(settings), pending, writer
+        retr, repo, org, None, WebSearch(settings, cooldown=CooldownStore(settings.kb_path / '.kb' / 'search_cd.json')), pending, writer
     )
     loop = AgentToolLoop(settings, llm, registry)
 

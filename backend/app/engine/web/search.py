@@ -1,116 +1,75 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Protocol
-
-import httpx
-
 from app.config import Settings
+from app.engine.web.search_backends import (
+    BraveSearchProvider,
+    SearchResult,
+    SerperProvider,
+    TavilyProvider,
+    WebSearchProvider,
+)
+from app.engine.web.search_router import (
+    NoSearchProviderAvailable,
+    resolve_search_candidates,
+    select_search_provider,
+)
+from app.models.cooldown import CooldownStore, classify_error
 
-
-@dataclass
-class SearchResult:
-    title: str
-    url: str
-    snippet: str
-
-
-class WebSearchProvider(Protocol):
-    async def search(self, query: str, k: int = 5) -> list[SearchResult]: ...
-
-
-class TavilyProvider:
-    def __init__(self, api_key: str):
-        self._api_key = api_key
-
-    async def search(self, query: str, k: int = 5) -> list[SearchResult]:
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(
-                "https://api.tavily.com/search",
-                json={"api_key": self._api_key, "query": query, "max_results": k},
-            )
-            resp.raise_for_status()
-            data = resp.json()
-        return [
-            SearchResult(
-                title=item.get("title", ""),
-                url=item.get("url", ""),
-                snippet=item.get("content", ""),
-            )
-            for item in data.get("results", [])
-        ]
-
-
-class SerperProvider:
-    def __init__(self, api_key: str):
-        self._api_key = api_key
-
-    async def search(self, query: str, k: int = 5) -> list[SearchResult]:
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(
-                "https://google.serper.dev/search",
-                headers={"X-API-KEY": self._api_key},
-                json={"q": query, "num": k},
-            )
-            resp.raise_for_status()
-            data = resp.json()
-        return [
-            SearchResult(
-                title=item.get("title", ""),
-                url=item.get("link", ""),
-                snippet=item.get("snippet", ""),
-            )
-            for item in data.get("organic", [])
-        ]
-
-
-class BraveSearchProvider:
-    def __init__(self, api_key: str):
-        self._api_key = api_key
-
-    async def search(self, query: str, k: int = 5) -> list[SearchResult]:
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(
-                "https://api.search.brave.com/res/v1/web/search",
-                headers={"X-Subscription-Token": self._api_key},
-                params={"q": query, "count": k},
-            )
-            resp.raise_for_status()
-            data = resp.json()
-        return [
-            SearchResult(
-                title=item.get("title", ""),
-                url=item.get("url", ""),
-                snippet=item.get("description", ""),
-            )
-            for item in data.get("web", {}).get("results", [])
-        ]
+__all__ = [
+    "BraveSearchProvider",
+    "SearchResult",
+    "SerperProvider",
+    "TavilyProvider",
+    "WebSearch",
+    "WebSearchProvider",
+]
 
 
 class WebSearch:
-    def __init__(self, settings: Settings):
+    def __init__(self, settings: Settings, *, cooldown: CooldownStore):
+        """cooldown 须与 Container.search_cooldown 同一实例（见 CONTEXT.md）。"""
         self.settings = settings
-        self._provider, self.provider_name = self._resolve_provider()
+        self.cooldown = cooldown
+        self.provider_name: str | None = None
 
     @property
     def provider(self) -> WebSearchProvider | None:
-        return self._provider
+        """兼容门控：链上是否至少有一个已配置密钥的提供商。"""
+        cands = resolve_search_candidates(self.settings)
+        if not cands:
+            return None
+        return cands[0].provider
 
-    def _resolve_provider(self) -> tuple[WebSearchProvider | None, str | None]:
-        order = [p.strip() for p in self.settings.search_provider_order.split(",")]
-        mapping: dict[str, tuple[str | None, type | None]] = {
-            "tavily": (self.settings.tavily_api_key, TavilyProvider),
-            "serper": (self.settings.serper_api_key, SerperProvider),
-            "brave": (self.settings.brave_search_api_key, BraveSearchProvider),
-        }
-        for name in order:
-            key, cls = mapping.get(name, (None, None))
-            if key and cls:
-                return cls(key), name
-        return None, None
+    def rebind_settings(self, settings: Settings) -> None:
+        self.settings = settings
 
     async def search(self, query: str, k: int = 5) -> tuple[list[SearchResult], str | None]:
-        if self._provider is None:
-            return [], "未配置搜索 API，请在 backend/.env 中设置 TAVILY_API_KEY 等"
-        results = await self._provider.search(query, k=k)
-        return results, None
+        if not resolve_search_candidates(self.settings):
+            return [], "未配置搜索 API，请在设置中添加搜索提供商"
+
+        attempted: set[str] = set()
+        last_exc: BaseException | None = None
+        while True:
+            try:
+                sel = select_search_provider(
+                    self.settings, self.cooldown, exclude_ids=attempted
+                )
+            except NoSearchProviderAvailable:
+                if last_exc is not None:
+                    return [], f"搜索失败：{last_exc}"
+                return [], "搜索提供商均不可用（冷却或已禁用），请稍后重试或在设置中调整"
+
+            entry = sel.entry
+            try:
+                results = await sel.candidate.provider.search(query, k=k)
+            except BaseException as e:
+                last_exc = e
+                self.cooldown.record_failure(
+                    entry.id, classify_error(e), error=str(e)
+                )
+                attempted.add(entry.id)
+                continue
+
+            self.cooldown.record_success(entry.id)
+            self.provider_name = entry.provider
+            return results, None

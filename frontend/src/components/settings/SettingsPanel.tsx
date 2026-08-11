@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from "react"
 import {
   changePassword,
   clearModelCooldown,
+  clearSearchCooldown,
   downloadExport,
   getSettings,
   importKb,
@@ -18,13 +19,43 @@ import {
   ModelSettingsTab,
   parseCandidates,
   SECRET_KEYS,
+  SEARCH_PROVIDER_OPTIONS,
   type CooldownStatus,
   type ModelCandidateDraft,
   type ModelSlot,
+  type SearchProviderDraft,
+  type SearchProviderId,
   type SecretKey,
 } from "./ModelSettingsTab";
 import { SearchSettingsTab } from "./SearchSettingsTab";
 import { UsageSettingsTab } from "./UsageSettingsTab";
+
+const SEARCH_PROVIDER_IDS = new Set(
+  SEARCH_PROVIDER_OPTIONS.map((o) => o.id),
+);
+
+function parseSearchProviders(raw: unknown): SearchProviderDraft[] {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set<string>();
+  const out: SearchProviderDraft[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const row = item as Record<string, unknown>;
+    const provider = String(row.provider || "").trim().toLowerCase();
+    if (!SEARCH_PROVIDER_IDS.has(provider as SearchProviderId) || seen.has(provider)) {
+      continue;
+    }
+    seen.add(provider);
+    const id = String(row.id || provider).trim() || provider;
+    const apiKey = typeof row.api_key === "string" ? row.api_key : "";
+    out.push({
+      id,
+      provider: provider as SearchProviderId,
+      api_key: apiKey.includes("***") ? "" : apiKey,
+    });
+  }
+  return out;
+}
 
 type Props = {
   open: boolean;
@@ -118,6 +149,8 @@ export function SettingsPanel({
     emptyCandidate(),
   ]);
   const [cooldown, setCooldown] = useState<CooldownStatus>({});
+  const [searchProviders, setSearchProviders] = useState<SearchProviderDraft[]>([]);
+  const [searchCooldown, setSearchCooldown] = useState<CooldownStatus>({});
 
   const [endpointExpanded, setEndpointExpanded] = useState<Record<ModelSlot, boolean>>({
     embed: false,
@@ -183,6 +216,12 @@ export function SettingsPanel({
       setCooldown(
         data.model_cooldown && typeof data.model_cooldown === "object"
           ? (data.model_cooldown as CooldownStatus)
+          : {},
+      );
+      setSearchProviders(parseSearchProviders(data.search_providers));
+      setSearchCooldown(
+        data.search_cooldown && typeof data.search_cooldown === "object"
+          ? (data.search_cooldown as CooldownStatus)
           : {},
       );
 
@@ -285,6 +324,11 @@ export function SettingsPanel({
           effort: c.effort,
           effort_options: c.effort_options,
           image_wire: c.image_wire,
+        })),
+        search_providers: searchProviders.map((p) => ({
+          id: p.id,
+          provider: p.provider,
+          api_key: p.api_key.trim() || null,
         })),
         min_vector_score: minVectorScore,
         rrf_k: rrfK,
@@ -498,6 +542,24 @@ export function SettingsPanel({
                           const res = await clearModelCooldown({ candidate_id: candidateId });
                           if (res.model_cooldown && typeof res.model_cooldown === "object") {
                             setCooldown(res.model_cooldown as CooldownStatus);
+                          }
+                        } catch (err) {
+                          setError(err instanceof Error ? err.message : "清除冷却失败");
+                        }
+                      }}
+                      searchProviders={searchProviders}
+                      onSearchProvidersChange={setSearchProviders}
+                      searchCooldown={searchCooldown}
+                      onClearSearchCooldown={async (candidateId) => {
+                        try {
+                          const res = await clearSearchCooldown({
+                            provider_id: candidateId,
+                          });
+                          if (
+                            res.search_cooldown &&
+                            typeof res.search_cooldown === "object"
+                          ) {
+                            setSearchCooldown(res.search_cooldown as CooldownStatus);
                           }
                         } catch (err) {
                           setError(err instanceof Error ? err.message : "清除冷却失败");
