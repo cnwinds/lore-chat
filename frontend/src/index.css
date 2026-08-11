@@ -1779,13 +1779,19 @@ button.memory-fact-statement--jump:focus-visible {
 
 .settings-embed-row {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   gap: 10px;
 }
 
 .settings-embed-model {
   flex: 1;
   min-width: 0;
+}
+
+/* 「独立」与输入框底对齐，高度贴合 .settings-field input */
+.settings-embed-row > .settings-endpoint-toggle {
+  height: 35px;
+  box-sizing: border-box;
 }
 
 .settings-priority-badge {

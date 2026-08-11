@@ -47,11 +47,21 @@ function parseSearchProviders(raw: unknown): SearchProviderDraft[] {
     }
     seen.add(provider);
     const id = String(row.id || provider).trim() || provider;
-    const apiKey = typeof row.api_key === "string" ? row.api_key : "";
+    const rawKey = typeof row.api_key === "string" ? row.api_key.trim() : "";
+    let api_key_masked: string | undefined;
+    if (rawKey) {
+      api_key_masked =
+        rawKey.includes("***") || rawKey === "****"
+          ? rawKey
+          : rawKey.length <= 4
+            ? "****"
+            : rawKey;
+    }
     out.push({
       id,
       provider: provider as SearchProviderId,
-      api_key: apiKey.includes("***") ? "" : apiKey,
+      api_key: "",
+      api_key_masked,
     });
   }
   return out;

@@ -14,7 +14,10 @@ export const SEARCH_PROVIDER_OPTIONS: {
 export type SearchProviderDraft = {
   id: string;
   provider: SearchProviderId;
+  /** 用户新输入；留空表示不改 */
   api_key: string;
+  /** 服务端脱敏展示，作 placeholder */
+  api_key_masked?: string;
 };
 
 type Props = {
@@ -131,7 +134,7 @@ export function SearchProviderEditor({
                   value={p.api_key}
                   onChange={(e) => updateAt(i, { api_key: e.target.value })}
                   disabled={saving}
-                  placeholder="留空保持原密钥"
+                  placeholder={p.api_key_masked || "未设置"}
                 />
               </label>
               {st && (!st.available || st.disabled) ? (
