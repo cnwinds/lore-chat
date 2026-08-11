@@ -149,10 +149,8 @@ class SettingsStore:
             if key not in EDITABLE_SETTING_KEYS:
                 continue
             if key in SECRET_SETTING_KEYS:
+                # "" / None = 不修改（前端未填或 JSON null）；候选级端点清空见 use_custom_endpoint
                 if value == "" or value is None:
-                    # "" = 不修改；None = 显式清空（如关闭独立端点）
-                    if value is None:
-                        filtered[key] = None
                     continue
                 filtered[key] = value
                 continue
