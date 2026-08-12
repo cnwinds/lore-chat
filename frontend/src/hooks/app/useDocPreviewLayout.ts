@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import type { DocWidth } from "../../types/doc";
+import type { DocWidth, RefreshKbOpts } from "../../types/doc";
 import {
   getStoredFloatWidth,
   getStoredPanelWidth,
@@ -74,12 +74,18 @@ export function useDocPreviewLayout(refreshSidebar: () => void) {
     else closePinnedPreview();
   }
 
-  function refreshKb(changedPath?: string) {
+  function refreshKb(changedPath?: string, opts?: RefreshKbOpts) {
     refreshSidebar();
-    if (pathTouchesChanged(floatPath, changedPath)) {
+    if (
+      opts?.except !== "float" &&
+      pathTouchesChanged(floatPath, changedPath)
+    ) {
       setFloatRefreshKey((k) => k + 1);
     }
-    if (pathTouchesChanged(pinnedPath, changedPath)) {
+    if (
+      opts?.except !== "pinned" &&
+      pathTouchesChanged(pinnedPath, changedPath)
+    ) {
       setPinnedRefreshKey((k) => k + 1);
     }
   }

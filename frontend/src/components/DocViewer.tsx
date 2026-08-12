@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { saveDoc } from "../api";
 import { DocDiffModal } from "./DocDiffModal";
 import { type DocSelection } from "./DocLivePreview";
 import { DocMergeReviewBar } from "./doc/DocMergeReviewBar";
@@ -111,6 +110,7 @@ export function DocViewer({
     unsavedPrompt,
     setUnsavedPrompt,
     handleSave,
+    handleMergeSave,
     handleConfirmSave,
     handleConfirmDiscard,
     handleClose,
@@ -230,33 +230,6 @@ export function DocViewer({
     },
     [editMode, mergeEditing, mergeReview],
   );
-
-  const handleMergeSave = useCallback(async () => {
-    if (!mergeReview || saving || readOnly || !doc) return;
-    setSaving(true);
-    setSaveError(null);
-    try {
-      await saveDoc(path, body);
-      onMergeReviewChange?.({ userModified: true });
-      onSaved?.(path);
-      const gen = ++loadGenRef.current;
-      await loadDoc(path, gen);
-    } catch (e) {
-      setSaveError(e instanceof Error ? e.message : "保存失败");
-    } finally {
-      setSaving(false);
-    }
-  }, [
-    body,
-    doc,
-    loadDoc,
-    mergeReview,
-    onMergeReviewChange,
-    onSaved,
-    path,
-    readOnly,
-    saving,
-  ]);
 
   return (
     <div

@@ -124,15 +124,15 @@ export function useDocDirtyPrompt({
 
   const handleSaveRef = useRef<() => Promise<void>>(async () => {});
 
-  const handleSave = useCallback(async (): Promise<boolean> => {
-    if (!dirty || saving || readOnly || !doc) return !dirty;
+  /** 落盘正文并更新本地 saved 状态；不触发 remount。 */
+  const writeBodyToDisk = useCallback(async (): Promise<boolean> => {
+    if (saving || readOnly || !doc) return false;
     setSaving(true);
     setSaveError(null);
     try {
       const saved = await saveDoc(path, body);
       setDoc(saved);
       setSavedBody(body);
-      onSaved?.(path);
       return true;
     } catch (e) {
       setSaveError(e instanceof Error ? e.message : "保存失败");
@@ -142,9 +142,7 @@ export function useDocDirtyPrompt({
     }
   }, [
     body,
-    dirty,
     doc,
-    onSaved,
     path,
     readOnly,
     saving,
@@ -154,8 +152,25 @@ export function useDocDirtyPrompt({
     setSaving,
   ]);
 
+  const handleSave = useCallback(async (): Promise<boolean> => {
+    if (!dirty) return true;
+    if (!(await writeBodyToDisk())) return false;
+    onSaved?.(path);
+    return true;
+  }, [dirty, onSaved, path, writeBodyToDisk]);
+
+  const handleMergeSave = useCallback(async (): Promise<boolean> => {
+    if (!mergeReview) return false;
+    if (!dirty) return true;
+    if (!(await writeBodyToDisk())) return false;
+    onMergeReviewChange?.({ userModified: true });
+    onSaved?.(path);
+    return true;
+  }, [dirty, mergeReview, onMergeReviewChange, onSaved, path, writeBodyToDisk]);
+
   handleSaveRef.current = async () => {
-    await handleSave();
+    if (mergeReview && mergeEditing) await handleMergeSave();
+    else await handleSave();
   };
 
   useEffect(() => {
@@ -224,44 +239,17 @@ export function useDocDirtyPrompt({
 
     const ok =
       mergeReview && mergeEditing
-        ? await (async () => {
-            if (!mergeReview || saving || readOnly || !doc) return false;
-            setSaving(true);
-            setSaveError(null);
-            try {
-              await saveDoc(path, body);
-              onMergeReviewChange?.({ userModified: true });
-              onSaved?.(path);
-              const gen = ++loadGenRef.current;
-              await loadDoc(path, gen);
-              return true;
-            } catch (e) {
-              setSaveError(e instanceof Error ? e.message : "保存失败");
-              return false;
-            } finally {
-              setSaving(false);
-            }
-          })()
+        ? await handleMergeSave()
         : await handleSave();
 
     if (!ok) return;
     resolveUnsavedPromptAfterAction("save");
   }, [
-    body,
-    doc,
+    handleMergeSave,
     handleSave,
-    loadDoc,
-    loadGenRef,
     mergeEditing,
     mergeReview,
-    onMergeReviewChange,
-    onSaved,
-    path,
-    readOnly,
     resolveUnsavedPromptAfterAction,
-    saving,
-    setSaveError,
-    setSaving,
   ]);
 
   const handleClose = useCallback(() => {
@@ -289,6 +277,7 @@ export function useDocDirtyPrompt({
     unsavedPrompt,
     setUnsavedPrompt,
     handleSave,
+    handleMergeSave,
     handleConfirmSave,
     handleConfirmDiscard,
     handleClose,

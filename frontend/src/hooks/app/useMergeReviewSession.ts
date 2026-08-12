@@ -5,6 +5,7 @@ import {
   regenerateMerge,
   rejectMerge,
 } from "../../api";
+import type { RefreshKb } from "../../types/doc";
 
 export type MergeReviewState = {
   mergeId: string;
@@ -28,7 +29,7 @@ type UseMergeReviewSessionOptions = {
     options?: { pin?: boolean },
   ) => void;
   closeDocPreview: () => void;
-  refreshKb: (changedPath?: string) => void;
+  refreshKb: RefreshKb;
   setDocRefreshKey: Dispatch<SetStateAction<number>>;
   setSelectionMode: Dispatch<SetStateAction<boolean>>;
   clearSelection: () => void;

@@ -1,7 +1,7 @@
+import type { DocPane } from "../../types/doc";
 import type { useDocPreviewLayout } from "./useDocPreviewLayout";
 
 type DocPreview = ReturnType<typeof useDocPreviewLayout>;
-type DocPane = "float" | "pinned";
 
 export function buildDocViewerHandlers(
   doc: DocPreview,
@@ -9,7 +9,8 @@ export function buildDocViewerHandlers(
   onOpenConversation: (id: string) => void,
 ) {
   const shared = {
-    onSaved: doc.refreshKb,
+    // 本栏刚写完，勿 bump 本栏 refreshKey（否则会 loadDoc remount，丢滚动/光标）
+    onSaved: (path: string) => doc.refreshKb(path, { except: pane }),
     onOpenConversation,
     mergeReview: null,
     onMergeReviewChange: () => {},
