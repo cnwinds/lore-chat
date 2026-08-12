@@ -1,7 +1,8 @@
-"""models.dev 在线目录：首次拉取、TTL 刷新、磁盘缓存、搜索与能力映射。"""
+"""models.dev 在线目录：内置回退、TTL 旁路刷新、磁盘缓存、搜索与能力映射。"""
 
 from __future__ import annotations
 
+import gzip
 import json
 import logging
 import threading
@@ -14,6 +15,7 @@ import httpx
 
 from app.models.candidate import ImageWire, ThinkingProtocol
 from app.models.effort import Effort, parse_reasoning_options, pick_default_effort
+
 
 @dataclass(frozen=True)
 class CatalogHit:
@@ -47,10 +49,29 @@ _log = logging.getLogger("lorechat.models_dev")
 
 MODELS_DEV_URL = "https://models.dev/api.json"
 DEFAULT_TTL_SEC = 24 * 3600
-DEFAULT_TIMEOUT_SEC = 60.0
+# 旁路拉取短超时：目标环境可能访问不了 models.dev，勿拖住主路径
+DEFAULT_TIMEOUT_SEC = 8.0
 
 _SHARED: dict[str, "ModelsDevStore"] = {}
 _LOCK = threading.Lock()
+
+
+def default_bundled_path() -> Path:
+    """镜像/包内默认目录；优先 gzip，兼容明文 json。"""
+    base = Path(__file__).resolve().parent / "data"
+    gz = base / "models_dev_api.json.gz"
+    plain = base / "models_dev_api.json"
+    if gz.is_file():
+        return gz
+    return plain
+
+
+def _read_json_file(path: Path) -> Any:
+    name = path.name.lower()
+    if name.endswith(".json.gz") or path.suffix == ".gz":
+        with gzip.open(path, "rt", encoding="utf-8") as f:
+            return json.load(f)
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def infer_thinking_protocol(model_id: str, base_url: str | None = None) -> ThinkingProtocol:
@@ -243,23 +264,55 @@ class ModelsDevStore:
         *,
         url: str = MODELS_DEV_URL,
         ttl_sec: float = DEFAULT_TTL_SEC,
+        timeout_sec: float = DEFAULT_TIMEOUT_SEC,
+        bundled_path: Path | None = None,
     ) -> None:
         self.cache_path = Path(cache_path)
         self.url = url
         self.ttl_sec = ttl_sec
+        self.timeout_sec = float(timeout_sec)
+        self.bundled_path = (
+            Path(bundled_path) if bundled_path is not None else default_bundled_path()
+        )
         self._index: dict[str, CatalogHit] = {}
         self._fetched_at: float = 0.0
         self._source: str = "empty"
         self._error: str | None = None
         self._lock = threading.Lock()
+        self._refreshing = False
         self._load_disk()
+        if not self._index:
+            self._load_bundled()
+
+    def _apply_payload(
+        self,
+        payload: dict[str, Any],
+        *,
+        source: str,
+        fetched_at: float,
+        persist: bool,
+    ) -> bool:
+        """应用目录快照。persist 失败则不改内存，返回 False。"""
+        index = index_payload(payload)
+        if persist:
+            try:
+                self._save_disk(payload, fetched_at)
+            except OSError as e:
+                _log.warning("models.dev cache write failed: %s", e)
+                return False
+        with self._lock:
+            self._index = index
+            self._fetched_at = fetched_at
+            self._source = source
+            self._error = None
+        return True
 
     def _load_disk(self) -> None:
         if not self.cache_path.is_file():
             return
         try:
-            raw = json.loads(self.cache_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as e:
+            raw = _read_json_file(self.cache_path)
+        except (OSError, json.JSONDecodeError, EOFError) as e:
             _log.warning("models.dev cache read failed: %s", e)
             return
         if not isinstance(raw, dict):
@@ -268,10 +321,31 @@ class ModelsDevStore:
         fetched = float(raw.get("fetched_at") or 0)
         if not isinstance(payload, dict):
             return
-        self._index = index_payload(payload)
-        self._fetched_at = fetched
-        self._source = "cache"
-        self._error = None
+        self._apply_payload(
+            payload, source="cache", fetched_at=fetched, persist=False
+        )
+
+    def _load_bundled(self) -> None:
+        path = self.bundled_path
+        if not path.is_file():
+            _log.warning("models.dev bundled catalog missing: %s", path)
+            return
+        try:
+            payload = _read_json_file(path)
+        except (OSError, json.JSONDecodeError, EOFError) as e:
+            _log.warning("models.dev bundled read failed: %s", e)
+            return
+        if not isinstance(payload, dict):
+            return
+        # 内置快照：fetched_at=0 → is_stale，可旁路尝试在线刷新
+        self._apply_payload(
+            payload, source="bundled", fetched_at=0.0, persist=False
+        )
+        _log.info(
+            "models.dev loaded bundled entries≈%d path=%s",
+            len({h.id for h in self._index.values()}),
+            path,
+        )
 
     def _save_disk(self, payload: dict[str, Any], fetched_at: float) -> None:
         self.cache_path.parent.mkdir(parents=True, exist_ok=True)
@@ -286,43 +360,86 @@ class ModelsDevStore:
             return True
         return (now - self._fetched_at) >= self.ttl_sec
 
-    def ensure_fresh(self, *, force: bool = False, now: float | None = None) -> str:
-        """必要时拉取；返回 source：remote|cache|empty。"""
+    def schedule_refresh(self, *, force: bool = False, now: float | None = None) -> bool:
+        """旁路调度网络拉取；绝不阻塞调用方。返回是否新启了刷新线程。"""
         now = time.time() if now is None else now
         with self._lock:
+            if self._refreshing:
+                return False
+            if not force and self._index and not self.is_stale(now=now):
+                return False
+            self._refreshing = True
+        threading.Thread(
+            target=self._bg_refresh,
+            kwargs={"now": now},
+            name="models-dev-fetch",
+            daemon=True,
+        ).start()
+        return True
+
+    def _bg_refresh(self, *, now: float) -> None:
+        try:
+            self._fetch_remote(now=now)
+        finally:
+            with self._lock:
+                self._refreshing = False
+
+    def _fetch_remote(self, *, now: float) -> str:
+        try:
+            with httpx.Client(timeout=self.timeout_sec, follow_redirects=True) as client:
+                resp = client.get(self.url)
+                resp.raise_for_status()
+                payload = resp.json()
+            if not isinstance(payload, dict):
+                raise ValueError("models.dev payload is not an object")
+            if not self._apply_payload(
+                payload, source="remote", fetched_at=now, persist=True
+            ):
+                with self._lock:
+                    self._error = "cache write failed after fetch"
+                    return self._source
+            _log.info(
+                "models.dev refreshed entries≈%d age=0",
+                len({h.id for h in self._index.values()}),
+            )
+            return "remote"
+        except Exception as e:
+            err = str(e)[:300]
+            with self._lock:
+                self._error = err
+                if not self._index:
+                    self._source = "empty"
+                source = self._source
+            _log.warning("models.dev fetch failed: %s", e)
+            return source
+
+    def refresh_now(self, *, force: bool = False, now: float | None = None) -> str:
+        """在调用方线程同步拉取（供维护循环；仍带短超时，勿用于请求路径）。"""
+        now = time.time() if now is None else now
+        with self._lock:
+            if self._refreshing:
+                return self._source
             if not force and self._index and not self.is_stale(now=now):
                 return self._source
-            try:
-                with httpx.Client(timeout=DEFAULT_TIMEOUT_SEC, follow_redirects=True) as client:
-                    resp = client.get(self.url)
-                    resp.raise_for_status()
-                    payload = resp.json()
-                if not isinstance(payload, dict):
-                    raise ValueError("models.dev payload is not an object")
-                self._index = index_payload(payload)
-                self._fetched_at = now
-                self._source = "remote"
-                self._error = None
-                self._save_disk(payload, now)
-                _log.info(
-                    "models.dev refreshed entries≈%d age=0",
-                    len({h.id for h in self._index.values()}),
-                )
-                return self._source
-            except Exception as e:
-                self._error = str(e)[:300]
-                _log.warning("models.dev fetch failed: %s", e)
-                if self._index:
-                    self._source = "cache"
-                    return self._source
-                self._source = "empty"
-                return self._source
+            self._refreshing = True
+        try:
+            return self._fetch_remote(now=now)
+        finally:
+            with self._lock:
+                self._refreshing = False
+
+    def ensure_fresh(self, *, force: bool = False, now: float | None = None) -> str:
+        """必要时旁路拉取；立即返回当前 source，不阻塞主逻辑。"""
+        self.schedule_refresh(force=force, now=now)
+        with self._lock:
+            return self._source
 
     def lookup(self, model: str) -> CatalogHit | None:
         mid = (model or "").strip().lower()
         if not mid:
             return None
-        return self._index.get(mid)
+        with self._lock:
+            return self._index.get(mid)
 
     def search(
         self,
@@ -331,24 +448,29 @@ class ModelsDevStore:
         limit: int = 40,
         kind: str | None = None,
     ) -> list[CatalogHit]:
+        with self._lock:
+            items = unique_hits_by_id(self._index)
         return filter_catalog_hits(
-            unique_hits_by_id(self._index),
+            items,
             query,
             limit=limit,
             kind=kind,
         )
 
     def status(self) -> dict[str, Any]:
-        unique = {h.id.lower() for h in self._index.values()}
-        return {
-            "source": self._source,
-            "fetched_at": self._fetched_at,
-            "stale": self.is_stale(),
-            "count": len(unique),
-            "error": self._error,
-            "ttl_sec": self.ttl_sec,
-            "url": self.url,
-        }
+        with self._lock:
+            unique = {h.id.lower() for h in self._index.values()}
+            return {
+                "source": self._source,
+                "fetched_at": self._fetched_at,
+                "stale": self.is_stale(),
+                "count": len(unique),
+                "error": self._error,
+                "ttl_sec": self.ttl_sec,
+                "url": self.url,
+                "timeout_sec": self.timeout_sec,
+                "refreshing": self._refreshing,
+            }
 
 
 def shared_models_dev_store(cache_path: Path) -> ModelsDevStore:

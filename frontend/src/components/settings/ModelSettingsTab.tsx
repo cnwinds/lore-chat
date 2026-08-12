@@ -318,7 +318,15 @@ function ModelNameField({
           } else {
             setHint(
               st.count
-                ? `models.dev · ${st.count} 条${st.stale ? "（待刷新）" : ""}`
+                ? `${
+                    st.source === "bundled"
+                      ? "内置目录"
+                      : st.source === "cache"
+                        ? "本地缓存"
+                        : "models.dev"
+                  } · ${st.count} 条${st.stale ? "（待刷新）" : ""}${
+                    st.refreshing ? "（刷新中）" : ""
+                  }`
                 : null,
             );
           }

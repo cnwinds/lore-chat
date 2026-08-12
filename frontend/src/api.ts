@@ -110,6 +110,7 @@ export type ModelCatalogResponse = {
     stale?: boolean;
     count?: number;
     error?: string | null;
+    refreshing?: boolean;
   };
   items: ModelCatalogItem[];
 };

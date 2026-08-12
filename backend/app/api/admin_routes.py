@@ -146,6 +146,7 @@ def get_model_catalog(
     kind: all | llm | embedding（嵌入选模时用 embedding）
     """
     store = _models_dev_for_request(request)
+    # 旁路刷新（短超时后台线程）；目录查询本身不阻塞网络
     source = store.ensure_fresh(force=refresh)
     remote = store.search(q, limit=limit, kind=kind)
     local = search_supplement(q, limit=limit, kind=kind)
@@ -161,6 +162,7 @@ def get_model_catalog(
 @router.post("/model-catalog/refresh")
 def refresh_model_catalog(request: Request) -> dict[str, Any]:
     store = _models_dev_for_request(request)
+    # 强制旁路拉取，立即返回当前状态（可能仍为 bundled/cache，refreshing=true）
     source = store.ensure_fresh(force=True)
     return {"ok": True, "source": source, "status": store.status()}
 

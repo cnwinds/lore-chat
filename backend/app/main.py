@@ -68,7 +68,8 @@ def create_app(settings: Settings | None = None, llm: LLMClient | None = None) -
             def _run_models_dev_refresh() -> None:
                 while not stop_event.is_set():
                     try:
-                        models_dev.ensure_fresh(force=models_dev.is_stale())
+                        # 已在旁路维护线程内同步拉取，避免再套一层 daemon
+                        models_dev.refresh_now(force=models_dev.is_stale())
                     except Exception:
                         logging.getLogger("uvicorn.error").exception(
                             "models.dev refresh failed"

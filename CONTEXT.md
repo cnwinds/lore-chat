@@ -8,7 +8,7 @@
 |----|------|------|
 | HTTP | `backend/app/api/routes.py` | 鉴权、DTO、StreamingResponse；**不**解析 Agent SSE |
 | 聊天 | `backend/app/engine/chat/` | `TurnExecutionHub`（begin/ensure/观测/stop 生命周期）、`ChatSessionRunner`（HTTP 薄 facade + ephemeral）、时间线、SSE；持久回合可发 `timeline_state` 投影 |
-| 模型链 | `backend/app/models/`（`candidate` / `router` / `cooldown` / `vision` / `thinking` / `catalog` / `models_dev` / `effort`）+ `llm.py` | chat/utility 优先级链、冷却单例、models.dev 缓存目录、识图双通道；HTTP 不自建 CooldownStore / ModelsDevStore |
+| 模型链 | `backend/app/models/`（`candidate` / `router` / `cooldown` / `vision` / `thinking` / `catalog` / `models_dev` / `effort`）+ `llm.py` | chat/utility 优先级链、冷却单例、models.dev 缓存目录（包内 `data/models_dev_api.json.gz` 回退；网络拉取旁路短超时）、识图双通道；HTTP 不自建 CooldownStore / ModelsDevStore |
 | 联网搜索 | `backend/app/engine/web/`（`search_providers` / `search_router` / `search_backends` / `search.py`） | 搜索提供商有序链、与模型同算法的冷却 failover；HTTP 不自建 search CooldownStore |
 | Agent | `backend/app/engine/agent/` | `AgentOrchestrator`（adapter）、`AgentToolLoop`（LLM+工具循环）、`tool_catalog`、`tool_impl/*`（执行）、`tools.py`（`ToolRegistry.execute` / `rebind` / `interrupt_runtime`） |
 | 会话 | `conversations.py` + `conversation/*` | SQLite 消息/turn；outbox；`MemoryExtractSchedule`；`ConversationTranscript`；`ConversationDeletionWorkflow`；`ConversationMessageGraph`；`ConversationSummaryLedger`（`store.summaries`）；`ConversationSystemEvents`（`store.system_events`）；其余 store 兼容委托逐步收口 |
