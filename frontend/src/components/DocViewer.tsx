@@ -252,7 +252,9 @@ export function DocViewer({
         mergeReview={mergeReview}
         onDiscard={handleDiscard}
         onSave={handleSave}
-        onMergeSave={handleMergeSave}
+        onMergeSave={async () => {
+          await handleMergeSave();
+        }}
         onViewDiff={() => setUnsavedPrompt("view")}
         outlineOpen={outlineOpen}
         onOutlineToggle={() => setOutlineOpen((v) => !v)}
