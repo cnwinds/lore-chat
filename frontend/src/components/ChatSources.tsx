@@ -10,14 +10,15 @@ type Props = {
 
 export function ChatSources({ sources, previewPath, onOpen }: Props) {
   const items = dedupeSources(sources);
+  const hasConversation = items.some((s) => s.type === "conversation");
+  // 会话引用需要可点跳转：有会话来源时默认展开
+  const [open, setOpen] = useState(hasConversation);
+
   if (items.length === 0) return null;
 
-  const hasConversation = items.some((s) => s.type === "conversation");
   const hasKb = items.some((s) => s.type === "kb");
   const sectionTitle =
     hasConversation && !hasKb ? "参考会话" : hasConversation ? "参考来源" : "参考文档";
-  // 会话引用需要可点跳转：有会话来源时默认展开
-  const [open, setOpen] = useState(hasConversation);
   return (
     <div className="chat-sources">
       <button
