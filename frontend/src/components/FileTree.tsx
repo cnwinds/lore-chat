@@ -1,6 +1,9 @@
 import { useMemo, useRef, useState, type DragEvent } from "react";
-import { isSystemLayerPath, type TreeNode } from "../utils/fileTree";
-import { isMarkdownPath } from "../api";
+import {
+  fileTreeFileIcon,
+  isSystemLayerPath,
+  type TreeNode,
+} from "../utils/fileTree";
 import { dropEffectForTransfer } from "../utils/droppedFiles";
 
 function parentDirectoryFromPath(path: string): string {
@@ -298,7 +301,6 @@ function TreeItem({
 
   const selected = activePathSet.has(node.path);
   const isRenaming = renamingPath === node.path;
-  const isAttach = !isMarkdownPath(node.path);
   const fileParentDir = parentDirectoryFromPath(node.path);
 
   function handleFileDragOver(e: DragEvent) {
@@ -370,7 +372,7 @@ function TreeItem({
           }
           onDoubleClick={() => onStartRename(node.path, node.name)}
         >
-          <span className="file-tree-icon">{isAttach ? "📎" : "📄"}</span>
+          <span className="file-tree-icon">{fileTreeFileIcon(node.path)}</span>
           <span className="file-tree-label">{node.name}</span>
         </button>
       )}

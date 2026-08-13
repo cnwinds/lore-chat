@@ -25,7 +25,7 @@
 | 文档合并 | `backend/app/engine/merge_workflow.py` | 多源合并、审阅会话；HTTP 经 `Container.merge_workflow` |
 | 记忆时间线压缩 | `backend/app/engine/memory/dialogue_timeline_pack.py` | 会话级抽取输入的预算/头尾打包；`session_extractor` 只做 SlotAction |
 | Pending 决议 | `backend/app/engine/pending_resolver.py` | `/questions/.../resolve` 编排 seam |
-| 存储 | `backend/app/storage/` | `KnowledgeRepo`、`kb_paths` |
+| 存储 | `backend/app/storage/` | `KnowledgeRepo`、`kb_paths`、`kb_media_paths`（聊天上传/生图目录约定） |
 
 ## 依赖注入
 

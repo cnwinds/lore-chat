@@ -265,7 +265,7 @@ TOOL_DEFINITIONS: list[dict] = [
             "name": "generate_image",
             "description": (
                 "根据文字描述生成一张图片并保存到知识库。"
-                "默认 destination=chat_attachment，写入 generated/ 目录，结果以附件形式出现在信息流；"
+                "默认 destination=chat_attachment，写入 媒体/生成/{年}/，结果以附件形式出现在信息流；"
                 "若需写入指定知识库路径供文档引用，用 destination=kb 并提供 directory 与 filename（均必填）。"
                 "文档中请用相对路径 Markdown 插图：![说明](相对路径)。"
                 "需已配置生图提供商。"
@@ -287,7 +287,7 @@ TOOL_DEFINITIONS: list[dict] = [
                         "type": "string",
                         "enum": ["chat_attachment", "kb"],
                         "description": (
-                            "chat_attachment=会话附件（默认，写入 generated/）；"
+                            "chat_attachment=会话附件（默认，写入 媒体/生成/{年}/）；"
                             "kb=指定知识库目录与文件名"
                         ),
                         "default": "chat_attachment",

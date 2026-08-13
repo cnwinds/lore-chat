@@ -75,7 +75,9 @@ function toolOneLiner(block: Extract<TimelineBlock, { type: "tool" }>): string |
     if (web) return web.url;
   }
   if (
-    (block.tool === "web_search" || block.tool === "search_kb") &&
+    (block.tool === "web_search" ||
+      block.tool === "search_kb" ||
+      block.tool === "generate_image") &&
     block.query
   ) {
     return block.summary ? `${block.query} · ${block.summary}` : block.query;
@@ -217,9 +219,20 @@ function ToolBlockView({
           </div>
         )}
       {open &&
-        (block.tool === "web_search" || block.tool === "search_kb") &&
+        (block.tool === "web_search" ||
+          block.tool === "search_kb" ||
+          block.tool === "generate_image") &&
         block.query && (
-          <div className="timeline-tool-query">{block.query}</div>
+          <div className="timeline-tool-query">
+            {block.tool === "generate_image" ? (
+              <>
+                <div className="timeline-tool-query-label">提示词</div>
+                <div className="timeline-tool-query-text">{block.query}</div>
+              </>
+            ) : (
+              block.query
+            )}
+          </div>
         )}
       {open && block.status === "done" && block.sources && block.sources.length > 0 && (
         <div className="timeline-tool-sources timeline-tool-sources-inline">

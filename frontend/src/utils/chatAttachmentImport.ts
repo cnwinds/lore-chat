@@ -2,9 +2,9 @@
 
 import type { ApiError } from "../api";
 import { kbImport } from "../api";
+import { mediaUploadDir } from "./kbMediaPaths";
 import { imageExtFromFile, isImageFile } from "./kbImageUrls";
 
-const CHAT_ATTACH_DIR = "未分类";
 const MAX_CONFLICT_RETRIES = 8;
 
 function bytesToHex(buf: ArrayBuffer): string {
@@ -29,7 +29,7 @@ export async function chatAttachmentFilename(file: File): Promise<string> {
  */
 export async function importChatAttachment(
   file: File,
-  directory: string = CHAT_ATTACH_DIR,
+  directory: string = mediaUploadDir(),
 ): Promise<string> {
   let filename: string | undefined = await chatAttachmentFilename(file);
   let lastErr: unknown;

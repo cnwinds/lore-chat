@@ -39,7 +39,7 @@ class TimelineAccumulator:
             }
             inp = data.get("input")
             if isinstance(inp, dict):
-                for key in ("query", "command", "path", "sandbox_path"):
+                for key in ("query", "prompt", "command", "path", "sandbox_path"):
                     v = inp.get(key)
                     if isinstance(v, str):
                         q = clip_tool_query(v)

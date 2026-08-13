@@ -121,7 +121,13 @@ describe("updateTimeline tool_progress", () => {
       tool: "generate_image",
       label: "生图",
       ts: "t0",
+      input: { prompt: "一只橙色的猫" },
     });
+    const started = timeline[0];
+    expect(started.type).toBe("tool");
+    if (started.type === "tool") {
+      expect(started.query).toBe("一只橙色的猫");
+    }
     timeline = updateTimeline(timeline, "tool_progress", {
       id: "1",
       message: "百炼生成中（RUNNING）.",
@@ -131,12 +137,14 @@ describe("updateTimeline tool_progress", () => {
       summary: "已生成图片 → generated/x.png（bailian）",
       attachments: ["generated/x.png"],
       sources: [],
+      query: "一只橙色的猫",
     });
     const block = timeline[0];
     expect(block.type).toBe("tool");
     if (block.type === "tool") {
       expect(block.progress_log).toBeUndefined();
       expect(block.attachments).toEqual(["generated/x.png"]);
+      expect(block.query).toBe("一只橙色的猫");
     }
   });
 });

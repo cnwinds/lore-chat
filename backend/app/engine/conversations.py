@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 import sqlite3
 import threading
 import uuid
@@ -772,6 +772,42 @@ class ConversationStore:
             msg["conversation_id"] = row["conversation_id"]
             msg["conversation_title"] = row["conversation_title"]
             return msg
+
+    def transform_message_json_columns(
+        self,
+        transform: Callable[[str | None], str | None],
+        *,
+        columns: tuple[str, ...] = ("attachments_json", "timeline_json"),
+    ) -> int:
+        """对全部消息的指定 JSON 文本列做幂等变换。返回更新行数。"""
+        if not columns:
+            return 0
+        col_sql = ", ".join(columns)
+        updated = 0
+        with self._lock:
+            rows = self.conn.execute(
+                f"SELECT id, {col_sql} FROM messages"
+            ).fetchall()
+            for row in rows:
+                new_vals: list[str | None] = []
+                changed = False
+                for col in columns:
+                    old = row[col]
+                    new = transform(old)
+                    new_vals.append(new)
+                    if new != old:
+                        changed = True
+                if not changed:
+                    continue
+                sets = ", ".join(f"{c} = ?" for c in columns)
+                self.conn.execute(
+                    f"UPDATE messages SET {sets} WHERE id = ?",
+                    (*new_vals, row["id"]),
+                )
+                updated += 1
+            if updated:
+                self.conn.commit()
+        return updated
 
     # ------------------------------------------------------------------
     # 迁移：旧版单文件 conversations.json → SQLite（一次性、幂等）

@@ -17,7 +17,7 @@ import type {
 function toolQueryFromInput(input: unknown): string | undefined {
   if (!input || typeof input !== "object") return undefined;
   const o = input as Record<string, unknown>;
-  for (const key of ["query", "command", "path", "sandbox_path"]) {
+  for (const key of ["query", "prompt", "command", "path", "sandbox_path"]) {
     const v = o[key];
     if (typeof v === "string" && v.trim()) {
       return clipToolQuery(v);

@@ -56,6 +56,21 @@ def create_app(settings: Settings | None = None, llm: LLMClient | None = None) -
                 "orphan turn recovery failed"
             )
 
+        if not _under_pytest():
+            try:
+                from app.storage.media_layout_migration import (
+                    run_media_layout_migration,
+                )
+
+                run_media_layout_migration(
+                    knowledge_writer=app.state.container.knowledge_writer,
+                    conversations=app.state.container.conversations,
+                )
+            except Exception:
+                logging.getLogger("uvicorn.error").exception(
+                    "media layout migration failed"
+                )
+
         from app.models.models_dev import DEFAULT_TTL_SEC
 
         models_dev = app.state.container.models_dev

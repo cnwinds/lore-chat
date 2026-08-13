@@ -25,8 +25,7 @@ from app.engine.imagegen.types import (
 )
 from app.engine.knowledge_writer import KbPathExistsError, KnowledgeWriter
 from app.models.cooldown import CooldownStore, ErrorClass
-
-CHAT_ATTACHMENT_DIR = "generated"
+from app.storage.kb_media_paths import media_generated_dir
 
 
 def _to_cooldown_class(kind: ImageGenErrorKind) -> ErrorClass:
@@ -37,10 +36,6 @@ def _to_cooldown_class(kind: ImageGenErrorKind) -> ErrorClass:
     if kind == ImageGenErrorKind.TRANSIENT:
         return ErrorClass.TRANSIENT
     return ErrorClass.UNKNOWN
-
-
-def _year_subdir() -> str:
-    return datetime.now(timezone.utc).strftime("%Y")
 
 
 def _auto_filename(ext: str) -> str:
@@ -148,7 +143,7 @@ class ImageGen:
         filename: str | None = None,
     ) -> str:
         if destination == "chat_attachment":
-            directory = f"{CHAT_ATTACHMENT_DIR}/{_year_subdir()}"
+            directory = media_generated_dir()
             filename = _auto_filename(image.extension)
         elif destination == "kb":
             if not directory or not str(directory).strip():

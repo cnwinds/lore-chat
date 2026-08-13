@@ -53,6 +53,21 @@ def test_tool_start_stores_command_as_query():
     assert acc.timeline[0]["query"] == "echo hi && sleep 1"
 
 
+def test_tool_start_stores_generate_image_prompt_as_query():
+    acc = TimelineAccumulator()
+    acc.accumulate(
+        "tool_start",
+        {
+            "id": "1",
+            "tool": "generate_image",
+            "label": "生图",
+            "ts": "t0",
+            "input": {"prompt": "一只橙色的猫，坐在窗台上"},
+        },
+    )
+    assert acc.timeline[0]["query"] == "一只橙色的猫，坐在窗台上"
+
+
 def test_interrupted_payload_marks_running_tools():
     acc = TimelineAccumulator()
     acc.accumulate(

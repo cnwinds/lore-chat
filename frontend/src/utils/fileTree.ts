@@ -1,14 +1,26 @@
+import {
+  MEDIA_GENERATED,
+  MEDIA_ROOT,
+  MEDIA_UPLOADS,
+  isMediaPath,
+} from "./kbMediaPaths";
+import { isLikelyImagePath } from "./kbImageUrls";
+import { isMarkdownPath } from "./kbPath";
+
 /** 系统控制层目录名，与 backend `system_layer_dir` 保持一致 */
 export const SYSTEM_LAYER_DIR = "系统";
 
 /** Skill 固定目录，与 backend `skills_dir` 保持一致 */
 export const SKILLS_DIR = "技能";
 
+/** 聊天媒体根目录，与 backend `kb_media_paths.MEDIA_ROOT` 对齐 */
+export const MEDIA_DIR = MEDIA_ROOT;
+
 /** 系统层文件显示顺序：心法在上，戒律在下（与 backend SystemLayer.compose 一致） */
 const SYSTEM_LAYER_FILE_ORDER = ["心法.md", "戒律.md"];
 
-/** 根级固定目录排序：系统 → 技能 → 其余 */
-const ROOT_FIXED_FOLDER_ORDER = [SYSTEM_LAYER_DIR, SKILLS_DIR];
+/** 根级固定目录排序：系统 → 技能 → 媒体 → 其余 */
+const ROOT_FIXED_FOLDER_ORDER = [SYSTEM_LAYER_DIR, SKILLS_DIR, MEDIA_DIR];
 
 export function isSystemLayerPath(path: string): boolean {
   return path === SYSTEM_LAYER_DIR || path.startsWith(`${SYSTEM_LAYER_DIR}/`);
@@ -16,6 +28,17 @@ export function isSystemLayerPath(path: string): boolean {
 
 export function isSkillsDirPath(path: string): boolean {
   return path === SKILLS_DIR || path.startsWith(`${SKILLS_DIR}/`);
+}
+
+export function isMediaDirPath(path: string): boolean {
+  return isMediaPath(path);
+}
+
+/** 侧栏文件行图标：图片专用，其它非 md 为附件，md 为文档。 */
+export function fileTreeFileIcon(path: string): "🖼" | "📎" | "📄" {
+  if (isLikelyImagePath(path)) return "🖼";
+  if (!isMarkdownPath(path)) return "📎";
+  return "📄";
 }
 
 export type FileNode = { type: "file"; name: string; path: string };
@@ -27,18 +50,20 @@ export type FolderNode = {
 };
 export type TreeNode = FileNode | FolderNode;
 
-function ensureRootFolder(root: FolderNode, name: string): void {
-  const exists = root.children.some(
-    (c) => c.type === "folder" && c.name === name,
+function ensureFolder(parent: FolderNode, name: string): FolderNode {
+  let folder = parent.children.find(
+    (c): c is FolderNode => c.type === "folder" && c.name === name,
   );
-  if (!exists) {
-    root.children.push({
-      type: "folder",
-      name,
-      path: name,
-      children: [],
-    });
+  if (!folder) {
+    const path = parent.path ? `${parent.path}/${name}` : name;
+    folder = { type: "folder", name, path, children: [] };
+    parent.children.push(folder);
   }
+  return folder;
+}
+
+function ensureRootFolder(root: FolderNode, name: string): FolderNode {
+  return ensureFolder(root, name);
 }
 
 export function buildFileTree(paths: string[]): TreeNode[] {
@@ -69,6 +94,9 @@ export function buildFileTree(paths: string[]): TreeNode[] {
 
   ensureRootFolder(root, SYSTEM_LAYER_DIR);
   ensureRootFolder(root, SKILLS_DIR);
+  const media = ensureRootFolder(root, MEDIA_DIR);
+  ensureFolder(media, MEDIA_UPLOADS);
+  ensureFolder(media, MEDIA_GENERATED);
 
   const sortNodes = (nodes: TreeNode[], parentPath = ""): TreeNode[] =>
     [...nodes]
@@ -109,10 +137,10 @@ export function collectFolderPaths(nodes: TreeNode[]): string[] {
   return paths;
 }
 
-/** 默认展开的文件夹：前 2 层展开，第 3 层及以下折叠；系统控制层目录保持折叠 */
+/** 默认展开的文件夹：前 2 层展开，第 3 层及以下折叠；系统/媒体目录保持折叠 */
 export function collectDefaultExpandedFolderPaths(nodes: TreeNode[]): string[] {
   return collectFolderPaths(nodes).filter((p) => {
-    if (p === SYSTEM_LAYER_DIR) return false;
+    if (p === SYSTEM_LAYER_DIR || isMediaDirPath(p)) return false;
     const depth = p.split("/").filter(Boolean).length;
     return depth <= 2;
   });

@@ -9,6 +9,7 @@ import {
   chatAttachmentFilename,
   importChatAttachment,
 } from "./chatAttachmentImport";
+import { mediaUploadDir } from "./kbMediaPaths";
 
 describe("chatAttachmentFilename", () => {
   it("hashes image content for stable path reuse", async () => {
@@ -35,39 +36,41 @@ describe("importChatAttachment", () => {
   });
 
   it("returns rel_path on first success", async () => {
+    const dir = mediaUploadDir();
     vi.mocked(kbImport).mockResolvedValueOnce({
-      rel_path: "未分类/a.png",
+      rel_path: `${dir}/a.png`,
       kind: "file",
       indexed: false,
     });
     const file = new File([new Uint8Array([1])], "a.png", { type: "image/png" });
-    await expect(importChatAttachment(file)).resolves.toBe("未分类/a.png");
+    await expect(importChatAttachment(file)).resolves.toBe(`${dir}/a.png`);
     expect(kbImport).toHaveBeenCalledWith(
       file,
-      "未分类",
+      dir,
       expect.stringMatching(/^[0-9a-f]{32}\.png$/),
     );
   });
 
   it("auto-retries with suggested_filename on 409", async () => {
+    const dir = mediaUploadDir();
     vi.mocked(kbImport)
       .mockRejectedValueOnce({
         status: 409,
         pathExists: {
           code: "PATH_EXISTS",
-          path: "未分类/a.png",
-          message: "目标路径已存在：未分类/a.png",
+          path: `${dir}/a.png`,
+          message: `目标路径已存在：${dir}/a.png`,
           suggested_filename: "a (1).png",
         },
       })
       .mockResolvedValueOnce({
-        rel_path: "未分类/a (1).png",
+        rel_path: `${dir}/a (1).png`,
         kind: "file",
         indexed: false,
       });
     const file = new File([new Uint8Array([9])], "a.png", { type: "image/png" });
-    await expect(importChatAttachment(file)).resolves.toBe("未分类/a (1).png");
+    await expect(importChatAttachment(file)).resolves.toBe(`${dir}/a (1).png`);
     expect(kbImport).toHaveBeenCalledTimes(2);
-    expect(kbImport).toHaveBeenNthCalledWith(2, file, "未分类", "a (1).png");
+    expect(kbImport).toHaveBeenNthCalledWith(2, file, dir, "a (1).png");
   });
 });

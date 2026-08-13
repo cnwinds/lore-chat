@@ -281,3 +281,35 @@ def reindex_api(request: Request) -> dict[str, Any]:
         return reindex_all(request.app.state.container)
     finally:
         lock.release()
+
+
+@router.post("/migrate-media-layout")
+def migrate_media_layout_api(
+    request: Request, force: bool = False
+) -> dict[str, Any]:
+    """显式触发媒体目录迁移（与启动钩子同一实现）。"""
+    from app.storage.media_layout_migration import run_media_layout_migration
+
+    lock = request.app.state.maintenance_lock
+    try:
+        lock.acquire("migrate-media-layout")
+    except MaintenanceActiveError as exc:
+        raise _maintenance_http(exc) from exc
+    try:
+        result = run_media_layout_migration(
+            knowledge_writer=request.app.state.container.knowledge_writer,
+            conversations=request.app.state.container.conversations,
+            force=force,
+        )
+        # 不回传完整 path_map，避免大响应
+        return {
+            "ok": True,
+            "skipped": bool(result.get("skipped")),
+            "reason": result.get("reason"),
+            "moved": result.get("moved", 0),
+            "path_map_size": len(result.get("path_map") or {}),
+            "conversation_rows": result.get("conversation_rows", 0),
+            "markdown_files": result.get("markdown_files", 0),
+        }
+    finally:
+        lock.release()

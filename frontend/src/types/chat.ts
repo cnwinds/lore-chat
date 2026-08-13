@@ -60,7 +60,7 @@ export type TimelineBlock =
       label: string;
       ts: string;
       status: "running" | "done" | "interrupted";
-      /** 检索/搜索关键词（search_kb、web_search） */
+      /** 检索词 / 沙箱命令 / 生图提示词等 */
       query?: string;
       summary?: string;
       /** 沙箱等长任务的关键节点日志 */

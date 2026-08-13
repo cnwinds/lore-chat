@@ -4048,6 +4048,17 @@ button.memory-fact-statement--jump:focus-visible {
   white-space: pre-wrap;
 }
 
+.timeline-tool-query-label {
+  font-family: inherit;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  margin-bottom: 2px;
+}
+
+.timeline-tool-query-text {
+  font-family: inherit;
+}
+
 .timeline-tool-progress {
   max-height: 220px;
   overflow: auto;

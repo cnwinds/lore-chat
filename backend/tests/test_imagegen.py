@@ -340,13 +340,13 @@ async def test_failover_on_transient(tmp_path):
     assert not ig.cooldown.is_available("openai")
 
 
-def test_persist_chat_attachment_under_generated(tmp_path):
+def test_persist_chat_attachment_under_media_generated(tmp_path):
     ig = _ig(tmp_path, [])
     rel = ig.persist(
         GeneratedImage(data=b"not-really-png-but-ok", extension="png"),
         destination="chat_attachment",
     )
-    assert rel.startswith("generated/")
+    assert rel.startswith("媒体/生成/")
     assert rel.endswith(".png")
     assert (tmp_path / rel).is_file()
 

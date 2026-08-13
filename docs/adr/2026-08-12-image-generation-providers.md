@@ -27,10 +27,12 @@
 
 | destination | 行为 |
 |---|---|
-| `chat_attachment`（工具默认） | 写入 `generated/`（可按年分子目录）+ 自动文件名；路径挂到消息/工具结果的 `attachments` |
+| `chat_attachment`（工具默认） | 写入 `媒体/生成/{YYYY}/` + 自动文件名；路径挂到消息/工具结果的 `attachments` |
 | `kb` | 经 `KnowledgeWriter` 按 `directory` + `filename` 写入二进制；返回相对路径供后续写 Markdown |
 
-说明：当前聊天「附件」已是 KB 相对路径（用户上传常见进「未分类」）。生图默认进 `generated/`，与随手上传分离；权威身份仍是 KB 路径，复用 download / 签名等现有能力。
+说明：聊天粘贴/附件图写入 `媒体/上传/{YYYY}/`（内容哈希文件名，同图幂等）；生图默认进 `媒体/生成/{YYYY}/`，与上传分轨、共用顶层「媒体」。权威身份仍是 KB 路径，复用 download / 签名等现有能力。
+
+**路径勘误（2026-08-13）**：早期实现曾用 `generated/{YYYY}/` 与「未分类」承载聊天图；现统一为上表，启动时幂等迁移旧根并重写会话附件引用。
 
 ### 4. 第一期调用面：仅 Agent 工具
 
@@ -80,4 +82,4 @@
 - 换一家厂商（协议不同）时，工具结果仍是本系统相对路径；聊天工具块可预览，消息级 attachments 落库可重载
 - 写入文档的 md 仅为相对路径，Doc 预览能出图；换部署 host 不改 md 正文
 - 模拟「审核拒绝」不触发切厂商；模拟「5xx/超时」可冷却并切下一家
-- `destination=chat_attachment` 落在 `generated/`；`destination=kb` 走 KnowledgeWriter 且路径符合 directory/filename 约定
+- `destination=chat_attachment` 落在 `媒体/生成/{年}/`；`destination=kb` 走 KnowledgeWriter 且路径符合 directory/filename 约定
