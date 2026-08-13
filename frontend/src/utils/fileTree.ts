@@ -137,10 +137,17 @@ export function collectFolderPaths(nodes: TreeNode[]): string[] {
   return paths;
 }
 
-/** 默认展开的文件夹：前 2 层展开，第 3 层及以下折叠；系统/媒体目录保持折叠 */
+/** 默认展开的文件夹：前 2 层展开，第 3 层及以下折叠；系统/技能/媒体目录保持折叠 */
 export function collectDefaultExpandedFolderPaths(nodes: TreeNode[]): string[] {
   return collectFolderPaths(nodes).filter((p) => {
-    if (p === SYSTEM_LAYER_DIR || isMediaDirPath(p)) return false;
+    if (
+      p === SYSTEM_LAYER_DIR ||
+      p === SKILLS_DIR ||
+      isSkillsDirPath(p) ||
+      isMediaDirPath(p)
+    ) {
+      return false;
+    }
     const depth = p.split("/").filter(Boolean).length;
     return depth <= 2;
   });

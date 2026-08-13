@@ -63,3 +63,10 @@ def test_empty_ignores_kb_internal_md(tmp_path):
     internal.parent.mkdir(parents=True)
     internal.write_text("# log\n", encoding="utf-8")
     assert is_kb_empty(tmp_path) is True
+
+
+def test_empty_ignores_skills_gitkeep(tmp_path):
+    skills = tmp_path / "技能"
+    skills.mkdir()
+    (skills / ".gitkeep").write_text("", encoding="utf-8")
+    assert is_kb_empty(tmp_path) is True

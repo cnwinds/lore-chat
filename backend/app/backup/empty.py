@@ -54,5 +54,7 @@ def _has_user_files(root: Path, system_layer_dir: str) -> bool:
             continue
         if rel.lower().endswith(".md"):
             continue
+        if path.name == ".gitkeep":
+            continue
         return True
     return False
