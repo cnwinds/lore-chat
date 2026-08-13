@@ -1,6 +1,7 @@
 import type { MutableRefObject, RefObject } from "react";
 import { formatDuration, type ChatMessage, type IngestResult, type SourceRef } from "../../api";
 import { expandMessagesForDisplay } from "../../utils/chatMessage";
+import type { ConversationLinkTarget } from "../../utils/conversationLinks";
 import { LoreLogo } from "../LoreLogo";
 import { ChatMessageRow, messageHasBody } from "./ChatMessageRow";
 import { ConversationOutline } from "./ConversationOutline";
@@ -17,6 +18,7 @@ export type ChatMessageListProps = {
   previewPath?: string | null;
   conversationId: string | null;
   onOpenSource: (src: SourceRef) => void;
+  onOpenConversation?: (target: ConversationLinkTarget) => void;
   onQuestionResolved: (
     blockId: string,
     result: IngestResult,
@@ -36,6 +38,7 @@ export function ChatMessageList({
   previewPath,
   conversationId,
   onOpenSource,
+  onOpenConversation,
   onQuestionResolved,
 }: ChatMessageListProps) {
   const rows = expandMessagesForDisplay(msgs);
@@ -70,6 +73,7 @@ export function ChatMessageList({
                   previewPath={previewPath}
                   conversationId={conversationId}
                   onOpenSource={onOpenSource}
+                  onOpenConversation={onOpenConversation}
                   onQuestionResolved={onQuestionResolved}
                 />
               );

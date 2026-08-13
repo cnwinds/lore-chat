@@ -1,6 +1,7 @@
 export type JumpTarget = {
   conversationId: string;
-  messageId: string;
+  /** 省略则只切换会话，不滚动到具体消息 */
+  messageId?: string;
   startChar?: number;
   endChar?: number;
   offsetVersion?: string;
