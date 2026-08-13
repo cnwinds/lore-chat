@@ -112,7 +112,7 @@ export function collectFolderPaths(nodes: TreeNode[]): string[] {
 /** 默认展开的文件夹：前 2 层展开，第 3 层及以下折叠；系统控制层目录保持折叠 */
 export function collectDefaultExpandedFolderPaths(nodes: TreeNode[]): string[] {
   return collectFolderPaths(nodes).filter((p) => {
-    if (p === SYSTEM_LAYER_DIR) return false;
+    if (p === SYSTEM_LAYER_DIR || p === SKILLS_DIR) return false;
     const depth = p.split("/").filter(Boolean).length;
     return depth <= 2;
   });

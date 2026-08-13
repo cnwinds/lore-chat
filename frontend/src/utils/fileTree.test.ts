@@ -22,6 +22,7 @@ describe("collectDefaultExpandedFolderPaths", () => {
     expect(expanded.has("a/b")).toBe(true);
     expect(expanded.has("a/b/c")).toBe(false);
     expect(expanded.has(SYSTEM_LAYER_DIR)).toBe(false);
+    expect(expanded.has(SKILLS_DIR)).toBe(false);
   });
 });
 
