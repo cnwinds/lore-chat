@@ -6,14 +6,23 @@ from pathlib import Path
 _CONVERSATIONS_DB_REL = Path(".kb") / "conversations" / "conversations.db"
 
 
-def is_kb_empty(kb_path: Path, system_layer_dir: str = "系统") -> bool:
+def _excluded_prefixes(*dirs: str) -> tuple[str, ...]:
+    return tuple(d.rstrip("/") + "/" for d in dirs if d.strip())
+
+
+def is_kb_empty(
+    kb_path: Path,
+    system_layer_dir: str = "系统",
+    skills_dir: str = "技能",
+) -> bool:
     """Return True when the knowledge base has no user content."""
     root = Path(kb_path)
+    excluded = _excluded_prefixes(system_layer_dir, skills_dir)
     if _has_conversations(root):
         return False
-    if _has_user_markdown(root, system_layer_dir):
+    if _has_user_markdown(root, excluded):
         return False
-    if _has_user_files(root, system_layer_dir):
+    if _has_user_files(root, excluded):
         return False
     return True
 
@@ -30,27 +39,26 @@ def _has_conversations(root: Path) -> bool:
         conn.close()
 
 
-def _has_user_markdown(root: Path, system_layer_dir: str) -> bool:
-    prefix = system_layer_dir.rstrip("/") + "/"
+def _has_user_markdown(root: Path, excluded_prefixes: tuple[str, ...]) -> bool:
     for path in sorted(root.rglob("*.md")):
         rel = path.relative_to(root).as_posix()
         if rel.startswith(".kb/"):
             continue
-        if not rel.startswith(prefix):
-            return True
+        if any(rel.startswith(prefix) for prefix in excluded_prefixes):
+            continue
+        return True
     return False
 
 
-def _has_user_files(root: Path, system_layer_dir: str) -> bool:
-    """非 Markdown 用户文件（任意后缀），不计 .kb/.git/系统层。"""
-    prefix = system_layer_dir.rstrip("/") + "/"
+def _has_user_files(root: Path, excluded_prefixes: tuple[str, ...]) -> bool:
+    """非 Markdown 用户文件（任意后缀），不计 .kb/.git/系统层/技能层。"""
     for path in root.rglob("*"):
         if not path.is_file():
             continue
         rel = path.relative_to(root).as_posix()
         if rel.startswith(".kb/") or rel.startswith(".git/"):
             continue
-        if rel.startswith(prefix):
+        if any(rel.startswith(prefix) for prefix in excluded_prefixes):
             continue
         if rel.lower().endswith(".md"):
             continue
