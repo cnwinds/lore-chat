@@ -6095,14 +6095,6 @@ button.source-link--inline.conversation-md-link {
   background: var(--composer-chip-primary-hover);
 }
 
-.composer-doc-chip--skill {
-  border-style: dashed;
-}
-
-.composer-doc-chip--skill .composer-doc-chip-bar {
-  background: var(--accent, #7c6cf0);
-}
-
 .skill-pick-modal.modal-panel {
   max-width: 28rem;
   width: 100%;
@@ -6124,6 +6116,12 @@ button.source-link--inline.conversation-md-link {
   color: var(--text-muted);
 }
 
+.skill-pick-toolbar {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
 .skill-pick-list {
   list-style: none;
   margin: 0 0 1rem;
@@ -6132,17 +6130,25 @@ button.source-link--inline.conversation-md-link {
   overflow-y: auto;
 }
 
+.skill-pick-list li {
+  display: block;
+}
+
 .skill-pick-list label {
   display: flex;
   gap: 0.5rem;
   align-items: center;
   padding: 0.35rem 0;
   cursor: pointer;
+  min-width: 0;
+  flex: 1;
 }
 
 .skill-pick-path {
   font-family: var(--font-mono, monospace);
   font-size: 0.85rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .composer-doc-chip-bar {

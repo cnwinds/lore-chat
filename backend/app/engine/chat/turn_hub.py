@@ -29,9 +29,9 @@ class TurnRunSpec:
     text: str
     history: list[dict]
     doc_paths: list[str]
-    skill_roots: list[str] | None
     primary_doc: str | None
     web_enabled: bool
+    skill_catalog: list[dict[str, str]] | None = None
     attachments: list[str] | None = None
 
 
@@ -173,7 +173,7 @@ class TurnExecutionHub:
         primary_doc: str | None,
         attachments: list | None,
         doc_paths: list[str],
-        skill_roots: list[str] | None,
+        skill_catalog: list[dict[str, str]] | None,
         web_enabled: bool,
         history: list[dict] | None = None,
     ) -> dict:
@@ -200,7 +200,7 @@ class TurnExecutionHub:
                     text=user_text,
                     history=hist,
                     doc_paths=doc_paths,
-                    skill_roots=skill_roots,
+                    skill_catalog=skill_catalog,
                     primary_doc=primary_doc,
                     web_enabled=web_enabled,
                     attachments=list(attachments) if attachments else None,
@@ -330,7 +330,7 @@ class TurnExecutionHub:
                 active_doc_path=spec.primary_doc,
                 active_doc_paths=spec.doc_paths,
                 primary_doc_path=spec.primary_doc,
-                skill_roots=spec.skill_roots,
+                skill_catalog=spec.skill_catalog,
                 history=spec.history,
                 conversation_id=cid,
                 turn_id=turn_id,

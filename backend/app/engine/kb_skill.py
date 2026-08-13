@@ -1,9 +1,13 @@
 from __future__ import annotations
 
-from app.engine.disclosure import disclose
+import re
+
+import yaml
+
 from app.storage.repo import KnowledgeRepo
 
 _SKILL_ENTRY = "SKILL.md"
+_BODY_YAML = re.compile(r"\A---\r?\n(.*?)\r?\n---(?:\r?\n|$)", re.DOTALL)
 
 
 def norm_dir(path: str) -> str:
@@ -61,31 +65,32 @@ def skill_entry_rel_path(root: str) -> str:
     return f"{root}/{_SKILL_ENTRY}"
 
 
-def build_skill_activation_body(
-    repo: KnowledgeRepo, root: str, *, limit: int
-) -> tuple[str, str] | None:
-    """返回 (entry_path, activation_text)；包无效时返回 None。"""
+def parse_skill_body_header(body: str) -> dict:
+    """解析 SKILL.md 正文开头的 --- YAML（非 LORE_META）。"""
+    text = (body or "").lstrip("\ufeff")
+    m = _BODY_YAML.match(text)
+    if not m:
+        return {}
     try:
-        entry = skill_entry_rel_path(root)
-    except ValueError:
+        data = yaml.safe_load(m.group(1))
+    except yaml.YAMLError:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _as_nonempty_str(val) -> str | None:
+    if val is None:
         return None
-    try:
-        doc = repo.read_doc(entry)
-    except FileNotFoundError:
-        return None
-    info = disclose(doc.body, offset=0, limit=limit, with_outline=True)
-    meta_bits: list[str] = [f"包根: {root}"]
-    for key in ("name", "description", "title"):
-        val = doc.meta.get(key)
-        if val:
-            meta_bits.append(f"{key}: {val}")
-    header = "\n".join(meta_bits)
-    body = info["body"]
-    more = ""
-    if info.get("has_more"):
-        more = (
-            f"\n\n（入口未读完，共约 {info['total_chars']} 字；"
-            f"请对 `{entry}` 使用 read_doc 续读。`references/` 等子文件按需 read_doc，勿预读。）"
-        )
-    text = f"{header}\n\n{body}{more}"
-    return entry, text
+    if isinstance(val, str):
+        s = val.strip()
+        return s or None
+    s = str(val).strip()
+    return s or None
+
+
+def skill_trigger_fields(body: str) -> tuple[str | None, str | None]:
+    """从正文 YAML 取 name / description（触发条件）；忽略 KB meta。"""
+    data = parse_skill_body_header(body)
+    return _as_nonempty_str(data.get("name")), _as_nonempty_str(
+        data.get("description")
+    )

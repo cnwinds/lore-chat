@@ -1,9 +1,6 @@
-export type DocTrayKind = "document" | "skill_root";
-
 export type DocTrayItem = {
   path: string;
   title: string;
-  kind: DocTrayKind;
 };
 
 export type ComposerDocState = {

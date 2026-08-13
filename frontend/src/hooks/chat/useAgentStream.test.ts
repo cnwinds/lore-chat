@@ -43,7 +43,6 @@ function baseOptions(overrides: Partial<Parameters<typeof useAgentStream>[0]> = 
     conversationId: "cid-1",
     previewPath: null,
     webEnabled: false,
-    documentPaths: [] as string[],
     docContextItems: [] as DocContextItem[],
     primaryDocPath: null,
     msgs: [] as ChatMessage[],

@@ -136,19 +136,19 @@ def test_discover_skills_rejects_outside_skills_dir(client):
     assert r.status_code == 403
 
 
-def test_chat_rejects_skill_as_primary(client):
+def test_chat_accepts_legacy_skill_root_as_document(client):
     r = client.post(
         "/api/chat",
         json={
             "text": "hi",
             "doc_context": [
-                {"path": "技能/pkg", "kind": "skill_root"},
+                {"path": "notes/a.md", "kind": "skill_root"},
                 {"path": "a.md", "kind": "document"},
             ],
-            "primary_doc_path": "技能/pkg",
+            "primary_doc_path": "notes/a.md",
         },
     )
-    assert r.status_code == 400
+    assert r.status_code == 200
 
 
 def test_chat_rejects_invalid_doc_context_kind(client):
@@ -159,31 +159,114 @@ def test_chat_rejects_invalid_doc_context_kind(client):
             "doc_context": [{"path": "x.md", "kind": "not_a_kind"}],
         },
     )
-    assert r.status_code == 422
+    # kind 收紧为 Literal[document] 后由请求体校验拒绝
+    assert r.status_code in (400, 422)
 
 
-def test_chat_rejects_missing_skill_root(client):
+def test_chat_rejects_non_markdown_primary(client):
     r = client.post(
         "/api/chat",
         json={
             "text": "hi",
-            "doc_context": [{"path": "no/such/skill", "kind": "skill_root"}],
+            "doc_context": [
+                {"path": "notes", "kind": "document"},
+                {"path": "a.md", "kind": "document"},
+            ],
+            "primary_doc_path": "notes",
         },
     )
     assert r.status_code == 400
-    assert "技能" in r.json()["detail"]
+    assert "Markdown" in r.json()["detail"]
 
 
-def test_chat_rejects_skill_root_outside_skills_dir(client):
+def test_chat_rejects_enabled_skill_missing_header(client):
+    files = {"file": ("SKILL.md", b"# no header\n", "text/markdown")}
+    assert (
+        client.post(
+            "/api/kb/import",
+            files=files,
+            data={"directory": "技能/bare-chat"},
+        ).status_code
+        == 200
+    )
+    # 绕过 PUT 校验：直接写启用集文件模拟历史脏状态
+    from pathlib import Path
+
+    kb = Path(client.app.state.container.settings.kb_path)
+    (kb / ".kb").mkdir(parents=True, exist_ok=True)
+    (kb / ".kb" / "enabled_skills.json").write_text(
+        '{"roots": ["技能/bare-chat"]}\n', encoding="utf-8"
+    )
+    r = client.post("/api/chat", json={"text": "hi"})
+    assert r.status_code == 400
+    assert "SKILL.md" in r.json()["detail"]
+
+
+def test_enabled_skills_put_and_get(client):
+    body = (
+        "---\nname: demo\ndescription: Use when demo is needed.\n---\n\n# Demo\n"
+    ).encode()
+    files = {"file": ("SKILL.md", body, "text/markdown")}
     r = client.post(
-        "/api/chat",
-        json={
-            "text": "hi",
-            "doc_context": [{"path": "其它/pkg", "kind": "skill_root"}],
-        },
+        "/api/kb/import",
+        files=files,
+        data={"directory": "技能/demo"},
     )
-    assert r.status_code == 400
-    assert "技能" in r.json()["detail"]
+    assert r.status_code == 200
+    r2 = client.put(
+        "/api/enabled-skills",
+        json={"roots": ["技能/demo"]},
+    )
+    assert r2.status_code == 200
+    assert r2.json()["roots"] == ["技能/demo"]
+    r3 = client.get("/api/enabled-skills")
+    assert r3.json()["roots"] == ["技能/demo"]
+    r4 = client.post("/api/chat", json={"text": "hi"})
+    assert r4.status_code == 200
+
+
+def test_enabled_skills_put_rewrites_full_set(client):
+    for name, desc in (("a", "Use A"), ("b", "Use B"), ("c", "Use C")):
+        body = f"---\nname: {name}\ndescription: {desc}\n---\n\n# {name}\n".encode()
+        files = {"file": ("SKILL.md", body, "text/markdown")}
+        assert (
+            client.post(
+                "/api/kb/import",
+                files=files,
+                data={"directory": f"技能/{name}"},
+            ).status_code
+            == 200
+        )
+    assert (
+        client.put(
+            "/api/enabled-skills",
+            json={"roots": ["技能/a", "技能/b", "技能/c"]},
+        ).status_code
+        == 200
+    )
+    r = client.put(
+        "/api/enabled-skills",
+        json={"roots": ["技能/a", "技能/c"]},
+    )
+    assert r.status_code == 200
+    assert set(r.json()["roots"]) == {"技能/a", "技能/c"}
+
+
+def test_enabled_skills_rejects_missing_header(client):
+    files = {"file": ("SKILL.md", b"# no header\n", "text/markdown")}
+    r = client.post(
+        "/api/kb/import",
+        files=files,
+        data={"directory": "技能/bare"},
+    )
+    assert r.status_code == 200
+    r2 = client.put(
+        "/api/enabled-skills",
+        json={"roots": ["技能/bare"]},
+    )
+    assert r2.status_code == 400
+    assert "description" in r2.json()["detail"]
+    assert "SKILL.md" in r2.json()["detail"]
 
 
 def test_kb_import_rejects_skill_md_outside_skills_dir(client):

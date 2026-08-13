@@ -16,9 +16,9 @@ import { useFileTreeInteraction } from "../hooks/useFileTreeInteraction";
 import { useDragAutoScroll } from "../hooks/useDragAutoScroll";
 import { useDismissOnOutsideClick } from "../hooks/useDismissOnOutsideClick";
 import { useKbTreeViewportUi } from "../hooks/useKbTreeViewportUi";
-import { isSystemLayerPath } from "../utils/fileTree";
+import { isSystemLayerPath, SKILLS_DIR } from "../utils/fileTree";
 
-type SelectMods = { ctrlKey?: boolean; metaKey?: boolean; shiftKey?: boolean };
+type SelectMods = { ctrlKey?: boolean; metaKey?: boolean };
 
 type Props = {
   refreshKey?: number;
@@ -30,8 +30,7 @@ type Props = {
   onOpenSettings?: () => void;
   onSelectFile: (path: string, mods?: SelectMods) => void;
   onSelectFolder?: (path: string, mods?: SelectMods) => void;
-  onAttachSkillsFolder?: (path: string) => void;
-  onDocsLoaded?: (paths: string[]) => void;
+  onOpenEnabledSkills?: () => void;
   onNewChat: () => void;
   onSelectConversation: (id: string) => void;
   onDeleteConversation: (id: string) => void;
@@ -49,11 +48,10 @@ export function Sidebar({
   onOpenSettings,
   onSelectFile,
   onSelectFolder,
-  onAttachSkillsFolder,
+  onOpenEnabledSkills,
   onNewChat,
   onSelectConversation,
   onDeleteConversation,
-  onDocsLoaded,
   onKbPathChanged,
   onKbPathsDeleted,
 }: Props) {
@@ -78,7 +76,6 @@ export function Sidebar({
   async function refresh() {
     const nextDocs = (await getTree()).docs as string[];
     setDocs(nextDocs);
-    onDocsLoaded?.(nextDocs);
     setConversations((await listConversations()).conversations);
   }
 
@@ -125,17 +122,17 @@ export function Sidebar({
             </button>
           )}
           {tree.menu.ctx.kind === "folder" &&
-            !isSystemLayerPath(tree.menu.ctx.path) &&
-            onAttachSkillsFolder && (
+            tree.menu.ctx.path === SKILLS_DIR &&
+            onOpenEnabledSkills && (
               <button
                 type="button"
                 role="menuitem"
                 onClick={() => {
-                  onAttachSkillsFolder(tree.menu!.ctx.path);
+                  onOpenEnabledSkills();
                   tree.closeMenu();
                 }}
               >
-                附加 Skill…
+                启用 Skill…
               </button>
             )}
           {!isSystemLayerPath(tree.menu.ctx.path) && (
@@ -245,13 +242,15 @@ export function Sidebar({
                         <strong>单击</strong> Markdown 打开预览；附件触发下载
                       </li>
                       <li>
-                        <strong>Ctrl / ⌘ + 单击</strong> 加入对话文档托盘
+                        <strong>Ctrl / ⌘ + 单击</strong>{" "}
+                        文件或目录加入工作托盘（顶层「技能」除外；标明本轮主要工作对象）
                       </li>
                       <li>
                         <strong>双击</strong> 文件名重命名；文件夹可右键重命名
                       </li>
                       <li>
-                        <strong>Ctrl+单击「技能」下文件夹</strong> 附加 Skill（递归发现 SKILL.md）
+                        <strong>Ctrl+单击顶层「技能」</strong>{" "}
+                        （或右键「启用 Skill…」）维护默认启用的 Skill（跨会话；与托盘无关）
                       </li>
                       <li>
                         <strong>拖入</strong> 到文件夹行；移动或上传时顶部会出现「根目录」

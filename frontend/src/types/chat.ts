@@ -105,7 +105,7 @@ export type TimelineBlock =
 
 export type DocContextItem = {
   path: string;
-  kind: "document" | "skill_root";
+  kind: "document";
 };
 
 export type ChatMessage = {

@@ -1,12 +1,12 @@
 from app.storage.frontmatter import parse, dump
 
 
-def test_parse_legacy_frontmatter():
+def test_leading_yaml_stays_in_body_not_kb_meta():
+    """正文 --- 不再当作 KB meta（与 Skill 触发头共存）。"""
     text = "---\ntitle: 常用命令\ntags: [docker, cli]\n---\n正文第一行\n正文第二行\n"
     meta, body = parse(text)
-    assert meta["title"] == "常用命令"
-    assert meta["tags"] == ["docker", "cli"]
-    assert body == "正文第一行\n正文第二行\n"
+    assert meta == {}
+    assert body == text
 
 
 def test_parse_without_frontmatter():
@@ -39,19 +39,18 @@ def test_skill_yaml_body_not_parsed_as_meta_with_lore_header():
     assert parsed_body.startswith("---\nname: demo")
 
 
-def test_legacy_then_rewrite_migrates_delim(tmp_path):
+def test_import_skill_md_preserves_trigger_yaml(tmp_path):
     from app.storage.repo import KnowledgeRepo
+    from tests.helpers import make_writer
 
     repo = KnowledgeRepo(tmp_path)
-    legacy = "---\ntitle: Old\ntags: [a]\n---\nbody line\n"
-    (tmp_path / "x.md").write_text(legacy, encoding="utf-8")
-    # bypass write_doc to plant legacy file without commit complexity
-    abs_p = repo.abs_path("x.md")
-    abs_p.write_text(legacy, encoding="utf-8")
-    doc = repo.read_doc("x.md")
-    assert doc.meta["title"] == "Old"
-    assert doc.body == "body line\n"
-    repo.write_doc("x.md", doc.meta, doc.body, commit_msg="migrate")
-    raw = abs_p.read_text(encoding="utf-8")
-    assert raw.startswith("<<<LORE_META\n")
-    assert "---\ntitle:" not in raw
+    writer = make_writer(repo, tmp_path)
+    raw = "---\nname: demo\ndescription: Use when demo.\n---\n\n# Demo\n"
+    out = writer.import_entry(
+        directory="技能/demo", filename="SKILL.md", data=raw.encode()
+    )
+    assert out["rel_path"] == "技能/demo/SKILL.md"
+    doc = repo.read_doc(out["rel_path"])
+    assert "name: demo" in doc.body
+    assert "description: Use when demo." in doc.body
+    assert "name" not in doc.meta

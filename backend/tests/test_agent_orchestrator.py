@@ -254,12 +254,13 @@ async def test_run_web_disabled_excludes_web_search(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_run_injects_skill_activation(tmp_path):
+async def test_run_injects_skill_catalog(tmp_path):
     kb = tmp_path / "knowledge"
     repo = KnowledgeRepo(kb)
     repo.write_doc(
         "技能/demo/SKILL.md",
         {"title": "Demo"},
+        "---\nname: demo-skill\ndescription: Use when testing catalog injection.\n---\n\n"
         "ROLE RULE: speak like demo.\n",
         commit_msg="seed",
     )
@@ -267,18 +268,55 @@ async def test_run_injects_skill_activation(tmp_path):
         tmp_path,
         tool_responses=[{"content": "ok", "tool_calls": []}],
     )
-    async for _ in orchestrator.run(
-        "你好",
-        skill_roots=["技能/demo"],
-    ):
+    catalog = [
+        {
+            "root": "技能/demo",
+            "name": "demo-skill",
+            "description": "Use when testing catalog injection.",
+            "entry": "技能/demo/SKILL.md",
+        }
+    ]
+    async for _ in orchestrator.run("你好", skill_catalog=catalog):
         pass
     messages = orchestrator.llm.calls[-1]["messages"]
     system_contents = "\n".join(
         m["content"] for m in messages if m["role"] == "system"
     )
-    assert "Skill 激活" in system_contents
-    assert "ROLE RULE" in system_contents
-    assert "技能/demo（Skill 包）" in system_contents
+    assert "Skill 目录" in system_contents
+    assert "demo-skill" in system_contents
+    assert "Use when testing catalog injection." in system_contents
+    assert "技能/demo/SKILL.md" in system_contents
+    assert "ROLE RULE" not in system_contents
+
+
+@pytest.mark.asyncio
+async def test_run_injects_multi_skill_conflict_rules(tmp_path):
+    orchestrator = _make_orchestrator(
+        tmp_path,
+        tool_responses=[{"content": "ok", "tool_calls": []}],
+    )
+    catalog = [
+        {
+            "root": "技能/a",
+            "name": "skill-a",
+            "description": "Use a.",
+            "entry": "技能/a/SKILL.md",
+        },
+        {
+            "root": "技能/b",
+            "name": "skill-b",
+            "description": "Use b.",
+            "entry": "技能/b/SKILL.md",
+        },
+    ]
+    async for _ in orchestrator.run("你好", skill_catalog=catalog):
+        pass
+    system_contents = "\n".join(
+        m["content"]
+        for m in orchestrator.llm.calls[-1]["messages"]
+        if m["role"] == "system"
+    )
+    assert "Skill 冲突总则" in system_contents
 
 
 @pytest.mark.asyncio

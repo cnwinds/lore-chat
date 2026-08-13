@@ -86,23 +86,23 @@ _Avoid_: 流式中锁死输入；同会话并行多个 running turn；inject 打
 **沙箱确认**：高风险 `sandbox_run` 在 trust_mode 关闭时经 `SandboxCommandGate` 建 Pending；用户批准后由 `PendingResolver` 后端代跑（不依赖模型再调工具）。
 _Avoid_: 在 Organizer / KB 摄入路径解析 `sandbox_confirm`
 
-**文档托盘**：用户在发送前选中的知识库上下文集合；项为带类型的 `{ path, kind }`，持久化在消息的 `doc_context` 中。可含普通文档与 Skill 根等。托盘 ↔ float/pin 预览编排在 `useComposerPreviewBridge`。
-_Avoid_: 附件托盘（与 `attachments/` 二进制附件区分）；仅用无类型路径列表表达 Skill；在 `App.tsx` 再堆 pin/tray/路径同步状态机
+**文档托盘（工作托盘）**：用户 Ctrl+单击侧栏**文件或目录**（顶层「技能」除外）加入；项为 `{ path, kind: "document" }`，持久化在 `doc_context`。含义：本轮主要针对这些路径工作（目录=在该目录范围内作业）。编排在 `useComposerPreviewBridge`。
+_Avoid_: 附件托盘；用托盘表达 Skill 启用；Ctrl+单击非「技能」根时打开启用窗；在 `App.tsx` 再堆 pin/tray 状态机
 
-**主文档**：托盘内用于默认 `edit_doc` 目标的普通 Markdown 文档。Skill 包（`skill_root`）不可作主文档；用户明确指定路径时仍可 `edit_doc`（含 `SKILL.md`）。文档元数据用 `write_doc.meta` / `read_doc_meta` / `update_doc_meta`，调用方不感知磁盘定界。
-_Avoid_: 把 Skill 根当作可编辑文档；在正文伪造 KB 元数据头
+**主文档**：托盘内用于默认 `edit_doc` 目标的普通 Markdown 文档。文档元数据用 `write_doc.meta` / `read_doc_meta` / `update_doc_meta`，调用方不感知磁盘定界。
+_Avoid_: 在正文伪造 KB 元数据头
 
-**Skill 激活**：仅当托盘含 `skill_root` 时，在本轮 system 对该包注入元信息与 `SKILL.md` 入口正文（首窗与 `read_doc` 默认 limit 对齐，约 3000 字；不足则全文）；不预载 `references/` 等子资源。
-_Avoid_: 全量注入；对普通 `document` 路径做 Skill 激活
+**Skill 启用集（catalog）**：跨会话保存在 `.kb/enabled_skills.json`；编排在 `useEnabledSkillsAttach`。**仅** Ctrl+单击顶层「技能」目录（或该目录右键「启用 Skill…」）→ 发现全部包 → 勾选维护默认启用集（首次无启用则默认全选，否则预勾选「候选 ∩ 已启用」）。确认后 `PUT /api/enabled-skills` **整表重写** `roots`。每轮注入 name/description（见 `[Skill 目录]`）；命中后再 `read_doc`。启用集**不进**托盘；要对某包改内容，Ctrl+单击该包目录/文件加入托盘即可。Skill 包（含 `SKILL.md`）**必须**落在「技能」目录下（发现 / 启用 / 写入硬约束）；对话 catalog 由 `ChatSessionRunner.resolve_skill_catalog` 装配。
+_Avoid_: 挂载即灌入 SKILL.md 全文；子文件夹 Ctrl+单击打开启用窗；把 name/description 写入 `<<<LORE_META`；在 SYSTEM_PROMPT 与 catalog 注入重复写触发契约；在 HTTP 路由内直接编排 `EnabledSkillsStore`；作用域合并双形态 PUT
 
-**Skill 包发现**：Skill 包固定驻留在知识库顶层「技能」目录（与「系统」同级、侧栏排在其下）。用户点选「技能」或其子文件夹后，自该目录起**递归**找出所有「目录内直接含 `SKILL.md`」的包根；经**勾选确认层**后以若干 `skill_root` 写入托盘。发现 API、托盘 `skill_root`、写入/导入 `SKILL.md` 均硬约束在该前缀内；知识库根目录的 `SKILL.md` 不视为合法包。前端编排在 `useSkillTrayAttach`；扫描起点越出「技能」时拒绝。
-_Avoid_: 不经确认自动塞满托盘；只扫描一层；在 `App.tsx` 再堆发现/确认状态机；在任意目录约定 Skill；保留「skills_dir 可选」的发现旁路
+**Skill 正文头**：每个 `SKILL.md` 正文开头须有 `---` YAML，含非空 `name` 与 `description`（何时使用，语言不限）。缺头时启用/对话返回可读错误，引导用户改文件。KB 文档元数据只用 `<<<LORE_META`；正文 `---` 不作库头解析。
+_Avoid_: 无触发头的 Skill 包；用关键词黑名单代替 description
 
 **知识库树 viewport UI**：侧栏目录的展开态与滚动位置（hydrate / 临时露出 / 恢复 / 落盘）收在 `useKbTreeViewportUi`；`FileTree` 只渲染受控展开；存储细节在 `kbTreeUiStorage`。
 _Avoid_: 用 `onExpandReady` 跨组件握手；在 `FileTree` / `Sidebar` 再拆一套展开或滚动状态机
 
-**托盘项类型（kind）**：`document`（普通 Markdown）与 `skill_root`（Skill 包根目录）。**仅 `skill_root` 触发 Skill 激活**；`document` 永不因 Skill 规则激活。历史纯字符串路径读作 `document`；不重放补做 Skill 激活。
-_Avoid_: 单文件 Skill；对旧会话做全库迁移
+**托盘项类型（kind）**：仅 `document`。历史消息里的 `skill_root` 读出时一律当作 document 展示；Skill 启用与激活不经托盘。
+_Avoid_: 再引入托盘 Skill 专用 kind / 标签；用托盘驱动 catalog
 
-**多 Skill 并存**：同一轮可挂多个 `skill_root`；各 Skill 分段注入 system，顺序与托盘一致；与用户消息冲突以用户消息为准；Skill 之间冲突则合并取交集或向用户澄清。
+**多 Skill 并存**：同一启用集可含多个包；catalog 分段列出；与用户消息冲突以用户消息为准；Skill 之间冲突则合并取交集或向用户澄清。
 _Avoid_: 每轮仅允许一个 Skill（除非产品另行限制）

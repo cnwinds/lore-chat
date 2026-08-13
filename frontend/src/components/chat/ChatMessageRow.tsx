@@ -2,6 +2,7 @@ import {
   computeCumulative,
   formatDuration,
   getMessageCopyText,
+  isMarkdownPath,
   normalizeDocContext,
   type ChatMessage,
   type IngestResult,
@@ -85,15 +86,14 @@ function renderUserMessageChips(m: ChatMessage) {
     <div className="chat-user-chips">
       {docItems.map((item) => (
         <DocChip
-          key={`${item.kind}:${item.path}`}
-          title={
-            item.kind === "skill_root"
-              ? `Skill · ${basename(item.path) || "根"}`
-              : basename(item.path)
-          }
+          key={item.path}
+          title={basename(item.path)}
           tooltip={item.path}
-          primary={item.kind === "document" && item.path === m.primary_doc}
-          skill={item.kind === "skill_root"}
+          primary={
+            Boolean(m.primary_doc) &&
+            isMarkdownPath(m.primary_doc) &&
+            item.path === m.primary_doc
+          }
         />
       ))}
       {m.attachments?.map((a) => (

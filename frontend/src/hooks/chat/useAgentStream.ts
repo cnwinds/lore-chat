@@ -29,7 +29,7 @@ import {
 } from "../../utils/agentStreamProjection";
 
 export type DocContext = {
-  documentPaths: string[];
+  trayPaths: string[];
   docContext: DocContextItem[];
   primary: string | null;
 };
@@ -48,7 +48,6 @@ type UseAgentStreamOptions = {
   conversationId: string | null;
   previewPath?: string | null;
   webEnabled: boolean;
-  documentPaths: string[];
   docContextItems: DocContextItem[];
   primaryDocPath: string | null;
   msgs: ChatMessage[];
@@ -71,7 +70,6 @@ type UseAgentStreamOptions = {
 export function useAgentStream({
   conversationId,
   webEnabled,
-  documentPaths,
   docContextItems,
   primaryDocPath,
   msgs,
@@ -137,7 +135,7 @@ export function useAgentStream({
 
   function resolveDocContext(): DocContext {
     return {
-      documentPaths,
+      trayPaths: docContextItems.map((d) => d.path),
       docContext: docContextItems,
       primary: primaryDocPath,
     };
@@ -323,7 +321,7 @@ export function useAgentStream({
       const result = await consumeEvents(
         chatStream(apiText, {
           conversationId: cid,
-          activeDocPaths: ctx.documentPaths,
+          activeDocPaths: ctx.trayPaths,
           docContext: ctx.docContext.length ? ctx.docContext : undefined,
           primaryDocPath: ctx.primary,
           webEnabled: useWeb,

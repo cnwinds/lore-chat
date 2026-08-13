@@ -40,6 +40,7 @@ from app.engine.agent.system_layer import SystemLayer
 from app.engine.memory.service import MemoryService
 from app.engine.memory.store import MemoryStore
 from app.engine.workspace import ensure_workspace_id
+from app.engine.enabled_skills import EnabledSkillsStore
 
 from app.deps_index import IndexSubgraph, build_index_subgraph
 from app.deps_memory import MemorySubgraph, build_memory_subgraph
@@ -77,6 +78,7 @@ class Container:
     chat_runner: ChatSessionRunner
     system_layer: SystemLayer
     memory_service: MemoryService
+    enabled_skills: EnabledSkillsStore
     _index_subgraph: IndexSubgraph | None = field(default=None, repr=False)
     _memory_subgraph: MemorySubgraph | None = field(default=None, repr=False)
     _agent_subgraph: AgentSubgraph | None = field(default=None, repr=False)
@@ -104,6 +106,9 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
     from app.engine.skills_dir import ensure_skills_dir
 
     ensure_skills_dir(repo, settings.skills_dir)
+    enabled_skills = EnabledSkillsStore(
+        settings.kb_path, skills_dir=settings.skills_dir
+    )
 
     memory_store = MemoryStore(
         settings.kb_path / ".kb" / "memory" / "memory.db",
@@ -166,6 +171,7 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
         memory_service=memory.service,
         search_cooldown=search_cooldown,
         image_cooldown=image_cooldown,
+        enabled_skills=enabled_skills,
     )
 
     pending_resolver = PendingResolver(
@@ -206,6 +212,7 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
         chat_runner=agent.chat_runner,
         system_layer=system_layer,
         memory_service=memory.service,
+        enabled_skills=enabled_skills,
         _index_subgraph=index,
         _memory_subgraph=memory,
         _agent_subgraph=agent,

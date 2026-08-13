@@ -584,6 +584,18 @@ export async function discoverSkills(fromDir = "") {
   return apiFetch<{ roots: string[] }>(`/api/kb/discover-skills${q}`);
 }
 
+export async function getEnabledSkills() {
+  return apiFetch<{ roots: string[] }>("/api/enabled-skills");
+}
+
+export async function putEnabledSkills(roots: string[]) {
+  return apiFetch<{ roots: string[] }>("/api/enabled-skills", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ roots }),
+  });
+}
+
 export type DocContent = {
   rel_path: string;
   meta: Record<string, unknown>;

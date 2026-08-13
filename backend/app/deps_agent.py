@@ -107,6 +107,7 @@ def build_agent_subgraph(
     memory_service: MemoryService,
     search_cooldown: CooldownStore,
     image_cooldown: CooldownStore,
+    enabled_skills=None,
 ) -> AgentSubgraph:
     planner_host = PlacementPlanner(repo, retriever, llm)
     merge_workflow = MergeWorkflow(
@@ -167,8 +168,15 @@ def build_agent_subgraph(
         runtime=sandbox_runtime,
         sandbox_tools=tool_registry.sandbox,
     )
-    agent = AgentOrchestrator(settings, llm, tool_registry, system_layer=system_layer)
-    chat_runner = ChatSessionRunner(agent, conversations)
+    agent = AgentOrchestrator(
+        settings,
+        llm,
+        tool_registry,
+        system_layer=system_layer,
+    )
+    chat_runner = ChatSessionRunner(
+        agent, conversations, enabled_skills=enabled_skills
+    )
     return AgentSubgraph(
         organizer=organizer,
         tools=tool_registry,

@@ -1,4 +1,5 @@
 import type { DocTrayItem, PendingFile } from "../types/composer";
+import { isMarkdownPath } from "../utils/kbPath";
 
 type Props = {
   items: DocTrayItem[];
@@ -20,15 +21,14 @@ type DocChipProps = {
   title: string;
   tooltip?: string;
   primary?: boolean;
-  skill?: boolean;
   onClick?: () => void;
   onRemove?: () => void;
 };
 
-export function DocChip({ title, tooltip, primary, skill, onClick, onRemove }: DocChipProps) {
+export function DocChip({ title, tooltip, primary, onClick, onRemove }: DocChipProps) {
   return (
     <div
-      className={`composer-doc-chip${primary ? " composer-doc-chip--primary" : ""}${skill ? " composer-doc-chip--skill" : ""}`}
+      className={`composer-doc-chip${primary ? " composer-doc-chip--primary" : ""}`}
       onClick={onClick}
       role={onClick ? "button" : undefined}
       tabIndex={onClick ? 0 : undefined}
@@ -96,19 +96,19 @@ export function ComposerTray({
 
   return (
     <div className="composer-tray">
-      {items.map((item) => (
-        <DocChip
-          key={`${item.kind}:${item.path}`}
-          title={item.title}
-          tooltip={item.path}
-          primary={item.kind === "document" && item.path === primaryPath}
-          skill={item.kind === "skill_root"}
-          onClick={
-            item.kind === "document" ? () => onSetPrimary(item.path) : undefined
-          }
-          onRemove={() => onRemoveDoc(item.path)}
-        />
-      ))}
+      {items.map((item) => {
+        const canPrimary = isMarkdownPath(item.path);
+        return (
+          <DocChip
+            key={item.path}
+            title={item.title}
+            tooltip={item.path}
+            primary={canPrimary && item.path === primaryPath}
+            onClick={canPrimary ? () => onSetPrimary(item.path) : undefined}
+            onRemove={() => onRemoveDoc(item.path)}
+          />
+        );
+      })}
       {pendingFiles.map((f) => (
         <FileChip
           key={f.id}

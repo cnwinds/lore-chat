@@ -1,20 +1,21 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import { SKILLS_DIR } from "../utils/fileTree";
 
 type Props = {
   open: boolean;
-  folderLabel: string;
   candidates: string[];
-  maxSelectable: number;
+  initiallySelected: string[];
+  saving?: boolean;
   onConfirm: (selected: string[]) => void;
   onCancel: () => void;
 };
 
 export function SkillPickModal({
   open,
-  folderLabel,
   candidates,
-  maxSelectable,
+  initiallySelected,
+  saving = false,
   onConfirm,
   onCancel,
 }: Props) {
@@ -22,9 +23,9 @@ export function SkillPickModal({
 
   useEffect(() => {
     if (open) {
-      setSelected(new Set(candidates));
+      setSelected(new Set(initiallySelected));
     }
-  }, [open, candidates]);
+  }, [open, initiallySelected]);
 
   if (!open) return null;
 
@@ -32,15 +33,17 @@ export function SkillPickModal({
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(path)) next.delete(path);
-      else {
-        if (next.size >= maxSelectable) {
-          window.alert(`最多还能选 ${maxSelectable} 个 Skill`);
-          return prev;
-        }
-        next.add(path);
-      }
+      else next.add(path);
       return next;
     });
+  }
+
+  function selectAll() {
+    setSelected(new Set(candidates));
+  }
+
+  function selectNone() {
+    setSelected(new Set());
   }
 
   return createPortal(
@@ -52,12 +55,24 @@ export function SkillPickModal({
         aria-labelledby="skill-pick-title"
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 id="skill-pick-title">附加 Skill</h3>
+        <h3 id="skill-pick-title">默认启用的 Skill</h3>
         <p className="skill-pick-hint">
-          在「{folderLabel || "根目录"}」下发现 {candidates.length} 个 Skill 包，请勾选要加入对话托盘的项。
+          勾选后跨会话生效：每次对话自动带上这些 Skill 的 name /
+          description，命中后再读 SKILL.md。与文档托盘无关；要对某包改内容，请
+          Ctrl+单击该包目录或文件加入托盘。
         </p>
+        <div className="skill-pick-toolbar">
+          <button type="button" className="btn-secondary" onClick={selectAll}>
+            全选
+          </button>
+          <button type="button" className="btn-secondary" onClick={selectNone}>
+            全不选
+          </button>
+        </div>
         {candidates.length === 0 ? (
-          <p className="skill-pick-empty">未发现包含 SKILL.md 的子目录。</p>
+          <p className="skill-pick-empty">
+            「{SKILLS_DIR}」下未发现包含 SKILL.md 的包。
+          </p>
         ) : (
           <ul className="skill-pick-list">
             {candidates.map((root) => (
@@ -67,24 +82,30 @@ export function SkillPickModal({
                     type="checkbox"
                     checked={selected.has(root)}
                     onChange={() => toggle(root)}
+                    disabled={saving}
                   />
-                  <span className="skill-pick-path">{root || "(根目录)"}</span>
+                  <span className="skill-pick-path">{root}</span>
                 </label>
               </li>
             ))}
           </ul>
         )}
         <div className="modal-actions">
-          <button type="button" className="btn-secondary" onClick={onCancel}>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={onCancel}
+            disabled={saving}
+          >
             取消
           </button>
           <button
             type="button"
             className="btn-primary"
-            disabled={candidates.length === 0 || selected.size === 0}
+            disabled={saving || candidates.length === 0}
             onClick={() => onConfirm([...selected])}
           >
-            加入托盘
+            {saving ? "保存中…" : "保存"}
           </button>
         </div>
       </div>

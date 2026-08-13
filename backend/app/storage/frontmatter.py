@@ -4,7 +4,6 @@ from __future__ import annotations
 # 故意不用 Markdown 常见的 ---，以免与 Agent Skills 正文 YAML 冲突。
 _OPEN = "<<<LORE_META"
 _CLOSE = "LORE_META>>>"
-_LEGACY_DELIM = "---"
 
 
 def _parse_header_lines(header: str) -> dict:
@@ -25,7 +24,7 @@ def _parse_header_lines(header: str) -> dict:
 
 
 def parse(text: str) -> tuple[dict, str]:
-    """解析文档：优先新定界，兼容旧 --- 头（迁移窗口）。"""
+    """解析文档：仅认 <<<LORE_META>>>；正文 --- YAML（Skill 头等）保持不动。"""
     if text.startswith(_OPEN + "\n"):
         end = text.find("\n" + _CLOSE + "\n", len(_OPEN) + 1)
         if end == -1:
@@ -40,14 +39,6 @@ def parse(text: str) -> tuple[dict, str]:
             return _parse_header_lines(header), body
         header = text[len(_OPEN) + 1 : end]
         body = text[end + len("\n" + _CLOSE + "\n") :]
-        return _parse_header_lines(header), body
-
-    if text.startswith(_LEGACY_DELIM + "\n"):
-        end = text.find("\n" + _LEGACY_DELIM + "\n", len(_LEGACY_DELIM) + 1)
-        if end == -1:
-            return {}, text
-        header = text[len(_LEGACY_DELIM) + 1 : end]
-        body = text[end + len("\n" + _LEGACY_DELIM + "\n") :]
         return _parse_header_lines(header), body
 
     return {}, text

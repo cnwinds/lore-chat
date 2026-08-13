@@ -320,7 +320,7 @@ TOOL_DEFINITIONS: list[dict] = [
                 "将 Markdown 正文写入知识库。必须指定 directory 与 filename；"
                 "写入前先 list_kb_structure。可选 meta（title/tags/source）；"
                 "正文勿含元数据头。已存在则默认合并，不存在则新建。"
-                "Skill 包放在「技能」目录下。"
+                "Skill 包放在「技能」目录下；Skill 的 name/description 触发头写在正文 --- YAML，勿放进 meta。"
                 "禁止 conv: 前缀、禁止会话 id 当目录名。"
             ),
             "parameters": {

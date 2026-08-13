@@ -46,7 +46,7 @@ async def test_subscribe_cancel_does_not_stop_turn(tmp_path):
         text="hi",
         history=[],
         doc_paths=[],
-        skill_roots=None,
+        skill_catalog=None,
         primary_doc=None,
         web_enabled=False,
     )
@@ -90,7 +90,7 @@ async def test_request_stop_finalizes_interrupted(tmp_path):
     hub.ensure_running(
         cid,
         turn,
-        TurnRunSpec("hi", [], [], None, None, False),
+        TurnRunSpec("hi", [], [], None, False),
     )
     await started.wait()
     assert hub.request_stop(cid) is True
@@ -109,7 +109,7 @@ async def test_second_subscribe_replays_buffer(tmp_path):
     hub.ensure_running(
         cid,
         turn,
-        TurnRunSpec("hi", [], [], None, None, False),
+        TurnRunSpec("hi", [], [], None, False),
     )
     # First subscriber drains to completion
     first = [ev async for ev in hub.subscribe(cid, turn["turn_id"])]

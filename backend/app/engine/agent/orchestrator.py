@@ -6,7 +6,7 @@ from collections.abc import AsyncIterator
 from app.config import Settings
 from app.engine.agent.message_builder import build_agent_messages
 from app.engine.agent.prompts import MODE_DEFAULT
-from app.engine.agent.skill_activation import build_skill_activation_system_messages
+from app.engine.agent.skill_activation import build_skill_catalog_system_messages
 from app.engine.agent.tool_loop import AgentToolLoop
 from app.engine.agent.tools import ToolRegistry, select_tools
 
@@ -15,7 +15,11 @@ class AgentOrchestrator:
     """Agent 运行入口：组装消息与模式，委托 AgentToolLoop 执行 LLM+工具循环。"""
 
     def __init__(
-        self, settings: Settings, llm, tools: ToolRegistry, system_layer=None
+        self,
+        settings: Settings,
+        llm,
+        tools: ToolRegistry,
+        system_layer=None,
     ):
         self._settings = settings
         self._llm = llm
@@ -49,7 +53,7 @@ class AgentOrchestrator:
         active_doc_path: str | None = None,
         active_doc_paths: list[str] | None = None,
         primary_doc_path: str | None = None,
-        skill_roots: list[str] | None = None,
+        skill_catalog: list[dict[str, str]] | None = None,
         history: list[dict] | None = None,
         conversation_id: str | None = None,
         turn_id: str | None = None,
@@ -65,11 +69,8 @@ class AgentOrchestrator:
         user_memory = (
             self.system_layer.memory_context() if self.system_layer else ""
         )
-        skill_msgs = build_skill_activation_system_messages(
-            self.tools.repo,
-            list(skill_roots or []),
-            disclosure_limit=self.tools.disclosure_chars,
-        )
+        catalog = list(skill_catalog) if skill_catalog else []
+        skill_msgs = build_skill_catalog_system_messages(catalog)
         search_configured = (
             self.tools.web_search is not None
             and self.tools.web_search.provider is not None
@@ -90,7 +91,6 @@ class AgentOrchestrator:
             active_doc_path=active_doc_path,
             active_doc_paths=active_doc_paths,
             primary_doc_path=primary_doc_path,
-            skill_roots=skill_roots,
             extra_system_messages=skill_msgs or None,
             attachments=attachments,
         )

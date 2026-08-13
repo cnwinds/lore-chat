@@ -1,8 +1,9 @@
-import { useRef, useState } from "react";
+import { useRef } from "react";
 import { downloadUrl, isMarkdownPath, type SourceRef } from "../api";
+import { pathBasename } from "../utils/kbPath";
+import { SKILLS_DIR } from "../utils/fileTree";
 import type { useComposerDocState } from "./useComposerDocState";
 import type { useDocPreviewLayout } from "./app/useDocPreviewLayout";
-import { isInsideSkillPackage } from "../utils/kbSkill";
 
 type Composer = ReturnType<typeof useComposerDocState>;
 type DocLayout = ReturnType<typeof useDocPreviewLayout>;
@@ -11,29 +12,33 @@ type Options = {
   composer: Composer;
   doc: DocLayout;
   refreshSidebar: () => void;
+  /** 仅顶层「技能」目录：打开启用集，不进托盘 */
+  onOpenEnabledSkills: () => void;
   /** search 出处由 shell 打开 snippet modal */
   onSearchSource?: (src: Extract<SourceRef, { type: "search" }>) => void;
 };
 
 /**
- * 文档托盘 ↔ float/pin 预览编排 seam（对称于 useSkillTrayAttach）。
+ * 文档托盘 ↔ float/pin 预览编排 seam（对称于 useEnabledSkillsAttach）。
  * App 只接线 shell，不堆 pin/tray/路径同步状态机。
  */
 export function useComposerPreviewBridge({
   composer,
   doc,
   refreshSidebar,
+  onOpenEnabledSkills,
   onSearchSource,
 }: Options) {
   const pinAddedTrayRef = useRef<string | null>(null);
-  const [kbDocs, setKbDocs] = useState<string[]>([]);
 
-  function addDocToComposer(path: string) {
-    const title = path.split("/").pop() ?? path;
+  function addDocToComposer(path: string, *, setAsPrimary: boolean) {
+    const title = pathBasename(path);
     if (!composer.items.some((i) => i.path === path)) {
       composer.addDocumentToTray(path, title);
     }
-    composer.setPrimary(path);
+    if (setAsPrimary && isMarkdownPath(path)) {
+      composer.setPrimary(path);
+    }
   }
 
   function openDocWithComposer(
@@ -41,7 +46,7 @@ export function useComposerPreviewBridge({
     excerpt?: string,
     options?: { pin?: boolean },
   ) {
-    addDocToComposer(path);
+    addDocToComposer(path, { setAsPrimary: true });
     doc.openDocPreview(path, excerpt, options);
   }
 
@@ -51,10 +56,10 @@ export function useComposerPreviewBridge({
     const wasInTray = composer.items.some((i) => i.path === path);
     if (!wasInTray) {
       pinAddedTrayRef.current = path;
-      addDocToComposer(path);
+      addDocToComposer(path, { setAsPrimary: true });
     } else {
       pinAddedTrayRef.current = null;
-      composer.setPrimary(path);
+      if (isMarkdownPath(path)) composer.setPrimary(path);
     }
     doc.pinDocPreview();
   }
@@ -70,22 +75,29 @@ export function useComposerPreviewBridge({
 
   function handleSelectFile(
     path: string,
-    mods?: { ctrlKey?: boolean; metaKey?: boolean; shiftKey?: boolean },
+    mods?: { ctrlKey?: boolean; metaKey?: boolean },
   ) {
-    const title = path.split("/").pop() ?? path;
+    if (mods?.ctrlKey || mods?.metaKey) {
+      addDocToComposer(path, { setAsPrimary: false });
+      return;
+    }
     if (!isMarkdownPath(path)) {
       window.open(downloadUrl(path), "_blank", "noopener,noreferrer");
       return;
     }
-    if (mods?.ctrlKey || mods?.metaKey || mods?.shiftKey) {
-      if (isInsideSkillPackage(path, kbDocs)) {
-        window.alert("Skill 包内文档请点文件夹附加 Skill；此处仅可打开阅读。");
-        return;
-      }
-      composer.addDocumentToTray(path, title);
-    } else {
-      doc.openDocPreview(path, undefined, { pin: false });
+    doc.openDocPreview(path, undefined, { pin: false });
+  }
+
+  function handleSelectFolder(
+    path: string,
+    mods?: { ctrlKey?: boolean; metaKey?: boolean },
+  ) {
+    if (!(mods?.ctrlKey || mods?.metaKey)) return;
+    if (path === SKILLS_DIR) {
+      onOpenEnabledSkills();
+      return;
     }
+    addDocToComposer(path, { setAsPrimary: false });
   }
 
   function handleKbPathChanged(fromPath: string, toPath: string) {
@@ -105,8 +117,8 @@ export function useComposerPreviewBridge({
   }
 
   function handleTraySetPrimary(path: string) {
-    const item = composer.items.find((i) => i.path === path);
-    if (!item || item.kind !== "document") return;
+    if (!isMarkdownPath(path)) return;
+    if (!composer.items.some((i) => i.path === path)) return;
     composer.setPrimary(path);
     openDocWithComposer(path, undefined, { pin: true });
   }
@@ -132,11 +144,11 @@ export function useComposerPreviewBridge({
   }
 
   return {
-    setKbDocs,
     openDocWithComposer,
     handlePinDoc,
     handleUnpinDoc,
     handleSelectFile,
+    handleSelectFolder,
     handleKbPathChanged,
     handleKbPathsDeleted,
     handleTraySetPrimary,

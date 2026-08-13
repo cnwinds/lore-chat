@@ -16,10 +16,7 @@ export function normalizeDocContext(
     if (typeof item === "string") {
       return { path: item, kind: "document" as const };
     }
-    return {
-      path: item.path,
-      kind: item.kind === "skill_root" ? "skill_root" : "document",
-    };
+    return { path: item.path, kind: "document" as const };
   });
 }
 /** 提取消息可复制文本；助手仅含 timeline 中的结论文字 */

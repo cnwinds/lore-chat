@@ -16,7 +16,7 @@ import { useDocPreviewLayout } from "./hooks/app/useDocPreviewLayout";
 import { useLlmSetupGuide } from "./hooks/app/useLlmSetupGuide";
 import { useComposerDocState } from "./hooks/useComposerDocState";
 import { useComposerPreviewBridge } from "./hooks/useComposerPreviewBridge";
-import { useSkillTrayAttach } from "./hooks/useSkillTrayAttach";
+import { useEnabledSkillsAttach } from "./hooks/useEnabledSkillsAttach";
 import type { JumpTarget } from "./hooks/chat/useConversationJump";
 import { SkillPickModal } from "./components/SkillPickModal";
 
@@ -65,22 +65,18 @@ function AppMain() {
   const composer = useComposerDocState();
   const {
     skillPick,
-    openSkillPickForFolder,
+    saving: skillPickSaving,
+    openEnabledSkillsModal,
     handleSkillPickConfirm,
     cancelSkillPick,
-  } = useSkillTrayAttach(composer);
+  } = useEnabledSkillsAttach();
   const bridge = useComposerPreviewBridge({
     composer,
     doc,
     refreshSidebar,
+    onOpenEnabledSkills: openEnabledSkillsModal,
     onSearchSource: setSnippetSource,
   });
-
-  function handleSelectFolder(path: string, mods?: { ctrlKey?: boolean; metaKey?: boolean }) {
-    if (mods?.ctrlKey || mods?.metaKey) {
-      openSkillPickForFolder(path);
-    }
-  }
 
   const conversation = useConversationShell({
     sidebarRefreshKey,
@@ -88,9 +84,8 @@ function AppMain() {
     doc,
     composerPrimaryPath: composer.primaryPath,
     onSelectFile: bridge.handleSelectFile,
-    onSelectFolder: handleSelectFolder,
-    onAttachSkillsFolder: openSkillPickForFolder,
-    onDocsLoaded: bridge.setKbDocs,
+    onSelectFolder: bridge.handleSelectFolder,
+    onOpenEnabledSkills: openEnabledSkillsModal,
     onKbPathChanged: bridge.handleKbPathChanged,
     onKbPathsDeleted: bridge.handleKbPathsDeleted,
   });
@@ -142,7 +137,6 @@ function AppMain() {
             onJumpHandled={conversation.clearPendingJump}
             docTrayItems={composer.items}
             primaryDocPath={composer.primaryPath}
-            documentPaths={composer.documentPaths}
             docContextItems={composer.docContextItems}
             onTraySetPrimary={bridge.handleTraySetPrimary}
             onTrayRemove={bridge.handleTrayRemove}
@@ -198,9 +192,9 @@ function AppMain() {
             />
             <SkillPickModal
               open={skillPick !== null}
-              folderLabel={skillPick?.folder ?? ""}
               candidates={skillPick?.candidates ?? []}
-              maxSelectable={composer.trayRemaining}
+              initiallySelected={skillPick?.initiallySelected ?? []}
+              saving={skillPickSaving}
               onConfirm={handleSkillPickConfirm}
               onCancel={cancelSkillPick}
             />

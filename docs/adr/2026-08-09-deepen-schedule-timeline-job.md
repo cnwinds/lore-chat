@@ -15,7 +15,7 @@
 3. **`SandboxJobRunner`**：长任务 wait/poll/progress；`SandboxTools` 薄委托。
 4. **删除** `MemoryObserver` / 按条 `llm_extractor` / `extractor` / `MemoryIntake`；门禁测试钉在 session 抽取。
 5. **`KnowledgeWriter.apply_placement`**：Organizer._apply 委托；merge 注入 `reorganize_existing`。
-6. **`useSkillTrayAttach` + `AccountSettingsTab`**：继续拆设置/托盘编排。
+6. **`useEnabledSkillsAttach` + `AccountSettingsTab`**：继续拆设置/技能启用编排。
 
 ## 后果
 

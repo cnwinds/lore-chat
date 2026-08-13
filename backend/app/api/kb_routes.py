@@ -7,6 +7,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 
 from app.api.file_download import content_disposition_type, media_type_for_filename
 from app.api.http_deps import (
+    EnabledSkillsPutBody,
     KbDeleteBody,
     KbMoveBody,
     UpdateDocBody,
@@ -117,6 +118,24 @@ async def discover_skills(request: Request, from_dir: str = ""):
         roots = svc.discover_skills(from_dir)
     except PermissionError as e:
         raise HTTPException(403, str(e)) from e
+    return {"roots": roots}
+
+
+@router.get("/enabled-skills")
+async def get_enabled_skills(request: Request):
+    c = container(request)
+    return {"roots": c.enabled_skills.load_roots()}
+
+
+@router.put("/enabled-skills")
+async def put_enabled_skills(body: EnabledSkillsPutBody, request: Request):
+    from app.engine.enabled_skills import EnabledSkillsError
+
+    c = container(request)
+    try:
+        roots = c.enabled_skills.put(c.repo, list(body.roots or []))
+    except EnabledSkillsError as e:
+        raise HTTPException(400, str(e)) from e
     return {"roots": roots}
 
 

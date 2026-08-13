@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Literal
-
 from fastapi import HTTPException, Request
 from pydantic import BaseModel
 
@@ -49,7 +47,8 @@ class ResolveBody(BaseModel):
 
 class DocContextItem(BaseModel):
     path: str
-    kind: Literal["document", "skill_root"] = "document"
+    # kind 合法性与 skill_root 降级在 parse_doc_context_for_api 一处处理
+    kind: str = "document"
 
 
 class ChatBody(BaseModel):
@@ -114,19 +113,21 @@ class KbDeleteBody(BaseModel):
     path: str
 
 
+class EnabledSkillsPutBody(BaseModel):
+    roots: list[str] = []
+
+
 def normalize_chat_context(
     body: ChatBody,
-    repo,
-    *,
-    skills_dir: str = "技能",
-) -> tuple[list[dict[str, str]], list[str], list[str], str | None]:
+) -> tuple[list[dict[str, str]], list[str], str | None]:
+    """规范化文档托盘（仅 document）；主文档须为 Markdown。"""
     from app.engine.doc_context import (
         DocContextValidationError,
-        missing_skill_roots,
+        doc_context_paths,
         normalize_doc_context_items,
         parse_doc_context_for_api,
-        split_doc_context,
     )
+    from app.engine.knowledge_writer import is_markdown_path
 
     if body.doc_context:
         try:
@@ -142,29 +143,20 @@ def normalize_chat_context(
         items = normalize_doc_context_items(
             [{"path": p, "kind": "document"} for p in paths]
         )
-    doc_paths, skill_roots = split_doc_context(items)
-    if skill_roots:
-        missing = missing_skill_roots(
-            repo, skill_roots, skills_dir=skills_dir
-        )
-        if missing:
-            raise HTTPException(
-                400,
-                f"以下 Skill 包无效（须在「{skills_dir}」下且含 SKILL.md）："
-                f"{', '.join(missing)}",
-            )
+    doc_paths = doc_context_paths(items)
     primary = body.primary_doc_path or body.active_doc_path
     if body.active_doc_path and body.active_doc_path not in doc_paths:
         if not doc_paths:
             doc_paths = [body.active_doc_path]
+            items = [{"path": p, "kind": "document"} for p in doc_paths]
         if primary is None:
             primary = body.active_doc_path
     if primary is not None:
-        if primary in skill_roots:
-            raise HTTPException(400, "primary_doc_path 不能是 Skill 包路径")
         if primary not in doc_paths:
             raise HTTPException(400, "primary_doc_path 必须在文档托盘路径内")
-    return items, doc_paths, skill_roots, primary
+        if not is_markdown_path(primary):
+            raise HTTPException(400, "primary_doc_path 必须是 Markdown 文档")
+    return items, doc_paths, primary
 
 
 def merge_session_view(c, session: dict) -> dict:

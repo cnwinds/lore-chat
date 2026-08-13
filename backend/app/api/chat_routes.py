@@ -54,10 +54,15 @@ async def ask(body: AskBody, request: Request):
 @router.post("/chat")
 async def chat(body: ChatBody, request: Request):
     """产品主入口：开始或附着观测后台 Agent 回合（SSE）。"""
+    from app.engine.enabled_skills import EnabledSkillsError
+
     c = container(request)
-    doc_items, paths, skill_roots, primary = normalize_chat_context(
-        body, c.repo, skills_dir=c.settings.skills_dir
-    )
+    doc_items, paths, primary = normalize_chat_context(body)
+    # catalog 在 runner 内装配；此处仅预解析以便缺头时返回 400（非 SSE error）
+    try:
+        skill_catalog = c.chat_runner.resolve_skill_catalog()
+    except EnabledSkillsError as e:
+        raise HTTPException(400, str(e)) from e
     if body.conversation_id:
         try:
             c.conversations.get(body.conversation_id)
@@ -70,7 +75,7 @@ async def chat(body: ChatBody, request: Request):
                 c.chat_runner.stream_ephemeral(
                     body.text,
                     doc_paths=paths,
-                    skill_roots=skill_roots or None,
+                    skill_catalog=skill_catalog,
                     primary_doc=primary,
                     web_enabled=body.web_enabled,
                 )
@@ -91,7 +96,7 @@ async def chat(body: ChatBody, request: Request):
             primary_doc=primary,
             attachments=body.attachments or None,
             doc_paths=paths,
-            skill_roots=skill_roots or None,
+            skill_catalog=skill_catalog,
             web_enabled=body.web_enabled,
         )
     except TurnInProgress as e:

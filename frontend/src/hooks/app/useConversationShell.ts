@@ -25,7 +25,7 @@ function treeActivePaths(
   return out;
 }
 
-type SelectMods = { ctrlKey?: boolean; metaKey?: boolean; shiftKey?: boolean };
+type SelectMods = { ctrlKey?: boolean; metaKey?: boolean };
 
 type Options = {
   sidebarRefreshKey: number;
@@ -34,8 +34,7 @@ type Options = {
   composerPrimaryPath: string | null;
   onSelectFile: (path: string, mods?: SelectMods) => void;
   onSelectFolder?: (path: string, mods?: SelectMods) => void;
-  onAttachSkillsFolder?: (path: string) => void;
-  onDocsLoaded?: (paths: string[]) => void;
+  onOpenEnabledSkills?: () => void;
   onKbPathChanged?: (from: string, to: string) => void;
   onKbPathsDeleted?: (paths: string[]) => void;
 };
@@ -47,8 +46,7 @@ export function useConversationShell({
   composerPrimaryPath,
   onSelectFile,
   onSelectFolder,
-  onAttachSkillsFolder,
-  onDocsLoaded,
+  onOpenEnabledSkills,
   onKbPathChanged,
   onKbPathsDeleted,
 }: Options) {
@@ -112,8 +110,7 @@ export function useConversationShell({
         : undefined,
     onSelectFile,
     onSelectFolder,
-    onAttachSkillsFolder,
-    onDocsLoaded,
+    onOpenEnabledSkills,
     onKbPathChanged,
     onKbPathsDeleted,
     onNewChat: () => {

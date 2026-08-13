@@ -1,47 +1,30 @@
 from __future__ import annotations
 
-from app.engine.kb_skill import build_skill_activation_body
-from app.storage.repo import KnowledgeRepo
+_CATALOG_INTRO = """\
+[Skill 目录] 用户已跨会话启用下列 Skill。下列仅为 name 与触发条件（description）；\
+未命中时不要读取其 SKILL.md。若用户本轮意图命中某条 description，再用 read_doc 读取对应入口全文，\
+并按入口指引按需读取 references/ 等子文件；勿预读、勿一次读完整个包。"""
 
 _MULTI_SKILL_RULES = """\
-[Skill 冲突总则] 本轮附加了多个 Skill。与用户本条消息冲突时以用户消息为准；多个 Skill 之间冲突时合并取交集，无法满足时向用户说明。"""
+[Skill 冲突总则] 本轮启用了多个 Skill。与用户本条消息冲突时以用户消息为准；\
+多个 Skill 之间冲突时合并取交集，无法满足时向用户说明。"""
 
 
-def build_skill_activation_system_messages(
-    repo: KnowledgeRepo,
-    skill_roots: list[str],
-    *,
-    disclosure_limit: int,
+def build_skill_catalog_system_messages(
+    catalog: list[dict[str, str]],
 ) -> list[dict]:
-    if not skill_roots:
+    """catalog 项含 root / name / description / entry。行为契约只写在本段。"""
+    if not catalog:
         return []
-    messages: list[dict] = []
-    if len(skill_roots) > 1:
-        messages.append({"role": "system", "content": _MULTI_SKILL_RULES})
-    for root in skill_roots:
-        built = build_skill_activation_body(repo, root, limit=disclosure_limit)
-        if built is None:
-            messages.append(
-                {
-                    "role": "system",
-                    "content": (
-                        f"[Skill 激活失败] `{root or '(根目录)'}`："
-                        "未找到 SKILL.md，请从托盘移除后重试。"
-                    ),
-                }
-            )
-            continue
-        entry, text = built
-        label = root or "(根目录)"
-        messages.append(
-            {
-                "role": "system",
-                "content": (
-                    f"[Skill 激活] `{label}`\n"
-                    f"入口文件: `{entry}`\n"
-                    f"以下仅注入入口正文；引用文件须按入口指引用 read_doc 按需读取。\n\n"
-                    f"{text}"
-                ),
-            }
+    blocks: list[str] = [_CATALOG_INTRO]
+    if len(catalog) > 1:
+        blocks.append("")
+        blocks.append(_MULTI_SKILL_RULES)
+    blocks.append("")
+    for i, item in enumerate(catalog, start=1):
+        blocks.append(
+            f"{i}. name: {item['name']}\n"
+            f"   description: {item['description']}\n"
+            f"   入口: `{item['entry']}`（包根 `{item['root']}`）"
         )
-    return messages
+    return [{"role": "system", "content": "\n".join(blocks)}]

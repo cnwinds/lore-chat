@@ -8,6 +8,7 @@ import { useOutboundOrchestrator } from "../hooks/chat/useOutboundOrchestrator";
 import type { JumpTarget } from "../hooks/chat/useConversationJump";
 import {
   kbImport,
+  normalizeDocContext,
   summarizeConversation,
   type DocContextItem,
   type IngestResult,
@@ -46,7 +47,6 @@ type Props = {
   onJumpHandled?: () => void;
   docTrayItems?: ComposerDocItem[];
   primaryDocPath?: string | null;
-  documentPaths?: string[];
   docContextItems?: DocContextItem[];
   onTraySetPrimary?: (path: string) => void;
   onTrayRemove?: (path: string) => void;
@@ -63,7 +63,6 @@ export function Chat({
   onJumpHandled,
   docTrayItems = [],
   primaryDocPath = null,
-  documentPaths = [],
   docContextItems = [],
   onTraySetPrimary,
   onTrayRemove,
@@ -132,7 +131,6 @@ export function Chat({
     conversationId,
     previewPath,
     webEnabled,
-    documentPaths,
     docContextItems,
     primaryDocPath,
     msgs,
@@ -157,10 +155,8 @@ export function Chat({
     async (group: SendQueueItem[]) => {
       const text = mergeGroupText(group);
       const first = group[0];
-      const docContext = first.doc_context ?? [];
-      const documentPathsForRun = docContext
-        .filter((d) => d.kind !== "skill_root")
-        .map((d) => d.path);
+      const docContext = normalizeDocContext(first.doc_context);
+      const trayPaths = docContext.map((d) => d.path);
       return runAgentStream(
         text,
         text,
@@ -170,7 +166,7 @@ export function Chat({
           primary_doc: first.primary_doc ?? undefined,
         },
         {
-          documentPaths: documentPathsForRun,
+          trayPaths,
           docContext,
           primary: first.primary_doc ?? null,
         },
@@ -258,7 +254,7 @@ export function Chat({
     ) {
       setInput(text);
       window.alert(
-        "请先在侧栏用 Ctrl+单击 将文档加入输入框上方的托盘，再发送。",
+        "请先在侧栏用 Ctrl+单击 将文件或目录加入工作托盘（顶层「技能」除外），再发送。",
       );
       return;
     }

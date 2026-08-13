@@ -8,6 +8,7 @@ from app.engine.chat.sse import parse_agent_sse_event
 from app.engine.chat.turn_hub import TurnExecutionHub
 from app.engine.chat.turn_inject import PendingInject, TurnInjectBroker
 from app.engine.knowledge_writer import is_markdown_path
+from app.engine.enabled_skills import SkillCatalogEntry
 
 
 class ChatSessionRunner:
@@ -19,15 +20,28 @@ class ChatSessionRunner:
         conversations,
         inject_broker: TurnInjectBroker | None = None,
         turn_hub: TurnExecutionHub | None = None,
+        *,
+        enabled_skills=None,
     ):
         self.agent = agent
         self.conversations = conversations
+        self.enabled_skills = enabled_skills
         self.inject_broker = inject_broker or TurnInjectBroker()
         self.turn_hub = turn_hub or TurnExecutionHub(
             agent, conversations, inject_broker=self.inject_broker
         )
         if turn_hub is not None:
             self.inject_broker = self.turn_hub.inject_broker
+
+    def resolve_skill_catalog(
+        self, skill_catalog: list[SkillCatalogEntry] | None = None
+    ) -> list[SkillCatalogEntry]:
+        """启用集 → catalog；HTTP 只经此入口，勿直接摸 EnabledSkillsStore。"""
+        if skill_catalog is not None:
+            return list(skill_catalog)
+        if self.enabled_skills is None:
+            return []
+        return self.enabled_skills.catalog_for_chat(self.agent.tools.repo)
 
     def enqueue_inject(self, conversation_id: str, item: PendingInject) -> str:
         return self.turn_hub.enqueue_inject(conversation_id, item)
@@ -46,9 +60,10 @@ class ChatSessionRunner:
         primary_doc: str | None,
         attachments: list | None,
         doc_paths: list[str],
-        skill_roots: list[str] | None,
+        skill_catalog: list[dict[str, str]] | None = None,
         web_enabled: bool,
     ) -> dict:
+        catalog = self.resolve_skill_catalog(skill_catalog)
         return self.turn_hub.begin_and_ensure(
             conversation_id=conversation_id,
             user_text=user_text,
@@ -58,7 +73,7 @@ class ChatSessionRunner:
             primary_doc=primary_doc,
             attachments=attachments,
             doc_paths=doc_paths,
-            skill_roots=skill_roots,
+            skill_catalog=catalog,
             web_enabled=web_enabled,
         )
 
@@ -67,10 +82,11 @@ class ChatSessionRunner:
         text: str,
         *,
         doc_paths: list[str],
-        skill_roots: list[str] | None = None,
+        skill_catalog: list[dict[str, str]] | None = None,
         primary_doc: str | None,
         web_enabled: bool,
     ) -> AsyncIterator[str]:
+        catalog = self.resolve_skill_catalog(skill_catalog)
         try:
             async for ev in self.agent.run(
                 text,
@@ -78,7 +94,7 @@ class ChatSessionRunner:
                 active_doc_path=primary_doc,
                 active_doc_paths=doc_paths,
                 primary_doc_path=primary_doc,
-                skill_roots=skill_roots,
+                skill_catalog=catalog,
                 history=None,
                 conversation_id=None,
                 web_enabled=web_enabled,
@@ -105,35 +121,6 @@ class ChatSessionRunner:
     ) -> AsyncIterator[str]:
         async for ev in self.turn_hub.subscribe(
             conversation_id, turn_id, after_seq=after_seq
-        ):
-            yield ev
-
-    async def stream_and_persist(
-        self,
-        text: str,
-        *,
-        conversation_id: str,
-        turn: dict,
-        history: list[dict],
-        doc_paths: list[str],
-        skill_roots: list[str] | None = None,
-        primary_doc: str | None,
-        web_enabled: bool,
-    ) -> AsyncIterator[str]:
-        """兼容：ensure + subscribe（begin 已由 begin_persisted_turn 完成时可不经此路径）。"""
-        from app.engine.chat.turn_hub import TurnRunSpec
-
-        spec = TurnRunSpec(
-            text=text,
-            history=history,
-            doc_paths=doc_paths,
-            skill_roots=skill_roots,
-            primary_doc=primary_doc,
-            web_enabled=web_enabled,
-        )
-        self.turn_hub.ensure_running(conversation_id, turn, spec)
-        async for ev in self.turn_hub.subscribe(
-            conversation_id, turn["turn_id"], after_seq=0
         ):
             yield ev
 

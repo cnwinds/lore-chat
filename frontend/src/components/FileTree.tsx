@@ -8,7 +8,7 @@ function parentDirectoryFromPath(path: string): string {
   return idx === -1 ? "" : path.slice(0, idx);
 }
 
-type SelectMods = { ctrlKey?: boolean; metaKey?: boolean; shiftKey?: boolean };
+type SelectMods = { ctrlKey?: boolean; metaKey?: boolean };
 
 export type FileTreeNodeContext = {
   node: TreeNode;
@@ -366,7 +366,6 @@ function TreeItem({
             onSelectFile(node.path, {
               ctrlKey: e.ctrlKey,
               metaKey: e.metaKey,
-              shiftKey: e.shiftKey,
             })
           }
           onDoubleClick={() => onStartRename(node.path, node.name)}
