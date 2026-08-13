@@ -1,6 +1,6 @@
 import { downloadUrl } from "../api";
 
-const IMAGE_EXT = /\.(png|jpe?g|gif|webp|bmp|svg)$/i;
+const IMAGE_EXT = /\.(png|jpe?g|gif|webp|bmp|svg|tif|tiff|ico)$/i;
 
 /** 是否像知识库内相对路径（非 http(s)/data/绝对 URL）。 */
 export function isKbRelativeImagePath(src: string): boolean {
@@ -13,6 +13,26 @@ export function isKbRelativeImagePath(src: string): boolean {
 
 export function isLikelyImagePath(path: string): boolean {
   return IMAGE_EXT.test(path.split("?")[0] || path);
+}
+
+/** File / 剪贴板图：优先 MIME，否则文件名后缀（与 isLikelyImagePath 同源）。 */
+export function isImageFile(file: File, name?: string): boolean {
+  if (file.type.startsWith("image/")) return true;
+  return isLikelyImagePath(name ?? file.name);
+}
+
+export function imageExtFromFile(file: File, name?: string): string {
+  const n = name ?? file.name;
+  const m = n.match(IMAGE_EXT);
+  if (m) return m[0].toLowerCase();
+  const mime = file.type.toLowerCase();
+  if (mime === "image/jpeg") return ".jpg";
+  if (mime === "image/png") return ".png";
+  if (mime === "image/webp") return ".webp";
+  if (mime === "image/gif") return ".gif";
+  if (mime === "image/bmp") return ".bmp";
+  if (mime === "image/svg+xml") return ".svg";
+  return ".bin";
 }
 
 /** 渲染用：相对路径 → /api/download?path=... */

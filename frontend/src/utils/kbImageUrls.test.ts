@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  isImageFile,
   isKbRelativeImagePath,
   isLikelyImagePath,
   restoreMarkdownImageSrcsForStorage,
@@ -40,5 +41,18 @@ describe("kbImageUrls", () => {
   it("isLikelyImagePath", () => {
     expect(isLikelyImagePath("a/b.PNG")).toBe(true);
     expect(isLikelyImagePath("notes/a.md")).toBe(false);
+    expect(isLikelyImagePath("x.tif")).toBe(true);
+  });
+
+  it("isImageFile prefers mime then name", () => {
+    expect(
+      isImageFile(new File([new Uint8Array([1])], "x.bin", { type: "image/png" })),
+    ).toBe(true);
+    expect(
+      isImageFile(new File([new Uint8Array([1])], "shot.jpg", { type: "" })),
+    ).toBe(true);
+    expect(
+      isImageFile(new File([new Uint8Array([1])], "a.txt", { type: "text/plain" })),
+    ).toBe(false);
   });
 });

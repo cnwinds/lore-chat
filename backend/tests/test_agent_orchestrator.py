@@ -352,3 +352,23 @@ async def test_run_no_write_excludes_write_doc(tmp_path):
     tools = orchestrator.llm.calls[-1]["tools"]
     names = _tool_names_from_defs(tools)
     assert "write_doc" not in names
+
+
+@pytest.mark.asyncio
+async def test_run_includes_generate_image_when_image_tools_configured(tmp_path):
+    """回归：须读 tools.image_tools（不是不存在的 tools.image）。"""
+    from unittest.mock import MagicMock
+
+    orchestrator = _make_orchestrator(
+        tmp_path,
+        tool_responses=[{"content": "ok", "tool_calls": []}],
+    )
+    mock_gen = MagicMock()
+    mock_gen.configured = True
+    orchestrator.tools.image_tools.image_gen = mock_gen
+
+    async for _ in orchestrator.run("画一只猫", mode="default", web_enabled=True):
+        pass
+
+    names = _tool_names_from_defs(orchestrator.llm.calls[-1]["tools"])
+    assert "generate_image" in names

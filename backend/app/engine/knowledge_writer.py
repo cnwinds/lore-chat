@@ -292,7 +292,18 @@ class KnowledgeWriter:
 
         self.assert_non_md_asset_allowed(fn, allow_binary=allow_binary)
         rel = _file_rel(directory, fn)
-        if self.repo.abs_path(rel).exists():
+        abs_p = self.repo.abs_path(rel)
+        if abs_p.exists():
+            # 同路径同字节：幂等复用（粘贴同图再发常见），避免无意义冲突
+            if self.repo.read_bytes(rel) == data:
+                extracted = extract_text(abs_p)
+                indexed = bool(extracted and extracted.strip())
+                return {
+                    "rel_path": rel,
+                    "kind": "file",
+                    "indexed": indexed,
+                    "reused": True,
+                }
             raise KbPathExistsError(rel)
         self.repo.write_bytes(rel, data, commit_msg=f"import file: {rel}")
         extracted = extract_text(self.repo.abs_path(rel))

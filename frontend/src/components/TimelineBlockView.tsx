@@ -241,7 +241,7 @@ function ToolBlockView({
             paths={block.attachments}
             className="timeline-tool-attachments"
             imageClassName="timeline-gen-image"
-            linkClassName="timeline-gen-image-link"
+            thumbClassName="timeline-gen-image-link"
           />
         )}
       {open &&

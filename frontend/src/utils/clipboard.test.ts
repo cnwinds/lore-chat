@@ -1,10 +1,54 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { copyTextToClipboard } from "./clipboard";
+import { copyTextToClipboard, extractClipboardImageFiles } from "./clipboard";
 
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
   document.body.innerHTML = "";
+});
+
+describe("extractClipboardImageFiles", () => {
+  it("returns empty when clipboard is null or has no images", () => {
+    expect(extractClipboardImageFiles(null)).toEqual([]);
+    expect(
+      extractClipboardImageFiles({
+        items: [{ kind: "string", type: "text/plain", getAsFile: () => null }],
+      }),
+    ).toEqual([]);
+  });
+
+  it("extracts image/* file items (screenshot paste)", () => {
+    const png = new File([new Uint8Array([1, 2, 3])], "image.png", {
+      type: "image/png",
+    });
+    const got = extractClipboardImageFiles({
+      items: [
+        { kind: "string", type: "text/plain", getAsFile: () => null },
+        { kind: "file", type: "image/png", getAsFile: () => png },
+        {
+          kind: "file",
+          type: "application/pdf",
+          getAsFile: () =>
+            new File([new Uint8Array([9])], "x.pdf", { type: "application/pdf" }),
+        },
+      ],
+    });
+    expect(got).toEqual([png]);
+  });
+
+  it("falls back to files list when items yield no images", () => {
+    const jpg = new File([new Uint8Array([4])], "shot.jpg", {
+      type: "image/jpeg",
+    });
+    const txt = new File([new Uint8Array([5])], "a.txt", {
+      type: "text/plain",
+    });
+    const got = extractClipboardImageFiles({
+      items: [],
+      files: [jpg, txt],
+    });
+    expect(got).toEqual([jpg]);
+  });
 });
 
 describe("copyTextToClipboard", () => {

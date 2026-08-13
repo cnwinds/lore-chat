@@ -6190,6 +6190,136 @@ button.source-link--inline.conversation-md-link {
   font-size: var(--text-sm);
 }
 
+.composer-image-chip {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-muted);
+  overflow: hidden;
+  cursor: zoom-in;
+}
+
+.composer-image-chip:focus-visible {
+  outline: 2px solid var(--accent, #3b82f6);
+  outline-offset: 2px;
+}
+
+.composer-image-thumb {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.composer-image-chip-close {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  opacity: 0;
+}
+
+.composer-image-chip:hover .composer-image-chip-close {
+  opacity: 1;
+}
+
+.composer-image-chip-close:hover {
+  background: rgba(0, 0, 0, 0.75);
+  color: #fff;
+}
+
+.image-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 4000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.72);
+  cursor: zoom-out;
+}
+
+.image-lightbox-img {
+  max-width: min(96vw, 1200px);
+  max-height: 92vh;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  border-radius: var(--radius-sm);
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.45);
+  cursor: default;
+}
+
+.image-lightbox-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.image-lightbox-close:hover {
+  background: rgba(0, 0, 0, 0.75);
+}
+
+.image-lightbox-download {
+  position: absolute;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: var(--text-sm);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.image-lightbox-download:hover {
+  background: rgba(0, 0, 0, 0.75);
+  color: #fff;
+}
+
+.kb-attachment-image-btn {
+  appearance: none;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: zoom-in;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+}
+
+.chat-user-image-chip {
+  appearance: none;
+  margin: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+}
+
 .composer-file-icon {
   flex-shrink: 0;
   font-size: 12px;

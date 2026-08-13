@@ -1,5 +1,9 @@
+import { useEffect, useState } from "react";
 import type { DocTrayItem, PendingFile } from "../types/composer";
 import { isMarkdownPath } from "../utils/kbPath";
+import { isImageFile } from "../utils/kbImageUrls";
+import { ImageThumbButton } from "./ImageThumbButton";
+import { useImageLightbox } from "../hooks/useImageLightbox";
 
 type Props = {
   items: DocTrayItem[];
@@ -84,6 +88,51 @@ export function FileChip({ name, tooltip, size, onRemove }: FileChipProps) {
   );
 }
 
+type PendingFileChipProps = {
+  pending: PendingFile;
+  onRemove: () => void;
+};
+
+function PendingFileChip({ pending, onRemove }: PendingFileChipProps) {
+  const image = isImageFile(pending.file, pending.name);
+  const [thumbUrl, setThumbUrl] = useState<string | null>(null);
+  const { openPreview, lightbox } = useImageLightbox();
+
+  useEffect(() => {
+    if (!image) {
+      setThumbUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(pending.file);
+    setThumbUrl(url);
+    return () => {
+      URL.revokeObjectURL(url);
+    };
+  }, [image, pending.file]);
+
+  if (image && thumbUrl) {
+    return (
+      <>
+        <ImageThumbButton
+          src={thumbUrl}
+          alt={pending.name}
+          onOpen={openPreview}
+          onRemove={onRemove}
+        />
+        {lightbox}
+      </>
+    );
+  }
+
+  return (
+    <FileChip
+      name={pending.name}
+      size={pending.size}
+      onRemove={onRemove}
+    />
+  );
+}
+
 export function ComposerTray({
   items,
   primaryPath,
@@ -110,10 +159,9 @@ export function ComposerTray({
         );
       })}
       {pendingFiles.map((f) => (
-        <FileChip
+        <PendingFileChip
           key={f.id}
-          name={f.name}
-          size={f.size}
+          pending={f}
           onRemove={() => onRemoveFile(f.id)}
         />
       ))}

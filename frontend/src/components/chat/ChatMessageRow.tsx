@@ -1,5 +1,6 @@
 import {
   computeCumulative,
+  downloadUrl,
   formatDuration,
   getMessageCopyText,
   isMarkdownPath,
@@ -12,6 +13,8 @@ import { DocChip, FileChip } from "../ComposerTray";
 import { formatMessageTs, isInjectedUserMessage } from "../../utils/chatMessage";
 import { MarkdownContent } from "../MarkdownContent";
 import { KbAttachmentList } from "../KbAttachmentList";
+import { ImageThumbButton } from "../ImageThumbButton";
+import { useImageLightbox } from "../../hooks/useImageLightbox";
 import { ChatSources } from "../ChatSources";
 import { CopyButton } from "../CopyButton";
 import { TimelineBlockView } from "../TimelineBlockView";
@@ -24,6 +27,7 @@ import {
 } from "../../utils/unicodeHighlight";
 import type { HighlightRangeDetail } from "../../hooks/chat/useConversationJump";
 import type { ConversationLinkTarget } from "../../utils/conversationLinks";
+import { isLikelyImagePath } from "../../utils/kbImageUrls";
 
 export type ChatMessageRowProps = {
   message: ChatMessage;
@@ -76,10 +80,12 @@ function footAttachmentPaths(m: ChatMessage): string[] {
   return attachments.filter((p) => !shown.has(p));
 }
 
-function renderUserMessageChips(m: ChatMessage) {
+function UserMessageChips({ m }: { m: ChatMessage }) {
   const docItems = normalizeDocContext(m.doc_context);
+  const attachments = m.attachments ?? [];
   const hasDocs = docItems.length > 0;
-  const hasFiles = (m.attachments?.length ?? 0) > 0;
+  const hasFiles = attachments.length > 0;
+  const { openPreview, lightbox } = useImageLightbox();
   if (!hasDocs && !hasFiles) return null;
 
   return (
@@ -96,9 +102,22 @@ function renderUserMessageChips(m: ChatMessage) {
           }
         />
       ))}
-      {m.attachments?.map((a) => (
-        <FileChip key={a} name={basename(a)} tooltip={a} />
-      ))}
+      {attachments.map((a) =>
+        isLikelyImagePath(a) ? (
+          <ImageThumbButton
+            key={a}
+            src={downloadUrl(a)}
+            alt={basename(a)}
+            title={`${a}（点击查看大图）`}
+            className="composer-image-chip chat-user-image-chip"
+            downloadHref={downloadUrl(a, { download: true })}
+            onOpen={openPreview}
+          />
+        ) : (
+          <FileChip key={a} name={basename(a)} tooltip={a} />
+        ),
+      )}
+      {lightbox}
     </div>
   );
 }
@@ -312,7 +331,7 @@ export function ChatMessageRow({
             本轮因刷新或断线中断；未完成的步骤已标出，可继续发消息或回答待确认项。
           </div>
         )}
-        {m.role === "user" && renderUserMessageChips(m)}
+        {m.role === "user" && <UserMessageChips m={m} />}
         {renderMessageContent(
           m,
           isLiveStreaming,
@@ -337,7 +356,7 @@ export function ChatMessageRow({
             paths={footPaths}
             className="kb-attachment-list"
             imageClassName="chat-gen-image"
-            linkClassName="chat-gen-image-link"
+            thumbClassName="chat-gen-image-link"
           />
         ) : null}
         {renderMessageMeta(m, isLiveStreaming, liveElapsedMs)}

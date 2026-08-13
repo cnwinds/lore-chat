@@ -53,6 +53,19 @@ def test_import_conflict(tmp_path):
     assert suggest_alternate_filename("a.md") == "a (1).md"
 
 
+def test_import_file_same_bytes_reuses_path(tmp_path):
+    repo = KnowledgeRepo(tmp_path / "knowledge")
+    w = _writer(repo, tmp_path)
+    data = b"\xff\xd8\xff fakejpeg"
+    r1 = w.import_entry(directory="未分类", filename="shot.jpg", data=data)
+    r2 = w.import_entry(directory="未分类", filename="shot.jpg", data=data)
+    assert r1["rel_path"] == "未分类/shot.jpg"
+    assert r2["rel_path"] == "未分类/shot.jpg"
+    assert r2.get("reused") is True
+    with pytest.raises(KbPathExistsError):
+        w.import_entry(directory="未分类", filename="shot.jpg", data=b"different")
+
+
 def test_move_file(tmp_path):
     repo = KnowledgeRepo(tmp_path / "knowledge")
     w = _writer(repo, tmp_path)

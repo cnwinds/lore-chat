@@ -76,8 +76,7 @@ class AgentOrchestrator:
             and self.tools.web_search.provider is not None
         )
         imagegen_configured = bool(
-            getattr(self.tools, "image", None)
-            and self.tools.image_tools.image_gen is not None
+            self.tools.image_tools.image_gen is not None
             and self.tools.image_tools.image_gen.configured
         )
         web_search_enabled = web_enabled and search_configured

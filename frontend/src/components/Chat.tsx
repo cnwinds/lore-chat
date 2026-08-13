@@ -7,7 +7,6 @@ import { useSendQueue } from "../hooks/chat/useSendQueue";
 import { useOutboundOrchestrator } from "../hooks/chat/useOutboundOrchestrator";
 import type { JumpTarget } from "../hooks/chat/useConversationJump";
 import {
-  kbImport,
   normalizeDocContext,
   summarizeConversation,
   type DocContextItem,
@@ -29,6 +28,8 @@ import { ComposerToolbar } from "./ComposerToolbar";
 import { ComposerSendQueue } from "./ComposerSendQueue";
 import { ArchiveConversationModal } from "./ArchiveConversationModal";
 import type { DocTrayItem, PendingFile } from "../types/composer";
+import { extractClipboardImageFiles } from "../utils/clipboard";
+import { importChatAttachment } from "../utils/chatAttachmentImport";
 import { suggestArchivePath } from "../utils/suggestArchivePath";
 
 type ComposerDocItem = DocTrayItem;
@@ -231,9 +232,9 @@ export function Chat({
       setPendingFiles([]);
       try {
         for (const pf of filesToUpload) {
-          const r = await kbImport(pf.file, "未分类");
-          uploadedPaths.push(r.rel_path);
-          refreshKb(r.rel_path);
+          const rel = await importChatAttachment(pf.file);
+          uploadedPaths.push(rel);
+          refreshKb(rel);
         }
       } catch (err) {
         setPendingFiles(filesToUpload);
@@ -430,19 +431,41 @@ export function Chat({
     }
   }
 
+  function addPendingFiles(files: File[]) {
+    if (!files.length) return;
+    setPendingFiles((prev) => [
+      ...prev,
+      ...files.map((f) => ({
+        id: `${Date.now()}-${f.name}-${newId()}`,
+        file: f,
+        name: f.name,
+        size: f.size,
+      })),
+    ]);
+  }
+
   function onFile(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
     if (!f) return;
-    const id = `${Date.now()}-${f.name}`;
-    setPendingFiles((prev) => [
-      ...prev,
-      { id, file: f, name: f.name, size: f.size },
-    ]);
+    addPendingFiles([f]);
     e.target.value = "";
   }
 
   function removePendingFile(id: string) {
     setPendingFiles((prev) => prev.filter((f) => f.id !== id));
+  }
+
+  function onInputPaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
+    const images = extractClipboardImageFiles(e.clipboardData);
+    if (!images.length) return;
+    e.preventDefault();
+    addPendingFiles(images);
+    const pasteText = e.clipboardData.getData("text/plain");
+    if (!pasteText) return;
+    const el = e.currentTarget;
+    const start = el.selectionStart ?? input.length;
+    const end = el.selectionEnd ?? input.length;
+    setInput(input.slice(0, start) + pasteText + input.slice(end));
   }
 
   function onInputKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -556,9 +579,10 @@ export function Chat({
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={onInputKeyDown}
+                onPaste={onInputPaste}
                 rows={1}
                 placeholder={streaming ? "输入消息加入队列…" : "输入消息…"}
-                title="Ctrl+Enter 发送"
+                title="Ctrl+Enter 发送；可粘贴图片到托盘"
                 style={{
                   minHeight: INPUT_MIN_HEIGHT,
                   maxHeight: INPUT_MAX_HEIGHT,
