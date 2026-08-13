@@ -95,8 +95,8 @@ _Avoid_: 把 Skill 根当作可编辑文档；在正文伪造 KB 元数据头
 **Skill 激活**：仅当托盘含 `skill_root` 时，在本轮 system 对该包注入元信息与 `SKILL.md` 入口正文（首窗与 `read_doc` 默认 limit 对齐，约 3000 字；不足则全文）；不预载 `references/` 等子资源。
 _Avoid_: 全量注入；对普通 `document` 路径做 Skill 激活
 
-**Skill 包发现**：Skill 包固定驻留在知识库顶层「技能」目录（与「系统」同级、侧栏排在其下）。用户点选「技能」或其子文件夹后，自该目录起**递归**找出所有「目录内直接含 `SKILL.md`」的包根；经**勾选确认层**（列出候选路径，用户选择）后以若干 `skill_root` 写入托盘。点选目录自身含 `SKILL.md` 时，候选列表须包含该目录。未发现任何包时提示用户，不写入托盘。前端编排在 `useSkillTrayAttach`；扫描起点越出「技能」时拒绝。
-_Avoid_: 不经确认自动塞满托盘；只扫描一层；在 `App.tsx` 再堆发现/确认状态机；在任意目录约定 Skill
+**Skill 包发现**：Skill 包固定驻留在知识库顶层「技能」目录（与「系统」同级、侧栏排在其下）。用户点选「技能」或其子文件夹后，自该目录起**递归**找出所有「目录内直接含 `SKILL.md`」的包根；经**勾选确认层**后以若干 `skill_root` 写入托盘。发现 API、托盘 `skill_root`、写入/导入 `SKILL.md` 均硬约束在该前缀内；知识库根目录的 `SKILL.md` 不视为合法包。前端编排在 `useSkillTrayAttach`；扫描起点越出「技能」时拒绝。
+_Avoid_: 不经确认自动塞满托盘；只扫描一层；在 `App.tsx` 再堆发现/确认状态机；在任意目录约定 Skill；保留「skills_dir 可选」的发现旁路
 
 **知识库树 viewport UI**：侧栏目录的展开态与滚动位置（hydrate / 临时露出 / 恢复 / 落盘）收在 `useKbTreeViewportUi`；`FileTree` 只渲染受控展开；存储细节在 `kbTreeUiStorage`。
 _Avoid_: 用 `onExpandReady` 跨组件握手；在 `FileTree` / `Sidebar` 再拆一套展开或滚动状态机

@@ -73,10 +73,23 @@ def split_doc_context(
     return docs, skills
 
 
-def missing_skill_roots(repo: KnowledgeRepo, skill_roots: list[str]) -> list[str]:
+def missing_skill_roots(
+    repo: KnowledgeRepo,
+    skill_roots: list[str],
+    *,
+    skills_dir: str,
+) -> list[str]:
+    """返回无效包根：不在技能目录内、或缺少 SKILL.md。"""
+    from app.engine.skills_dir import require_skill_root_in_skills_dir
+
     missing: list[str] = []
     for root in skill_roots:
-        entry = skill_entry_rel_path(root)
+        try:
+            require_skill_root_in_skills_dir(root, skills_dir)
+            entry = skill_entry_rel_path(root)
+        except ValueError:
+            missing.append(root)
+            continue
         if not repo.abs_path(entry).is_file():
             missing.append(root)
     return missing

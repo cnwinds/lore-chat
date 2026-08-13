@@ -35,11 +35,32 @@ def test_discover_skill_roots_nested(tmp_path):
     assert discover_skill_roots(repo, "技能/职业规划/张雪峰", skills_dir="技能") == [
         "技能/职业规划/张雪峰"
     ]
+    assert discover_skill_roots(repo, "elsewhere", skills_dir="技能") == []
 
 
 def test_skill_entry_rel_path():
     assert skill_entry_rel_path("a/b") == "a/b/SKILL.md"
-    assert skill_entry_rel_path("") == "SKILL.md"
+    with pytest.raises(ValueError, match="不能为空"):
+        skill_entry_rel_path("")
+
+
+def test_discover_requires_skills_dir(tmp_path):
+    repo = KnowledgeRepo(tmp_path / "kb")
+    with pytest.raises(TypeError):
+        discover_skill_roots(repo, "技能")  # type: ignore[call-arg]
+    with pytest.raises(ValueError, match="不能为空"):
+        discover_skill_roots(repo, "技能", skills_dir="")
+
+
+def test_discover_ignores_packages_outside_skills_dir(tmp_path):
+    repo = KnowledgeRepo(tmp_path)
+    repo.write_doc(
+        "elsewhere/pkg/SKILL.md",
+        {"title": "Out"},
+        "# Out\n",
+        commit_msg="seed",
+    )
+    assert discover_skill_roots(repo, "elsewhere", skills_dir="技能") == []
 
 
 def test_clamp_skills_scan_dir():

@@ -115,13 +115,21 @@ class Organizer:
         if "tags" in clean:
             decision.tags = list(clean["tags"])
         mode = resolve_write_mode(decision.rel_path, write_mode)
-        self._apply(
-            decision,
-            content,
-            conversation_id=conversation_id,
-            write_mode=mode,
-            meta_overrides=clean or None,
-        )
+        try:
+            self._apply(
+                decision,
+                content,
+                conversation_id=conversation_id,
+                write_mode=mode,
+                meta_overrides=clean or None,
+            )
+        except ValueError as e:
+            return IngestResult(
+                status="rejected",
+                rel_path=None,
+                question_id=None,
+                message=str(e),
+            )
         return IngestResult(
             status="saved",
             rel_path=decision.rel_path,

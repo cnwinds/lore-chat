@@ -19,11 +19,11 @@ def test_normalize_legacy_strings():
 def test_split_doc_context():
     items = [
         {"path": "doc.md", "kind": "document"},
-        {"path": "skill/foo", "kind": "skill_root"},
+        {"path": "技能/foo", "kind": "skill_root"},
     ]
     docs, skills = split_doc_context(items)
     assert docs == ["doc.md"]
-    assert skills == ["skill/foo"]
+    assert skills == ["技能/foo"]
 
 
 def test_parse_api_rejects_string_item():

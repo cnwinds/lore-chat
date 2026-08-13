@@ -117,6 +117,8 @@ class KbDeleteBody(BaseModel):
 def normalize_chat_context(
     body: ChatBody,
     repo,
+    *,
+    skills_dir: str = "技能",
 ) -> tuple[list[dict[str, str]], list[str], list[str], str | None]:
     from app.engine.doc_context import (
         DocContextValidationError,
@@ -142,11 +144,14 @@ def normalize_chat_context(
         )
     doc_paths, skill_roots = split_doc_context(items)
     if skill_roots:
-        missing = missing_skill_roots(repo, skill_roots)
+        missing = missing_skill_roots(
+            repo, skill_roots, skills_dir=skills_dir
+        )
         if missing:
             raise HTTPException(
                 400,
-                f"以下 Skill 包不存在或缺少 SKILL.md：{', '.join(missing)}",
+                f"以下 Skill 包无效（须在「{skills_dir}」下且含 SKILL.md）："
+                f"{', '.join(missing)}",
             )
     primary = body.primary_doc_path or body.active_doc_path
     if body.active_doc_path and body.active_doc_path not in doc_paths:

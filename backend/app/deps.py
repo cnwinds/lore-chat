@@ -120,7 +120,9 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
     index = build_index_subgraph(
         settings, repo, llm, system_layer_prefix=system_layer.prefix
     )
-    knowledge_writer = KnowledgeWriter(repo, index.indexer)
+    knowledge_writer = KnowledgeWriter(
+        repo, index.indexer, skills_dir=settings.skills_dir
+    )
     memory_service = MemoryService(
         memory_store,
         repo,

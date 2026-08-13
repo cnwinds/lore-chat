@@ -55,7 +55,9 @@ async def ask(body: AskBody, request: Request):
 async def chat(body: ChatBody, request: Request):
     """产品主入口：开始或附着观测后台 Agent 回合（SSE）。"""
     c = container(request)
-    doc_items, paths, skill_roots, primary = normalize_chat_context(body, c.repo)
+    doc_items, paths, skill_roots, primary = normalize_chat_context(
+        body, c.repo, skills_dir=c.settings.skills_dir
+    )
     if body.conversation_id:
         try:
             c.conversations.get(body.conversation_id)

@@ -152,6 +152,16 @@ def test_legacy_pending_resolves_to_saved_without_kind(tmp_path):
     assert "要点 A" in result.message
 
 
+def test_ingest_rejects_skill_md_outside_skills_dir(tmp_path):
+    org, repo, _ = _make(tmp_path, [])
+    result = org.ingest_text(
+        "---\nname: x\n---\n\n# X\n",
+        forced_rel_path="其它/demo/SKILL.md",
+    )
+    assert result.status == "rejected"
+    assert "技能" in result.message
+
+
 def test_ingest_skill_md_keeps_yaml_in_body(tmp_path):
     """Skill YAML 留在 body；不被 parse 进 KB meta；落盘用新定界。"""
     org, repo, _ = _make(tmp_path, [])

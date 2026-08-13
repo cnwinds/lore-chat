@@ -368,32 +368,32 @@ async def test_move_entry_tool(tmp_path):
 async def test_move_entry_directory(tmp_path):
     registry, repo, idx = _make_registry(tmp_path)
     repo.write_doc(
-        "skill/old-pkg/SKILL.md",
+        "技能/old-pkg/SKILL.md",
         {"title": "S"},
         "body\n",
         commit_msg="seed",
     )
     repo.write_doc(
-        "skill/old-pkg/references/a.md",
+        "技能/old-pkg/references/a.md",
         {"title": "A"},
         "ref\n",
         commit_msg="seed",
     )
-    idx.reindex_doc("skill/old-pkg/SKILL.md", "body\n")
-    idx.reindex_doc("skill/old-pkg/references/a.md", "ref\n")
+    idx.reindex_doc("技能/old-pkg/SKILL.md", "body\n")
+    idx.reindex_doc("技能/old-pkg/references/a.md", "ref\n")
     result = await registry.execute(
         "move_entry",
         {
-            "from_path": "skill/old-pkg",
-            "to_directory": "skill",
+            "from_path": "技能/old-pkg",
+            "to_directory": "技能",
             "to_filename": "new-pkg",
         },
     )
     assert result["status"] == "saved"
-    assert result["rel_path"] == "skill/new-pkg"
-    repo.read_doc("skill/new-pkg/SKILL.md")
-    repo.read_doc("skill/new-pkg/references/a.md")
-    assert not (repo.root / "skill" / "old-pkg").exists()
+    assert result["rel_path"] == "技能/new-pkg"
+    repo.read_doc("技能/new-pkg/SKILL.md")
+    repo.read_doc("技能/new-pkg/references/a.md")
+    assert not (repo.root / "技能" / "old-pkg").exists()
 
 
 @pytest.mark.asyncio

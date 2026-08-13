@@ -69,9 +69,16 @@ def _file_rel(directory: str, filename: str) -> str:
 class KnowledgeWriter:
     """知识库落盘、索引与 changelog 的唯一 seam（Markdown 文档与文本/附件文件）。"""
 
-    def __init__(self, repo: KnowledgeRepo, indexer: Indexer | None = None):
+    def __init__(
+        self,
+        repo: KnowledgeRepo,
+        indexer: Indexer | None = None,
+        *,
+        skills_dir: str = "技能",
+    ):
         self.repo = repo
         self.indexer = indexer
+        self.skills_dir = skills_dir.replace("\\", "/").strip("/") or "技能"
 
     def persist_document(
         self,
@@ -82,9 +89,12 @@ class KnowledgeWriter:
         commit_msg: str,
         changelog_line: str,
     ) -> str:
+        from app.engine.skills_dir import require_skill_md_in_skills_dir
+
         norm = rel_path.replace("\\", "/").lstrip("/")
         if is_memory_projection_path(norm):
             raise ValueError(_MEMORY_FILE_DISABLED_MSG)
+        require_skill_md_in_skills_dir(norm, self.skills_dir)
         body = sanitize_markdown_image_srcs_for_storage(body)
         self.repo.write_doc(norm, meta, body, commit_msg=commit_msg)
         if self.indexer is not None:
@@ -140,7 +150,10 @@ class KnowledgeWriter:
         commit_msg: str | None = None,
         changelog_line: str | None = None,
     ) -> str:
+        from app.engine.skills_dir import require_skill_md_in_skills_dir
+
         norm = rel_path.replace("\\", "/").lstrip("/")
+        require_skill_md_in_skills_dir(norm, self.skills_dir)
         msg = commit_msg or f"edit: {norm}"
         new_body = sanitize_markdown_image_srcs_for_storage(new_body)
         self.repo.write_doc(norm, meta, new_body, commit_msg=msg)
@@ -348,6 +361,17 @@ class KnowledgeWriter:
         if self.repo.abs_path(new_root).exists():
             raise KbPathExistsError(new_root)
 
+        from app.engine.skills_dir import is_skill_md_path, require_skill_md_in_skills_dir
+
+        for rel in self.repo.list_tree():
+            if rel != from_norm and not rel.startswith(f"{from_norm}/"):
+                continue
+            if not is_skill_md_path(rel):
+                continue
+            suffix = rel[len(from_norm) :].lstrip("/")
+            new_rel = f"{new_root}/{suffix}" if suffix else f"{new_root}/{PurePosixPath(rel).name}"
+            require_skill_md_in_skills_dir(new_rel, self.skills_dir)
+
         old_paths, new_paths = self.repo.move_directory(
             from_norm,
             new_root,
@@ -398,6 +422,9 @@ class KnowledgeWriter:
                 raise ValueError(str(e)) from e
             if self.repo.abs_path(rel).exists():
                 raise KbPathExistsError(rel)
+            from app.engine.skills_dir import require_skill_md_in_skills_dir
+
+            require_skill_md_in_skills_dir(rel, self.skills_dir)
             try:
                 return self.move_document(from_norm, to_directory, fn)
             except ValueError as e:

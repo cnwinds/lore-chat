@@ -171,7 +171,30 @@ def test_chat_rejects_missing_skill_root(client):
         },
     )
     assert r.status_code == 400
-    assert "SKILL.md" in r.json()["detail"]
+    assert "技能" in r.json()["detail"]
+
+
+def test_chat_rejects_skill_root_outside_skills_dir(client):
+    r = client.post(
+        "/api/chat",
+        json={
+            "text": "hi",
+            "doc_context": [{"path": "其它/pkg", "kind": "skill_root"}],
+        },
+    )
+    assert r.status_code == 400
+    assert "技能" in r.json()["detail"]
+
+
+def test_kb_import_rejects_skill_md_outside_skills_dir(client):
+    files = {"file": ("SKILL.md", b"# skill\n", "text/markdown")}
+    r = client.post(
+        "/api/kb/import",
+        files=files,
+        data={"directory": "其它/pkg"},
+    )
+    assert r.status_code == 400
+    assert "技能" in r.json()["detail"]
 
 
 def test_upload_and_download(client):
