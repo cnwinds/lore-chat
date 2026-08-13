@@ -17,6 +17,7 @@ import {
   joinProgressChunks,
 } from "../utils/progressLog";
 import { toolDisplayDurationMs } from "../utils/toolDuration";
+import type { ConversationLinkTarget } from "../utils/conversationLinks";
 
 type Props = {
   block: TimelineBlock;
@@ -30,6 +31,7 @@ type Props = {
   durationBold?: boolean;
   previewPath?: string | null;
   onOpenSource: (src: SourceRef) => void;
+  onOpenConversation?: (target: ConversationLinkTarget) => void;
   conversationId?: string | null;
   onQuestionResolved?: (
     blockId: string,
@@ -102,6 +104,7 @@ function ToolBlockView({
   nowMs,
   durationBold,
   onOpenSource,
+  onOpenConversation,
   previewPath,
   conversationId,
   onQuestionResolved,
@@ -111,6 +114,7 @@ function ToolBlockView({
   nowMs?: number;
   durationBold?: boolean;
   onOpenSource: (src: SourceRef) => void;
+  onOpenConversation?: (target: ConversationLinkTarget) => void;
   previewPath?: string | null;
   conversationId?: string | null;
   onQuestionResolved?: (
@@ -253,6 +257,7 @@ function ToolBlockView({
         <div className="timeline-tool-body timeline-tool-content">
           <MarkdownContent
             className="markdown-body chat-markdown"
+            onOpenConversation={onOpenConversation}
           >
             {block.content}
           </MarkdownContent>
@@ -311,9 +316,11 @@ function ToolBlockView({
 function ThinkBlockView({
   block,
   isLive,
+  onOpenConversation,
 }: {
   block: Extract<TimelineBlock, { type: "think" }>;
   isLive?: boolean;
+  onOpenConversation?: (target: ConversationLinkTarget) => void;
 }) {
   const [open, setOpen] = useState(!!isLive);
   const preview =
@@ -339,6 +346,7 @@ function ThinkBlockView({
         <div className="timeline-think-body">
           <MarkdownContent
             className="markdown-body chat-markdown timeline-think-markdown"
+            onOpenConversation={onOpenConversation}
           >
             {block.content}
           </MarkdownContent>
@@ -357,6 +365,7 @@ export function TimelineBlockView({
   inParallel,
   durationBold,
   onOpenSource,
+  onOpenConversation,
   previewPath,
   conversationId,
   onQuestionResolved,
@@ -370,6 +379,7 @@ export function TimelineBlockView({
         nowMs={nowMs}
         durationBold={inParallel ? durationBold : true}
         onOpenSource={onOpenSource}
+        onOpenConversation={onOpenConversation}
         previewPath={previewPath}
         conversationId={conversationId}
         onQuestionResolved={onQuestionResolved}
@@ -405,6 +415,7 @@ export function TimelineBlockView({
               child.duration_ms === maxMs
             }
             onOpenSource={onOpenSource}
+            onOpenConversation={onOpenConversation}
             previewPath={previewPath}
             conversationId={conversationId}
             onQuestionResolved={onQuestionResolved}
@@ -420,6 +431,7 @@ export function TimelineBlockView({
       <ThinkBlockView
         block={block}
         isLive={isLive}
+        onOpenConversation={onOpenConversation}
       />
     );
   }
@@ -432,19 +444,13 @@ export function TimelineBlockView({
   if (block.type === "text") {
     return (
       <div className="timeline-text">
-        {textHighlight ? (
-          <div className="chat-markdown">
-            <MessageRangeHighlight
-              text={block.content}
-              start={textHighlight.start}
-              end={textHighlight.end}
-            />
-          </div>
-        ) : (
-          <MarkdownContent className="markdown-body chat-markdown">
-            {block.content}
-          </MarkdownContent>
-        )}
+        <MarkdownContent
+          className="markdown-body chat-markdown"
+          onOpenConversation={onOpenConversation}
+          highlightRange={textHighlight ?? null}
+        >
+          {block.content}
+        </MarkdownContent>
       </div>
     );
   }

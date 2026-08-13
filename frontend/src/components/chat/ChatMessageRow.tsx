@@ -22,6 +22,7 @@ import {
   mapGlobalRangeToTimelineHighlights,
 } from "../../utils/unicodeHighlight";
 import type { HighlightRangeDetail } from "../../hooks/chat/useConversationJump";
+import type { ConversationLinkTarget } from "../../utils/conversationLinks";
 
 export type ChatMessageRowProps = {
   message: ChatMessage;
@@ -32,6 +33,7 @@ export type ChatMessageRowProps = {
   previewPath?: string | null;
   conversationId: string | null;
   onOpenSource: (src: SourceRef) => void;
+  onOpenConversation?: (target: ConversationLinkTarget) => void;
   onQuestionResolved: (
     blockId: string,
     result: IngestResult,
@@ -137,6 +139,7 @@ function renderMessageContent(
   previewPath: string | null | undefined,
   conversationId: string | null,
   onOpenSource: (src: SourceRef) => void,
+  onOpenConversation: ((target: ConversationLinkTarget) => void) | undefined,
   onQuestionResolved: (
     blockId: string,
     result: IngestResult,
@@ -178,6 +181,7 @@ function renderMessageContent(
           nowMs={isLive ? streamNowMs : undefined}
           isLive={isLive}
           onOpenSource={onOpenSource}
+          onOpenConversation={onOpenConversation}
           previewPath={previewPath}
           conversationId={conversationId}
           onQuestionResolved={onQuestionResolved}
@@ -201,19 +205,12 @@ function renderMessageContent(
       }
       return <div className="chat-user-text">{m.text}</div>;
     }
-    if (highlightRange) {
-      return (
-        <div className="chat-markdown">
-          <MessageRangeHighlight
-            text={m.text}
-            start={highlightRange.start}
-            end={highlightRange.end}
-          />
-        </div>
-      );
-    }
     return (
-      <MarkdownContent className="markdown-body chat-markdown">
+      <MarkdownContent
+        className="markdown-body chat-markdown"
+        onOpenConversation={onOpenConversation}
+        highlightRange={highlightRange}
+      >
         {m.text}
       </MarkdownContent>
     );
@@ -240,6 +237,7 @@ export function ChatMessageRow({
   previewPath,
   conversationId,
   onOpenSource,
+  onOpenConversation,
   onQuestionResolved,
 }: ChatMessageRowProps) {
   const rowRef = useRef<HTMLDivElement>(null);
@@ -291,6 +289,7 @@ export function ChatMessageRow({
           previewPath,
           conversationId,
           onOpenSource,
+          onOpenConversation,
           onQuestionResolved,
           highlightRange,
         )}

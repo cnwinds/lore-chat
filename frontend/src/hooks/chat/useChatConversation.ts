@@ -19,6 +19,10 @@ type Options = {
   onActiveTurn?: (conversationId: string, startedAt?: string | null) => void;
 };
 
+/**
+ * 跳转会话后：无 messageId 时只要会话已切过去即可完成（不必等消息加载）。
+ * 有 messageId 时等历史加载完再滚到目标消息。
+ */
 export function useChatConversation({
   conversationId,
   skipLoadRef,
@@ -33,13 +37,24 @@ export function useChatConversation({
   const [summaryPath, setSummaryPath] = useState<string | null>(null);
   const pendingJumpRef = useRef<JumpTarget | null>(null);
   const onActiveTurnRef = useRef(onActiveTurn);
+  const onJumpHandledRef = useRef(onJumpHandled);
   onActiveTurnRef.current = onActiveTurn;
+  onJumpHandledRef.current = onJumpHandled;
 
   useEffect(() => {
     if (pendingJump) {
       pendingJumpRef.current = pendingJump;
     }
   }, [pendingJump]);
+
+  // 仅切换会话（无 messageId）：activeConversationId 对齐即可完成跳转
+  useEffect(() => {
+    const target = pendingJumpRef.current;
+    if (!target || target.messageId) return;
+    if (target.conversationId !== conversationId) return;
+    pendingJumpRef.current = null;
+    onJumpHandledRef.current?.();
+  }, [conversationId]);
 
   useEffect(() => {
     if (!conversationId) {
@@ -91,7 +106,7 @@ export function useChatConversation({
 
   useEffect(() => {
     const target = pendingJumpRef.current;
-    if (!target || target.conversationId !== conversationId) return;
+    if (!target?.messageId || target.conversationId !== conversationId) return;
     if (loadingHistory || msgs.length === 0) return;
 
     const range =
@@ -101,17 +116,17 @@ export function useChatConversation({
 
     const frame = requestAnimationFrame(() => {
       const ok = scrollToMessageHighlight(
-        target.messageId,
+        target.messageId!,
         range,
         target.offsetVersion,
       );
       if (ok) {
         pendingJumpRef.current = null;
-        onJumpHandled?.();
+        onJumpHandledRef.current?.();
       }
     });
     return () => cancelAnimationFrame(frame);
-  }, [conversationId, loadingHistory, msgs, onJumpHandled]);
+  }, [conversationId, loadingHistory, msgs]);
 
   return {
     msgs,

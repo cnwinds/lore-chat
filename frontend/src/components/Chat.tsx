@@ -457,10 +457,10 @@ export function Chat({
   }
 
   function handleOpenSource(src: SourceRef) {
-    if (src.type === "conversation" && src.message_id) {
+    if (src.type === "conversation") {
       onJumpToConversation?.({
         conversationId: src.cid,
-        messageId: src.message_id,
+        ...(src.message_id ? { messageId: src.message_id } : {}),
         startChar: src.start_char,
         endChar: src.end_char,
         offsetVersion: src.offset_version,
@@ -476,6 +476,16 @@ export function Chat({
     } else if (src.type === "web" || src.type === "search") {
       window.open(src.url, "_blank", "noopener,noreferrer");
     }
+  }
+
+  function handleOpenConversation(target: {
+    conversationId: string;
+    messageId?: string;
+  }) {
+    onJumpToConversation?.({
+      conversationId: target.conversationId,
+      ...(target.messageId ? { messageId: target.messageId } : {}),
+    });
   }
 
   return (
@@ -505,6 +515,7 @@ export function Chat({
         previewPath={previewPath}
         conversationId={conversationId}
         onOpenSource={handleOpenSource}
+        onOpenConversation={handleOpenConversation}
         onQuestionResolved={handleQuestionResolved}
       />
       <div className="chat-composer-wrap">
