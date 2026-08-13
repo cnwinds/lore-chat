@@ -83,7 +83,7 @@ class AgentChoiceResolution:
             if context:
                 parts.append(f"\n背景：{context}")
             parts.append(
-                "\n请结合以上对话与选择，继续完成知识库整理（必要时先 list_kb_structure，再 write_kb）。"
+                "\n请结合以上对话与选择，继续完成知识库整理（必要时先 list_kb_structure，再 write_doc）。"
             )
             return ChoiceResult(
                 status="continue",
@@ -110,7 +110,7 @@ class AgentChoiceResolution:
         if context:
             parts.append(f"\n背景：{context}")
         parts.append(
-            "\n请先调用 list_kb_structure 查看目录，再调用 write_kb（必填 directory、filename、text）写入；"
+            "\n请先调用 list_kb_structure 查看目录，再调用 write_doc（必填 directory、filename、text）写入；"
             "禁止无路径自动落库。"
         )
         return ChoiceResult(

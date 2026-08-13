@@ -12,7 +12,7 @@ from app.engine.merge_sessions import MergeSessionStore
 from app.engine.retriever import Retriever
 from app.engine.pending import PendingStore
 from app.engine.document_synthesis import DocumentSynthesis
-from app.engine.knowledge_writer import KnowledgeWriter
+from app.engine.knowledge_writer import KnowledgeWriter, sanitize_doc_meta
 from app.engine.agent_choice import AgentChoiceResolution
 from app.engine.conversation_archive import ConversationArchiveWorkflow
 from app.engine.merge_workflow import MergeResult, MergeWorkflow
@@ -83,6 +83,7 @@ class Organizer:
         forced_rel_path: str,
         write_mode: WriteMode = "auto",
         conversation_id: str | None = None,
+        meta: dict | None = None,
     ) -> IngestResult:
         if is_question_only(content):
             return IngestResult(
@@ -97,7 +98,7 @@ class Organizer:
                 status="rejected",
                 rel_path=None,
                 question_id=None,
-                message="缺少目标路径。请通过 write_kb 指定 directory 与 filename。",
+                message="缺少目标路径。请通过 write_doc 指定 directory 与 filename。",
             )
         if is_memory_projection_path(forced_rel_path):
             return IngestResult(
@@ -108,9 +109,18 @@ class Organizer:
             )
 
         decision = self.planner.decision_for_forced_path(forced_rel_path)
+        clean = sanitize_doc_meta(meta)
+        if clean.get("title"):
+            decision.title = clean["title"]
+        if "tags" in clean:
+            decision.tags = list(clean["tags"])
         mode = resolve_write_mode(decision.rel_path, write_mode)
         self._apply(
-            decision, content, conversation_id=conversation_id, write_mode=mode
+            decision,
+            content,
+            conversation_id=conversation_id,
+            write_mode=mode,
+            meta_overrides=clean or None,
         )
         return IngestResult(
             status="saved",
@@ -195,6 +205,7 @@ class Organizer:
         *,
         conversation_id: str | None = None,
         write_mode: WriteMode = "merge",
+        meta_overrides: dict | None = None,
     ) -> None:
         self.writer.apply_placement(
             decision,
@@ -202,6 +213,7 @@ class Organizer:
             write_mode=write_mode,
             conversation_id=conversation_id,
             reorganize_existing=self.synthesis.reorganize_existing,
+            meta_overrides=meta_overrides,
         )
 
     def resolve_agent_choices(

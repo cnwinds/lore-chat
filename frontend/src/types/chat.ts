@@ -141,11 +141,12 @@ export type ChatStreamEvent = { event: string; data: Record<string, unknown> };
 
 // 会改动知识库、需要刷新侧栏的工具
 export const KB_MUTATING_TOOLS = [
-  "write_kb",
+  "write_doc",
   "write_kb_file",
   "delete_kb",
   "summarize_conversation",
   "edit_doc",
+  "update_doc_meta",
   "move_entry",
   "move_doc",
   "publish_from_sandbox",

@@ -6,13 +6,13 @@ from app.storage.repo import KnowledgeRepo
 _SKILL_ENTRY = "SKILL.md"
 
 
-def _norm_dir(path: str) -> str:
+def norm_dir(path: str) -> str:
     return path.replace("\\", "/").strip("/")
 
 
 def is_under_dir(path: str, base: str) -> bool:
-    base = _norm_dir(base)
-    path = _norm_dir(path)
+    base = norm_dir(base)
+    path = norm_dir(path)
     if not base:
         return True
     return path == base or path.startswith(f"{base}/")
@@ -28,21 +28,33 @@ def skill_package_root_from_skill_md(rel_path: str) -> str | None:
     return None
 
 
-def discover_skill_roots(repo: KnowledgeRepo, from_dir: str) -> list[str]:
-    """递归找出 from_dir 下（含自身）所有含 SKILL.md 的目录包根。"""
-    from_dir = _norm_dir(from_dir)
+def discover_skill_roots(
+    repo: KnowledgeRepo,
+    from_dir: str,
+    *,
+    skills_dir: str | None = None,
+) -> list[str]:
+    """递归找出 from_dir 下（含自身）所有含 SKILL.md 的目录包根。
+
+    若指定 skills_dir，则只返回落在该前缀内的包根。
+    """
+    from_dir = norm_dir(from_dir)
+    skills = norm_dir(skills_dir) if skills_dir is not None else None
     roots: set[str] = set()
     for rel in repo.list_tree():
         root = skill_package_root_from_skill_md(rel)
         if root is None:
             continue
-        if is_under_dir(root, from_dir):
-            roots.add(root)
+        if not is_under_dir(root, from_dir):
+            continue
+        if skills is not None and not is_under_dir(root, skills):
+            continue
+        roots.add(root)
     return sorted(roots)
 
 
 def skill_entry_rel_path(root: str) -> str:
-    root = _norm_dir(root)
+    root = norm_dir(root)
     return f"{root}/{_SKILL_ENTRY}" if root else _SKILL_ENTRY
 
 

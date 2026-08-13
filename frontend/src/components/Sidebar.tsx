@@ -251,7 +251,7 @@ export function Sidebar({
                         <strong>双击</strong> 文件名重命名；文件夹可右键重命名
                       </li>
                       <li>
-                        <strong>Ctrl+单击文件夹</strong> 附加 Skill（递归发现 SKILL.md）
+                        <strong>Ctrl+单击「技能」下文件夹</strong> 附加 Skill（递归发现 SKILL.md）
                       </li>
                       <li>
                         <strong>拖入</strong> 到文件夹行；移动或上传时顶部会出现「根目录」

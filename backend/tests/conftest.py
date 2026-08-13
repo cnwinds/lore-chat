@@ -16,7 +16,7 @@ def _build_tool_responses() -> list[dict]:
                 "tool_calls": [
                     ToolCall(
                         id=f"w{i}",
-                        name="write_kb",
+                        name="write_doc",
                         arguments={
                             "text": "",
                             "directory": "未分类",
@@ -60,9 +60,9 @@ class AgentFakeLLM(FakeLLMClient):
         patched: list[ToolCall] = []
         for tc in result.tool_calls:
             args = dict(tc.arguments)
-            if tc.name == "write_kb" and not args.get("text"):
+            if tc.name == "write_doc" and not args.get("text"):
                 args["text"] = user_text
-            if tc.name == "write_kb":
+            if tc.name == "write_doc":
                 if "directory" not in args:
                     args["directory"] = "未分类"
                 if "filename" not in args:

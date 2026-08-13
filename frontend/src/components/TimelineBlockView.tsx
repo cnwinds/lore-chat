@@ -269,7 +269,7 @@ function ToolBlockView({
         block.summary &&
         !(block.progress_log && block.progress_log.length > 0) &&
         block.tool !== "sandbox_run" &&
-        (block.tool === "write_kb" ||
+        (block.tool === "write_doc" ||
           block.tool === "edit_doc" ||
           block.tool === "generate_image" ||
           !block.sources?.length) &&

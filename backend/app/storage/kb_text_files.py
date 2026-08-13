@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import PurePosixPath
 
-# 浏览器预览友好的文本后缀；Markdown 由 write_kb / read_doc 文档路径单独处理。
+# 浏览器预览友好的文本后缀；Markdown 由 write_doc / read_doc 文档路径单独处理。
 KB_TEXT_FILE_SUFFIXES: frozenset[str] = frozenset(
     {
         ".sh",

@@ -152,7 +152,7 @@ class ChatSessionRunner:
             yield ev
 
 
-def ingest_from_write_kb_result(data: dict) -> dict:
+def ingest_from_write_doc_result(data: dict) -> dict:
     status = data.get("status")
     rel_path = data.get("rel_path")
     if not rel_path:
@@ -175,10 +175,10 @@ async def consume_agent_ingest(agent, text: str) -> dict:
         if not parsed:
             continue
         event_type, data = parsed
-        if event_type == "tool_result" and data.get("tool") == "write_kb":
-            result = ingest_from_write_kb_result(data)
+        if event_type == "tool_result" and data.get("tool") == "write_doc":
+            result = ingest_from_write_doc_result(data)
     if result is None:
-        raise RuntimeError("Agent 未调用 write_kb")
+        raise RuntimeError("Agent 未调用 write_doc")
     return result
 
 

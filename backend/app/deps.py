@@ -101,6 +101,9 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
             llm.usage_recorder = usage_recorder
         llm.cooldown = model_cooldown
     repo = KnowledgeRepo(settings.kb_path, protected_dirs=(settings.system_layer_dir,))
+    from app.engine.skills_dir import ensure_skills_dir
+
+    ensure_skills_dir(repo, settings.skills_dir)
 
     memory_store = MemoryStore(
         settings.kb_path / ".kb" / "memory" / "memory.db",

@@ -8,14 +8,14 @@ from app.engine.knowledge_writer import KnowledgeWriter
 resolve_kb_location = KnowledgeWriter.resolve_location
 
 READ_ONLY_TOOLS = frozenset({
-    "search_kb", "read_doc", "list_kb_structure", "read_conversation_context",
+    "search_kb", "read_doc", "read_doc_meta", "list_kb_structure", "read_conversation_context",
     "fetch_url", "web_search",
     "recall_memory",
     "sandbox_list_dir", "sandbox_read_file", "sandbox_job_status",
 })
 WRITE_TOOLS = frozenset({
-    "write_kb", "write_kb_file", "delete_kb", "ask_user", "summarize_conversation",
-    "edit_doc",
+    "write_doc", "write_kb_file", "delete_kb", "ask_user", "summarize_conversation",
+    "edit_doc", "update_doc_meta",
     "manage_memory", "move_entry",
     "generate_image",
     "sandbox_run", "publish_from_sandbox", "stage_to_sandbox",
@@ -92,17 +92,19 @@ def can_parallelize(tool_names: list[str]) -> bool:
 TOOL_LABELS = {
     "search_kb": "检索本地知识库",
     "read_doc": "读取文档",
+    "read_doc_meta": "读取文档元数据",
     "list_kb_structure": "查看知识库目录结构",
     "read_conversation_context": "读取会话邻近消息",
     "fetch_url": "打开链接",
     "web_search": "搜索网页",
     "generate_image": "生成图片",
-    "write_kb": "写入知识库文档",
+    "write_doc": "写入文档",
     "write_kb_file": "写入知识库代码/文本文件",
     "summarize_conversation": "归档整段会话",
     "delete_kb": "删除知识库内容",
     "ask_user": "征询用户",
     "edit_doc": "局部编辑文档",
+    "update_doc_meta": "更新文档元数据",
     "move_entry": "移动或重命名路径",
     "manage_memory": "管理长期用户记忆",
     "recall_memory": "回忆已确认的用户画像",
@@ -129,7 +131,7 @@ _KB_DIRECTORY_DESC = (
 )
 _KB_FILENAME_DESC = "Markdown 文件名，必须以 .md 结尾。示例：DeepSeek对比.md、常用命令.md"
 _KB_FILE_FILENAME_DESC = (
-    "非 Markdown 文本文件名（如 .sh/.py/.js/.yaml）；禁止 .md（文档请用 write_kb）。"
+    "非 Markdown 文本文件名（如 .sh/.py/.js/.yaml）；禁止 .md（文档请用 write_doc）。"
     "示例：gen_audio.sh、fetch.py"
 )
 
@@ -200,7 +202,7 @@ TOOL_DEFINITIONS: list[dict] = [
             "name": "list_kb_structure",
             "description": (
                 "列出知识库当前目录结构与各目录下的文档文件名（只读）。"
-                "在 write_kb、write_kb_file、summarize_conversation、move_entry 之前必须先调用本工具，"
+                "在 write_doc、write_kb_file、summarize_conversation、move_entry 之前必须先调用本工具，"
                 "据此决定放入已有目录、新建子目录或 move_entry 调整结构；禁止凭记忆编造路径。"
             ),
             "parameters": {"type": "object", "properties": {}, "required": []},
@@ -313,27 +315,42 @@ TOOL_DEFINITIONS: list[dict] = [
     {
         "type": "function",
         "function": {
-            "name": "write_kb",
+            "name": "write_doc",
             "description": (
-                "将内容写入知识库。必须指定 directory 与 filename（目录 + 文件名）。"
-                "写入前应先 list_kb_structure 规划路径。"
-                "目标文件已存在时合并重组；不存在时在指定路径新建。"
-                "禁止 conv: 等内部前缀、禁止会话 id 当目录名。"
+                "将 Markdown 正文写入知识库。必须指定 directory 与 filename；"
+                "写入前先 list_kb_structure。可选 meta（title/tags/source）；"
+                "正文勿含元数据头。已存在则默认合并，不存在则新建。"
+                "Skill 包放在「技能」目录下。"
+                "禁止 conv: 前缀、禁止会话 id 当目录名。"
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "text": {"type": "string", "description": "要写入的正文内容"},
+                    "text": {
+                        "type": "string",
+                        "description": "正文内容",
+                    },
                     "context": {
                         "type": "string",
                         "description": "可选上下文（如来源说明），会拼接到正文前",
+                    },
+                    "meta": {
+                        "type": "object",
+                        "description": "可选元数据：title、tags、source",
+                        "properties": {
+                            "title": {"type": "string"},
+                            "tags": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                            },
+                            "source": {"type": "string"},
+                        },
                     },
                     "write_mode": {
                         "type": "string",
                         "enum": ["auto", "merge", "replace"],
                         "description": (
-                            "写入策略：auto（默认；SKILL.md 覆盖写入，其它已存在则 LLM 合并）；"
-                            "merge（强制合并重组）；replace（整篇覆盖正文，保留元数据）"
+                            "auto（默认，已存在则合并）；merge；replace（覆盖正文）"
                         ),
                         "default": "auto",
                     },
@@ -346,10 +363,64 @@ TOOL_DEFINITIONS: list[dict] = [
     {
         "type": "function",
         "function": {
+            "name": "read_doc_meta",
+            "description": "读取文档结构化元数据；读正文用 read_doc。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "文档相对路径，如 技术/docker/常用命令.md",
+                    },
+                },
+                "required": ["path"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "update_doc_meta",
+            "description": (
+                "更新文档元数据（title/tags/source）；不改正文。"
+                "默认与现有字段合并；created/updated 由系统维护。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "文档相对路径",
+                    },
+                    "meta": {
+                        "type": "object",
+                        "description": "要写入的字段（title/tags/source）",
+                        "properties": {
+                            "title": {"type": "string"},
+                            "tags": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                            },
+                            "source": {"type": "string"},
+                        },
+                    },
+                    "merge": {
+                        "type": "boolean",
+                        "description": "默认 true，与现有元数据合并",
+                        "default": True,
+                    },
+                },
+                "required": ["path", "meta"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "write_kb_file",
             "description": (
                 "将文本类代码/配置文件写入知识库（.sh/.py/.js/.yaml 等）。"
-                "禁止 .md（文档请用 write_kb）。不做 LLM 合并；已存在时须 overwrite=true 整文件覆盖。"
+                "禁止 .md（文档请用 write_doc）。不做 LLM 合并；已存在时须 overwrite=true 整文件覆盖。"
                 "写入前应先 list_kb_structure 规划路径。"
             ),
             "parameters": {
@@ -384,7 +455,7 @@ TOOL_DEFINITIONS: list[dict] = [
             "description": (
                 "对已有知识库文档做局部修改（替换或插入）。"
                 "修改前必须先 read_doc 读取目标区域；old_string 必须从 read_doc 返回内容中精确复制。"
-                "小范围修改优先于 write_kb。"
+                "小范围修改优先于 write_doc。"
             ),
             "parameters": {
                 "type": "object",
@@ -475,7 +546,7 @@ TOOL_DEFINITIONS: list[dict] = [
                     "from_path": {
                         "type": "string",
                         "description": (
-                            "当前相对路径：任意知识库文件，或目录（如 skill/张雪峰）"
+                            "当前相对路径：任意知识库文件，或目录（如 技能/张雪峰）"
                         ),
                     },
                     "to_directory": {
@@ -775,7 +846,7 @@ TOOL_DEFINITIONS: list[dict] = [
                                     "type": "string",
                                     "description": (
                                         "知识库相对路径，如 "
-                                        "skill/hn-video-report/scripts/fetch_hn.py"
+                                        "技能/hn-video-report/scripts/fetch_hn.py"
                                     ),
                                 },
                                 "sandbox_path": {
@@ -826,8 +897,8 @@ def select_tools(
 
     - web_enabled=False 或未配置搜索 provider：移除 web_search（保留 fetch_url）。
     - 未配置生图 provider：移除 generate_image。
-    - mode=no_write：移除 write_kb / write_kb_file / manage_memory / publish_from_sandbox / generate_image（保留 stage_to_sandbox）。
-    - mode=force_write：保留 write_kb（/api/ingest 依赖 prompt 强制调用）。
+    - mode=no_write：移除 write_doc / write_kb_file / update_doc_meta / manage_memory / publish_from_sandbox / generate_image（保留 stage_to_sandbox）。
+    - mode=force_write：保留 write_doc（/api/ingest 依赖 prompt 强制调用）。
     - sandbox_enabled=False：移除全部沙箱工具。
     - disclosure_windows：注入 read_doc / fetch_url 的实际窗口字数（与 Settings 一致）。
 
@@ -840,8 +911,9 @@ def select_tools(
     if not imagegen_configured:
         excluded.add("generate_image")
     if mode == _MODE_NO_WRITE:
-        excluded.add("write_kb")
+        excluded.add("write_doc")
         excluded.add("write_kb_file")
+        excluded.add("update_doc_meta")
         excluded.add("manage_memory")
         excluded.add("publish_from_sandbox")
         excluded.add("generate_image")

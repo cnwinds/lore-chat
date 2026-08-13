@@ -63,7 +63,7 @@ def _make_registry(tmp_path, chat_responses=None, conversation_fts=None, convers
 
 def test_can_parallelize_read_only():
     assert can_parallelize(["search_kb", "fetch_url"]) is True
-    assert can_parallelize(["search_kb", "write_kb"]) is False
+    assert can_parallelize(["search_kb", "write_doc"]) is False
     assert can_parallelize(["search_kb", "delete_kb"]) is False
     assert can_parallelize(["search_kb", "edit_doc"]) is False
 
@@ -321,10 +321,10 @@ async def test_delete_kb_doc(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_write_kb_exposes_structured_status(tmp_path):
+async def test_write_doc_exposes_structured_status(tmp_path):
     registry, repo, idx = _make_registry(tmp_path)
     result = await registry.execute(
-        "write_kb",
+        "write_doc",
         {
             "text": "docker ps 查看容器列表",
             "directory": "技术/docker",
@@ -337,9 +337,9 @@ async def test_write_kb_exposes_structured_status(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_write_kb_requires_directory_and_filename(tmp_path):
+async def test_write_doc_requires_directory_and_filename(tmp_path):
     registry, _, _ = _make_registry(tmp_path)
-    result = await registry.execute("write_kb", {"text": "hello"})
+    result = await registry.execute("write_doc", {"text": "hello"})
     assert result["error"] == "MISSING_PATH"
 
 
@@ -624,14 +624,14 @@ def test_select_tools_imagegen_gate():
     assert "generate_image" not in names_nw
 
 
-def test_select_tools_no_write_drops_write_kb():
+def test_select_tools_no_write_drops_write_doc():
     names = _tool_names(select_tools(MODE_NO_WRITE, web_enabled=True))
-    assert "write_kb" not in names
+    assert "write_doc" not in names
 
 
-def test_select_tools_force_write_keeps_write_kb():
+def test_select_tools_force_write_keeps_write_doc():
     names = _tool_names(select_tools(MODE_FORCE_WRITE, web_enabled=True))
-    assert "write_kb" in names
+    assert "write_doc" in names
 
 
 @pytest.mark.asyncio

@@ -2,7 +2,7 @@ from app.engine.chat.session_runner import (
     ChatSessionRunner,
     consume_agent_ask,
     consume_agent_ingest,
-    ingest_from_write_kb_result,
+    ingest_from_write_doc_result,
 )
 from app.engine.chat.sse import parse_agent_sse_event
 from app.engine.chat.timeline import TimelineAccumulator
@@ -13,5 +13,5 @@ __all__ = [
     "parse_agent_sse_event",
     "consume_agent_ingest",
     "consume_agent_ask",
-    "ingest_from_write_kb_result",
+    "ingest_from_write_doc_result",
 ]

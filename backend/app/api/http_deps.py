@@ -16,7 +16,12 @@ def kb_tree_service(request: Request):
     from app.engine.kb_tree_service import KbTreeService
 
     c = container(request)
-    return c, KbTreeService(c.repo, c.knowledge_writer, c.index_revision)
+    return c, KbTreeService(
+        c.repo,
+        c.knowledge_writer,
+        c.index_revision,
+        skills_dir=c.settings.skills_dir,
+    )
 
 
 def kb_path_exists_detail(rel_path: str, message: str, suggested_filename: str) -> dict:

@@ -511,7 +511,7 @@ export function chatInject(body: ChatInjectBody) {
 
 /**
  * 强制落库（测试 / 脚本 API）。
- * 产品 UI 请用 {@link chatStream}；同步 JSON，语义等价于 Agent 必须 write_kb。
+ * 产品 UI 请用 {@link chatStream}；同步 JSON，语义等价于 Agent 必须 write_doc。
  * @see docs/superpowers/specs/2026-07-12-ingest-ask-api-design.md
  */
 export async function ingest(text: string) {
@@ -524,7 +524,7 @@ export async function ingest(text: string) {
 
 /**
  * 只读问答（测试 / 脚本 API）。
- * 产品 UI 请用 {@link chatStream}；硬门禁止 write_kb，返回最终正文与 sources。
+ * 产品 UI 请用 {@link chatStream}；硬门禁止 write_doc，返回最终正文与 sources。
  * @see docs/superpowers/specs/2026-07-12-ingest-ask-api-design.md
  */
 export async function ask(query: string) {

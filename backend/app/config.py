@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     precepts_filename: str = "戒律.md"
     soul_filename: str = "心法.md"
 
+    # Skill 固定目录：与系统层同级，侧栏排在「系统」之下；可检索、可附加，不受系统层保护
+    skills_dir: str = "技能"
+
     openai_api_key: str = "sk-none"
     openai_base_url: str = "https://api.openai.com/v1"
 

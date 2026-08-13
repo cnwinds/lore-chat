@@ -123,12 +123,17 @@ def test_discover_skills_nested(client):
     r = client.post(
         "/api/kb/import",
         files=files,
-        data={"directory": "skill/职业规划/张雪峰"},
+        data={"directory": "技能/职业规划/张雪峰"},
     )
     assert r.status_code == 200
-    r2 = client.get("/api/kb/discover-skills", params={"from_dir": "skill"})
+    r2 = client.get("/api/kb/discover-skills", params={"from_dir": "技能"})
     assert r2.status_code == 200
-    assert "skill/职业规划/张雪峰" in r2.json()["roots"]
+    assert "技能/职业规划/张雪峰" in r2.json()["roots"]
+
+
+def test_discover_skills_rejects_outside_skills_dir(client):
+    r = client.get("/api/kb/discover-skills", params={"from_dir": "其它"})
+    assert r.status_code == 403
 
 
 def test_chat_rejects_skill_as_primary(client):
@@ -137,10 +142,10 @@ def test_chat_rejects_skill_as_primary(client):
         json={
             "text": "hi",
             "doc_context": [
-                {"path": "skill/pkg", "kind": "skill_root"},
+                {"path": "技能/pkg", "kind": "skill_root"},
                 {"path": "a.md", "kind": "document"},
             ],
-            "primary_doc_path": "skill/pkg",
+            "primary_doc_path": "技能/pkg",
         },
     )
     assert r.status_code == 400

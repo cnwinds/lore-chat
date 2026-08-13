@@ -30,7 +30,7 @@ Lore Chat 的 Agent 工具面是服务器内白名单语义工具（KB / 网页 
 - 单操作者维护 **一个**长驻沙箱（sandbox id 持久化在 lore-chat 配置/状态中）。
 - 持久层：Docker named volume（OpenSandbox `pvc`）挂到沙箱内 `/workspace`（及可选 home/工具目录）；重建沙箱时 **工具环境可清空，`/workspace` 默认保留**。
 - 沙箱可出网、可装软件；**不**向沙箱暴露宿主机根盘、**不**向沙箱挂载 `docker.sock`、**不**把整个知识库可写挂进沙箱。
-- 知识库写入仅经受控工具（如 `publish_from_sandbox` / 现有 `write_kb` 管线），从沙箱指定路径导入。
+- 知识库写入仅经受控工具（如 `publish_from_sandbox` / 现有 `write_doc` 管线），从沙箱指定路径导入。
 
 ### 3. 与 Agent 循环的耦合
 

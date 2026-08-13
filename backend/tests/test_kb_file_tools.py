@@ -55,7 +55,7 @@ def test_write_text_file_and_overwrite(tmp_path):
 def test_write_text_file_rejects_md(tmp_path):
     repo = KnowledgeRepo(tmp_path / "knowledge")
     w = make_writer(repo, tmp_path)
-    with pytest.raises(ValueError, match="write_kb"):
+    with pytest.raises(ValueError, match="write_doc"):
         w.write_text_file(directory="x", filename="a.md", content="# hi\n")
 
 
@@ -192,7 +192,7 @@ def test_select_tools_no_write_drops_write_kb_file_keeps_stage():
     )
     assert "write_kb_file" not in names
     assert "stage_to_sandbox" in names
-    assert "write_kb" not in names
+    assert "write_doc" not in names
 
 
 def test_select_tools_includes_write_kb_file_by_default():

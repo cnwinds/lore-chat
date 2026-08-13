@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from app.engine.kb_skill import norm_dir
 from app.engine.knowledge_writer import (
     KbPathExistsError,
     KnowledgeWriter,
@@ -17,10 +18,13 @@ class KbTreeService:
         repo: KnowledgeRepo,
         writer: KnowledgeWriter,
         index_revision: IndexRevision,
+        *,
+        skills_dir: str = "技能",
     ):
         self.repo = repo
         self.writer = writer
         self.index_revision = index_revision
+        self.skills_dir = norm_dir(skills_dir) or "技能"
 
     def import_upload(
         self, *, directory: str, filename: str, data: bytes
@@ -62,11 +66,17 @@ class KbTreeService:
 
     def discover_skills(self, from_dir: str) -> list[str]:
         from app.engine.kb_skill import discover_skill_roots
+        from app.engine.skills_dir import clamp_skills_scan_dir
 
-        norm = from_dir.replace("\\", "/").strip("/")
-        if norm and self.repo.is_protected(norm):
+        try:
+            norm = clamp_skills_scan_dir(from_dir, self.skills_dir)
+        except ValueError as e:
+            raise PermissionError(str(e)) from e
+        if self.repo.is_protected(norm):
             raise PermissionError("禁止扫描该目录")
-        return discover_skill_roots(self.repo, norm)
+        return discover_skill_roots(
+            self.repo, norm, skills_dir=self.skills_dir
+        )
 
 
 __all__ = [

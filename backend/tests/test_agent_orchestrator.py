@@ -258,7 +258,7 @@ async def test_run_injects_skill_activation(tmp_path):
     kb = tmp_path / "knowledge"
     repo = KnowledgeRepo(kb)
     repo.write_doc(
-        "skill/demo/SKILL.md",
+        "技能/demo/SKILL.md",
         {"title": "Demo"},
         "ROLE RULE: speak like demo.\n",
         commit_msg="seed",
@@ -269,7 +269,7 @@ async def test_run_injects_skill_activation(tmp_path):
     )
     async for _ in orchestrator.run(
         "你好",
-        skill_roots=["skill/demo"],
+        skill_roots=["技能/demo"],
     ):
         pass
     messages = orchestrator.llm.calls[-1]["messages"]
@@ -278,7 +278,7 @@ async def test_run_injects_skill_activation(tmp_path):
     )
     assert "Skill 激活" in system_contents
     assert "ROLE RULE" in system_contents
-    assert "skill/demo（Skill 包）" in system_contents
+    assert "技能/demo（Skill 包）" in system_contents
 
 
 @pytest.mark.asyncio
@@ -303,7 +303,7 @@ async def test_run_injects_multi_doc_context(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_run_no_write_excludes_write_kb(tmp_path):
+async def test_run_no_write_excludes_write_doc(tmp_path):
     orchestrator = _make_orchestrator(
         tmp_path,
         tool_responses=[{"content": "ok", "tool_calls": []}],
@@ -313,4 +313,4 @@ async def test_run_no_write_excludes_write_kb(tmp_path):
 
     tools = orchestrator.llm.calls[-1]["tools"]
     names = _tool_names_from_defs(tools)
-    assert "write_kb" not in names
+    assert "write_doc" not in names

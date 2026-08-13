@@ -44,7 +44,7 @@ class KbMutateTools:
         self.edit_doc_max_edits = edit_doc_max_edits
         self.edit_doc_max_patch_chars = edit_doc_max_patch_chars
 
-    def write_kb(self, args: dict) -> dict:
+    def write_doc(self, args: dict) -> dict:
         rel_path, err = resolve_kb_location(args)
         if err:
             return err
@@ -62,8 +62,19 @@ class KbMutateTools:
         write_mode: WriteMode = (
             mode_raw if mode_raw in ("auto", "merge", "replace") else "auto"
         )
+        meta = args.get("meta")
+        if meta is not None and not isinstance(meta, dict):
+            return {
+                "summary": "meta 必须是对象（如 {title, tags}）",
+                "sources": [],
+                "error": "INVALID_META",
+                "status": "failed",
+            }
         result = self.organizer.ingest_text(
-            text, forced_rel_path=rel_path, write_mode=write_mode
+            text,
+            forced_rel_path=rel_path,
+            write_mode=write_mode,
+            meta=meta if isinstance(meta, dict) else None,
         )
         sources = [{"type": "kb", "path": result.rel_path}] if result.rel_path else []
         out: dict = {
@@ -76,6 +87,100 @@ class KbMutateTools:
         if result.question_id:
             out["question_id"] = result.question_id
         return out
+
+    def _resolve_doc_meta_path(self, args: dict) -> tuple[str | None, dict | None]:
+        path = (args.get("path") or "").replace("\\", "/").lstrip("/")
+        if not path:
+            return None, {
+                "summary": "缺少 path",
+                "sources": [],
+                "error": "MISSING_PATH",
+                "status": "failed",
+            }
+        if is_memory_projection_path(path):
+            return None, {
+                "summary": _MEMORY_FILE_DISABLED_MSG,
+                "sources": [],
+                "error": "memory_file_disabled",
+                "status": "failed",
+            }
+        return path, None
+
+    def read_doc_meta(self, args: dict) -> dict:
+        path, err = self._resolve_doc_meta_path(args)
+        if err:
+            return err
+        assert path is not None
+        try:
+            doc = self.repo.read_doc(path)
+        except FileNotFoundError:
+            return {
+                "summary": f"文档不存在：{path}",
+                "sources": [],
+                "error": "NOT_FOUND",
+                "status": "failed",
+            }
+        except Exception as e:
+            return {
+                "summary": str(e),
+                "sources": [],
+                "error": "READ_FAILED",
+                "status": "failed",
+            }
+        return {
+            "summary": f"已读取元数据：{path}",
+            "sources": [{"type": "kb", "path": path}],
+            "path": path,
+            "meta": dict(doc.meta),
+            "status": "ok",
+        }
+
+    def update_doc_meta(self, args: dict) -> dict:
+        path, err = self._resolve_doc_meta_path(args)
+        if err:
+            return err
+        assert path is not None
+        patch = args.get("meta")
+        if not isinstance(patch, dict) or not patch:
+            return {
+                "summary": "缺少 meta 对象",
+                "sources": [],
+                "error": "MISSING_META",
+                "status": "failed",
+            }
+        merge = bool(args.get("merge", True))
+        try:
+            meta = self.knowledge_writer.update_document_meta(
+                path, patch, merge=merge
+            )
+        except FileNotFoundError:
+            return {
+                "summary": f"文档不存在：{path}",
+                "sources": [],
+                "error": "NOT_FOUND",
+                "status": "failed",
+            }
+        except ValueError as e:
+            return {
+                "summary": str(e),
+                "sources": [{"type": "kb", "path": path}],
+                "error": "EMPTY_META" if "可更新" in str(e) else "WRITE_FAILED",
+                "status": "failed",
+            }
+        except Exception as e:
+            return {
+                "summary": str(e),
+                "sources": [],
+                "error": "WRITE_FAILED",
+                "status": "failed",
+            }
+        return {
+            "summary": f"已更新元数据：{path}",
+            "sources": [{"type": "kb", "path": path}],
+            "path": path,
+            "meta": meta,
+            "status": "ok",
+        }
 
     def write_kb_file(self, args: dict) -> dict:
         directory = args.get("directory")

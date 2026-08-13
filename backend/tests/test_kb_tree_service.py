@@ -10,13 +10,13 @@ from app.models.llm import FakeLLMClient
 from app.storage.repo import KnowledgeRepo
 
 
-def _svc(tmp_path, *, protected=("系统",)):
+def _svc(tmp_path, *, protected=("系统",), skills_dir="技能"):
     repo = KnowledgeRepo(tmp_path / "knowledge", protected_dirs=protected)
     llm = FakeLLMClient(embed_dim=8)
     idx = Indexer(VectorIndex(tmp_path / "vec"), FullTextIndex(tmp_path / "fts.db"), llm)
     writer = KnowledgeWriter(repo, idx)
     rev = IndexRevision(tmp_path / "revision.txt")
-    return KbTreeService(repo, writer, rev), repo, rev
+    return KbTreeService(repo, writer, rev, skills_dir=skills_dir), repo, rev
 
 
 def test_import_upload_bumps_revision(tmp_path):
@@ -54,6 +54,17 @@ def test_delete_bumps_when_paths_removed(tmp_path):
     r = svc.delete("x/f.txt")
     assert r["deleted_paths"] == ["x/f.txt"]
     assert rev.get() == before + 1
+
+
+def test_discover_skills_clamped(tmp_path):
+    svc, repo, _ = _svc(tmp_path)
+    svc.import_upload(
+        directory="技能/pkg", filename="SKILL.md", data=b"# skill\n"
+    )
+    assert svc.discover_skills("") == ["技能/pkg"]
+    assert svc.discover_skills("技能") == ["技能/pkg"]
+    with pytest.raises(PermissionError, match="技能"):
+        svc.discover_skills("其它")
 
 
 def test_import_conflict(tmp_path):

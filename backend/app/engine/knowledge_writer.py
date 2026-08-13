@@ -95,6 +95,39 @@ class KnowledgeWriter:
         )
         return norm
 
+    def update_document_meta(
+        self,
+        rel_path: str,
+        patch: dict,
+        *,
+        merge: bool = True,
+    ) -> dict:
+        """只改结构化元数据，正文不动；经 persist_document 以刷新索引与 changelog。"""
+        norm = rel_path.replace("\\", "/").lstrip("/")
+        if is_memory_projection_path(norm):
+            raise ValueError(_MEMORY_FILE_DISABLED_MSG)
+        doc = self.repo.read_doc(norm)
+        clean = sanitize_doc_meta(patch)
+        if not clean:
+            raise ValueError("没有可更新的元数据字段（允许 title/tags/source）")
+        if merge:
+            new_meta = {**doc.meta, **clean}
+        else:
+            new_meta = {
+                k: v
+                for k, v in doc.meta.items()
+                if k in ("created", "updated", "conversation_ids")
+            }
+            new_meta.update(clean)
+        self.persist_document(
+            norm,
+            new_meta,
+            doc.body,
+            commit_msg=f"meta: {norm}",
+            changelog_line=f"更新元数据 {norm}",
+        )
+        return dict(self.repo.read_doc(norm).meta)
+
     def save_edit(
         self,
         rel_path: str,
@@ -268,7 +301,7 @@ class KnowledgeWriter:
         """写入白名单文本资产（非 Markdown）；不做 LLM 合并。"""
         fn = _safe_basename(filename)
         if is_markdown_path(fn):
-            raise ValueError("Markdown 请使用 write_kb，勿用 write_kb_file")
+            raise ValueError("Markdown 请使用 write_doc，勿用 write_kb_file")
         self.assert_non_md_asset_allowed(fn, allow_binary=False)
         rel = _file_rel(directory, fn)
         if not self.repo.is_writable(rel):
@@ -406,6 +439,7 @@ class KnowledgeWriter:
         write_mode: WriteMode = "merge",
         conversation_id: str | None = None,
         reorganize_existing: Callable[[str, str, str], str] | None = None,
+        meta_overrides: dict | None = None,
     ) -> None:
         """按 PlacementDecision 落盘（replace / merge / new）。"""
         rel_path = decision.rel_path
@@ -417,6 +451,7 @@ class KnowledgeWriter:
             exists = False
 
         body = content if content.endswith("\n") else f"{content}\n"
+        overrides = sanitize_doc_meta(meta_overrides)
 
         if write_mode == "replace" and exists:
             doc = self.repo.read_doc(rel_path)
@@ -427,6 +462,7 @@ class KnowledgeWriter:
             if decision.tags:
                 existing_tags = doc.meta.get("tags") or []
                 meta["tags"] = list(dict.fromkeys(existing_tags + decision.tags))
+            meta = {**meta, **overrides}
             meta = _conversation_ids_meta(meta, conversation_id)
             self.persist_document(
                 rel_path,
@@ -450,6 +486,7 @@ class KnowledgeWriter:
                 merged_meta["tags"] = list(
                     dict.fromkeys(existing_tags + decision.tags)
                 )
+            merged_meta = {**merged_meta, **overrides}
             merged_meta = _conversation_ids_meta(merged_meta, conversation_id)
             merged_body = reorganize_existing(doc.body, content, decision.title)
             self.persist_document(
@@ -466,6 +503,7 @@ class KnowledgeWriter:
             "tags": decision.tags,
             "source": "conversation" if conversation_id else "chat",
         }
+        meta = {**meta, **overrides}
         meta = _conversation_ids_meta(meta, conversation_id)
         self.persist_document(
             rel_path,
@@ -474,6 +512,27 @@ class KnowledgeWriter:
             commit_msg=f"add: 新建 {rel_path}",
             changelog_line=f"创建 {rel_path}：{decision.reason or decision.title}",
         )
+
+
+_META_READONLY = frozenset({"created", "updated"})
+_META_ALLOWED = frozenset({"title", "tags", "source"})
+
+
+def sanitize_doc_meta(meta: dict | None) -> dict:
+    if not meta:
+        return {}
+    out: dict = {}
+    for key, val in meta.items():
+        if key in _META_READONLY or key not in _META_ALLOWED:
+            continue
+        if key == "tags":
+            if isinstance(val, list):
+                out["tags"] = [str(x) for x in val]
+            continue
+        if val is None:
+            continue
+        out[key] = str(val)
+    return out
 
 
 def _conversation_ids_meta(meta: dict, conversation_id: str | None) -> dict:

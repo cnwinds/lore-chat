@@ -46,7 +46,7 @@
 
 所有**新建/归档**到 KB 的入口必须带 **`directory` + `filename`**（`.md`）：
 
-- Agent：`write_kb`、`summarize_conversation`（见 `tool_catalog.py`）
+- Agent：`write_doc`、`summarize_conversation`（见 `tool_catalog.py`）
 - HTTP：`POST /api/conversations/{id}/summarize` body 同形
 - 校验与拼接：`kb_paths.join_kb_path` / `KnowledgeWriter.resolve_location`
 
@@ -89,14 +89,14 @@ _Avoid_: 在 Organizer / KB 摄入路径解析 `sandbox_confirm`
 **文档托盘**：用户在发送前选中的知识库上下文集合；项为带类型的 `{ path, kind }`，持久化在消息的 `doc_context` 中。可含普通文档与 Skill 根等。托盘 ↔ float/pin 预览编排在 `useComposerPreviewBridge`。
 _Avoid_: 附件托盘（与 `attachments/` 二进制附件区分）；仅用无类型路径列表表达 Skill；在 `App.tsx` 再堆 pin/tray/路径同步状态机
 
-**主文档**：托盘内用于默认 `edit_doc` 目标的普通 Markdown 文档。Skill 包（`skill_root`）不可作主文档；用户明确指定路径时仍可 `edit_doc`（含某 Skill 的 `SKILL.md`）。
-_Avoid_: 把 Skill 根当作可编辑文档
+**主文档**：托盘内用于默认 `edit_doc` 目标的普通 Markdown 文档。Skill 包（`skill_root`）不可作主文档；用户明确指定路径时仍可 `edit_doc`（含 `SKILL.md`）。文档元数据用 `write_doc.meta` / `read_doc_meta` / `update_doc_meta`，调用方不感知磁盘定界。
+_Avoid_: 把 Skill 根当作可编辑文档；在正文伪造 KB 元数据头
 
 **Skill 激活**：仅当托盘含 `skill_root` 时，在本轮 system 对该包注入元信息与 `SKILL.md` 入口正文（首窗与 `read_doc` 默认 limit 对齐，约 3000 字；不足则全文）；不预载 `references/` 等子资源。
 _Avoid_: 全量注入；对普通 `document` 路径做 Skill 激活
 
-**Skill 包发现**：用户点选侧栏某文件夹后，自该目录起**递归**找出所有「目录内直接含 `SKILL.md`」的包根；经**勾选确认层**（列出候选路径，用户选择）后以若干 `skill_root` 写入托盘。点选目录自身含 `SKILL.md` 时，候选列表须包含该目录。未发现任何包时提示用户，不写入托盘。前端编排在 `useSkillTrayAttach`。
-_Avoid_: 不经确认自动塞满托盘；只扫描一层；在 `App.tsx` 再堆发现/确认状态机
+**Skill 包发现**：Skill 包固定驻留在知识库顶层「技能」目录（与「系统」同级、侧栏排在其下）。用户点选「技能」或其子文件夹后，自该目录起**递归**找出所有「目录内直接含 `SKILL.md`」的包根；经**勾选确认层**（列出候选路径，用户选择）后以若干 `skill_root` 写入托盘。点选目录自身含 `SKILL.md` 时，候选列表须包含该目录。未发现任何包时提示用户，不写入托盘。前端编排在 `useSkillTrayAttach`；扫描起点越出「技能」时拒绝。
+_Avoid_: 不经确认自动塞满托盘；只扫描一层；在 `App.tsx` 再堆发现/确认状态机；在任意目录约定 Skill
 
 **知识库树 viewport UI**：侧栏目录的展开态与滚动位置（hydrate / 临时露出 / 恢复 / 落盘）收在 `useKbTreeViewportUi`；`FileTree` 只渲染受控展开；存储细节在 `kbTreeUiStorage`。
 _Avoid_: 用 `onExpandReady` 跨组件握手；在 `FileTree` / `Sidebar` 再拆一套展开或滚动状态机

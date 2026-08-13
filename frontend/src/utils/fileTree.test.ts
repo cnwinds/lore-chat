@@ -5,6 +5,7 @@ import {
   collectDefaultExpandedFolderPaths,
   nextUserExpandedAfterTreeChange,
   resolveExpandedFolderPaths,
+  SKILLS_DIR,
   SYSTEM_LAYER_DIR,
 } from "./fileTree";
 
@@ -21,6 +22,17 @@ describe("collectDefaultExpandedFolderPaths", () => {
     expect(expanded.has("a/b")).toBe(true);
     expect(expanded.has("a/b/c")).toBe(false);
     expect(expanded.has(SYSTEM_LAYER_DIR)).toBe(false);
+  });
+});
+
+describe("buildFileTree fixed folders", () => {
+  it("orders 系统 then 技能 at root and injects empty 技能", () => {
+    const tree = buildFileTree([`${SYSTEM_LAYER_DIR}/心法.md`, "a/x.md"]);
+    expect(tree[0]?.type).toBe("folder");
+    expect(tree[0]?.name).toBe(SYSTEM_LAYER_DIR);
+    expect(tree[1]?.type).toBe("folder");
+    expect(tree[1]?.name).toBe(SKILLS_DIR);
+    expect(tree.some((n) => n.name === "a")).toBe(true);
   });
 });
 

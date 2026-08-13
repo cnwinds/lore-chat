@@ -152,18 +152,116 @@ def test_legacy_pending_resolves_to_saved_without_kind(tmp_path):
     assert "要点 A" in result.message
 
 
-def test_ingest_skill_md_uses_replace_not_merge(tmp_path):
-    org, repo, _ = _make(tmp_path, ["# should-not-appear\n"])
+def test_ingest_skill_md_keeps_yaml_in_body(tmp_path):
+    """Skill YAML 留在 body；不被 parse 进 KB meta；落盘用新定界。"""
+    org, repo, _ = _make(tmp_path, [])
+    new_body = "---\nname: demo\ndescription: x\n---\n\n# Demo\n\nbody\n"
+    result = org.ingest_text(
+        new_body,
+        forced_rel_path="技能/demo/SKILL.md",
+        meta={"title": "demo"},
+    )
+    assert result.status == "saved"
+    doc = repo.read_doc("技能/demo/SKILL.md")
+    assert "name: demo" in doc.body
+    assert "description: x" in doc.body
+    assert "# Demo" in doc.body
+    assert "name" not in doc.meta
+    assert "description" not in doc.meta
+    assert doc.meta.get("title") == "demo"
+    raw = repo.abs_path("技能/demo/SKILL.md").read_text(encoding="utf-8")
+    assert raw.startswith("<<<LORE_META\n")
+    assert "---\nname: demo" in raw
+
+
+def test_update_doc_meta_preserves_skill_body(tmp_path):
+    org, repo, _ = _make(tmp_path, [])
+    body = "---\nname: demo\ndescription: x\n---\n\n# Demo\n"
+    org.ingest_text(body, forced_rel_path="技能/demo/SKILL.md", meta={"title": "demo"})
+    from app.engine.agent.tool_impl.kb_mutate import KbMutateTools
+    from app.engine.agent.tool_impl.doc_read_guard import DocReadGuard
+    from tests.helpers import make_writer
+
+    tools = KbMutateTools(
+        repo=repo,
+        organizer=org,
+        knowledge_writer=make_writer(repo, tmp_path),
+        read_guard=DocReadGuard(require_read=False),
+    )
+    out = tools.update_doc_meta(
+        {"path": "技能/demo/SKILL.md", "meta": {"tags": ["skill"]}}
+    )
+    assert out["status"] == "ok"
+    doc = repo.read_doc("技能/demo/SKILL.md")
+    assert doc.meta.get("tags") == ["skill"]
+    assert doc.body.startswith("---\nname: demo")
+    assert "description: x" in doc.body
+    changelog = (repo.root / ".kb" / "changelog.md").read_text(encoding="utf-8")
+    assert "更新元数据 技能/demo/SKILL.md" in changelog
+
+
+def test_edit_doc_preserves_skill_yaml(tmp_path):
+    org, repo, _ = _make(tmp_path, [])
+    body = "---\nname: demo\ndescription: x\n---\n\n# Demo\n\nold line\n"
+    org.ingest_text(body, forced_rel_path="技能/demo/SKILL.md", meta={"title": "demo"})
+    from app.engine.agent.tool_impl.kb_mutate import KbMutateTools
+    from app.engine.agent.tool_impl.doc_read_guard import DocReadGuard
+    from tests.helpers import make_writer
+
+    tools = KbMutateTools(
+        repo=repo,
+        organizer=org,
+        knowledge_writer=make_writer(repo, tmp_path),
+        read_guard=DocReadGuard(require_read=False),
+    )
+    out = tools.edit_doc(
+        {
+            "path": "技能/demo/SKILL.md",
+            "edits": [{"old_string": "old line", "new_string": "new line"}],
+        }
+    )
+    assert out.get("error") is None
+    doc = repo.read_doc("技能/demo/SKILL.md")
+    assert "name: demo" in doc.body
+    assert "description: x" in doc.body
+    assert "new line" in doc.body
+    assert "old line" not in doc.body
+
+
+def test_ingest_merge_existing_skill_keeps_yaml_when_llm_preserves(tmp_path):
+    """已存在 SKILL.md 走 merge；FakeLLM 按合成契约回写保留 YAML。"""
+    skill_yaml = "---\nname: demo\ndescription: x\n---\n"
+    merged = skill_yaml + "\n# Demo\n\nmerged body\n"
+    org, repo, _ = _make(tmp_path, [merged])
     repo.write_doc(
-        "skill/demo/SKILL.md",
-        {"title": "Old"},
-        "# old body\n",
+        "技能/demo/SKILL.md",
+        {"title": "demo"},
+        skill_yaml + "\n# Demo\n\nold\n",
         commit_msg="seed",
     )
-    new_body = "---\nname: demo\ndescription: x\n---\n\n# Demo\n\nbody\n"
-    result = org.ingest_text(new_body, forced_rel_path="skill/demo/SKILL.md")
+    result = org.ingest_text(
+        "补充一句",
+        forced_rel_path="技能/demo/SKILL.md",
+        write_mode="auto",
+    )
     assert result.status == "saved"
-    doc = repo.read_doc("skill/demo/SKILL.md")
+    doc = repo.read_doc("技能/demo/SKILL.md")
     assert "name: demo" in doc.body
-    assert "should-not-appear" not in doc.body
-    assert "# Demo" in doc.body
+    assert "merged body" in doc.body
+
+
+def test_reorganize_prompt_requires_preserving_body_yaml():
+    from app.engine.document_synthesis import DocumentSynthesis
+    from app.models.llm import FakeLLMClient
+
+    llm = FakeLLMClient(
+        chat_responses=["---\nname: demo\n---\n\n# ok\n"], embed_dim=8
+    )
+    synth = DocumentSynthesis(llm)
+    out = synth.reorganize_existing(
+        "---\nname: demo\n---\n\n# Old\n", "new bit", "demo"
+    )
+    assert "name: demo" in out
+    sys_msg = llm.calls[-1]["messages"][0]["content"]
+    assert "须原样保留" in sys_msg
+    assert "YAML" in sys_msg

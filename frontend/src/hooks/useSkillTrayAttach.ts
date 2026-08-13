@@ -1,10 +1,12 @@
 /**
  * Skill 包发现 → 确认层 → 写入文档托盘。
+ * Skill 仅存在于固定「技能」目录下。
  */
 
 import { useCallback, useState } from "react";
 import { discoverSkills } from "../api";
 import { COMPOSER_TRAY_MAX } from "../types/composer";
+import { isSkillsDirPath, SKILLS_DIR } from "../utils/fileTree";
 
 type ComposerSkillApi = {
   trayRemaining: number;
@@ -38,6 +40,12 @@ export function useSkillTrayAttach(composer: ComposerSkillApi) {
   const openSkillPickForFolder = useCallback(
     (folderPath: string) => {
       void (async () => {
+        if (!isSkillsDirPath(folderPath)) {
+          window.alert(
+            `Skill 包仅位于「${SKILLS_DIR}」目录下。请在该目录或其子文件夹上附加 Skill。`,
+          );
+          return;
+        }
         try {
           const { roots } = await discoverSkills(folderPath);
           if (roots.length === 0) {

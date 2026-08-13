@@ -1,11 +1,21 @@
 /** 系统控制层目录名，与 backend `system_layer_dir` 保持一致 */
 export const SYSTEM_LAYER_DIR = "系统";
 
+/** Skill 固定目录，与 backend `skills_dir` 保持一致 */
+export const SKILLS_DIR = "技能";
+
 /** 系统层文件显示顺序：心法在上，戒律在下（与 backend SystemLayer.compose 一致） */
 const SYSTEM_LAYER_FILE_ORDER = ["心法.md", "戒律.md"];
 
+/** 根级固定目录排序：系统 → 技能 → 其余 */
+const ROOT_FIXED_FOLDER_ORDER = [SYSTEM_LAYER_DIR, SKILLS_DIR];
+
 export function isSystemLayerPath(path: string): boolean {
   return path === SYSTEM_LAYER_DIR || path.startsWith(`${SYSTEM_LAYER_DIR}/`);
+}
+
+export function isSkillsDirPath(path: string): boolean {
+  return path === SKILLS_DIR || path.startsWith(`${SKILLS_DIR}/`);
 }
 
 export type FileNode = { type: "file"; name: string; path: string };
@@ -16,6 +26,20 @@ export type FolderNode = {
   children: TreeNode[];
 };
 export type TreeNode = FileNode | FolderNode;
+
+function ensureRootFolder(root: FolderNode, name: string): void {
+  const exists = root.children.some(
+    (c) => c.type === "folder" && c.name === name,
+  );
+  if (!exists) {
+    root.children.push({
+      type: "folder",
+      name,
+      path: name,
+      children: [],
+    });
+  }
+}
 
 export function buildFileTree(paths: string[]): TreeNode[] {
   const root: FolderNode = { type: "folder", name: "", path: "", children: [] };
@@ -43,13 +67,19 @@ export function buildFileTree(paths: string[]): TreeNode[] {
     }
   }
 
+  ensureRootFolder(root, SYSTEM_LAYER_DIR);
+  ensureRootFolder(root, SKILLS_DIR);
+
   const sortNodes = (nodes: TreeNode[], parentPath = ""): TreeNode[] =>
     [...nodes]
       .sort((a, b) => {
         if (parentPath === "") {
-          const aSystem = a.type === "folder" && a.name === SYSTEM_LAYER_DIR;
-          const bSystem = b.type === "folder" && b.name === SYSTEM_LAYER_DIR;
-          if (aSystem !== bSystem) return aSystem ? -1 : 1;
+          const aRank = ROOT_FIXED_FOLDER_ORDER.indexOf(a.name);
+          const bRank = ROOT_FIXED_FOLDER_ORDER.indexOf(b.name);
+          const aFixed = a.type === "folder" && aRank !== -1;
+          const bFixed = b.type === "folder" && bRank !== -1;
+          if (aFixed && bFixed) return aRank - bRank;
+          if (aFixed !== bFixed) return aFixed ? -1 : 1;
         }
         if (parentPath === SYSTEM_LAYER_DIR) {
           const orderA = SYSTEM_LAYER_FILE_ORDER.indexOf(a.name);
