@@ -157,6 +157,71 @@ def test_begin_and_finalize_turn_assigns_message_ids(tmp_path):
     assert conv["messages"][1]["in_reply_to_message_id"] == conv["messages"][0]["id"]
 
 
+def test_finalize_turn_persists_assistant_attachments(tmp_path):
+    """生图等工具结果的 attachments 须写入 messages.attachments_json，否则重载后消息脚无图。"""
+    store = _store(tmp_path)
+    cid = store.create()
+    turn = store.begin_turn(
+        cid, user_text="画一只猫", client_message_id="cli-img", observation_allowed=False
+    )
+    store.finalize_turn(
+        cid,
+        turn_id=turn["turn_id"],
+        assistant={
+            "text": "好的",
+            "timeline": [
+                {
+                    "type": "tool",
+                    "id": "t1",
+                    "tool": "generate_image",
+                    "status": "done",
+                    "attachments": ["generated/2026/cat.png"],
+                }
+            ],
+            "attachments": ["generated/2026/cat.png"],
+            "sources": [],
+            "status": "complete",
+        },
+    )
+    assistant = store.get(cid)["messages"][1]
+    assert assistant["attachments"] == ["generated/2026/cat.png"]
+
+
+def test_message_row_backfills_attachments_from_timeline(tmp_path):
+    """旧消息未写 attachments_json 时，读库从 timeline 工具块回填。"""
+    store = _store(tmp_path)
+    cid = store.create()
+    turn = store.begin_turn(
+        cid, user_text="画", client_message_id="cli-old", observation_allowed=False
+    )
+    store.finalize_turn(
+        cid,
+        turn_id=turn["turn_id"],
+        assistant={
+            "text": "ok",
+            "timeline": [
+                {
+                    "type": "tool",
+                    "id": "t1",
+                    "tool": "generate_image",
+                    "status": "done",
+                    "attachments": ["generated/old.png"],
+                }
+            ],
+            "sources": [],
+            "status": "complete",
+        },
+    )
+    # 模拟历史行：清空 attachments_json
+    with store._lock:
+        store.conn.execute(
+            "UPDATE messages SET attachments_json = NULL WHERE role = 'assistant'"
+        )
+        store.conn.commit()
+    assistant = store.get(cid)["messages"][1]
+    assert assistant["attachments"] == ["generated/old.png"]
+
+
 def test_duplicate_client_message_id_while_running_raises(tmp_path):
     store = _store(tmp_path)
     cid = store.create()

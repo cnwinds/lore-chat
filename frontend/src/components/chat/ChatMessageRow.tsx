@@ -45,6 +45,36 @@ function basename(path: string): string {
   return path.split("/").pop() || path;
 }
 
+/** 时间线 generate_image 已展示的路径，消息脚不再重复。 */
+function timelineGenerateImagePaths(m: ChatMessage): Set<string> {
+  const out = new Set<string>();
+  const add = (paths: string[] | undefined) => {
+    for (const p of paths ?? []) {
+      if (p) out.add(p);
+    }
+  };
+  for (const block of m.timeline ?? []) {
+    if (block.type === "tool" && block.tool === "generate_image") {
+      add(block.attachments);
+    } else if (block.type === "parallel") {
+      for (const child of block.children) {
+        if (child.type === "tool" && child.tool === "generate_image") {
+          add(child.attachments);
+        }
+      }
+    }
+  }
+  return out;
+}
+
+/** 消息脚附件：去掉已在生图工具块展示的路径。 */
+function footAttachmentPaths(m: ChatMessage): string[] {
+  const attachments = m.attachments ?? [];
+  if (!attachments.length || m.role === "user") return [];
+  const shown = timelineGenerateImagePaths(m);
+  return attachments.filter((p) => !shown.has(p));
+}
+
 function renderUserMessageChips(m: ChatMessage) {
   const docItems = normalizeDocContext(m.doc_context);
   const hasDocs = docItems.length > 0;
@@ -260,6 +290,8 @@ export function ChatMessageRow({
     return () => el.removeEventListener("highlight-range", onHighlight);
   }, []);
 
+  const footPaths = footAttachmentPaths(m);
+
   return (
     <div
       ref={rowRef}
@@ -300,9 +332,9 @@ export function ChatMessageRow({
             onOpen={onOpenSource}
           />
         )}
-        {m.role !== "user" && m.attachments && m.attachments.length > 0 ? (
+        {footPaths.length > 0 ? (
           <KbAttachmentList
-            paths={m.attachments}
+            paths={footPaths}
             className="kb-attachment-list"
             imageClassName="chat-gen-image"
             linkClassName="chat-gen-image-link"

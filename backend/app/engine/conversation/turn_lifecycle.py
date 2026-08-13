@@ -174,8 +174,9 @@ class TurnLifecycle:
                     INSERT INTO messages(
                         id, conversation_id, seq, role, text, ts, status,
                         in_reply_to_message_id, timeline_json, sources_json,
-                        total_duration_ms, model_name, model_failover
-                    ) VALUES (?, ?, ?, 'assistant', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        total_duration_ms, model_name, model_failover,
+                        attachments_json
+                    ) VALUES (?, ?, ?, 'assistant', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         assistant_msg_id,
@@ -190,6 +191,9 @@ class TurnLifecycle:
                         assistant.get("total_duration_ms"),
                         assistant.get("model_name"),
                         1 if assistant.get("model_failover") else 0,
+                        dumps_json(assistant.get("attachments"))
+                        if assistant.get("attachments")
+                        else None,
                     ),
                 )
                 store._enqueue_index_jobs(assistant_msg_id, turn_id)

@@ -41,7 +41,10 @@
 
 ### 5. 展示协议
 
-- **聊天**：以结构化 `attachments` 为主做内联预览（挂在助手消息级；工具块可保留 summary，避免与消息脚双份出图）；正文若出现相对路径 `![](...)`，展示期可改写为 `/api/download`（不依赖模型必须写图链）
+- **聊天**：
+  - **主预览面**：时间线工具块（`generate_image` 完成且有 `attachments` 时默认展开并内联出图）
+  - **消息级 `attachments`**：finalize 落库，保证重载/API 有权威路径列表；脚注只展示**未**出现在生图工具块中的路径（避免与主预览双份）
+  - 正文若出现相对路径 `![](...)`，展示期可改写为 `/api/download`（不依赖模型必须写图链）
 - **文档**：Markdown 源文件写相对路径 `![](...)`；**渲染期**重写为 `/api/download?path=...`（或等价鉴权 URL）。落盘时剥离 `/api/download` 绝对链，还原为相对路径。禁止把 API 绝对 URL 写进知识库正文
 
 ### 6. 多厂商配置与路由
@@ -74,7 +77,7 @@
 
 ## 验收意图（根因同类，非孤例）
 
-- 换一家厂商（协议不同）时，工具结果仍是本系统相对路径，聊天 attachments 可预览
+- 换一家厂商（协议不同）时，工具结果仍是本系统相对路径；聊天工具块可预览，消息级 attachments 落库可重载
 - 写入文档的 md 仅为相对路径，Doc 预览能出图；换部署 host 不改 md 正文
 - 模拟「审核拒绝」不触发切厂商；模拟「5xx/超时」可冷却并切下一家
 - `destination=chat_attachment` 落在 `generated/`；`destination=kb` 走 KnowledgeWriter 且路径符合 directory/filename 约定

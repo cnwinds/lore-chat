@@ -137,12 +137,15 @@ function ToolBlockView({
     block.tool === "search_kb" ||
     block.tool === "web_search" ||
     block.tool === "fetch_url";
-  // generate_image 预览挂在消息级 attachments（ADR §5），工具块不渲染图，故不因 attachments 默认展开
+  // 生图完成后默认展开，便于直接看到工具块内预览
   const defaultOpen =
     !collapsedByDefault &&
     (isLive ||
       pendingAsk ||
       block.status === "running" ||
+      (block.tool === "generate_image" &&
+        Array.isArray(block.attachments) &&
+        block.attachments.length > 0) ||
       (block.tool === "sandbox_run" &&
         !block.question_id &&
         (!!block.query || !!block.progress_log?.length)));
@@ -232,7 +235,6 @@ function ToolBlockView({
       )}
       {open &&
         block.status === "done" &&
-        block.tool !== "generate_image" &&
         block.attachments &&
         block.attachments.length > 0 && (
           <KbAttachmentList

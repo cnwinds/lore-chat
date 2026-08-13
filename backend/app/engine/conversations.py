@@ -385,6 +385,13 @@ class ConversationStore:
             )
         if row["attachments_json"] is not None:
             msg["attachments"] = _loads(row["attachments_json"], [])
+        elif msg.get("timeline"):
+            # 兼容旧行：finalize 曾未写 attachments_json，从时间线工具块回填
+            from app.engine.chat.timeline import collect_timeline_attachments
+
+            atts = collect_timeline_attachments(msg["timeline"])
+            if atts:
+                msg["attachments"] = atts
         if row["primary_doc"]:
             msg["primary_doc"] = row["primary_doc"]
         try:

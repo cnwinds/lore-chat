@@ -181,7 +181,7 @@ class TimelineAccumulator:
             "total_duration_ms": self.total_duration_ms,
             "status": status,
         }
-        atts = _collect_timeline_attachments(timeline)
+        atts = collect_timeline_attachments(timeline)
         if atts:
             assistant["attachments"] = atts
         if self.model_name:
@@ -193,7 +193,8 @@ class TimelineAccumulator:
         return assistant
 
 
-def _collect_timeline_attachments(timeline: list[dict]) -> list[str]:
+def collect_timeline_attachments(timeline: list[dict]) -> list[str]:
+    """从时间线工具块收集 attachments（含 parallel 子块）；去重保序。"""
     out: list[str] = []
     seen: set[str] = set()
 
