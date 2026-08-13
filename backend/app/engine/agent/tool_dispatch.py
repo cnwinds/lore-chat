@@ -56,6 +56,7 @@ def build_tool_dispatch(registry: ToolRegistry) -> dict[str, ToolHandler]:
         ),
         "fetch_url": lambda args, **kw: web.fetch_url(args),
         "web_search": lambda args, **kw: web.web_search(args),
+        "generate_image": lambda args, **kw: registry.image_tools.generate_image(args),
         "write_kb": lambda args, **kw: asyncio.to_thread(kb_mutate.write_kb, args),
         "write_kb_file": lambda args, **kw: asyncio.to_thread(
             kb_mutate.write_kb_file, args

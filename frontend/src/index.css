@@ -4144,6 +4144,40 @@ button.memory-fact-statement--jump:focus-visible {
   padding: 0 10px 8px;
 }
 
+.timeline-tool-attachments,
+.kb-attachment-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 10px 10px;
+}
+
+.timeline-gen-image-link,
+.chat-gen-image-link,
+.kb-attachment-image-link {
+  display: inline-block;
+  max-width: min(100%, 360px);
+  border-radius: 8px;
+  overflow: hidden;
+  line-height: 0;
+}
+
+.timeline-gen-image,
+.chat-gen-image,
+.kb-md-image,
+.kb-attachment-image {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+}
+
+.chat-gen-image-link,
+.chat-bubble .kb-attachment-list {
+  margin: 8px 0;
+  padding: 0;
+}
+
 .timeline-ask-user {
   padding-top: 2px;
 }

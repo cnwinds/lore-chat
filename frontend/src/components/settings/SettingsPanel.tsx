@@ -3,6 +3,7 @@ import {
   changePassword,
   clearModelCooldown,
   clearSearchCooldown,
+  clearImageCooldown,
   downloadExport,
   getSettings,
   importKb,
@@ -20,11 +21,14 @@ import {
   parseCandidates,
   SECRET_KEYS,
   SEARCH_PROVIDER_OPTIONS,
+  IMAGE_PROVIDER_OPTIONS,
   type CooldownStatus,
   type ModelCandidateDraft,
   type ModelSlot,
   type SearchProviderDraft,
   type SearchProviderId,
+  type ImageProviderDraft,
+  type ImageProviderId,
   type SecretKey,
 } from "./ModelSettingsTab";
 import { SearchSettingsTab } from "./SearchSettingsTab";
@@ -34,37 +38,86 @@ const SEARCH_PROVIDER_IDS = new Set(
   SEARCH_PROVIDER_OPTIONS.map((o) => o.id),
 );
 
-function parseSearchProviders(raw: unknown): SearchProviderDraft[] {
+const IMAGE_PROVIDER_IDS = new Set(
+  IMAGE_PROVIDER_OPTIONS.map((o) => o.id),
+);
+
+function maskApiKeyPlaceholder(rawKey: string): string {
+  if (rawKey.includes("***") || rawKey === "****") return rawKey;
+  return rawKey.length <= 4 ? "****" : rawKey;
+}
+
+function parseProviderChainDrafts<T extends string>(
+  raw: unknown,
+  allowed: Set<string>,
+  opts?: {
+    /** provider：同厂家只保留一条；id：同厂家可多条、按 id 去重 */
+    uniqueBy?: "provider" | "id";
+    extra?: (row: Record<string, unknown>) => Record<string, string>;
+  },
+): Array<{
+  id: string;
+  provider: T;
+  api_key: string;
+  api_key_masked?: string;
+} & Record<string, string>> {
   if (!Array.isArray(raw)) return [];
+  const uniqueBy = opts?.uniqueBy ?? "provider";
   const seen = new Set<string>();
-  const out: SearchProviderDraft[] = [];
+  const out: Array<{
+    id: string;
+    provider: T;
+    api_key: string;
+    api_key_masked?: string;
+  } & Record<string, string>> = [];
   for (const item of raw) {
     if (!item || typeof item !== "object") continue;
     const row = item as Record<string, unknown>;
     const provider = String(row.provider || "").trim().toLowerCase();
-    if (!SEARCH_PROVIDER_IDS.has(provider as SearchProviderId) || seen.has(provider)) {
-      continue;
+    if (!allowed.has(provider)) continue;
+    let id = String(row.id || "").trim();
+    if (!id) {
+      id = provider;
+      if (uniqueBy === "id") {
+        let n = 2;
+        while (seen.has(id)) {
+          id = `${provider}-${n}`;
+          n += 1;
+        }
+      }
     }
-    seen.add(provider);
-    const id = String(row.id || provider).trim() || provider;
+    const dedupeKey = uniqueBy === "provider" ? provider : id;
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
     const rawKey = typeof row.api_key === "string" ? row.api_key.trim() : "";
-    let api_key_masked: string | undefined;
-    if (rawKey) {
-      api_key_masked =
-        rawKey.includes("***") || rawKey === "****"
-          ? rawKey
-          : rawKey.length <= 4
-            ? "****"
-            : rawKey;
-    }
     out.push({
       id,
-      provider: provider as SearchProviderId,
+      provider: provider as T,
       api_key: "",
-      api_key_masked,
+      ...(rawKey ? { api_key_masked: maskApiKeyPlaceholder(rawKey) } : {}),
+      ...(opts?.extra ? opts.extra(row) : {}),
     });
   }
   return out;
+}
+
+function parseSearchProviders(raw: unknown): SearchProviderDraft[] {
+  return parseProviderChainDrafts<SearchProviderId>(
+    raw,
+    SEARCH_PROVIDER_IDS,
+    { uniqueBy: "provider" },
+  ) as SearchProviderDraft[];
+}
+
+/** 生图：同厂家可多条，仅按 id 去重。 */
+function parseImageProviders(raw: unknown): ImageProviderDraft[] {
+  return parseProviderChainDrafts<ImageProviderId>(raw, IMAGE_PROVIDER_IDS, {
+    uniqueBy: "id",
+    extra: (row) => ({
+      base_url: typeof row.base_url === "string" ? row.base_url : "",
+      model: typeof row.model === "string" ? row.model : "",
+    }),
+  }) as ImageProviderDraft[];
 }
 
 type Props = {
@@ -161,6 +214,8 @@ export function SettingsPanel({
   const [cooldown, setCooldown] = useState<CooldownStatus>({});
   const [searchProviders, setSearchProviders] = useState<SearchProviderDraft[]>([]);
   const [searchCooldown, setSearchCooldown] = useState<CooldownStatus>({});
+  const [imageProviders, setImageProviders] = useState<ImageProviderDraft[]>([]);
+  const [imageCooldown, setImageCooldown] = useState<CooldownStatus>({});
 
   const [endpointExpanded, setEndpointExpanded] = useState<Record<ModelSlot, boolean>>({
     embed: false,
@@ -232,6 +287,12 @@ export function SettingsPanel({
       setSearchCooldown(
         data.search_cooldown && typeof data.search_cooldown === "object"
           ? (data.search_cooldown as CooldownStatus)
+          : {},
+      );
+      setImageProviders(parseImageProviders(data.image_providers));
+      setImageCooldown(
+        data.image_cooldown && typeof data.image_cooldown === "object"
+          ? (data.image_cooldown as CooldownStatus)
           : {},
       );
 
@@ -339,6 +400,13 @@ export function SettingsPanel({
           id: p.id,
           provider: p.provider,
           api_key: p.api_key.trim() || null,
+        })),
+        image_providers: imageProviders.map((p) => ({
+          id: p.id,
+          provider: p.provider,
+          api_key: p.api_key.trim() || null,
+          base_url: p.base_url.trim() || null,
+          model: p.model.trim() || null,
         })),
         min_vector_score: minVectorScore,
         rrf_k: rrfK,
@@ -570,6 +638,24 @@ export function SettingsPanel({
                             typeof res.search_cooldown === "object"
                           ) {
                             setSearchCooldown(res.search_cooldown as CooldownStatus);
+                          }
+                        } catch (err) {
+                          setError(err instanceof Error ? err.message : "清除冷却失败");
+                        }
+                      }}
+                      imageProviders={imageProviders}
+                      onImageProvidersChange={setImageProviders}
+                      imageCooldown={imageCooldown}
+                      onClearImageCooldown={async (candidateId) => {
+                        try {
+                          const res = await clearImageCooldown({
+                            provider_id: candidateId,
+                          });
+                          if (
+                            res.image_cooldown &&
+                            typeof res.image_cooldown === "object"
+                          ) {
+                            setImageCooldown(res.image_cooldown as CooldownStatus);
                           }
                         } catch (err) {
                           setError(err instanceof Error ? err.message : "清除冷却失败");

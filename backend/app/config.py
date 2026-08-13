@@ -99,6 +99,20 @@ class Settings(BaseSettings):
             return json.loads(v)
         return v
 
+    # 生图：有序链；[]=显式未配置；默认 []
+    image_providers: list[dict[str, Any]] = []
+
+    @field_validator("image_providers", mode="before")
+    @classmethod
+    def _parse_image_providers(cls, v: Any) -> list:
+        if v is None or v == "":
+            return []
+        if isinstance(v, str):
+            import json
+
+            return json.loads(v)
+        return v
+
     # edit_doc 局部编辑
     edit_doc_max_edits: int = 10
     edit_doc_max_patch_chars: int = 8192
@@ -175,6 +189,9 @@ CHAIN_MODEL_SETTING_KEYS: frozenset[str] = frozenset({"chat_models", "utility_mo
 
 # 嵌套在 search_providers[].api_key 内
 CHAIN_SEARCH_SETTING_KEYS: frozenset[str] = frozenset({"search_providers"})
+
+# 嵌套在 image_providers[].api_key 内
+CHAIN_IMAGE_SETTING_KEYS: frozenset[str] = frozenset({"image_providers"})
 
 
 def get_settings() -> "Settings":

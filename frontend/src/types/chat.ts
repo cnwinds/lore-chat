@@ -79,6 +79,8 @@ export type TimelineBlock =
       preview?: string;
       reindex_mode?: string;
       applied?: number;
+      /** generate_image 等产出的本地相对路径 */
+      attachments?: string[];
     }
   | {
       type: "parallel";
@@ -140,12 +142,14 @@ export type ChatStreamEvent = { event: string; data: Record<string, unknown> };
 // 会改动知识库、需要刷新侧栏的工具
 export const KB_MUTATING_TOOLS = [
   "write_kb",
+  "write_kb_file",
   "delete_kb",
   "summarize_conversation",
   "edit_doc",
   "move_entry",
   "move_doc",
   "publish_from_sandbox",
+  "generate_image",
 ] as const;
 
 export type ConversationSummary = {

@@ -16,6 +16,10 @@ from app.engine.web.search_providers import (
     DuplicateSearchProviderError,
     search_routing_changed,
 )
+from app.engine.imagegen.providers import (
+    DuplicateImageProviderError,
+    image_routing_changed,
+)
 from app.models.catalog import (
     get_active_models_dev_store,
     merge_catalog_hits,
@@ -62,6 +66,10 @@ def get_settings(request: Request) -> dict[str, Any]:
         data["search_cooldown"] = container.search_cooldown.public_status()
     else:
         data["search_cooldown"] = {}
+    if container is not None and getattr(container, "image_cooldown", None) is not None:
+        data["image_cooldown"] = container.image_cooldown.public_status()
+    else:
+        data["image_cooldown"] = {}
     return data
 
 
@@ -74,6 +82,8 @@ def put_settings(body: dict[str, Any], request: Request) -> dict[str, Any]:
         new_settings = store.update(body)
     except DuplicateSearchProviderError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except DuplicateImageProviderError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     # 模型/密钥/端点配置实际变更 → 解除 disabled（共识：改配置可恢复）
@@ -81,10 +91,13 @@ def put_settings(body: dict[str, Any], request: Request) -> dict[str, Any]:
         container.model_cooldown.clear_disabled()
     if search_routing_changed(prev, new_settings):
         container.search_cooldown.clear_disabled()
+    if image_routing_changed(prev, new_settings):
+        container.image_cooldown.clear_disabled()
     apply_settings(container, new_settings)
     data = store.public_dict()
     data["model_cooldown"] = container.model_cooldown.public_status()
     data["search_cooldown"] = container.search_cooldown.public_status()
+    data["image_cooldown"] = container.image_cooldown.public_status()
     return data
 
 
@@ -114,6 +127,20 @@ def clear_search_cooldown(body: dict[str, Any], request: Request) -> dict[str, A
             raise HTTPException(status_code=422, detail="provider_id or all required")
         store.reenable(str(pid))
     return {"ok": True, "search_cooldown": store.public_status()}
+
+
+@router.post("/image-cooldown/clear")
+def clear_image_cooldown(body: dict[str, Any], request: Request) -> dict[str, Any]:
+    """清除生图提供商冷却或重新启用。body: {provider_id?: str, all?: bool}"""
+    store = request.app.state.container.image_cooldown
+    if body.get("all"):
+        store.clear()
+    else:
+        pid = body.get("provider_id") or body.get("candidate_id")
+        if not pid:
+            raise HTTPException(status_code=422, detail="provider_id or all required")
+        store.reenable(str(pid))
+    return {"ok": True, "image_cooldown": store.public_status()}
 
 
 def _models_dev_for_request(request: Request):

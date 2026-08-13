@@ -17,8 +17,10 @@ from app.engine.agent.tool_impl import (
     MemoryTools,
     WebReadTools,
 )
+from app.engine.agent.tool_impl.image_tools import ImageGenTools
 from app.engine.agent.tool_impl.sandbox_tools import SandboxTools
 from app.engine.disclosure import DisclosureWindows
+from app.engine.imagegen import ImageGen
 from app.engine.knowledge_writer import KnowledgeWriter
 from app.engine.sandbox.protocol import SandboxRuntime
 
@@ -55,6 +57,7 @@ class ToolRegistry:
         conversation_context_max_chars: int = 12000,
         memory_service=None,
         sandbox_runtime: SandboxRuntime | None = None,
+        image_gen: ImageGen | None = None,
     ):
         del indexer  # 保留构造签名，索引经 knowledge_writer
         self.repo = repo
@@ -94,6 +97,7 @@ class ToolRegistry:
         )
         self.memory = MemoryTools(memory_service)
         self.interaction = InteractionTools(pending)
+        self.image_tools = ImageGenTools(image_gen)
         self.sandbox = SandboxTools(
             sandbox_runtime,
             knowledge_writer,
@@ -142,6 +146,7 @@ class ToolRegistry:
         memory_service=None,
         sandbox_runtime: SandboxRuntime | None = None,
         sandbox_trust_mode: bool | None = None,
+        image_gen: ImageGen | None = None,
     ) -> None:
         """热更新依赖；调用方不必摸 tool_impl 字段。"""
         if fetcher is not None:
@@ -150,6 +155,8 @@ class ToolRegistry:
             self.web_search = web_search
         if memory_service is not None:
             self.memory_service = memory_service
+        if image_gen is not None:
+            self.image_tools.image_gen = image_gen
         if sandbox_runtime is not None:
             self.sandbox_runtime = sandbox_runtime
             self.sandbox.runtime = sandbox_runtime

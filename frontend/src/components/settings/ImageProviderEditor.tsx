@@ -1,45 +1,50 @@
 import type { CooldownStatus } from "./settingsTypes";
 import { ProviderCooldownBar } from "./ProviderCooldownBar";
 
-export type SearchProviderId = "tavily" | "serper" | "brave";
+export type ImageProviderId = "openai" | "zhipu" | "bailian";
 
-export const SEARCH_PROVIDER_OPTIONS: {
-  id: SearchProviderId;
+export const IMAGE_PROVIDER_OPTIONS: {
+  id: ImageProviderId;
   label: string;
 }[] = [
-  { id: "tavily", label: "Tavily" },
-  { id: "serper", label: "Serper" },
-  { id: "brave", label: "Brave Search" },
+  { id: "openai", label: "OpenAI Images" },
+  { id: "zhipu", label: "智谱 CogView" },
+  { id: "bailian", label: "百炼万相" },
 ];
 
-export type SearchProviderDraft = {
+export type ImageProviderDraft = {
   id: string;
-  provider: SearchProviderId;
-  /** 用户新输入；留空表示不改 */
+  provider: ImageProviderId;
   api_key: string;
-  /** 服务端脱敏展示，作 placeholder */
   api_key_masked?: string;
+  base_url: string;
+  model: string;
 };
 
 type Props = {
-  providers: SearchProviderDraft[];
-  onChange: (next: SearchProviderDraft[]) => void;
+  providers: ImageProviderDraft[];
+  onChange: (next: ImageProviderDraft[]) => void;
   cooldown: CooldownStatus;
   onClearCooldown: (providerId: string) => void;
   saving: boolean;
 };
 
-export function SearchProviderEditor({
+function nextEntryId(provider: ImageProviderId, existing: ImageProviderDraft[]): string {
+  const ids = new Set(existing.map((p) => p.id));
+  if (!ids.has(provider)) return provider;
+  let n = 2;
+  while (ids.has(`${provider}-${n}`)) n += 1;
+  return `${provider}-${n}`;
+}
+
+export function ImageProviderEditor({
   providers,
   onChange,
   cooldown,
   onClearCooldown,
   saving,
 }: Props) {
-  const used = new Set(providers.map((p) => p.provider));
-  const available = SEARCH_PROVIDER_OPTIONS.filter((o) => !used.has(o.id));
-
-  function updateAt(i: number, patch: Partial<SearchProviderDraft>) {
+  function updateAt(i: number, patch: Partial<ImageProviderDraft>) {
     onChange(providers.map((p, idx) => (idx === i ? { ...p, ...patch } : p)));
   }
 
@@ -51,20 +56,28 @@ export function SearchProviderEditor({
     onChange(next);
   }
 
-  function addProvider(provider: SearchProviderId) {
-    if (used.has(provider)) return;
-    onChange([...providers, { id: provider, provider, api_key: "" }]);
+  function addProvider(provider: ImageProviderId) {
+    onChange([
+      ...providers,
+      {
+        id: nextEntryId(provider, providers),
+        provider,
+        api_key: "",
+        base_url: "",
+        model: "",
+      },
+    ]);
   }
 
-  const labelOf = (id: SearchProviderId) =>
-    SEARCH_PROVIDER_OPTIONS.find((o) => o.id === id)?.label ?? id;
+  const labelOf = (id: ImageProviderId) =>
+    IMAGE_PROVIDER_OPTIONS.find((o) => o.id === id)?.label ?? id;
 
   return (
     <section className="settings-group settings-chain">
       <header className="settings-group-header">
-        <h3 className="settings-group-title">搜索提供商</h3>
+        <h3 className="settings-group-title">生图提供商</h3>
         <p className="settings-group-hint">
-          用于联网搜索工具。按需添加；列表顺序即优先级，出问题会冷却并切换下一家。每种类型只能添加一次。
+          用于 generate_image 工具。列表顺序即优先级；超时/限流等会冷却并切换下一条。同一厂家可添加多条以配置不同模型。
         </p>
       </header>
       <div className="settings-chain-list">
@@ -72,6 +85,10 @@ export function SearchProviderEditor({
           const st = cooldown[p.id];
           const cooling = Boolean(st && !st.available && !st.disabled);
           const disabled = Boolean(st?.disabled);
+          const title =
+            p.model.trim() !== ""
+              ? `${labelOf(p.provider)} · ${p.model.trim()}`
+              : labelOf(p.provider);
           return (
             <article
               key={p.id}
@@ -92,7 +109,9 @@ export function SearchProviderEditor({
                   {i + 1}
                 </span>
                 <div className="settings-model-candidate-main">
-                  <span className="settings-search-provider-name">{labelOf(p.provider)}</span>
+                  <span className="settings-search-provider-name" title={p.id}>
+                    {title}
+                  </span>
                 </div>
                 <div className="settings-model-candidate-actions">
                   <button
@@ -138,6 +157,28 @@ export function SearchProviderEditor({
                   placeholder={p.api_key_masked || "未设置"}
                 />
               </label>
+              <label className="settings-field">
+                <span>Base URL（可选）</span>
+                <input
+                  type="text"
+                  autoComplete="off"
+                  value={p.base_url}
+                  onChange={(e) => updateAt(i, { base_url: e.target.value })}
+                  disabled={saving}
+                  placeholder="留空用默认根；勿贴完整 /generation 路径"
+                />
+              </label>
+              <label className="settings-field">
+                <span>模型（可选）</span>
+                <input
+                  type="text"
+                  autoComplete="off"
+                  value={p.model}
+                  onChange={(e) => updateAt(i, { model: e.target.value })}
+                  disabled={saving}
+                  placeholder="如 dall-e-3 / glm-image / wan2.7-image-pro / qwen-image-3.0-pro"
+                />
+              </label>
               <ProviderCooldownBar
                 status={st}
                 saving={saving}
@@ -147,32 +188,28 @@ export function SearchProviderEditor({
           );
         })}
       </div>
-      {available.length > 0 ? (
-        <div className="settings-search-add-row">
-          <label className="settings-field settings-search-add-field">
-            <span className="visually-hidden">添加搜索提供商</span>
-            <select
-              value=""
-              disabled={saving}
-              onChange={(e) => {
-                const v = e.target.value as SearchProviderId;
-                if (v) addProvider(v);
-              }}
-            >
-              <option value="" disabled>
-                + 添加搜索提供商
+      <div className="settings-search-add-row">
+        <label className="settings-field settings-search-add-field">
+          <span className="visually-hidden">添加生图提供商</span>
+          <select
+            value=""
+            disabled={saving}
+            onChange={(e) => {
+              const v = e.target.value as ImageProviderId;
+              if (v) addProvider(v);
+            }}
+          >
+            <option value="" disabled>
+              + 添加生图提供商
+            </option>
+            {IMAGE_PROVIDER_OPTIONS.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.label}
               </option>
-              {available.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-      ) : (
-        <p className="settings-group-hint">已添加全部可用类型。</p>
-      )}
+            ))}
+          </select>
+        </label>
+      </div>
     </section>
   );
 }

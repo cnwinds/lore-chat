@@ -63,3 +63,27 @@ def test_interrupted_payload_marks_running_tools():
     assert payload["status"] == "interrupted"
     assert payload["timeline"][0]["status"] == "interrupted"
     assert "连接中断" in payload["timeline"][0]["summary"]
+
+
+def test_generate_image_clears_progress_log_on_result():
+    acc = TimelineAccumulator()
+    acc.accumulate(
+        "tool_start",
+        {"id": "1", "tool": "generate_image", "label": "生图", "ts": "t0"},
+    )
+    acc.accumulate(
+        "tool_progress",
+        {"id": "1", "message": "百炼生成中（RUNNING）.", "ts": "t1"},
+    )
+    assert acc.timeline[0].get("progress_log")
+    acc.accumulate(
+        "tool_result",
+        {
+            "id": "1",
+            "summary": "已生成图片 → generated/x.png（bailian）",
+            "attachments": ["generated/x.png"],
+            "sources": [],
+        },
+    )
+    assert "progress_log" not in acc.timeline[0]
+    assert acc.timeline[0]["attachments"] == ["generated/x.png"]

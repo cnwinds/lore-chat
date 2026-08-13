@@ -109,38 +109,48 @@ export function updateTimeline(
 
   if (event === "tool_result") {
     const id = data.id as string;
-    return updateToolBlock(timeline, id, (block) => ({
-      ...block,
-      status: "done",
-      summary: (data.summary as string) || "",
-      sources: (data.sources as SourceRef[]) || [],
-      ...(data.content ? { content: data.content as string } : {}),
-      ...(data.duration_ms !== undefined
-        ? { duration_ms: data.duration_ms as number }
-        : {}),
-      ...(typeof data.query === "string" && data.query.trim()
-        ? { query: (data.query as string).trim() }
-        : {}),
-      ...(data.question_id
-        ? { question_id: data.question_id as string }
-        : {}),
-      ...(data.question ? { question: data.question as string } : {}),
-      ...(data.options
-        ? { options: data.options as QuestionOption[] }
-        : {}),
-      ...(data.multi_select !== undefined
-        ? { multi_select: data.multi_select as boolean }
-        : {}),
-      ...(typeof data.preview === "string" && data.preview
-        ? { preview: data.preview as string }
-        : {}),
-      ...(typeof data.reindex_mode === "string" && data.reindex_mode
-        ? { reindex_mode: data.reindex_mode as string }
-        : {}),
-      ...(data.applied !== undefined
-        ? { applied: data.applied as number }
-        : {}),
-    }));
+    return updateToolBlock(timeline, id, (block) => {
+      const next = {
+        ...block,
+        status: "done" as const,
+        summary: (data.summary as string) || "",
+        sources: (data.sources as SourceRef[]) || [],
+        ...(data.content ? { content: data.content as string } : {}),
+        ...(data.duration_ms !== undefined
+          ? { duration_ms: data.duration_ms as number }
+          : {}),
+        ...(typeof data.query === "string" && data.query.trim()
+          ? { query: (data.query as string).trim() }
+          : {}),
+        ...(data.question_id
+          ? { question_id: data.question_id as string }
+          : {}),
+        ...(data.question ? { question: data.question as string } : {}),
+        ...(data.options
+          ? { options: data.options as QuestionOption[] }
+          : {}),
+        ...(data.multi_select !== undefined
+          ? { multi_select: data.multi_select as boolean }
+          : {}),
+        ...(typeof data.preview === "string" && data.preview
+          ? { preview: data.preview as string }
+          : {}),
+        ...(typeof data.reindex_mode === "string" && data.reindex_mode
+          ? { reindex_mode: data.reindex_mode as string }
+          : {}),
+        ...(data.applied !== undefined
+          ? { applied: data.applied as number }
+          : {}),
+        ...(Array.isArray(data.attachments)
+          ? { attachments: data.attachments as string[] }
+          : {}),
+      };
+      // 生图轮询文案仅运行时有用；完成后与同步厂商一致
+      if (block.tool === "generate_image") {
+        delete next.progress_log;
+      }
+      return next;
+    });
   }
 
   if (event === "parallel_batch_start") {
