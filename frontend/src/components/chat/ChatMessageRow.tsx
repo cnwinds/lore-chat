@@ -90,7 +90,7 @@ function renderUserMessageChips(m: ChatMessage) {
           title={basename(item.path)}
           tooltip={item.path}
           primary={
-            Boolean(m.primary_doc) &&
+            typeof m.primary_doc === "string" &&
             isMarkdownPath(m.primary_doc) &&
             item.path === m.primary_doc
           }
