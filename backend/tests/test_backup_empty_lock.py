@@ -23,6 +23,13 @@ def test_empty_with_system_layer_only(tmp_path):
     assert is_kb_empty(tmp_path) is True
 
 
+def test_empty_with_skills_dir_gitkeep_only(tmp_path):
+    skills = tmp_path / "技能"
+    skills.mkdir()
+    (skills / ".gitkeep").write_text("", encoding="utf-8")
+    assert is_kb_empty(tmp_path) is True
+
+
 def test_non_empty_with_conversation(tmp_path):
     store = ConversationStore(tmp_path / ".kb" / "conversations")
     store.create()

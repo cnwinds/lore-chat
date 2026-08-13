@@ -31,7 +31,10 @@ export function useComposerPreviewBridge({
 }: Options) {
   const pinAddedTrayRef = useRef<string | null>(null);
 
-  function addDocToComposer(path: string, *, setAsPrimary: boolean) {
+  function addDocToComposer(
+    path: string,
+    { setAsPrimary }: { setAsPrimary: boolean },
+  ) {
     const title = pathBasename(path);
     if (!composer.items.some((i) => i.path === path)) {
       composer.addDocumentToTray(path, title);
