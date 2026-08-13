@@ -65,6 +65,7 @@ def _read_doc_description(windows: DisclosureWindows) -> str:
 def _fetch_url_description(windows: DisclosureWindows) -> str:
     return (
         "抓取并解析网页或 PDF 为 Markdown，按渐进式披露返回。"
+        "支持微信公众号文章链接（内部自动处理）。"
         f"默认 intent=spot（约 {windows.spot} 字）；"
         f"深读/核对/成文用 intent=deep（默认约 {windows.deep} 字，硬上限 {windows.max_chars}）。"
         "同一链接会缓存，需要更多时用 offset 继续，不会重复抓取。"

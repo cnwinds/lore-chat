@@ -13,6 +13,12 @@ from app.engine.web.limits import (
     FETCH_URL_PDF_TIMEOUT_FLOOR,
 )
 from app.engine.web.types import FetchResult
+from app.engine.web.weixin_article import (
+    WEIXIN_HTML_MAX_BYTES,
+    is_weixin_article_url,
+    looks_like_weixin_challenge,
+    weixin_request_headers,
+)
 from app.engine.web.x_status import fetch_status_via_fxembed, parse_x_status_id
 from app.index.extract import extract_text_from_bytes
 
@@ -124,10 +130,18 @@ class WebFetcher:
         # 响应头/魔数才知 PDF；下载前统一给足下限，避免大 PDF 被 HTML 超时掐断
         return max(self.timeout, FETCH_URL_PDF_TIMEOUT_FLOOR)
 
-    def _client(self, *, timeout: float, accept: str | None = None) -> httpx.AsyncClient:
+    def _client(
+        self,
+        *,
+        timeout: float,
+        accept: str | None = None,
+        extra_headers: dict[str, str] | None = None,
+    ) -> httpx.AsyncClient:
         headers = {"User-Agent": "LorechatBot/1.0"}
         if accept:
             headers["Accept"] = accept
+        if extra_headers:
+            headers.update(extra_headers)
         return httpx.AsyncClient(
             timeout=timeout,
             follow_redirects=True,
@@ -149,19 +163,32 @@ class WebFetcher:
 
     async def _fetch_http(self, url: str) -> FetchResult:
         prefer_pdf = url_looks_like_pdf(url)
+        weixin = is_weixin_article_url(url)
+        extra = weixin_request_headers() if weixin else None
+        html_limit = WEIXIN_HTML_MAX_BYTES if weixin else self.max_bytes
         try:
-            async with self._client(timeout=self._request_timeout()) as client:
+            async with self._client(
+                timeout=self._request_timeout(),
+                extra_headers=extra,
+            ) as client:
                 async with client.stream("GET", url) as resp:
                     resp.raise_for_status()
                     encoding = resp.encoding
                     content, is_pdf, err = await self._read_body(
-                        resp, prefer_pdf=prefer_pdf
+                        resp,
+                        prefer_pdf=prefer_pdf,
+                        html_max_bytes=html_limit,
                     )
             if err:
                 return FetchResult(url=url, error=err)
             if is_pdf:
                 return self._result_from_pdf(url, content)
             html = content.decode(encoding or "utf-8", errors="replace")
+            if weixin and looks_like_weixin_challenge(html):
+                return FetchResult(
+                    url=url,
+                    error="微信公众号返回验证页或未放行正文，请稍后重试或在微信内打开",
+                )
             markdown = html_to_markdown(html, url)
             title = extract_page_title(html, content) or url
             snippet = markdown[:300].strip()
@@ -174,10 +201,12 @@ class WebFetcher:
         resp: httpx.Response,
         *,
         prefer_pdf: bool,
+        html_max_bytes: int | None = None,
     ) -> tuple[bytes, bool, str | None]:
         ctype = resp.headers.get("content-type", "")
         is_pdf = prefer_pdf or content_type_is_pdf(ctype)
-        limit = self.pdf_max_bytes if is_pdf else self.max_bytes
+        html_cap = html_max_bytes if html_max_bytes is not None else self.max_bytes
+        limit = self.pdf_max_bytes if is_pdf else html_cap
         cl_header = resp.headers.get("content-length")
         cl = int(cl_header) if cl_header and cl_header.isdigit() else None
         # 仅在已判定为 PDF 时按 Content-Length 拒收；未标明的大 PDF 靠魔数升级限额
