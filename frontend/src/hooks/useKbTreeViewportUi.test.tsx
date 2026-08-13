@@ -7,6 +7,7 @@ import {
   saveKbTreeExpanded,
   saveKbTreeScrollTop,
 } from "../utils/kbTreeUiStorage";
+import { SKILLS_DIR } from "../utils/fileTree";
 import { useKbTreeViewportUi } from "./useKbTreeViewportUi";
 
 function makeScrollEl(opts: {
@@ -133,7 +134,7 @@ describe("useKbTreeViewportUi", () => {
       result.current.toggleFolder("a");
     });
     expect(result.current.expanded.has("a")).toBe(false);
-    expect(loadKbTreeUi()?.expandedPaths).toEqual(["a/b"]);
+    expect(loadKbTreeUi()?.expandedPaths).toEqual(["a/b", SKILLS_DIR]);
   });
 
   it("does not overwrite stored scrollTop with 0 while restore is pending", () => {

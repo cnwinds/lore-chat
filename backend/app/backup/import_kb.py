@@ -121,12 +121,13 @@ def import_kb(
     mode: ImportMode,
     *,
     system_layer_dir: str = "系统",
+    skills_dir: str = "技能",
 ) -> ImportResult:
     root = Path(kb_path)
     root.mkdir(parents=True, exist_ok=True)
 
     if mode == "empty_only":
-        if not is_kb_empty(root, system_layer_dir):
+        if not is_kb_empty(root, system_layer_dir, skills_dir):
             return ImportResult(
                 ok=False,
                 backup_path=None,

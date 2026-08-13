@@ -254,6 +254,7 @@ async def import_kb_api(
             tmp_path,
             mode,  # type: ignore[arg-type]
             system_layer_dir=settings.system_layer_dir,
+            skills_dir=settings.skills_dir,
         )
         if not result.ok:
             remount_container(request.app)

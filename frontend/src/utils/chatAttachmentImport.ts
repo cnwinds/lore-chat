@@ -18,7 +18,8 @@ export async function chatAttachmentFilename(file: File): Promise<string> {
   if (!isImageFile(file)) {
     return file.name || "upload.bin";
   }
-  const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
   const hex = bytesToHex(digest).slice(0, 32);
   return `${hex}${imageExtFromFile(file)}`;
 }
