@@ -1,6 +1,10 @@
-"""微信公众号单篇文章：直连常被 UA 风控拦成验证页。
+"""微信公众号单篇文章抓取特例。
 
-根因：服务端检查 User-Agent 是否含 MicroMessenger；伪装微信客户端即可放行。
+根因两层：
+1. UA：直连常被拦成验证页；请求须带 MicroMessenger。
+2. 正文：页面前置大量脚本，`#js_content` 往往在数百 KB～1MB+ 之后；
+   仅提高限额仍脆弱，应优先抽出该容器再转 Markdown。
+
 对标 x_status：站点特例藏在 WebFetcher 内，fetch_url 工具接口不变。
 """
 
@@ -23,8 +27,8 @@ WEIXIN_CLIENT_UA = (
     "MicroMessenger/8.0.49 NetType/WIFI Language/zh_CN"
 )
 
-# 公众号页脚本多，默认 HTML 限额易截断到 js_content 之前
-WEIXIN_HTML_MAX_BYTES = 512 * 1024
+# 兜底读入上限：须盖过常见「脚本前缀 + #js_content」；正文仍优先按容器抽取
+WEIXIN_HTML_MAX_BYTES = 2 * 1024 * 1024
 
 # 拦截页特征：须配合「无正文容器」使用，避免正文 JS 里的「验证」误判
 _CHALLENGE_MARKERS = (
@@ -66,3 +70,44 @@ def looks_like_weixin_challenge(html: str) -> bool:
         return False
     lowered = html.lower()
     return any(marker.lower() in lowered for marker in _CHALLENGE_MARKERS)
+
+
+def extract_weixin_js_content_html(html: str) -> str | None:
+    """抽出 `#js_content` 节点 HTML（含自身）；缺失或解析失败返回 None。"""
+    if not html or "js_content" not in html:
+        return None
+    try:
+        from lxml import html as lxml_html
+    except ImportError:
+        return None
+    try:
+        root = lxml_html.fromstring(html)
+    except Exception:
+        return None
+    nodes = root.xpath('//*[@id="js_content"]')
+    if not nodes:
+        return None
+    node = nodes[0]
+    # 空壳（仅空白/脚本占位）视为未拿到正文
+    text = (node.text_content() or "").strip()
+    if not text:
+        return None
+    return lxml_html.tostring(node, encoding="unicode", method="html")
+
+
+def weixin_js_content_to_markdown(body_html: str, url: str = "") -> str:
+    """将 `#js_content` 片段转为 Markdown（包一层完整文档供抽取器解析）。"""
+    # 延迟导入避免与 fetcher 循环依赖
+    from app.engine.web.fetcher import html_to_markdown
+
+    wrapped = f"<!DOCTYPE html><html><body>{body_html}</body></html>"
+    md = html_to_markdown(wrapped, url)
+    if md.strip():
+        return md.strip()
+    try:
+        from lxml import html as lxml_html
+
+        text = (lxml_html.fromstring(body_html).text_content() or "").strip()
+    except Exception:
+        text = ""
+    return text

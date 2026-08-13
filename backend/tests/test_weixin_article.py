@@ -9,6 +9,8 @@ import pytest
 from app.engine.web.fetcher import WebFetcher
 from app.engine.web.weixin_article import (
     WEIXIN_CLIENT_UA,
+    WEIXIN_HTML_MAX_BYTES,
+    extract_weixin_js_content_html,
     is_weixin_article_url,
     looks_like_weixin_challenge,
     weixin_request_headers,
@@ -60,6 +62,29 @@ def test_looks_like_weixin_challenge():
     assert looks_like_weixin_challenge(truncated) is False
     assert looks_like_weixin_challenge("") is False
     assert looks_like_weixin_challenge('<div class="WXA-CAPTCHA">x</div>') is True
+
+
+def test_extract_weixin_js_content_prefers_container():
+    html = (
+        "<html><head><title>T</title></head><body>"
+        "<nav>noise</nav>"
+        '<div id="js_content"><div><p>驻场交付</p><p>第二段</p></div></div>'
+        "<footer>foot</footer></body></html>"
+    )
+    body = extract_weixin_js_content_html(html)
+    assert body is not None
+    assert "驻场交付" in body
+    assert "noise" not in body
+    assert "foot" not in body
+
+
+def test_extract_weixin_js_content_empty_shell_is_none():
+    html = '<html><body><div id="js_content">   \n</div></body></html>'
+    assert extract_weixin_js_content_html(html) is None
+
+
+def test_weixin_html_max_bytes_is_at_least_2mb():
+    assert WEIXIN_HTML_MAX_BYTES >= 2 * 1024 * 1024
 
 
 class _FakeStreamResp:
@@ -145,3 +170,15 @@ async def test_fetch_weixin_challenge_returns_error():
         result = await f.fetch("https://mp.weixin.qq.com/s/blocked")
     assert result.error
     assert "验证" in result.error or "微信" in result.error
+
+
+@pytest.mark.asyncio
+async def test_fetch_weixin_missing_js_content_returns_error():
+    """有标题但无正文容器（例如读入截断）→ 明确错误，勿假装成功空文。"""
+    prefix = ("<html><head><title>一文读懂</title></head><body>" + ("x" * 1000)).encode()
+    f = WebFetcher(timeout=5, max_bytes=10000)
+    with _patch_client(_FakeStreamResp(prefix)):
+        result = await f.fetch("https://mp.weixin.qq.com/s/truncated")
+    assert result.error
+    assert "正文" in result.error
+    assert result.title == "一文读懂"

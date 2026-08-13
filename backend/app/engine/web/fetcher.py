@@ -15,8 +15,10 @@ from app.engine.web.limits import (
 from app.engine.web.types import FetchResult
 from app.engine.web.weixin_article import (
     WEIXIN_HTML_MAX_BYTES,
+    extract_weixin_js_content_html,
     is_weixin_article_url,
     looks_like_weixin_challenge,
+    weixin_js_content_to_markdown,
     weixin_request_headers,
 )
 from app.engine.web.x_status import fetch_status_via_fxembed, parse_x_status_id
@@ -189,8 +191,21 @@ class WebFetcher:
                     url=url,
                     error="微信公众号返回验证页或未放行正文，请稍后重试或在微信内打开",
                 )
-            markdown = html_to_markdown(html, url)
             title = extract_page_title(html, content) or url
+            if weixin:
+                body_html = extract_weixin_js_content_html(html)
+                if not body_html:
+                    return FetchResult(
+                        url=url,
+                        title=title,
+                        error=(
+                            "微信公众号正文容器未抓到（页面过大被截断或结构变化），"
+                            "请稍后重试或在微信内打开"
+                        ),
+                    )
+                markdown = weixin_js_content_to_markdown(body_html, url)
+            else:
+                markdown = html_to_markdown(html, url)
             snippet = markdown[:300].strip()
             return FetchResult(url=url, title=title, markdown=markdown, snippet=snippet)
         except Exception as e:
