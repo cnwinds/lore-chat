@@ -7,11 +7,11 @@ import {
   type SourceRef,
   type TimelineBlock,
 } from "../api";
+import { KbAttachmentList } from "./KbAttachmentList";
 import { MarkdownContent } from "./MarkdownContent";
 import { PendingQuestion } from "./PendingQuestion";
 import { SandboxTerminal } from "./SandboxTerminal";
 import { SourceChip } from "./SourceChip";
-import { MessageRangeHighlight } from "./chat/MessageRangeHighlight";
 import {
   isNoiseProgressLine,
   joinProgressChunks,
@@ -133,6 +133,7 @@ function ToolBlockView({
     block.tool === "search_kb" ||
     block.tool === "web_search" ||
     block.tool === "fetch_url";
+  // generate_image 预览挂在消息级 attachments（ADR §5），工具块不渲染图，故不因 attachments 默认展开
   const defaultOpen =
     !collapsedByDefault &&
     (isLive ||
@@ -226,7 +227,20 @@ function ToolBlockView({
         </div>
       )}
       {open &&
+        block.status === "done" &&
+        block.tool !== "generate_image" &&
+        block.attachments &&
+        block.attachments.length > 0 && (
+          <KbAttachmentList
+            paths={block.attachments}
+            className="timeline-tool-attachments"
+            imageClassName="timeline-gen-image"
+            linkClassName="timeline-gen-image-link"
+          />
+        )}
+      {open &&
         block.tool !== "sandbox_run" &&
+        !(block.tool === "generate_image" && block.status === "done") &&
         block.progress_log &&
         block.progress_log.length > 0 && (
         <div className="timeline-tool-body timeline-tool-progress">
@@ -237,7 +251,9 @@ function ToolBlockView({
       )}
       {open && block.content && block.tool === "fetch_url" && (
         <div className="timeline-tool-body timeline-tool-content">
-          <MarkdownContent className="markdown-body chat-markdown">
+          <MarkdownContent
+            className="markdown-body chat-markdown"
+          >
             {block.content}
           </MarkdownContent>
         </div>
@@ -248,6 +264,7 @@ function ToolBlockView({
         block.tool !== "sandbox_run" &&
         (block.tool === "write_kb" ||
           block.tool === "edit_doc" ||
+          block.tool === "generate_image" ||
           !block.sources?.length) &&
         block.tool !== "ask_user" && (
           <div className="timeline-tool-body">
@@ -320,7 +337,9 @@ function ThinkBlockView({
       </button>
       {open ? (
         <div className="timeline-think-body">
-          <MarkdownContent className="markdown-body chat-markdown timeline-think-markdown">
+          <MarkdownContent
+            className="markdown-body chat-markdown timeline-think-markdown"
+          >
             {block.content}
           </MarkdownContent>
         </div>
@@ -397,7 +416,12 @@ export function TimelineBlockView({
   }
 
   if (block.type === "think") {
-    return <ThinkBlockView block={block} isLive={isLive} />;
+    return (
+      <ThinkBlockView
+        block={block}
+        isLive={isLive}
+      />
+    );
   }
 
   if (block.type === "user_inject") {

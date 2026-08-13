@@ -131,6 +131,10 @@ def search_cooldown_path_for_kb(kb_path: Path) -> Path:
     return Path(kb_path) / ".kb" / "search_cooldown.json"
 
 
+def image_cooldown_path_for_kb(kb_path: Path) -> Path:
+    return Path(kb_path) / ".kb" / "image_cooldown.json"
+
+
 # 同 path 共用内存实例，避免 Container 外旁路（backfill/测试）另起一份
 _SHARED: dict[str, "CooldownStore"] = {}
 

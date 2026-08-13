@@ -46,6 +46,13 @@ def emit_tool_result_sse(tc: ToolCall, out: dict, duration_ms: int) -> str:
         extra.update(
             _copy_keys(out, ("preview", "reindex_mode", "applied", "hint", "suggestion"))
         )
+    elif tc.name == "generate_image":
+        extra.update(_copy_keys(out, ("attachments", "rel_path", "provider")))
+        q = tc.arguments.get("prompt")
+        if isinstance(q, str):
+            clipped = clip_tool_query(q)
+            if clipped:
+                extra["query"] = clipped
     return tool_result(
         tc.id,
         tc.name,

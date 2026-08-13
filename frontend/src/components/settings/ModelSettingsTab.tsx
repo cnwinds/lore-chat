@@ -5,6 +5,10 @@ import {
   SearchProviderEditor,
   type SearchProviderDraft,
 } from "./SearchProviderEditor";
+import {
+  ImageProviderEditor,
+  type ImageProviderDraft,
+} from "./ImageProviderEditor";
 import type { CooldownStatus } from "./settingsTypes";
 
 const SECRET_KEYS = ["openai_api_key", "embed_api_key"] as const;
@@ -13,6 +17,8 @@ type SecretKey = (typeof SECRET_KEYS)[number];
 
 export type { SearchProviderDraft, SearchProviderId } from "./SearchProviderEditor";
 export { SEARCH_PROVIDER_OPTIONS } from "./SearchProviderEditor";
+export type { ImageProviderDraft, ImageProviderId } from "./ImageProviderEditor";
+export { IMAGE_PROVIDER_OPTIONS } from "./ImageProviderEditor";
 export type { CooldownStatus } from "./settingsTypes";
 
 export type ModelCandidateDraft = {
@@ -799,6 +805,10 @@ type Props = {
   onSearchProvidersChange: (v: SearchProviderDraft[]) => void;
   searchCooldown: CooldownStatus;
   onClearSearchCooldown: (providerId: string) => void;
+  imageProviders: ImageProviderDraft[];
+  onImageProvidersChange: (v: ImageProviderDraft[]) => void;
+  imageCooldown: CooldownStatus;
+  onClearImageCooldown: (providerId: string) => void;
   saving: boolean;
 };
 
@@ -829,6 +839,10 @@ export function ModelSettingsTab({
   onSearchProvidersChange,
   searchCooldown,
   onClearSearchCooldown,
+  imageProviders,
+  onImageProvidersChange,
+  imageCooldown,
+  onClearImageCooldown,
   saving,
 }: Props) {
   return (
@@ -967,6 +981,14 @@ export function ModelSettingsTab({
         onChange={onSearchProvidersChange}
         cooldown={searchCooldown}
         onClearCooldown={onClearSearchCooldown}
+        saving={saving}
+      />
+
+      <ImageProviderEditor
+        providers={imageProviders}
+        onChange={onImageProvidersChange}
+        cooldown={imageCooldown}
+        onClearCooldown={onClearImageCooldown}
         saving={saving}
       />
     </>

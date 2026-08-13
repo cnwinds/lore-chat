@@ -15,6 +15,7 @@ from app.storage.kb_paths import (
     normalize_directory,
     title_from_rel_path,
 )
+from app.engine.kb_markdown_images import sanitize_markdown_image_srcs_for_storage
 from app.engine.memory.constants import is_memory_projection_path
 from app.engine.write_policy import WriteMode
 from app.storage.kb_text_files import is_kb_text_file
@@ -84,6 +85,7 @@ class KnowledgeWriter:
         norm = rel_path.replace("\\", "/").lstrip("/")
         if is_memory_projection_path(norm):
             raise ValueError(_MEMORY_FILE_DISABLED_MSG)
+        body = sanitize_markdown_image_srcs_for_storage(body)
         self.repo.write_doc(norm, meta, body, commit_msg=commit_msg)
         if self.indexer is not None:
             self.indexer.reindex_doc(norm, body)
@@ -107,6 +109,7 @@ class KnowledgeWriter:
     ) -> str:
         norm = rel_path.replace("\\", "/").lstrip("/")
         msg = commit_msg or f"edit: {norm}"
+        new_body = sanitize_markdown_image_srcs_for_storage(new_body)
         self.repo.write_doc(norm, meta, new_body, commit_msg=msg)
         reindex_mode = "full"
         if self.indexer is not None:

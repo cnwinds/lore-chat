@@ -88,6 +88,21 @@ export function clearSearchCooldown(body: {
   );
 }
 
+export function clearImageCooldown(body: {
+  provider_id?: string;
+  candidate_id?: string;
+  all?: boolean;
+}) {
+  return apiFetch<{ ok: boolean; image_cooldown: Record<string, unknown> }>(
+    "/api/admin/image-cooldown/clear",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
+}
+
 export type ModelCatalogItem = {
   provider: string;
   id: string;

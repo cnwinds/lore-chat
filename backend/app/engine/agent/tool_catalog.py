@@ -17,6 +17,7 @@ WRITE_TOOLS = frozenset({
     "write_kb", "write_kb_file", "delete_kb", "ask_user", "summarize_conversation",
     "edit_doc",
     "manage_memory", "move_entry",
+    "generate_image",
     "sandbox_run", "publish_from_sandbox", "stage_to_sandbox",
 })
 
@@ -94,6 +95,7 @@ TOOL_LABELS = {
     "read_conversation_context": "读取会话邻近消息",
     "fetch_url": "打开链接",
     "web_search": "搜索网页",
+    "generate_image": "生成图片",
     "write_kb": "写入知识库文档",
     "write_kb_file": "写入知识库代码/文本文件",
     "summarize_conversation": "归档整段会话",
@@ -251,6 +253,59 @@ TOOL_DEFINITIONS: list[dict] = [
                     "k": {"type": "integer", "description": "返回条数，默认 5", "default": 5},
                 },
                 "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "generate_image",
+            "description": (
+                "根据文字描述生成一张图片并保存到知识库。"
+                "默认 destination=chat_attachment，写入 generated/ 目录，结果以附件形式出现在信息流；"
+                "若需写入指定知识库路径供文档引用，用 destination=kb 并提供 directory 与 filename（均必填）。"
+                "文档中请用相对路径 Markdown 插图：![说明](相对路径)。"
+                "需已配置生图提供商。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "prompt": {
+                        "type": "string",
+                        "description": "图片内容描述（英文或中文）",
+                    },
+                    "aspect_ratio": {
+                        "type": "string",
+                        "enum": ["1:1", "16:9", "9:16", "4:3", "3:4"],
+                        "description": "宽高比，默认 1:1",
+                        "default": "1:1",
+                    },
+                    "destination": {
+                        "type": "string",
+                        "enum": ["chat_attachment", "kb"],
+                        "description": (
+                            "chat_attachment=会话附件（默认，写入 generated/）；"
+                            "kb=指定知识库目录与文件名"
+                        ),
+                        "default": "chat_attachment",
+                    },
+                    "directory": {
+                        "type": "string",
+                        "description": "destination=kb 时的目标目录（相对知识库根）",
+                    },
+                    "filename": {
+                        "type": "string",
+                        "description": "destination=kb 时必填的文件名（可省略扩展名，默认 .png）",
+                    },
+                    "provider": {
+                        "type": "string",
+                        "description": (
+                            "可选弱覆盖：优先尝试该提供商 id 或类型（openai/zhipu/bailian）；"
+                            "失败后仍可切换链上其余提供商"
+                        ),
+                    },
+                },
+                "required": ["prompt"],
             },
         },
     },
@@ -762,13 +817,15 @@ def select_tools(
     web_enabled: bool,
     *,
     search_configured: bool = True,
+    imagegen_configured: bool = True,
     sandbox_enabled: bool = False,
     disclosure_windows: DisclosureWindows | None = None,
 ) -> list[dict]:
     """按 mode / 联网 / 沙箱能力硬门过滤下发给模型的工具集。
 
     - web_enabled=False 或未配置搜索 provider：移除 web_search（保留 fetch_url）。
-    - mode=no_write：移除 write_kb / write_kb_file / manage_memory / publish_from_sandbox（保留 stage_to_sandbox）。
+    - 未配置生图 provider：移除 generate_image。
+    - mode=no_write：移除 write_kb / write_kb_file / manage_memory / publish_from_sandbox / generate_image（保留 stage_to_sandbox）。
     - mode=force_write：保留 write_kb（/api/ingest 依赖 prompt 强制调用）。
     - sandbox_enabled=False：移除全部沙箱工具。
     - disclosure_windows：注入 read_doc / fetch_url 的实际窗口字数（与 Settings 一致）。
@@ -779,11 +836,14 @@ def select_tools(
     excluded: set[str] = set()
     if not web_enabled or not search_configured:
         excluded.add("web_search")
+    if not imagegen_configured:
+        excluded.add("generate_image")
     if mode == _MODE_NO_WRITE:
         excluded.add("write_kb")
         excluded.add("write_kb_file")
         excluded.add("manage_memory")
         excluded.add("publish_from_sandbox")
+        excluded.add("generate_image")
     if not sandbox_enabled:
         excluded |= SANDBOX_TOOLS
     windows = disclosure_windows or DisclosureWindows()

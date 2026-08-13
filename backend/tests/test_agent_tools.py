@@ -609,6 +609,21 @@ def test_select_tools_web_enabled_but_no_provider_drops_web_search():
     assert "fetch_url" in names
 
 
+def test_select_tools_imagegen_gate():
+    names_on = _tool_names(
+        select_tools(MODE_DEFAULT, web_enabled=True, imagegen_configured=True)
+    )
+    names_off = _tool_names(
+        select_tools(MODE_DEFAULT, web_enabled=True, imagegen_configured=False)
+    )
+    assert "generate_image" in names_on
+    assert "generate_image" not in names_off
+    names_nw = _tool_names(
+        select_tools(MODE_NO_WRITE, web_enabled=True, imagegen_configured=True)
+    )
+    assert "generate_image" not in names_nw
+
+
 def test_select_tools_no_write_drops_write_kb():
     names = _tool_names(select_tools(MODE_NO_WRITE, web_enabled=True))
     assert "write_kb" not in names

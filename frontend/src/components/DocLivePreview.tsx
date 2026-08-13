@@ -2,6 +2,10 @@ import { useEffect, useRef } from "react";
 import { Crepe } from "@milkdown/crepe";
 import "@milkdown/crepe/theme/common/style.css";
 import { isMarkdownCosmeticallyEqual } from "../utils/docMarkdown";
+import {
+  restoreMarkdownImageSrcsForStorage,
+  rewriteMarkdownImageSrcsForDisplay,
+} from "../utils/kbImageUrls";
 
 export type DocSelection = { start: number; end: number };
 
@@ -39,17 +43,25 @@ export function DocLivePreview({
     const root = rootRef.current;
     if (!root) return;
 
-    const crepe = new Crepe({ root, defaultValue: initialBodyRef.current });
+    const displayInitial = rewriteMarkdownImageSrcsForDisplay(initialBodyRef.current);
+    const crepe = new Crepe({ root, defaultValue: displayInitial });
     crepe.on((listener) => {
       listener.markdownUpdated((_ctx, markdown) => {
         if (!readyRef.current) return;
-        if (markdown === lastMarkdownRef.current) return;
+        let stored: string;
+        try {
+          stored = restoreMarkdownImageSrcsForStorage(markdown);
+        } catch {
+          // 无法还原的 API 绝对链：不写回，避免污染 KB 正文
+          return;
+        }
+        if (stored === lastMarkdownRef.current) return;
         const prev = lastMarkdownRef.current;
-        lastMarkdownRef.current = markdown;
-        if (!isMarkdownCosmeticallyEqual(markdown, prev)) {
+        lastMarkdownRef.current = stored;
+        if (!isMarkdownCosmeticallyEqual(stored, prev)) {
           onUserEditRef.current?.();
         }
-        onChangeRef.current(markdown);
+        onChangeRef.current(stored);
       });
     });
     crepe.setReadonly(readOnly);
@@ -61,7 +73,13 @@ export function DocLivePreview({
         void crepe.destroy();
         return;
       }
-      const md = crepe.getMarkdown();
+      const md = (() => {
+        try {
+          return restoreMarkdownImageSrcsForStorage(crepe.getMarkdown());
+        } catch {
+          return initialBodyRef.current;
+        }
+      })();
       lastMarkdownRef.current = md;
       onStableRef.current?.(md);
       readyRef.current = true;

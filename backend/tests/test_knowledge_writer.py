@@ -22,6 +22,19 @@ def test_persist_document_reindexes(tmp_path):
     assert doc.body == "hello\n"
 
 
+def test_persist_document_restores_download_image_urls(tmp_path):
+    repo = KnowledgeRepo(tmp_path / "knowledge")
+    writer = KnowledgeWriter(repo, None)
+    writer.persist_document(
+        "pics.md",
+        {"title": "P"},
+        "![a](/api/download?path=generated%2Fx.png)\n",
+        commit_msg="add",
+        changelog_line="创建 pics.md",
+    )
+    assert repo.read_doc("pics.md").body == "![a](generated/x.png)\n"
+
+
 def test_import_entry_file(tmp_path):
     repo = KnowledgeRepo(tmp_path / "knowledge")
     llm = FakeLLMClient(embed_dim=8)

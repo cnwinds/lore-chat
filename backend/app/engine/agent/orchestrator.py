@@ -74,6 +74,11 @@ class AgentOrchestrator:
             self.tools.web_search is not None
             and self.tools.web_search.provider is not None
         )
+        imagegen_configured = bool(
+            getattr(self.tools, "image", None)
+            and self.tools.image_tools.image_gen is not None
+            and self.tools.image_tools.image_gen.configured
+        )
         web_search_enabled = web_enabled and search_configured
         messages = build_agent_messages(
             user_text,
@@ -93,6 +98,7 @@ class AgentOrchestrator:
             mode,
             web_enabled,
             search_configured=search_configured,
+            imagegen_configured=imagegen_configured,
             sandbox_enabled=bool(
                 self.settings.sandbox_enabled and self.tools.sandbox_runtime is not None
             ),

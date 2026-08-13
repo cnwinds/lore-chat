@@ -6,12 +6,17 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from app.config import (
+    CHAIN_IMAGE_SETTING_KEYS,
     CHAIN_MODEL_SETTING_KEYS,
     CHAIN_SEARCH_SETTING_KEYS,
     EDITABLE_SETTING_KEYS,
     LEGACY_SEARCH_SECRET_KEYS,
     SECRET_SETTING_KEYS,
     Settings,
+)
+from app.engine.imagegen.providers import (
+    mask_image_providers,
+    validate_image_providers_unique,
 )
 from app.engine.web.search_providers import (
     mask_search_providers,
@@ -48,6 +53,53 @@ def _mask(value: str | None) -> str | None:
     if len(value) <= 4:
         return "****"
     return f"{value[:2]}***{value[-4:]}"
+
+
+def _merge_provider_chain_entries(
+    value: list,
+    prev: list,
+    *,
+    optional_fields: tuple[str, ...] = (),
+    match_secret_by_provider: bool = True,
+) -> list[dict]:
+    """合并有序提供商链：保留未改动的脱敏 api_key；规范化 id/provider。
+
+    match_secret_by_provider=False 时仅按 id 回填密钥（生图允许同厂家多条）。
+    """
+    prev_by_id = {
+        (c.get("id") if isinstance(c, dict) else None): c
+        for c in prev
+        if isinstance(c, dict)
+    }
+    prev_by_provider = {
+        (c.get("provider") if isinstance(c, dict) else None): c
+        for c in prev
+        if isinstance(c, dict)
+    }
+    merged_list: list[dict] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        item = dict(item)
+        provider = str(item.get("provider") or "").strip().lower()
+        item["provider"] = provider
+        item["id"] = str(item.get("id") or provider).strip() or provider
+        old = prev_by_id.get(item.get("id"))
+        if old is None and match_secret_by_provider:
+            old = prev_by_provider.get(provider)
+        api_key = item.get("api_key")
+        if old and (
+            api_key is None
+            or api_key == ""
+            or (isinstance(api_key, str) and "***" in api_key)
+        ):
+            item["api_key"] = old.get("api_key")
+        for opt in optional_fields:
+            if opt in item and item[opt] is not None:
+                s = str(item[opt]).strip()
+                item[opt] = s or None
+        merged_list.append(item)
+    return merged_list
 
 
 def _enrich_chains(data: dict) -> dict:
@@ -157,6 +209,9 @@ class SettingsStore:
         for key in CHAIN_SEARCH_SETTING_KEYS:
             if key in data:
                 data[key] = mask_search_providers(data[key])
+        for key in CHAIN_IMAGE_SETTING_KEYS:
+            if key in data:
+                data[key] = mask_image_providers(data[key])
         return data
 
     def _write_overrides(self, overrides: dict) -> None:
@@ -214,34 +269,17 @@ class SettingsStore:
             if key in CHAIN_SEARCH_SETTING_KEYS and isinstance(value, list):
                 validate_search_providers_unique(value)
                 prev = self._overrides.get(key) or self._current.model_dump().get(key) or []
-                prev_by_id = {
-                    (c.get("id") if isinstance(c, dict) else None): c
-                    for c in prev
-                    if isinstance(c, dict)
-                }
-                prev_by_provider = {
-                    (c.get("provider") if isinstance(c, dict) else None): c
-                    for c in prev
-                    if isinstance(c, dict)
-                }
-                merged_list = []
-                for item in value:
-                    if not isinstance(item, dict):
-                        continue
-                    item = dict(item)
-                    provider = str(item.get("provider") or "").strip().lower()
-                    item["provider"] = provider
-                    item["id"] = str(item.get("id") or provider).strip() or provider
-                    old = prev_by_id.get(item.get("id")) or prev_by_provider.get(provider)
-                    api_key = item.get("api_key")
-                    if old and (
-                        api_key is None
-                        or api_key == ""
-                        or (isinstance(api_key, str) and "***" in api_key)
-                    ):
-                        item["api_key"] = old.get("api_key")
-                    merged_list.append(item)
-                filtered[key] = merged_list
+                filtered[key] = _merge_provider_chain_entries(value, prev)
+                continue
+            if key in CHAIN_IMAGE_SETTING_KEYS and isinstance(value, list):
+                validate_image_providers_unique(value)
+                prev = self._overrides.get(key) or self._current.model_dump().get(key) or []
+                filtered[key] = _merge_provider_chain_entries(
+                    value,
+                    prev,
+                    optional_fields=("base_url", "model"),
+                    match_secret_by_provider=False,
+                )
                 continue
             filtered[key] = value
 

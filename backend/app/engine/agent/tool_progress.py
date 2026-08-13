@@ -6,7 +6,7 @@ import asyncio
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 
-from app.engine.sandbox.progress import bind_progress_queue, reset_progress_queue
+from app.engine.progress import bind_progress_queue, reset_progress_queue
 from app.models.llm import ToolCall
 
 

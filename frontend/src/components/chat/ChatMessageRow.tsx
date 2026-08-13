@@ -2,7 +2,6 @@ import {
   computeCumulative,
   formatDuration,
   getMessageCopyText,
-  downloadUrl,
   normalizeDocContext,
   type ChatMessage,
   type IngestResult,
@@ -11,6 +10,7 @@ import {
 import { DocChip, FileChip } from "../ComposerTray";
 import { formatMessageTs, isInjectedUserMessage } from "../../utils/chatMessage";
 import { MarkdownContent } from "../MarkdownContent";
+import { KbAttachmentList } from "../KbAttachmentList";
 import { ChatSources } from "../ChatSources";
 import { CopyButton } from "../CopyButton";
 import { TimelineBlockView } from "../TimelineBlockView";
@@ -301,12 +301,14 @@ export function ChatMessageRow({
             onOpen={onOpenSource}
           />
         )}
-        {m.role !== "user" &&
-          m.attachments?.map((a) => (
-            <div key={a}>
-              <a href={downloadUrl(a, { download: true })}>下载附件：{basename(a)}</a>
-            </div>
-          ))}
+        {m.role !== "user" && m.attachments && m.attachments.length > 0 ? (
+          <KbAttachmentList
+            paths={m.attachments}
+            className="kb-attachment-list"
+            imageClassName="chat-gen-image"
+            linkClassName="chat-gen-image-link"
+          />
+        ) : null}
         {renderMessageMeta(m, isLiveStreaming, liveElapsedMs)}
       </div>
     </div>

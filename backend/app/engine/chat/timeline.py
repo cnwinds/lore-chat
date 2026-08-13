@@ -92,6 +92,11 @@ class TimelineAccumulator:
                 for key in ("preview", "reindex_mode", "applied"):
                     if data.get(key) is not None:
                         block[key] = data[key]
+                if data.get("attachments"):
+                    block["attachments"] = data["attachments"]
+                # 生图轮询文案仅运行时有用；完成后与同步厂商一致，只留结果
+                if block.get("tool") == "generate_image":
+                    block.pop("progress_log", None)
                 extend_sources(self.all_sources, block.get("sources") or [])
 
         elif event_type == "parallel_batch_start":
@@ -176,6 +181,9 @@ class TimelineAccumulator:
             "total_duration_ms": self.total_duration_ms,
             "status": status,
         }
+        atts = _collect_timeline_attachments(timeline)
+        if atts:
+            assistant["attachments"] = atts
         if self.model_name:
             assistant["model_name"] = self.model_name
         if self.model_failover:
@@ -183,6 +191,30 @@ class TimelineAccumulator:
         if error is not None:
             assistant["error"] = error
         return assistant
+
+
+def _collect_timeline_attachments(timeline: list[dict]) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+
+    def _add(paths: object) -> None:
+        if not isinstance(paths, list):
+            return
+        for p in paths:
+            if isinstance(p, str) and p and p not in seen:
+                seen.add(p)
+                out.append(p)
+
+    for block in timeline:
+        if not isinstance(block, dict):
+            continue
+        if block.get("type") == "tool":
+            _add(block.get("attachments"))
+        elif block.get("type") == "parallel":
+            for child in block.get("children") or []:
+                if isinstance(child, dict) and child.get("type") == "tool":
+                    _add(child.get("attachments"))
+    return out
 
 
 def _mark_running_tools_interrupted(timeline: list[dict]) -> list[dict]:

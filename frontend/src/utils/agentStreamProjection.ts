@@ -113,6 +113,18 @@ export function reduceStreamEvent(
     if ((KB_MUTATING_TOOLS as readonly string[]).includes(data.tool as string)) {
       kbNotify = kbPathFromToolResult(data) ?? null;
     }
+    if (Array.isArray(data.attachments) && data.attachments.length) {
+      const prev = assistant.attachments ?? [];
+      const seen = new Set(prev);
+      const merged = [...prev];
+      for (const p of data.attachments) {
+        if (typeof p === "string" && p && !seen.has(p)) {
+          seen.add(p);
+          merged.push(p);
+        }
+      }
+      assistant.attachments = merged;
+    }
     if (
       (data.tool === "ask_user" || data.tool === "sandbox_run") &&
       data.question_id &&

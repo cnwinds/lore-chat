@@ -114,4 +114,29 @@ describe("updateTimeline tool_progress", () => {
       expect(block.progress_log).toEqual(["$ ls\na\nb\n"]);
     }
   });
+
+  it("clears generate_image progress_log on tool_result", () => {
+    let timeline = updateTimeline([], "tool_start", {
+      id: "1",
+      tool: "generate_image",
+      label: "生图",
+      ts: "t0",
+    });
+    timeline = updateTimeline(timeline, "tool_progress", {
+      id: "1",
+      message: "百炼生成中（RUNNING）.",
+    });
+    timeline = updateTimeline(timeline, "tool_result", {
+      id: "1",
+      summary: "已生成图片 → generated/x.png（bailian）",
+      attachments: ["generated/x.png"],
+      sources: [],
+    });
+    const block = timeline[0];
+    expect(block.type).toBe("tool");
+    if (block.type === "tool") {
+      expect(block.progress_log).toBeUndefined();
+      expect(block.attachments).toEqual(["generated/x.png"]);
+    }
+  });
 });
