@@ -4903,6 +4903,70 @@ button.source-link--inline.conversation-md-link {
   cursor: not-allowed;
 }
 
+.skill-header-panel {
+  flex: 0 0 auto;
+  margin: 0 0 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-subtle);
+  overflow: hidden;
+}
+
+.skill-header-empty {
+  margin: 0;
+  padding: 10px 14px;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+.skill-header-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: var(--text-sm);
+}
+
+.skill-header-table th,
+.skill-header-table td {
+  padding: 10px 14px;
+  vertical-align: top;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+
+.skill-header-table tr:last-child th,
+.skill-header-table tr:last-child td {
+  border-bottom: none;
+}
+
+.skill-header-table th {
+  width: 7.5rem;
+  color: var(--text-muted);
+  font-weight: 600;
+  background: color-mix(in srgb, var(--bg-subtle) 70%, var(--bg-surface));
+}
+
+.skill-header-table td {
+  color: var(--text);
+  word-break: break-word;
+}
+
+.skill-header-multiline {
+  white-space: pre-wrap;
+  line-height: 1.55;
+}
+
+.skill-header-list {
+  margin: 0;
+  padding-left: 1.15em;
+  line-height: 1.55;
+}
+
+.skill-header-list li + li {
+  margin-top: 0.35em;
+}
+
 .doc-live-preview {
   position: relative;
   flex: 1;

@@ -1,9 +1,15 @@
-import type { RefObject } from "react";
+import { useMemo, type RefObject } from "react";
 import type { DocContent } from "../../api";
 import type { MergeReviewInfo } from "../../hooks/doc/useDocDirtyPrompt";
 import type { EditMode } from "../../types/doc";
+import {
+  isSkillMdPath,
+  joinSkillBody,
+  splitSkillBodyHeader,
+} from "../../utils/skillHeader";
 import { DocLivePreview, type DocSelection } from "../DocLivePreview";
 import { DocMarkdownSource } from "../DocMarkdownSource";
+import { SkillHeaderTable } from "./SkillHeaderTable";
 
 type Props = {
   bodyRef: RefObject<HTMLDivElement | null>;
@@ -52,6 +58,18 @@ export function DocViewerBody({
   selection,
   onSelectionChange,
 }: Props) {
+  const skillPreview = useMemo(() => {
+    if (!isSkillMdPath(loadedPath)) return null;
+    const split = splitSkillBodyHeader(body);
+    // 只要匹配到 --- 头就剥离；字段可空（降级提示），禁止把 YAML 退回 Crepe
+    if (!split.headerBlock) return null;
+    return split;
+  }, [loadedPath, body]);
+
+  const previewBody = skillPreview?.content ?? body;
+  const withSkillHeader = (content: string) =>
+    joinSkillBody(skillPreview?.headerBlock, content);
+
   return (
     <div className="doc-viewer-body" ref={bodyRef}>
       {loading && <div className="doc-muted">加载中…</div>}
@@ -71,14 +89,21 @@ export function DocViewerBody({
               readOnly={readOnly}
             />
           ) : editMode === "preview" ? (
-            <DocLivePreview
-              key={`${loadedPath}#${refreshKey}#${previewRemountKey}`}
-              initialBody={body}
-              onChange={(b) => (onPreviewChange ?? onBodyChange)(b)}
-              onStable={onPreviewStable}
-              onUserEdit={onPreviewUserEdit}
-              readOnly={readOnly}
-            />
+            <>
+              {skillPreview && (
+                <SkillHeaderTable entries={skillPreview.fields} />
+              )}
+              <DocLivePreview
+                key={`${loadedPath}#${refreshKey}#${previewRemountKey}`}
+                initialBody={previewBody}
+                onChange={(b) =>
+                  (onPreviewChange ?? onBodyChange)(withSkillHeader(b))
+                }
+                onStable={(md) => onPreviewStable(withSkillHeader(md))}
+                onUserEdit={onPreviewUserEdit}
+                readOnly={readOnly}
+              />
+            </>
           ) : (
             <DocMarkdownSource
               ref={markdownSourceRef}
