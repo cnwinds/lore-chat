@@ -31,12 +31,15 @@ export function useComposerPreviewBridge({
 }: Options) {
   const pinAddedTrayRef = useRef<string | null>(null);
 
-  function addDocToComposer(path: string, *, setAsPrimary: boolean) {
+  function addDocToComposer(
+    path: string,
+    opts: { setAsPrimary: boolean },
+  ) {
     const title = pathBasename(path);
     if (!composer.items.some((i) => i.path === path)) {
       composer.addDocumentToTray(path, title);
     }
-    if (setAsPrimary && isMarkdownPath(path)) {
+    if (opts.setAsPrimary && isMarkdownPath(path)) {
       composer.setPrimary(path);
     }
   }
