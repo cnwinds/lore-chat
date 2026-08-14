@@ -37,7 +37,10 @@ Copy-Item frontend\.env.example frontend\.env
 - 前端：http://localhost:5173
 - 后端：http://localhost:8000
 
-源码 Docker 构建：`cp .env.docker.example .env && ./lorechat.sh start`（沙箱见 [ADR](docs/adr/2026-08-06-opensandbox-runtime.md)）。
+源码 Docker：
+
+- **开发热重载**（推荐改代码时用）：`cp .env.docker.example .env && ./lorechat.sh start --chat --dev`（或 `--work --dev`）。详见 [README「Docker 开发模式」](README.md#docker-开发模式源码映射--热重载)。
+- **生产式本地构建**：`./lorechat.sh start --chat` / `--work`（沙箱见 [ADR](docs/adr/2026-08-06-opensandbox-runtime.md)）。
 
 ## 测试
 

@@ -8,26 +8,22 @@ from typing import BinaryIO
 
 from app.backup.manifest import build_manifest, manifest_json
 
-_EXCLUDED_DB_NAMES = frozenset({"fts.db", "conversation_fts.db"})
-_VEC_PREFIX = ".kb/index/vec"
-
 
 def _normalize_rel(rel: str) -> str:
     return rel.replace("\\", "/")
 
 
 def _should_exclude(rel: str) -> bool:
+    """导出排除项：跳过 wal/shm，以及磁盘上的旧 manifest（打包时写入新生成的一份）。
+
+    全文 / 向量索引（fts.db、conversation_fts.db、.kb/index/vec/）一并打包，
+    导入后即可检索，无需强制重建。
+    """
     posix = _normalize_rel(rel)
     if posix == "manifest.json":
         return True
-    if posix == _VEC_PREFIX or posix.startswith(f"{_VEC_PREFIX}/"):
-        return True
     name = Path(posix).name
-    if name in _EXCLUDED_DB_NAMES:
-        return True
-    if name.endswith(".db-wal") or name.endswith(".db-shm"):
-        return True
-    return False
+    return name.endswith(".db-wal") or name.endswith(".db-shm")
 
 
 def _checkpoint_sqlite_dbs(kb_path: Path) -> None:

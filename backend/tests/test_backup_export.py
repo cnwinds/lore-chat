@@ -9,7 +9,7 @@ from app.main import create_app
 from app.models.llm import FakeLLMClient
 
 
-def test_export_includes_docs_excludes_index(tmp_path: Path):
+def test_export_includes_docs_and_index(tmp_path: Path):
     kb = tmp_path / "kb"
     (kb / "技术").mkdir(parents=True)
     (kb / "技术" / "a.md").write_text("# hi\n", encoding="utf-8")
@@ -18,22 +18,24 @@ def test_export_includes_docs_excludes_index(tmp_path: Path):
     (idx / "vec").mkdir(parents=True)
     (idx / "vec" / "dummy.bin").write_bytes(b"x")
     (idx / "fts.db").write_bytes(b"sqlite")
+    (idx / "conversation_fts.db").write_bytes(b"sqlite")
+    (idx / "fts.db-wal").write_bytes(b"wal")
+    (idx / "fts.db-shm").write_bytes(b"shm")
     (kb / ".kb" / "auth.json").write_text('{"password_hash":"x"}', encoding="utf-8")
 
     out = tmp_path / "out.zip"
     build_export_zip(kb, out)
     with zipfile.ZipFile(out) as z:
         names = z.namelist()
-    assert any(n.endswith("技术/a.md") or n.endswith("技术\\a.md") for n in names)
-    assert any("auth.json" in n for n in names)
-    assert any(n.endswith("manifest.json") for n in names)
+    norm = [n.replace("\\", "/") for n in names]
+    assert any(n.endswith("技术/a.md") for n in norm)
+    assert any("auth.json" in n for n in norm)
+    assert any(n.endswith("manifest.json") for n in norm)
     assert names.count("manifest.json") == 1
-    assert not any("fts.db" in n for n in names)
-    assert not any(
-        "/vec/" in n.replace("\\", "/") or n.replace("\\", "/").endswith("/vec")
-        for n in names
-        if "vec" in n
-    )
+    assert any(n.endswith(".kb/index/fts.db") for n in norm)
+    assert any(n.endswith(".kb/index/conversation_fts.db") for n in norm)
+    assert any(".kb/index/vec/dummy.bin" in n for n in norm)
+    assert not any(n.endswith(".db-wal") or n.endswith(".db-shm") for n in norm)
 
 
 def test_directory_zip_contains_folder_prefix(tmp_path: Path):

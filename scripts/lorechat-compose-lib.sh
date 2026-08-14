@@ -111,12 +111,16 @@ lorechat_warn_work_images() {
   echo "[Lore Chat] 首次下载可能较慢，请耐心等待。"
 }
 
+# $1 = chat|work；其余为 compose 参数。若 LORECHAT_COMPOSE_DEV=1 则叠加 docker-compose.dev.yml
 lorechat_compose() {
   local mode="$1"
   shift
   local -a files=(-f "${LORECHAT_COMPOSE_BASE}")
   if [[ "${mode}" == "work" ]]; then
     files+=(-f "${LORECHAT_COMPOSE_SANDBOX}")
+  fi
+  if [[ "${LORECHAT_COMPOSE_DEV:-}" == "1" ]]; then
+    files+=(-f "${LORECHAT_COMPOSE_DEV_FILE:-${LORECHAT_COMPOSE_DIR}/docker-compose.dev.yml}")
   fi
   docker compose \
     --project-directory "${LORECHAT_COMPOSE_DIR}" \

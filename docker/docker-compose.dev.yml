@@ -1,0 +1,59 @@
+# 开发叠加：源码 bind mount + 热重载，改代码无需重建/重启容器。
+# 与 docker-compose.yml 一起用；需要沙箱时再叠 docker-compose.sandbox.yml。
+#
+#   docker compose --project-directory docker --env-file .env \
+#     -f docker/docker-compose.yml -f docker/docker-compose.dev.yml up -d --build
+#
+# 或：./lorechat.sh start --chat --dev   /   ./lorechat.sh start --work --dev
+
+services:
+  backend:
+    volumes:
+      - ../backend/app:/app/app
+    environment:
+      # WSL / bind mount 下 inotify 常不可靠，强制轮询
+      WATCHFILES_FORCE_POLLING: "true"
+    command:
+      - uvicorn
+      - app.main:app
+      - --host
+      - "0.0.0.0"
+      - --port
+      - "8000"
+      - --reload
+      - --reload-dir
+      - /app/app
+    healthcheck:
+      start_period: 20s
+
+  web:
+    # 覆盖生产 nginx 静态镜像，改为 Vite HMR
+    image: node:20-alpine
+    build: !reset
+    working_dir: /app
+    volumes:
+      - ../frontend:/app
+      - lorechat-web-node-modules:/app/node_modules
+    environment:
+      VITE_API_BASE: ""
+      VITE_PROXY_TARGET: http://backend:8000
+      CHOKIDAR_USEPOLLING: "true"
+      WATCHPACK_POLLING: "true"
+    ports: !override
+      - "${WEB_PORT:-8080}:5173"
+    command:
+      - sh
+      - -c
+      - |
+        set -e
+        npm config set registry https://registry.npmmirror.com
+        if [ ! -d node_modules/.bin ]; then npm install; fi
+        exec npm run dev -- --host 0.0.0.0 --port 5173
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck: !reset
+
+volumes:
+  lorechat-web-node-modules:
+    name: lorechat-web-node-modules

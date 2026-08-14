@@ -65,3 +65,36 @@ def test_reindex_blocked_during_maintenance(client):
         assert r.json()["code"] == "maintenance"
     finally:
         client.app.state.maintenance_lock.release()
+
+
+def test_reindex_skips_binary_assets_and_backfills_conversations(client):
+    """导入后常见：KB 含图片；重建索引不得因 UTF-8 失败而跳过会话回填。"""
+    container = client.app.state.container
+    container.repo.write_doc(
+        "技术/note.md",
+        {"title": "笔记"},
+        "markdown body for docs\n",
+        commit_msg="seed md",
+    )
+    # JPEG SOI — 非 UTF-8，旧逻辑会在 read_doc 处崩溃
+    container.repo.write_bytes(
+        "媒体/上传/fixture.jpg",
+        b"\xff\xd8\xff\xe0" + b"\x00" * 64,
+        commit_msg="seed binary",
+    )
+    cid = container.conversations.create(title="历史会话")
+    token = "unique-conv-reindex-token-zyx"
+    container.conversations.begin_turn(
+        cid, token, "cli-reindex-1", observation_allowed=False
+    )
+
+    r = client.post("/api/admin/reindex")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["ok"] is True
+    assert body["docs_indexed"] >= 1
+    assert body["conversations_fts"] >= 1
+
+    hits = container.conversation_fts.query(token, k=5)
+    assert hits
+    assert any(h.conversation_id == cid for h in hits)
