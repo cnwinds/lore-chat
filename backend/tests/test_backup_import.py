@@ -96,6 +96,83 @@ def test_import_failure_http_invalid_manifest_is_422():
     assert exc.detail["code"] == "invalid_manifest"
 
 
+def test_promote_staging_keeps_kb_directory(tmp_path: Path):
+    from app.backup.import_kb import _promote_staging
+
+    kb = tmp_path / "kb"
+    kb.mkdir()
+    (kb / "old.md").write_text("old\n", encoding="utf-8")
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    (staging / "new.md").write_text("new\n", encoding="utf-8")
+    ino = kb.stat().st_ino
+
+    _promote_staging(staging, kb)
+
+    assert kb.stat().st_ino == ino
+    assert (kb / "new.md").read_text(encoding="utf-8") == "new\n"
+    assert not (kb / "old.md").exists()
+    assert not staging.exists()
+    assert not any(p.name.startswith(".import-kb-bak-") for p in kb.iterdir())
+    assert not any(p.name.startswith(".import-kb-bak-") for p in kb.parent.iterdir())
+
+
+def test_promote_staging_restores_on_vacate_failure(tmp_path: Path, monkeypatch):
+    import app.backup.import_kb as import_mod
+
+    kb = tmp_path / "kb"
+    kb.mkdir()
+    (kb / "keep.md").write_text("keep\n", encoding="utf-8")
+    (kb / "also.md").write_text("also\n", encoding="utf-8")
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    (staging / "new.md").write_text("new\n", encoding="utf-8")
+
+    real_move = import_mod.shutil.move
+
+    def flaky(src, dst, *args, **kwargs):
+        if Path(src).name == "also.md":
+            raise OSError("simulated vacate failure")
+        return real_move(src, dst, *args, **kwargs)
+
+    monkeypatch.setattr(import_mod.shutil, "move", flaky)
+    with pytest.raises(OSError, match="vacate"):
+        import_mod._promote_staging(staging, kb)
+
+    assert (kb / "keep.md").read_text(encoding="utf-8") == "keep\n"
+    assert (kb / "also.md").read_text(encoding="utf-8") == "also\n"
+    assert not (kb / "new.md").exists()
+    assert not any(p.name.startswith(".import-kb-bak-") for p in kb.iterdir())
+
+
+def test_promote_staging_restores_on_fill_failure(tmp_path: Path, monkeypatch):
+    import app.backup.import_kb as import_mod
+
+    kb = tmp_path / "kb"
+    kb.mkdir()
+    system = kb / "系统"
+    system.mkdir()
+    (system / "戒律.md").write_text("# rules\n", encoding="utf-8")
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    (staging / "new.md").write_text("new\n", encoding="utf-8")
+
+    real_move = import_mod.shutil.move
+
+    def flaky(src, dst, *args, **kwargs):
+        if Path(src).name == "new.md":
+            raise OSError("simulated fill failure")
+        return real_move(src, dst, *args, **kwargs)
+
+    monkeypatch.setattr(import_mod.shutil, "move", flaky)
+    with pytest.raises(OSError, match="fill"):
+        import_mod._promote_staging(staging, kb)
+
+    assert (kb / "系统" / "戒律.md").read_text(encoding="utf-8") == "# rules\n"
+    assert not (kb / "new.md").exists()
+    assert not any(p.name.startswith(".import-kb-bak-") for p in kb.iterdir())
+
+
 def test_import_empty_only_ok(tmp_path: Path):
     kb = tmp_path / "kb"
     kb.mkdir()

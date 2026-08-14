@@ -18,6 +18,8 @@ def _normalize_rel(rel: str) -> str:
 
 def _should_exclude(rel: str) -> bool:
     posix = _normalize_rel(rel)
+    if posix == "manifest.json":
+        return True
     if posix == _VEC_PREFIX or posix.startswith(f"{_VEC_PREFIX}/"):
         return True
     name = Path(posix).name

@@ -13,6 +13,7 @@ def test_export_includes_docs_excludes_index(tmp_path: Path):
     kb = tmp_path / "kb"
     (kb / "技术").mkdir(parents=True)
     (kb / "技术" / "a.md").write_text("# hi\n", encoding="utf-8")
+    (kb / "manifest.json").write_text('{"format_version": 0}\n', encoding="utf-8")
     idx = kb / ".kb" / "index"
     (idx / "vec").mkdir(parents=True)
     (idx / "vec" / "dummy.bin").write_bytes(b"x")
@@ -26,6 +27,7 @@ def test_export_includes_docs_excludes_index(tmp_path: Path):
     assert any(n.endswith("技术/a.md") or n.endswith("技术\\a.md") for n in names)
     assert any("auth.json" in n for n in names)
     assert any(n.endswith("manifest.json") for n in names)
+    assert names.count("manifest.json") == 1
     assert not any("fts.db" in n for n in names)
     assert not any(
         "/vec/" in n.replace("\\", "/") or n.replace("\\", "/").endswith("/vec")

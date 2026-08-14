@@ -87,14 +87,35 @@ def _validate_manifest(zf: zipfile.ZipFile) -> None:
         )
 
 
-def _clear_kb(kb_path: Path) -> None:
+def _children(src: Path, *, skip: set[str] | None = None):
+    ignore = skip or set()
+    for child in list(src.iterdir()):
+        if child.name in ignore:
+            continue
+        yield child
+
+
+def _clear_kb(kb_path: Path, *, skip: set[str] | None = None) -> None:
     root = Path(kb_path)
     root.mkdir(parents=True, exist_ok=True)
-    for child in root.iterdir():
+    for child in _children(root, skip=skip):
         if child.is_dir():
             shutil.rmtree(child)
         else:
             child.unlink()
+
+
+def _move_children(src: Path, dest: Path, *, skip: set[str] | None = None) -> None:
+    dest.mkdir(parents=True, exist_ok=True)
+    for child in _children(src, skip=skip):
+        shutil.move(str(child), str(dest / child.name))
+
+
+def _remove_empty_dir(path: Path) -> None:
+    try:
+        path.rmdir()
+    except OSError:
+        pass
 
 
 def _safe_dest(kb_path: Path, rel: str) -> Path:
@@ -131,25 +152,38 @@ def _stage_zip(zf: zipfile.ZipFile, kb_path: Path) -> Path:
 
 
 def _promote_staging(staging: Path, kb_path: Path) -> None:
-    """Replace kb_path with staging via directory rename-swap (restores on failure)."""
+    """Replace kb_path *contents* with staging. Never rename kb_path itself.
+
+    Docker bind-mounts ``KB_PATH`` (``/data/knowledge``); renaming the
+    mountpoint fails with ``[Errno 16] Device or resource busy``.
+    The vacate backup lives beside kb_path, not inside it, so a crash
+    does not leave ``.import-kb-bak-*`` in the knowledge tree.
+    """
     kb_path = Path(kb_path)
     staging = Path(staging)
+    kb_path.mkdir(parents=True, exist_ok=True)
     bak = kb_path.parent / f".import-kb-bak-{uuid.uuid4().hex}"
-    moved_kb = False
+    bak.mkdir(parents=True, exist_ok=False)
+    replaced = False
     try:
-        if kb_path.exists():
-            shutil.move(str(kb_path), str(bak))
-            moved_kb = True
-        shutil.move(str(staging), str(kb_path))
-    except Exception:
-        if moved_kb and bak.exists():
-            if kb_path.exists():
-                shutil.rmtree(kb_path, ignore_errors=True)
-            shutil.move(str(bak), str(kb_path))
-        raise
+        try:
+            _move_children(kb_path, bak)
+        except Exception:
+            _move_children(bak, kb_path)
+            raise
+        try:
+            _move_children(staging, kb_path)
+        except Exception:
+            _clear_kb(kb_path)
+            _move_children(bak, kb_path)
+            raise
+        replaced = True
     finally:
-        if bak.exists():
+        if replaced:
             shutil.rmtree(bak, ignore_errors=True)
+        else:
+            _remove_empty_dir(bak)
+        shutil.rmtree(staging, ignore_errors=True)
 
 
 def _stage_validated_zip(zip_path: Path | BinaryIO, kb_path: Path) -> Path:
