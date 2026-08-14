@@ -19,6 +19,7 @@ from app.models.models_dev import (
     shared_models_dev_store,
 )
 from app.storage.repo import KnowledgeRepo
+from app.closing import close_quietly
 from app.index.conversation_fts import ConversationFTS
 from app.index.conversation_vector import ConversationVector
 from app.index.revision import IndexRevision
@@ -221,7 +222,7 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
 
 
 def dispose_container(container: Container | None) -> None:
-    """Close sqlite/git handles so kb_path files can be replaced during import."""
+    """Close sqlite/git/chroma handles so kb_path files can be replaced during import."""
     if container is None:
         return
 
@@ -238,18 +239,22 @@ def dispose_container(container: Container | None) -> None:
     _close_sqlite(container.conversations)
     _close_sqlite(container.conversation_fts)
     _close_sqlite(container.indexer.fulltext)
+    close_quietly(container.indexer.vector)
+    close_quietly(container.conversation_vector)
     if container._usage_store is not None:
-        try:
-            container._usage_store.close()
-        except Exception:
-            pass
+        close_quietly(container._usage_store)
     try:
         container.repo.repo.close()
     except Exception:
         pass
 
 
-def remount_container(app, llm: LLMClient | None = None) -> None:
+def remount_container(
+    app,
+    llm: LLMClient | None = None,
+    *,
+    keep_session_id: str | None = None,
+) -> None:
     """Rebuild container and reattach auth/session/settings after KB import."""
     from app.auth import AuthStore, SessionStore
     from app.settings_store import SettingsStore
@@ -262,6 +267,7 @@ def remount_container(app, llm: LLMClient | None = None) -> None:
     set_active_models_dev_store(app.state.container.models_dev)
     app.state.auth_store = AuthStore(kb_path)
     app.state.session_store = SessionStore(kb_path)
+    app.state.session_store.insert_if_absent(keep_session_id)
 
 
 def apply_settings(

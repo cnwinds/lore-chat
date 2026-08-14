@@ -1,13 +1,15 @@
 import io
+import json
 import zipfile
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
+from app.api.admin_routes import _import_failure_http
 from app.backup.empty import is_kb_empty
 from app.backup.export_kb import build_export_zip
-from app.backup.import_kb import backup_dir_for, import_kb
+from app.backup.import_kb import ImportResult, backup_dir_for, import_kb
 from app.config import Settings
 from app.main import create_app
 from app.models.llm import FakeLLMClient
@@ -23,6 +25,11 @@ def _make_pack(tmp_path: Path, rel: str, body: str) -> Path:
     return out
 
 
+def _inject_zip_sessions(pack: Path, sessions: dict) -> None:
+    with zipfile.ZipFile(pack, "a") as zf:
+        zf.writestr(".kb/sessions.json", json.dumps(sessions))
+
+
 def test_import_empty_only_rejects_non_empty(tmp_path: Path):
     kb = tmp_path / "kb"
     kb.mkdir()
@@ -32,9 +39,61 @@ def test_import_empty_only_rejects_non_empty(tmp_path: Path):
 
     result = import_kb(kb, pack, "empty_only")
     assert result.ok is False
+    assert result.code == "kb_not_empty"
     assert result.message == "knowledge base is not empty"
     assert (kb / "技术" / "a.md").is_file()
     assert not (kb / "技术" / "b.md").exists()
+
+
+def test_import_missing_manifest_sets_code(tmp_path: Path):
+    kb = tmp_path / "kb"
+    kb.mkdir()
+    pack = tmp_path / "bad.zip"
+    with zipfile.ZipFile(pack, "w") as zf:
+        zf.writestr("技术/a.md", "# a\n")
+
+    result = import_kb(kb, pack, "empty_only")
+    assert result.ok is False
+    assert result.code == "invalid_manifest"
+    assert result.message == "missing manifest.json"
+
+
+def test_import_unsupported_format_sets_code(tmp_path: Path):
+    kb = tmp_path / "kb"
+    kb.mkdir()
+    pack = tmp_path / "bad.zip"
+    with zipfile.ZipFile(pack, "w") as zf:
+        zf.writestr("manifest.json", json.dumps({"format_version": 99}))
+
+    result = import_kb(kb, pack, "empty_only")
+    assert result.ok is False
+    assert result.code == "unsupported_format"
+    assert "format_version" in result.message
+
+
+def test_import_failure_http_maps_code_not_message():
+    result = ImportResult(
+        ok=False,
+        backup_path=None,
+        message="missing manifest.json",
+        code="import_failed",
+    )
+    exc = _import_failure_http(result)
+    assert exc.status_code == 400
+    assert exc.detail["code"] == "import_failed"
+    assert exc.detail["detail"] == "missing manifest.json"
+
+
+def test_import_failure_http_invalid_manifest_is_422():
+    result = ImportResult(
+        ok=False,
+        backup_path=None,
+        message="missing manifest.json",
+        code="invalid_manifest",
+    )
+    exc = _import_failure_http(result)
+    assert exc.status_code == 422
+    assert exc.detail["code"] == "invalid_manifest"
 
 
 def test_import_empty_only_ok(tmp_path: Path):
@@ -78,6 +137,7 @@ def test_import_empty_only_survives_promote_failure(tmp_path: Path, monkeypatch)
 
     result = import_kb(kb, pack, "empty_only")
     assert result.ok is False
+    assert result.code == "import_failed"
     assert "simulated promote failure" in result.message
     assert is_kb_empty(kb)
 
@@ -105,6 +165,7 @@ def test_overwrite_rollback_on_bad_zip(tmp_path: Path, monkeypatch):
 
     result = import_kb(kb, pack, "overwrite")
     assert result.ok is False
+    assert result.code == "import_failed"
     assert "rolled back" in result.message
     assert (kb / "技术" / "a.md").read_text(encoding="utf-8") == "# keep\n"
     assert not (kb / "new" / "y.md").exists()
@@ -130,6 +191,49 @@ def test_import_api_empty_only(client, tmp_path):
     assert body["ok"] is True
     kb = client.app.state.settings_store.get().kb_path
     assert (kb / "技术" / "imported.md").is_file()
+    tree = client.get("/api/tree")
+    assert tree.status_code == 200, tree.text
+
+
+def test_import_api_keeps_importer_cookie_when_pack_has_other_sessions(
+    client, tmp_path
+):
+    pack = _make_pack(tmp_path, "技术/imported.md", "# imported\n")
+    packed_exp = "2099-01-01T00:00:00+00:00"
+    _inject_zip_sessions(pack, {"packed-sid": {"expires_at": packed_exp}})
+    with open(pack, "rb") as f:
+        r = client.post(
+            "/api/admin/import",
+            files={"file": ("pack.zip", f, "application/zip")},
+            data={"mode": "empty_only"},
+        )
+    assert r.status_code == 200, r.text
+    assert client.get("/api/tree").status_code == 200
+    kb = client.app.state.settings_store.get().kb_path
+    sessions = json.loads((kb / ".kb" / "sessions.json").read_text(encoding="utf-8"))
+    assert sessions["packed-sid"]["expires_at"] == packed_exp
+    cookie = client.cookies.get("lorechat_session")
+    assert cookie
+    assert cookie in sessions
+
+
+def test_import_api_overwrite_with_open_chroma(client, tmp_path):
+    kb = client.app.state.settings_store.get().kb_path
+    (kb / "技术").mkdir(parents=True)
+    (kb / "技术" / "keep.md").write_text("# keep\n", encoding="utf-8")
+    client.app.state.container.indexer.vector._chroma.collection()
+    client.app.state.container.conversation_vector._chroma.collection()
+    pack = _make_pack(tmp_path, "new/y.md", "new\n")
+    with open(pack, "rb") as f:
+        r = client.post(
+            "/api/admin/import",
+            files={"file": ("pack.zip", f, "application/zip")},
+            data={"mode": "overwrite"},
+        )
+    assert r.status_code == 200, r.text
+    assert (kb / "new" / "y.md").read_text(encoding="utf-8") == "new\n"
+    assert not (kb / "技术" / "keep.md").exists()
+    assert client.get("/api/tree").status_code == 200
 
 
 def test_import_api_failure_includes_backup_path(client, tmp_path, monkeypatch):
@@ -153,10 +257,27 @@ def test_import_api_failure_includes_backup_path(client, tmp_path, monkeypatch):
         )
     assert r.status_code == 400, r.text
     body = r.json()["detail"]
+    assert body["code"] == "import_failed"
     assert "rolled back" in body["detail"]
     assert "backup_path" in body
     assert Path(body["backup_path"]).is_file()
     assert (kb / "技术" / "keep.md").read_text(encoding="utf-8") == "# keep\n"
+
+
+def test_import_api_invalid_manifest(client, tmp_path):
+    pack = tmp_path / "bad.zip"
+    with zipfile.ZipFile(pack, "w") as zf:
+        zf.writestr("技术/a.md", "# a\n")
+    with open(pack, "rb") as f:
+        r = client.post(
+            "/api/admin/import",
+            files={"file": ("pack.zip", f, "application/zip")},
+            data={"mode": "empty_only"},
+        )
+    assert r.status_code == 422
+    detail = r.json()["detail"]
+    assert detail["code"] == "invalid_manifest"
+    assert detail["detail"] == "missing manifest.json"
 
 
 def test_import_api_rejects_non_empty(client, tmp_path):
@@ -171,6 +292,9 @@ def test_import_api_rejects_non_empty(client, tmp_path):
             data={"mode": "empty_only"},
         )
     assert r.status_code == 409
+    detail = r.json()["detail"]
+    assert detail["code"] == "kb_not_empty"
+    assert detail["detail"] == "knowledge base is not empty"
 
 
 def test_write_routes_blocked_during_maintenance(client, tmp_path):

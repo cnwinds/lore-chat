@@ -29,3 +29,18 @@ def test_expired_session_invalid(tmp_path: Path, monkeypatch):
     data[sid]["expires_at"] = "2000-01-01T00:00:00+00:00"
     path.write_text(json.dumps(data), encoding="utf-8")
     assert store.validate(sid) is False
+
+
+def test_insert_if_absent_preserves_existing_and_adds_missing(tmp_path: Path):
+    store = SessionStore(tmp_path)
+    existing = store.create()
+    path = tmp_path / ".kb" / "sessions.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    original_exp = data[existing]["expires_at"]
+    store.insert_if_absent(existing)
+    unchanged = json.loads(path.read_text(encoding="utf-8"))
+    assert unchanged[existing]["expires_at"] == original_exp
+    store.insert_if_absent("packed-sid")
+    merged = json.loads(path.read_text(encoding="utf-8"))
+    assert "packed-sid" in merged
+    assert merged[existing]["expires_at"] == original_exp

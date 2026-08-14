@@ -1,3 +1,7 @@
+import shutil
+
+import pytest
+
 from app.index.vector import VectorIndex
 
 
@@ -30,3 +34,20 @@ def test_reindex_same_doc_replaces(tmp_path):
     hits = vi.query(_vec(2), k=5)
     texts = [h.chunk for h in hits if h.doc_id == "doc1.md"]
     assert "新内容" in texts and "旧内容" not in texts
+
+
+def test_close_releases_chroma_directory(tmp_path):
+    vec = tmp_path / "vec"
+    vi = VectorIndex(vec)
+    vi.add("doc1.md", ["docker 命令"], [_vec(1)], source="doc1.md")
+    vi.close()
+    shutil.rmtree(vec)
+    assert not vec.exists()
+
+
+def test_close_rejects_reopen(tmp_path):
+    vi = VectorIndex(tmp_path / "vec")
+    vi.add("doc1.md", ["docker 命令"], [_vec(1)], source="doc1.md")
+    vi.close()
+    with pytest.raises(RuntimeError, match="closed"):
+        vi.query(_vec(1), k=1)

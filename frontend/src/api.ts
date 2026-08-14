@@ -18,6 +18,7 @@ import {
   type ApiError,
   type PathExistsDetail,
 } from "./lib/httpTransport";
+import { messageFromImportErrorBody } from "./utils/importKbError";
 
 export type { ApiError, PathExistsDetail };
 
@@ -318,6 +319,8 @@ export type ImportKbResult = {
   backup_path?: string;
 };
 
+export { IMPORT_ERROR_BY_CODE, messageFromImportErrorBody } from "./utils/importKbError";
+
 export async function importKb(
   file: File,
   mode: "empty_only" | "overwrite",
@@ -333,15 +336,8 @@ export async function importKb(
   if (!r.ok) {
     let detail = "导入失败";
     try {
-      const body = await r.json();
-      const d = body.detail;
-      if (typeof d === "string") {
-        detail = d;
-      } else if (d && typeof d === "object" && typeof d.detail === "string") {
-        detail = d.detail;
-      } else if (typeof body.message === "string") {
-        detail = body.message;
-      }
+      const body: unknown = await r.json();
+      detail = messageFromImportErrorBody(body) || detail;
     } catch {
       try {
         detail = (await r.text()) || detail;

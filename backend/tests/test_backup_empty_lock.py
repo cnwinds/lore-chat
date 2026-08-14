@@ -1,3 +1,6 @@
+import threading
+import time
+
 import pytest
 
 from app.backup.empty import is_kb_empty
@@ -63,6 +66,48 @@ def test_lock_is_active_and_reason():
     lock.release()
     assert lock.is_active() is False
     assert lock.reason() is None
+
+
+def test_try_idle_slot_skips_when_active():
+    lock = MaintenanceLock()
+    lock.acquire("import")
+    try:
+        with lock.try_idle_slot() as allowed:
+            assert allowed is False
+    finally:
+        lock.release()
+    with lock.try_idle_slot() as allowed:
+        assert allowed is True
+
+
+def test_acquire_waits_for_in_flight_idle_batch():
+    lock = MaintenanceLock()
+    started = threading.Event()
+    release_drain = threading.Event()
+    acquired = threading.Event()
+
+    def worker() -> None:
+        with lock.try_idle_slot() as allowed:
+            assert allowed is True
+            started.set()
+            release_drain.wait(timeout=5)
+
+    def importer() -> None:
+        lock.acquire("import")
+        acquired.set()
+        lock.release()
+
+    t_worker = threading.Thread(target=worker)
+    t_worker.start()
+    assert started.wait(timeout=2)
+    t_import = threading.Thread(target=importer)
+    t_import.start()
+    time.sleep(0.15)
+    assert acquired.is_set() is False
+    release_drain.set()
+    t_import.join(timeout=2)
+    t_worker.join(timeout=2)
+    assert acquired.is_set() is True
 
 
 def test_empty_ignores_kb_internal_md(tmp_path):

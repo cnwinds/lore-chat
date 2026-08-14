@@ -4,7 +4,7 @@ import threading
 from dataclasses import dataclass
 from pathlib import Path
 
-from app.index.chroma_client import make_persistent_client
+from app.index.chroma_client import ThreadLocalChroma
 
 from app.index.message_chunk import MessageChunk
 
@@ -33,18 +33,13 @@ class ConversationVector:
         self._path = str(path)
         Path(self._path).mkdir(parents=True, exist_ok=True)
         # Chroma 的 SQLite 连接不能跨线程共享；每线程独立 client
-        self._local = threading.local()
+        self._chroma = ThreadLocalChroma(
+            self._path, self.COLLECTION, {"hnsw:space": "cosine"}
+        )
         self._lock = threading.Lock()
 
-    def _collection(self):
-        col = getattr(self._local, "col", None)
-        if col is None:
-            client = make_persistent_client(self._path)
-            col = client.get_or_create_collection(
-                name=self.COLLECTION, metadata={"hnsw:space": "cosine"}
-            )
-            self._local.col = col
-        return col
+    def close(self) -> None:
+        self._chroma.close()
 
     @staticmethod
     def chunk_id(conversation_id: str, message_id: str, chunk_index: int) -> str:
@@ -64,7 +59,7 @@ class ConversationVector:
         if len(chunks) != len(embeddings):
             raise ValueError("chunks/embeddings length mismatch")
         with self._lock:
-            col = self._collection()
+            col = self._chroma.collection()
             existing = col.get(
                 where={
                     "$and": [
@@ -124,7 +119,7 @@ class ConversationVector:
             kwargs: dict = {"query_embeddings": [embedding], "n_results": max(k, 1)}
             if where:
                 kwargs["where"] = where
-            res = self._collection().query(**kwargs)
+            res = self._chroma.collection().query(**kwargs)
         hits: list[ConversationVectorHit] = []
         docs = (res.get("documents") or [[]])[0]
         metas = (res.get("metadatas") or [[]])[0]
@@ -151,14 +146,14 @@ class ConversationVector:
 
     def delete_conversation(self, conversation_id: str) -> None:
         with self._lock:
-            col = self._collection()
+            col = self._chroma.collection()
             existing = col.get(where={"conversation_id": conversation_id})
             if existing and existing.get("ids"):
                 col.delete(ids=existing["ids"])
 
     def count_for_message(self, conversation_id: str, message_id: str) -> int:
         with self._lock:
-            existing = self._collection().get(
+            existing = self._chroma.collection().get(
                 where={
                     "$and": [
                         {"conversation_id": conversation_id},

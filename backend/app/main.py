@@ -32,6 +32,18 @@ def _under_pytest() -> bool:
     return "pytest" in sys.modules
 
 
+def _run_while_idle(app: FastAPI, stop_event: threading.Event, interval: float, name: str, fn) -> None:
+    """Run ``fn`` once per interval, only when maintenance is idle."""
+    while not stop_event.is_set():
+        with app.state.maintenance_lock.try_idle_slot() as allowed:
+            if allowed:
+                try:
+                    fn()
+                except Exception:
+                    logging.getLogger("uvicorn.error").exception("%s 执行失败", name)
+        stop_event.wait(interval)
+
+
 def create_app(settings: Settings | None = None, llm: LLMClient | None = None) -> FastAPI:
     base_settings = settings or get_settings()
     _llm = llm
@@ -96,38 +108,36 @@ def create_app(settings: Settings | None = None, llm: LLMClient | None = None) -
             )
             catalog_thread.start()
 
-            worker = app.state.container.derivation_worker
-
-            def _run_derivation_worker() -> None:
-                while not stop_event.is_set():
-                    try:
-                        worker.drain(_DERIVATION_WORKER_BATCH_SIZE)
-                        app.state.container.memory_worker.drain(_DERIVATION_WORKER_BATCH_SIZE)
-                    except Exception:
-                        logging.getLogger("uvicorn.error").exception(
-                            "derivation worker 执行失败"
-                        )
-                    stop_event.wait(_DERIVATION_WORKER_INTERVAL_SECONDS)
+            def _drain_derivation() -> None:
+                container = app.state.container
+                container.derivation_worker.drain(_DERIVATION_WORKER_BATCH_SIZE)
+                container.memory_worker.drain(_DERIVATION_WORKER_BATCH_SIZE)
 
             worker_thread = threading.Thread(
-                target=_run_derivation_worker, name="derivation-worker", daemon=True
+                target=_run_while_idle,
+                args=(
+                    app,
+                    stop_event,
+                    _DERIVATION_WORKER_INTERVAL_SECONDS,
+                    "derivation worker",
+                    _drain_derivation,
+                ),
+                name="derivation-worker",
+                daemon=True,
             )
             worker_thread.start()
 
-            maintenance = app.state.container.memory_maintenance
-
-            def _run_memory_maintenance() -> None:
-                while not stop_event.is_set():
-                    try:
-                        maintenance.run()
-                    except Exception:
-                        logging.getLogger("uvicorn.error").exception(
-                            "memory maintenance 执行失败"
-                        )
-                    stop_event.wait(_MEMORY_MAINTENANCE_INTERVAL_SECONDS)
-
             maintenance_thread = threading.Thread(
-                target=_run_memory_maintenance, name="memory-maintenance", daemon=True
+                target=_run_while_idle,
+                args=(
+                    app,
+                    stop_event,
+                    _MEMORY_MAINTENANCE_INTERVAL_SECONDS,
+                    "memory maintenance",
+                    lambda: app.state.container.memory_maintenance.run(),
+                ),
+                name="memory-maintenance",
+                daemon=True,
             )
             maintenance_thread.start()
 

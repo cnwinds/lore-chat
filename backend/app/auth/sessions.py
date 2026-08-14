@@ -24,12 +24,25 @@ class SessionStore:
 
     def create(self) -> str:
         sid = secrets.token_urlsafe(32)
+        self.insert_if_absent(sid)
+        return sid
+
+    def insert_if_absent(self, session_id: str | None) -> None:
+        """Insert a session id only when sessions.json does not already have it.
+
+        After import, pack sessions.json is authoritative when it already has
+        this id. If the importer's cookie is missing from the pack, insert it
+        so the current request is not kicked to login.
+        """
+        if not session_id:
+            return
         data = self._read()
-        data[sid] = {
+        if session_id in data:
+            return
+        data[session_id] = {
             "expires_at": (datetime.now(timezone.utc) + self._ttl).isoformat()
         }
         self._write(data)
-        return sid
 
     def validate(self, session_id: str | None) -> bool:
         if not session_id:

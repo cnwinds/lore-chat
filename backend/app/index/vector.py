@@ -3,7 +3,7 @@ from __future__ import annotations
 import threading
 from pathlib import Path
 
-from app.index.chroma_client import make_persistent_client
+from app.index.chroma_client import ThreadLocalChroma
 
 from app.index.types import Hit
 
@@ -13,18 +13,13 @@ class VectorIndex:
         self._path = str(path)
         Path(self._path).mkdir(parents=True, exist_ok=True)
         # Chroma 的 SQLite 连接不能跨线程共享；每线程独立 client
-        self._local = threading.local()
+        self._chroma = ThreadLocalChroma(
+            self._path, "kbs", {"hnsw:space": "cosine"}
+        )
         self._lock = threading.Lock()
 
-    def _collection(self):
-        col = getattr(self._local, "col", None)
-        if col is None:
-            client = make_persistent_client(self._path)
-            col = client.get_or_create_collection(
-                name="kbs", metadata={"hnsw:space": "cosine"}
-            )
-            self._local.col = col
-        return col
+    def close(self) -> None:
+        self._chroma.close()
 
     def add(
         self,
@@ -40,7 +35,7 @@ class VectorIndex:
         ids = [f"{doc_id}::{i}" for i in range(start_index, start_index + len(chunks))]
         metadatas = [{"doc_id": doc_id, "source": source} for _ in chunks]
         with self._lock:
-            self._collection().add(
+            self._chroma.collection().add(
                 ids=ids, documents=chunks, embeddings=embeddings, metadatas=metadatas
             )
 
@@ -48,15 +43,15 @@ class VectorIndex:
         if not ids:
             return
         with self._lock:
-            self._collection().delete(ids=ids)
+            self._chroma.collection().delete(ids=ids)
 
     def delete(self, doc_id: str) -> None:
         with self._lock:
-            self._collection().delete(where={"doc_id": doc_id})
+            self._chroma.collection().delete(where={"doc_id": doc_id})
 
     def query(self, embedding: list[float], k: int = 5) -> list[Hit]:
         with self._lock:
-            res = self._collection().query(query_embeddings=[embedding], n_results=k)
+            res = self._chroma.collection().query(query_embeddings=[embedding], n_results=k)
         hits: list[Hit] = []
         docs = res.get("documents") or [[]]
         metas = res.get("metadatas") or [[]]

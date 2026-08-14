@@ -14,6 +14,26 @@ from app.backup.export_kb import build_export_zip
 from app.backup.manifest import FORMAT_VERSION
 
 ImportMode = Literal["empty_only", "overwrite"]
+ImportFailureCode = Literal[
+    "kb_not_empty",
+    "unsupported_format",
+    "invalid_manifest",
+    "import_failed",
+]
+
+
+class KbImportError(ValueError):
+    def __init__(self, message: str, code: ImportFailureCode) -> None:
+        super().__init__(message)
+        self.code = code
+
+
+IMPORT_HTTP_STATUS: dict[ImportFailureCode, int] = {
+    "kb_not_empty": 409,
+    "unsupported_format": 409,
+    "invalid_manifest": 422,
+    "import_failed": 400,
+}
 
 
 @dataclass
@@ -21,6 +41,26 @@ class ImportResult:
     ok: bool
     backup_path: Path | None
     message: str
+    code: ImportFailureCode | None = None
+
+    def http_status(self) -> int:
+        return IMPORT_HTTP_STATUS[self.code or "import_failed"]
+
+
+def _fail(
+    message: str,
+    code: ImportFailureCode,
+    backup_path: Path | None = None,
+) -> ImportResult:
+    return ImportResult(ok=False, backup_path=backup_path, message=message, code=code)
+
+
+def _fail_from_exc(
+    exc: BaseException, backup_path: Path | None = None
+) -> ImportResult:
+    if isinstance(exc, KbImportError):
+        return _fail(str(exc), exc.code, backup_path)
+    return _fail(str(exc), "import_failed", backup_path)
 
 
 def backup_dir_for(kb_path: Path) -> Path:
@@ -34,14 +74,17 @@ def _validate_manifest(zf: zipfile.ZipFile) -> None:
     try:
         raw = zf.read("manifest.json")
     except KeyError as exc:
-        raise ValueError("missing manifest.json") from exc
+        raise KbImportError("missing manifest.json", "invalid_manifest") from exc
     try:
         manifest = json.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise ValueError("invalid manifest.json") from exc
+        raise KbImportError("invalid manifest.json", "invalid_manifest") from exc
     version = manifest.get("format_version")
     if version != FORMAT_VERSION:
-        raise ValueError(f"unsupported format_version: {version}")
+        raise KbImportError(
+            f"unsupported format_version: {version}",
+            "unsupported_format",
+        )
 
 
 def _clear_kb(kb_path: Path) -> None:
@@ -109,6 +152,12 @@ def _promote_staging(staging: Path, kb_path: Path) -> None:
             shutil.rmtree(bak, ignore_errors=True)
 
 
+def _stage_validated_zip(zip_path: Path | BinaryIO, kb_path: Path) -> Path:
+    with zipfile.ZipFile(zip_path) as zf:
+        _validate_manifest(zf)
+        return _stage_zip(zf, kb_path)
+
+
 def _backup_timestamp() -> str:
     from app.time import now_display
 
@@ -128,18 +177,12 @@ def import_kb(
 
     if mode == "empty_only":
         if not is_kb_empty(root, system_layer_dir, skills_dir):
-            return ImportResult(
-                ok=False,
-                backup_path=None,
-                message="knowledge base is not empty",
-            )
+            return _fail("knowledge base is not empty", "kb_not_empty")
         try:
-            with zipfile.ZipFile(zip_path) as zf:
-                _validate_manifest(zf)
-                staging = _stage_zip(zf, root)
-                _promote_staging(staging, root)
+            staging = _stage_validated_zip(zip_path, root)
+            _promote_staging(staging, root)
         except Exception as exc:
-            return ImportResult(ok=False, backup_path=None, message=str(exc))
+            return _fail_from_exc(exc)
         return ImportResult(ok=True, backup_path=None, message="imported")
 
     backup_dir = backup_dir_for(root)
@@ -149,33 +192,23 @@ def import_kb(
     try:
         build_export_zip(root, backup_path)
     except Exception as exc:
-        return ImportResult(
-            ok=False,
-            backup_path=None,
-            message=f"backup failed: {exc}",
-        )
+        return _fail(f"backup failed: {exc}", "import_failed")
 
     try:
-        with zipfile.ZipFile(zip_path) as zf:
-            _validate_manifest(zf)
-            staging = _stage_zip(zf, root)
-            try:
-                _promote_staging(staging, root)
-            except Exception as exc:
-                _clear_kb(root)
-                with zipfile.ZipFile(backup_path) as backup_zip:
-                    _extract_zip(backup_zip, root)
-                return ImportResult(
-                    ok=False,
-                    backup_path=backup_path,
-                    message=f"import failed, rolled back: {exc}",
-                )
+        staging = _stage_validated_zip(zip_path, root)
+        try:
+            _promote_staging(staging, root)
+        except Exception as exc:
+            _clear_kb(root)
+            with zipfile.ZipFile(backup_path) as backup_zip:
+                _extract_zip(backup_zip, root)
+            return _fail(
+                f"import failed, rolled back: {exc}",
+                "import_failed",
+                backup_path,
+            )
     except Exception as exc:
-        return ImportResult(
-            ok=False,
-            backup_path=backup_path,
-            message=str(exc),
-        )
+        return _fail_from_exc(exc, backup_path)
 
     return ImportResult(
         ok=True,

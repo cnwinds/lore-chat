@@ -6,6 +6,7 @@ from typing import Any
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 
+from app.auth.routes import COOKIE
 from app.backup.export_kb import build_export_zip
 from app.backup.import_kb import ImportResult, import_kb
 from app.backup.lock import MaintenanceActiveError
@@ -42,16 +43,11 @@ def _maintenance_http(exc: MaintenanceActiveError) -> HTTPException:
 
 
 def _import_failure_http(result: ImportResult) -> HTTPException:
-    if result.message == "knowledge base is not empty":
-        status = 409
-    elif "format_version" in result.message or "manifest" in result.message:
-        status = 409
-    else:
-        status = 400
-    detail: dict[str, Any] = {"detail": result.message}
+    code = result.code or "import_failed"
+    detail: dict[str, Any] = {"detail": result.message, "code": code}
     if result.backup_path is not None:
         detail["backup_path"] = str(result.backup_path)
-    return HTTPException(status_code=status, detail=detail)
+    return HTTPException(status_code=result.http_status(), detail=detail)
 
 
 @router.get("/settings")
@@ -260,7 +256,10 @@ async def import_kb_api(
             remount_container(request.app)
             raise _import_failure_http(result)
 
-        remount_container(request.app)
+        remount_container(
+            request.app,
+            keep_session_id=request.cookies.get(COOKIE),
+        )
         payload: dict[str, Any] = {"ok": True, "message": result.message}
         if result.backup_path is not None:
             payload["backup_path"] = str(result.backup_path)
