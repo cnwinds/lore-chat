@@ -81,14 +81,18 @@ def _unsafe_reason(url: str) -> str:
 
 
 def html_to_markdown(html: str, url: str = "") -> str:
-    """将 HTML 转为干净 Markdown，优先提取正文，过滤导航/页脚等噪音。"""
+    """将 HTML 转为干净 Markdown，优先提取正文，过滤导航/页脚等噪音。
+
+    不用 favor_precision：精度模式几乎不额外去广告，却易丢掉文档站
+    （如带复制按钮外壳的 <pre>）里的命令代码块。
+    """
     markdown = trafilatura.extract(
         html,
         url=url or None,
         output_format="markdown",
         include_links=True,
         include_tables=True,
-        favor_precision=True,
+        favor_precision=False,
     )
     if markdown and markdown.strip():
         return markdown.strip()

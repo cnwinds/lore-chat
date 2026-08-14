@@ -39,6 +39,26 @@ def test_html_to_markdown_strips_boilerplate():
     assert "Copyright" not in md
 
 
+def test_html_to_markdown_keeps_code_in_copy_chrome():
+    """文档站常见：复制按钮 + 多层 div 包住 <pre>；勿因精度模式丢掉命令。"""
+    html = """<html><body><main><div class="prose">
+    <h1>Installation</h1>
+    <p>Install with a single command:</p>
+    <div class="mb-4"><div class="border group"><div class="relative">
+    <button type="button">Copy</button>
+    <div><pre class="w-full"><code>curl https://example.com/install | bash</code></pre></div>
+    </div></div></div>
+    <p>Then verify:</p>
+    <div class="mb-4"><div class="border group"><div class="relative">
+    <button type="button">Copy</button>
+    <pre><code>tool --version</code></pre>
+    </div></div></div>
+    </div></main></body></html>"""
+    md = html_to_markdown(html)
+    assert "curl https://example.com/install" in md
+    assert "tool --version" in md
+
+
 def test_url_and_content_type_pdf_helpers():
     assert url_looks_like_pdf("https://ex.com/a/Rules%20V1.pdf?x=1") is True
     assert url_looks_like_pdf("https://ex.com/page") is False
