@@ -29,6 +29,13 @@ def test_group_provenance_links_summary_and_message():
     assert groups[0]["group_key"] == "conversation:abc"
     assert groups[0]["nav_preference"] == "summary"
     assert len(groups[0]["hits"]) == 2
+    # 必须可 JSON 序列化（否则 tool_loop 写回模型时整轮 interrupted）
+    import json
+
+    json.dumps(groups, ensure_ascii=False)
+    assert isinstance(groups[0]["hits"][0], dict)
+    assert groups[0]["hits"][0]["source"] == "娱乐/盘点.md"
+    assert groups[0]["hits"][1]["message_id"] == "m1"
 
 
 def test_conv_vector_lane_respects_min_score(tmp_path, monkeypatch):

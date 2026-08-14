@@ -1,4 +1,7 @@
-from dataclasses import dataclass
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass
+from typing import Any
 
 
 @dataclass
@@ -15,3 +18,7 @@ class Hit:
     role: str | None = None
     ts: str | None = None
     conversation_title: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """供 tool 结果 / SSE 等 JSON 序列化。"""
+        return asdict(self)

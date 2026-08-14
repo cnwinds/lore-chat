@@ -6,6 +6,7 @@ import logging
 import time
 import uuid
 from collections.abc import AsyncIterator
+from dataclasses import asdict, is_dataclass
 
 from app.config import Settings
 from app.engine.agent.events import (
@@ -464,4 +465,11 @@ class AgentToolLoop:
     @staticmethod
     def _serialize_tool_output(out: dict) -> str:
         payload = {k: v for k, v in out.items() if k not in _NON_SERIALIZABLE_KEYS}
-        return json.dumps(payload, ensure_ascii=False)
+        return json.dumps(payload, ensure_ascii=False, default=_json_default)
+
+
+def _json_default(obj: object) -> object:
+    """兜底：dataclass（如遗漏的 Hit）转为 dict，避免整轮 agent 中断。"""
+    if is_dataclass(obj) and not isinstance(obj, type):
+        return asdict(obj)
+    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")

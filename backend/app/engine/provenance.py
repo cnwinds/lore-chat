@@ -62,6 +62,7 @@ def group_provenance(
             groups.append({
                 "group_key": key,
                 "nav_preference": "summary",
-                "hits": group_hits,
+                # 必须可 JSON 序列化：tool_loop 会把 provenance_groups 写入模型上下文
+                "hits": [gh.to_dict() for gh in group_hits],
             })
     return groups
