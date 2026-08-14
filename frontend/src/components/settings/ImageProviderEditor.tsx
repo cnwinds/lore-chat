@@ -1,7 +1,23 @@
 import type { CooldownStatus } from "./settingsTypes";
 import { ProviderCooldownBar } from "./ProviderCooldownBar";
 
-export type ImageProviderId = "openai" | "zhipu" | "bailian";
+export type ImageProviderId = "openai" | "zhipu" | "bailian" | "agnes";
+
+/** 与 backend `imagegen/providers._DEFAULT_BASE_URLS` 对齐 */
+export const IMAGE_PROVIDER_DEFAULT_BASE_URL: Record<ImageProviderId, string> = {
+  openai: "https://api.openai.com/v1",
+  zhipu: "https://open.bigmodel.cn/api/paas/v4",
+  bailian: "https://dashscope.aliyuncs.com",
+  agnes: "https://apihub.agnes-ai.com/v1",
+};
+
+/** 与 backend `imagegen/providers._DEFAULT_MODELS` 对齐 */
+export const IMAGE_PROVIDER_DEFAULT_MODEL: Record<ImageProviderId, string> = {
+  openai: "dall-e-3",
+  zhipu: "cogview-4",
+  bailian: "wanx-v1",
+  agnes: "agnes-image-2.1-flash",
+};
 
 export const IMAGE_PROVIDER_OPTIONS: {
   id: ImageProviderId;
@@ -10,6 +26,7 @@ export const IMAGE_PROVIDER_OPTIONS: {
   { id: "openai", label: "OpenAI Images" },
   { id: "zhipu", label: "智谱 CogView" },
   { id: "bailian", label: "百炼万相" },
+  { id: "agnes", label: "Agnes Image" },
 ];
 
 export type ImageProviderDraft = {
@@ -63,8 +80,8 @@ export function ImageProviderEditor({
         id: nextEntryId(provider, providers),
         provider,
         api_key: "",
-        base_url: "",
-        model: "",
+        base_url: IMAGE_PROVIDER_DEFAULT_BASE_URL[provider],
+        model: IMAGE_PROVIDER_DEFAULT_MODEL[provider],
       },
     ]);
   }
@@ -165,7 +182,10 @@ export function ImageProviderEditor({
                   value={p.base_url}
                   onChange={(e) => updateAt(i, { base_url: e.target.value })}
                   disabled={saving}
-                  placeholder="留空用默认根；勿贴完整 /generation 路径"
+                  placeholder={
+                    IMAGE_PROVIDER_DEFAULT_BASE_URL[p.provider] ||
+                    "留空用默认根；勿贴完整 /generation 路径"
+                  }
                 />
               </label>
               <label className="settings-field">
@@ -176,7 +196,10 @@ export function ImageProviderEditor({
                   value={p.model}
                   onChange={(e) => updateAt(i, { model: e.target.value })}
                   disabled={saving}
-                  placeholder="如 dall-e-3 / glm-image / wan2.7-image-pro / qwen-image-3.0-pro"
+                  placeholder={
+                    IMAGE_PROVIDER_DEFAULT_MODEL[p.provider] ||
+                    "如 dall-e-3 / glm-image / wan2.7-image-pro"
+                  }
                 />
               </label>
               <ProviderCooldownBar

@@ -9,7 +9,14 @@ from typing import Protocol
 import httpx
 
 from app.engine.imagegen.providers import ImageGenProviderEntry
-from app.engine.imagegen.sizes import BAILIAN_SIZE, OPENAI_SIZE, ZHIPU_SIZE, bailian_size_for
+from app.engine.imagegen.sizes import (
+    AGNES_RATIO,
+    AGNES_SIZE_TIER,
+    BAILIAN_SIZE,
+    OPENAI_SIZE,
+    ZHIPU_SIZE,
+    bailian_size_for,
+)
 from app.engine.imagegen.types import (
     GeneratedImage,
     ImageGenError,
@@ -178,6 +185,70 @@ class ZhipuImagesBackend:
             label="智谱",
             check_body_error=True,
         )
+
+
+class AgnesImagesBackend:
+    """Agnes Image API（OpenAI 形 /images/generations，协议见官方 wiki）。
+
+    要点：
+    - response_format 必须放在 extra_body，不可顶层
+    - 文生图取 Base64 用顶层 return_base64: true
+    - size 推荐 1K/2K… 档位，配合 ratio
+    """
+
+    def __init__(self, entry: ImageGenProviderEntry):
+        self._entry = entry
+
+    async def generate(self, request: ImageGenRequest) -> GeneratedImage:
+        url = f"{self._entry.resolved_base_url()}/images/generations"
+        ratio = AGNES_RATIO[request.aspect_ratio]
+        payload: dict = {
+            "model": self._entry.resolved_model(),
+            "prompt": request.prompt,
+            "size": AGNES_SIZE_TIER,
+            "ratio": ratio,
+            # 文生图官方示例：顶层 return_base64（勿把 response_format 放顶层）
+            "return_base64": True,
+        }
+        headers = {
+            "Authorization": f"Bearer {self._entry.api_key}",
+            "Content-Type": "application/json",
+        }
+        emit_progress("Agnes 生图中…")
+        # 官方建议客户端超时 60–360s
+        try:
+            async with httpx.AsyncClient(timeout=180.0) as client:
+                resp = await client.post(url, headers=headers, json=payload)
+                if resp.status_code >= 400:
+                    _raise_http(resp)
+                data = resp.json()
+                if not isinstance(data, dict):
+                    raise ImageGenError(
+                        "Agnes 响应非 JSON 对象", kind=ImageGenErrorKind.UNKNOWN
+                    )
+                img_url, b64 = _parse_openai_like_data(data)
+                if b64:
+                    raw = b64
+                    if "," in raw and raw.strip().lower().startswith("data:"):
+                        raw = raw.split(",", 1)[1]
+                    return GeneratedImage(
+                        data=base64.b64decode(raw),
+                        content_type="image/png",
+                        extension="png",
+                    )
+                if img_url:
+                    return await _download_url(client, img_url)
+        except ImageGenError:
+            raise
+        except httpx.TimeoutException as e:
+            raise ImageGenError(
+                f"Agnes 生图超时：{e}", kind=ImageGenErrorKind.TRANSIENT
+            ) from e
+        except httpx.HTTPError as e:
+            raise ImageGenError(
+                f"Agnes 生图网络错误：{e}", kind=ImageGenErrorKind.TRANSIENT
+            ) from e
+        raise ImageGenError("Agnes 生图响应无图片数据", kind=ImageGenErrorKind.UNKNOWN)
 
 
 def _bailian_uses_multimodal(model: str) -> bool:
@@ -410,6 +481,7 @@ _PROVIDER_CLS: dict[str, type] = {
     "openai": OpenAIImagesBackend,
     "zhipu": ZhipuImagesBackend,
     "bailian": BailianImagesBackend,
+    "agnes": AgnesImagesBackend,
 }
 
 

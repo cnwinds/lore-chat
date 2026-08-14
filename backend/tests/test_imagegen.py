@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.config import Settings
-from app.engine.imagegen.backends import BailianImagesBackend, OpenAIImagesBackend, _kind_from_http
+from app.engine.imagegen.backends import AgnesImagesBackend, BailianImagesBackend, OpenAIImagesBackend, _kind_from_http
 from app.engine.imagegen.providers import (
     DuplicateImageProviderError,
     ImageGenProviderEntry,
@@ -441,3 +441,74 @@ async def test_tool_kb_destination_omits_attachments(tmp_path):
     assert out["rel_path"] == "assets/hero.png"
     assert "attachments" not in out
     assert (tmp_path / "assets/hero.png").read_bytes() == b"png"
+
+
+def test_agnes_defaults_and_parse():
+    entries = parse_image_providers(
+        [{"provider": "agnes", "api_key": "ak-test", "model": "agnes-image-2.1-flash"}]
+    )
+    assert len(entries) == 1
+    e = entries[0]
+    assert e.provider == "agnes"
+    assert e.resolved_model() == "agnes-image-2.1-flash"
+    assert e.resolved_base_url() == "https://apihub.agnes-ai.com/v1"
+    assert (
+        normalize_image_base_url(
+            "agnes", "https://apihub.agnes-ai.com/v1/images/generations"
+        )
+        == "https://apihub.agnes-ai.com/v1"
+    )
+
+
+@pytest.mark.asyncio
+async def test_agnes_images_backend_uses_extra_body_and_return_base64(monkeypatch):
+    """协议：文生图用顶层 return_base64；勿把 response_format 放顶层。"""
+    import base64
+
+    entry = ImageGenProviderEntry(
+        id="agnes",
+        provider="agnes",
+        api_key="ak-test",
+        model="agnes-image-2.1-flash",
+    )
+    backend = AgnesImagesBackend(entry)
+    png = base64.b64encode(b"\x89PNG\r\n\x1a\nfake").decode("ascii")
+    captured: dict = {}
+
+    class FakeResp:
+        status_code = 200
+        text = "{}"
+
+        def json(self):
+            return {"created": 1, "data": [{"url": None, "b64_json": png}]}
+
+    class FakeClient:
+        def __init__(self, *a, **k):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def post(self, url, headers=None, json=None):
+            captured["url"] = url
+            captured["headers"] = headers
+            captured["json"] = json
+            return FakeResp()
+
+    import httpx
+
+    monkeypatch.setattr(httpx, "AsyncClient", FakeClient)
+    img = await backend.generate(ImageGenRequest(prompt="a cat", aspect_ratio="16:9"))
+    assert img.extension == "png"
+    assert img.data.startswith(b"\x89PNG")
+    assert captured["url"].endswith("/images/generations")
+    body = captured["json"]
+    assert body["model"] == "agnes-image-2.1-flash"
+    assert body["size"] == "1K"
+    assert body["ratio"] == "16:9"
+    assert body["return_base64"] is True
+    assert "response_format" not in body  # 不可顶层
+    assert "extra_body" not in body  # 文生图 Base64 无需 extra_body

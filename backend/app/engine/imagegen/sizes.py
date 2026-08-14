@@ -58,6 +58,16 @@ BAILIAN_WAN27_SIZE: dict[AspectRatio, str] = {
     "3:4": "1728*2304",
 }
 
+# Agnes：官方推荐 size 档位 + ratio；项目宽高比均在其支持列表内
+AGNES_SIZE_TIER = "1K"
+AGNES_RATIO: dict[AspectRatio, str] = {
+    "1:1": "1:1",
+    "16:9": "16:9",
+    "9:16": "9:16",
+    "4:3": "4:3",
+    "3:4": "3:4",
+}
+
 
 def bailian_size_for(model: str, aspect_ratio: AspectRatio) -> str:
     """按模型族选择百炼 size 字符串。"""

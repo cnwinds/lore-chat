@@ -303,7 +303,7 @@ TOOL_DEFINITIONS: list[dict] = [
                     "provider": {
                         "type": "string",
                         "description": (
-                            "可选弱覆盖：优先尝试该提供商 id 或类型（openai/zhipu/bailian）；"
+                            "可选弱覆盖：优先尝试该提供商 id 或类型（openai/zhipu/bailian/agnes）；"
                             "失败后仍可切换链上其余提供商"
                         ),
                     },
