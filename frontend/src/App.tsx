@@ -18,6 +18,7 @@ import { useComposerDocState } from "./hooks/useComposerDocState";
 import { useComposerPreviewBridge } from "./hooks/useComposerPreviewBridge";
 import { useEnabledSkillsAttach } from "./hooks/useEnabledSkillsAttach";
 import type { JumpTarget } from "./hooks/chat/useConversationJump";
+import { MediaGalleryFloatLayer } from "./components/app/MediaGalleryFloatLayer";
 import { SkillPickModal } from "./components/SkillPickModal";
 
 type Gate = "loading" | "setup" | "login" | "app";
@@ -49,6 +50,7 @@ export default function App() {
 
 function AppMain() {
   const [sidebarRefreshKey, setSidebarRefreshKey] = useState(0);
+  const [kbPaths, setKbPaths] = useState<string[]>([]);
   const {
     settingsOpen,
     setSettingsOpen,
@@ -119,6 +121,7 @@ function AppMain() {
         sidebarProps={{
           ...conversation.sidebarProps,
           onOpenSettings: () => setSettingsOpen(true),
+          onDocsChange: setKbPaths,
         }}
         chat={
           <Chat
@@ -143,7 +146,16 @@ function AppMain() {
           />
         }
         docFloat={
-          doc.showFloat ? (
+          doc.showMediaGallery ? (
+            <MediaGalleryFloatLayer
+              directory={doc.mediaFolderPath!}
+              refreshKey={doc.mediaRefreshKey}
+              paths={kbPaths}
+              docWidth={doc.floatWidth}
+              onClose={doc.closeMediaFolder}
+              onToggleWidth={doc.toggleFloatWidth}
+            />
+          ) : doc.showFloat ? (
             <DocFloatLayer
               path={doc.floatPath!}
               refreshKey={doc.floatRefreshKey}

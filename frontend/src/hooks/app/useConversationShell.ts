@@ -16,7 +16,12 @@ function treeActivePaths(
 ): string[] {
   const out: string[] = [];
   const seen = new Set<string>();
-  for (const p of [doc.pinnedPath, doc.floatPath, composerPrimaryPath]) {
+  for (const p of [
+    doc.pinnedPath,
+    doc.floatPath,
+    doc.mediaFolderPath,
+    composerPrimaryPath,
+  ]) {
     if (p && !seen.has(p)) {
       seen.add(p);
       out.push(p);
@@ -92,7 +97,7 @@ export function useConversationShell({
 
   const kbTreeActivePaths = useMemo(
     () => treeActivePaths(doc, composerPrimaryPath),
-    [doc.pinnedPath, doc.floatPath, composerPrimaryPath],
+    [doc.pinnedPath, doc.floatPath, doc.mediaFolderPath, composerPrimaryPath],
   );
 
   const sidebarProps: ComponentProps<typeof Sidebar> = {

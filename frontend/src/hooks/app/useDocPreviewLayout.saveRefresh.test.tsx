@@ -1,7 +1,28 @@
 import { act, renderHook } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { buildDocViewerHandlers } from "./buildDocViewerHandlers";
-import { useDocPreviewLayout } from "./useDocPreviewLayout";
+import {
+  pathTouchesChanged,
+  useDocPreviewLayout,
+} from "./useDocPreviewLayout";
+
+describe("pathTouchesChanged", () => {
+  it("matches self and ancestor for open file paths", () => {
+    expect(pathTouchesChanged("a/b.md", "a/b.md")).toBe(true);
+    expect(pathTouchesChanged("a/b.md", "a")).toBe(true);
+    expect(pathTouchesChanged("a/b.md", "other")).toBe(false);
+  });
+
+  it("matches children when open path is a directory (media gallery)", () => {
+    expect(
+      pathTouchesChanged("媒体/生成/2026", "媒体/生成/2026/logo.svg"),
+    ).toBe(true);
+    expect(pathTouchesChanged("媒体/生成/2026", "媒体/生成/2026")).toBe(true);
+    expect(pathTouchesChanged("媒体/生成/2026", "媒体/上传/2026/x.png")).toBe(
+      false,
+    );
+  });
+});
 
 /**
  * 回归：本地保存 onSaved → refreshKb(path, { except }) 不 bump 本栏 refreshKey，
@@ -75,6 +96,40 @@ describe("useDocPreviewLayout refresh after local save", () => {
     });
 
     expect(result.current.pinnedRefreshKey).toBe(before + 1);
+  });
+
+  it("bumps media gallery when a file under the open folder changes", () => {
+    const refreshSidebar = vi.fn();
+    const { result } = renderHook(() => useDocPreviewLayout(refreshSidebar));
+
+    act(() => {
+      result.current.openMediaFolder("媒体/生成/2026");
+    });
+    const before = result.current.mediaRefreshKey;
+
+    act(() => {
+      result.current.refreshKb("媒体/生成/2026/logo.svg");
+    });
+
+    expect(result.current.mediaRefreshKey).toBe(before + 1);
+  });
+
+  it("openMediaFolder ignores non-media paths and keeps pinned", () => {
+    const refreshSidebar = vi.fn();
+    const { result } = renderHook(() => useDocPreviewLayout(refreshSidebar));
+
+    act(() => {
+      result.current.openDocPreview("notes/a.md", undefined, { pin: true });
+      result.current.openMediaFolder("备忘");
+    });
+    expect(result.current.mediaFolderPath).toBeNull();
+    expect(result.current.pinnedPath).toBe("notes/a.md");
+
+    act(() => {
+      result.current.openMediaFolder("媒体/生成/2026");
+    });
+    expect(result.current.mediaFolderPath).toBe("媒体/生成/2026");
+    expect(result.current.pinnedPath).toBe("notes/a.md");
   });
 });
 

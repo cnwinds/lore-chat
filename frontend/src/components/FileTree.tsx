@@ -4,6 +4,7 @@ import {
   isSystemLayerPath,
   type TreeNode,
 } from "../utils/fileTree";
+import { isMediaLeafDirectory } from "../utils/kbMediaPaths";
 import { dropEffectForTransfer } from "../utils/droppedFiles";
 
 function parentDirectoryFromPath(path: string): string {
@@ -215,20 +216,20 @@ function TreeItem({
     const isOpen = expanded.has(node.path);
     const dropActive = dropHighlightDir === node.path;
     const isRenaming = renamingPath === node.path;
+    const selected = activePathSet.has(node.path);
+    const hasChildFolders = node.children.some((c) => c.type === "folder");
+    const mediaLeaf = isMediaLeafDirectory(node.path, hasChildFolders);
     return (
       <>
         <div
-          className={`file-tree-row folder${systemLayer ? " system-layer" : ""}${dropActive ? " drop-target" : ""}`}
+          className={`file-tree-row folder${systemLayer ? " system-layer" : ""}${dropActive ? " drop-target" : ""}${selected ? " selected" : ""}${mediaLeaf ? " media-leaf" : ""}`}
           style={{ paddingLeft: pad }}
           draggable={!disabled && !systemLayer && !isRenaming}
           onDragStart={(e) => setDragPayload(e, node.path)}
           onDragEnd={() => setDragSource(null)}
           onClick={(e) => {
-            if (
-              !isRenaming &&
-              onSelectFolder &&
-              (e.ctrlKey || e.metaKey)
-            ) {
+            if (isRenaming) return;
+            if (onSelectFolder && (e.ctrlKey || e.metaKey)) {
               e.stopPropagation();
               onSelectFolder(node.path, {
                 ctrlKey: e.ctrlKey,
@@ -236,7 +237,15 @@ function TreeItem({
               });
               return;
             }
-            if (!isRenaming) onToggleFolder(node.path);
+            if (onSelectFolder && mediaLeaf) {
+              onSelectFolder(node.path, {
+                ctrlKey: false,
+                metaKey: false,
+              });
+              // 媒体末级目录无文件行，不展开空壳
+              return;
+            }
+            onToggleFolder(node.path);
           }}
           onContextMenu={(e) => {
             e.preventDefault();
@@ -245,8 +254,14 @@ function TreeItem({
           onDragOver={(e) => onFolderDragOver(e, node.path)}
           onDrop={(e) => onFolderDrop(e, node.path)}
         >
-          <span className="file-tree-chevron">{isOpen ? "▼" : "▶"}</span>
-          <span className="file-tree-icon">{isOpen ? "📂" : "📁"}</span>
+          {mediaLeaf ? (
+            <span className="file-tree-chevron file-tree-chevron--leaf" aria-hidden />
+          ) : (
+            <span className="file-tree-chevron">{isOpen ? "▼" : "▶"}</span>
+          )}
+          <span className="file-tree-icon">
+            {mediaLeaf ? "🖼" : isOpen ? "📂" : "📁"}
+          </span>
           {isRenaming ? (
             <input
               className="file-tree-rename-input"

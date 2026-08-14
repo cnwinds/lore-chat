@@ -36,6 +36,8 @@ type Props = {
   onDeleteConversation: (id: string) => void;
   onKbPathChanged?: (fromPath: string, toPath: string) => void;
   onKbPathsDeleted?: (paths: string[]) => void;
+  /** 知识库路径列表变更（供媒体图库等复用，避免重复 getTree） */
+  onDocsChange?: (docs: string[]) => void;
 };
 
 export function Sidebar({
@@ -54,6 +56,7 @@ export function Sidebar({
   onDeleteConversation,
   onKbPathChanged,
   onKbPathsDeleted,
+  onDocsChange,
 }: Props) {
   const [docs, setDocs] = useState<string[]>([]);
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
@@ -76,6 +79,7 @@ export function Sidebar({
   async function refresh() {
     const nextDocs = (await getTree()).docs as string[];
     setDocs(nextDocs);
+    onDocsChange?.(nextDocs);
     setConversations((await listConversations()).conversations);
   }
 
@@ -239,7 +243,10 @@ export function Sidebar({
                     <p className="sidebar-kb-hint-lead">文档与附件</p>
                     <ul className="sidebar-kb-hint-list">
                       <li>
-                        <strong>单击</strong> Markdown 打开预览；附件触发下载
+                        <strong>单击</strong> Markdown 打开预览；图片用灯箱；附件下载
+                      </li>
+                      <li>
+                        <strong>单击媒体末级目录</strong>（如「媒体/生成/2026」）以浮窗打开图片瓦片图库；媒体树下不列出文件
                       </li>
                       <li>
                         <strong>Ctrl / ⌘ + 单击</strong>{" "}

@@ -78,6 +78,8 @@ export function buildFileTree(paths: string[]): TreeNode[] {
       const nodePath = parts.slice(0, i + 1).join("/");
 
       if (isFile) {
+        // 媒体树只保留目录结构，文件改由左侧图库浏览
+        if (isMediaPath(rel)) continue;
         current.children.push({ type: "file", name: part, path: rel });
       } else {
         let folder = current.children.find(

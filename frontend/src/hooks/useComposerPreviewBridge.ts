@@ -1,6 +1,7 @@
 import { useRef } from "react";
 import { downloadUrl, isMarkdownPath, type SourceRef } from "../api";
 import { isLikelyImagePath } from "../utils/kbImageUrls";
+import { isMediaPath, MEDIA_ROOT, normalizeKbRel } from "../utils/kbMediaPaths";
 import { pathBasename } from "../utils/kbPath";
 import { SKILLS_DIR } from "../utils/fileTree";
 import { useImageLightbox } from "./useImageLightbox";
@@ -111,12 +112,18 @@ export function useComposerPreviewBridge({
     path: string,
     mods?: { ctrlKey?: boolean; metaKey?: boolean },
   ) {
-    if (!(mods?.ctrlKey || mods?.metaKey)) return;
-    if (path === SKILLS_DIR) {
-      onOpenEnabledSkills();
+    if (mods?.ctrlKey || mods?.metaKey) {
+      if (path === SKILLS_DIR) {
+        onOpenEnabledSkills();
+        return;
+      }
+      addDocToComposer(path, { setAsPrimary: false });
       return;
     }
-    addDocToComposer(path, { setAsPrimary: false });
+    // 仅媒体目录（非根）开图库；末级判定由 FileTree 负责
+    const norm = normalizeKbRel(path);
+    if (!norm || norm === MEDIA_ROOT || !isMediaPath(norm)) return;
+    doc.openMediaFolder(norm);
   }
 
   function handleKbPathChanged(fromPath: string, toPath: string) {
@@ -132,6 +139,17 @@ export function useComposerPreviewBridge({
     }
     if (doc.floatPath && deleted.has(doc.floatPath)) doc.closeFloatPreview();
     if (doc.pinnedPath && deleted.has(doc.pinnedPath)) doc.closePinnedPreview();
+    if (
+      doc.mediaFolderPath &&
+      (deleted.has(doc.mediaFolderPath) ||
+        paths.some(
+          (p) =>
+            doc.mediaFolderPath === p ||
+            doc.mediaFolderPath?.startsWith(`${p}/`),
+        ))
+    ) {
+      doc.closeMediaFolder();
+    }
     refreshSidebar();
   }
 

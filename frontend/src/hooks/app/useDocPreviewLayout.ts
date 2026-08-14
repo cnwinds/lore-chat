@@ -6,14 +6,22 @@ import {
   setStoredFloatWidth,
   setStoredPanelWidth,
 } from "../../utils/docStorage";
+import { isMediaPath, MEDIA_ROOT, normalizeKbRel } from "../../utils/kbMediaPaths";
 import { remapKbPath } from "../../utils/remapKbPath";
 
 function pathTouchesChanged(path: string | null, changedPath?: string): boolean {
   return Boolean(
     path &&
-      (!changedPath || changedPath === path || path.startsWith(`${changedPath}/`)),
+      (!changedPath ||
+        changedPath === path ||
+        path.startsWith(`${changedPath}/`) ||
+        // 打开的是目录时：目录内文件变更也需刷新（媒体图库）
+        changedPath.startsWith(`${path}/`)),
   );
 }
+
+/** 供单测与外部复用 */
+export { pathTouchesChanged };
 
 export function useDocPreviewLayout(refreshSidebar: () => void) {
   const [floatPath, setFloatPath] = useState<string | null>(null);
@@ -29,6 +37,8 @@ export function useDocPreviewLayout(refreshSidebar: () => void) {
   const [pinnedRefreshKey, setPinnedRefreshKey] = useState(0);
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mediaFolderPath, setMediaFolderPath] = useState<string | null>(null);
+  const [mediaRefreshKey, setMediaRefreshKey] = useState(0);
   const floatCloseRef = useRef<(() => void) | null>(null);
   const pinnedCloseRef = useRef<(() => void) | null>(null);
 
@@ -61,7 +71,28 @@ export function useDocPreviewLayout(refreshSidebar: () => void) {
     setPinnedPath(null);
     setPinnedHighlight(undefined);
     setPinnedFocus(false);
+    setMediaFolderPath(null);
     setSidebarCollapsed(false);
+  }
+
+  function closeMediaFolder() {
+    setMediaFolderPath(null);
+  }
+
+  /** 打开媒体目录图库（聊天区左侧浮窗，与文档浮窗同槽；保留右侧 pinned）。 */
+  function openMediaFolder(path: string) {
+    const norm = normalizeKbRel(path);
+    if (!norm || norm === MEDIA_ROOT || !isMediaPath(norm)) return;
+    if (mediaFolderPath === norm) {
+      closeMediaFolder();
+      return;
+    }
+    setFloatPath(null);
+    setFloatHighlight(undefined);
+    setFloatFocus(false);
+    setMediaFolderPath(norm);
+    // 图库默认宽浮窗，便于瓦片排布（不持久化，避免覆盖文档浮窗偏好）
+    setFloatWidth("wide");
   }
 
   function requestCloseFloatPreview() {
@@ -88,6 +119,9 @@ export function useDocPreviewLayout(refreshSidebar: () => void) {
     ) {
       setPinnedRefreshKey((k) => k + 1);
     }
+    if (pathTouchesChanged(mediaFolderPath, changedPath)) {
+      setMediaRefreshKey((k) => k + 1);
+    }
   }
 
   function openDocPreview(
@@ -98,6 +132,7 @@ export function useDocPreviewLayout(refreshSidebar: () => void) {
     const wantPin = options?.pin ?? false;
 
     if (wantPin) {
+      setMediaFolderPath(null);
       setPinnedPath(path);
       setPinnedHighlight(excerpt);
       setPinnedWidth(getStoredPanelWidth());
@@ -109,6 +144,7 @@ export function useDocPreviewLayout(refreshSidebar: () => void) {
       return;
     }
 
+    setMediaFolderPath(null);
     setFloatPath(path);
     setFloatHighlight(excerpt);
     setFloatFocus(false);
@@ -117,6 +153,7 @@ export function useDocPreviewLayout(refreshSidebar: () => void) {
 
   function pinDocPreview() {
     if (!floatPath) return;
+    setMediaFolderPath(null);
     setPinnedPath(floatPath);
     setPinnedHighlight(floatHighlight);
     setPinnedWidth(getStoredPanelWidth());
@@ -125,6 +162,7 @@ export function useDocPreviewLayout(refreshSidebar: () => void) {
 
   function unpinDocPreview() {
     if (!pinnedPath) return;
+    setMediaFolderPath(null);
     setFloatPath(pinnedPath);
     setFloatHighlight(pinnedHighlight);
     setFloatFocus(false);
@@ -193,14 +231,22 @@ export function useDocPreviewLayout(refreshSidebar: () => void) {
         setPinnedRefreshKey((k) => k + 1);
       }
     }
+    if (mediaFolderPath) {
+      const next = remapKbPath(mediaFolderPath, from, to);
+      if (next !== mediaFolderPath) {
+        setMediaFolderPath(next);
+        setMediaRefreshKey((k) => k + 1);
+      }
+    }
   }
 
   const showFloat = Boolean(floatPath);
   const showPinned = Boolean(pinnedPath);
+  const showMediaGallery = Boolean(mediaFolderPath);
   const panelFocus = Boolean(pinnedFocus && pinnedPath);
   const floatFocusActive = Boolean(floatFocus && floatPath);
   const mainFloatWide = Boolean(
-    floatPath && floatWidth === "wide" && !floatFocus,
+    ((floatPath && !floatFocus) || mediaFolderPath) && floatWidth === "wide",
   );
 
   return {
@@ -215,6 +261,8 @@ export function useDocPreviewLayout(refreshSidebar: () => void) {
     pinnedWidth,
     pinnedFocus,
     pinnedRefreshKey,
+    mediaFolderPath,
+    mediaRefreshKey,
     /** 聊天来源高亮用右侧栏文档 */
     previewPath: pinnedPath,
     sidebarCollapsed,
@@ -225,10 +273,12 @@ export function useDocPreviewLayout(refreshSidebar: () => void) {
     requestClosePinnedPreview,
     closeFloatPreview,
     closePinnedPreview,
+    closeMediaFolder,
     closeAllPreviews,
     refreshKb,
     remapOpenPath,
     openDocPreview,
+    openMediaFolder,
     pinDocPreview,
     unpinDocPreview,
     toggleFloatWidth,
@@ -241,6 +291,7 @@ export function useDocPreviewLayout(refreshSidebar: () => void) {
     floatFocus: floatFocusActive,
     showFloat,
     showPinned,
+    showMediaGallery,
     mainFloatWide,
     contextValue: {
       previewPath: pinnedPath,

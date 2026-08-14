@@ -10,7 +10,9 @@ export function useAppEscapeKey(
   onCloseSnippet: () => void,
 ) {
   useEffect(() => {
-    const hasPreview = Boolean(doc.floatPath || doc.pinnedPath);
+    const hasPreview = Boolean(
+      doc.floatPath || doc.pinnedPath || doc.mediaFolderPath,
+    );
     if (!hasPreview && !snippetSource) return;
     function onKeyDown(e: KeyboardEvent) {
       if (e.key !== "Escape") return;
@@ -27,6 +29,10 @@ export function useAppEscapeKey(
         doc.exitPinnedFocus();
         return;
       }
+      if (doc.mediaFolderPath) {
+        doc.closeMediaFolder();
+        return;
+      }
       if (doc.floatPath) {
         doc.requestCloseFloatPreview();
         return;
@@ -40,6 +46,7 @@ export function useAppEscapeKey(
   }, [
     doc.floatPath,
     doc.pinnedPath,
+    doc.mediaFolderPath,
     doc.floatFocus,
     doc.pinnedFocus,
     snippetSource,

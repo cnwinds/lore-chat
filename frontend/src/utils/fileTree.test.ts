@@ -45,6 +45,24 @@ describe("buildFileTree fixed folders", () => {
     expect(childNames).toEqual(["上传", "生成"]);
     expect(tree.some((n) => n.name === "a")).toBe(true);
   });
+
+  it("keeps media folder structure but omits media files from the tree", () => {
+    const tree = buildFileTree([
+      `${MEDIA_DIR}/生成/2026/logo.svg`,
+      `${MEDIA_DIR}/上传/2026/shot.png`,
+      "备忘/note.md",
+    ]);
+    const media = tree.find((n) => n.name === MEDIA_DIR);
+    if (media?.type !== "folder") throw new Error("expected media folder");
+    const gen = media.children.find((c) => c.name === "生成");
+    if (gen?.type !== "folder") throw new Error("expected 生成");
+    const year = gen.children.find((c) => c.name === "2026");
+    if (year?.type !== "folder") throw new Error("expected year");
+    expect(year.children).toEqual([]);
+    const notes = tree.find((n) => n.name === "备忘");
+    if (notes?.type !== "folder") throw new Error("expected 备忘");
+    expect(notes.children.some((c) => c.type === "file")).toBe(true);
+  });
 });
 
 describe("fileTreeFileIcon", () => {
