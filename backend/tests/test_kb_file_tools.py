@@ -64,12 +64,16 @@ def test_write_text_file_allows_svg(tmp_path):
     w = make_writer(repo, tmp_path)
     svg = '<svg xmlns="http://www.w3.org/2000/svg"><rect width="10" height="10"/></svg>\n'
     r = w.write_text_file(
-        directory="媒体/生成/2026",
+        directory="备忘",
         filename="logo.svg",
         content=svg,
     )
-    assert r["rel_path"] == "媒体/生成/2026/logo.svg"
-    assert repo.abs_path(r["rel_path"]).read_text(encoding="utf-8") == svg
+    # SVG 忽略备忘等目录，固定落媒体/生成/{年}；入库时补 XML 声明便于 <img>
+    assert r["rel_path"].startswith("媒体/生成/")
+    assert r["rel_path"].endswith("/logo.svg")
+    written = repo.abs_path(r["rel_path"]).read_text(encoding="utf-8")
+    assert written.startswith('<?xml version="1.0" encoding="UTF-8"?>')
+    assert '<svg xmlns="http://www.w3.org/2000/svg">' in written
 
 
 @pytest.mark.asyncio
@@ -79,15 +83,18 @@ async def test_write_kb_file_svg_returns_attachments(tmp_path):
     out = await registry.execute(
         "write_kb_file",
         {
-            "directory": "媒体/生成/2026",
+            "directory": "备忘",
             "filename": "mark.svg",
             "content": svg,
         },
     )
     assert out.get("status") == "saved"
-    assert out.get("rel_path") == "媒体/生成/2026/mark.svg"
-    assert out.get("attachments") == ["媒体/生成/2026/mark.svg"]
-    assert registry.repo.abs_path(out["rel_path"]).read_text(encoding="utf-8") == svg
+    rel = out.get("rel_path") or ""
+    assert rel.startswith("媒体/生成/") and rel.endswith("/mark.svg")
+    assert out.get("attachments") == [rel]
+    written = registry.repo.abs_path(rel).read_text(encoding="utf-8")
+    assert written.startswith('<?xml version="1.0" encoding="UTF-8"?>')
+    assert "<circle r=\"5\"/>" in written
 
 
 def test_write_text_file_rejects_unknown_binary_ext(tmp_path):

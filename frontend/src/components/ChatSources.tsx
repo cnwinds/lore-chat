@@ -1,18 +1,44 @@
 import { useState } from "react";
-import { dedupeSources, type SourceRef } from "../api";
+import { dedupeSources, downloadUrl, type SourceRef } from "../api";
+import { isLikelyImagePath } from "../utils/kbImageUrls";
+import { ImageThumbButton } from "./ImageThumbButton";
 import { SourceChip } from "./SourceChip";
+import { useImageLightbox } from "../hooks/useImageLightbox";
 
 type Props = {
   sources: SourceRef[];
   previewPath?: string | null;
   onOpen: (src: SourceRef) => void;
+  /** 已在时间线附件中展示的图片路径，参考区不再出瓦片 */
+  hideImagePaths?: string[];
 };
 
-export function ChatSources({ sources, previewPath, onOpen }: Props) {
-  const items = dedupeSources(sources);
+function basename(path: string): string {
+  return path.split("/").pop() || path;
+}
+
+function isKbImageSource(
+  src: SourceRef,
+): src is Extract<SourceRef, { type: "kb" }> {
+  return src.type === "kb" && isLikelyImagePath(src.path);
+}
+
+export function ChatSources({
+  sources,
+  previewPath,
+  onOpen,
+  hideImagePaths,
+}: Props) {
+  const hidden = new Set(hideImagePaths ?? []);
+  const items = dedupeSources(sources).filter(
+    (s) => !(isKbImageSource(s) && hidden.has(s.path)),
+  );
+  const imageSources = items.filter(isKbImageSource);
+  const otherSources = items.filter((s) => !isKbImageSource(s));
   const hasConversation = items.some((s) => s.type === "conversation");
-  // 会话引用需要可点跳转：有会话来源时默认展开
-  const [open, setOpen] = useState(hasConversation);
+  // 会话引用 / 图片瓦片需要可点查看：有会话或图片时默认展开
+  const [open, setOpen] = useState(hasConversation || imageSources.length > 0);
+  const { openPreview, lightbox } = useImageLightbox();
 
   if (items.length === 0) return null;
 
@@ -34,17 +60,38 @@ export function ChatSources({ sources, previewPath, onOpen }: Props) {
         </span>
       </button>
       {open && (
-        <div className="chat-sources-links">
-          {items.map((src, j) => (
-            <SourceChip
-              key={`${src.type}-${j}`}
-              source={src}
-              active={src.type === "kb" && previewPath === src.path}
-              onOpen={onOpen}
-            />
-          ))}
+        <div className="chat-sources-body">
+          {imageSources.length > 0 && (
+            <div className="chat-sources-tiles">
+              {imageSources.map((src) => (
+                <ImageThumbButton
+                  key={src.path}
+                  src={downloadUrl(src.path)}
+                  alt={basename(src.path)}
+                  title={`${src.path}（点击查看大图）`}
+                  className="chat-sources-tile"
+                  imageClassName="chat-sources-tile-img"
+                  downloadHref={downloadUrl(src.path, { download: true })}
+                  onOpen={openPreview}
+                />
+              ))}
+            </div>
+          )}
+          {otherSources.length > 0 && (
+            <div className="chat-sources-links">
+              {otherSources.map((src, j) => (
+                <SourceChip
+                  key={`${src.type}-${j}`}
+                  source={src}
+                  active={src.type === "kb" && previewPath === src.path}
+                  onOpen={onOpen}
+                />
+              ))}
+            </div>
+          )}
         </div>
       )}
+      {lightbox}
     </div>
   );
 }

@@ -338,6 +338,9 @@ async def test_failover_on_transient(tmp_path):
     assert img.data.startswith(b"\x89PNG")
     assert calls["n"] == 2
     assert not ig.cooldown.is_available("openai")
+    assert img.provider == "zhipu"
+    assert img.provider_id == "zhipu"
+    assert ig.provider_name == "zhipu"
 
 
 def test_persist_chat_attachment_under_media_generated(tmp_path):

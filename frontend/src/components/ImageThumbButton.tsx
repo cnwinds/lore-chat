@@ -1,4 +1,5 @@
 import type { ImagePreviewTarget } from "../hooks/useImageLightbox";
+import { useDisplayImageSrc } from "../hooks/useDisplayImageSrc";
 
 type Props = {
   src: string;
@@ -22,6 +23,8 @@ export function ImageThumbButton({
   onOpen,
   onRemove,
 }: Props) {
+  const displaySrc = useDisplayImageSrc(src);
+
   return (
     <div
       className={className}
@@ -36,13 +39,17 @@ export function ImageThumbButton({
         }
       }}
     >
-      <img
-        src={src}
-        alt={alt}
-        className={imageClassName}
-        loading="lazy"
-        draggable={false}
-      />
+      {displaySrc ? (
+        <img
+          src={displaySrc}
+          alt={alt}
+          className={imageClassName}
+          loading="lazy"
+          draggable={false}
+        />
+      ) : (
+        <div className={`${imageClassName} image-thumb-placeholder`} aria-hidden />
+      )}
       {onRemove && (
         <button
           type="button"

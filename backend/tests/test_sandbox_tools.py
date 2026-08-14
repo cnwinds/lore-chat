@@ -236,7 +236,11 @@ async def test_publish_image_png_and_svg_as_attachments(tmp_path):
         "媒体/生成/2026/logo.svg",
     ]
     assert registry.repo.abs_path("媒体/生成/2026/shot.png").read_bytes() == png
-    assert registry.repo.abs_path("媒体/生成/2026/logo.svg").read_bytes() == svg
+    written_svg = registry.repo.abs_path("媒体/生成/2026/logo.svg").read_text(
+        encoding="utf-8"
+    )
+    assert written_svg.startswith('<?xml version="1.0" encoding="UTF-8"?>')
+    assert '<svg xmlns="http://www.w3.org/2000/svg">' in written_svg
 
 
 @pytest.mark.asyncio

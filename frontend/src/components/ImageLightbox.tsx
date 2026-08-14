@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { createPortal } from "react-dom";
+import { useDisplayImageSrc } from "../hooks/useDisplayImageSrc";
 
 type Props = {
   src: string;
@@ -18,6 +19,8 @@ export function ImageLightbox({
   onClose,
   downloadHref,
 }: Props) {
+  const displaySrc = useDisplayImageSrc(open ? src : "");
+
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -46,11 +49,12 @@ export function ImageLightbox({
         ×
       </button>
       <img
-        src={src}
+        src={displaySrc || src}
         alt={alt}
         className="image-lightbox-img"
         draggable={false}
         onClick={(e) => e.stopPropagation()}
+        style={displaySrc ? undefined : { visibility: "hidden" }}
       />
       {downloadHref ? (
         <a

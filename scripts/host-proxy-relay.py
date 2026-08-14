@@ -15,11 +15,25 @@ import socket
 import sys
 import threading
 
+# 单侧无数据空闲超时。请求发完后上行会长时间静默，过小会掐断仍在流式返回的 LLM。
+# 可用 LORECHAT_PROXY_RELAY_IDLE_SEC 覆盖（秒）。
+_DEFAULT_IDLE_SEC = 3600
 
-def _pipe(a: socket.socket, b: socket.socket) -> None:
+
+def _idle_sec() -> float:
+    raw = (os.environ.get("LORECHAT_PROXY_RELAY_IDLE_SEC") or "").strip()
+    if not raw:
+        return float(_DEFAULT_IDLE_SEC)
+    try:
+        return max(1.0, float(raw))
+    except ValueError:
+        return float(_DEFAULT_IDLE_SEC)
+
+
+def _pipe(a: socket.socket, b: socket.socket, *, idle_sec: float) -> None:
     try:
         while True:
-            ready, _, _ = select.select([a], [], [], 120)
+            ready, _, _ = select.select([a], [], [], idle_sec)
             if not ready:
                 break
             data = a.recv(65536)
@@ -40,7 +54,9 @@ def _pipe(a: socket.socket, b: socket.socket) -> None:
                 pass
 
 
-def _handle(client: socket.socket, target: tuple[str, int]) -> None:
+def _handle(
+    client: socket.socket, target: tuple[str, int], *, idle_sec: float
+) -> None:
     upstream = socket.socket()
     upstream.settimeout(30)
     try:
@@ -48,8 +64,10 @@ def _handle(client: socket.socket, target: tuple[str, int]) -> None:
     except OSError:
         client.close()
         return
-    threading.Thread(target=_pipe, args=(client, upstream), daemon=True).start()
-    _pipe(upstream, client)
+    threading.Thread(
+        target=_pipe, args=(client, upstream), kwargs={"idle_sec": idle_sec}, daemon=True
+    ).start()
+    _pipe(upstream, client, idle_sec=idle_sec)
 
 
 def main() -> int:
@@ -74,6 +92,7 @@ def main() -> int:
 
     listen = _host_port(args.listen)
     target = _host_port(args.target)
+    idle_sec = _idle_sec()
 
     srv = socket.socket()
     srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -92,13 +111,22 @@ def main() -> int:
     signal.signal(signal.SIGINT, _stop)
     signal.signal(signal.SIGTERM, _stop)
 
-    print(f"[proxy-relay] {listen[0]}:{listen[1]} -> {target[0]}:{target[1]}", flush=True)
+    print(
+        f"[proxy-relay] {listen[0]}:{listen[1]} -> {target[0]}:{target[1]} "
+        f"(idle_sec={idle_sec:g})",
+        flush=True,
+    )
     while not stop.is_set():
         try:
             client, _ = srv.accept()
         except OSError:
             break
-        threading.Thread(target=_handle, args=(client, target), daemon=True).start()
+        threading.Thread(
+            target=_handle,
+            args=(client, target),
+            kwargs={"idle_sec": idle_sec},
+            daemon=True,
+        ).start()
     return 0
 
 

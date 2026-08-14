@@ -18,7 +18,7 @@ from app.storage.kb_paths import (
 from app.engine.kb_markdown_images import sanitize_markdown_image_srcs_for_storage
 from app.engine.memory.constants import is_memory_projection_path
 from app.engine.write_policy import WriteMode
-from app.storage.kb_media_paths import is_image_filename
+from app.storage.kb_media_paths import is_image_filename, media_generated_dir
 from app.storage.kb_text_files import is_kb_text_file
 from app.storage.repo import KnowledgeRepo
 
@@ -38,6 +38,33 @@ class KbPathExistsError(FileExistsError):
 
 def is_markdown_path(rel_path: str) -> bool:
     return rel_path.replace("\\", "/").lower().endswith(".md")
+
+
+def _normalize_svg_content(content: str) -> str:
+    """保证 <img> 可显示：UTF-8 XML 声明 + 有 viewBox 时补 width/height。"""
+    text = (content or "").lstrip("\ufeff").strip()
+    if not text:
+        return content
+    if not re.match(r"(?is)^\s*<\?xml\b", text):
+        text = '<?xml version="1.0" encoding="UTF-8"?>\n' + text
+
+    def _inject_size(m: re.Match[str]) -> str:
+        tag = m.group(0)
+        if re.search(r"\bwidth\s*=", tag, flags=re.I):
+            return tag
+        vb = re.search(r'\bviewBox\s*=\s*["\']([^"\']+)["\']', tag, flags=re.I)
+        if not vb:
+            return tag
+        parts = vb.group(1).split()
+        if len(parts) != 4:
+            return tag
+        w, h = parts[2], parts[3]
+        return tag[:-1] + f' width="{w}" height="{h}">'
+
+    text = re.sub(r"(?is)<svg\b[^>]*>", _inject_size, text, count=1)
+    if not text.endswith("\n"):
+        text += "\n"
+    return text
 
 
 def suggest_alternate_filename(filename: str) -> str:
@@ -296,6 +323,13 @@ class KnowledgeWriter:
             return {"rel_path": rel, "kind": "markdown", "indexed": True}
 
         self.assert_non_md_asset_allowed(fn, allow_binary=allow_binary)
+        # 生成/发布的 SVG 与 PNG 同落媒体目录，并规范化便于 <img> 预览
+        if PurePosixPath(fn).suffix.lower() == ".svg":
+            directory = media_generated_dir()
+            try:
+                data = _normalize_svg_content(data.decode("utf-8")).encode("utf-8")
+            except UnicodeDecodeError:
+                pass
         rel = _file_rel(directory, fn)
         abs_p = self.repo.abs_path(rel)
         if abs_p.exists():
@@ -337,6 +371,10 @@ class KnowledgeWriter:
             raise ValueError(
                 f"位图请用 generate_image 或 publish_from_sandbox，勿用 write_kb_file：{fn}"
             )
+        # SVG 与生图同轨：一律落 媒体/生成/{年}/，忽略其它 directory（避免写进备忘等文档目录）
+        if suffix == ".svg":
+            directory = media_generated_dir()
+            content = _normalize_svg_content(content)
         self.assert_non_md_asset_allowed(fn, allow_binary=False)
         rel = _file_rel(directory, fn)
         if not self.repo.is_writable(rel):

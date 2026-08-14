@@ -7,6 +7,7 @@ import { useSendQueue } from "../hooks/chat/useSendQueue";
 import { useOutboundOrchestrator } from "../hooks/chat/useOutboundOrchestrator";
 import type { JumpTarget } from "../hooks/chat/useConversationJump";
 import {
+  isMarkdownPath,
   normalizeDocContext,
   summarizeConversation,
   type DocContextItem,
@@ -484,6 +485,11 @@ export function Chat({
         endChar: src.end_char,
         offsetVersion: src.offset_version,
       });
+      return;
+    }
+    // 非 Markdown（含 SVG）交给 shell：灯箱预览 / 下载，勿当文档打开
+    if (src.type === "kb" && src.path && !isMarkdownPath(src.path)) {
+      onOpenSource?.(src);
       return;
     }
     if (src.type === "kb" && src.path) {

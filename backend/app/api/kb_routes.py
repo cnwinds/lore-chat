@@ -38,13 +38,22 @@ async def download(
     filename = abs_p.name
     media = media_type_for_filename(filename)
     disposition = content_disposition_type(
-        media, force_download=force_download, filename=filename
+        media,
+        force_download=force_download,
+        filename=filename,
+        sec_fetch_dest=request.headers.get("sec-fetch-dest"),
     )
+    headers: dict[str, str] = {}
+    # SVG 的 disposition 随 Sec-Fetch-Dest 变化；避免浏览器沿用旧的 attachment 缓存导致 <img> 空白
+    if filename.lower().endswith(".svg"):
+        headers["Cache-Control"] = "private, no-cache"
+        headers["Vary"] = "Sec-Fetch-Dest"
     return FileResponse(
         path=abs_p,
         media_type=media,
         filename=filename,
         content_disposition_type=disposition,
+        headers=headers,
     )
 
 

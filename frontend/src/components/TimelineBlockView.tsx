@@ -18,6 +18,7 @@ import {
 } from "../utils/progressLog";
 import { toolDisplayDurationMs } from "../utils/toolDuration";
 import type { ConversationLinkTarget } from "../utils/conversationLinks";
+import { isLikelyImagePath } from "../utils/kbImageUrls";
 
 type Props = {
   block: TimelineBlock;
@@ -139,15 +140,16 @@ function ToolBlockView({
     block.tool === "search_kb" ||
     block.tool === "web_search" ||
     block.tool === "fetch_url";
-  // 生图完成后默认展开，便于直接看到工具块内预览
+  const hasImageAttachments =
+    Array.isArray(block.attachments) &&
+    block.attachments.some((p) => isLikelyImagePath(p));
+  // 带图附件（生图 / write_kb_file SVG）完成后默认展开，便于直接预览
   const defaultOpen =
     !collapsedByDefault &&
     (isLive ||
       pendingAsk ||
       block.status === "running" ||
-      (block.tool === "generate_image" &&
-        Array.isArray(block.attachments) &&
-        block.attachments.length > 0) ||
+      hasImageAttachments ||
       (block.tool === "sandbox_run" &&
         !block.question_id &&
         (!!block.query || !!block.progress_log?.length)));
@@ -404,8 +406,24 @@ export function TimelineBlockView({
 
   if (block.type === "parallel") {
     const maxMs = maxParallelDuration(block.children);
+    const imageChildren = block.children.filter(
+      (c) => c.type === "tool" && c.tool === "generate_image",
+    );
+    const allImages =
+      block.children.length > 0 &&
+      imageChildren.length === block.children.length;
+    const runningN = imageChildren.filter((c) => c.type === "tool" && c.status === "running").length;
+    const doneN = imageChildren.filter((c) => c.type === "tool" && c.status === "done").length;
+    const headerLabel = allImages
+      ? runningN > 0
+        ? `生成图片（${doneN}/${block.children.length}）`
+        : `生成图片（${block.children.length}）`
+      : null;
     return (
       <div className="timeline-parallel">
+        {headerLabel ? (
+          <div className="timeline-parallel-label">{headerLabel}</div>
+        ) : null}
         {block.children.map((child, i) => (
           <TimelineBlockView
             key={

@@ -31,9 +31,29 @@ def test_inline_by_default_including_octet_stream():
     assert content_disposition_type("text/plain; charset=utf-8") == "inline"
 
 
-def test_svg_forces_attachment_even_without_download_flag():
+def test_svg_attachment_only_for_unsafe_fetch_dest():
+    # <img> / 缺省 dest → inline，保证聊天缩略图与灯箱可预览
     assert (
-        content_disposition_type("image/svg+xml", filename="logo.svg") == "attachment"
+        content_disposition_type(
+            "image/svg+xml", filename="logo.svg", sec_fetch_dest="image"
+        )
+        == "inline"
+    )
+    assert (
+        content_disposition_type("image/svg+xml", filename="logo.svg") == "inline"
+    )
+    # 顶层导航 / embed 仍 attachment，避免脚本 XSS
+    assert (
+        content_disposition_type(
+            "image/svg+xml", filename="logo.svg", sec_fetch_dest="document"
+        )
+        == "attachment"
+    )
+    assert (
+        content_disposition_type(
+            "image/svg+xml", filename="logo.svg", sec_fetch_dest="object"
+        )
+        == "attachment"
     )
     assert content_disposition_type("image/png", filename="a.png") == "inline"
 

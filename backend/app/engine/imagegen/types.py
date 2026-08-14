@@ -51,3 +51,6 @@ class GeneratedImage:
     data: bytes
     content_type: str = "image/png"
     extension: str = "png"
+    # 路由选出的厂家（并行生图时勿依赖 ImageGen 实例可变字段）
+    provider: str | None = None
+    provider_id: str | None = None

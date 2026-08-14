@@ -25,7 +25,7 @@ from app.engine.chat.turn_inject import PendingInject, TurnInjectBroker
 from app.engine.agent.run_report import AgentRunReport
 from app.engine.agent.tool_events import emit_tool_result_sse
 from app.engine.agent.tools import (
-    READ_ONLY_TOOLS,
+    PARALLELIZABLE_TOOLS,
     TOOL_LABELS,
     ToolRegistry,
     can_parallelize,
@@ -288,7 +288,7 @@ class AgentToolLoop:
             parallel_group = []
 
         for tc in tool_calls:
-            if tc.name in READ_ONLY_TOOLS:
+            if tc.name in PARALLELIZABLE_TOOLS:
                 parallel_group.append(tc)
             else:
                 flush_parallel()
@@ -337,18 +337,60 @@ class AgentToolLoop:
         for tc in batch:
             yield tool_start(tc.id, tc.name, TOOL_LABELS[tc.name], tc.arguments), None
 
-        async def run_one(tc: ToolCall) -> tuple[ToolCall, dict, int]:
-            out, duration_ms = await self._execute_tool(
-                tc,
-                active_doc_path=active_doc_path,
-                conversation_id=conversation_id,
-            )
-            return tc, out, duration_ms
+        # 合并各工具 stream：进度按 tool_call_id 推送，完成即出 tool_result（不必等整批）
+        merge_q: asyncio.Queue[
+            tuple[ToolCall, str, object] | None
+        ] = asyncio.Queue()
+
+        async def run_one(tc: ToolCall) -> None:
+            try:
+                async for kind, payload in self._execute_tool_stream(
+                    tc,
+                    active_doc_path=active_doc_path,
+                    conversation_id=conversation_id,
+                ):
+                    await merge_q.put((tc, kind, payload))
+            except Exception as e:
+                # 保证合并循环能收到结果，避免整批挂死
+                err = {
+                    "summary": f"工具执行失败：{e}",
+                    "sources": [],
+                    "error": str(e),
+                }
+                await merge_q.put((tc, "result", (err, 0)))
 
         tasks = [asyncio.create_task(run_one(tc)) for tc in batch]
-        for coro in asyncio.as_completed(tasks):
-            tc, out, duration_ms = await coro
-            yield emit_tool_result_sse(tc, out, duration_ms), (tc, out, duration_ms)
+        remaining = len(batch)
+        try:
+            while remaining > 0:
+                item = await merge_q.get()
+                if item is None:
+                    continue
+                tc, kind, payload = item
+                if kind == "progress":
+                    assert isinstance(payload, dict)
+                    yield (
+                        tool_progress(
+                            tc.id,
+                            tc.name,
+                            payload.get("message", ""),
+                            **{k: v for k, v in payload.items() if k != "message"},
+                        ),
+                        None,
+                    )
+                else:
+                    out, duration_ms = payload  # type: ignore[misc]
+                    yield emit_tool_result_sse(tc, out, duration_ms), (
+                        tc,
+                        out,
+                        duration_ms,
+                    )
+                    remaining -= 1
+        finally:
+            for t in tasks:
+                if not t.done():
+                    t.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
 
         batch_duration = int((time.monotonic() - batch_start) * 1000)
         yield parallel_batch_end(batch_id, batch_duration), None

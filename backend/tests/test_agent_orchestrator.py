@@ -191,6 +191,69 @@ async def test_orchestrator_parallel_batch(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_orchestrator_parallel_generate_image(tmp_path):
+    """同轮多个 generate_image 应并行，并透出 tool_progress。"""
+    import asyncio
+    import time
+    from unittest.mock import MagicMock
+
+    from app.engine.progress import emit_progress
+
+    orchestrator = _make_orchestrator(
+        tmp_path,
+        tool_responses=[
+            {
+                "content": None,
+                "tool_calls": [
+                    ToolCall(id="g1", name="generate_image", arguments={"prompt": "logo-a"}),
+                    ToolCall(id="g2", name="generate_image", arguments={"prompt": "logo-b"}),
+                ],
+            },
+            {"content": "两张都好了", "tool_calls": []},
+        ],
+        agent_parallel_tools=True,
+    )
+    mock_gen = MagicMock()
+    mock_gen.configured = True
+    orchestrator.tools.image_tools.image_gen = mock_gen
+
+    started: list[float] = []
+
+    async def fake_gen(args):
+        started.append(time.monotonic())
+        emit_progress(f"生图中…{args.get('prompt')}")
+        await asyncio.sleep(0.2)
+        prompt = args.get("prompt")
+        return {
+            "summary": f"已生成 {prompt}",
+            "sources": [{"type": "kb", "path": f"媒体/生成/{prompt}.png"}],
+            "attachments": [f"媒体/生成/{prompt}.png"],
+            "rel_path": f"媒体/生成/{prompt}.png",
+            "provider": "openai",
+        }
+
+    orchestrator.tools.image_tools.generate_image = fake_gen
+
+    events: list[str] = []
+    t0 = time.monotonic()
+    async for ev in orchestrator.run("出两张 logo", mode="default"):
+        events.append(ev)
+    wall = time.monotonic() - t0
+
+    event_types = _parse_event_types(events)
+    assert "parallel_batch_start" in event_types
+    assert "parallel_batch_end" in event_types
+    assert event_types.count("tool_start") == 2
+    assert event_types.count("tool_result") == 2
+    assert "tool_progress" in event_types
+    # 并行：两任务几乎同时开始，墙钟应明显小于串行 0.4s
+    assert len(started) == 2
+    assert abs(started[0] - started[1]) < 0.15
+    assert wall < 0.55
+    _assert_events_have_ts(events)
+
+
+@pytest.mark.asyncio
 async def test_orchestrator_stream_does_not_block_event_loop(tmp_path):
     """同步 LLM 流式迭代不得堵死事件循环（否则聊天中 /api/doc 会一直加载中）。"""
     import asyncio

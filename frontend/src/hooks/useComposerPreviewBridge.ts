@@ -1,7 +1,9 @@
 import { useRef } from "react";
 import { downloadUrl, isMarkdownPath, type SourceRef } from "../api";
+import { isLikelyImagePath } from "../utils/kbImageUrls";
 import { pathBasename } from "../utils/kbPath";
 import { SKILLS_DIR } from "../utils/fileTree";
+import { useImageLightbox } from "./useImageLightbox";
 import type { useComposerDocState } from "./useComposerDocState";
 import type { useDocPreviewLayout } from "./app/useDocPreviewLayout";
 
@@ -30,6 +32,15 @@ export function useComposerPreviewBridge({
   onSearchSource,
 }: Options) {
   const pinAddedTrayRef = useRef<string | null>(null);
+  const { openPreview, lightbox } = useImageLightbox();
+
+  function openImagePreview(path: string) {
+    openPreview({
+      src: downloadUrl(path),
+      alt: pathBasename(path),
+      downloadHref: downloadUrl(path, { download: true }),
+    });
+  }
 
   function addDocToComposer(
     path: string,
@@ -82,6 +93,11 @@ export function useComposerPreviewBridge({
   ) {
     if (mods?.ctrlKey || mods?.metaKey) {
       addDocToComposer(path, { setAsPrimary: false });
+      return;
+    }
+    // SVG 等下载为 attachment（防 XSS），新标签页无法 inline 预览 → 用灯箱
+    if (isLikelyImagePath(path)) {
+      openImagePreview(path);
       return;
     }
     if (!isMarkdownPath(path)) {
@@ -138,6 +154,14 @@ export function useComposerPreviewBridge({
       return;
     }
     if (src.type === "kb") {
+      if (isLikelyImagePath(src.path)) {
+        openImagePreview(src.path);
+        return;
+      }
+      if (!isMarkdownPath(src.path)) {
+        window.open(downloadUrl(src.path), "_blank", "noopener,noreferrer");
+        return;
+      }
       openDocWithComposer(src.path, src.excerpt, { pin: true });
       return;
     }
@@ -157,5 +181,6 @@ export function useComposerPreviewBridge({
     handleTraySetPrimary,
     handleTrayRemove,
     handleOpenSource,
+    imageLightbox: lightbox,
   };
 }

@@ -20,6 +20,9 @@ WRITE_TOOLS = frozenset({
     "generate_image",
     "sandbox_run", "publish_from_sandbox", "stage_to_sandbox",
 })
+# 可读工具 + 生图：落盘路径互不冲突（chat_attachment 自动唯一名），可同批并行。
+# 其余写工具仍串行，避免文档竞态。
+PARALLELIZABLE_TOOLS = READ_ONLY_TOOLS | frozenset({"generate_image"})
 
 # 兼容旧导入（默认窗数值）
 _DEFAULT_DISCLOSURE_CHARS = DisclosureWindows().spot
@@ -86,7 +89,7 @@ def apply_disclosure_windows(tool_def: dict, windows: DisclosureWindows) -> dict
 
 
 def can_parallelize(tool_names: list[str]) -> bool:
-    return all(n in READ_ONLY_TOOLS for n in tool_names)
+    return all(n in PARALLELIZABLE_TOOLS for n in tool_names)
 
 
 TOOL_LABELS = {
@@ -268,6 +271,8 @@ TOOL_DEFINITIONS: list[dict] = [
                 "默认 destination=chat_attachment，写入 媒体/生成/{年}/，结果以附件形式出现在信息流；"
                 "若需写入指定知识库路径供文档引用，用 destination=kb 并提供 directory 与 filename（均必填）。"
                 "文档中请用相对路径 Markdown 插图：![说明](相对路径)。"
+                "用户要多张图（多构思/多变体）时：在同一轮一次性发出多个 generate_image（不同 prompt），"
+                "系统会并行生图；勿等一张完成再调下一张。"
                 "需已配置生图提供商。"
             ),
             "parameters": {
@@ -420,7 +425,8 @@ TOOL_DEFINITIONS: list[dict] = [
             "name": "write_kb_file",
             "description": (
                 "将文本类代码/配置文件写入知识库（.sh/.py/.js/.yaml 等），"
-                "也支持矢量图 .svg（与 PNG/JPG 同为图片资产，可在聊天中预览）。"
+                "也支持矢量图 .svg（与 PNG/JPG 同为图片资产，可在聊天中预览；"
+                "**SVG 固定写入 媒体/生成/{年}/**，directory 可传该路径或任意占位）。"
                 "禁止 .md（文档请用 write_doc）。不做 LLM 合并；已存在时须 overwrite=true 整文件覆盖。"
                 "写入前应先 list_kb_structure 规划路径。"
             ),
@@ -765,6 +771,7 @@ TOOL_DEFINITIONS: list[dict] = [
             "description": (
                 "将沙箱 /workspace 下的文件显式发布到知识库。"
                 "支持 Markdown、文本代码/配置，以及图片（.png/.jpg/.svg 等；图片会挂聊天附件预览）。"
+                "**SVG 固定发布到 媒体/生成/{年}/**（与生图同目录）。"
                 "重型调用：多文件务必一次用 files 批量发布，勿逐文件反复调用。"
                 "中间产物不要自动入库；仅最终旁白/分镜/成片等需要归档时调用。"
             ),

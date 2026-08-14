@@ -5,6 +5,7 @@ from app.engine.agent.tool_catalog import (
     TOOL_LABELS,
     WRITE_TOOLS,
     READ_ONLY_TOOLS,
+    PARALLELIZABLE_TOOLS,
     can_parallelize,
     select_tools,
 )
@@ -32,6 +33,7 @@ __all__ = [
     "can_parallelize",
     "READ_ONLY_TOOLS",
     "WRITE_TOOLS",
+    "PARALLELIZABLE_TOOLS",
 ]
 
 

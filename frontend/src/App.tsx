@@ -198,6 +198,7 @@ function AppMain() {
               onConfirm={handleSkillPickConfirm}
               onCancel={cancelSkillPick}
             />
+            {bridge.imageLightbox}
           </>
         }
       />

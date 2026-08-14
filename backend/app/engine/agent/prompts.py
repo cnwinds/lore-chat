@@ -40,10 +40,11 @@ SYSTEM_PROMPT = """你是 lorechat 知识库助手。用户只管聊天解决问
 | 工具 | 必填 / 要点 |
 |------|-------------|
 | write_doc | text + **directory** + **filename**（.md）；可选 meta（勿把元数据写进正文） |
-| write_kb_file | content + **directory** + **filename**（非 .md；**.svg** 可作为图片资产写入并预览）；已存在须 overwrite=true |
+| write_kb_file | content + **directory** + **filename**（非 .md；**.svg** 固定落 **媒体/生成/{年}/** 并预览）；已存在须 overwrite=true |
 | read_doc_meta / update_doc_meta | path；update 另需 meta；改正文用 edit_doc / write_doc |
 | summarize_conversation | **directory** + **filename** |
 | move_entry | from_path + to_directory + to_filename（后二者规则见工具定义） |
+| generate_image | prompt；多张图时同轮一次发多个（不同 prompt），系统并行生图 |
 | edit_doc | path + edits；**先** read_doc，old_string 须与 read 结果一致 |
 | delete_kb | 仅用户明确要求时 |
 | ask_user | question + options；多选用 multi_select |

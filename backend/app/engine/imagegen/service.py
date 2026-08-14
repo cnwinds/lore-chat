@@ -132,7 +132,13 @@ class ImageGen:
             self.cooldown.record_success(entry.id)
             self.provider_name = entry.provider
             self.provider_id = entry.id
-            return image
+            return GeneratedImage(
+                data=image.data,
+                content_type=image.content_type,
+                extension=image.extension,
+                provider=entry.provider,
+                provider_id=entry.id,
+            )
 
     def persist(
         self,
@@ -212,6 +218,8 @@ class ImageGen:
             ImageGenRequest(prompt=prompt_s, aspect_ratio=ar),
             prefer_provider=prefer_provider,
         )
+        provider = image.provider or self.provider_name
+        provider_id = image.provider_id or self.provider_id
         rel = self.persist(
             image,
             destination=destination,
@@ -220,8 +228,8 @@ class ImageGen:
         )
         return {
             "rel_path": rel,
-            "provider": self.provider_name,
-            "provider_id": self.provider_id,
+            "provider": provider,
+            "provider_id": provider_id,
             "aspect_ratio": ar,
             "destination": destination,
         }

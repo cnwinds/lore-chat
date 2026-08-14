@@ -50,8 +50,8 @@ function basename(path: string): string {
   return path.split("/").pop() || path;
 }
 
-/** 时间线 generate_image 已展示的路径，消息脚不再重复。 */
-function timelineGenerateImagePaths(m: ChatMessage): Set<string> {
+/** 时间线工具块已展示的附件路径，消息脚（参考文档下方）不再重复。 */
+function timelineToolAttachmentPaths(m: ChatMessage): Set<string> {
   const out = new Set<string>();
   const add = (paths: string[] | undefined) => {
     for (const p of paths ?? []) {
@@ -59,24 +59,22 @@ function timelineGenerateImagePaths(m: ChatMessage): Set<string> {
     }
   };
   for (const block of m.timeline ?? []) {
-    if (block.type === "tool" && block.tool === "generate_image") {
+    if (block.type === "tool") {
       add(block.attachments);
     } else if (block.type === "parallel") {
       for (const child of block.children) {
-        if (child.type === "tool" && child.tool === "generate_image") {
-          add(child.attachments);
-        }
+        if (child.type === "tool") add(child.attachments);
       }
     }
   }
   return out;
 }
 
-/** 消息脚附件：去掉已在生图工具块展示的路径。 */
+/** 消息脚附件：去掉已在工具块展示的路径。 */
 function footAttachmentPaths(m: ChatMessage): string[] {
   const attachments = m.attachments ?? [];
   if (!attachments.length || m.role === "user") return [];
-  const shown = timelineGenerateImagePaths(m);
+  const shown = timelineToolAttachmentPaths(m);
   return attachments.filter((p) => !shown.has(p));
 }
 
@@ -310,6 +308,7 @@ export function ChatMessageRow({
   }, []);
 
   const footPaths = footAttachmentPaths(m);
+  const timelineImagePaths = [...timelineToolAttachmentPaths(m)];
 
   return (
     <div
@@ -349,6 +348,7 @@ export function ChatMessageRow({
             sources={m.sources}
             previewPath={previewPath}
             onOpen={onOpenSource}
+            hideImagePaths={timelineImagePaths}
           />
         )}
         {footPaths.length > 0 ? (
