@@ -10,7 +10,7 @@ import {
   type SourceRef,
 } from "../../api";
 import { DocChip, FileChip } from "../ComposerTray";
-import { formatMessageTs, isInjectedUserMessage } from "../../utils/chatMessage";
+import { formatMessageTs, isInjectedUserMessage, canRetryAssistantReply } from "../../utils/chatMessage";
 import { MarkdownContent } from "../MarkdownContent";
 import { KbAttachmentList } from "../KbAttachmentList";
 import { ImageThumbButton } from "../ImageThumbButton";
@@ -44,6 +44,9 @@ export type ChatMessageRowProps = {
     result: IngestResult,
     choiceLabel: string,
   ) => void;
+  /** 失败/中断时重新发起本轮用户提问 */
+  onRetryReply?: () => void;
+  retryDisabled?: boolean;
 };
 
 function basename(path: string): string {
@@ -134,8 +137,12 @@ function renderMessageMeta(
   m: ChatMessage,
   isLive: boolean,
   liveElapsedMs: number,
+  onRetryReply?: () => void,
+  retryDisabled?: boolean,
 ) {
   const copyText = getMessageCopyText(m);
+  const showRetry =
+    !isLive && !!onRetryReply && canRetryAssistantReply(m);
 
   if (m.role === "user") {
     if (!copyText && !m.ts) return null;
@@ -154,7 +161,8 @@ function renderMessageMeta(
     !timeStr &&
     (durationMs === undefined || durationMs <= 0) &&
     !copyText &&
-    !m.model_name
+    !m.model_name &&
+    !showRetry
   ) {
     return null;
   }
@@ -173,7 +181,20 @@ function renderMessageMeta(
           <span>用时 {formatDuration(durationMs)}</span>
         )}
       </div>
-      {copyText && !isLive && <CopyButton text={copyText} />}
+      <div className="chat-meta-actions">
+        {showRetry ? (
+          <button
+            type="button"
+            className="chat-retry-btn"
+            onClick={onRetryReply}
+            disabled={retryDisabled}
+            title="重新生成这一轮回复（不重复提问）"
+          >
+            重新回复
+          </button>
+        ) : null}
+        {copyText && !isLive && <CopyButton text={copyText} />}
+      </div>
     </div>
   );
 }
@@ -286,6 +307,8 @@ export function ChatMessageRow({
   onOpenSource,
   onOpenConversation,
   onQuestionResolved,
+  onRetryReply,
+  retryDisabled,
 }: ChatMessageRowProps) {
   const rowRef = useRef<HTMLDivElement>(null);
   const [highlightRange, setHighlightRange] = useState<{
@@ -309,6 +332,8 @@ export function ChatMessageRow({
 
   const footPaths = footAttachmentPaths(m);
   const timelineImagePaths = [...timelineToolAttachmentPaths(m)];
+  const showRetry =
+    !isLiveStreaming && !!onRetryReply && canRetryAssistantReply(m);
 
   return (
     <div
@@ -327,7 +352,7 @@ export function ChatMessageRow({
           )}
         {m.role === "assistant" && m.status === "interrupted" && !isLiveStreaming && (
           <div className="chat-interrupted-note" role="status">
-            本轮因刷新或断线中断；未完成的步骤已标出，可继续发消息或回答待确认项。
+            本轮因刷新或断线中断；未完成的步骤已标出，可继续发消息、回答待确认项，或重新回复。
           </div>
         )}
         {m.role === "user" && <UserMessageChips m={m} />}
@@ -359,7 +384,13 @@ export function ChatMessageRow({
             thumbClassName="chat-gen-image-link"
           />
         ) : null}
-        {renderMessageMeta(m, isLiveStreaming, liveElapsedMs)}
+        {renderMessageMeta(
+          m,
+          isLiveStreaming,
+          liveElapsedMs,
+          showRetry ? onRetryReply : undefined,
+          retryDisabled,
+        )}
       </div>
     </div>
   );

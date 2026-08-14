@@ -98,12 +98,15 @@ async def chat(body: ChatBody, request: Request):
             doc_paths=paths,
             skill_catalog=skill_catalog,
             web_enabled=body.web_enabled,
+            reuse_user_message_id=body.reuse_user_message_id,
         )
     except TurnInProgress as e:
         raise HTTPException(
             409,
             detail={"code": "turn_in_progress", "retry_after_ms": e.retry_after_ms},
         )
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
 
     headers = {**_SSE_HEADERS, "X-Turn-Id": turn["turn_id"]}
     if turn.get("status", "running") != "running":

@@ -415,6 +415,8 @@ export type ChatStreamOptions = {
   attachments?: string[];
   /** 幂等重试键：同一 (conversation_id, clientMessageId) 重复发送不会重跑 Agent。 */
   clientMessageId?: string;
+  /** 原地重新回复：复用已有用户消息 id，不追加重复提问 */
+  reuseUserMessageId?: string;
   signal?: AbortSignal;
 };
 
@@ -430,6 +432,7 @@ export async function* chatStream(
     webEnabled = false,
     attachments = [],
     clientMessageId,
+    reuseUserMessageId,
     signal,
   } = options;
   const body: Record<string, unknown> = {
@@ -440,6 +443,9 @@ export async function* chatStream(
     web_enabled: webEnabled,
     attachments: attachments.length ? attachments : undefined,
   };
+  if (reuseUserMessageId) {
+    body.reuse_user_message_id = reuseUserMessageId;
+  }
   if (docContext?.length) {
     body.doc_context = docContext;
   } else if (activeDocPaths.length) {

@@ -53,6 +53,28 @@ export function timelineAwaitsUserAnswer(
   return false;
 }
 
+/** 助手回复失败/中断，可展示「重新回复」（待确认 ask_user 除外）。 */
+export function canRetryAssistantReply(m: ChatMessage): boolean {
+  if (m.role !== "assistant") return false;
+  if (timelineAwaitsUserAnswer(m.timeline)) return false;
+  if (m.status === "interrupted" || m.status === "error") return true;
+  const t = (m.text || "").trim();
+  return t.startsWith("错误：") || t.startsWith("错误:");
+}
+
+/** 取本轮对应的用户提问（不跨上一轮助手；跳过中途插入）。 */
+export function findPrecedingUserForRetry(
+  msgs: ChatMessage[],
+  assistantSourceIndex: number,
+): ChatMessage | null {
+  for (let i = assistantSourceIndex - 1; i >= 0; i--) {
+    const m = msgs[i];
+    if (m.role === "assistant") break;
+    if (m.role === "user" && !isInjectedUserMessage(m)) return m;
+  }
+  return null;
+}
+
 /** 刷新/重载后：把仍标 running 的工具收成 interrupted，避免永远转圈。 */
 export function normalizeLoadedTimeline(
   timeline: TimelineBlock[] | undefined,
@@ -88,7 +110,12 @@ export function normalizeLoadedMessage(m: ChatMessage): ChatMessage {
   return {
     ...m,
     timeline,
-    status: m.status === "interrupted" || hasInterrupted ? "interrupted" : m.status,
+    status:
+      m.status === "error"
+        ? "error"
+        : m.status === "interrupted" || hasInterrupted
+          ? "interrupted"
+          : m.status,
   };
 }
 

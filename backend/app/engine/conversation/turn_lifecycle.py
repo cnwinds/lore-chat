@@ -31,6 +31,8 @@ class TurnLifecycle:
         doc_context: list[str] | None = None,
         primary_doc: str | None = None,
         attachments: list[str] | None = None,
+        web_enabled: bool | None = None,
+        reuse_user_message_id: str | None = None,
     ) -> dict:
         store = self._store
         with store._lock:
@@ -71,28 +73,35 @@ class TurnLifecycle:
                 if active_turn is not None and active_turn["status"] == "running":
                     raise TurnInProgress(active_turn["id"])
 
-            now = user_ts or now_iso()
-            msg_id = new_id()
-            seq = store._next_seq(cid)
-            store.conn.execute(
-                """
-                INSERT INTO messages(
-                    id, conversation_id, seq, role, text, ts, status,
-                    client_message_id, doc_context_json, attachments_json, primary_doc
-                ) VALUES (?, ?, ?, 'user', ?, ?, 'complete', ?, ?, ?, ?)
-                """,
-                (
-                    msg_id,
-                    cid,
-                    seq,
-                    user_text,
-                    now,
-                    client_message_id,
-                    dumps_json(doc_context),
-                    dumps_json(attachments),
-                    primary_doc,
-                ),
-            )
+            if reuse_user_message_id:
+                msg_id = self._prepare_reuse_user_message(
+                    cid, reuse_user_message_id, user_text
+                )
+            else:
+                now = user_ts or now_iso()
+                msg_id = new_id()
+                seq = store._next_seq(cid)
+                store.conn.execute(
+                    """
+                    INSERT INTO messages(
+                        id, conversation_id, seq, role, text, ts, status,
+                        client_message_id, doc_context_json, attachments_json,
+                        primary_doc, web_enabled
+                    ) VALUES (?, ?, ?, 'user', ?, ?, 'complete', ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        msg_id,
+                        cid,
+                        seq,
+                        user_text,
+                        now,
+                        client_message_id,
+                        dumps_json(doc_context),
+                        dumps_json(attachments),
+                        primary_doc,
+                        None if web_enabled is None else int(bool(web_enabled)),
+                    ),
+                )
 
             turn_id = new_id()
             started_at = now_iso()
@@ -107,7 +116,8 @@ class TurnLifecycle:
                 (turn_id, cid, client_message_id, msg_id, int(observation_allowed), started_at),
             )
 
-            store._enqueue_index_jobs(msg_id, turn_id)
+            if not reuse_user_message_id:
+                store._enqueue_index_jobs(msg_id, turn_id)
             # 会话级空闲抽取：只打 dirty（已持锁，用 unlocked 变体）
             store.memory_schedule.mark_dirty_unlocked(cid, at=started_at)
             store._mark_dirty_and_stale(cid)
@@ -133,6 +143,60 @@ class TurnLifecycle:
                 "status": "running",
                 "user_message": store._message_row_to_dict(msg_row),
             }
+
+    def _prepare_reuse_user_message(
+        self, cid: str, reuse_user_message_id: str, user_text: str
+    ) -> str:
+        """删除该用户消息之后的内容与旧 turn，供原地重新回复。须已持 store._lock。"""
+        store = self._store
+        user_row = store.conn.execute(
+            "SELECT * FROM messages WHERE id = ? AND conversation_id = ?",
+            (reuse_user_message_id, cid),
+        ).fetchone()
+        if user_row is None:
+            raise ValueError("reuse_user_message_id not found")
+        if user_row["role"] != "user":
+            raise ValueError("reuse_user_message_id must be a user message")
+
+        # 不允许跨过后续真实用户轮次重生（inject 可随尾部一并清掉）
+        later_user = store.conn.execute(
+            """
+            SELECT id, client_message_id FROM messages
+            WHERE conversation_id = ? AND seq > ? AND role = 'user'
+            ORDER BY seq ASC
+            """,
+            (cid, user_row["seq"]),
+        ).fetchall()
+        for row in later_user:
+            cid_key = row["client_message_id"] or ""
+            if not str(cid_key).startswith("inject:"):
+                raise ValueError(
+                    "reuse_user_message_id is not the latest user turn"
+                )
+
+        old_turns = store.conn.execute(
+            """
+            SELECT id, status, assistant_message_id FROM turns
+            WHERE conversation_id = ? AND user_message_id = ?
+            """,
+            (cid, reuse_user_message_id),
+        ).fetchall()
+        for t in old_turns:
+            if t["status"] == "running":
+                raise TurnInProgress(t["id"])
+
+        store.conn.execute(
+            "DELETE FROM messages WHERE conversation_id = ? AND seq > ?",
+            (cid, user_row["seq"]),
+        )
+        store.conn.execute(
+            "DELETE FROM turns WHERE conversation_id = ? AND user_message_id = ?",
+            (cid, reuse_user_message_id),
+        )
+
+        # 正文以库内为准；请求里的 text 仅作校验提示，不覆盖
+        _ = user_text
+        return reuse_user_message_id
 
     def finalize_turn(self, cid: str, turn_id: str, assistant: dict) -> dict | None:
         store = self._store

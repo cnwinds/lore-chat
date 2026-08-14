@@ -119,14 +119,16 @@ export type ChatMessage = {
   doc_context?: DocContextItem[] | string[];
   primary_doc?: string;
   intent?: "recall" | "remember";
-  /** complete | interrupted — 来自持久化 turn 状态 */
-  status?: "complete" | "interrupted" | string;
+  /** complete | interrupted — 服务端 turn/消息落库；error — 失败（可落库或仅前端流式失败） */
+  status?: "complete" | "interrupted" | "error" | string;
   /** 本轮回复总耗时（毫秒），来自 SSE done 事件 */
   total_duration_ms?: number;
   /** 本轮实际使用的模型名 */
   model_name?: string;
   /** 是否因冷却/禁用/本轮失败排除而切换到更低优先级 */
   model_failover?: boolean;
+  /** 该用户提问发送时是否开启联网（重新回复时回放） */
+  web_enabled?: boolean;
   /** Mid-turn inject (client_message_id starts with inject:) */
   injected?: boolean;
   client_message_id?: string;

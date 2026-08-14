@@ -4190,6 +4190,41 @@ button.memory-fact-statement--jump:focus-visible {
   justify-content: space-between;
 }
 
+.chat-meta-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.chat-retry-btn {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
+}
+
+.chat-retry-btn:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--bg-muted);
+  border-color: var(--border-strong, var(--border));
+}
+
+.chat-retry-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .chat-copy-btn {
   display: inline-flex;
   align-items: center;

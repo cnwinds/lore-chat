@@ -7,6 +7,7 @@ import { useSendQueue } from "../hooks/chat/useSendQueue";
 import { useOutboundOrchestrator } from "../hooks/chat/useOutboundOrchestrator";
 import type { JumpTarget } from "../hooks/chat/useConversationJump";
 import {
+  getConversation,
   isMarkdownPath,
   normalizeDocContext,
   summarizeConversation,
@@ -15,7 +16,13 @@ import {
   type SourceRef,
 } from "../api";
 import { useDocPreview } from "../contexts/DocPreviewContext";
-import { markToolBlockResolved } from "../utils/chatMessage";
+import {
+  canRetryAssistantReply,
+  findPrecedingUserForRetry,
+  isInjectedUserMessage,
+  markToolBlockResolved,
+  normalizeLoadedMessage,
+} from "../utils/chatMessage";
 import { nowIsoDisplay } from "../utils/displayTime";
 import { newId } from "../utils/id";
 import {
@@ -172,7 +179,11 @@ export function Chat({
           docContext,
           primary: first.primary_doc ?? null,
         },
-        { webEnabled: first.webEnabled },
+        {
+          webEnabled: first.webEnabled,
+          reuseUserMessageId: first.reuseUserMessageId,
+          replaceAssistantIndex: first.replaceAssistantIndex,
+        },
       );
     },
     [runAgentStream],
@@ -325,6 +336,97 @@ export function Chat({
 
   function handleSkipFailed() {
     outbound.handleSkipFailed();
+  }
+
+  async function handleRetryAssistantReply(assistantSourceIndex: number) {
+    if (streamingRef.current) return;
+    let liveMsgs = msgs;
+    let user = findPrecedingUserForRetry(liveMsgs, assistantSourceIndex);
+    if (!user) return;
+    const text = (user.text || "").trim();
+    const attachments = user.attachments ?? [];
+    if (!text && attachments.length === 0) return;
+
+    let assistantIdx = assistantSourceIndex;
+    let reuseId = user.id;
+    if (!reuseId && conversationId) {
+      try {
+        const conv = await getConversation(conversationId);
+        if (conversationIdRef.current !== conversationId) return;
+        liveMsgs = conv.messages.map((m) =>
+          normalizeLoadedMessage({
+            ...m,
+            injected: isInjectedUserMessage(m),
+          }),
+        );
+        setMsgs(liveMsgs);
+        for (let i = liveMsgs.length - 1; i >= 0; i--) {
+          const m = liveMsgs[i];
+          if (m.role !== "assistant" || !canRetryAssistantReply(m)) continue;
+          const u = findPrecedingUserForRetry(liveMsgs, i);
+          if (
+            u?.id &&
+            (u.text || "").trim() === text &&
+            JSON.stringify(u.attachments ?? []) === JSON.stringify(attachments)
+          ) {
+            user = u;
+            reuseId = u.id;
+            assistantIdx = i;
+            break;
+          }
+        }
+      } catch {
+        /* keep local state */
+      }
+    }
+    if (!reuseId) {
+      window.alert("无法定位原提问，请刷新后再试");
+      return;
+    }
+
+    const docContext = normalizeDocContext(user.doc_context);
+    const docCtx = {
+      trayPaths: docContext.map((d) => d.path),
+      docContext,
+      primary: user.primary_doc ?? null,
+    };
+    const userMeta = {
+      attachments: attachments.length ? attachments : undefined,
+      doc_context: docContext.length ? docContext : undefined,
+      primary_doc: user.primary_doc ?? undefined,
+    };
+    const replyWeb =
+      typeof user.web_enabled === "boolean" ? user.web_enabled : webEnabled;
+
+    const shouldQueue = streaming || sendQueue.items.length > 0;
+    if (!shouldQueue) {
+      void runAgentStream(text, text, userMeta, docCtx, {
+        webEnabled: replyWeb,
+        reuseUserMessageId: reuseId,
+        replaceAssistantIndex: assistantIdx,
+      });
+      return;
+    }
+
+    const newItem: SendQueueItem = {
+      id: newId(),
+      text,
+      timing: "defer",
+      mergeWithNext: false,
+      doc_context: userMeta.doc_context,
+      primary_doc: user.primary_doc ?? null,
+      attachments: userMeta.attachments,
+      webEnabled: replyWeb,
+      reuseUserMessageId: reuseId,
+      replaceAssistantIndex: assistantIdx,
+      locked: false,
+      error: null,
+    };
+    if (outbound.itemsRef.current.length >= SEND_QUEUE_MAX) {
+      window.alert(`发送队列最多 ${SEND_QUEUE_MAX} 条`);
+      return;
+    }
+    outbound.enqueueAndKick(newItem);
   }
 
   function openArchiveModal() {
@@ -542,6 +644,7 @@ export function Chat({
         onOpenSource={handleOpenSource}
         onOpenConversation={handleOpenConversation}
         onQuestionResolved={handleQuestionResolved}
+        onRetryReply={handleRetryAssistantReply}
       />
       <div className="chat-composer-wrap">
         <ComposerSendQueue

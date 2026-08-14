@@ -18,6 +18,7 @@ import {
   emptyCandidate,
   hasCustomEndpoint,
   ModelSettingsTab,
+  maskApiKeyPlaceholder,
   parseCandidates,
   SECRET_KEYS,
   SEARCH_PROVIDER_OPTIONS,
@@ -41,11 +42,6 @@ const SEARCH_PROVIDER_IDS = new Set(
 const IMAGE_PROVIDER_IDS = new Set(
   IMAGE_PROVIDER_OPTIONS.map((o) => o.id),
 );
-
-function maskApiKeyPlaceholder(rawKey: string): string {
-  if (rawKey.includes("***") || rawKey === "****") return rawKey;
-  return rawKey.length <= 4 ? "****" : rawKey;
-}
 
 function parseProviderChainDrafts<T extends string>(
   raw: unknown,

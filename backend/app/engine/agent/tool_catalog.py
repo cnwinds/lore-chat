@@ -119,6 +119,18 @@ TOOL_LABELS = {
     "sandbox_job_status": "查询沙箱后台任务",
 }
 
+
+def resolve_tool_label(name: str, arguments: dict | None = None) -> str:
+    """时间线展示名：同工具按产物类型区分（SVG 是图像资产，不是代码/文本）。"""
+    base = TOOL_LABELS.get(name, name)
+    if name != "write_kb_file" or not isinstance(arguments, dict):
+        return base
+    fn = str(arguments.get("filename") or "").strip().lower()
+    if fn.endswith(".svg"):
+        return "写入知识库矢量图"
+    return base
+
+
 SANDBOX_TOOLS = frozenset({
     "sandbox_run",
     "sandbox_list_dir",
@@ -134,8 +146,9 @@ _KB_DIRECTORY_DESC = (
 )
 _KB_FILENAME_DESC = "Markdown 文件名，必须以 .md 结尾。示例：DeepSeek对比.md、常用命令.md"
 _KB_FILE_FILENAME_DESC = (
-    "非 Markdown 文本文件名（如 .sh/.py/.js/.yaml）；禁止 .md（文档请用 write_doc）。"
-    "示例：gen_audio.sh、fetch.py"
+    "非 Markdown 文件名：文本代码/配置（.sh/.py/.js/.yaml 等），"
+    "或矢量图 .svg（按图片资产落盘并预览）；禁止 .md（文档请用 write_doc）。"
+    "示例：gen_audio.sh、fetch.py、logo.svg"
 )
 
 

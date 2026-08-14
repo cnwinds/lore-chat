@@ -263,11 +263,22 @@ export function useAgentStream({
     userDisplayText?: string,
     userMeta?: Pick<ChatMessage, "attachments" | "doc_context" | "primary_doc">,
     docCtx?: DocContext,
-    opts?: { webEnabled?: boolean },
+    opts?: {
+      webEnabled?: boolean;
+      /** 原地重新回复：复用服务端用户消息 id */
+      reuseUserMessageId?: string;
+      /** 替换该下标的助手气泡（不追加用户消息） */
+      replaceAssistantIndex?: number;
+    },
   ): Promise<boolean> {
     if (streamingRef.current) return false;
     const display = userDisplayText ?? apiText;
-    const isFirstUserQuestion = !msgs.some((m) => m.role === "user");
+    const useWeb = opts?.webEnabled ?? webEnabled;
+    const reuseUserMessageId = opts?.reuseUserMessageId;
+    const replaceAssistantIndexOpt = opts?.replaceAssistantIndex;
+    const isRetry = !!reuseUserMessageId;
+    const isFirstUserQuestion =
+      !isRetry && !msgs.some((m) => m.role === "user");
     stickToBottomRef.current = true;
     stopRequestedRef.current = false;
     streamingRef.current = true;
@@ -285,6 +296,18 @@ export function useAgentStream({
       sources: [],
     };
     setMsgs((m) => {
+      if (isRetry && reuseUserMessageId) {
+        const userIdx = m.findIndex((x) => x.id === reuseUserMessageId);
+        const cut =
+          userIdx >= 0
+            ? userIdx + 1
+            : typeof replaceAssistantIndexOpt === "number"
+              ? replaceAssistantIndexOpt
+              : m.length;
+        const truncated = m.slice(0, Math.max(0, cut));
+        streamingAssistantIdxRef.current = truncated.length;
+        return [...truncated, assistantMsg];
+      }
       const assistantIdx = m.length + 1;
       streamingAssistantIdxRef.current = assistantIdx;
       return [
@@ -293,6 +316,7 @@ export function useAgentStream({
           role: "user",
           text: display,
           ts: nowIsoDisplay(),
+          web_enabled: useWeb,
           ...(userMeta?.attachments?.length
             ? { attachments: userMeta.attachments }
             : {}),
@@ -317,7 +341,6 @@ export function useAgentStream({
       }
       const ctx = docCtx ?? resolveDocContext();
       const clientMessageId = newId();
-      const useWeb = opts?.webEnabled ?? webEnabled;
       const result = await consumeEvents(
         chatStream(apiText, {
           conversationId: cid,
@@ -327,6 +350,7 @@ export function useAgentStream({
           webEnabled: useWeb,
           attachments: userMeta?.attachments ?? [],
           clientMessageId,
+          reuseUserMessageId,
           signal: controller.signal,
         }),
       );
@@ -342,7 +366,11 @@ export function useAgentStream({
       } else {
         streamFailed = true;
         const msg = err instanceof Error ? err.message : "请求失败";
-        patchAssistant((prevMsg) => ({ ...prevMsg, text: `错误：${msg}` }));
+        patchAssistant((prevMsg) => ({
+          ...prevMsg,
+          text: `错误：${msg}`,
+          status: "error",
+        }));
       }
     } finally {
       await finishObservation(cid, {
@@ -412,7 +440,11 @@ export function useAgentStream({
       } else {
         streamFailed = true;
         const msg = err instanceof Error ? err.message : "请求失败";
-        patchAssistant((prevMsg) => ({ ...prevMsg, text: `错误：${msg}` }));
+        patchAssistant((prevMsg) => ({
+          ...prevMsg,
+          text: `错误：${msg}`,
+          status: "error",
+        }));
       }
     } finally {
       await finishObservation(cid, {

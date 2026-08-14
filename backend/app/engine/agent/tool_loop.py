@@ -26,7 +26,7 @@ from app.engine.agent.run_report import AgentRunReport
 from app.engine.agent.tool_events import emit_tool_result_sse
 from app.engine.agent.tools import (
     PARALLELIZABLE_TOOLS,
-    TOOL_LABELS,
+    resolve_tool_label,
     ToolRegistry,
     can_parallelize,
 )
@@ -174,7 +174,7 @@ class AgentToolLoop:
                                 yield tool_start(
                                     tc.id,
                                     tc.name,
-                                    TOOL_LABELS[tc.name],
+                                    resolve_tool_label(tc.name, tc.arguments),
                                     tc.arguments,
                                 )
                                 out = None
@@ -335,7 +335,9 @@ class AgentToolLoop:
         yield parallel_batch_start(batch_id, [tc.name for tc in batch]), None
 
         for tc in batch:
-            yield tool_start(tc.id, tc.name, TOOL_LABELS[tc.name], tc.arguments), None
+            yield tool_start(
+                tc.id, tc.name, resolve_tool_label(tc.name, tc.arguments), tc.arguments
+            ), None
 
         # 合并各工具 stream：进度按 tool_call_id 推送，完成即出 tool_result（不必等整批）
         merge_q: asyncio.Queue[

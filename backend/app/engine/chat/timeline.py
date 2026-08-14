@@ -172,14 +172,22 @@ class TimelineAccumulator:
 
     def assistant_payload(self, status: str, *, error: str | None = None) -> dict:
         timeline = self.timeline
-        if status == "interrupted":
+        if status in ("interrupted", "error"):
             timeline = _mark_running_tools_interrupted(timeline)
+        text = self.assistant_text
+        msg_status = status
+        if error is not None:
+            if not (text or "").strip():
+                text = f"错误：{error}"
+            # 消息级 error 便于前端「重新回复」；turn 仍按非 complete → interrupted 落库
+            if status != "complete":
+                msg_status = "error"
         assistant: dict = {
-            "text": self.assistant_text,
+            "text": text,
             "timeline": timeline,
             "sources": self.all_sources,
             "total_duration_ms": self.total_duration_ms,
-            "status": status,
+            "status": msg_status,
         }
         atts = collect_timeline_attachments(timeline)
         if atts:

@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from app.engine.agent.prompts import MODE_DEFAULT, MODE_NO_WRITE
-from app.engine.agent.tool_catalog import select_tools
+from app.engine.agent.tool_catalog import resolve_tool_label, select_tools
 from app.engine.knowledge_writer import KbPathExistsError
 from app.storage.kb_text_files import is_kb_text_file
 from app.storage.repo import KnowledgeRepo
@@ -19,6 +19,18 @@ def test_is_kb_text_file_allowlist():
     assert is_kb_text_file("Dockerfile")
     assert not is_kb_text_file("note.md")
     assert not is_kb_text_file("shot.png")
+
+
+def test_resolve_tool_label_svg_vs_code():
+    assert (
+        resolve_tool_label("write_kb_file", {"filename": "logo.svg"})
+        == "写入知识库矢量图"
+    )
+    assert (
+        resolve_tool_label("write_kb_file", {"filename": "run.sh"})
+        == "写入知识库代码/文本文件"
+    )
+    assert resolve_tool_label("generate_image", {}) == "生成图片"
 
 
 def test_write_text_file_and_overwrite(tmp_path):

@@ -53,7 +53,8 @@ CREATE TABLE IF NOT EXISTS messages (
     attachments_json TEXT,
     primary_doc TEXT,
     model_name TEXT,
-    model_failover INTEGER NOT NULL DEFAULT 0
+    model_failover INTEGER NOT NULL DEFAULT 0,
+    web_enabled INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_messages_conversation_seq
     ON messages(conversation_id, seq);
@@ -158,6 +159,7 @@ class ConversationStore:
             self.conn.executescript(_SCHEMA)
             self._ensure_memory_schedule_columns()
             self._ensure_message_model_columns()
+            self._ensure_message_web_enabled_column()
             self.conn.commit()
 
         if legacy_single.exists():
@@ -222,6 +224,14 @@ class ConversationStore:
             self.conn.execute(
                 "ALTER TABLE messages ADD COLUMN model_failover INTEGER NOT NULL DEFAULT 0"
             )
+
+    def _ensure_message_web_enabled_column(self) -> None:
+        cols = {
+            r[1]
+            for r in self.conn.execute("PRAGMA table_info(messages)").fetchall()
+        }
+        if "web_enabled" not in cols:
+            self.conn.execute("ALTER TABLE messages ADD COLUMN web_enabled INTEGER")
 
     def _json_shards_migrated(self) -> bool:
         row = self.conn.execute(
@@ -404,6 +414,11 @@ class ConversationStore:
                 msg["model_failover"] = True
         except (KeyError, IndexError):
             pass
+        try:
+            if row["web_enabled"] is not None:
+                msg["web_enabled"] = bool(row["web_enabled"])
+        except (KeyError, IndexError):
+            pass
         return msg
 
     def _load_messages(self, cid: str) -> list[dict]:
@@ -575,6 +590,8 @@ class ConversationStore:
         doc_context: list[str] | None = None,
         primary_doc: str | None = None,
         attachments: list[str] | None = None,
+        web_enabled: bool | None = None,
+        reuse_user_message_id: str | None = None,
     ) -> dict:
         return self._turn_lifecycle.begin_turn(
             cid,
@@ -585,6 +602,8 @@ class ConversationStore:
             doc_context=doc_context,
             primary_doc=primary_doc,
             attachments=attachments,
+            web_enabled=web_enabled,
+            reuse_user_message_id=reuse_user_message_id,
         )
 
     def finalize_turn(self, cid: str, turn_id: str, assistant: dict) -> dict | None:

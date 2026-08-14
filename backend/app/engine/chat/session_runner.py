@@ -62,6 +62,7 @@ class ChatSessionRunner:
         doc_paths: list[str],
         skill_catalog: list[dict[str, str]] | None = None,
         web_enabled: bool,
+        reuse_user_message_id: str | None = None,
     ) -> dict:
         catalog = self.resolve_skill_catalog(skill_catalog)
         return self.turn_hub.begin_and_ensure(
@@ -75,6 +76,7 @@ class ChatSessionRunner:
             doc_paths=doc_paths,
             skill_catalog=catalog,
             web_enabled=web_enabled,
+            reuse_user_message_id=reuse_user_message_id,
         )
 
     async def stream_ephemeral(

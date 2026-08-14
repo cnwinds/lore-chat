@@ -62,6 +62,8 @@ class ChatBody(BaseModel):
     web_enabled: bool = False
     attachments: list[str] = []
     observation_allowed: bool = True
+    # 原地重新回复：复用已有用户消息，不追加重复提问
+    reuse_user_message_id: str | None = None
 
 
 class InjectBody(BaseModel):

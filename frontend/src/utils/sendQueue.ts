@@ -12,6 +12,9 @@ export type SendQueueItem = {
   primary_doc?: string | null;
   attachments?: string[];
   webEnabled: boolean;
+  /** 原地重新回复：复用已有用户消息 */
+  reuseUserMessageId?: string;
+  replaceAssistantIndex?: number;
   /** Locked while inject submitted to backend for current turn. */
   locked?: boolean;
   error?: string | null;
@@ -42,6 +45,14 @@ export function loadSendQueue(conversationId: string | null): SendQueueItem[] {
         primary_doc: x.primary_doc ?? null,
         attachments: Array.isArray(x.attachments) ? x.attachments : undefined,
         webEnabled: !!x.webEnabled,
+        reuseUserMessageId:
+          typeof x.reuseUserMessageId === "string"
+            ? x.reuseUserMessageId
+            : undefined,
+        replaceAssistantIndex:
+          typeof x.replaceAssistantIndex === "number"
+            ? x.replaceAssistantIndex
+            : undefined,
         locked: false,
         error: null,
       }));
@@ -66,6 +77,8 @@ export function saveSendQueue(
         primary_doc,
         attachments,
         webEnabled,
+        reuseUserMessageId,
+        replaceAssistantIndex,
       }) => ({
         id,
         text,
@@ -75,6 +88,8 @@ export function saveSendQueue(
         primary_doc,
         attachments,
         webEnabled,
+        reuseUserMessageId,
+        replaceAssistantIndex,
       }),
     );
     localStorage.setItem(

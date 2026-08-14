@@ -26,6 +26,8 @@ export type ModelCandidateDraft = {
   model: string;
   base_url: string;
   api_key: string;
+  /** 已保存密钥的首尾脱敏展示（作 placeholder；与检索/生图一致） */
+  api_key_masked?: string;
   image: boolean;
   thinking: boolean;
   effort: string;
@@ -37,6 +39,13 @@ export type ModelCandidateDraft = {
   /** 用户手动改过能力后，onBlur 不再覆盖 */
   caps_user_edited?: boolean;
 };
+
+/** 后端已脱敏则原样；否则本地补首尾掩码，避免 placeholder 露出全文。 */
+export function maskApiKeyPlaceholder(rawKey: string): string {
+  if (rawKey.includes("***") || rawKey === "****") return rawKey;
+  if (rawKey.length <= 4) return "****";
+  return `${rawKey.slice(0, 2)}***${rawKey.slice(-4)}`;
+}
 
 type ModelSlot = "embed";
 
@@ -123,12 +132,14 @@ export function parseCandidates(raw: unknown): ModelCandidateDraft[] {
         : supportedEfforts(model, protocol);
       const effort = pickEffortInOptions(str(x.effort), opts);
       const base = str(x.base_url);
-      const hadKey = typeof x.api_key === "string" && Boolean(x.api_key.trim());
+      const rawKey = typeof x.api_key === "string" ? x.api_key.trim() : "";
+      const hadKey = Boolean(rawKey);
       return {
         id: str(x.id) || newId().slice(0, 12),
         model,
         base_url: base,
         api_key: "",
+        ...(hadKey ? { api_key_masked: maskApiKeyPlaceholder(rawKey) } : {}),
         image: Boolean(x.image),
         thinking: Boolean(x.thinking),
         effort,
@@ -739,7 +750,7 @@ function ChainEditor({
                       value={c.api_key}
                       onChange={(e) => updateAt(i, { api_key: e.target.value })}
                       disabled={saving}
-                      placeholder="留空保持原密钥"
+                      placeholder={c.api_key_masked || "未设置"}
                     />
                   </label>
                 </div>

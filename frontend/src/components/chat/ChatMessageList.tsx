@@ -1,6 +1,6 @@
 import type { MutableRefObject, RefObject } from "react";
 import { formatDuration, type ChatMessage, type IngestResult, type SourceRef } from "../../api";
-import { expandMessagesForDisplay } from "../../utils/chatMessage";
+import { expandMessagesForDisplay, canRetryAssistantReply, findPrecedingUserForRetry } from "../../utils/chatMessage";
 import type { ConversationLinkTarget } from "../../utils/conversationLinks";
 import { LoreLogo } from "../LoreLogo";
 import { ChatMessageRow, messageHasBody } from "./ChatMessageRow";
@@ -24,6 +24,7 @@ export type ChatMessageListProps = {
     result: IngestResult,
     choiceLabel: string,
   ) => void;
+  onRetryReply?: (assistantSourceIndex: number) => void;
 };
 
 export function ChatMessageList({
@@ -40,6 +41,7 @@ export function ChatMessageList({
   onOpenSource,
   onOpenConversation,
   onQuestionResolved,
+  onRetryReply,
 }: ChatMessageListProps) {
   const rows = expandMessagesForDisplay(msgs);
   const showWelcome = !loadingHistory && msgs.length === 0;
@@ -63,6 +65,17 @@ export function ChatMessageList({
               if (!messageHasBody(row.message, isLiveStreaming)) {
                 return null;
               }
+              const preceding = findPrecedingUserForRetry(msgs, row.sourceIndex);
+              const precedingRetryable =
+                !!preceding &&
+                (!!(preceding.text || "").trim() ||
+                  !!(preceding.attachments && preceding.attachments.length));
+              const canRetry =
+                row.isTailSlice &&
+                !isLiveStreaming &&
+                canRetryAssistantReply(row.message) &&
+                precedingRetryable &&
+                !!onRetryReply;
               return (
                 <ChatMessageRow
                   key={row.key}
@@ -75,6 +88,12 @@ export function ChatMessageList({
                   onOpenSource={onOpenSource}
                   onOpenConversation={onOpenConversation}
                   onQuestionResolved={onQuestionResolved}
+                  onRetryReply={
+                    canRetry
+                      ? () => onRetryReply(row.sourceIndex)
+                      : undefined
+                  }
+                  retryDisabled={streaming}
                 />
               );
             })}

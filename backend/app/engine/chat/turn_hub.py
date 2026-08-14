@@ -176,13 +176,23 @@ class TurnExecutionHub:
         skill_catalog: list[dict[str, str]] | None,
         web_enabled: bool,
         history: list[dict] | None = None,
+        reuse_user_message_id: str | None = None,
     ) -> dict:
         """回合生命周期：begin_turn +（若 running）启动 Task。观测另走 subscribe。"""
         hist = history
         if hist is None:
-            hist = self.conversations.llm_history(
-                self.conversations.get(conversation_id)
-            )
+            conv = self.conversations.get(conversation_id)
+            if reuse_user_message_id:
+                # 重生：历史不含被重生的用户消息及其后内容
+                prior = []
+                for m in conv.get("messages") or []:
+                    if m.get("id") == reuse_user_message_id:
+                        break
+                    prior.append(m)
+                hist = self.conversations.llm_history({**conv, "messages": prior})
+            else:
+                # 新回合：须在 begin_turn 之前快照，避免 history 含本轮用户消息
+                hist = self.conversations.llm_history(conv)
         turn = self.conversations.begin_turn(
             conversation_id,
             user_text=user_text,
@@ -191,6 +201,8 @@ class TurnExecutionHub:
             doc_context=doc_context,
             primary_doc=primary_doc,
             attachments=attachments,
+            web_enabled=web_enabled,
+            reuse_user_message_id=reuse_user_message_id,
         )
         if turn.get("status", "running") == "running":
             self.ensure_running(

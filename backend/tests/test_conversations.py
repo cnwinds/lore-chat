@@ -410,3 +410,84 @@ def test_llm_history_truncates_by_turns(tmp_path):
         {"role": "user", "content": "问题2"},
         {"role": "assistant", "content": "回答2"},
     ]
+
+
+def test_begin_turn_stores_web_enabled(tmp_path):
+    store = _store(tmp_path)
+    cid = store.create()
+    turn = store.begin_turn(
+        cid,
+        user_text="联网问",
+        client_message_id="cli-web",
+        observation_allowed=False,
+        web_enabled=True,
+    )
+    assert turn["user_message"]["web_enabled"] is True
+
+
+def test_reuse_user_message_regenerates_without_duplicate_user(tmp_path):
+    store = _store(tmp_path)
+    cid = store.create()
+    turn = store.begin_turn(
+        cid, user_text="原问", client_message_id="cli-1", observation_allowed=False
+    )
+    user_id = turn["user_message"]["id"]
+    store.finalize_turn(
+        cid,
+        turn_id=turn["turn_id"],
+        assistant={
+            "text": "错误：失败",
+            "timeline": [],
+            "sources": [],
+            "status": "error",
+            "error": "失败",
+        },
+    )
+    conv = store.get(cid)
+    assert len(conv["messages"]) == 2
+
+    regen = store.begin_turn(
+        cid,
+        user_text="原问",
+        client_message_id="cli-2",
+        observation_allowed=False,
+        reuse_user_message_id=user_id,
+    )
+    assert regen["status"] == "running"
+    assert regen["user_message"]["id"] == user_id
+    conv2 = store.get(cid)
+    assert len(conv2["messages"]) == 1
+    assert conv2["messages"][0]["id"] == user_id
+    assert conv2["active_turn"]["status"] == "running"
+
+
+def test_reuse_user_message_rejects_non_latest_turn(tmp_path):
+    store = _store(tmp_path)
+    cid = store.create()
+    t1 = store.begin_turn(
+        cid, user_text="第一问", client_message_id="cli-1", observation_allowed=False
+    )
+    store.finalize_turn(
+        cid,
+        turn_id=t1["turn_id"],
+        assistant={"text": "答1", "timeline": [], "sources": [], "status": "complete"},
+    )
+    t2 = store.begin_turn(
+        cid, user_text="第二问", client_message_id="cli-2", observation_allowed=False
+    )
+    store.finalize_turn(
+        cid,
+        turn_id=t2["turn_id"],
+        assistant={"text": "答2", "timeline": [], "sources": [], "status": "complete"},
+    )
+    import pytest
+
+    with pytest.raises(ValueError, match="latest user turn"):
+        store.begin_turn(
+            cid,
+            user_text="第一问",
+            client_message_id="cli-3",
+            observation_allowed=False,
+            reuse_user_message_id=t1["user_message"]["id"],
+        )
+

@@ -7,6 +7,7 @@ from app.engine.agent.tool_catalog import (
     READ_ONLY_TOOLS,
     PARALLELIZABLE_TOOLS,
     can_parallelize,
+    resolve_tool_label,
     select_tools,
 )
 from app.engine.agent.tool_dispatch import dispatch_tool
@@ -29,6 +30,7 @@ __all__ = [
     "ToolRegistry",
     "TOOL_DEFINITIONS",
     "TOOL_LABELS",
+    "resolve_tool_label",
     "select_tools",
     "can_parallelize",
     "READ_ONLY_TOOLS",

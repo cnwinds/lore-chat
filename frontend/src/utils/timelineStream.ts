@@ -5,7 +5,7 @@
 
 import { appendProgressChunk } from "./progressLog";
 import { clipToolQuery } from "./toolQuery";
-import { TOOL_LABELS } from "./toolLabels";
+import { resolveToolLabel } from "./toolLabels";
 import type {
   ChatMessage,
   DocContextItem,
@@ -66,7 +66,12 @@ export function updateTimeline(
       type: "tool",
       id: data.id as string,
       tool: data.tool as string,
-      label: (data.label as string) || TOOL_LABELS[data.tool as string] || (data.tool as string),
+      label:
+        (data.label as string) ||
+        resolveToolLabel(
+          data.tool as string,
+          (data.input as Record<string, unknown> | undefined) ?? null,
+        ),
       ts: data.ts as string,
       status: "running",
       started_at_ms: Date.now(),

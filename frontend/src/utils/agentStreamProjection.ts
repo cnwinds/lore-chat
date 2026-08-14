@@ -33,7 +33,11 @@ export function reduceStreamEvent(
       state: {
         ...state,
         streamFailed: true,
-        assistant: { ...state.assistant, text: `错误：${message}` },
+        assistant: {
+          ...state.assistant,
+          text: `错误：${message}`,
+          status: "error",
+        },
       },
       stop: true,
     };
@@ -155,6 +159,7 @@ export type ObservationEndInfo = {
 
 /** 是否在观测结束后从服务端重载消息列表。 */
 export function shouldReloadConversation(info: ObservationEndInfo): "full" | "aborted" | "none" {
+  // 流失败保留本地错误气泡（可能尚未落库）；刷新后靠服务端 interrupted/error 正文
   if (info.streamFailed || info.detached) return "none";
   if (info.aborted) return "aborted";
   return "full";

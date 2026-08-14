@@ -80,6 +80,14 @@ def test_interrupted_payload_marks_running_tools():
     assert "连接中断" in payload["timeline"][0]["summary"]
 
 
+def test_error_payload_fills_text_and_status():
+    acc = TimelineAccumulator()
+    payload = acc.assistant_payload("interrupted", error="网关超时")
+    assert payload["status"] == "error"
+    assert payload["text"] == "错误：网关超时"
+    assert payload["error"] == "网关超时"
+
+
 def test_generate_image_clears_progress_log_on_result():
     acc = TimelineAccumulator()
     acc.accumulate(

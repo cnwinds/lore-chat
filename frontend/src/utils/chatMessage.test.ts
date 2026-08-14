@@ -6,6 +6,8 @@ import {
   expandMessagesForDisplay,
   timelineAwaitsUserAnswer,
   normalizeLoadedMessage,
+  canRetryAssistantReply,
+  findPrecedingUserForRetry,
 } from "./chatMessage";
 import type { ChatMessage } from "../api";
 
@@ -159,5 +161,64 @@ describe("normalizeLoadedMessage", () => {
       status: "interrupted",
       summary: "连接中断，未完成",
     });
+  });
+});
+
+describe("canRetryAssistantReply", () => {
+  it("allows error and interrupted assistant messages", () => {
+    expect(
+      canRetryAssistantReply({ role: "assistant", text: "错误：超时", status: "error" }),
+    ).toBe(true);
+    expect(
+      canRetryAssistantReply({ role: "assistant", text: "半截", status: "interrupted" }),
+    ).toBe(true);
+    expect(
+      canRetryAssistantReply({ role: "assistant", text: "错误：网关失败" }),
+    ).toBe(true);
+  });
+
+  it("rejects complete replies and pending ask_user", () => {
+    expect(
+      canRetryAssistantReply({ role: "assistant", text: "正常回复", status: "complete" }),
+    ).toBe(false);
+    expect(
+      canRetryAssistantReply({
+        role: "assistant",
+        status: "interrupted",
+        timeline: [
+          {
+            type: "tool",
+            id: "t1",
+            tool: "ask_user",
+            label: "提问",
+            ts: "t",
+            status: "done",
+            question_id: "q1",
+            options: [{ id: "a", label: "A" }],
+          },
+        ],
+      }),
+    ).toBe(false);
+  });
+});
+
+describe("findPrecedingUserForRetry", () => {
+  it("returns the turn user and stops at previous assistant", () => {
+    const msgs: ChatMessage[] = [
+      { role: "user", text: "旧问" },
+      { role: "assistant", text: "旧答" },
+      { role: "user", text: "新问", attachments: ["a.png"] },
+      { role: "assistant", text: "错误：失败", status: "error" },
+    ];
+    expect(findPrecedingUserForRetry(msgs, 3)?.text).toBe("新问");
+  });
+
+  it("skips injected user messages", () => {
+    const msgs: ChatMessage[] = [
+      { role: "user", text: "主问" },
+      { role: "user", text: "插入", injected: true, client_message_id: "inject:1" },
+      { role: "assistant", text: "错误：x", status: "error" },
+    ];
+    expect(findPrecedingUserForRetry(msgs, 2)?.text).toBe("主问");
   });
 });
