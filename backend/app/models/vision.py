@@ -13,7 +13,21 @@ from urllib.parse import quote
 
 from app.models.candidate import ImageWire, ModelCandidate
 
-_IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tif", ".tiff", ".ico"}
+_IMAGE_SUFFIXES = {
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".webp",
+    ".bmp",
+    ".svg",
+    ".tif",
+    ".tiff",
+    ".ico",
+}
+
+# 可展示但多数识图 API 不吃的矢量图：聊天缩略图走 download，不送 multimodal
+_VISION_SKIP_SUFFIXES = {".svg"}
 
 
 def is_image_path(path: str) -> bool:
@@ -22,6 +36,13 @@ def is_image_path(path: str) -> bool:
     if mime and mime.startswith("image/"):
         return True
     return Path(path).suffix.lower() in _IMAGE_SUFFIXES
+
+
+def is_vision_image_path(path: str) -> bool:
+    """是否适合作为识图 API 的图片输入（排除 SVG）。"""
+    if Path(path).suffix.lower() in _VISION_SKIP_SUFFIXES:
+        return False
+    return is_image_path(path)
 
 
 def sniff_image_mime(path: Path) -> str | None:
@@ -146,6 +167,10 @@ def build_user_content_with_images(
     other: list[str] = []
     for p in attachment_paths:
         abs_try = (kb_path / p).resolve()
+        # SVG：聊天可预览，但不送识图 API
+        if Path(p).suffix.lower() in _VISION_SKIP_SUFFIXES:
+            other.append(p)
+            continue
         if abs_try.is_file() and is_image_file(abs_try):
             image_rels.append(p)
         elif is_image_path(p):

@@ -53,6 +53,10 @@ def emit_tool_result_sse(tc: ToolCall, out: dict, duration_ms: int) -> str:
             clipped = clip_tool_query(q)
             if clipped:
                 extra["query"] = clipped
+    elif tc.name == "publish_from_sandbox":
+        extra.update(_copy_keys(out, ("attachments", "rel_path")))
+    elif tc.name == "write_kb_file":
+        extra.update(_copy_keys(out, ("attachments", "rel_path")))
     return tool_result(
         tc.id,
         tc.name,

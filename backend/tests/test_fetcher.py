@@ -6,6 +6,7 @@ import pytest
 from app.engine.web.fetcher import (
     WebFetcher,
     content_type_is_pdf,
+    content_type_is_plain_text,
     html_to_markdown,
     is_safe_url,
     title_from_url,
@@ -131,6 +132,29 @@ async def test_fetch_returns_markdown():
     assert result.error is None
     assert result.title == "Test"
     assert "Hello world" in result.markdown
+
+
+def test_content_type_is_plain_text():
+    assert content_type_is_plain_text("text/plain; charset=utf-8") is True
+    assert content_type_is_plain_text("text/markdown") is True
+    assert content_type_is_plain_text("text/html; charset=utf-8") is False
+
+
+@pytest.mark.asyncio
+async def test_fetch_plain_text_skips_trafilatura():
+    """raw.githubusercontent.com 等返回 text/plain；勿经 HTML 抽取变成空串。"""
+    raw = b"# Lore Chat\n\nA knowledge base assistant.\n"
+    f = WebFetcher(timeout=5, max_bytes=10000)
+    with _patch_client(
+        _FakeStreamResp(raw, {"content-type": "text/plain; charset=utf-8"})
+    ):
+        result = await f.fetch(
+            "https://raw.githubusercontent.com/cnwinds/lore-chat/master/README.md"
+        )
+    assert result.error is None, result.error
+    assert "Lore Chat" in result.markdown
+    assert "knowledge base" in result.markdown
+    assert result.title.endswith("README.md")
 
 
 @pytest.mark.asyncio

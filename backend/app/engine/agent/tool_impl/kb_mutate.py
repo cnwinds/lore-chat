@@ -16,6 +16,7 @@ _MEMORY_FILE_DISABLED_MSG = (
 )
 from app.engine.organizer import Organizer
 from app.engine.patch import Edit, Insert, apply_edits, apply_insert
+from app.storage.kb_media_paths import is_image_filename
 from app.storage.kb_paths import KbPathError
 from app.storage.repo import KnowledgeRepo
 
@@ -232,7 +233,7 @@ class KbMutateTools:
             }
         rel = result["rel_path"]
         action = "已覆盖" if result.get("overwritten") else "已写入"
-        return {
+        out: dict = {
             "summary": f"{action}知识库文件：{rel}",
             "sources": [{"type": "kb", "path": rel}],
             "status": "saved",
@@ -240,6 +241,10 @@ class KbMutateTools:
             "kind": result.get("kind"),
             "overwritten": bool(result.get("overwritten")),
         }
+        # SVG 等图片与 PNG 同轨：挂附件以便信息流出缩略图
+        if is_image_filename(filename):
+            out["attachments"] = [rel]
+        return out
 
     def summarize_conversation(
         self, args: dict, *, conversation_id: str | None = None

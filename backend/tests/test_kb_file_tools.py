@@ -59,6 +59,51 @@ def test_write_text_file_rejects_md(tmp_path):
         w.write_text_file(directory="x", filename="a.md", content="# hi\n")
 
 
+def test_write_text_file_allows_svg(tmp_path):
+    repo = KnowledgeRepo(tmp_path / "knowledge")
+    w = make_writer(repo, tmp_path)
+    svg = '<svg xmlns="http://www.w3.org/2000/svg"><rect width="10" height="10"/></svg>\n'
+    r = w.write_text_file(
+        directory="媒体/生成/2026",
+        filename="logo.svg",
+        content=svg,
+    )
+    assert r["rel_path"] == "媒体/生成/2026/logo.svg"
+    assert repo.abs_path(r["rel_path"]).read_text(encoding="utf-8") == svg
+
+
+@pytest.mark.asyncio
+async def test_write_kb_file_svg_returns_attachments(tmp_path):
+    registry, _ = _make_registry(tmp_path)
+    svg = '<svg xmlns="http://www.w3.org/2000/svg"><circle r="5"/></svg>\n'
+    out = await registry.execute(
+        "write_kb_file",
+        {
+            "directory": "媒体/生成/2026",
+            "filename": "mark.svg",
+            "content": svg,
+        },
+    )
+    assert out.get("status") == "saved"
+    assert out.get("rel_path") == "媒体/生成/2026/mark.svg"
+    assert out.get("attachments") == ["媒体/生成/2026/mark.svg"]
+    assert registry.repo.abs_path(out["rel_path"]).read_text(encoding="utf-8") == svg
+
+
+def test_write_text_file_rejects_unknown_binary_ext(tmp_path):
+    repo = KnowledgeRepo(tmp_path / "knowledge")
+    w = make_writer(repo, tmp_path)
+    with pytest.raises(ValueError, match="不支持的文件类型"):
+        w.write_text_file(directory="x", filename="a.bin", content="x")
+
+
+def test_write_text_file_rejects_raster_image(tmp_path):
+    repo = KnowledgeRepo(tmp_path / "knowledge")
+    w = make_writer(repo, tmp_path)
+    with pytest.raises(ValueError, match="generate_image|publish_from_sandbox"):
+        w.write_text_file(directory="图", filename="a.png", content="not-a-png")
+
+
 @pytest.mark.asyncio
 async def test_write_kb_file_tool_roundtrip(tmp_path):
     registry, _ = _make_registry(tmp_path)

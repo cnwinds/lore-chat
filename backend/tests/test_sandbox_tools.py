@@ -183,25 +183,60 @@ async def test_publish_from_sandbox_batch_partial(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_publish_rejects_binary_asset(tmp_path):
-    """Agent publish 走严格准入；二进制请经 HTTP 树导入。"""
+async def test_publish_rejects_non_image_binary(tmp_path):
+    """Agent publish：非图片二进制仍拒；图片（含 SVG）放行。"""
     registry, runtime = _make_registry(tmp_path)
     assert runtime is not None
-    png = b"\x89PNG\r\n\x1a\n" + bytes(range(256))
-    await runtime.write_file("/workspace/shot.png", png)
+    await runtime.write_file("/workspace/blob.bin", b"\x00\x01\x02\xff" + bytes(range(64)))
     pub = await registry.execute(
         "publish_from_sandbox",
         {
-            "sandbox_path": "/workspace/shot.png",
+            "sandbox_path": "/workspace/blob.bin",
             "directory": "图",
-            "filename": "shot.png",
+            "filename": "blob.bin",
         },
     )
     assert pub.get("ok") in (0, None) or pub.get("failed") == 1 or pub.get("error")
-    assert "shot.png" not in (pub.get("rel_path") or "")
+    assert "blob.bin" not in (pub.get("rel_path") or "")
     items = pub.get("items") or []
     if items:
         assert items[0].get("ok") is False
+
+
+@pytest.mark.asyncio
+async def test_publish_image_png_and_svg_as_attachments(tmp_path):
+    """PNG/SVG 与位图同轨：可 publish，并挂 attachments 供聊天预览。"""
+    registry, runtime = _make_registry(tmp_path)
+    assert runtime is not None
+    png = b"\x89PNG\r\n\x1a\n" + bytes(range(32))
+    svg = b'<svg xmlns="http://www.w3.org/2000/svg"><circle r="10"/></svg>\n'
+    await runtime.write_file("/workspace/shot.png", png)
+    await runtime.write_file("/workspace/logo.svg", svg)
+    pub = await registry.execute(
+        "publish_from_sandbox",
+        {
+            "files": [
+                {
+                    "sandbox_path": "/workspace/shot.png",
+                    "directory": "媒体/生成/2026",
+                    "filename": "shot.png",
+                },
+                {
+                    "sandbox_path": "/workspace/logo.svg",
+                    "directory": "媒体/生成/2026",
+                    "filename": "logo.svg",
+                },
+            ]
+        },
+    )
+    assert pub.get("ok") == 2, pub
+    assert pub.get("failed") == 0
+    assert pub.get("attachments") == [
+        "媒体/生成/2026/shot.png",
+        "媒体/生成/2026/logo.svg",
+    ]
+    assert registry.repo.abs_path("媒体/生成/2026/shot.png").read_bytes() == png
+    assert registry.repo.abs_path("媒体/生成/2026/logo.svg").read_bytes() == svg
 
 
 @pytest.mark.asyncio

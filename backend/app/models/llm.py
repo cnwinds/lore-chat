@@ -147,6 +147,9 @@ def _messages_need_image(messages: list[dict], *, kb_path: Path | None = None) -
             for p in atts:
                 if not isinstance(p, str):
                     continue
+                # SVG 可预览但不走识图路由（与 build_user_content_with_images 一致）
+                if Path(p).suffix.lower() == ".svg":
+                    continue
                 if root is not None:
                     abs_p = (root / p).resolve()
                     if abs_p.is_file() and is_image_file(abs_p):

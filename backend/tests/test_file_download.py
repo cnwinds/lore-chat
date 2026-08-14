@@ -11,6 +11,10 @@ def test_media_type_png():
     assert media_type_for_filename("shot.png") == "image/png"
 
 
+def test_media_type_svg():
+    assert media_type_for_filename("logo.svg") == "image/svg+xml"
+
+
 def test_media_type_unknown_fallback():
     assert media_type_for_filename("data.bin") == "application/octet-stream"
 
@@ -25,6 +29,13 @@ def test_inline_by_default_including_octet_stream():
     assert content_disposition_type("application/pdf") == "inline"
     assert content_disposition_type("application/octet-stream") == "inline"
     assert content_disposition_type("text/plain; charset=utf-8") == "inline"
+
+
+def test_svg_forces_attachment_even_without_download_flag():
+    assert (
+        content_disposition_type("image/svg+xml", filename="logo.svg") == "attachment"
+    )
+    assert content_disposition_type("image/png", filename="a.png") == "inline"
 
 
 def test_force_download_overrides_inline():

@@ -12,6 +12,7 @@ from pathlib import PurePosixPath
 
 from app.engine.knowledge_writer import KbPathExistsError, KnowledgeWriter
 from app.engine.sandbox.protocol import SandboxRuntime
+from app.storage.kb_media_paths import is_image_filename
 from app.storage.kb_paths import KbPathError
 
 
@@ -246,6 +247,7 @@ class KbSandboxExchange:
         await runtime.ensure_ready()
         items_out: list[dict] = []
         sources: list[dict] = []
+        attachments: list[str] = []
         ok_n = 0
         for spec in parsed:
             item: dict = {
@@ -297,6 +299,9 @@ class KbSandboxExchange:
             ok_n += 1
             if rel:
                 sources.append({"type": "kb", "path": rel})
+                # 图片（含 SVG）挂附件，聊天侧与 generate_image 一样出缩略图
+                if is_image_filename(PurePosixPath(rel).name):
+                    attachments.append(rel)
 
         failed_n = len(items_out) - ok_n
         lines = [
@@ -314,6 +319,8 @@ class KbSandboxExchange:
             "failed": failed_n,
             "items": items_out,
         }
+        if attachments:
+            out["attachments"] = attachments
         if failed_n:
             out["error"] = f"{failed_n} file(s) failed"
         if len(items_out) == 1:

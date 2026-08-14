@@ -23,6 +23,8 @@ LORECHAT_COMPOSE_SANDBOX="${ROOT}/docker/docker-compose.sandbox.yml"
 LORECHAT_COMPOSE_DEV_FILE="${ROOT}/docker/docker-compose.dev.yml"
 LORECHAT_DEFAULT_SANDBOX_IMAGE="lorechat-sandbox-agent:local"
 COMPOSE_DEV_FILE="${RUNTIME}/compose-dev"
+PROXY_RELAY_PID_FILE="${RUNTIME}/proxy-relay.pid"
+PROXY_RELAY_LOG="${RUNTIME}/proxy-relay.log"
 
 usage() {
   cat <<'EOF'
@@ -58,6 +60,63 @@ need_cmd() {
 
 ensure_runtime() {
   mkdir -p "${RUNTIME}"
+}
+
+# 读 .env 中的 KEY=VALUE（忽略注释/空行）；无则空
+_lorechat_env_get() {
+  local key="$1"
+  [[ -f "${ROOT}/.env" ]] || return 0
+  local line
+  line="$(grep -E "^${key}=" "${ROOT}/.env" 2>/dev/null | tail -n1 || true)"
+  [[ -n "${line}" ]] || return 0
+  printf '%s' "${line#*=}"
+}
+
+# WSL/本机 Clash 仅监听 127.0.0.1 时，为 Docker 起 0.0.0.0 转发
+ensure_proxy_relay() {
+  local enabled target listen
+  enabled="$(_lorechat_env_get LORECHAT_HOST_PROXY_RELAY)"
+  [[ "${enabled}" == "1" || "${enabled}" == "true" ]] || return 0
+
+  target="$(_lorechat_env_get LORECHAT_PROXY_RELAY_TARGET)"
+  listen="$(_lorechat_env_get LORECHAT_PROXY_RELAY_LISTEN)"
+  target="${target:-127.0.0.1:7897}"
+  listen="${listen:-0.0.0.0:17897}"
+
+  if [[ -f "${PROXY_RELAY_PID_FILE}" ]]; then
+    local old
+    old="$(tr -d '[:space:]' <"${PROXY_RELAY_PID_FILE}" || true)"
+    if [[ -n "${old}" ]] && kill -0 "${old}" 2>/dev/null; then
+      echo "[Lore Chat] Proxy relay already running (pid ${old}): ${listen} → ${target}"
+      return 0
+    fi
+    rm -f "${PROXY_RELAY_PID_FILE}"
+  fi
+
+  need_cmd python3
+  nohup python3 "${ROOT}/scripts/host-proxy-relay.py" \
+    --listen "${listen}" \
+    --target "${target}" \
+    >>"${PROXY_RELAY_LOG}" 2>&1 &
+  echo $! >"${PROXY_RELAY_PID_FILE}"
+  sleep 0.3
+  if kill -0 "$(tr -d '[:space:]' <"${PROXY_RELAY_PID_FILE}")" 2>/dev/null; then
+    echo "[Lore Chat] Proxy relay: ${listen} → ${target}"
+  else
+    echo "[Lore Chat] Proxy relay failed to start; see ${PROXY_RELAY_LOG}" >&2
+    rm -f "${PROXY_RELAY_PID_FILE}"
+  fi
+}
+
+stop_proxy_relay() {
+  [[ -f "${PROXY_RELAY_PID_FILE}" ]] || return 0
+  local pid
+  pid="$(tr -d '[:space:]' <"${PROXY_RELAY_PID_FILE}" || true)"
+  if [[ -n "${pid}" ]] && kill -0 "${pid}" 2>/dev/null; then
+    kill "${pid}" 2>/dev/null || true
+    echo "[Lore Chat] Proxy relay stopped"
+  fi
+  rm -f "${PROXY_RELAY_PID_FILE}"
 }
 
 do_setup() {
@@ -164,6 +223,7 @@ do_start() {
   if [[ "${stack_mode}" == "work" ]]; then
     lorechat_warn_work_images
   fi
+  ensure_proxy_relay
   echo "start" >"${MODE_FILE}"
   lorechat_save_stack_mode "${stack_mode}"
   if [[ "${LORECHAT_COMPOSE_DEV}" == "1" ]]; then
@@ -201,6 +261,7 @@ do_stop() {
       fi
     done
   fi
+  stop_proxy_relay
   rm -f "${MODE_FILE}"
   echo "[Lore Chat] Stopped"
 }

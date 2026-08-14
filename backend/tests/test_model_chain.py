@@ -324,6 +324,28 @@ def test_attachment_is_image_by_magic_without_suffix(tmp_path):
     assert attachment_is_image("readme.txt", kb_path=tmp_path) is False
 
 
+def test_messages_need_image_skips_svg_keeps_magic(tmp_path):
+    from app.models.llm import _messages_need_image
+
+    png = tmp_path / "noext"
+    png.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 8)
+    (tmp_path / "logo.svg").write_text(
+        '<svg xmlns="http://www.w3.org/2000/svg"/>', encoding="utf-8"
+    )
+    assert _messages_need_image(
+        [{"role": "user", "attachments": ["logo.svg"], "content": "x"}],
+        kb_path=tmp_path,
+    ) is False
+    assert _messages_need_image(
+        [{"role": "user", "attachments": ["noext"], "content": "x"}],
+        kb_path=tmp_path,
+    ) is True
+    assert _messages_need_image(
+        [{"role": "user", "attachments": ["shot.png"], "content": "x"}],
+        kb_path=tmp_path,
+    ) is True
+
+
 def test_signed_image_requires_magic_not_suffix(tmp_path):
     from app.models.vision import is_image_file, is_signed_image_file
 
@@ -334,6 +356,48 @@ def test_signed_image_requires_magic_not_suffix(tmp_path):
     real = tmp_path / "ok.png"
     real.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 8)
     assert is_signed_image_file(real) is True
+
+
+def test_svg_is_display_image_but_not_vision_feed(tmp_path):
+    from app.models.candidate import ModelCandidate
+    from app.models.vision import (
+        attachment_is_image,
+        build_user_content_with_images,
+        is_image_path,
+        is_vision_image_path,
+    )
+
+    svg_rel = "媒体/logo.svg"
+    (tmp_path / "媒体").mkdir()
+    (tmp_path / svg_rel).write_text(
+        '<svg xmlns="http://www.w3.org/2000/svg"><circle r="1"/></svg>\n',
+        encoding="utf-8",
+    )
+    assert is_image_path(svg_rel) is True
+    assert is_vision_image_path(svg_rel) is False
+    assert attachment_is_image(svg_rel, kb_path=tmp_path) is True
+
+    cand = ModelCandidate(
+        id="t",
+        provider="openai",
+        model="gpt",
+        api_key="k",
+        base_url="https://example.com/v1",
+        image=True,
+        image_wire="data",
+    )
+    content = build_user_content_with_images(
+        "看这个 logo",
+        [svg_rel],
+        candidate=cand,
+        kb_path=tmp_path,
+        public_base_url=None,
+        signing_secret="sek",
+    )
+    # SVG 不进 image_url parts，只作文本附件提示
+    assert isinstance(content, str)
+    assert "logo.svg" in content
+    assert "image_url" not in content
 
 
 def test_model_routing_changed_ignores_effort_only():

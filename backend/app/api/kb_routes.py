@@ -37,7 +37,9 @@ async def download(
         raise HTTPException(404, "文件不存在")
     filename = abs_p.name
     media = media_type_for_filename(filename)
-    disposition = content_disposition_type(media, force_download=force_download)
+    disposition = content_disposition_type(
+        media, force_download=force_download, filename=filename
+    )
     return FileResponse(
         path=abs_p,
         media_type=media,

@@ -116,6 +116,28 @@ def content_type_is_pdf(content_type: str) -> bool:
     return "application/pdf" in (content_type or "").lower()
 
 
+# 非 HTML：走 trafilatura 会得到空串（如 raw.githubusercontent.com 的 README）
+_PLAIN_TEXT_TYPES = frozenset({
+    "text/plain",
+    "text/markdown",
+    "text/x-markdown",
+    "text/csv",
+    "text/tab-separated-values",
+    "application/json",
+    "application/ld+json",
+    "application/xml",
+    "text/xml",
+    "application/yaml",
+    "application/x-yaml",
+    "text/yaml",
+})
+
+
+def content_type_is_plain_text(content_type: str) -> bool:
+    ctype = (content_type or "").lower().split(";", 1)[0].strip()
+    return ctype in _PLAIN_TEXT_TYPES
+
+
 def title_from_url(url: str) -> str:
     name = unquote((urlparse(url).path or "").rsplit("/", 1)[-1]).strip()
     return name or url
@@ -180,6 +202,7 @@ class WebFetcher:
                 async with client.stream("GET", url) as resp:
                     resp.raise_for_status()
                     encoding = resp.encoding
+                    ctype = resp.headers.get("content-type", "")
                     content, is_pdf, err = await self._read_body(
                         resp,
                         prefer_pdf=prefer_pdf,
@@ -189,7 +212,17 @@ class WebFetcher:
                 return FetchResult(url=url, error=err)
             if is_pdf:
                 return self._result_from_pdf(url, content)
-            html = content.decode(encoding or "utf-8", errors="replace")
+            body = content.decode(encoding or "utf-8", errors="replace")
+            if content_type_is_plain_text(ctype):
+                text = body.strip()
+                title = title_from_url(url)
+                return FetchResult(
+                    url=url,
+                    title=title,
+                    markdown=text,
+                    snippet=text[:300],
+                )
+            html = body
             if weixin and looks_like_weixin_challenge(html):
                 return FetchResult(
                     url=url,

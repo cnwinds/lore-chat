@@ -419,7 +419,8 @@ TOOL_DEFINITIONS: list[dict] = [
         "function": {
             "name": "write_kb_file",
             "description": (
-                "将文本类代码/配置文件写入知识库（.sh/.py/.js/.yaml 等）。"
+                "将文本类代码/配置文件写入知识库（.sh/.py/.js/.yaml 等），"
+                "也支持矢量图 .svg（与 PNG/JPG 同为图片资产，可在聊天中预览）。"
                 "禁止 .md（文档请用 write_doc）。不做 LLM 合并；已存在时须 overwrite=true 整文件覆盖。"
                 "写入前应先 list_kb_structure 规划路径。"
             ),
@@ -763,6 +764,7 @@ TOOL_DEFINITIONS: list[dict] = [
             "name": "publish_from_sandbox",
             "description": (
                 "将沙箱 /workspace 下的文件显式发布到知识库。"
+                "支持 Markdown、文本代码/配置，以及图片（.png/.jpg/.svg 等；图片会挂聊天附件预览）。"
                 "重型调用：多文件务必一次用 files 批量发布，勿逐文件反复调用。"
                 "中间产物不要自动入库；仅最终旁白/分镜/成片等需要归档时调用。"
             ),

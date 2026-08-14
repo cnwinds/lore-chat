@@ -18,6 +18,7 @@ from app.storage.kb_paths import (
 from app.engine.kb_markdown_images import sanitize_markdown_image_srcs_for_storage
 from app.engine.memory.constants import is_memory_projection_path
 from app.engine.write_policy import WriteMode
+from app.storage.kb_media_paths import is_image_filename
 from app.storage.kb_text_files import is_kb_text_file
 from app.storage.repo import KnowledgeRepo
 
@@ -250,14 +251,18 @@ class KnowledgeWriter:
         return self.repo.read_bytes(norm)
 
     def assert_non_md_asset_allowed(self, filename: str, *, allow_binary: bool) -> None:
-        """非 Markdown 资产准入：Agent/publish 默认仅文本白名单；HTTP 可放行二进制。"""
+        """非 Markdown 资产准入。
+
+        Agent/publish 默认：文本白名单 + 图片后缀（含 .svg，与 PNG/JPG 同轨）。
+        HTTP 树导入可 allow_binary=True 放行其它二进制。
+        """
         fn = _safe_basename(filename)
         if is_markdown_path(fn):
             return
-        if allow_binary or is_kb_text_file(fn):
+        if allow_binary or is_kb_text_file(fn) or is_image_filename(fn):
             return
         raise ValueError(
-            f"不支持的文件类型：{fn}（仅允许 Markdown 或文本代码/配置类扩展名）"
+            f"不支持的文件类型：{fn}（仅允许 Markdown、文本代码/配置类，或图片扩展名）"
         )
 
     def import_entry(
@@ -322,10 +327,16 @@ class KnowledgeWriter:
         content: str,
         overwrite: bool = False,
     ) -> dict:
-        """写入白名单文本资产（非 Markdown）；不做 LLM 合并。"""
+        """写入白名单文本资产（非 Markdown）或 SVG；不做 LLM 合并。"""
         fn = _safe_basename(filename)
         if is_markdown_path(fn):
             raise ValueError("Markdown 请使用 write_doc，勿用 write_kb_file")
+        # 位图是二进制：Agent 用 generate_image / publish_from_sandbox；此处仅 SVG（UTF-8 文本）
+        suffix = PurePosixPath(fn).suffix.lower()
+        if is_image_filename(fn) and suffix != ".svg":
+            raise ValueError(
+                f"位图请用 generate_image 或 publish_from_sandbox，勿用 write_kb_file：{fn}"
+            )
         self.assert_non_md_asset_allowed(fn, allow_binary=False)
         rel = _file_rel(directory, fn)
         if not self.repo.is_writable(rel):
