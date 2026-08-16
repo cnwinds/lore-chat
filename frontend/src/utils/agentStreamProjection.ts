@@ -101,8 +101,23 @@ export function reduceStreamEvent(
   let awaitingUser = state.awaitingUser;
   let kbNotify: string | null | undefined;
 
-  if (event !== "done" && !state.serverTimeline) {
+  // 与 backend turn_hub._STRUCTURAL_TIMELINE_EVENTS 互补（ADR 2026-08-08 §5）。
+  const STREAM_LOCAL_DELTA_EVENTS = new Set([
+    "text_delta",
+    "think_delta",
+    "tool_progress",
+  ]);
+  // 结构事件由 timeline_state 投影；token/进度增量即使已切 serverTimeline 也本地 reduce，
+  // 避免后端对每个 delta 再推全量快照（O(n²) 内存）。
+  if (event !== "done" && (!state.serverTimeline || STREAM_LOCAL_DELTA_EVENTS.has(event))) {
     assistant.timeline = applyTimelineEvent(assistant.timeline ?? [], event, data);
+  }
+  // 持久回合不再随 token 推 assistant_text；仅在已切投影后累加，避免 ephemeral 双源。
+  if (state.serverTimeline && event === "text_delta") {
+    const delta = typeof data.delta === "string" ? data.delta : "";
+    if (delta) {
+      assistant.text = (assistant.text || "") + delta;
+    }
   }
   if (event === "done") {
     assistant.sources = (data.sources as SourceRef[]) || [];

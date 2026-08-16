@@ -23,6 +23,25 @@ _log = get_logger("chat.turn_hub")
 _END = object()
 _RETAIN_FINISHED_SEC = 120.0
 
+# 结构事件才推全量 timeline_state；与前端 STREAM_LOCAL_DELTA_EVENTS 互补（ADR 2026-08-08 §5）。
+_STRUCTURAL_TIMELINE_EVENTS = frozenset(
+    {
+        "tool_start",
+        "tool_result",
+        "parallel_batch_start",
+        "parallel_batch_end",
+        "user_inject",
+    }
+)
+
+
+def _sse_event_name(ev: str) -> str | None:
+    """First `event:` line only — avoid full JSON parse on the publish hot path."""
+    if not ev.startswith("event: "):
+        return None
+    end = ev.find("\n")
+    return ev[7:end] if end != -1 else ev[7:]
+
 
 @dataclass
 class TurnRunSpec:
@@ -47,6 +66,7 @@ class ActiveTurn:
     finished: bool = False
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     retain_until: float = 0.0
+    purge_task: asyncio.Task[None] | None = None
 
 
 class TurnExecutionHub:
@@ -59,7 +79,28 @@ class TurnExecutionHub:
         self._by_turn: dict[str, ActiveTurn] = {}
         self._cid_to_turn: dict[str, str] = {}
 
+    def _purge_expired(self) -> None:
+        """Drop finished turns past retain window so SSE buffers cannot linger forever."""
+        now = time.monotonic()
+        dead = [
+            tid
+            for tid, at in self._by_turn.items()
+            if at.finished and at.retain_until > 0 and now >= at.retain_until
+        ]
+        for tid in dead:
+            at = self._by_turn.pop(tid, None)
+            if at is not None and at.purge_task is not None and not at.purge_task.done():
+                at.purge_task.cancel()
+
+    async def _purge_after_retain(self, delay: float) -> None:
+        try:
+            await asyncio.sleep(delay)
+        except asyncio.CancelledError:
+            return
+        self._purge_expired()
+
     def get_active(self, conversation_id: str) -> dict[str, Any] | None:
+        self._purge_expired()
         tid = self._cid_to_turn.get(conversation_id)
         if not tid:
             return None
@@ -75,6 +116,7 @@ class TurnExecutionHub:
 
     def resolve_turn_id(self, conversation_id: str) -> str | None:
         """Live or retained-in-memory turn for observation."""
+        self._purge_expired()
         active = self.get_active(conversation_id)
         if active:
             return active["turn_id"]
@@ -92,6 +134,7 @@ class TurnExecutionHub:
         turn: dict,
         spec: TurnRunSpec,
     ) -> ActiveTurn:
+        self._purge_expired()
         turn_id = turn["turn_id"]
         existing = self._by_turn.get(turn_id)
         if existing is not None and not existing.finished:
@@ -121,6 +164,7 @@ class TurnExecutionHub:
         *,
         after_seq: int = 0,
     ) -> AsyncIterator[str]:
+        self._purge_expired()
         at = self._by_turn.get(turn_id)
         if at is None or at.conversation_id != conversation_id:
             return
@@ -150,6 +194,7 @@ class TurnExecutionHub:
             at.subscribers.discard(q)
 
     def request_stop(self, conversation_id: str) -> bool:
+        self._purge_expired()
         tid = self._cid_to_turn.get(conversation_id)
         if not tid:
             return False
@@ -259,6 +304,13 @@ class TurnExecutionHub:
         async with at.lock:
             seq = at.next_seq
             at.next_seq += 1
+            # 观测重放只需最新投影；丢掉旧 timeline_state，避免结构事件也二次方膨胀。
+            if _sse_event_name(ev) == "timeline_state":
+                at.buffer = [
+                    (s, e)
+                    for s, e in at.buffer
+                    if _sse_event_name(e) != "timeline_state"
+                ]
             at.buffer.append((seq, ev))
             subs = list(at.subscribers)
         for q in subs:
@@ -281,6 +333,12 @@ class TurnExecutionHub:
             # Keep mapping until retain expires so get_active/stop stay coherent;
             # clear when finished so new turns can start.
             self._cid_to_turn.pop(at.conversation_id, None)
+        # 空闲进程也要回收：retain 到期后主动 purge，不依赖下一次 hub 入口。
+        at.purge_task = asyncio.create_task(
+            self._purge_after_retain(_RETAIN_FINISHED_SEC + 0.05),
+            name=f"purge-turn-{at.turn_id[:8]}",
+        )
+        self._purge_expired()
 
     async def _run_turn(self, at: ActiveTurn, spec: TurnRunSpec) -> None:
         acc = TimelineAccumulator()
@@ -360,17 +418,8 @@ class TurnExecutionHub:
                         stop_reason = "turn_complete"
                         turn_status = "complete"
                         _finalize("complete")
-                    # 时间线投影：后端为 source of truth；UI 只 apply
-                    if parsed[0] in (
-                        "tool_start",
-                        "tool_progress",
-                        "tool_result",
-                        "parallel_batch_start",
-                        "parallel_batch_end",
-                        "text_delta",
-                        "think_delta",
-                        "user_inject",
-                    ):
+                    # 结构变更推全量投影；think/text/progress 只发增量，避免 buffer O(n²)
+                    if parsed[0] in _STRUCTURAL_TIMELINE_EVENTS:
                         await self._publish(
                             at,
                             timeline_state(
