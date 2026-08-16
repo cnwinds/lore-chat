@@ -191,6 +191,7 @@ ensure_docker_compose() {
 }
 
 # 解析 start 参数：--chat|--work 与可选 --dev（顺序不限）
+# 结果写入 LORECHAT_STACK_MODE / LORECHAT_COMPOSE_DEV（勿用 $() 调用，否则 set -u 下侧效应丢失）
 lorechat_parse_start_args() {
   local stack_flag=""
   LORECHAT_COMPOSE_DEV=0
@@ -211,14 +212,14 @@ lorechat_parse_start_args() {
         ;;
     esac
   done
-  lorechat_resolve_stack_mode "${stack_flag}"
+  LORECHAT_STACK_MODE="$(lorechat_resolve_stack_mode "${stack_flag}")" || return 1
 }
 
 do_start() {
   ensure_runtime
   ensure_docker_compose
-  local stack_mode
-  stack_mode="$(lorechat_parse_start_args "$@")" || exit 1
+  lorechat_parse_start_args "$@" || exit 1
+  local stack_mode="${LORECHAT_STACK_MODE}"
   export LORECHAT_COMPOSE_DEV
   if [[ "${stack_mode}" == "work" ]]; then
     lorechat_warn_work_images

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { useAgentStream } from "./useAgentStream";
+import { createStreamOwnership } from "./streamOwnership";
 import * as api from "../../api";
 import type { ChatMessage, DocContextItem } from "../../api";
 
@@ -49,9 +50,9 @@ function baseOptions(overrides: Partial<Parameters<typeof useAgentStream>[0]> = 
     setMsgs,
     setSummarized: vi.fn(),
     setSummaryPath: vi.fn(),
-    conversationIdRef: { current: "cid-1" },
-    skipLoadRef: { current: null },
-    streamingRef: { current: false },
+    conversationIdRef: { current: "cid-1" as string | null },
+    skipLoadRef: { current: null as string | null },
+    streamOwnership: createStreamOwnership(),
     stickToBottomRef: { current: true },
     onSidebarRefresh: vi.fn(),
     onKbChanged: vi.fn(),
@@ -79,7 +80,8 @@ describe("useAgentStream", () => {
     });
 
     expect(result.current.streaming).toBe(false);
-    expect(options.streamingRef.current).toBe(false);
+    expect(options.streamOwnership.streamingRef.current).toBe(false);
+    expect(options.streamOwnership.streamConversationIdRef.current).toBeNull();
     expect(options.skipLoadRef.current).toBeNull();
   });
 
@@ -326,5 +328,120 @@ describe("useAgentStream", () => {
       await firstCall;
     });
     expect(result.current.streaming).toBe(false);
+  });
+
+  it("does not paint stream events onto another conversation after switch", async () => {
+    let pushEvent: ((ev: { event: string; data: Record<string, unknown> }) => void) | undefined;
+    let finishGate: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => {
+      finishGate = resolve;
+    });
+    vi.mocked(api.chatStream).mockImplementation(async function* (_text, opts) {
+      const queue: Array<{ event: string; data: Record<string, unknown> }> = [];
+      let waiting: (() => void) | undefined;
+      pushEvent = (ev) => {
+        queue.push(ev);
+        waiting?.();
+      };
+      const signal = opts?.signal;
+      while (true) {
+        if (signal?.aborted) {
+          const err = new Error("Aborted");
+          err.name = "AbortError";
+          throw err;
+        }
+        if (queue.length === 0) {
+          await new Promise<void>((resolve) => {
+            waiting = resolve;
+          });
+          continue;
+        }
+        const next = queue.shift()!;
+        if (next.event === "__end__") break;
+        yield next as never;
+      }
+      await gate;
+    });
+
+    const conversationIdRef = { current: "cid-a" as string | null };
+    const { setMsgs, getCurrent } = makeSetMsgs([]);
+    const onStreamEnd = vi.fn();
+    const options = baseOptions({
+      conversationId: "cid-a",
+      conversationIdRef,
+      setMsgs,
+      onStreamEnd,
+    });
+    const { result } = renderHook(() => useAgentStream(options));
+
+    let run!: Promise<boolean>;
+    await act(async () => {
+      run = result.current.runAgentStream("hello");
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(result.current.streamingForView).toBe(true);
+    expect(getCurrent().length).toBeGreaterThanOrEqual(2);
+
+    // Parent updated the viewed-conversation ref before abort settles.
+    conversationIdRef.current = "cid-b";
+    const snapshot = structuredClone(getCurrent());
+    await act(async () => {
+      pushEvent?.({
+        event: "tool_start",
+        data: { id: "t1", tool: "search_kb", ts: "2026-01-01T00:00:00.000Z" },
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(getCurrent()).toEqual(snapshot);
+
+    await act(async () => {
+      pushEvent?.({ event: "__end__", data: {} });
+      finishGate?.();
+      await run;
+    });
+
+    expect(onStreamEnd).toHaveBeenCalledWith(
+      expect.objectContaining({
+        conversationId: "cid-a",
+      }),
+    );
+  });
+
+  it("scopes streamingForView to the conversation that owns the stream", async () => {
+    let resolveStream: (() => void) | undefined;
+    vi.mocked(api.chatStream).mockImplementation(async function* () {
+      await new Promise<void>((resolve) => {
+        resolveStream = resolve;
+      });
+      yield { event: "done", data: { sources: [] } };
+    });
+    const options = baseOptions({ conversationId: "cid-a" });
+    const { result, rerender } = renderHook(
+      (props) => useAgentStream(props),
+      { initialProps: options },
+    );
+
+    let run!: Promise<boolean>;
+    await act(async () => {
+      run = result.current.runAgentStream("hello");
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(result.current.streamingForView).toBe(true);
+
+    rerender({ ...options, conversationId: "cid-b" });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    // Switch detaches and clears ownership immediately.
+    expect(result.current.streamingForView).toBe(false);
+    expect(result.current.streaming).toBe(false);
+
+    resolveStream?.();
+    await act(async () => {
+      await run;
+    });
   });
 });

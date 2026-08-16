@@ -12,7 +12,7 @@ function resolveAllowedHosts(): true | string[] {
     return true;
   }
   if (raw) {
-    return raw.split(",").map((s) => s.trim()).filter(Boolean);
+    return raw.split(",").map((s: string) => s.trim()).filter(Boolean);
   }
   // Docker compose.dev 会注入 VITE_PROXY_TARGET
   if (process.env.VITE_PROXY_TARGET) {

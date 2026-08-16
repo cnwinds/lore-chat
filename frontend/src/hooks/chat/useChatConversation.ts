@@ -1,9 +1,13 @@
-import { useEffect, useRef, useState, type MutableRefObject } from "react";
+import { useEffect, useRef, useState } from "react";
 import { getConversation, type ChatMessage } from "../../api";
 import {
   isInjectedUserMessage,
   normalizeLoadedMessage,
 } from "../../utils/chatMessage";
+import {
+  shouldProtectStreamingHistory,
+  type StreamOwnership,
+} from "./streamOwnership";
 import {
   scrollToMessageHighlight,
   type JumpTarget,
@@ -11,8 +15,8 @@ import {
 
 type Options = {
   conversationId: string | null;
-  skipLoadRef: MutableRefObject<string | null>;
-  streamingRef: MutableRefObject<boolean>;
+  skipLoadRef: { current: string | null };
+  streamOwnership: StreamOwnership;
   pendingJump?: JumpTarget | null;
   onJumpHandled?: () => void;
   /** Called when loaded conversation has a server-side running turn. */
@@ -26,7 +30,7 @@ type Options = {
 export function useChatConversation({
   conversationId,
   skipLoadRef,
-  streamingRef,
+  streamOwnership,
   pendingJump = null,
   onJumpHandled,
   onActiveTurn,
@@ -59,18 +63,34 @@ export function useChatConversation({
   useEffect(() => {
     if (!conversationId) {
       setMsgs([]);
+      streamOwnership.msgsConversationIdRef.current = null;
       setSummarized(false);
       setSummaryPath(null);
       return;
     }
-    if (skipLoadRef.current === conversationId || streamingRef.current) {
+    // Only skip reload for the conversation we just created / own optimistically.
+    // Do NOT skip because some *other* conversation is still streaming — that left
+    // the previous chat's messages on screen after switching.
+    if (skipLoadRef.current === conversationId) {
       return;
     }
     let cancelled = false;
+    const loadedFor = conversationId;
     setLoadingHistory(true);
+
+    const applyIfSafe = (apply: () => void) => {
+      if (cancelled) return;
+      // Protect in-flight optimistic UI only when msgs already belong to this stream.
+      // After A→B→A, msgs may still be B's while the stream owns A — must reload.
+      if (shouldProtectStreamingHistory(streamOwnership, loadedFor)) {
+        return;
+      }
+      apply();
+    };
+
     getConversation(conversationId)
       .then((conv) => {
-        if (!cancelled && !streamingRef.current) {
+        applyIfSafe(() => {
           setMsgs(
             conv.messages.map((m) =>
               normalizeLoadedMessage({
@@ -79,22 +99,24 @@ export function useChatConversation({
               }),
             ),
           );
+          streamOwnership.msgsConversationIdRef.current = loadedFor;
           setSummarized(!!conv.summarized);
           setSummaryPath(conv.summary_path ?? null);
           if (conv.active_turn?.status === "running") {
             onActiveTurnRef.current?.(
-              conversationId,
+              loadedFor,
               conv.active_turn.started_at,
             );
           }
-        }
+        });
       })
       .catch(() => {
-        if (!cancelled && !streamingRef.current) {
+        applyIfSafe(() => {
           setMsgs([]);
+          streamOwnership.msgsConversationIdRef.current = loadedFor;
           setSummarized(false);
           setSummaryPath(null);
-        }
+        });
       })
       .finally(() => {
         if (!cancelled) setLoadingHistory(false);
@@ -102,7 +124,7 @@ export function useChatConversation({
     return () => {
       cancelled = true;
     };
-  }, [conversationId]);
+  }, [conversationId, skipLoadRef, streamOwnership]);
 
   useEffect(() => {
     const target = pendingJumpRef.current;

@@ -27,6 +27,10 @@ import {
   reduceStreamEvent,
   shouldReloadConversation,
 } from "../../utils/agentStreamProjection";
+import {
+  isStreamingForView,
+  type StreamOwnership,
+} from "./streamOwnership";
 
 export type DocContext = {
   trayPaths: string[];
@@ -56,7 +60,7 @@ type UseAgentStreamOptions = {
   setSummaryPath: Dispatch<SetStateAction<string | null>>;
   conversationIdRef: MutableRefObject<string | null>;
   skipLoadRef: MutableRefObject<string | null>;
-  streamingRef: MutableRefObject<boolean>;
+  streamOwnership: StreamOwnership;
   stickToBottomRef: MutableRefObject<boolean>;
   onConversationCreated?: (id: string) => void;
   onFirstQuestionTitle?: (id: string, title: string) => void;
@@ -78,7 +82,7 @@ export function useAgentStream({
   setSummaryPath,
   conversationIdRef,
   skipLoadRef,
-  streamingRef,
+  streamOwnership,
   stickToBottomRef,
   onConversationCreated,
   onFirstQuestionTitle,
@@ -88,7 +92,10 @@ export function useAgentStream({
   onInjectDeferred,
   onUserInjected,
 }: UseAgentStreamOptions) {
+  const { streamingRef, streamConversationIdRef, msgsConversationIdRef } =
+    streamOwnership;
   const [streaming, setStreaming] = useState(false);
+  const [streamViewId, setStreamViewId] = useState<string | null>(null);
   const [liveElapsedMs, setLiveElapsedMs] = useState(0);
   const [streamNowMs, setStreamNowMs] = useState(() => Date.now());
   const streamingStartRef = useRef<number | null>(null);
@@ -130,8 +137,16 @@ export function useAgentStream({
     if (!conversationId) return;
     return () => {
       abortRef.current?.abort();
+      // Release ownership immediately so the newly selected conversation can load /
+      // resume without waiting for the aborted observation's finally.
+      if (streamConversationIdRef.current !== null || streamingRef.current) {
+        streamingRef.current = false;
+        streamConversationIdRef.current = null;
+        setStreaming(false);
+        setStreamViewId(null);
+      }
     };
-  }, [conversationId]);
+  }, [conversationId, streamConversationIdRef, streamingRef]);
 
   function resolveDocContext(): DocContext {
     return {
@@ -163,7 +178,12 @@ export function useAgentStream({
     abortRef.current?.abort();
   }
 
-  function patchAssistant(updater: (msg: ChatMessage) => ChatMessage) {
+  function patchAssistant(
+    streamCid: string | null,
+    updater: (msg: ChatMessage) => ChatMessage,
+  ) {
+    // Switched away: keep consuming until abort lands, but do not paint onto the wrong chat.
+    if (streamCid && conversationIdRef.current !== streamCid) return;
     setMsgs((prev) => {
       if (prev.length === 0) return prev;
       const idx = prev.length - 1;
@@ -175,6 +195,7 @@ export function useAgentStream({
 
   async function consumeEvents(
     events: AsyncGenerator<ChatStreamEvent>,
+    streamCid: string | null,
   ): Promise<{ streamFailed: boolean; awaitingUser: boolean }> {
     let streamFailed = false;
     let awaitingUser = false;
@@ -184,7 +205,7 @@ export function useAgentStream({
       let injectDeferredId: string | undefined;
       let kbNotify: string | null | undefined;
       let stop = false;
-      patchAssistant((prevMsg) => {
+      patchAssistant(streamCid, (prevMsg) => {
         const result = reduceStreamEvent(
           {
             streamFailed,
@@ -212,8 +233,15 @@ export function useAgentStream({
     return { streamFailed, awaitingUser };
   }
 
+  function clearStreamOwnership() {
+    streamingRef.current = false;
+    streamConversationIdRef.current = null;
+    setStreaming(false);
+    setStreamViewId(null);
+  }
+
   async function finishObservation(
-    cid: string | null,
+    streamCid: string | null,
     info: {
       streamFailed: boolean;
       aborted: boolean;
@@ -223,24 +251,23 @@ export function useAgentStream({
   ) {
     abortRef.current = null;
     stopRequestedRef.current = false;
-    streamingRef.current = false;
-    setStreaming(false);
+    clearStreamOwnership();
     skipLoadRef.current = null;
     onSidebarRefresh?.();
-    const endCid = conversationIdRef.current ?? cid;
+    // Always attribute the end event to the stream owner, not the viewed chat.
     onStreamEndRef.current?.({
       failed: info.streamFailed,
       aborted: info.aborted,
       detached: info.detached,
       awaitingUser:
         !info.streamFailed && !info.aborted && !info.detached && info.awaitingUser,
-      conversationId: endCid,
+      conversationId: streamCid,
     });
     const reload = shouldReloadConversation(info);
-    if (!endCid || reload === "none") return;
-    getConversation(endCid)
+    if (!streamCid || reload === "none") return;
+    getConversation(streamCid)
       .then((conv) => {
-        if (conversationIdRef.current !== endCid) return;
+        if (conversationIdRef.current !== streamCid) return;
         if (streamingRef.current) return;
         setMsgs(
           conv.messages.map((m) =>
@@ -250,6 +277,7 @@ export function useAgentStream({
             }),
           ),
         );
+        msgsConversationIdRef.current = streamCid;
         if (reload === "full") {
           setSummarized(!!conv.summarized);
           setSummaryPath(conv.summary_path ?? null);
@@ -282,6 +310,12 @@ export function useAgentStream({
     stickToBottomRef.current = true;
     stopRequestedRef.current = false;
     streamingRef.current = true;
+    // Claim ownership before setStreaming so the first paint scopes UI correctly.
+    streamConversationIdRef.current = conversationId;
+    setStreamViewId(conversationId);
+    if (conversationId) {
+      msgsConversationIdRef.current = conversationId;
+    }
     setStreaming(true);
     streamingStartRef.current = Date.now();
     setLiveElapsedMs(0);
@@ -336,6 +370,9 @@ export function useAgentStream({
     let cid: string | null = null;
     try {
       cid = await ensureConversationId();
+      streamConversationIdRef.current = cid;
+      msgsConversationIdRef.current = cid;
+      setStreamViewId(cid);
       if (isFirstUserQuestion) {
         onFirstQuestionTitle?.(cid, titleFromText(display));
       }
@@ -353,6 +390,7 @@ export function useAgentStream({
           reuseUserMessageId,
           signal: controller.signal,
         }),
+        cid,
       );
       streamFailed = result.streamFailed;
       awaitingUser = result.awaitingUser;
@@ -366,7 +404,7 @@ export function useAgentStream({
       } else {
         streamFailed = true;
         const msg = err instanceof Error ? err.message : "请求失败";
-        patchAssistant((prevMsg) => ({
+        patchAssistant(cid, (prevMsg) => ({
           ...prevMsg,
           text: `错误：${msg}`,
           status: "error",
@@ -392,6 +430,9 @@ export function useAgentStream({
     stickToBottomRef.current = true;
     stopRequestedRef.current = false;
     streamingRef.current = true;
+    streamConversationIdRef.current = cid;
+    msgsConversationIdRef.current = cid;
+    setStreamViewId(cid);
     setStreaming(true);
     const startedMs = startedAt ? Date.parse(startedAt) : NaN;
     streamingStartRef.current = Number.isFinite(startedMs)
@@ -427,6 +468,7 @@ export function useAgentStream({
     try {
       const result = await consumeEvents(
         observeActiveTurnStream(cid, { signal: controller.signal }),
+        cid,
       );
       streamFailed = result.streamFailed;
       awaitingUser = result.awaitingUser;
@@ -440,7 +482,7 @@ export function useAgentStream({
       } else {
         streamFailed = true;
         const msg = err instanceof Error ? err.message : "请求失败";
-        patchAssistant((prevMsg) => ({
+        patchAssistant(cid, (prevMsg) => ({
           ...prevMsg,
           text: `错误：${msg}`,
           status: "error",
@@ -457,8 +499,15 @@ export function useAgentStream({
     return true;
   }
 
+  const streamingForView = isStreamingForView(
+    streaming,
+    streamViewId,
+    conversationId,
+  );
+
   return {
     streaming,
+    streamingForView,
     liveElapsedMs,
     streamNowMs,
     streamingAssistantIdxRef,

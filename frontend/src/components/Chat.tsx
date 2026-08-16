@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useChatConversation } from "../hooks/chat/useChatConversation";
 import { useChatScroll } from "../hooks/chat/useChatScroll";
 import { useAgentStream } from "../hooks/chat/useAgentStream";
+import { createStreamOwnership } from "../hooks/chat/streamOwnership";
 import { useConversationMemoryEvents } from "../hooks/chat/useConversationMemoryEvents";
 import { useSendQueue } from "../hooks/chat/useSendQueue";
 import { useOutboundOrchestrator } from "../hooks/chat/useOutboundOrchestrator";
@@ -89,7 +90,7 @@ export function Chat({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const skipLoadRef = useRef<string | null>(null);
-  const streamingRef = useRef(false);
+  const streamOwnership = useRef(createStreamOwnership()).current;
   const conversationIdRef = useRef(conversationId);
   const stickToBottomRef = useRef(true);
   const resumeActiveTurnRef = useRef<
@@ -107,7 +108,7 @@ export function Chat({
   } = useChatConversation({
     conversationId,
     skipLoadRef,
-    streamingRef,
+    streamOwnership,
     pendingJump,
     onJumpHandled,
     onActiveTurn: (cid, startedAt) => {
@@ -127,7 +128,7 @@ export function Chat({
   const userInjectedRef = useRef<(id: string) => void>(() => {});
 
   const {
-    streaming,
+    streamingForView,
     liveElapsedMs,
     streamNowMs,
     streamingAssistantIdxRef,
@@ -148,7 +149,7 @@ export function Chat({
     setSummaryPath,
     conversationIdRef,
     skipLoadRef,
-    streamingRef,
+    streamOwnership,
     stickToBottomRef,
     onConversationCreated,
     onFirstQuestionTitle,
@@ -191,8 +192,8 @@ export function Chat({
 
   const outbound = useOutboundOrchestrator({
     sendQueue,
-    streaming,
-    streamingRef,
+    streaming: streamingForView,
+    streamingRef: streamOwnership.streamingRef,
     conversationIdRef,
     runOutbound,
   });
@@ -201,7 +202,7 @@ export function Chat({
   userInjectedRef.current = outbound.handleUserInjected;
 
   const { messagesContainerRef } = useChatScroll(
-    [msgs, loadingHistory, streaming],
+    [msgs, loadingHistory, streamingForView],
     stickToBottomRef,
   );
   const { notice: memoryNotice, dismissNotice: dismissMemoryNotice } =
@@ -272,7 +273,7 @@ export function Chat({
       return;
     }
 
-    const shouldQueue = streaming || sendQueue.items.length > 0;
+    const shouldQueue = streamingForView || sendQueue.items.length > 0;
     if (!shouldQueue) {
       await runAgentStream(
         text,
@@ -339,7 +340,7 @@ export function Chat({
   }
 
   async function handleRetryAssistantReply(assistantSourceIndex: number) {
-    if (streamingRef.current) return;
+    if (streamOwnership.streamingRef.current) return;
     let liveMsgs = msgs;
     let user = findPrecedingUserForRetry(liveMsgs, assistantSourceIndex);
     if (!user) return;
@@ -398,7 +399,7 @@ export function Chat({
     const replyWeb =
       typeof user.web_enabled === "boolean" ? user.web_enabled : webEnabled;
 
-    const shouldQueue = streaming || sendQueue.items.length > 0;
+    const shouldQueue = streamingForView || sendQueue.items.length > 0;
     if (!shouldQueue) {
       void runAgentStream(text, text, userMeta, docCtx, {
         webEnabled: replyWeb,
@@ -430,13 +431,13 @@ export function Chat({
   }
 
   function openArchiveModal() {
-    if (!conversationId || streaming || archiving) return;
+    if (!conversationId || streamingForView || archiving) return;
     if (!msgs.some((m) => m.role === "user")) return;
     setArchiveModalOpen(true);
   }
 
   async function performArchive(directory: string, filename: string) {
-    if (!conversationId || streaming || archiving) return;
+    if (!conversationId || streamingForView || archiving) return;
     const targetCid = conversationId;
     setArchiving(true);
     try {
@@ -494,13 +495,13 @@ export function Chat({
       // unless it asks another question.
       outbound.pausedRef.current = false;
       sendQueue.setPaused(false);
-      if (streaming || sendQueue.items.length > 0) {
+      if (streamingForView || sendQueue.items.length > 0) {
         sendQueue.enqueue({
           text: result.continue_prompt,
           timing: "defer",
           webEnabled,
         });
-        if (!streaming) void outbound.flushQueue();
+        if (!streamingForView) void outbound.flushQueue();
       } else {
         void runAgentStream(result.continue_prompt, choiceLabel);
       }
@@ -633,7 +634,7 @@ export function Chat({
       <ChatMessageList
         msgs={msgs}
         loadingHistory={loadingHistory}
-        streaming={streaming}
+        streaming={streamingForView}
         liveElapsedMs={liveElapsedMs}
         streamNowMs={streamNowMs}
         streamingAssistantIdxRef={streamingAssistantIdxRef}
@@ -690,7 +691,7 @@ export function Chat({
                 onKeyDown={onInputKeyDown}
                 onPaste={onInputPaste}
                 rows={1}
-                placeholder={streaming ? "输入消息加入队列…" : "输入消息…"}
+                placeholder={streamingForView ? "输入消息加入队列…" : "输入消息…"}
                 title="Ctrl+Enter 发送；可粘贴图片到托盘"
                 style={{
                   minHeight: INPUT_MIN_HEIGHT,
@@ -701,7 +702,7 @@ export function Chat({
             <ComposerToolbar
               webEnabled={webEnabled}
               onToggleWeb={toggleWebSearch}
-              streaming={streaming}
+              streaming={streamingForView}
               canSend={!!input.trim() || pendingFiles.length > 0}
               archiving={archiving}
               conversationId={conversationId}
