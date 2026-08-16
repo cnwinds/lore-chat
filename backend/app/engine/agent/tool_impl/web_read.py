@@ -21,13 +21,21 @@ class WebReadTools:
         result = self._fetch_cache.get(url)
         if result is None:
             result = await self.fetcher.fetch(url)
-            if not result.error:
+            # 只缓存「有正文」的成功结果；空正文若入缓存会导致同轮重试永远 0 字
+            if not result.error and (result.markdown or "").strip():
                 self._fetch_cache[url] = result
         if result.error:
             return {
                 "summary": f"{url} — {result.error}",
                 "sources": [],
                 "error": result.error,
+            }
+        if not (result.markdown or "").strip():
+            err = "未能抽取正文（空页面）"
+            return {
+                "summary": f"{url} — {err}",
+                "sources": [],
+                "error": err,
             }
         sources = [
             {

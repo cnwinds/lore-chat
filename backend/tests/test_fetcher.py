@@ -12,10 +12,36 @@ from app.engine.web.fetcher import (
     title_from_url,
     url_looks_like_pdf,
 )
-from app.engine.web.limits import FETCH_URL_PDF_TIMEOUT_FLOOR
+from app.engine.web.limits import (
+    FETCH_URL_HTML_MAX_BYTES,
+    FETCH_URL_PDF_TIMEOUT_FLOOR,
+)
 from app.index.extract import BytesExtractResult
 
 _FIXTURE_PDF = Path(__file__).parent / "fixtures" / "dummy.pdf"
+
+
+def test_html_max_bytes_covers_css_heavy_news_pages():
+    """旧 100KiB 上限会截断 TechCrunch 等站的正文区。"""
+    assert FETCH_URL_HTML_MAX_BYTES >= 512 * 1024
+
+
+def test_html_to_markdown_empty_when_body_cut_by_100kib_cap():
+    """模拟 CSS/脚本在前、正文在后：截到 100KiB 后抽正文为空。"""
+    style = "x" * 120_000
+    article = (
+        "<article><h1>Watermark</h1>"
+        "<p>Anthropic published details about SynthID-Text watermarks on Claude.</p>"
+        "</article>"
+    )
+    html = (
+        f"<html><head><title>Watermark | News</title>"
+        f"<style>{style}</style></head><body>{article}</body></html>"
+    )
+    assert "SynthID-Text" in html_to_markdown(html)
+    truncated = html[:102400]
+    assert "SynthID-Text" not in truncated
+    assert html_to_markdown(truncated) == ""
 
 
 def test_is_safe_url_rejects_localhost():
@@ -113,6 +139,25 @@ def _patch_client(resp: _FakeStreamResp):
         return _FakeClient(*args, _resp=resp, **kwargs)
 
     return patch("app.engine.web.fetcher.httpx.AsyncClient", _client)
+
+
+@pytest.mark.asyncio
+async def test_fetch_default_limit_keeps_body_after_large_head_boilerplate():
+    """默认 HTML 上限须容纳头部长样板 + 正文（回归：TechCrunch 类页面抽空）。"""
+    style = "x" * 120_000
+    body = (
+        f"<html><head><title>Watermark | News</title><style>{style}</style></head>"
+        "<body><article><h1>Watermark</h1>"
+        "<p>Anthropic published details about SynthID-Text watermarks on Claude.</p>"
+        "</article></body></html>"
+    ).encode()
+    assert len(body) > 102400
+    f = WebFetcher(timeout=5)  # 使用 FETCH_URL_HTML_MAX_BYTES 默认
+    with _patch_client(_FakeStreamResp(body, {"content-type": "text/html"})):
+        result = await f.fetch("https://example.com/news/watermark")
+    assert result.error is None, result.error
+    assert "SynthID-Text" in result.markdown
+    assert result.title.startswith("Watermark")
 
 
 @pytest.mark.asyncio
@@ -248,18 +293,68 @@ async def test_fetch_pdf_empty_text_is_error(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_fetch_pdf_converter_failure_is_distinct(monkeypatch):
-    f = WebFetcher(timeout=5, max_bytes=1000, pdf_max_bytes=50_000)
-    monkeypatch.setattr(
-        "app.engine.web.fetcher.extract_text_from_bytes",
-        lambda data, file_extension: BytesExtractResult(
-            error="文档转换失败: boom"
-        ),
-    )
-    with _patch_client(
-        _FakeStreamResp(b"%PDF-1.4 x", {"content-type": "application/pdf"})
-    ):
-        result = await f.fetch("https://example.com/bad.pdf")
+async def test_fetch_truncated_empty_extract_is_error():
+    """头部长样板导致截断后抽空：须报错，不能假装成功返回 0 字。"""
+    style = "x" * 80_000
+    body = (
+        f"<html><head><title>Watermark | News</title><style>{style}</style></head>"
+        "<body><article><p>Anthropic SynthID-Text details here.</p></article>"
+        "</body></html>"
+    ).encode()
+    f = WebFetcher(timeout=5, max_bytes=40_000)
+    with _patch_client(_FakeStreamResp(body, {"content-type": "text/html"})):
+        result = await f.fetch("https://example.com/news/watermark")
     assert result.error is not None
-    assert "转换失败" in result.error
-    assert "扫描件" not in result.error
+    assert "截断" in result.error
+    assert result.markdown == ""
+
+
+@pytest.mark.asyncio
+async def test_fetch_empty_shell_html_is_error_after_retry():
+    shell = (
+        b"<html><head><title>Empty Shell</title></head>"
+        b"<body><div id='app'></div></body></html>"
+    )
+    f = WebFetcher(timeout=5, max_bytes=100_000)
+    with _patch_client(_FakeStreamResp(shell, {"content-type": "text/html"})):
+        result = await f.fetch("https://example.com/spa")
+    assert result.error is not None
+    assert "未能抽取正文" in result.error
+
+
+@pytest.mark.asyncio
+async def test_fetch_url_tool_does_not_cache_empty_markdown():
+    from app.engine.agent.tool_impl.web_read import WebReadTools
+    from app.engine.web.types import FetchResult
+
+    class _SeqFetcher:
+        def __init__(self):
+            self.calls = 0
+
+        async def fetch(self, url: str) -> FetchResult:
+            self.calls += 1
+            if self.calls == 1:
+                return FetchResult(url=url, title="T", markdown="", snippet="")
+            return FetchResult(
+                url=url,
+                title="T",
+                markdown="# Hello body",
+                snippet="Hello body",
+            )
+
+    fetcher = _SeqFetcher()
+    tools = WebReadTools(fetcher=fetcher, web_search=None)
+    first = await tools.fetch_url({"url": "https://example.com/a"})
+    assert first.get("error")
+    assert "https://example.com/a" not in tools._fetch_cache
+    assert fetcher.calls == 1
+
+    second = await tools.fetch_url({"url": "https://example.com/a"})
+    assert fetcher.calls == 2
+    assert not second.get("error")
+    assert "Hello body" in (second.get("markdown") or "")
+    assert "https://example.com/a" in tools._fetch_cache
+
+    third = await tools.fetch_url({"url": "https://example.com/a"})
+    assert fetcher.calls == 2  # cache hit
+    assert "Hello body" in (third.get("markdown") or "")

@@ -9,6 +9,7 @@ import httpx
 import trafilatura
 
 from app.engine.web.limits import (
+    FETCH_URL_HTML_MAX_BYTES,
     FETCH_URL_PDF_MAX_BYTES,
     FETCH_URL_PDF_TIMEOUT_FLOOR,
 )
@@ -147,7 +148,7 @@ class WebFetcher:
     def __init__(
         self,
         timeout: int = 15,
-        max_bytes: int = 102400,
+        max_bytes: int = FETCH_URL_HTML_MAX_BYTES,
         pdf_max_bytes: int = FETCH_URL_PDF_MAX_BYTES,
     ):
         self.timeout = timeout
@@ -189,7 +190,7 @@ class WebFetcher:
             _log.debug("X status embed unavailable; falling back to HTML url=%s", url)
         return await self._fetch_http(url)
 
-    async def _fetch_http(self, url: str) -> FetchResult:
+    async def _fetch_http(self, url: str, *, attempt: int = 0) -> FetchResult:
         prefer_pdf = url_looks_like_pdf(url)
         weixin = is_weixin_article_url(url)
         extra = weixin_request_headers() if weixin else None
@@ -203,7 +204,7 @@ class WebFetcher:
                     resp.raise_for_status()
                     encoding = resp.encoding
                     ctype = resp.headers.get("content-type", "")
-                    content, is_pdf, err = await self._read_body(
+                    content, is_pdf, err, truncated = await self._read_body(
                         resp,
                         prefer_pdf=prefer_pdf,
                         html_max_bytes=html_limit,
@@ -216,6 +217,12 @@ class WebFetcher:
             if content_type_is_plain_text(ctype):
                 text = body.strip()
                 title = title_from_url(url)
+                if not text:
+                    return FetchResult(
+                        url=url,
+                        title=title,
+                        error="页面无文本内容",
+                    )
                 return FetchResult(
                     url=url,
                     title=title,
@@ -243,6 +250,32 @@ class WebFetcher:
                 markdown = weixin_js_content_to_markdown(body_html, url)
             else:
                 markdown = html_to_markdown(html, url)
+            if not (markdown or "").strip():
+                if truncated:
+                    return FetchResult(
+                        url=url,
+                        title=title,
+                        error=(
+                            f"页面过大被截断（已读 {len(content)} 字节），未能抽取正文；"
+                            "请换源或提高 FETCH_URL_MAX_BYTES"
+                        ),
+                    )
+                if attempt < 1:
+                    # 代理/链路偶发半包：重试一次再判定失败
+                    _log.info(
+                        "empty html extract, retrying url=%s bytes=%s",
+                        url,
+                        len(content),
+                    )
+                    return await self._fetch_http(url, attempt=attempt + 1)
+                return FetchResult(
+                    url=url,
+                    title=title,
+                    error=(
+                        "未能抽取正文（可能是反爬壳页、脚本渲染或传输不完整），"
+                        "请改用搜索或其他来源"
+                    ),
+                )
             snippet = markdown[:300].strip()
             return FetchResult(url=url, title=title, markdown=markdown, snippet=snippet)
         except Exception as e:
@@ -254,7 +287,7 @@ class WebFetcher:
         *,
         prefer_pdf: bool,
         html_max_bytes: int | None = None,
-    ) -> tuple[bytes, bool, str | None]:
+    ) -> tuple[bytes, bool, str | None, bool]:
         ctype = resp.headers.get("content-type", "")
         is_pdf = prefer_pdf or content_type_is_pdf(ctype)
         html_cap = html_max_bytes if html_max_bytes is not None else self.max_bytes
@@ -263,27 +296,29 @@ class WebFetcher:
         cl = int(cl_header) if cl_header and cl_header.isdigit() else None
         # 仅在已判定为 PDF 时按 Content-Length 拒收；未标明的大 PDF 靠魔数升级限额
         if is_pdf and cl is not None and cl > limit:
-            return b"", True, f"PDF过大（{cl} 字节，上限 {limit}）"
+            return b"", True, f"PDF过大（{cl} 字节，上限 {limit}）", False
 
         chunks: list[bytes] = []
         total = 0
+        truncated = False
         async for chunk in resp.aiter_bytes():
             if not chunks and not is_pdf and chunk.startswith(_PDF_MAGIC):
                 is_pdf = True
                 limit = self.pdf_max_bytes
                 if cl is not None and cl > limit:
-                    return b"", True, f"PDF过大（{cl} 字节，上限 {limit}）"
+                    return b"", True, f"PDF过大（{cl} 字节，上限 {limit}）", False
             total += len(chunk)
             if total > limit:
                 if is_pdf:
-                    return b"", True, f"PDF过大（超过 {limit} 字节上限）"
+                    return b"", True, f"PDF过大（超过 {limit} 字节上限）", False
                 # HTML：截断后仍尽量抽正文（保持原行为）
                 remain = limit - (total - len(chunk))
                 if remain > 0:
                     chunks.append(chunk[:remain])
+                truncated = True
                 break
             chunks.append(chunk)
-        return b"".join(chunks), is_pdf, None
+        return b"".join(chunks), is_pdf, None, truncated
 
     def _result_from_pdf(self, url: str, content: bytes) -> FetchResult:
         extracted = extract_text_from_bytes(content, file_extension=".pdf")
