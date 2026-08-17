@@ -134,6 +134,21 @@ def test_move_file(repo):
     assert repo.read_bytes(new) == b"hi"
 
 
+def test_move_file_untracked(repo):
+    """工作区未 git add 的文件也可移动并纳入版本库。"""
+    abs_p = repo.root / "orphan.bin"
+    abs_p.write_bytes(b"\x00\x01")
+    new = repo.move_file(
+        "orphan.bin",
+        "媒体/生成/2026-08/orphan.bin",
+        commit_msg="move orphan",
+    )
+    assert new == "媒体/生成/2026-08/orphan.bin"
+    assert repo.read_bytes(new) == b"\x00\x01"
+    assert not abs_p.exists()
+    assert "媒体/生成/2026-08/orphan.bin" in repo.list_tree()
+
+
 def test_delete_protected_path_raises(repo):
     with pytest.raises(ValueError, match="禁止删除"):
         repo.delete_path(".kb/changelog.md", commit_msg="nope")

@@ -286,7 +286,11 @@ class KnowledgeRepo:
         parent = PurePosixPath(from_norm).parent.as_posix()
         if parent not in ("", "."):
             self._prune_empty_directories(parent)
-        self.repo.index.remove([from_norm])
+        # 源可能未跟踪（list_tree 含工作区文件）；remove 失败仍须 add 目标
+        try:
+            self.repo.index.remove([from_norm])
+        except Exception:
+            pass
         self.repo.index.add([to_norm])
         self.repo.index.commit(commit_msg)
         return to_norm
