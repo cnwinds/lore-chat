@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   getTree,
   listConversations,
@@ -66,7 +67,11 @@ export function Sidebar({
   const [docs, setDocs] = useState<string[]>([]);
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [kbHintOpen, setKbHintOpen] = useState(false);
+  const [kbHintPos, setKbHintPos] = useState<{ top: number; left: number } | null>(
+    null,
+  );
   const kbHintRef = useRef<HTMLDivElement>(null);
+  const kbHintPopoverRef = useRef<HTMLDivElement>(null);
   const treeScrollRef = useRef<HTMLDivElement>(null);
   const activeConversationRef = useRef<HTMLDivElement>(null);
   const { onDragOverAutoScroll } = useDragAutoScroll(treeScrollRef);
@@ -108,9 +113,47 @@ export function Sidebar({
     scrollConversationItemIntoView(el);
   }, [activeConversationId, conversations, collapsed]);
 
+  // tip 用 portal + fixed，避开侧栏 overflow 裁切
+  useLayoutEffect(() => {
+    if (!kbHintOpen) {
+      setKbHintPos(null);
+      return;
+    }
+    function place() {
+      const anchor = kbHintRef.current;
+      if (!anchor) return;
+      const r = anchor.getBoundingClientRect();
+      const width = Math.min(280, window.innerWidth - 24);
+      let left = r.left;
+      if (left + width > window.innerWidth - 12) {
+        left = window.innerWidth - 12 - width;
+      }
+      left = Math.max(12, left);
+      // 与 .sidebar-kb-hint-popover max-height: min(70vh, 420px) 对齐
+      const maxH = Math.min(window.innerHeight * 0.7, 420);
+      const popH = kbHintPopoverRef.current?.offsetHeight ?? maxH;
+      let top = r.bottom + 8;
+      if (top + popH > window.innerHeight - 12) {
+        top = Math.max(12, r.top - 8 - popH);
+      }
+      setKbHintPos((prev) =>
+        prev && prev.top === top && prev.left === left ? prev : { top, left },
+      );
+    }
+    place();
+    const raf = window.requestAnimationFrame(place);
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      window.cancelAnimationFrame(raf);
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [kbHintOpen]);
+
   useDismissOnOutsideClick(tree.menuRef, !!tree.menu, tree.closeMenu);
   useDismissOnOutsideClick(
-    kbHintRef,
+    [kbHintRef, kbHintPopoverRef],
     kbHintOpen,
     () => setKbHintOpen(false),
     { escape: true },
@@ -253,36 +296,45 @@ export function Sidebar({
                 >
                   ?
                 </button>
-                {kbHintOpen && (
-                  <div className="sidebar-kb-hint-popover" role="dialog" aria-label="知识库使用说明">
-                    <p className="sidebar-kb-hint-lead">文档与附件</p>
-                    <ul className="sidebar-kb-hint-list">
-                      <li>
-                        <strong>单击</strong> Markdown 打开预览；图片用灯箱；附件下载
-                      </li>
-                      <li>
-                        <strong>单击媒体末级目录</strong>（如「媒体/生成/2026-08」）以浮窗打开图片瓦片图库；媒体树下不列出文件
-                      </li>
-                      <li>
-                        <strong>Ctrl / ⌘ + 单击</strong>{" "}
-                        文件或目录加入工作托盘（顶层「技能」除外；标明本轮主要工作对象）
-                      </li>
-                      <li>
-                        <strong>双击</strong> 文件名重命名；文件夹可右键重命名
-                      </li>
-                      <li>
-                        <strong>Ctrl+单击顶层「技能」</strong>{" "}
-                        （或右键「启用 Skill…」）维护默认启用的 Skill（跨会话；与托盘无关）
-                      </li>
-                      <li>
-                        <strong>拖入</strong> 到文件夹行；移动或上传时顶部会出现「根目录」
-                      </li>
-                      <li>
-                        <strong>拖拽</strong> 文件或文件夹到其他目录可移动
-                      </li>
-                    </ul>
-                  </div>
-                )}
+                {kbHintOpen &&
+                  kbHintPos &&
+                  createPortal(
+                    <div
+                      ref={kbHintPopoverRef}
+                      className="sidebar-kb-hint-popover"
+                      role="dialog"
+                      aria-label="知识库使用说明"
+                      style={{ top: kbHintPos.top, left: kbHintPos.left }}
+                    >
+                      <p className="sidebar-kb-hint-lead">文档与附件</p>
+                      <ul className="sidebar-kb-hint-list">
+                        <li>
+                          <strong>单击</strong> Markdown 打开预览；图片用灯箱；附件下载
+                        </li>
+                        <li>
+                          <strong>单击媒体末级目录</strong>（如「媒体/生成/2026-08」）以浮窗打开图片瓦片图库；媒体树下不列出文件
+                        </li>
+                        <li>
+                          <strong>Ctrl / ⌘ + 单击</strong>{" "}
+                          文件或目录加入工作托盘（顶层「技能」除外；标明本轮主要工作对象）
+                        </li>
+                        <li>
+                          <strong>双击</strong> 文件名重命名；文件夹可右键重命名
+                        </li>
+                        <li>
+                          <strong>Ctrl+单击顶层「技能」</strong>{" "}
+                          （或右键「启用 Skill…」）维护默认启用的 Skill（跨会话；与托盘无关）
+                        </li>
+                        <li>
+                          <strong>拖入</strong> 到文件夹行；移动或上传时顶部会出现「根目录」
+                        </li>
+                        <li>
+                          <strong>拖拽</strong> 文件或文件夹到其他目录可移动
+                        </li>
+                      </ul>
+                    </div>,
+                    document.body,
+                  )}
               </div>
               <div className="sidebar-section-actions">
                 {onToggleCollapsed && (
