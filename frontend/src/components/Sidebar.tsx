@@ -21,6 +21,9 @@ import { useKbTreeViewportUi } from "../hooks/useKbTreeViewportUi";
 import { isSystemLayerPath, SKILLS_DIR } from "../utils/fileTree";
 import { SettingsAttentionDot } from "./settings/SettingsAttentionDot";
 
+/** 与 portal style / CSS 共用：知识库 tip 最大高度上限（px） */
+const KB_HINT_POPOVER_MAX_PX = 420;
+
 type SelectMods = { ctrlKey?: boolean; metaKey?: boolean };
 
 type Props = {
@@ -119,7 +122,7 @@ export function Sidebar({
       setKbHintPos(null);
       return;
     }
-    function place() {
+    function updateKbHintPopoverPosition() {
       const anchor = kbHintRef.current;
       if (!anchor) return;
       const r = anchor.getBoundingClientRect();
@@ -129,9 +132,11 @@ export function Sidebar({
         left = window.innerWidth - 12 - width;
       }
       left = Math.max(12, left);
-      // 与 .sidebar-kb-hint-popover max-height: min(70vh, 420px) 对齐
-      const maxH = Math.min(window.innerHeight * 0.7, 420);
-      const popH = kbHintPopoverRef.current?.offsetHeight ?? maxH;
+      const fallbackH = Math.min(
+        window.innerHeight * 0.85,
+        KB_HINT_POPOVER_MAX_PX,
+      );
+      const popH = kbHintPopoverRef.current?.offsetHeight ?? fallbackH;
       let top = r.bottom + 8;
       if (top + popH > window.innerHeight - 12) {
         top = Math.max(12, r.top - 8 - popH);
@@ -140,14 +145,14 @@ export function Sidebar({
         prev && prev.top === top && prev.left === left ? prev : { top, left },
       );
     }
-    place();
-    const raf = window.requestAnimationFrame(place);
-    window.addEventListener("resize", place);
-    window.addEventListener("scroll", place, true);
+    updateKbHintPopoverPosition();
+    const raf = window.requestAnimationFrame(updateKbHintPopoverPosition);
+    window.addEventListener("resize", updateKbHintPopoverPosition);
+    window.addEventListener("scroll", updateKbHintPopoverPosition, true);
     return () => {
       window.cancelAnimationFrame(raf);
-      window.removeEventListener("resize", place);
-      window.removeEventListener("scroll", place, true);
+      window.removeEventListener("resize", updateKbHintPopoverPosition);
+      window.removeEventListener("scroll", updateKbHintPopoverPosition, true);
     };
   }, [kbHintOpen]);
 
@@ -304,7 +309,11 @@ export function Sidebar({
                       className="sidebar-kb-hint-popover"
                       role="dialog"
                       aria-label="知识库使用说明"
-                      style={{ top: kbHintPos.top, left: kbHintPos.left }}
+                      style={{
+                        top: kbHintPos.top,
+                        left: kbHintPos.left,
+                        maxHeight: `min(85vh, ${KB_HINT_POPOVER_MAX_PX}px)`,
+                      }}
                     >
                       <p className="sidebar-kb-hint-lead">文档与附件</p>
                       <ul className="sidebar-kb-hint-list">
