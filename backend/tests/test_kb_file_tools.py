@@ -80,7 +80,7 @@ def test_write_text_file_allows_svg(tmp_path):
         filename="logo.svg",
         content=svg,
     )
-    # SVG 忽略备忘等目录，固定落媒体/生成/{年}；入库时补 XML 声明便于 <img>
+    # SVG 忽略备忘等目录，固定落媒体/生成/{年月}；入库时补 XML 声明便于 <img>
     assert r["rel_path"].startswith("媒体/生成/")
     assert r["rel_path"].endswith("/logo.svg")
     written = repo.abs_path(r["rel_path"]).read_text(encoding="utf-8")

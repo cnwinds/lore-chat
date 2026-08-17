@@ -238,7 +238,7 @@ class KbSandboxExchange:
         runtime: SandboxRuntime,
         args: dict,
         *,
-        allow_binary: bool = False,
+        allow_binary: bool = True,
     ) -> dict:
         parsed = publish_items_from_args(args)
         if isinstance(parsed, dict):

@@ -280,8 +280,8 @@ class KnowledgeWriter:
     def assert_non_md_asset_allowed(self, filename: str, *, allow_binary: bool) -> None:
         """非 Markdown 资产准入。
 
-        Agent/publish 默认：文本白名单 + 图片后缀（含 .svg，与 PNG/JPG 同轨）。
-        HTTP 树导入可 allow_binary=True 放行其它二进制。
+        allow_binary=False：文本白名单 + 图片后缀（含 .svg，与 PNG/JPG 同轨）。
+        allow_binary=True：放行其它二进制（HTTP 树导入、沙箱 publish_from_sandbox）。
         """
         fn = _safe_basename(filename)
         if is_markdown_path(fn):
@@ -371,7 +371,7 @@ class KnowledgeWriter:
             raise ValueError(
                 f"位图请用 generate_image 或 publish_from_sandbox，勿用 write_kb_file：{fn}"
             )
-        # SVG 与生图同轨：一律落 媒体/生成/{年}/，忽略其它 directory（避免写进备忘等文档目录）
+        # SVG 与生图同轨：一律落 媒体/生成/{年月}/，忽略其它 directory（避免写进备忘等文档目录）
         if suffix == ".svg":
             directory = media_generated_dir()
             content = _normalize_svg_content(content)

@@ -185,7 +185,7 @@ class SandboxTools:
         rt = self._require()
         if isinstance(rt, dict):
             return rt
-        return await self.exchange.publish(rt, args, allow_binary=False)
+        return await self.exchange.publish(rt, args, allow_binary=True)
 
     async def stage_to_sandbox(self, args: dict) -> dict:
         rt = self._require()

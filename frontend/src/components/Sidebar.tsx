@@ -246,7 +246,7 @@ export function Sidebar({
                         <strong>单击</strong> Markdown 打开预览；图片用灯箱；附件下载
                       </li>
                       <li>
-                        <strong>单击媒体末级目录</strong>（如「媒体/生成/2026」）以浮窗打开图片瓦片图库；媒体树下不列出文件
+                        <strong>单击媒体末级目录</strong>（如「媒体/生成/2026-08」）以浮窗打开图片瓦片图库；媒体树下不列出文件
                       </li>
                       <li>
                         <strong>Ctrl / ⌘ + 单击</strong>{" "}

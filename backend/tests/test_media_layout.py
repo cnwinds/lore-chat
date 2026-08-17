@@ -14,7 +14,7 @@ from app.storage.kb_media_paths import (
     media_generated_dir,
     media_upload_dir,
     rewrite_legacy_media_path,
-    utc_year,
+    year_month,
 )
 from app.storage.media_layout_migration import (
     migration_marker_path,
@@ -24,13 +24,18 @@ from app.storage.repo import KnowledgeRepo
 
 
 def test_media_path_helpers():
-    assert media_upload_dir("2026") == "媒体/上传/2026"
-    assert media_generated_dir("2026") == "媒体/生成/2026"
-    assert is_media_path("媒体/上传/2026/a.png")
+    assert media_upload_dir("2026-08") == "媒体/上传/2026-08"
+    assert media_generated_dir("2026-08") == "媒体/生成/2026-08"
+    assert is_media_path("媒体/上传/2026-08/a.png")
     assert not is_media_path("未分类/a.png")
-    assert rewrite_legacy_media_path("generated/2026/a.png") == "媒体/生成/2026/a.png"
-    y = utc_year(datetime(2024, 6, 1, tzinfo=timezone.utc))
-    assert y == "2024"
+    ym = year_month()
+    assert rewrite_legacy_media_path("generated/2026/a.png") == f"媒体/生成/{ym}/a.png"
+    assert (
+        rewrite_legacy_media_path("媒体/生成/2026/a.png") == f"媒体/生成/{ym}/a.png"
+    )
+    assert (
+        year_month(datetime(2026, 8, 17, 1, 0, tzinfo=timezone.utc)) == "2026-08"
+    )
 
 
 def test_media_layout_migration_moves_and_rewrites(tmp_path: Path):
@@ -82,25 +87,28 @@ def test_media_layout_migration_moves_and_rewrites(tmp_path: Path):
     )
     assert result["skipped"] is False
     assert result["moved"] == 2
-    assert (tmp_path / "媒体" / "生成" / "2026" / "a.png").is_file()
+    ym = year_month()
+    assert (tmp_path / "媒体" / "生成" / ym / "a.png").is_file()
     assert not (tmp_path / "generated" / "2026" / "a.png").exists()
-    # 上传年取 mtime；测试环境一般为当年
+    assert not (tmp_path / "媒体" / "生成" / "2026" / "a.png").exists()
     upload_hits = list((tmp_path / "媒体" / "上传").rglob("x.jpg"))
     assert len(upload_hits) == 1
+    assert upload_hits[0].parent.name == ym
     assert (tmp_path / "未分类" / "notes.txt").is_file()
     assert not (tmp_path / "未分类" / "x.jpg").exists()
 
+    gen_rel = f"媒体/生成/{ym}/a.png"
     assistant = store.get(cid)["messages"][1]
     assert assistant["attachments"] == [
-        "媒体/生成/2026/a.png",
+        gen_rel,
         str(upload_hits[0].relative_to(tmp_path).as_posix()),
     ]
-    assert assistant["timeline"][0]["attachments"] == ["媒体/生成/2026/a.png"]
-    assert "媒体/生成/2026/a.png" in assistant["timeline"][0]["summary"]
+    assert assistant["timeline"][0]["attachments"] == [gen_rel]
+    assert gen_rel in assistant["timeline"][0]["summary"]
 
     body = (tmp_path / "doc.md").read_text(encoding="utf-8")
     assert "generated/2026/a.png" not in body
-    assert "媒体/生成/2026/a.png" in body
+    assert gen_rel in body
 
     marker = migration_marker_path(tmp_path)
     assert marker.is_file()
@@ -109,12 +117,12 @@ def test_media_layout_migration_moves_and_rewrites(tmp_path: Path):
         knowledge_writer=writer, conversations=store
     )
     assert again["skipped"] is True
-    assert json.loads(marker.read_text(encoding="utf-8"))["id"] == "media-layout-v1"
+    assert json.loads(marker.read_text(encoding="utf-8"))["id"] == "media-layout-v2"
     assert MEDIA_ROOT == "媒体"
 
 
-def test_media_layout_migration_recovers_refs_after_interrupt(tmp_path: Path):
-    """文件已迁走、无标记、会话仍写旧路径 → 重跑应推断 path_map 并改写。"""
+def test_media_layout_migration_rebuckets_year_dirs(tmp_path: Path):
+    """存量 媒体/…/{年}/ 按 mtime 重分桶到 {年月}，并改写会话引用。"""
     repo = KnowledgeRepo(tmp_path)
     writer = KnowledgeWriter(repo)
     writer.import_entry(
@@ -122,6 +130,51 @@ def test_media_layout_migration_recovers_refs_after_interrupt(tmp_path: Path):
     )
     writer.import_entry(
         directory="媒体/上传/2026", filename="x.jpg", data=b"jpg-x"
+    )
+
+    store = ConversationStore(tmp_path / ".kb" / "conversations")
+    cid = store.create()
+    turn = store.begin_turn(
+        cid, user_text="图", client_message_id="cli-year", observation_allowed=False
+    )
+    store.finalize_turn(
+        cid,
+        turn_id=turn["turn_id"],
+        assistant={
+            "text": "ok",
+            "timeline": [],
+            "attachments": ["媒体/生成/2026/a.png", "媒体/上传/2026/x.jpg"],
+            "sources": [],
+            "status": "complete",
+        },
+    )
+
+    result = run_media_layout_migration(
+        knowledge_writer=writer, conversations=store
+    )
+    assert result["skipped"] is False
+    assert result["moved"] == 2
+    ym = year_month()
+    assert (tmp_path / "媒体" / "生成" / ym / "a.png").is_file()
+    assert (tmp_path / "媒体" / "上传" / ym / "x.jpg").is_file()
+    assert not (tmp_path / "媒体" / "生成" / "2026" / "a.png").exists()
+    assistant = store.get(cid)["messages"][1]
+    assert assistant["attachments"] == [
+        f"媒体/生成/{ym}/a.png",
+        f"媒体/上传/{ym}/x.jpg",
+    ]
+
+
+def test_media_layout_migration_recovers_refs_after_interrupt(tmp_path: Path):
+    """文件已在年月目录、无标记、会话仍写旧路径 → 重跑应推断 path_map 并改写。"""
+    repo = KnowledgeRepo(tmp_path)
+    writer = KnowledgeWriter(repo)
+    ym = year_month()
+    writer.import_entry(
+        directory=f"媒体/生成/{ym}", filename="a.png", data=b"png-a"
+    )
+    writer.import_entry(
+        directory=f"媒体/上传/{ym}", filename="x.jpg", data=b"jpg-x"
     )
 
     store = ConversationStore(tmp_path / ".kb" / "conversations")
@@ -150,8 +203,8 @@ def test_media_layout_migration_recovers_refs_after_interrupt(tmp_path: Path):
     assert result["conversation_rows"] >= 1
     assistant = store.get(cid)["messages"][1]
     assert assistant["attachments"] == [
-        "媒体/生成/2026/a.png",
-        "媒体/上传/2026/x.jpg",
+        f"媒体/生成/{ym}/a.png",
+        f"媒体/上传/{ym}/x.jpg",
     ]
     assert migration_marker_path(tmp_path).is_file()
 
@@ -160,7 +213,6 @@ def test_media_layout_reruns_when_legacy_reappears(tmp_path: Path):
     repo = KnowledgeRepo(tmp_path)
     writer = KnowledgeWriter(repo)
     store = ConversationStore(tmp_path / ".kb" / "conversations")
-    # 先跑空迁移写标记
     first = run_media_layout_migration(
         knowledge_writer=writer, conversations=store
     )
@@ -175,7 +227,8 @@ def test_media_layout_reruns_when_legacy_reappears(tmp_path: Path):
     )
     assert second["skipped"] is False
     assert second["moved"] == 1
-    assert (tmp_path / "媒体" / "生成" / "2026" / "b.png").is_file()
+    ym = year_month()
+    assert (tmp_path / "媒体" / "生成" / ym / "b.png").is_file()
 
 
 def test_admin_migrate_media_layout_endpoint(client):
@@ -184,7 +237,6 @@ def test_admin_migrate_media_layout_endpoint(client):
     body = r.json()
     assert body["ok"] is True
     assert "moved" in body
-    # 再次调用：无旧根时应 skipped
     r2 = client.post("/api/admin/migrate-media-layout")
     assert r2.status_code == 200, r2.text
     assert r2.json()["skipped"] is True

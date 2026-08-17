@@ -4,16 +4,26 @@ export const MEDIA_ROOT = "媒体";
 export const MEDIA_UPLOADS = "上传";
 export const MEDIA_GENERATED = "生成";
 
-export function utcYear(d: Date = new Date()): string {
-  return String(d.getUTCFullYear());
+const MEDIA_TZ = "Asia/Shanghai";
+
+/** 媒体子目录用的 {年月}：北京时间 YYYY-MM。 */
+export function yearMonth(d: Date = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: MEDIA_TZ,
+    year: "numeric",
+    month: "2-digit",
+  }).formatToParts(d);
+  const y = parts.find((p) => p.type === "year")?.value ?? "";
+  const m = parts.find((p) => p.type === "month")?.value ?? "";
+  return `${y}-${m}`;
 }
 
-export function mediaUploadDir(year?: string): string {
-  return `${MEDIA_ROOT}/${MEDIA_UPLOADS}/${year ?? utcYear()}`;
+export function mediaUploadDir(period?: string): string {
+  return `${MEDIA_ROOT}/${MEDIA_UPLOADS}/${period ?? yearMonth()}`;
 }
 
-export function mediaGeneratedDir(year?: string): string {
-  return `${MEDIA_ROOT}/${MEDIA_GENERATED}/${year ?? utcYear()}`;
+export function mediaGeneratedDir(period?: string): string {
+  return `${MEDIA_ROOT}/${MEDIA_GENERATED}/${period ?? yearMonth()}`;
 }
 
 export function isMediaPath(rel: string): boolean {
@@ -28,7 +38,7 @@ export function normalizeKbRel(rel: string): string {
 
 /**
  * 是否为媒体树下的「末级目录」：路径在媒体下，且树节点无子文件夹。
- * 中间层（媒体、媒体/生成）点选只展开；末级（如媒体/生成/2026）打开浮窗图库。
+ * 中间层（媒体、媒体/生成）点选只展开；末级（如媒体/生成/2026-08）打开浮窗图库。
  */
 export function isMediaLeafDirectory(
   dirPath: string,

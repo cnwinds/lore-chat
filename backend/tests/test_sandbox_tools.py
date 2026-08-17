@@ -183,47 +183,64 @@ async def test_publish_from_sandbox_batch_partial(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_publish_rejects_non_image_binary(tmp_path):
-    """Agent publish：非图片二进制仍拒；图片（含 SVG）放行。"""
+async def test_publish_allows_binary(tmp_path):
+    """Agent publish：沙箱任意二进制（含视频）可入库。"""
     registry, runtime = _make_registry(tmp_path)
     assert runtime is not None
-    await runtime.write_file("/workspace/blob.bin", b"\x00\x01\x02\xff" + bytes(range(64)))
+    blob = b"\x00\x01\x02\xff" + bytes(range(64))
+    mp4 = b"\x00\x00\x00\x18ftypmp42" + bytes(range(32))
+    await runtime.write_file("/workspace/blob.bin", blob)
+    await runtime.write_file("/workspace/out/report.mp4", mp4)
     pub = await registry.execute(
         "publish_from_sandbox",
         {
-            "sandbox_path": "/workspace/blob.bin",
-            "directory": "图",
-            "filename": "blob.bin",
+            "files": [
+                {
+                    "sandbox_path": "/workspace/blob.bin",
+                    "directory": "备忘",
+                    "filename": "blob.bin",
+                },
+                {
+                    "sandbox_path": "/workspace/out/report.mp4",
+                    "directory": "备忘/HN视频0816",
+                    "filename": "report.mp4",
+                },
+            ]
         },
     )
-    assert pub.get("ok") in (0, None) or pub.get("failed") == 1 or pub.get("error")
-    assert "blob.bin" not in (pub.get("rel_path") or "")
-    items = pub.get("items") or []
-    if items:
-        assert items[0].get("ok") is False
+    assert pub.get("ok") == 2, pub
+    assert pub.get("failed") == 0
+    assert pub.get("error") is None
+    assert registry.repo.abs_path("备忘/blob.bin").read_bytes() == blob
+    assert (
+        registry.repo.abs_path("备忘/HN视频0816/report.mp4").read_bytes() == mp4
+    )
 
 
 @pytest.mark.asyncio
 async def test_publish_image_png_and_svg_as_attachments(tmp_path):
     """PNG/SVG 与位图同轨：可 publish，并挂 attachments 供聊天预览。"""
+    from app.storage.kb_media_paths import media_generated_dir
+
     registry, runtime = _make_registry(tmp_path)
     assert runtime is not None
     png = b"\x89PNG\r\n\x1a\n" + bytes(range(32))
     svg = b'<svg xmlns="http://www.w3.org/2000/svg"><circle r="10"/></svg>\n'
     await runtime.write_file("/workspace/shot.png", png)
     await runtime.write_file("/workspace/logo.svg", svg)
+    gen_dir = media_generated_dir()
     pub = await registry.execute(
         "publish_from_sandbox",
         {
             "files": [
                 {
                     "sandbox_path": "/workspace/shot.png",
-                    "directory": "媒体/生成/2026",
+                    "directory": gen_dir,
                     "filename": "shot.png",
                 },
                 {
                     "sandbox_path": "/workspace/logo.svg",
-                    "directory": "媒体/生成/2026",
+                    "directory": gen_dir,
                     "filename": "logo.svg",
                 },
             ]
@@ -232,11 +249,11 @@ async def test_publish_image_png_and_svg_as_attachments(tmp_path):
     assert pub.get("ok") == 2, pub
     assert pub.get("failed") == 0
     assert pub.get("attachments") == [
-        "媒体/生成/2026/shot.png",
-        "媒体/生成/2026/logo.svg",
+        f"{gen_dir}/shot.png",
+        f"{gen_dir}/logo.svg",
     ]
-    assert registry.repo.abs_path("媒体/生成/2026/shot.png").read_bytes() == png
-    written_svg = registry.repo.abs_path("媒体/生成/2026/logo.svg").read_text(
+    assert registry.repo.abs_path(f"{gen_dir}/shot.png").read_bytes() == png
+    written_svg = registry.repo.abs_path(f"{gen_dir}/logo.svg").read_text(
         encoding="utf-8"
     )
     assert written_svg.startswith('<?xml version="1.0" encoding="UTF-8"?>')

@@ -281,7 +281,7 @@ TOOL_DEFINITIONS: list[dict] = [
             "name": "generate_image",
             "description": (
                 "根据文字描述生成一张图片并保存到知识库。"
-                "默认 destination=chat_attachment，写入 媒体/生成/{年}/，结果以附件形式出现在信息流；"
+                "默认 destination=chat_attachment，写入 媒体/生成/{年月}/，结果以附件形式出现在信息流；"
                 "若需写入指定知识库路径供文档引用，用 destination=kb 并提供 directory 与 filename（均必填）。"
                 "文档中请用相对路径 Markdown 插图：![说明](相对路径)。"
                 "用户要多张图（多构思/多变体）时：在同一轮一次性发出多个 generate_image（不同 prompt），"
@@ -305,7 +305,7 @@ TOOL_DEFINITIONS: list[dict] = [
                         "type": "string",
                         "enum": ["chat_attachment", "kb"],
                         "description": (
-                            "chat_attachment=会话附件（默认，写入 媒体/生成/{年}/）；"
+                            "chat_attachment=会话附件（默认，写入 媒体/生成/{年月}/）；"
                             "kb=指定知识库目录与文件名"
                         ),
                         "default": "chat_attachment",
@@ -439,7 +439,7 @@ TOOL_DEFINITIONS: list[dict] = [
             "description": (
                 "将文本类代码/配置文件写入知识库（.sh/.py/.js/.yaml 等），"
                 "也支持矢量图 .svg（与 PNG/JPG 同为图片资产，可在聊天中预览；"
-                "**SVG 固定写入 媒体/生成/{年}/**，directory 可传该路径或任意占位）。"
+                "**SVG 固定写入 媒体/生成/{年月}/**，directory 可传该路径或任意占位）。"
                 "禁止 .md（文档请用 write_doc）。不做 LLM 合并；已存在时须 overwrite=true 整文件覆盖。"
                 "写入前应先 list_kb_structure 规划路径。"
             ),
@@ -783,8 +783,9 @@ TOOL_DEFINITIONS: list[dict] = [
             "name": "publish_from_sandbox",
             "description": (
                 "将沙箱 /workspace 下的文件显式发布到知识库。"
-                "支持 Markdown、文本代码/配置，以及图片（.png/.jpg/.svg 等；图片会挂聊天附件预览）。"
-                "**SVG 固定发布到 媒体/生成/{年}/**（与生图同目录）。"
+                "支持 Markdown、文本代码/配置、图片（.png/.jpg/.svg 等；图片会挂聊天附件预览），"
+                "以及其它二进制产物（如 .mp4/.mp3/.bin 等成片与中间件）。"
+                "**SVG 固定发布到 媒体/生成/{年月}/**（与生图同目录）。"
                 "重型调用：多文件务必一次用 files 批量发布，勿逐文件反复调用。"
                 "中间产物不要自动入库；仅最终旁白/分镜/成片等需要归档时调用。"
             ),

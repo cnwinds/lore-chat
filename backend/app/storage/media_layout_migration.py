@@ -1,4 +1,4 @@
-"""一次性：旧媒体根 → 媒体/上传|生成；并重写会话附件引用。"""
+"""一次性：旧媒体根 → 媒体/上传|生成/{年月}；并重写会话附件引用。"""
 
 from __future__ import annotations
 
@@ -23,25 +23,30 @@ from app.storage.kb_media_paths import (
     is_image_filename,
     is_legacy_generated_path,
     is_legacy_inbox_image_path,
+    is_year_month_period,
     media_generated_dir,
     media_upload_dir,
+    parse_year_only_media_file,
     rewrite_json_media_paths,
+    year_month,
 )
 from app.storage.repo import KnowledgeRepo
 
 logger = logging.getLogger(__name__)
 
-MIGRATION_ID = "media-layout-v1"
+MIGRATION_ID = "media-layout-v2"
 MARKER_NAME = f"{MIGRATION_ID}.done"
+# 旧标记：有年目录待重分桶时仍会再跑
+_LEGACY_MARKER_NAMES = ("media-layout-v1.done",)
 
 
 def migration_marker_path(kb_root: Path) -> Path:
     return kb_root / ".kb" / "migrations" / MARKER_NAME
 
 
-def _year_from_mtime(abs_path: Path) -> str:
+def _period_from_mtime(abs_path: Path) -> str:
     ts = abs_path.stat().st_mtime
-    return datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y")
+    return year_month(datetime.fromtimestamp(ts, tz=timezone.utc))
 
 
 def _unique_filename(directory: str, filename: str, repo: KnowledgeRepo) -> str:
@@ -88,23 +93,33 @@ def _move_or_reuse(
 
 
 def _collect_legacy_moves(repo: KnowledgeRepo) -> list[tuple[str, str, str]]:
-    """返回 (from_rel, to_directory, to_filename)。"""
+    """返回 (from_rel, to_directory, to_filename)。目标目录一律按 mtime 的 {年月}。"""
     moves: list[tuple[str, str, str]] = []
     for rel in repo.list_tree():
         norm = rel.replace("\\", "/").lstrip("/")
         name = PurePosixPath(norm).name
+        abs_p = repo.abs_path(norm)
         if is_legacy_generated_path(norm) and norm != LEGACY_GENERATED_ROOT:
-            rest = norm[len(LEGACY_GENERATED_ROOT) + 1 :]
-            parts = [p for p in rest.split("/") if p]
-            if len(parts) >= 2 and parts[0].isdigit() and len(parts[0]) == 4:
-                year = parts[0]
-            else:
-                year = _year_from_mtime(repo.abs_path(norm))
-            moves.append((norm, media_generated_dir(year), name))
+            period = _period_from_mtime(abs_p)
+            moves.append((norm, media_generated_dir(period), name))
             continue
         if is_legacy_inbox_image_path(norm):
-            year = _year_from_mtime(repo.abs_path(norm))
-            moves.append((norm, media_upload_dir(year), name))
+            period = _period_from_mtime(abs_p)
+            moves.append((norm, media_upload_dir(period), name))
+            continue
+        year_only = parse_year_only_media_file(norm)
+        if year_only is not None:
+            track, _year, fname = year_only
+            period = _period_from_mtime(abs_p)
+            dest_dir = (
+                media_generated_dir(period)
+                if track == "generated"
+                else media_upload_dir(period)
+            )
+            dest = f"{dest_dir}/{fname}"
+            if dest == norm:
+                continue
+            moves.append((norm, dest_dir, fname))
     return moves
 
 
@@ -118,12 +133,25 @@ def infer_path_map_from_media_tree(repo: KnowledgeRepo) -> dict[str, str]:
         norm = rel.replace("\\", "/").lstrip("/")
         if norm.startswith(gen_prefix):
             rest = norm[len(gen_prefix) :]
-            if rest:
-                path_map[f"{LEGACY_GENERATED_ROOT}/{rest}"] = norm
+            if not rest:
+                continue
+            path_map[f"{LEGACY_GENERATED_ROOT}/{rest}"] = norm
+            parts = [p for p in rest.split("/") if p]
+            # 年月目录：兼映射 generated/{年}/… 与 媒体/生成/{年}/…
+            if len(parts) >= 2 and is_year_month_period(parts[0]):
+                y = parts[0][:4]
+                alias_rest = "/".join([y, *parts[1:]])
+                path_map[f"{LEGACY_GENERATED_ROOT}/{alias_rest}"] = norm
+                path_map[f"{MEDIA_ROOT}/{MEDIA_GENERATED}/{alias_rest}"] = norm
             continue
         if norm.startswith(up_prefix) and is_image_filename(PurePosixPath(norm).name):
             name = PurePosixPath(norm).name
             inbox_by_name.setdefault(name, []).append(norm)
+            rest = norm[len(up_prefix) :]
+            parts = [p for p in rest.split("/") if p]
+            if len(parts) >= 2 and is_year_month_period(parts[0]):
+                y = parts[0][:4]
+                path_map[f"{MEDIA_ROOT}/{MEDIA_UPLOADS}/{y}/{name}"] = norm
     for name, dests in inbox_by_name.items():
         dests_sorted = sorted(dests)
         path_map[f"{LEGACY_INBOX_ROOT}/{name}"] = dests_sorted[0]
@@ -157,11 +185,12 @@ def rewrite_markdown_generated_links(
         except Exception:
             continue
         body = doc.body
-        if old in body:
-            body = body.replace(old, new)
+        # 先按 path_map（含 generated/{年}/… → 年月）替换，再做前缀兜底
         for src, dst in sorted(mapping.items(), key=lambda kv: -len(kv[0])):
             if src in body:
                 body = body.replace(src, dst)
+        if old in body:
+            body = body.replace(old, new)
         if body == doc.body:
             continue
         writer.persist_document(
@@ -182,6 +211,8 @@ def legacy_media_needs_migration(repo: KnowledgeRepo) -> bool:
             return True
         if is_legacy_inbox_image_path(norm):
             return True
+        if parse_year_only_media_file(norm) is not None:
+            return True
     return False
 
 
@@ -193,8 +224,8 @@ def run_media_layout_migration(
 ) -> dict[str, Any]:
     """幂等迁移。
 
-    跳过条件：已有标记、无残留旧根、且非 force。
-    旧根仍在时即使有标记也会再跑；无标记时也会做引用重写（含中断后推断 path_map）。
+    跳过条件：已有 v2 标记、无残留旧根/年目录、且非 force。
+    旧根或 媒体/…/{年}/ 仍在时即使有标记也会再跑；无标记时也会做引用重写。
     """
     repo = knowledge_writer.repo
     kb_root = Path(repo.root)
@@ -241,6 +272,14 @@ def run_media_layout_migration(
         + "\n",
         encoding="utf-8",
     )
+    # 清理旧 v1 标记，避免并存误导
+    for legacy_name in _LEGACY_MARKER_NAMES:
+        legacy = kb_root / ".kb" / "migrations" / legacy_name
+        if legacy.exists():
+            try:
+                legacy.unlink()
+            except OSError:
+                pass
     logger.info(
         "media layout migration done: moved=%s conv_rows=%s md=%s",
         moved,
