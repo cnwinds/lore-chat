@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/brand/lore-wordmark.svg" alt="Lore" width="240" />
+</p>
+
 # Lore Chat
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)

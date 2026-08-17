@@ -684,9 +684,40 @@ a:hover {
   line-height: 1;
 }
 
-.sidebar-expand-btn:hover {
-  background: var(--bg-hover);
+.sidebar--collapsed .sidebar-expand-btn.sidebar-expand-logo {
+  border: none;
+  background: transparent;
+  width: 32px;
+  height: 32px;
+}
+
+.sidebar-expand-btn.sidebar-expand-logo:hover {
+  background: var(--accent-soft);
+}
+
+.sidebar-collapsed-mark {
+  width: 22px;
+  height: 22px;
+  color: var(--accent);
+  display: block;
+}
+
+.sidebar-brand {
+  flex-shrink: 0;
+  padding: 14px 14px 4px;
+  display: flex;
+  align-items: center;
+}
+
+.sidebar-brand-wordmark {
+  width: 96px;
+  height: auto;
+  display: block;
   color: var(--text);
+}
+
+.lore-logo--wordmark .lore-o {
+  color: var(--accent);
 }
 
 /* Focus mode: comfortable reading column for meta; editors fill panel */
@@ -4198,9 +4229,9 @@ button.memory-fact-statement--jump:focus-visible {
 }
 
 .chat-welcome-logo {
-  width: 88px;
-  height: 88px;
-  color: var(--accent);
+  width: min(260px, 70vw);
+  height: auto;
+  color: var(--text);
 }
 
 .chat-row {
@@ -7084,6 +7115,14 @@ button.source-link--inline.conversation-md-link {
   border-radius: var(--radius-lg);
   background: var(--bg-surface);
   box-shadow: var(--shadow-md);
+}
+
+.auth-gate-logo {
+  display: block;
+  width: 168px;
+  height: auto;
+  margin: 0 auto 22px;
+  color: var(--text);
 }
 
 .auth-gate-title {

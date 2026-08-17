@@ -52,3 +52,6 @@ Thumbs.db
 
 # Git worktrees
 .worktrees/
+
+# Local brand font cache (glyphs are outlined into SVGs)
+docs/brand/_fonts/

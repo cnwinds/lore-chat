@@ -12,6 +12,7 @@ import { scrollConversationItemIntoView } from "../utils/sidebarConversationScro
 import { FileTree } from "./FileTree";
 import { KbFloatingRootDrop } from "./KbFloatingRootDrop";
 import { KbTreeProgressBar } from "./KbTreeProgressBar";
+import { LoreLogo } from "./LoreLogo";
 import { ThemeToggle } from "./ThemeToggle";
 import { useKbTreeActions } from "../hooks/useKbTreeActions";
 import { useFileTreeInteraction } from "../hooks/useFileTreeInteraction";
@@ -217,15 +218,18 @@ export function Sidebar({
         <div className="sidebar-expand-rail">
           <button
             type="button"
-            className="sidebar-expand-btn"
+            className="sidebar-expand-btn sidebar-expand-logo"
             title="展开侧栏"
             onClick={onToggleCollapsed}
           >
-            »
+            <LoreLogo variant="mark" className="sidebar-collapsed-mark" />
           </button>
         </div>
       ) : (
         <>
+          <div className="sidebar-brand">
+            <LoreLogo variant="wordmark" className="sidebar-brand-wordmark" />
+          </div>
           <section className="sidebar-section sidebar-chat-section">
             <div className="sidebar-section-head">
               <h4>对话</h4>

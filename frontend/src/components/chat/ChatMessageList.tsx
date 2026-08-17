@@ -51,7 +51,7 @@ export function ChatMessageList({
       <div className="chat-messages-shell">
         {showWelcome && (
           <div className="chat-welcome">
-            <LoreLogo className="chat-welcome-logo" />
+            <LoreLogo variant="wordmark" className="chat-welcome-logo" />
           </div>
         )}
         <div className="chat-messages" ref={messagesContainerRef}>

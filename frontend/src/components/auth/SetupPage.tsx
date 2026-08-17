@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { setupAuth } from "../../api";
+import { LoreLogo } from "../LoreLogo";
 
 type Props = {
   onDone: () => void;
@@ -40,6 +41,7 @@ export function SetupPage({ onDone }: Props) {
   return (
     <div className="auth-gate">
       <div className="auth-gate-card">
+        <LoreLogo variant="wordmark" className="auth-gate-logo" />
         <h1 className="auth-gate-title">设置管理员密码</h1>
         <p className="auth-gate-subtitle">首次使用请设置登录密码，至少 8 位。</p>
         <form className="auth-gate-form" onSubmit={handleSubmit}>

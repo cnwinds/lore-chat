@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Lore — 大 Logo</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@450;500;600;650;700&display=swap" rel="stylesheet" />
+  <style>
+    :root { --ink:#14161c; --muted:#5c6370; --paper:#f3f1eb; --accent:#5b5bd6; --night:#0f1117; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: Outfit, ui-sans-serif, system-ui, sans-serif; background: var(--paper); color: var(--ink); }
+    .kicker { font-size: 12px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--accent); font-weight: 600; text-align: center; padding: 48px 24px 0; }
+    .hero, .night {
+      min-height: 62vh;
+      display: grid;
+      place-items: center;
+      padding: 48px 24px 64px;
+    }
+    .night { background: var(--night); }
+    .hero img, .night img { width: min(560px, 88vw); height: auto; display: block; }
+    section { width: min(960px, calc(100% - 40px)); margin: 0 auto 56px; }
+    h2 { font-size: 12px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); }
+    .card { background: #fffcf7; border: 1px solid #e4e0d6; border-radius: 20px; padding: 28px; display: grid; place-items: center; }
+    .card.dark { background: var(--night); border-color: #2a2f3a; }
+    footer { text-align: center; color: var(--muted); font-size: 13px; padding: 0 24px 56px; }
+  </style>
+</head>
+<body>
+  <div class="kicker">Lore · Brand signature</div>
+  <div class="hero">
+    <img src="lore-logo.svg" alt="Lore" />
+  </div>
+  <div class="night">
+    <img src="lore-logo-dark.svg" alt="Lore" />
+  </div>
+  <section>
+    <h2>词标 · o 是年轮</h2>
+    <div class="card"><img src="lore-wordmark.svg" width="480" alt="Lore wordmark" /></div>
+  </section>
+  <section>
+    <h2>SVG 横版</h2>
+    <div class="card"><img src="lore-logo.svg" width="560" alt="Lore logo light" /></div>
+  </section>
+  <section>
+    <h2>SVG 深色底</h2>
+    <div class="card dark"><img src="lore-logo-dark.svg" width="560" alt="Lore logo dark" /></div>
+  </section>
+  <section>
+    <h2>导航锁定组合</h2>
+    <div class="card"><img src="lore-lockup.svg" width="220" alt="Lore lockup" /></div>
+  </section>
+  <section>
+    <h2>竖版</h2>
+    <div class="card"><img src="lore-logo-stacked.svg" width="280" alt="Lore stacked" /></div>
+  </section>
+  <footer>大 Logo 文件：lore-logo.svg · lore-logo-dark.svg · lore-wordmark.svg · lore-logo-stacked.svg</footer>
+</body>
+</html>

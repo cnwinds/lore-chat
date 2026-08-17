@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { login } from "../../api";
+import { LoreLogo } from "../LoreLogo";
 
 type Props = {
   onDone: () => void;
@@ -35,6 +36,7 @@ export function LoginPage({ onDone }: Props) {
   return (
     <div className="auth-gate">
       <div className="auth-gate-card">
+        <LoreLogo variant="wordmark" className="auth-gate-logo" />
         <h1 className="auth-gate-title">登录</h1>
         <p className="auth-gate-subtitle">请输入管理员密码以继续使用。</p>
         <form className="auth-gate-form" onSubmit={handleSubmit}>
