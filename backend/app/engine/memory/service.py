@@ -168,6 +168,10 @@ class MemoryService:
         others.sort(key=updated_at, reverse=True)
         return {"facts": candidates + others, "count": len(items)}
 
+    def count_pending_candidates(self) -> int:
+        """设置红点：待确认记忆条数。"""
+        return len(self.store.list_candidates())
+
     def confirm_candidate(self, fact_id: str) -> dict:
         return self.resolver.confirm_candidate(fact_id)
 

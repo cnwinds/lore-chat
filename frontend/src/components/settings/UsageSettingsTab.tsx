@@ -12,6 +12,8 @@ import {
   type UsagePrice,
   type UsageSummary,
 } from "../../api";
+import { priceRowNeedsSetup } from "./settingsAttention";
+import { SettingsAttentionDot } from "./SettingsAttentionDot";
 
 type Granularity = "hour" | "day" | "week" | "month";
 
@@ -229,7 +231,13 @@ function EventList({ events }: { events: UsageEvent[] }) {
   );
 }
 
-export function UsageSettingsTab() {
+export function UsageSettingsTab({
+  onAttentionChange,
+  onIncompletePriceCountChange,
+}: {
+  onAttentionChange?: () => void;
+  onIncompletePriceCountChange?: (count: number) => void;
+} = {}) {
   const [granularity, setGranularity] = useState<Granularity>("day");
   const [summary, setSummary] = useState<UsageSummary | null>(null);
   const [events, setEvents] = useState<UsageEvent[]>([]);
@@ -265,12 +273,15 @@ export function UsageSettingsTab() {
         Object.fromEntries(p.items.map((row) => [row.model, priceKey(row)])),
       );
       setPrefs(pr);
+      onIncompletePriceCountChange?.(
+        p.items.filter(priceRowNeedsSetup).length,
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "加载失败");
     } finally {
       setLoading(false);
     }
-  }, [granularity]);
+  }, [granularity, onIncompletePriceCountChange]);
 
   const loadEvents = useCallback(async () => {
     setEventsLoading(true);
@@ -303,6 +314,10 @@ export function UsageSettingsTab() {
     return set;
   }, [prices, baselinePrices]);
 
+  useEffect(() => {
+    onIncompletePriceCountChange?.(prices.filter(priceRowNeedsSetup).length);
+  }, [prices, onIncompletePriceCountChange]);
+
   async function savePrice(row: UsagePrice) {
     setSavingPrice(row.model);
     setError(null);
@@ -321,6 +336,7 @@ export function UsageSettingsTab() {
         ...prev,
         [saved.model]: priceKey(saved),
       }));
+      onAttentionChange?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : "保存价目失败");
     } finally {
@@ -517,7 +533,12 @@ export function UsageSettingsTab() {
           onClick={() => setPricesOpen((v) => !v)}
         >
           <span className="usage-disclosure-copy">
-            <span className="usage-section-title">价目表</span>
+            <span className="usage-section-title">
+              价目表
+              {prices.some(priceRowNeedsSetup) ? (
+                <SettingsAttentionDot title="有未配置价格" />
+              ) : null}
+            </span>
             <span className="usage-section-sub">
               每百万 tokens · {prices.length} 个模型
               {dirtyModels.size > 0 ? ` · ${dirtyModels.size} 处未保存` : ""}
@@ -546,6 +567,9 @@ export function UsageSettingsTab() {
                       <div className="usage-price-card-title">
                         <span className="usage-model-name" title={row.model}>
                           {row.model}
+                          {priceRowNeedsSetup(row) ? (
+                            <SettingsAttentionDot title="需要填写单价" />
+                          ) : null}
                         </span>
                         <span className="usage-price-role">
                           {fields.chat && fields.embed

@@ -55,6 +55,30 @@ export function getSettings() {
   return apiFetch<Record<string, unknown>>("/api/admin/settings");
 }
 
+export type SettingsAttention = {
+  any: boolean;
+  model: {
+    any: boolean;
+    chat: boolean;
+    utility: boolean;
+    embed: boolean;
+  };
+  memory: {
+    any: boolean;
+    pending_count: number;
+  };
+  usage: {
+    any: boolean;
+    incomplete_price_count: number;
+  };
+};
+
+export function getSettingsAttention() {
+  return apiFetch<{ ok: boolean; attention: SettingsAttention }>(
+    "/api/admin/settings-attention",
+  );
+}
+
 export function putSettings(patch: Record<string, unknown>) {
   return apiFetch<Record<string, unknown>>("/api/admin/settings", {
     method: "PUT",

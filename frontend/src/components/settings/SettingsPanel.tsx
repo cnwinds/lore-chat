@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import {
   changePassword,
   clearModelCooldown,
@@ -34,6 +34,12 @@ import {
 } from "./ModelSettingsTab";
 import { SearchSettingsTab } from "./SearchSettingsTab";
 import { UsageSettingsTab } from "./UsageSettingsTab";
+import { SettingsAttentionDot } from "./SettingsAttentionDot";
+import {
+  draftChainNeedsSetup,
+  mergeSettingsAttention,
+} from "./settingsAttention";
+import type { SettingsAttention } from "../../api";
 
 const SEARCH_PROVIDER_IDS = new Set(
   SEARCH_PROVIDER_OPTIONS.map((o) => o.id),
@@ -123,6 +129,12 @@ type Props = {
   /** 首次进入且未配置主 API Key 时：打开设置并切到「模型」Tab，展示引导文案 */
   showLlmSetupGuide?: boolean;
   onLlmConfigured?: () => void;
+  /** 服务端红点；面板打开时用草稿/本地态合并后经 onLiveAttentionChange 回传 */
+  attention?: SettingsAttention | null;
+  /** 记忆/用量等变更后刷新服务端红点 */
+  onAttentionChange?: () => void;
+  /** 面板打开期间的合并红点（关闭时传 null） */
+  onLiveAttentionChange?: (live: SettingsAttention | null) => void;
 };
 
 type SettingsTab = "model" | "search" | "agent" | "kb" | "memory" | "usage" | "account";
@@ -158,6 +170,13 @@ function writeStoredSettingsTab(tab: SettingsTab) {
   }
 }
 
+const EMPTY_ATTENTION: SettingsAttention = {
+  any: false,
+  model: { any: false, chat: false, utility: false, embed: false },
+  memory: { any: false, pending_count: 0 },
+  usage: { any: false, incomplete_price_count: 0 },
+};
+
 function str(v: unknown): string {
   if (v === null || v === undefined) return "";
   return String(v);
@@ -188,6 +207,9 @@ export function SettingsPanel({
   onOpenConversation,
   showLlmSetupGuide = false,
   onLlmConfigured,
+  attention = null,
+  onAttentionChange,
+  onLiveAttentionChange,
 }: Props) {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -237,6 +259,9 @@ export function SettingsPanel({
   const [importMode, setImportMode] = useState<"empty_only" | "overwrite">("empty_only");
   const [importFile, setImportFile] = useState<File | null>(null);
   const importFileRef = useRef<HTMLInputElement>(null);
+  /** 面板内本地态：覆盖服务端 memory/usage 分区，避免未保存时不同步 */
+  const [memoryPending, setMemoryPending] = useState<number | null>(null);
+  const [usageIncomplete, setUsageIncomplete] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -324,9 +349,13 @@ export function SettingsPanel({
       setBackupError(null);
       setImportFile(null);
       setImportMode("empty_only");
+      setMemoryPending(null);
+      setUsageIncomplete(null);
       if (importFileRef.current) importFileRef.current.value = "";
+    } else {
+      onLiveAttentionChange?.(null);
     }
-  }, [open, load]);
+  }, [open, load, onLiveAttentionChange]);
 
   useEffect(() => {
     if (open && showLlmSetupGuide) {
@@ -346,6 +375,37 @@ export function SettingsPanel({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
+
+  const liveAttention = useMemo(() => {
+    const server = attention ?? EMPTY_ATTENTION;
+    const modelOverlay =
+      !open || loading
+        ? null
+        : {
+            chat: draftChainNeedsSetup(chatModels),
+            utility: draftChainNeedsSetup(utilityModels),
+            embed: draftChainNeedsSetup(embedModels),
+          };
+    return mergeSettingsAttention(server, {
+      model: modelOverlay,
+      memoryPending: open ? memoryPending : null,
+      usageIncomplete: open ? usageIncomplete : null,
+    });
+  }, [
+    open,
+    loading,
+    chatModels,
+    utilityModels,
+    embedModels,
+    attention,
+    memoryPending,
+    usageIncomplete,
+  ]);
+
+  useEffect(() => {
+    if (!open) return;
+    onLiveAttentionChange?.(liveAttention);
+  }, [open, liveAttention, onLiveAttentionChange]);
 
   async function handleSaveSettings(e: FormEvent) {
     e.preventDefault();
@@ -417,6 +477,7 @@ export function SettingsPanel({
       const saved = await putSettings(patch);
       setSaveMsg("已保存并生效");
       await load();
+      onAttentionChange?.();
       if (saved.llm_api_key_configured === true) {
         onLlmConfigured?.();
       }
@@ -518,6 +579,12 @@ export function SettingsPanel({
 
   if (!open) return null;
 
+  const tabAttentionFlags: Partial<Record<SettingsTab, boolean>> = {
+    model: liveAttention.model.any,
+    memory: liveAttention.memory.any,
+    usage: liveAttention.usage.any,
+  };
+
   return (
     <div className="settings-panel-backdrop" onClick={onClose}>
       <aside
@@ -554,7 +621,12 @@ export function SettingsPanel({
               className={`settings-tab${activeTab === tab.id ? " settings-tab--active" : ""}`}
               onClick={() => setActiveTab(tab.id)}
             >
-              {tab.label}
+              <span className="settings-tab-label">
+                {tab.label}
+                {tabAttentionFlags[tab.id] ? (
+                  <SettingsAttentionDot />
+                ) : null}
+              </span>
             </button>
           ))}
         </nav>
@@ -721,10 +793,19 @@ export function SettingsPanel({
               </form>
 
               {activeTab === "memory" ? (
-                <MemorySettingsTab onOpenConversation={onOpenConversation} />
+                <MemorySettingsTab
+                  onOpenConversation={onOpenConversation}
+                  onAttentionChange={onAttentionChange}
+                  onPendingCountChange={setMemoryPending}
+                />
               ) : null}
 
-              {activeTab === "usage" ? <UsageSettingsTab /> : null}
+              {activeTab === "usage" ? (
+                <UsageSettingsTab
+                  onAttentionChange={onAttentionChange}
+                  onIncompletePriceCountChange={setUsageIncomplete}
+                />
+              ) : null}
 
               {activeTab === "account" ? (
                 <div

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getAuthStatus, type SourceRef } from "./api";
+import { getAuthStatus, type SourceRef, type SettingsAttention } from "./api";
 import { LoginPage } from "./components/auth/LoginPage";
 import { SetupPage } from "./components/auth/SetupPage";
 import { Chat } from "./components/Chat";
@@ -14,6 +14,7 @@ import { useAppEscapeKey } from "./hooks/app/useAppEscapeKey";
 import { useConversationShell } from "./hooks/app/useConversationShell";
 import { useDocPreviewLayout } from "./hooks/app/useDocPreviewLayout";
 import { useLlmSetupGuide } from "./hooks/app/useLlmSetupGuide";
+import { useSettingsAttention } from "./hooks/app/useSettingsAttention";
 import { useComposerDocState } from "./hooks/useComposerDocState";
 import { useComposerPreviewBridge } from "./hooks/useComposerPreviewBridge";
 import { useEnabledSkillsAttach } from "./hooks/useEnabledSkillsAttach";
@@ -57,6 +58,14 @@ function AppMain() {
     llmSetupGuide,
     clearLlmSetupGuide,
   } = useLlmSetupGuide();
+  const { attention, refreshAttention } = useSettingsAttention();
+  const [liveAttention, setLiveAttention] = useState<SettingsAttention | null>(
+    null,
+  );
+  useEffect(() => {
+    refreshAttention();
+  }, [settingsOpen, refreshAttention]);
+  const displayAttention = liveAttention ?? attention;
   const [snippetSource, setSnippetSource] = useState<Extract<
     SourceRef,
     { type: "search" }
@@ -121,6 +130,7 @@ function AppMain() {
         sidebarProps={{
           ...conversation.sidebarProps,
           onOpenSettings: () => setSettingsOpen(true),
+          settingsAttention: displayAttention.any,
           onDocsChange: setKbPaths,
         }}
         chat={
@@ -193,12 +203,18 @@ function AppMain() {
               onClose={() => {
                 setSettingsOpen(false);
                 clearLlmSetupGuide();
+                setLiveAttention(null);
+                refreshAttention();
               }}
               showLlmSetupGuide={llmSetupGuide}
               onLlmConfigured={clearLlmSetupGuide}
+              attention={attention}
+              onAttentionChange={refreshAttention}
+              onLiveAttentionChange={setLiveAttention}
               onOpenConversation={(id) => {
                 setSettingsOpen(false);
                 clearLlmSetupGuide();
+                setLiveAttention(null);
                 conversation.selectConversation(id);
               }}
             />

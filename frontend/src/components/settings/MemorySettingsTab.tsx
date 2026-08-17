@@ -17,9 +17,12 @@ import {
   TrashIcon,
   XIcon,
 } from "../DocToolbarIcons";
+import { SettingsAttentionDot } from "./SettingsAttentionDot";
 
 type Props = {
   onOpenConversation?: (conversationId: string) => void;
+  onAttentionChange?: () => void;
+  onPendingCountChange?: (count: number) => void;
 };
 
 type MenuAction = {
@@ -197,7 +200,11 @@ function buildActions(
   ];
 }
 
-export function MemorySettingsTab({ onOpenConversation }: Props) {
+export function MemorySettingsTab({
+  onOpenConversation,
+  onAttentionChange,
+  onPendingCountChange,
+}: Props) {
   const [facts, setFacts] = useState<MemoryFact[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -210,13 +217,17 @@ export function MemorySettingsTab({ onOpenConversation }: Props) {
     setError(null);
     try {
       const data = await listMemoryFacts();
-      setFacts(data.facts || []);
+      const next = data.facts || [];
+      setFacts(next);
+      onPendingCountChange?.(
+        next.filter((f) => f.status === "candidate").length,
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "加载记忆失败");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [onPendingCountChange]);
 
   useEffect(() => {
     void load();
@@ -228,6 +239,7 @@ export function MemorySettingsTab({ onOpenConversation }: Props) {
     try {
       await fn();
       await load();
+      onAttentionChange?.();
       setEditingId(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "操作失败");
@@ -268,7 +280,10 @@ export function MemorySettingsTab({ onOpenConversation }: Props) {
               >
                 <div className="memory-fact-main">
                   {candidate ? (
-                    <span className="memory-fact-status memory-fact-status--candidate">待确认</span>
+                    <span className="memory-fact-status memory-fact-status--candidate">
+                      <SettingsAttentionDot title="待确认" />
+                      待确认
+                    </span>
                   ) : null}
                   {editing ? (
                     <textarea

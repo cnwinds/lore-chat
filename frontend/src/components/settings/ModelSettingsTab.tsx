@@ -15,6 +15,7 @@ import {
   SettingsFoldSection,
   useSettingsItemFold,
 } from "./SettingsFold";
+import { draftChainNeedsSetup } from "./settingsAttention";
 import {
   EMBED_PROVIDER_DEFAULT_BASE_URL,
   EMBED_PROVIDER_OPTIONS,
@@ -572,6 +573,7 @@ type ChainEditorProps = {
   cooldown: CooldownStatus;
   onClearCooldown: (candidateId: string) => void;
   saving: boolean;
+  attention?: boolean;
 };
 
 function ChainEditor({
@@ -581,6 +583,7 @@ function ChainEditor({
   cooldown,
   onClearCooldown,
   saving,
+  attention = false,
 }: ChainEditorProps) {
   const ids = candidates.map((c) => c.id);
   const { isOpen, toggle } = useSettingsItemFold(ids);
@@ -598,7 +601,11 @@ function ChainEditor({
   }
 
   return (
-    <SettingsFoldSection title={title} count={candidates.length}>
+    <SettingsFoldSection
+      title={title}
+      count={candidates.length}
+      attention={attention}
+    >
       <div className="settings-chain-list">
         {candidates.map((c, i) => {
           const st = cooldown[c.id];
@@ -824,6 +831,7 @@ type EmbedChainEditorProps = {
   cooldown: CooldownStatus;
   onClearCooldown: (candidateId: string) => void;
   saving: boolean;
+  attention?: boolean;
 };
 
 function EmbedChainEditor({
@@ -832,6 +840,7 @@ function EmbedChainEditor({
   cooldown,
   onClearCooldown,
   saving,
+  attention = false,
 }: EmbedChainEditorProps) {
   const ids = candidates.map((c) => c.id);
   const { isOpen, toggle } = useSettingsItemFold(ids);
@@ -849,7 +858,11 @@ function EmbedChainEditor({
   }
 
   return (
-    <SettingsFoldSection title="嵌入模型" count={candidates.length}>
+    <SettingsFoldSection
+      title="嵌入模型"
+      count={candidates.length}
+      attention={attention}
+    >
       <div className="settings-chain-list">
         {candidates.map((c, i) => {
           const st = cooldown[c.id];
@@ -1070,6 +1083,7 @@ export function ModelSettingsTab({
         cooldown={cooldown}
         onClearCooldown={onClearCooldown}
         saving={saving}
+        attention={draftChainNeedsSetup(chatModels)}
       />
 
       <ChainEditor
@@ -1079,6 +1093,7 @@ export function ModelSettingsTab({
         cooldown={cooldown}
         onClearCooldown={onClearCooldown}
         saving={saving}
+        attention={draftChainNeedsSetup(utilityModels)}
       />
 
       <EmbedChainEditor
@@ -1087,6 +1102,7 @@ export function ModelSettingsTab({
         cooldown={cooldown}
         onClearCooldown={onClearCooldown}
         saving={saving}
+        attention={draftChainNeedsSetup(embedModels)}
       />
 
       <SearchProviderEditor

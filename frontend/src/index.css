@@ -1546,6 +1546,26 @@ a:hover {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.settings-attention-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #e11d48;
+  flex-shrink: 0;
+  vertical-align: middle;
+  box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--bg-surface, #fff) 80%, transparent);
+}
+
+.settings-tab-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
 }
 
 /* Settings panel drawer */
@@ -1796,6 +1816,9 @@ a:hover {
 
 .memory-fact-status--candidate {
   align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   font-size: var(--text-xs);
   font-weight: 600;
   color: var(--accent, #b45309);
@@ -1980,6 +2003,9 @@ button.memory-fact-statement--jump:focus-visible {
   font-weight: 650;
   color: var(--text);
   letter-spacing: -0.01em;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .settings-group-hint {
@@ -2695,6 +2721,9 @@ button.memory-fact-statement--jump:focus-visible {
   font-weight: 600;
   color: var(--text);
   line-height: var(--leading-tight);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .usage-section-sub {
@@ -2882,6 +2911,9 @@ button.memory-fact-statement--jump:focus-visible {
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
 }
 
 .usage-model-cost {

@@ -4,6 +4,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { SettingsAttentionDot } from "./SettingsAttentionDot";
 
 type FoldSectionProps = {
   title: string;
@@ -11,6 +12,8 @@ type FoldSectionProps = {
   count: number;
   countUnit?: string;
   defaultOpen?: boolean;
+  /** 需要用户处理时显示红点 */
+  attention?: boolean;
   children: ReactNode;
 };
 
@@ -20,6 +23,7 @@ export function SettingsFoldSection({
   count,
   countUnit = "项",
   defaultOpen = false,
+  attention = false,
   children,
 }: FoldSectionProps) {
   const [open, setOpen] = useState(defaultOpen);
@@ -37,7 +41,10 @@ export function SettingsFoldSection({
           {open ? "▾" : "▸"}
         </span>
         <span className="settings-fold-header-main">
-          <span className="settings-group-title">{title}</span>
+          <span className="settings-group-title">
+            {title}
+            {attention ? <SettingsAttentionDot title="需要配置" /> : null}
+          </span>
           <span className="settings-fold-count">
             {count} {countUnit}
           </span>

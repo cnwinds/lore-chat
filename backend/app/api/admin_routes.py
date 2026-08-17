@@ -69,6 +69,41 @@ def get_settings(request: Request) -> dict[str, Any]:
     return data
 
 
+@router.get("/settings-attention")
+def get_settings_attention(request: Request) -> dict[str, Any]:
+    """主界面/设置页红点：未配模型链、记忆待确认、价目表缺单价。"""
+    from app.settings_attention import (
+        build_settings_attention,
+        count_incomplete_prices,
+    )
+
+    settings = request.app.state.settings_store.get()
+    container = getattr(request.app.state, "container", None)
+    pending = 0
+    incomplete_prices = 0
+    if container is not None:
+        mem = getattr(container, "memory_service", None)
+        if mem is not None:
+            try:
+                pending = int(mem.count_pending_candidates())
+            except Exception:
+                pending = 0
+        usage = getattr(container, "usage", None)
+        if usage is not None:
+            try:
+                incomplete_prices = count_incomplete_prices(usage.prices())
+            except Exception:
+                incomplete_prices = 0
+    return {
+        "ok": True,
+        "attention": build_settings_attention(
+            settings=settings,
+            memory_pending_count=pending,
+            incomplete_price_count=incomplete_prices,
+        ),
+    }
+
+
 @router.put("/settings")
 def put_settings(body: dict[str, Any], request: Request) -> dict[str, Any]:
     store = request.app.state.settings_store

@@ -17,6 +17,7 @@ import { useDragAutoScroll } from "../hooks/useDragAutoScroll";
 import { useDismissOnOutsideClick } from "../hooks/useDismissOnOutsideClick";
 import { useKbTreeViewportUi } from "../hooks/useKbTreeViewportUi";
 import { isSystemLayerPath, SKILLS_DIR } from "../utils/fileTree";
+import { SettingsAttentionDot } from "./settings/SettingsAttentionDot";
 
 type SelectMods = { ctrlKey?: boolean; metaKey?: boolean };
 
@@ -28,6 +29,8 @@ type Props = {
   collapsed?: boolean;
   onToggleCollapsed?: () => void;
   onOpenSettings?: () => void;
+  /** 设置内有待办（未配模型 / 待确认记忆 / 缺价目） */
+  settingsAttention?: boolean;
   onSelectFile: (path: string, mods?: SelectMods) => void;
   onSelectFolder?: (path: string, mods?: SelectMods) => void;
   onOpenEnabledSkills?: () => void;
@@ -48,6 +51,7 @@ export function Sidebar({
   collapsed = false,
   onToggleCollapsed,
   onOpenSettings,
+  settingsAttention = false,
   onSelectFile,
   onSelectFolder,
   onOpenEnabledSkills,
@@ -321,12 +325,21 @@ export function Sidebar({
                   type="button"
                   className="sidebar-settings-btn"
                   onClick={onOpenSettings}
-                  title="系统设置"
+                  title={
+                    settingsAttention
+                      ? "系统设置（有待办）"
+                      : "系统设置"
+                  }
                 >
                   <span className="sidebar-settings-icon" aria-hidden>
                     ⚙
                   </span>
-                  <span className="sidebar-settings-label">设置</span>
+                  <span className="sidebar-settings-label">
+                    设置
+                    {settingsAttention ? (
+                      <SettingsAttentionDot title="有待办" />
+                    ) : null}
+                  </span>
                 </button>
               ) : null}
             </div>
