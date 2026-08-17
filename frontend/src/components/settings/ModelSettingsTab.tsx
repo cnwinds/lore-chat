@@ -16,6 +16,7 @@ import {
   useSettingsItemFold,
 } from "./SettingsFold";
 import { draftChainNeedsSetup } from "./settingsAttention";
+import { ProviderApiKeyLabel } from "./ProviderApiKeyLabel";
 import {
   EMBED_PROVIDER_DEFAULT_BASE_URL,
   EMBED_PROVIDER_OPTIONS,
@@ -696,7 +697,7 @@ function ChainEditor({
                       />
                     </label>
                     <label className="settings-field">
-                      <span>API Key</span>
+                      <ProviderApiKeyLabel providerId={c.provider} />
                       <input
                         type="password"
                         autoComplete="off"
@@ -953,7 +954,7 @@ function EmbedChainEditor({
                       />
                     </label>
                     <label className="settings-field">
-                      <span>API Key</span>
+                      <ProviderApiKeyLabel providerId={c.provider} />
                       <input
                         type="password"
                         autoComplete="off"

@@ -6,6 +6,7 @@ import {
   SettingsFoldSection,
   useSettingsItemFold,
 } from "./SettingsFold";
+import { ProviderApiKeyLabel } from "./ProviderApiKeyLabel";
 
 export type SearchProviderId = "tavily" | "serper" | "brave";
 
@@ -132,7 +133,7 @@ export function SearchProviderEditor({
               {open ? (
                 <div className="settings-model-candidate-body">
                   <label className="settings-field">
-                    <span>API Key</span>
+                    <ProviderApiKeyLabel providerId={p.provider} />
                     <input
                       type="password"
                       autoComplete="off"

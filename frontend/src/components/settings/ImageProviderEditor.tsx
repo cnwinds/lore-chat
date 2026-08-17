@@ -7,6 +7,7 @@ import {
   SettingsFoldSection,
   useSettingsItemFold,
 } from "./SettingsFold";
+import { ProviderApiKeyLabel } from "./ProviderApiKeyLabel";
 
 export type ImageProviderId = "openai" | "zhipu" | "bailian" | "agnes" | "custom";
 
@@ -383,7 +384,7 @@ export function ImageProviderEditor({
                       />
                     </label>
                     <label className="settings-field">
-                      <span>API Key</span>
+                      <ProviderApiKeyLabel providerId={p.provider} />
                       <input
                         type="password"
                         autoComplete="off"

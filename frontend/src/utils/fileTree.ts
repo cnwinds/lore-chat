@@ -34,10 +34,10 @@ export function isMediaDirPath(path: string): boolean {
   return isMediaPath(path);
 }
 
-/** 知识库根级特殊目录行：仅「系统」「技能」「媒体」三节点本身 */
-export function isSpecialKbRootPath(path: string): boolean {
+/** 知识库特殊目录「系统 / 技能 / 媒体」及其下所有路径（含子目录与文件） */
+export function isSpecialKbPath(path: string): boolean {
   return (
-    path === SYSTEM_LAYER_DIR || path === SKILLS_DIR || path === MEDIA_DIR
+    isSystemLayerPath(path) || isSkillsDirPath(path) || isMediaDirPath(path)
   );
 }
 

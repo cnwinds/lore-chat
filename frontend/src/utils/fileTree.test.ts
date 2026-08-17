@@ -4,7 +4,7 @@ import {
   collectAncestorFolderPaths,
   collectDefaultExpandedFolderPaths,
   fileTreeFileIcon,
-  isSpecialKbRootPath,
+  isSpecialKbPath,
   MEDIA_DIR,
   nextUserExpandedAfterTreeChange,
   resolveExpandedFolderPaths,
@@ -12,15 +12,16 @@ import {
   SYSTEM_LAYER_DIR,
 } from "./fileTree";
 
-describe("isSpecialKbRootPath", () => {
-  it("marks only the three root folder rows", () => {
-    expect(isSpecialKbRootPath(SYSTEM_LAYER_DIR)).toBe(true);
-    expect(isSpecialKbRootPath(SKILLS_DIR)).toBe(true);
-    expect(isSpecialKbRootPath(MEDIA_DIR)).toBe(true);
-    expect(isSpecialKbRootPath(`${SYSTEM_LAYER_DIR}/戒律.md`)).toBe(false);
-    expect(isSpecialKbRootPath(`${SKILLS_DIR}/demo/SKILL.md`)).toBe(false);
-    expect(isSpecialKbRootPath(`${MEDIA_DIR}/生成/2026-08`)).toBe(false);
-    expect(isSpecialKbRootPath("笔记/a.md")).toBe(false);
+describe("isSpecialKbPath", () => {
+  it("marks 系统 / 技能 / 媒体 trees including descendants", () => {
+    expect(isSpecialKbPath(SYSTEM_LAYER_DIR)).toBe(true);
+    expect(isSpecialKbPath(`${SYSTEM_LAYER_DIR}/戒律.md`)).toBe(true);
+    expect(isSpecialKbPath(SKILLS_DIR)).toBe(true);
+    expect(isSpecialKbPath(`${SKILLS_DIR}/demo`)).toBe(true);
+    expect(isSpecialKbPath(`${SKILLS_DIR}/demo/SKILL.md`)).toBe(true);
+    expect(isSpecialKbPath(MEDIA_DIR)).toBe(true);
+    expect(isSpecialKbPath(`${MEDIA_DIR}/生成/2026-08`)).toBe(true);
+    expect(isSpecialKbPath("笔记/a.md")).toBe(false);
   });
 });
 

@@ -1192,7 +1192,8 @@ a:hover {
 }
 
 /* 选中仍保留特殊底色，只用强调色文字区分（与普通行的 accent-soft 底区分开） */
-.file-tree-row.kb-special.folder.selected {
+.file-tree-row.kb-special.folder.selected,
+.file-tree-row.kb-special.file.selected {
   background: var(--kb-special-bg-hover);
 }
 
@@ -3158,6 +3159,27 @@ button.memory-fact-statement--jump:focus-visible {
 .settings-field span {
   font-size: var(--text-xs);
   color: var(--text-muted);
+}
+
+.settings-field-label-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+}
+
+.settings-provider-key-link {
+  font-size: var(--font-ui-xs);
+  font-weight: 500;
+  color: var(--accent);
+  text-decoration: none;
+  flex-shrink: 0;
+}
+
+.settings-provider-key-link:hover {
+  color: var(--accent-hover);
+  text-decoration: underline;
 }
 
 .settings-field input[type="text"],
