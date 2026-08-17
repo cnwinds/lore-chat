@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState, type DragEvent } from "react";
 import {
   fileTreeFileIcon,
+  isSpecialKbRootPath,
   isSystemLayerPath,
   type TreeNode,
 } from "../utils/fileTree";
@@ -211,6 +212,7 @@ function TreeItem({
 }) {
   const pad = 8 + depth * 16;
   const systemLayer = isSystemLayerPath(node.path);
+  const specialKbRoot = isSpecialKbRootPath(node.path);
 
   if (node.type === "folder") {
     const isOpen = expanded.has(node.path);
@@ -222,7 +224,7 @@ function TreeItem({
     return (
       <>
         <div
-          className={`file-tree-row folder${systemLayer ? " system-layer" : ""}${dropActive ? " drop-target" : ""}${selected ? " selected" : ""}${mediaLeaf ? " media-leaf" : ""}`}
+          className={`file-tree-row folder${specialKbRoot ? " kb-special" : ""}${dropActive ? " drop-target" : ""}${selected ? " selected" : ""}${mediaLeaf ? " media-leaf" : ""}`}
           style={{ paddingLeft: pad }}
           draggable={!disabled && !systemLayer && !isRenaming}
           onDragStart={(e) => setDragPayload(e, node.path)}
@@ -350,7 +352,7 @@ function TreeItem({
 
   return (
     <div
-      className={`file-tree-row file${systemLayer ? " system-layer" : ""}${selected ? " selected" : ""}`}
+      className={`file-tree-row file${selected ? " selected" : ""}`}
       style={{ paddingLeft: pad + 18 }}
       draggable={!disabled && !systemLayer && !isRenaming}
       onDragOver={handleFileDragOver}

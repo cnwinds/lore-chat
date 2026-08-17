@@ -597,7 +597,6 @@ export function SettingsPanel({
         <header className="settings-panel-header">
           <div className="settings-panel-heading">
             <h2 id="settings-panel-title">设置</h2>
-            <p className="settings-panel-subtitle">模型、检索与账户</p>
           </div>
           <button
             type="button"
@@ -653,7 +652,6 @@ export function SettingsPanel({
                         Key（OpenAI 兼容）。保存后即可开始对话。
                       </p>
                     ) : null}
-                    <p className="settings-tab-hint">密钥留空表示不修改；当前值已脱敏显示。</p>
                     <ModelSettingsTab
                       publicBaseUrl={publicBaseUrl}
                       onPublicBaseUrlChange={setPublicBaseUrl}

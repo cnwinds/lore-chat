@@ -84,6 +84,9 @@
 
   --system-layer: #b45309;
   --system-layer-soft: rgba(180, 83, 9, 0.1);
+  /* 知识库特殊目录（系统/技能/媒体）统一底色，不用黄字 */
+  --kb-special-bg: rgba(71, 85, 105, 0.09);
+  --kb-special-bg-hover: rgba(71, 85, 105, 0.14);
 
   --backdrop: rgba(17, 24, 39, 0.4);
 
@@ -144,6 +147,8 @@
 
   --system-layer: #f59e0b;
   --system-layer-soft: rgba(245, 158, 11, 0.14);
+  --kb-special-bg: rgba(148, 163, 184, 0.12);
+  --kb-special-bg-hover: rgba(148, 163, 184, 0.18);
 
   --backdrop: rgba(0, 0, 0, 0.6);
 
@@ -1178,23 +1183,17 @@ a:hover {
   font-weight: 600;
 }
 
-.file-tree-row.system-layer {
-  color: var(--system-layer);
-  font-weight: 500;
+.file-tree-row.kb-special {
+  background: var(--kb-special-bg);
 }
 
-.file-tree-row.system-layer:hover {
-  background: var(--system-layer-soft);
+.file-tree-row.kb-special:hover {
+  background: var(--kb-special-bg-hover);
 }
 
-.file-tree-row.system-layer.file.selected {
-  background: var(--system-layer-soft);
-  color: var(--system-layer);
-}
-
-.file-tree-row.system-layer .file-tree-chevron {
-  color: var(--system-layer);
-  opacity: 0.75;
+/* 选中仍保留特殊底色，只用强调色文字区分（与普通行的 accent-soft 底区分开） */
+.file-tree-row.kb-special.folder.selected {
+  background: var(--kb-special-bg-hover);
 }
 
 .file-tree-chevron {
@@ -1640,13 +1639,6 @@ a:hover {
   font-weight: 650;
   letter-spacing: -0.01em;
   color: var(--text);
-}
-
-.settings-panel-subtitle {
-  margin: 0;
-  font-size: var(--font-ui-xs);
-  color: var(--text-muted);
-  line-height: var(--leading-tight);
 }
 
 .settings-panel-close {
@@ -3047,12 +3039,12 @@ button.memory-fact-statement--jump:focus-visible {
 
 .usage-price-fields {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
 }
 
-.usage-price-field--wide {
-  grid-column: 1 / -1;
+.usage-price-fields--single {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .usage-price-card-title {

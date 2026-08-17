@@ -4,12 +4,25 @@ import {
   collectAncestorFolderPaths,
   collectDefaultExpandedFolderPaths,
   fileTreeFileIcon,
+  isSpecialKbRootPath,
   MEDIA_DIR,
   nextUserExpandedAfterTreeChange,
   resolveExpandedFolderPaths,
   SKILLS_DIR,
   SYSTEM_LAYER_DIR,
 } from "./fileTree";
+
+describe("isSpecialKbRootPath", () => {
+  it("marks only the three root folder rows", () => {
+    expect(isSpecialKbRootPath(SYSTEM_LAYER_DIR)).toBe(true);
+    expect(isSpecialKbRootPath(SKILLS_DIR)).toBe(true);
+    expect(isSpecialKbRootPath(MEDIA_DIR)).toBe(true);
+    expect(isSpecialKbRootPath(`${SYSTEM_LAYER_DIR}/戒律.md`)).toBe(false);
+    expect(isSpecialKbRootPath(`${SKILLS_DIR}/demo/SKILL.md`)).toBe(false);
+    expect(isSpecialKbRootPath(`${MEDIA_DIR}/生成/2026-08`)).toBe(false);
+    expect(isSpecialKbRootPath("笔记/a.md")).toBe(false);
+  });
+});
 
 describe("collectDefaultExpandedFolderPaths", () => {
   it("expands depth 1–2 only", () => {

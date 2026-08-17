@@ -632,8 +632,8 @@ export function UsageSettingsTab({
                               }
                             />
                           </label>
-                          <label className="usage-price-field usage-price-field--wide">
-                            <span>Cache Input</span>
+                          <label className="usage-price-field">
+                            <span>Cache</span>
                             <input
                               type="number"
                               step="any"
@@ -656,8 +656,8 @@ export function UsageSettingsTab({
 
                     {fields.embed ? (
                       <div className="usage-price-group">
-                        <div className="usage-price-fields">
-                          <label className="usage-price-field usage-price-field--wide">
+                        <div className="usage-price-fields usage-price-fields--single">
+                          <label className="usage-price-field">
                             <span>Embed</span>
                             <input
                               type="number"

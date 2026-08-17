@@ -7,6 +7,7 @@ import {
 } from "../api";
 import { groupConversationsByTime } from "../utils/conversationGroups";
 import { formatSidebarConversationTime } from "../utils/displayTime";
+import { scrollConversationItemIntoView } from "../utils/sidebarConversationScroll";
 import { FileTree } from "./FileTree";
 import { KbFloatingRootDrop } from "./KbFloatingRootDrop";
 import { KbTreeProgressBar } from "./KbTreeProgressBar";
@@ -67,6 +68,7 @@ export function Sidebar({
   const [kbHintOpen, setKbHintOpen] = useState(false);
   const kbHintRef = useRef<HTMLDivElement>(null);
   const treeScrollRef = useRef<HTMLDivElement>(null);
+  const activeConversationRef = useRef<HTMLDivElement>(null);
   const { onDragOverAutoScroll } = useDragAutoScroll(treeScrollRef);
   const viewport = useKbTreeViewportUi({
     paths: docs,
@@ -97,6 +99,14 @@ export function Sidebar({
   useEffect(() => {
     refresh();
   }, [refreshKey]);
+
+  // 切换/跳转会话后：仅当标题未完整可见时滚入列表可视区（列表刷新不误滚）
+  useEffect(() => {
+    if (!activeConversationId || collapsed) return;
+    const el = activeConversationRef.current;
+    if (!el) return;
+    scrollConversationItemIntoView(el);
+  }, [activeConversationId, conversations, collapsed]);
 
   useDismissOnOutsideClick(tree.menuRef, !!tree.menu, tree.closeMenu);
   useDismissOnOutsideClick(
@@ -191,6 +201,7 @@ export function Sidebar({
                     return (
                       <div
                         key={c.id}
+                        ref={active ? activeConversationRef : undefined}
                         className={`conversation-item${active ? " active" : ""}`}
                       >
                         <button

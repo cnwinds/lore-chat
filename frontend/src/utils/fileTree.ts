@@ -34,6 +34,13 @@ export function isMediaDirPath(path: string): boolean {
   return isMediaPath(path);
 }
 
+/** 知识库根级特殊目录行：仅「系统」「技能」「媒体」三节点本身 */
+export function isSpecialKbRootPath(path: string): boolean {
+  return (
+    path === SYSTEM_LAYER_DIR || path === SKILLS_DIR || path === MEDIA_DIR
+  );
+}
+
 /** 侧栏文件行图标：图片专用，其它非 md 为附件，md 为文档。 */
 export function fileTreeFileIcon(path: string): "🖼" | "📎" | "📄" {
   if (isLikelyImagePath(path)) return "🖼";
