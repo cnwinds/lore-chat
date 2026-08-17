@@ -43,6 +43,44 @@ def test_enrich_always_adapts_thinking_protocol():
     assert out2["thinking_protocol"] == "none"
 
 
+def test_enrich_preserves_saved_effort_options_and_max():
+    """目录缺档或更窄时，不得掏空已保存的强度下拉，也不得把 max 打回 medium。"""
+    from app.models.catalog import enrich_candidate_dict
+
+    glm = enrich_candidate_dict(
+        {
+            "model": "glm-5.3",
+            "thinking": True,
+            "effort": "max",
+            "effort_options": ["low", "high", "max"],
+        }
+    )
+    assert glm["effort_options"] == ["low", "high", "max"]
+    assert glm["effort"] == "max"
+
+    ds = enrich_candidate_dict(
+        {
+            "model": "deepseek-v4-flash-0731",
+            "thinking": True,
+            "effort": "max",
+            "effort_options": ["none", "low", "high", "max"],
+            "thinking_protocol": "deepseek",
+        }
+    )
+    assert "max" in ds["effort_options"]
+    assert ds["effort"] == "max"
+
+
+def test_enrich_fills_effort_options_when_thinking_but_catalog_empty():
+    """可思考但目录未列档位时，应用协议启发，避免下拉消失。"""
+    from app.models.catalog import enrich_candidate_dict
+
+    out = enrich_candidate_dict({"model": "glm-5.3", "thinking": True})
+    assert out["thinking"] is True
+    assert len(out["effort_options"]) > 0
+    assert "max" in out["effort_options"]
+
+
 def test_migrate_settings_dict_from_legacy():
     data = migrate_settings_dict(
         {"big_model": "agnes-2.5-pro", "small_model": "gpt-4o-mini", "big_base_url": "https://apihub.agnes-ai.com/v1"}
@@ -50,6 +88,25 @@ def test_migrate_settings_dict_from_legacy():
     assert data["chat_models"][0]["model"] == "agnes-2.5-pro"
     assert data["chat_models"][0]["image"] is True
     assert data["utility_models"][0]["model"] == "gpt-4o-mini"
+    assert data["embed_models"][0]["model"] == "text-embedding-3-small"
+
+
+def test_resolve_embed_chain_from_embed_models(tmp_path):
+    s = Settings(
+        kb_path=tmp_path,
+        embed_models=[
+            {
+                "id": "e1",
+                "model": "text-embedding-v3",
+                "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+                "api_key": "sk-emb",
+                "provider": "bailian",
+            }
+        ],
+    )
+    emb = resolve_chain_candidates(s, "embed")
+    assert emb[0].model == "text-embedding-v3"
+    assert emb[0].base_url.endswith("/compatible-mode/v1")
 
 
 def test_resolve_chain_from_legacy_settings(tmp_path):

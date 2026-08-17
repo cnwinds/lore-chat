@@ -1,5 +1,11 @@
+import { useMemo } from "react";
 import type { CooldownStatus } from "./settingsTypes";
 import { ProviderCooldownBar } from "./ProviderCooldownBar";
+import {
+  SettingsCandidateFoldToggle,
+  SettingsFoldSection,
+  useSettingsItemFold,
+} from "./SettingsFold";
 
 export type SearchProviderId = "tavily" | "serper" | "brave";
 
@@ -38,6 +44,8 @@ export function SearchProviderEditor({
 }: Props) {
   const used = new Set(providers.map((p) => p.provider));
   const available = SEARCH_PROVIDER_OPTIONS.filter((o) => !used.has(o.id));
+  const ids = useMemo(() => providers.map((p) => p.id), [providers]);
+  const { isOpen, toggle } = useSettingsItemFold(ids);
 
   function updateAt(i: number, patch: Partial<SearchProviderDraft>) {
     onChange(providers.map((p, idx) => (idx === i ? { ...p, ...patch } : p)));
@@ -60,23 +68,19 @@ export function SearchProviderEditor({
     SEARCH_PROVIDER_OPTIONS.find((o) => o.id === id)?.label ?? id;
 
   return (
-    <section className="settings-group settings-chain">
-      <header className="settings-group-header">
-        <h3 className="settings-group-title">搜索提供商</h3>
-        <p className="settings-group-hint">
-          用于联网搜索工具。按需添加；列表顺序即优先级，出问题会冷却并切换下一家。每种类型只能添加一次。
-        </p>
-      </header>
+    <SettingsFoldSection title="搜索提供商" count={providers.length}>
       <div className="settings-chain-list">
         {providers.map((p, i) => {
           const st = cooldown[p.id];
           const cooling = Boolean(st && !st.available && !st.disabled);
           const disabled = Boolean(st?.disabled);
+          const open = isOpen(p.id);
           return (
             <article
               key={p.id}
               className={[
                 "settings-model-candidate",
+                open ? "" : "settings-model-candidate--folded",
                 i === 0 ? "settings-model-candidate--primary" : "",
                 disabled ? "settings-model-candidate--disabled" : "",
                 cooling ? "settings-model-candidate--cooling" : "",
@@ -85,15 +89,13 @@ export function SearchProviderEditor({
                 .join(" ")}
             >
               <div className="settings-model-candidate-head">
-                <span
-                  className={`settings-priority-badge${i === 0 ? " settings-priority-badge--primary" : ""}`}
-                  title={i === 0 ? "最高优先级" : `优先级 ${i + 1}`}
-                >
-                  {i + 1}
-                </span>
-                <div className="settings-model-candidate-main">
-                  <span className="settings-search-provider-name">{labelOf(p.provider)}</span>
-                </div>
+                <SettingsCandidateFoldToggle
+                  open={open}
+                  onToggle={() => toggle(p.id)}
+                  title={labelOf(p.provider)}
+                  priority={i + 1}
+                  primary={i === 0}
+                />
                 <div className="settings-model-candidate-actions">
                   <button
                     type="button"
@@ -127,22 +129,26 @@ export function SearchProviderEditor({
                   </button>
                 </div>
               </div>
-              <label className="settings-field">
-                <span>API Key</span>
-                <input
-                  type="password"
-                  autoComplete="off"
-                  value={p.api_key}
-                  onChange={(e) => updateAt(i, { api_key: e.target.value })}
-                  disabled={saving}
-                  placeholder={p.api_key_masked || "未设置"}
-                />
-              </label>
-              <ProviderCooldownBar
-                status={st}
-                saving={saving}
-                onClear={() => onClearCooldown(p.id)}
-              />
+              {open ? (
+                <div className="settings-model-candidate-body">
+                  <label className="settings-field">
+                    <span>API Key</span>
+                    <input
+                      type="password"
+                      autoComplete="off"
+                      value={p.api_key}
+                      onChange={(e) => updateAt(i, { api_key: e.target.value })}
+                      disabled={saving}
+                      placeholder={p.api_key_masked || "未设置"}
+                    />
+                  </label>
+                  <ProviderCooldownBar
+                    status={st}
+                    saving={saving}
+                    onClear={() => onClearCooldown(p.id)}
+                  />
+                </div>
+              ) : null}
             </article>
           );
         })}
@@ -173,6 +179,6 @@ export function SearchProviderEditor({
       ) : (
         <p className="settings-group-hint">已添加全部可用类型。</p>
       )}
-    </section>
+    </SettingsFoldSection>
   );
 }

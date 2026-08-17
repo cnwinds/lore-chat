@@ -146,6 +146,29 @@ export function searchModelCatalog(
   );
 }
 
+export type ProviderModelsResponse = {
+  ok: boolean;
+  source: "provider" | "catalog_fallback" | string;
+  error?: string | null;
+  items: ModelCatalogItem[];
+};
+
+/** 按候选 Base URL / Key 拉远端 /models；失败时后端回退已知目录。 */
+export function listProviderModels(body: {
+  base_url: string;
+  api_key?: string | null;
+  candidate_id?: string | null;
+  q?: string;
+  kind?: "all" | "llm" | "embedding" | "image";
+  limit?: number;
+}) {
+  return apiFetch<ProviderModelsResponse>("/api/admin/provider-models", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
 export type UsageAgg = {
   calls: number;
   ok_calls: number;

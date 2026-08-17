@@ -11,7 +11,7 @@ from app.models.effort import Effort, coerce_effort, coerce_to_options, default_
 
 ImageWire = Literal["data", "url"]
 ThinkingProtocol = Literal["none", "openai_kwargs", "deepseek", "qwen", "agnes"]
-ModelChain = Literal["chat", "utility"]
+ModelChain = Literal["chat", "utility", "embed"]
 
 # 兼容旧 import：from app.models.candidate import Effort
 __all__ = [
@@ -28,6 +28,8 @@ class ModelCandidate(BaseModel):
     model: str
     base_url: str | None = None
     api_key: str | None = None
+    # 厂家预设 id（openai/zhipu/.../custom）；仅设置 UI，运行时路由不依赖
+    provider: str | None = None
     image: bool = False
     thinking: bool = False
     image_wire: ImageWire = "data"
@@ -116,7 +118,11 @@ def parse_candidates(raw: Any) -> list[ModelCandidate]:
 
 
 def resolve_chain_candidates(settings: Any, chain: ModelChain) -> list[ModelCandidate]:
-    """返回有序候选；空链时从 legacy small/big 合成一条。"""
+    """返回有序候选；空链时从 legacy small/big/embed 合成一条。
+
+    不在运行时用全局 openai_* 回填：每条候选须自带 base_url / api_key
+    （旧配置由 migrate_settings_dict 一次性提升）。
+    """
     if chain == "chat":
         configured = parse_candidates(getattr(settings, "chat_models", None))
         if configured:
@@ -128,6 +134,23 @@ def resolve_chain_candidates(settings: Any, chain: ModelChain) -> list[ModelCand
                 api_key=getattr(settings, "big_api_key", None),
                 chain="chat",
             )
+        ]
+    if chain == "embed":
+        configured = parse_candidates(getattr(settings, "embed_models", None))
+        if configured:
+            return configured
+        model = (getattr(settings, "embed_model", None) or "").strip() or "text-embedding-3-small"
+        return [
+            ModelCandidate(
+                id="embed-legacy",
+                model=model,
+                base_url=getattr(settings, "embed_base_url", None),
+                api_key=getattr(settings, "embed_api_key", None),
+                image=False,
+                thinking=False,
+                effort_options=[],
+                thinking_protocol="none",
+            ).ensure_id()
         ]
     configured = parse_candidates(getattr(settings, "utility_models", None))
     if configured:
@@ -143,7 +166,10 @@ def resolve_chain_candidates(settings: Any, chain: ModelChain) -> list[ModelCand
 
 
 def migrate_settings_dict(data: dict[str, Any]) -> dict[str, Any]:
-    """将旧 small/big 字段一次性写入 chat_models/utility_models（若尚无新字段）。"""
+    """将旧 small/big/embed 字段一次性写入对应 *_models 链（若尚无新字段）。
+
+    并在候选缺少 base_url/api_key 时，从全局 openai_* 填入（取消「默认端点」后的兼容）。
+    """
     out = dict(data)
     if not parse_candidates(out.get("chat_models")):
         big = out.get("big_model") or "gpt-4o"
@@ -165,14 +191,101 @@ def migrate_settings_dict(data: dict[str, Any]) -> dict[str, Any]:
                 chain="utility",
             ).model_dump()
         ]
+    if not parse_candidates(out.get("embed_models")):
+        emb = (out.get("embed_model") or "").strip() or "text-embedding-3-small"
+        out["embed_models"] = [
+            ModelCandidate(
+                id="embed-migrated",
+                model=str(emb),
+                base_url=out.get("embed_base_url"),
+                api_key=out.get("embed_api_key"),
+                provider="custom",
+                image=False,
+                thinking=False,
+                effort_options=[],
+                thinking_protocol="none",
+            )
+            .ensure_id()
+            .model_dump()
+        ]
+    return promote_global_openai_endpoint(out)
+
+
+# 权威定义：settings_store 再导出同名常量
+PLACEHOLDER_API_KEYS = frozenset({"", "sk-none", "sk-your-key"})
+
+
+def is_placeholder_api_key(key: str | None) -> bool:
+    return (key or "").strip() in PLACEHOLDER_API_KEYS
+
+
+def _apply_endpoint_defaults(
+    cands: list[ModelCandidate],
+    *,
+    global_base: str | None,
+    global_key: str | None,
+) -> tuple[list[ModelCandidate], bool]:
+    """给缺 URL/Key 的候选补全局端点；返回 (列表, 是否有变更)。"""
+    base = (global_base or "").strip() or None
+    key = None if is_placeholder_api_key(global_key) else (global_key or "").strip() or None
+    changed = False
+    out: list[ModelCandidate] = []
+    for c in cands:
+        updates: dict[str, Any] = {}
+        if not (c.base_url or "").strip() and base:
+            updates["base_url"] = base
+        if not (c.api_key or "").strip() and key:
+            updates["api_key"] = key
+        if updates:
+            changed = True
+            out.append(c.model_copy(update=updates))
+        else:
+            out.append(c)
+    return out, changed
+
+
+def promote_global_openai_endpoint(data: dict[str, Any]) -> dict[str, Any]:
+    """旧配置一次性迁移：仅当 openai_* 非空时补齐缺端点的候选；运行时不再回退全局。"""
+    out = dict(data)
+    global_base = (out.get("openai_base_url") or "").strip() or None
+    global_key = out.get("openai_api_key")
+    if isinstance(global_key, str):
+        global_key = global_key.strip() or None
+    else:
+        global_key = None
+    if is_placeholder_api_key(global_key):
+        global_key = None
+
+    for chain_key in ("chat_models", "utility_models", "embed_models"):
+        cands = parse_candidates(out.get(chain_key))
+        if not cands:
+            continue
+        promoted, changed = _apply_endpoint_defaults(
+            cands, global_base=global_base, global_key=global_key
+        )
+        if changed:
+            out[chain_key] = [c.model_dump() for c in promoted]
+
+    # 兼容仍读 legacy 字段的路径：若尚无 embed_models 提升结果，再补顶层
+    embed_base = (out.get("embed_base_url") or "").strip()
+    if not embed_base and global_base and not parse_candidates(out.get("embed_models")):
+        out["embed_base_url"] = global_base
+    embed_key = out.get("embed_api_key")
+    if (
+        is_placeholder_api_key(embed_key if isinstance(embed_key, str) else None)
+        and global_key
+        and not parse_candidates(out.get("embed_models"))
+    ):
+        out["embed_api_key"] = global_key
     return out
 
 
 def sync_legacy_aliases(settings_dict: dict[str, Any]) -> dict[str, Any]:
-    """链首候选回写 small/big 别名，兼容仍读旧字段的代码/测试。"""
+    """链首候选回写 small/big/embed 别名，兼容仍读旧字段的代码/测试。"""
     out = dict(settings_dict)
     chat = parse_candidates(out.get("chat_models"))
     util = parse_candidates(out.get("utility_models"))
+    embed = parse_candidates(out.get("embed_models"))
     if chat:
         c0 = chat[0]
         out["big_model"] = c0.model
@@ -185,6 +298,12 @@ def sync_legacy_aliases(settings_dict: dict[str, Any]) -> dict[str, Any]:
         out["small_base_url"] = u0.base_url
         if u0.api_key is not None:
             out["small_api_key"] = u0.api_key
+    if embed:
+        e0 = embed[0]
+        out["embed_model"] = e0.model
+        out["embed_base_url"] = e0.base_url
+        if e0.api_key is not None:
+            out["embed_api_key"] = e0.api_key
     return out
 
 
@@ -214,6 +333,9 @@ _ROUTING_SETTINGS_KEYS = (
     "small_api_key",
     "small_base_url",
     "small_model",
+    "embed_api_key",
+    "embed_base_url",
+    "embed_model",
     "public_base_url",
 )
 
@@ -233,6 +355,7 @@ def model_routing_fingerprint(settings: Any) -> str:
     payload: dict[str, Any] = {
         "chat_models": chain_rows(getattr(settings, "chat_models", None)),
         "utility_models": chain_rows(getattr(settings, "utility_models", None)),
+        "embed_models": chain_rows(getattr(settings, "embed_models", None)),
     }
     for k in _ROUTING_SETTINGS_KEYS:
         payload[k] = getattr(settings, k, None)

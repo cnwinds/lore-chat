@@ -36,7 +36,8 @@ class Settings(BaseSettings):
     skills_dir: str = "技能"
 
     openai_api_key: str = "sk-none"
-    openai_base_url: str = "https://api.openai.com/v1"
+    # 仅作旧配置迁移源；运行时不回退。默认可空，避免新安装被注入 api.openai.com。
+    openai_base_url: str = ""
 
     # Legacy 别名：迁移后与 chat/utility 链首同步；新配置以 *_models 为准
     small_model: str = "gpt-4o-mini"
@@ -50,14 +51,15 @@ class Settings(BaseSettings):
     embed_base_url: str | None = None
     embed_api_key: str | None = None
 
-    # chat = 对话/Agent；utility = 辅助（记忆抽取等）；列表顺序即优先级
+    # chat = 对话/Agent；utility = 辅助（记忆抽取等）；embed = 向量；列表顺序即优先级
     chat_models: list[dict[str, Any]] = []
     utility_models: list[dict[str, Any]] = []
+    embed_models: list[dict[str, Any]] = []
 
     # Agnes 等 url_only 识图：签名附件 URL 的公网可达前缀（必填才启用 URL 识图）
     public_base_url: str | None = None
 
-    @field_validator("chat_models", "utility_models", mode="before")
+    @field_validator("chat_models", "utility_models", "embed_models", mode="before")
     @classmethod
     def _parse_model_lists(cls, v: Any) -> list:
         if v is None or v == "":
@@ -187,8 +189,10 @@ LEGACY_SEARCH_SECRET_KEYS: frozenset[str] = frozenset(
     }
 )
 
-# 嵌套在 chat_models / utility_models[].api_key 内，由 SettingsStore 单独脱敏
-CHAIN_MODEL_SETTING_KEYS: frozenset[str] = frozenset({"chat_models", "utility_models"})
+# 嵌套在 chat_models / utility_models / embed_models[].api_key 内，由 SettingsStore 单独脱敏
+CHAIN_MODEL_SETTING_KEYS: frozenset[str] = frozenset(
+    {"chat_models", "utility_models", "embed_models"}
+)
 
 # 嵌套在 search_providers[].api_key 内
 CHAIN_SEARCH_SETTING_KEYS: frozenset[str] = frozenset({"search_providers"})

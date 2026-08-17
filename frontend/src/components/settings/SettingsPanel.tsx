@@ -16,21 +16,21 @@ import { KbBackupSettingsTab } from "./KbBackupSettingsTab";
 import { MemorySettingsTab } from "./MemorySettingsTab";
 import {
   emptyCandidate,
-  hasCustomEndpoint,
+  emptyEmbedCandidate,
+  embedCandidatesFromLegacy,
   ModelSettingsTab,
   maskApiKeyPlaceholder,
   parseCandidates,
-  SECRET_KEYS,
+  parseEmbedCandidates,
   SEARCH_PROVIDER_OPTIONS,
   IMAGE_PROVIDER_OPTIONS,
   type CooldownStatus,
+  type EmbedCandidateDraft,
   type ModelCandidateDraft,
-  type ModelSlot,
   type SearchProviderDraft,
   type SearchProviderId,
   type ImageProviderDraft,
   type ImageProviderId,
-  type SecretKey,
 } from "./ModelSettingsTab";
 import { SearchSettingsTab } from "./SearchSettingsTab";
 import { UsageSettingsTab } from "./UsageSettingsTab";
@@ -196,26 +196,20 @@ export function SettingsPanel({
   const [activeTab, setActiveTab] = useState<SettingsTab>(readStoredSettingsTab);
 
   const [kbPath, setKbPath] = useState("");
-  const [maskedSecrets, setMaskedSecrets] = useState<Partial<Record<SecretKey, string>>>({});
-  const [secretInputs, setSecretInputs] = useState<Partial<Record<SecretKey, string>>>({});
 
-  const [embedModel, setEmbedModel] = useState("");
-  const [openaiBaseUrl, setOpenaiBaseUrl] = useState("");
   const [publicBaseUrl, setPublicBaseUrl] = useState("");
-  const [embedBaseUrl, setEmbedBaseUrl] = useState("");
   const [chatModels, setChatModels] = useState<ModelCandidateDraft[]>([emptyCandidate()]);
   const [utilityModels, setUtilityModels] = useState<ModelCandidateDraft[]>([
     emptyCandidate(),
+  ]);
+  const [embedModels, setEmbedModels] = useState<EmbedCandidateDraft[]>([
+    emptyEmbedCandidate(),
   ]);
   const [cooldown, setCooldown] = useState<CooldownStatus>({});
   const [searchProviders, setSearchProviders] = useState<SearchProviderDraft[]>([]);
   const [searchCooldown, setSearchCooldown] = useState<CooldownStatus>({});
   const [imageProviders, setImageProviders] = useState<ImageProviderDraft[]>([]);
   const [imageCooldown, setImageCooldown] = useState<CooldownStatus>({});
-
-  const [endpointExpanded, setEndpointExpanded] = useState<Record<ModelSlot, boolean>>({
-    embed: false,
-  });
 
   const [minVectorScore, setMinVectorScore] = useState(0.45);
   const [rrfK, setRrfK] = useState(60);
@@ -252,8 +246,6 @@ export function SettingsPanel({
       const data = await getSettings();
       setKbPath(str(data.kb_path));
 
-      setEmbedModel(str(data.embed_model));
-      setOpenaiBaseUrl(str(data.openai_base_url));
       const existingPublic = str(data.public_base_url).trim();
       if (existingPublic) {
         setPublicBaseUrl(existingPublic);
@@ -269,11 +261,20 @@ export function SettingsPanel({
           }
         }
       }
-      setEmbedBaseUrl(str(data.embed_base_url));
       const chat = parseCandidates(data.chat_models);
       const util = parseCandidates(data.utility_models);
       setChatModels(chat.length ? chat : [emptyCandidate()]);
       setUtilityModels(util.length ? util : [emptyCandidate()]);
+      const embeds = parseEmbedCandidates(data.embed_models);
+      setEmbedModels(
+        embeds.length
+          ? embeds
+          : embedCandidatesFromLegacy({
+              embed_model: data.embed_model,
+              embed_base_url: data.embed_base_url,
+              embed_api_key: data.embed_api_key,
+            }),
+      );
       setCooldown(
         data.model_cooldown && typeof data.model_cooldown === "object"
           ? (data.model_cooldown as CooldownStatus)
@@ -304,17 +305,6 @@ export function SettingsPanel({
       setSandboxMirrorRegion(
         data.sandbox_mirror_region === "global" ? "global" : "cn",
       );
-
-      const masked: Partial<Record<SecretKey, string>> = {};
-      for (const key of SECRET_KEYS) {
-        const v = data[key];
-        if (typeof v === "string" && v) masked[key] = v;
-      }
-      setMaskedSecrets(masked);
-      setSecretInputs({});
-      setEndpointExpanded({
-        embed: hasCustomEndpoint(str(data.embed_base_url), "embed_api_key", masked),
-      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "加载设置失败");
     } finally {
@@ -364,16 +354,13 @@ export function SettingsPanel({
     setSaveMsg(null);
     try {
       const patch: Record<string, unknown> = {
-        embed_model: embedModel,
-        openai_base_url: openaiBaseUrl,
         public_base_url: publicBaseUrl.trim() || null,
-        embed_base_url: endpointExpanded.embed ? embedBaseUrl.trim() || null : null,
         chat_models: chatModels.map((c) => ({
           id: c.id,
           model: c.model,
-          base_url: c.use_custom_endpoint ? c.base_url.trim() || null : null,
-          api_key: c.use_custom_endpoint ? c.api_key.trim() || null : null,
-          use_custom_endpoint: c.use_custom_endpoint,
+          provider: c.provider,
+          base_url: c.base_url.trim() || null,
+          api_key: c.api_key.trim() || null,
           image: c.image,
           thinking: c.thinking,
           effort: c.effort,
@@ -383,14 +370,27 @@ export function SettingsPanel({
         utility_models: utilityModels.map((c) => ({
           id: c.id,
           model: c.model,
-          base_url: c.use_custom_endpoint ? c.base_url.trim() || null : null,
-          api_key: c.use_custom_endpoint ? c.api_key.trim() || null : null,
-          use_custom_endpoint: c.use_custom_endpoint,
+          provider: c.provider,
+          base_url: c.base_url.trim() || null,
+          api_key: c.api_key.trim() || null,
           image: c.image,
           thinking: c.thinking,
           effort: c.effort,
           effort_options: c.effort_options,
           image_wire: c.image_wire,
+        })),
+        embed_models: embedModels.map((c) => ({
+          id: c.id,
+          model: c.model,
+          provider: c.provider,
+          base_url: c.base_url.trim() || null,
+          api_key: c.api_key.trim() || null,
+          image: false,
+          thinking: false,
+          effort: "medium",
+          effort_options: [],
+          image_wire: "data",
+          thinking_protocol: "none",
         })),
         search_providers: searchProviders.map((p) => ({
           id: p.id,
@@ -413,16 +413,6 @@ export function SettingsPanel({
         sandbox_trust_mode: sandboxTrustMode,
         sandbox_mirror_region: sandboxMirrorRegion,
       };
-
-      if (!endpointExpanded.embed) {
-        patch.embed_api_key = null;
-      }
-
-      for (const key of SECRET_KEYS) {
-        if (key === "embed_api_key" && !endpointExpanded.embed) continue;
-        const input = secretInputs[key]?.trim();
-        if (input) patch[key] = input;
-      }
 
       const saved = await putSettings(patch);
       setSaveMsg("已保存并生效");
@@ -587,29 +577,20 @@ export function SettingsPanel({
                   >
                     {showLlmSetupGuide ? (
                       <p className="settings-setup-guide" role="status">
-                        尚未配置 API Key。请填写下方默认 API Key（OpenAI 兼容）；也可修改 Base
-                        URL 指向其它兼容网关。保存后即可开始对话。
+                        尚未配置 API Key。请为对话/辅助模型添加候选，填写 Base URL 与 API
+                        Key（OpenAI 兼容）。保存后即可开始对话。
                       </p>
                     ) : null}
                     <p className="settings-tab-hint">密钥留空表示不修改；当前值已脱敏显示。</p>
                     <ModelSettingsTab
-                      openaiBaseUrl={openaiBaseUrl}
-                      onOpenaiBaseUrlChange={setOpenaiBaseUrl}
                       publicBaseUrl={publicBaseUrl}
                       onPublicBaseUrlChange={setPublicBaseUrl}
                       chatModels={chatModels}
                       onChatModelsChange={setChatModels}
                       utilityModels={utilityModels}
                       onUtilityModelsChange={setUtilityModels}
-                      embedModel={embedModel}
-                      onEmbedModelChange={setEmbedModel}
-                      embedBaseUrl={embedBaseUrl}
-                      onEmbedBaseUrlChange={setEmbedBaseUrl}
-                      secretInputs={secretInputs}
-                      setSecretInputs={setSecretInputs}
-                      maskedSecrets={maskedSecrets}
-                      endpointExpanded={endpointExpanded}
-                      setEndpointExpanded={setEndpointExpanded}
+                      embedModels={embedModels}
+                      onEmbedModelsChange={setEmbedModels}
                       cooldown={cooldown}
                       onClearCooldown={async (candidateId) => {
                         try {

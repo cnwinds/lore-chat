@@ -16,8 +16,25 @@ def test_gpt52_efforts_include_none_and_xhigh():
     assert default_effort("gpt-5.2", "openai_kwargs") == "none"
 
 
-def test_deepseek_efforts_three():
-    assert supported_efforts("deepseek-v4-pro", "deepseek") == ("low", "medium", "high")
+def test_deepseek_efforts_include_max():
+    assert supported_efforts("deepseek-v4-pro", "deepseek") == (
+        "low",
+        "medium",
+        "high",
+        "max",
+    )
+
+
+def test_glm_efforts_include_max():
+    assert supported_efforts("glm-5.3") == ("low", "medium", "high", "max")
+
+
+def test_unknown_model_efforts_no_max():
+    assert supported_efforts("totally-unknown-model-xyz") == (
+        "low",
+        "medium",
+        "high",
+    )
 
 
 def test_agnes_efforts_empty():

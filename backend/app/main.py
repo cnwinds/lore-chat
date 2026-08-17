@@ -21,7 +21,7 @@ from app.api.admin_routes import router as admin_router
 from app.api.usage_routes import router as usage_router
 from app.api.routes import router
 from app.engine.sandbox.mirrors import normalize_mirror_region
-from app.settings_store import SettingsStore, is_llm_api_key_configured
+from app.settings_store import SettingsStore, settings_have_llm_api_key
 
 _DERIVATION_WORKER_INTERVAL_SECONDS = 0.5
 _DERIVATION_WORKER_BATCH_SIZE = 20
@@ -51,10 +51,10 @@ def create_app(settings: Settings | None = None, llm: LLMClient | None = None) -
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         effective = app.state.settings_store.get()
-        if not is_llm_api_key_configured(effective.openai_api_key):
+        if not settings_have_llm_api_key(effective):
             logging.getLogger("uvicorn.error").warning(
-                "OPENAI_API_KEY 未配置（仍为占位符）。"
-                "请在网页「设置 → 模型」中填写，或设置环境变量 OPENAI_API_KEY"
+                "尚未配置有效的模型 API Key。"
+                "请在网页「设置 → 模型」为对话/辅助候选填写 API Key"
             )
         app.state.container = build_container(effective, llm=_llm)
         try:

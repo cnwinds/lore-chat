@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
-import { searchModelCatalog, type ModelCatalogItem } from "../../api";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { listProviderModels, type ModelCatalogItem } from "../../api";
 import { newId } from "../../utils/id";
 import {
   SearchProviderEditor,
@@ -10,53 +10,63 @@ import {
   type ImageProviderDraft,
 } from "./ImageProviderEditor";
 import type { CooldownStatus } from "./settingsTypes";
-
-const SECRET_KEYS = ["openai_api_key", "embed_api_key"] as const;
-
-type SecretKey = (typeof SECRET_KEYS)[number];
+import {
+  SettingsCandidateFoldToggle,
+  SettingsFoldSection,
+  useSettingsItemFold,
+} from "./SettingsFold";
+import {
+  EMBED_PROVIDER_DEFAULT_BASE_URL,
+  EMBED_PROVIDER_OPTIONS,
+  LLM_PROVIDER_DEFAULT_BASE_URL,
+  LLM_PROVIDER_OPTIONS,
+  candidateFromProvider,
+  embedCandidateFromProvider,
+  embedProviderLabel,
+  emptyCandidate,
+  emptyEmbedCandidate,
+  inferEmbedProviderFromBaseUrl,
+  inferProviderFromBaseUrl,
+  llmProviderLabel,
+  maskApiKeyPlaceholder,
+  parseEmbedCandidates,
+  parseProviderPresetId,
+  type EmbedCandidateDraft,
+  type EmbedProviderPresetId,
+  type LlmProviderPresetId,
+  type ModelCandidateDraft,
+} from "./providerPresets";
 
 export type { SearchProviderDraft, SearchProviderId } from "./SearchProviderEditor";
 export { SEARCH_PROVIDER_OPTIONS } from "./SearchProviderEditor";
 export type { ImageProviderDraft, ImageProviderId } from "./ImageProviderEditor";
 export { IMAGE_PROVIDER_OPTIONS } from "./ImageProviderEditor";
 export type { CooldownStatus } from "./settingsTypes";
-
-export type ModelCandidateDraft = {
-  id: string;
-  model: string;
-  base_url: string;
-  api_key: string;
-  /** 已保存密钥的首尾脱敏展示（作 placeholder；与检索/生图一致） */
-  api_key_masked?: string;
-  image: boolean;
-  thinking: boolean;
-  effort: string;
-  effort_options: string[];
-  image_wire: "data" | "url";
-  thinking_protocol: string;
-  /** 是否使用独立 Base URL / API Key；关闭则走默认 */
-  use_custom_endpoint: boolean;
-  /** 用户手动改过能力后，onBlur 不再覆盖 */
-  caps_user_edited?: boolean;
-};
-
-/** 后端已脱敏则原样；否则本地补首尾掩码，避免 placeholder 露出全文。 */
-export function maskApiKeyPlaceholder(rawKey: string): string {
-  if (rawKey.includes("***") || rawKey === "****") return rawKey;
-  if (rawKey.length <= 4) return "****";
-  return `${rawKey.slice(0, 2)}***${rawKey.slice(-4)}`;
-}
-
-type ModelSlot = "embed";
-
-export function hasCustomEndpoint(
-  baseUrl: string,
-  secretKey: SecretKey,
-  masked: Partial<Record<SecretKey, string>>,
-  input?: string,
-): boolean {
-  return Boolean(baseUrl.trim() || masked[secretKey] || input?.trim());
-}
+export type {
+  EmbedCandidateDraft,
+  EmbedProviderPresetId,
+  LlmProviderPresetId,
+  ModelCandidateDraft,
+} from "./providerPresets";
+export {
+  EMBED_PROVIDER_DEFAULT_BASE_URL,
+  EMBED_PROVIDER_OPTIONS,
+  LLM_PROVIDER_DEFAULT_BASE_URL,
+  LLM_PROVIDER_OPTIONS,
+  candidateFromProvider,
+  embedCandidateFromProvider,
+  embedCandidatesFromLegacy,
+  embedProviderLabel,
+  emptyCandidate,
+  emptyEmbedCandidate,
+  inferEmbedProviderFromBaseUrl,
+  inferProviderFromBaseUrl,
+  llmProviderLabel,
+  maskApiKeyPlaceholder,
+  parseEmbedCandidates,
+  parseEmbedProviderPresetId,
+  parseProviderPresetId,
+} from "./providerPresets";
 
 /** 与后端 effort.supported_efforts 对齐 */
 export function supportedEfforts(model: string, protocol?: string): string[] {
@@ -66,7 +76,7 @@ export function supportedEfforts(model: string, protocol?: string): string[] {
     return [];
   }
   if (proto === "deepseek" || proto === "qwen") {
-    return ["low", "medium", "high"];
+    return ["low", "medium", "high", "max"];
   }
   if (mid.startsWith("gpt-5.2")) return ["none", "low", "medium", "high", "xhigh"];
   if (mid.startsWith("gpt-5.1")) return ["none", "low", "medium", "high"];
@@ -76,6 +86,12 @@ export function supportedEfforts(model: string, protocol?: string): string[] {
   }
   if (proto === "openai_kwargs") {
     return ["none", "minimal", "low", "medium", "high", "xhigh"];
+  }
+  if (mid.startsWith("deepseek-") || mid.startsWith("qwen")) {
+    return ["low", "medium", "high", "max"];
+  }
+  if (mid.startsWith("glm")) {
+    return ["low", "medium", "high", "max"];
   }
   return ["low", "medium", "high"];
 }
@@ -103,22 +119,6 @@ export function pickEffortInOptions(effort: string, opts: string[]): string {
   return opts[0];
 }
 
-export function emptyCandidate(): ModelCandidateDraft {
-  return {
-    id: newId().slice(0, 12),
-    model: "",
-    base_url: "",
-    api_key: "",
-    image: false,
-    thinking: false,
-    effort: "medium",
-    effort_options: [],
-    image_wire: "data",
-    thinking_protocol: "none",
-    use_custom_endpoint: false,
-  };
-}
-
 export function parseCandidates(raw: unknown): ModelCandidateDraft[] {
   if (!Array.isArray(raw)) return [];
   return raw
@@ -134,19 +134,21 @@ export function parseCandidates(raw: unknown): ModelCandidateDraft[] {
       const base = str(x.base_url);
       const rawKey = typeof x.api_key === "string" ? x.api_key.trim() : "";
       const hadKey = Boolean(rawKey);
+      const provider =
+        parseProviderPresetId(x.provider) ?? inferProviderFromBaseUrl(base);
       return {
         id: str(x.id) || newId().slice(0, 12),
         model,
         base_url: base,
         api_key: "",
         ...(hadKey ? { api_key_masked: maskApiKeyPlaceholder(rawKey) } : {}),
+        provider,
         image: Boolean(x.image),
         thinking: Boolean(x.thinking),
         effort,
         effort_options: opts,
         image_wire: x.image_wire === "url" ? "url" : "data",
         thinking_protocol: protocol,
-        use_custom_endpoint: Boolean(base.trim() || hadKey),
       };
     });
 }
@@ -178,7 +180,8 @@ export function inferThinkingProtocol(
   return "none";
 }
 
-function inferCapsFromModel(
+/** 与后端 catalog 前缀启发对齐（含 glm 思考）。 */
+export function inferCapsFromModel(
   model: string,
   baseUrl?: string,
 ): Pick<
@@ -217,6 +220,16 @@ function inferCapsFromModel(
   if (mid.startsWith("qwen")) {
     return {
       image: true,
+      thinking: true,
+      image_wire: "data",
+      thinking_protocol: protocol,
+      effort,
+      effort_options: opts,
+    };
+  }
+  if (mid.startsWith("glm")) {
+    return {
+      image: false,
       thinking: true,
       image_wire: "data",
       thinking_protocol: protocol,
@@ -279,11 +292,13 @@ type ModelNameFieldProps = {
   value: string;
   disabled: boolean;
   baseUrl?: string;
+  apiKey?: string;
+  candidateId?: string;
   capsUserEdited?: boolean;
   /** false：仅改模型名（嵌入模型）；默认 true 会带上能力 */
   applyCapabilities?: boolean;
-  /** 目录筛选：llm 排除嵌入；embedding 仅嵌入 */
-  catalogKind?: "all" | "llm" | "embedding";
+  /** 目录筛选：llm 排除嵌入/生图；embedding 仅嵌入；image 仅生图 */
+  catalogKind?: "all" | "llm" | "embedding" | "image";
   label?: string;
   onPatch: (patch: Partial<ModelCandidateDraft>) => void;
 };
@@ -292,6 +307,8 @@ function ModelNameField({
   value,
   disabled,
   baseUrl = "",
+  apiKey = "",
+  candidateId,
   capsUserEdited,
   applyCapabilities = true,
   catalogKind = "llm",
@@ -300,11 +317,24 @@ function ModelNameField({
 }: ModelNameFieldProps) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState(value);
-  const [items, setItems] = useState<ModelCatalogItem[]>([]);
+  const [allItems, setAllItems] = useState<ModelCatalogItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [hint, setHint] = useState<string | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const seq = useRef(0);
+  const hasBase = Boolean(baseUrl.trim());
+  const fieldDisabled = disabled || !hasBase;
+
+  const items = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    if (!needle) return allItems;
+    return allItems.filter(
+      (it) =>
+        it.id.toLowerCase().includes(needle) ||
+        (it.name || "").toLowerCase().includes(needle) ||
+        (it.provider || "").toLowerCase().includes(needle),
+    );
+  }, [allItems, q]);
 
   useEffect(() => {
     setQ(value);
@@ -319,53 +349,48 @@ function ModelNameField({
   }, []);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || !hasBase) return;
     const my = ++seq.current;
     const handle = window.setTimeout(() => {
       setLoading(true);
-      void searchModelCatalog(q, { limit: 30, kind: catalogKind })
+      void listProviderModels({
+        base_url: baseUrl.trim(),
+        api_key: apiKey.trim() || null,
+        candidate_id: candidateId || null,
+        kind: catalogKind,
+        limit: 100,
+      })
         .then((res) => {
           if (seq.current !== my) return;
-          setItems(res.items || []);
-          const st = res.status || {};
-          if (st.error && !(st.count && st.count > 0)) {
-            setHint("目录暂不可用，可手填模型名");
-          } else if (st.source === "empty") {
-            setHint("目录尚未就绪，稍后刷新或手填");
+          setAllItems(res.items || []);
+          if (res.source === "provider") {
+            setHint(`接口模型 · ${(res.items || []).length} 条`);
           } else {
             setHint(
-              st.count
-                ? `${
-                    st.source === "bundled"
-                      ? "内置目录"
-                      : st.source === "cache"
-                        ? "本地缓存"
-                        : "models.dev"
-                  } · ${st.count} 条${st.stale ? "（待刷新）" : ""}${
-                    st.refreshing ? "（刷新中）" : ""
-                  }`
-                : null,
+              `无法拉取接口列表，已列出已知模型${
+                res.error ? `（${String(res.error).slice(0, 80)}）` : ""
+              }`,
             );
           }
         })
         .catch(() => {
           if (seq.current !== my) return;
-          setItems([]);
-          setHint("目录查询失败，可手填模型名");
+          setAllItems([]);
+          setHint("模型列表查询失败，可手填模型名");
         })
         .finally(() => {
           if (seq.current === my) setLoading(false);
         });
-    }, 220);
+    }, 120);
     return () => window.clearTimeout(handle);
-  }, [open, q, catalogKind]);
+  }, [open, catalogKind, baseUrl, apiKey, candidateId, hasBase]);
 
   function applyTyped(name: string) {
     if (!applyCapabilities) {
       onPatch({ model: name });
       return;
     }
-    const hit = items.find((it) => it.id.toLowerCase() === name.toLowerCase());
+    const hit = allItems.find((it) => it.id.toLowerCase() === name.toLowerCase());
     if (hit && !capsUserEdited) {
       onPatch({ ...capsFromCatalogItem(hit), caps_user_edited: false });
       return;
@@ -378,7 +403,6 @@ function ModelNameField({
         effort_options: inferred.effort_options,
       });
     } else {
-      // 无目录精确命中时不瞎改识图/思考；留给点选或后端 enrich（保存缺省字段时）
       onPatch({
         model: name,
         thinking_protocol: inferred.thinking_protocol,
@@ -394,13 +418,15 @@ function ModelNameField({
         <span>{label}</span>
         <input
           value={q}
-          disabled={disabled}
-          placeholder="搜索或输入模型名"
+          disabled={fieldDisabled}
+          placeholder={hasBase ? "点击选择或搜索接口模型" : "请先填写 Base URL"}
           autoComplete="off"
-          onFocus={() => setOpen(true)}
+          onFocus={() => {
+            if (hasBase) setOpen(true);
+          }}
           onChange={(e) => {
             setQ(e.target.value);
-            setOpen(true);
+            if (hasBase) setOpen(true);
             onPatch({ model: e.target.value });
           }}
           onBlur={() => {
@@ -408,10 +434,10 @@ function ModelNameField({
           }}
         />
       </label>
-      {open ? (
+      {open && hasBase ? (
         <div className="settings-model-picker-menu" role="listbox">
           <div className="settings-model-picker-meta">
-            {loading ? "搜索中…" : hint || "输入关键字过滤"}
+            {loading ? "加载模型列表…" : hint || "输入关键字过滤"}
           </div>
           {items.length === 0 && !loading ? (
             <div className="settings-model-picker-empty">无匹配，可直接使用上方手填名</div>
@@ -545,7 +571,6 @@ function ImageWireSwitch({
 
 type ChainEditorProps = {
   title: string;
-  hint: string;
   candidates: ModelCandidateDraft[];
   onChange: (next: ModelCandidateDraft[]) => void;
   cooldown: CooldownStatus;
@@ -555,13 +580,15 @@ type ChainEditorProps = {
 
 function ChainEditor({
   title,
-  hint,
   candidates,
   onChange,
   cooldown,
   onClearCooldown,
   saving,
 }: ChainEditorProps) {
+  const ids = candidates.map((c) => c.id);
+  const { isOpen, toggle } = useSettingsItemFold(ids);
+
   function updateAt(i: number, patch: Partial<ModelCandidateDraft>) {
     onChange(candidates.map((c, idx) => (idx === i ? { ...c, ...patch } : c)));
   }
@@ -575,21 +602,22 @@ function ChainEditor({
   }
 
   return (
-    <section className="settings-group settings-chain">
-      <header className="settings-group-header">
-        <h3 className="settings-group-title">{title}</h3>
-        <p className="settings-group-hint">{hint} 列表顺序即优先级。</p>
-      </header>
+    <SettingsFoldSection title={title} count={candidates.length}>
       <div className="settings-chain-list">
         {candidates.map((c, i) => {
           const st = cooldown[c.id];
           const cooling = Boolean(st && !st.available && !st.disabled);
           const disabled = Boolean(st?.disabled);
+          const open = isOpen(c.id);
+          const rowTitle = c.model.trim()
+            ? `${llmProviderLabel(c.provider)} · ${c.model.trim()}`
+            : llmProviderLabel(c.provider);
           return (
             <article
               key={c.id}
               className={[
                 "settings-model-candidate",
+                open ? "" : "settings-model-candidate--folded",
                 i === 0 ? "settings-model-candidate--primary" : "",
                 disabled ? "settings-model-candidate--disabled" : "",
                 cooling ? "settings-model-candidate--cooling" : "",
@@ -598,45 +626,15 @@ function ChainEditor({
                 .join(" ")}
             >
               <div className="settings-model-candidate-head">
-                <span
-                  className={`settings-priority-badge${i === 0 ? " settings-priority-badge--primary" : ""}`}
-                  title={i === 0 ? "最高优先级" : `优先级 ${i + 1}`}
-                >
-                  {i + 1}
-                </span>
-                <div className="settings-model-candidate-main">
-                  <ModelNameField
-                    value={c.model}
-                    disabled={saving}
-                    baseUrl={c.base_url}
-                    capsUserEdited={c.caps_user_edited}
-                    catalogKind="llm"
-                    onPatch={(patch) => updateAt(i, patch)}
-                  />
-                </div>
+                <SettingsCandidateFoldToggle
+                  open={open}
+                  onToggle={() => toggle(c.id)}
+                  title={rowTitle}
+                  titleAttr={c.id}
+                  priority={i + 1}
+                  primary={i === 0}
+                />
                 <div className="settings-model-candidate-actions">
-                  <button
-                    type="button"
-                    className={`settings-endpoint-toggle${c.use_custom_endpoint ? " settings-endpoint-toggle--on" : ""}`}
-                    aria-pressed={c.use_custom_endpoint}
-                    title={
-                      c.use_custom_endpoint
-                        ? "独立端点已开：使用本行 URL / Key"
-                        : "独立端点已关：使用默认 URL / Key"
-                    }
-                    disabled={saving}
-                    onClick={() => {
-                      const on = !c.use_custom_endpoint;
-                      updateAt(
-                        i,
-                        on
-                          ? { use_custom_endpoint: true }
-                          : { use_custom_endpoint: false, base_url: "", api_key: "" },
-                      );
-                    }}
-                  >
-                    独立
-                  </button>
                   <button
                     type="button"
                     className="settings-icon-btn"
@@ -670,146 +668,369 @@ function ChainEditor({
                 </div>
               </div>
 
-              <div className="settings-model-toolbar">
-                <div className="settings-model-caps">
-                  <button
-                    type="button"
-                    className={`settings-cap-icon-btn${c.image ? " settings-cap-icon-btn--on" : ""}`}
-                    disabled={saving}
-                    aria-pressed={c.image}
-                    aria-label={c.image ? "识图：开" : "识图：关"}
-                    title={c.image ? "识图：开" : "识图：关"}
-                    onClick={() =>
-                      updateAt(i, { image: !c.image, caps_user_edited: true })
-                    }
-                  >
-                    <ImageCapIcon />
-                  </button>
-                  <ImageWireSwitch
-                    value={c.image_wire}
-                    disabled={saving || !c.image}
-                    onChange={(image_wire) =>
-                      updateAt(i, { image_wire, caps_user_edited: true })
-                    }
-                  />
-                  <button
-                    type="button"
-                    className={`settings-cap-icon-btn${c.thinking ? " settings-cap-icon-btn--on" : ""}`}
-                    disabled={saving}
-                    aria-pressed={c.thinking}
-                    aria-label={c.thinking ? "思考：开" : "思考：关"}
-                    title={c.thinking ? "思考：开" : "思考：关"}
-                    onClick={() =>
-                      updateAt(i, { thinking: !c.thinking, caps_user_edited: true })
-                    }
-                  >
-                    <ThinkingCapIcon />
-                  </button>
-                  {c.effort_options.length > 0 ? (
-                    <label className="settings-cap-select">
-                      <span>强度</span>
-                      <select
-                        value={pickEffortInOptions(c.effort, c.effort_options)}
-                        onChange={(e) => updateAt(i, { effort: e.target.value })}
-                        disabled={saving || !c.thinking}
-                      >
-                        {c.effort_options.map((lv) => (
-                          <option key={lv} value={lv}>
-                            {lv}
-                          </option>
-                        ))}
-                      </select>
+              {open ? (
+                <div className="settings-model-candidate-body">
+                  <div className="settings-field-row">
+                    <label className="settings-field">
+                      <span>Base URL</span>
+                      <input
+                        value={c.base_url}
+                        onChange={(e) => updateAt(i, { base_url: e.target.value })}
+                        disabled={saving || c.provider !== "custom"}
+                        readOnly={c.provider !== "custom"}
+                        placeholder={
+                          c.provider === "custom"
+                            ? "https://…"
+                            : LLM_PROVIDER_DEFAULT_BASE_URL[
+                                c.provider as Exclude<LlmProviderPresetId, "custom">
+                              ]
+                        }
+                        title={
+                          c.provider !== "custom"
+                            ? "已选厂家，地址由预设决定；改用「自定义」可编辑"
+                            : undefined
+                        }
+                      />
                     </label>
-                  ) : null}
-                </div>
-              </div>
+                    <label className="settings-field">
+                      <span>API Key</span>
+                      <input
+                        type="password"
+                        autoComplete="off"
+                        value={c.api_key}
+                        onChange={(e) => updateAt(i, { api_key: e.target.value })}
+                        disabled={saving}
+                        placeholder={c.api_key_masked || "未设置"}
+                      />
+                    </label>
+                  </div>
 
-              {c.use_custom_endpoint ? (
-                <div className="settings-field-row">
-                  <label className="settings-field">
-                    <span>Base URL</span>
-                    <input
-                      value={c.base_url}
-                      onChange={(e) => updateAt(i, { base_url: e.target.value })}
-                      onBlur={(e) => {
-                        const inferred = inferCapsFromModel(c.model, e.target.value);
-                        updateAt(i, {
-                          thinking_protocol: inferred.thinking_protocol,
-                          effort_options: inferred.effort_options,
-                        });
-                      }}
-                      disabled={saving}
-                      placeholder="https://…"
-                    />
-                  </label>
-                  <label className="settings-field">
-                    <span>API Key</span>
-                    <input
-                      type="password"
-                      autoComplete="off"
-                      value={c.api_key}
-                      onChange={(e) => updateAt(i, { api_key: e.target.value })}
-                      disabled={saving}
-                      placeholder={c.api_key_masked || "未设置"}
-                    />
-                  </label>
-                </div>
-              ) : null}
-
-              {st && (!st.available || st.disabled) ? (
-                <div
-                  className={`settings-health-bar${disabled ? " settings-health-bar--danger" : " settings-health-bar--warn"}`}
-                >
-                  <span className="settings-health-dot" aria-hidden />
-                  <span className="settings-health-text">
-                    {disabled
-                      ? `已禁用${st.last_error ? ` · ${st.last_error}` : ""}`
-                      : `冷却中 · ${st.cooldown_remaining_sec ?? 0}s`}
-                  </span>
-                  <button
-                    type="button"
-                    className="settings-btn settings-btn--compact settings-btn--secondary"
+                  <ModelNameField
+                    value={c.model}
                     disabled={saving}
-                    onClick={() => onClearCooldown(c.id)}
-                  >
-                    立即重试
-                  </button>
+                    baseUrl={c.base_url}
+                    apiKey={c.api_key}
+                    candidateId={c.id}
+                    capsUserEdited={c.caps_user_edited}
+                    catalogKind="llm"
+                    onPatch={(patch) => updateAt(i, patch)}
+                  />
+
+                  <div className="settings-model-toolbar">
+                    <div className="settings-model-caps">
+                      <button
+                        type="button"
+                        className={`settings-cap-icon-btn${c.image ? " settings-cap-icon-btn--on" : ""}`}
+                        disabled={saving}
+                        aria-pressed={c.image}
+                        aria-label={c.image ? "识图：开" : "识图：关"}
+                        title={c.image ? "识图：开" : "识图：关"}
+                        onClick={() =>
+                          updateAt(i, { image: !c.image, caps_user_edited: true })
+                        }
+                      >
+                        <ImageCapIcon />
+                      </button>
+                      <ImageWireSwitch
+                        value={c.image_wire}
+                        disabled={saving || !c.image}
+                        onChange={(image_wire) =>
+                          updateAt(i, { image_wire, caps_user_edited: true })
+                        }
+                      />
+                      <button
+                        type="button"
+                        className={`settings-cap-icon-btn${c.thinking ? " settings-cap-icon-btn--on" : ""}`}
+                        disabled={saving}
+                        aria-pressed={c.thinking}
+                        aria-label={c.thinking ? "思考：开" : "思考：关"}
+                        title={c.thinking ? "思考：开" : "思考：关"}
+                        onClick={() =>
+                          updateAt(i, { thinking: !c.thinking, caps_user_edited: true })
+                        }
+                      >
+                        <ThinkingCapIcon />
+                      </button>
+                      {c.effort_options.length > 0 ? (
+                        <label className="settings-cap-select">
+                          <span>强度</span>
+                          <select
+                            value={pickEffortInOptions(c.effort, c.effort_options)}
+                            onChange={(e) => updateAt(i, { effort: e.target.value })}
+                            disabled={saving || !c.thinking}
+                          >
+                            {c.effort_options.map((lv) => (
+                              <option key={lv} value={lv}>
+                                {lv}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  {st && (!st.available || st.disabled) ? (
+                    <div
+                      className={`settings-health-bar${disabled ? " settings-health-bar--danger" : " settings-health-bar--warn"}`}
+                    >
+                      <span className="settings-health-dot" aria-hidden />
+                      <span className="settings-health-text">
+                        {disabled
+                          ? `已禁用${st.last_error ? ` · ${st.last_error}` : ""}`
+                          : `冷却中 · ${st.cooldown_remaining_sec ?? 0}s`}
+                      </span>
+                      <button
+                        type="button"
+                        className="settings-btn settings-btn--compact settings-btn--secondary"
+                        disabled={saving}
+                        onClick={() => onClearCooldown(c.id)}
+                      >
+                        立即重试
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
             </article>
           );
         })}
       </div>
-      <button
-        type="button"
-        className="settings-btn settings-btn--secondary settings-chain-add"
-        disabled={saving}
-        onClick={() => onChange([...candidates, emptyCandidate()])}
-      >
-        + 添加候选
-      </button>
-    </section>
+      <div className="settings-search-add-row">
+        <label className="settings-field settings-search-add-field">
+          <span className="visually-hidden">添加候选</span>
+          <select
+            value=""
+            disabled={saving}
+            onChange={(e) => {
+              const v = e.target.value as LlmProviderPresetId;
+              if (v) onChange([...candidates, candidateFromProvider(v)]);
+            }}
+          >
+            <option value="" disabled>
+              + 添加候选（选择厂家）
+            </option>
+            {LLM_PROVIDER_OPTIONS.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+    </SettingsFoldSection>
+  );
+}
+
+type EmbedChainEditorProps = {
+  candidates: EmbedCandidateDraft[];
+  onChange: (next: EmbedCandidateDraft[]) => void;
+  cooldown: CooldownStatus;
+  onClearCooldown: (candidateId: string) => void;
+  saving: boolean;
+};
+
+function EmbedChainEditor({
+  candidates,
+  onChange,
+  cooldown,
+  onClearCooldown,
+  saving,
+}: EmbedChainEditorProps) {
+  const ids = candidates.map((c) => c.id);
+  const { isOpen, toggle } = useSettingsItemFold(ids);
+
+  function updateAt(i: number, patch: Partial<EmbedCandidateDraft>) {
+    onChange(candidates.map((c, idx) => (idx === i ? { ...c, ...patch } : c)));
+  }
+
+  function move(i: number, dir: -1 | 1) {
+    const j = i + dir;
+    if (j < 0 || j >= candidates.length) return;
+    const next = [...candidates];
+    [next[i], next[j]] = [next[j], next[i]];
+    onChange(next);
+  }
+
+  return (
+    <SettingsFoldSection title="嵌入模型" count={candidates.length}>
+      <div className="settings-chain-list">
+        {candidates.map((c, i) => {
+          const st = cooldown[c.id];
+          const cooling = Boolean(st && !st.available && !st.disabled);
+          const disabled = Boolean(st?.disabled);
+          const open = isOpen(c.id);
+          const rowTitle = c.model.trim()
+            ? `${embedProviderLabel(c.provider)} · ${c.model.trim()}`
+            : embedProviderLabel(c.provider);
+          return (
+            <article
+              key={c.id}
+              className={[
+                "settings-model-candidate",
+                open ? "" : "settings-model-candidate--folded",
+                i === 0 ? "settings-model-candidate--primary" : "",
+                disabled ? "settings-model-candidate--disabled" : "",
+                cooling ? "settings-model-candidate--cooling" : "",
+              ]
+                .filter(Boolean)
+                .join(" ")}
+            >
+              <div className="settings-model-candidate-head">
+                <SettingsCandidateFoldToggle
+                  open={open}
+                  onToggle={() => toggle(c.id)}
+                  title={rowTitle}
+                  titleAttr={c.id}
+                  priority={i + 1}
+                  primary={i === 0}
+                />
+                <div className="settings-model-candidate-actions">
+                  <button
+                    type="button"
+                    className="settings-icon-btn"
+                    disabled={saving || i === 0}
+                    onClick={() => move(i, -1)}
+                    aria-label="上移"
+                    title="上移"
+                  >
+                    ↑
+                  </button>
+                  <button
+                    type="button"
+                    className="settings-icon-btn"
+                    disabled={saving || i === candidates.length - 1}
+                    onClick={() => move(i, 1)}
+                    aria-label="下移"
+                    title="下移"
+                  >
+                    ↓
+                  </button>
+                  <button
+                    type="button"
+                    className="settings-icon-btn settings-icon-btn--danger"
+                    disabled={saving || candidates.length <= 1}
+                    onClick={() => onChange(candidates.filter((_, idx) => idx !== i))}
+                    aria-label="删除"
+                    title="删除"
+                  >
+                    ×
+                  </button>
+                </div>
+              </div>
+
+              {open ? (
+                <div className="settings-model-candidate-body">
+                  <div className="settings-field-row">
+                    <label className="settings-field">
+                      <span>Base URL</span>
+                      <input
+                        value={c.base_url}
+                        onChange={(e) => updateAt(i, { base_url: e.target.value })}
+                        disabled={saving || c.provider !== "custom"}
+                        readOnly={c.provider !== "custom"}
+                        placeholder={
+                          c.provider === "custom"
+                            ? "https://…"
+                            : EMBED_PROVIDER_DEFAULT_BASE_URL[
+                                c.provider as Exclude<EmbedProviderPresetId, "custom">
+                              ]
+                        }
+                        title={
+                          c.provider !== "custom"
+                            ? "已选厂家，地址由预设决定；改用「自定义」可编辑"
+                            : undefined
+                        }
+                      />
+                    </label>
+                    <label className="settings-field">
+                      <span>API Key</span>
+                      <input
+                        type="password"
+                        autoComplete="off"
+                        value={c.api_key}
+                        onChange={(e) => updateAt(i, { api_key: e.target.value })}
+                        disabled={saving}
+                        placeholder={c.api_key_masked || "未设置"}
+                      />
+                    </label>
+                  </div>
+
+                  <ModelNameField
+                    value={c.model}
+                    disabled={saving}
+                    baseUrl={c.base_url}
+                    apiKey={c.api_key}
+                    candidateId={c.id}
+                    applyCapabilities={false}
+                    catalogKind="embedding"
+                    label="模型名称"
+                    onPatch={(patch) => {
+                      if (patch.model != null) updateAt(i, { model: patch.model });
+                    }}
+                  />
+
+                  {st && (!st.available || st.disabled) ? (
+                    <div
+                      className={`settings-health-bar${disabled ? " settings-health-bar--danger" : " settings-health-bar--warn"}`}
+                    >
+                      <span className="settings-health-dot" aria-hidden />
+                      <span className="settings-health-text">
+                        {disabled
+                          ? `已禁用${st.last_error ? ` · ${st.last_error}` : ""}`
+                          : `冷却中 · ${st.cooldown_remaining_sec ?? 0}s`}
+                      </span>
+                      <button
+                        type="button"
+                        className="settings-btn settings-btn--compact settings-btn--secondary"
+                        disabled={saving}
+                        onClick={() => onClearCooldown(c.id)}
+                      >
+                        立即重试
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+            </article>
+          );
+        })}
+      </div>
+      <div className="settings-search-add-row">
+        <label className="settings-field settings-search-add-field">
+          <span className="visually-hidden">添加嵌入候选</span>
+          <select
+            value=""
+            disabled={saving}
+            onChange={(e) => {
+              const v = e.target.value as EmbedProviderPresetId;
+              if (v) onChange([...candidates, embedCandidateFromProvider(v)]);
+            }}
+          >
+            <option value="" disabled>
+              + 添加候选（选择厂家）
+            </option>
+            {EMBED_PROVIDER_OPTIONS.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+    </SettingsFoldSection>
   );
 }
 
 type Props = {
-  openaiBaseUrl: string;
-  onOpenaiBaseUrlChange: (v: string) => void;
   publicBaseUrl: string;
   onPublicBaseUrlChange: (v: string) => void;
   chatModels: ModelCandidateDraft[];
   onChatModelsChange: (v: ModelCandidateDraft[]) => void;
   utilityModels: ModelCandidateDraft[];
   onUtilityModelsChange: (v: ModelCandidateDraft[]) => void;
-  embedModel: string;
-  onEmbedModelChange: (v: string) => void;
-  embedBaseUrl: string;
-  onEmbedBaseUrlChange: (v: string) => void;
-  secretInputs: Partial<Record<SecretKey, string>>;
-  setSecretInputs: Dispatch<SetStateAction<Partial<Record<SecretKey, string>>>>;
-  maskedSecrets: Partial<Record<SecretKey, string>>;
-  endpointExpanded: Record<ModelSlot, boolean>;
-  setEndpointExpanded: Dispatch<SetStateAction<Record<ModelSlot, boolean>>>;
+  embedModels: EmbedCandidateDraft[];
+  onEmbedModelsChange: (v: EmbedCandidateDraft[]) => void;
   cooldown: CooldownStatus;
   onClearCooldown: (candidateId: string) => void;
   searchProviders: SearchProviderDraft[];
@@ -823,27 +1044,15 @@ type Props = {
   saving: boolean;
 };
 
-export type { SecretKey, ModelSlot };
-export { SECRET_KEYS };
-
 export function ModelSettingsTab({
-  openaiBaseUrl,
-  onOpenaiBaseUrlChange,
   publicBaseUrl,
   onPublicBaseUrlChange,
   chatModels,
   onChatModelsChange,
   utilityModels,
   onUtilityModelsChange,
-  embedModel,
-  onEmbedModelChange,
-  embedBaseUrl,
-  onEmbedBaseUrlChange,
-  secretInputs,
-  setSecretInputs,
-  maskedSecrets,
-  endpointExpanded,
-  setEndpointExpanded,
+  embedModels,
+  onEmbedModelsChange,
   cooldown,
   onClearCooldown,
   searchProviders,
@@ -858,50 +1067,8 @@ export function ModelSettingsTab({
 }: Props) {
   return (
     <>
-      <div className="settings-group">
-        <header className="settings-group-header">
-          <h3 className="settings-group-title">默认</h3>
-          <p className="settings-group-hint">未单独配置的候选将使用此地址与密钥。</p>
-        </header>
-        <label className="settings-field">
-          <span>Base URL</span>
-          <input
-            value={openaiBaseUrl}
-            onChange={(e) => onOpenaiBaseUrlChange(e.target.value)}
-            disabled={saving}
-            placeholder="https://api.openai.com/v1"
-          />
-        </label>
-        <label className="settings-field">
-          <span>API Key</span>
-          <input
-            type="password"
-            autoComplete="off"
-            value={secretInputs.openai_api_key ?? ""}
-            placeholder={maskedSecrets.openai_api_key ?? "未设置"}
-            onChange={(e) =>
-              setSecretInputs((prev) => ({ ...prev, openai_api_key: e.target.value }))
-            }
-            disabled={saving}
-          />
-        </label>
-        <label className="settings-field">
-          <span>Public Base URL</span>
-          <input
-            value={publicBaseUrl}
-            onChange={(e) => onPublicBaseUrlChange(e.target.value)}
-            disabled={saving}
-            placeholder="https://your-host（Agnes 等 url 识图必填）"
-          />
-        </label>
-        <p className="settings-group-hint">
-          供签名附件 URL 使用。首次为空时会按当前浏览器访问地址自动填写并保存；外网识图请确保该地址可被模型服务访问。
-        </p>
-      </div>
-
       <ChainEditor
-        title="对话模型（chat）"
-        hint="用户可见对话与 Agent 工具循环。"
+        title="对话模型"
         candidates={chatModels}
         onChange={onChatModelsChange}
         cooldown={cooldown}
@@ -910,8 +1077,7 @@ export function ModelSettingsTab({
       />
 
       <ChainEditor
-        title="辅助模型（utility）"
-        hint="记忆抽取等后台任务；与对话链互不借用。"
+        title="辅助模型"
         candidates={utilityModels}
         onChange={onUtilityModelsChange}
         cooldown={cooldown}
@@ -919,73 +1085,13 @@ export function ModelSettingsTab({
         saving={saving}
       />
 
-      <div className="settings-group">
-        <header className="settings-group-header">
-          <h3 className="settings-group-title">嵌入模型</h3>
-          <p className="settings-group-hint">用于向量检索；可从目录筛选模型名。</p>
-        </header>
-        <div className="settings-embed-row">
-          <div className="settings-embed-model">
-            <ModelNameField
-              value={embedModel}
-              disabled={saving}
-              applyCapabilities={false}
-              catalogKind="embedding"
-              label="模型名称"
-              onPatch={(patch) => {
-                if (patch.model != null) onEmbedModelChange(patch.model);
-              }}
-            />
-          </div>
-          <button
-            type="button"
-            className={`settings-endpoint-toggle${endpointExpanded.embed ? " settings-endpoint-toggle--on" : ""}`}
-            aria-pressed={endpointExpanded.embed}
-            title={
-              endpointExpanded.embed
-                ? "独立端点已开：使用嵌入专用 URL / Key"
-                : "独立端点已关：使用默认 URL / Key"
-            }
-            disabled={saving}
-            onClick={() => {
-              const on = !endpointExpanded.embed;
-              setEndpointExpanded((prev) => ({ ...prev, embed: on }));
-              if (!on) {
-                onEmbedBaseUrlChange("");
-                setSecretInputs((prev) => ({ ...prev, embed_api_key: "" }));
-              }
-            }}
-          >
-            独立
-          </button>
-        </div>
-        {endpointExpanded.embed ? (
-          <div className="settings-field-row">
-            <label className="settings-field">
-              <span>Base URL</span>
-              <input
-                value={embedBaseUrl}
-                onChange={(e) => onEmbedBaseUrlChange(e.target.value)}
-                disabled={saving}
-                placeholder="https://…"
-              />
-            </label>
-            <label className="settings-field">
-              <span>API Key</span>
-              <input
-                type="password"
-                autoComplete="off"
-                value={secretInputs.embed_api_key ?? ""}
-                placeholder={maskedSecrets.embed_api_key ?? "未设置"}
-                onChange={(e) =>
-                  setSecretInputs((prev) => ({ ...prev, embed_api_key: e.target.value }))
-                }
-                disabled={saving}
-              />
-            </label>
-          </div>
-        ) : null}
-      </div>
+      <EmbedChainEditor
+        candidates={embedModels}
+        onChange={onEmbedModelsChange}
+        cooldown={cooldown}
+        onClearCooldown={onClearCooldown}
+        saving={saving}
+      />
 
       <SearchProviderEditor
         providers={searchProviders}
@@ -1002,6 +1108,21 @@ export function ModelSettingsTab({
         onClearCooldown={onClearImageCooldown}
         saving={saving}
       />
+
+      <div className="settings-group">
+        <header className="settings-group-header">
+          <h3 className="settings-group-title">识图公网地址</h3>
+        </header>
+        <label className="settings-field">
+          <span>Public Base URL</span>
+          <input
+            value={publicBaseUrl}
+            onChange={(e) => onPublicBaseUrlChange(e.target.value)}
+            disabled={saving}
+            placeholder="https://your-host"
+          />
+        </label>
+      </div>
     </>
   );
 }

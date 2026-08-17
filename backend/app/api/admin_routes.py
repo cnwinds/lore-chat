@@ -23,8 +23,8 @@ from app.engine.imagegen.providers import (
 )
 from app.models.catalog import (
     get_active_models_dev_store,
-    merge_catalog_hits,
-    search_supplement,
+    normalize_catalog_kind,
+    search_known_catalog,
     set_active_models_dev_store,
 )
 from app.models.models_dev import models_dev_cache_path_for_kb, shared_models_dev_store
@@ -171,15 +171,48 @@ def get_model_catalog(
     store = _models_dev_for_request(request)
     # 旁路刷新（短超时后台线程）；目录查询本身不阻塞网络
     source = store.ensure_fresh(force=refresh)
-    remote = store.search(q, limit=limit, kind=kind)
-    local = search_supplement(q, limit=limit, kind=kind)
+    kind_n = normalize_catalog_kind(kind)
     items = [
         h.to_dict()
-        for h in merge_catalog_hits(
-            remote, local, limit=limit, prefer_extra=bool(q.strip())
+        for h in search_known_catalog(
+            q, limit=limit, kind=kind_n, models_dev=store
         )
     ]
     return {"ok": True, "source": source, "status": store.status(), "items": items}
+
+
+@router.post("/provider-models")
+def post_provider_models(body: dict[str, Any], request: Request) -> dict[str, Any]:
+    """按候选 Base URL / API Key 拉取远端 /models，并用目录 JSON 标注能力。
+
+    拉取失败时回退 models.dev + 本地补充（全部已知模型）。
+    """
+    from app.models.provider_models import list_provider_models
+    from app.settings_store import resolve_api_key_from_settings
+
+    base_url = str(body.get("base_url") or "").strip()
+    if not base_url:
+        raise HTTPException(status_code=422, detail="base_url required")
+    settings = request.app.state.settings_store.get()
+    kind_n = normalize_catalog_kind(body.get("kind") or "llm", default="llm")
+    api_key = resolve_api_key_from_settings(
+        settings,
+        api_key=body.get("api_key") if isinstance(body.get("api_key"), str) else None,
+        candidate_id=str(body.get("candidate_id") or "") or None,
+        use_embed_key=kind_n == "embedding",
+    )
+    q = str(body.get("q") or "")
+    limit = int(body.get("limit") or 100)
+    store = _models_dev_for_request(request)
+    store.ensure_fresh(force=False)
+    return list_provider_models(
+        base_url=base_url,
+        api_key=api_key,
+        q=q,
+        kind=kind_n,
+        limit=limit,
+        models_dev=store,
+    )
 
 
 @router.post("/model-catalog/refresh")

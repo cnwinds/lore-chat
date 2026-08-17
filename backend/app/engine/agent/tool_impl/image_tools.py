@@ -13,7 +13,7 @@ class ImageGenTools:
     async def generate_image(self, args: dict) -> dict:
         if self.image_gen is None or not self.image_gen.configured:
             return {
-                "summary": "未配置生图提供商，请在设置 → 模型中添加生图提供商",
+                "summary": "未配置生图模型，请在设置 → 模型中添加生图模型",
                 "sources": [],
                 "error": "imagegen_not_configured",
             }

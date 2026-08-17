@@ -179,24 +179,24 @@ class OpenAILLMClient:
         # 同 kb 路径共用 store，禁止旁路另起内存实例
         self.cooldown = cooldown or shared_cooldown_store(cooldown_path_for_kb(kb))
         self.last_selection: Selection | None = None
-        self._embed = OpenAI(
-            api_key=settings.embed_api_key or settings.openai_api_key,
-            base_url=settings.embed_base_url or settings.openai_base_url,
-        )
         self._client_cache: dict[tuple[str, str], OpenAI] = {}
 
     def rebind_settings(self, settings: Settings) -> None:
         """热更新 settings，保留同一 CooldownStore。"""
         self.settings = settings
-        self._embed = OpenAI(
-            api_key=settings.embed_api_key or settings.openai_api_key,
-            base_url=settings.embed_base_url or settings.openai_base_url,
-        )
         self._client_cache.clear()
 
     def _client_for(self, candidate: ModelCandidate) -> OpenAI:
-        base = (candidate.base_url or self.settings.openai_base_url or "").rstrip("/")
-        key = candidate.api_key or self.settings.openai_api_key
+        base = (candidate.base_url or "").rstrip("/")
+        key = candidate.api_key or ""
+        if not base:
+            raise ValueError(
+                f"模型候选 {candidate.id or candidate.model!r} 未配置 base_url"
+            )
+        if not key.strip():
+            raise ValueError(
+                f"模型候选 {candidate.id or candidate.model!r} 未配置 api_key"
+            )
         cache_key = (base, key or "")
         client = self._client_cache.get(cache_key)
         if client is None:
@@ -675,49 +675,70 @@ class OpenAILLMClient:
     def embed(self, texts: list[str]) -> list[list[float]]:
         if not texts:
             return []
-        model = self.settings.embed_model
-        batch_size = 10
-        out: list[list[float]] = []
-        t0 = time.monotonic()
-        prompt_tokens = 0
-        total_tokens = 0
-        any_known = False
-        try:
-            for i in range(0, len(texts), batch_size):
-                batch = texts[i : i + batch_size]
-                resp = self._embed.embeddings.create(model=model, input=batch)
-                out.extend(d.embedding for d in resp.data)
-                pt, _, tt, _, known = self._usage_from_resp(resp)
-                if known:
-                    any_known = True
-                    if pt is not None:
-                        prompt_tokens += pt
-                    if tt is not None:
-                        total_tokens += tt
-                    elif pt is not None:
-                        total_tokens += pt
-        except BaseException as e:
+        attempted: set[str] = set()
+        last_exc: BaseException | None = None
+        while True:
+            try:
+                sel = select_candidate(
+                    self.settings,
+                    "embed",
+                    self.cooldown,
+                    exclude_ids=attempted,
+                )
+            except NoCandidateAvailable:
+                if last_exc:
+                    raise last_exc
+                raise
+            cand = sel.candidate
+            client = self._client_for(cand)
+            model = cand.model
+            batch_size = 10
+            out: list[list[float]] = []
+            t0 = time.monotonic()
+            prompt_tokens = 0
+            total_tokens = 0
+            any_known = False
+            try:
+                for i in range(0, len(texts), batch_size):
+                    batch = texts[i : i + batch_size]
+                    resp = client.embeddings.create(model=model, input=batch)
+                    out.extend(d.embedding for d in resp.data)
+                    pt, _, tt, _, known = self._usage_from_resp(resp)
+                    if known:
+                        any_known = True
+                        if pt is not None:
+                            prompt_tokens += pt
+                        if tt is not None:
+                            total_tokens += tt
+                        elif pt is not None:
+                            total_tokens += pt
+            except BaseException as e:
+                last_exc = e
+                self._record(
+                    model=model,
+                    kind="embed",
+                    role="embed",
+                    status="error",
+                    error=str(e),
+                    duration_ms=int((time.monotonic() - t0) * 1000),
+                )
+                self._next_after_failure(
+                    failed_id=cand.id, exc=e, attempted=attempted
+                )
+                continue
+            self.cooldown.record_success(cand.id)
             self._record(
                 model=model,
                 kind="embed",
                 role="embed",
-                status="error",
-                error=str(e),
+                prompt_tokens=prompt_tokens if any_known else None,
+                completion_tokens=None,
+                total_tokens=total_tokens if any_known else None,
+                tokens_known=any_known,
+                status="ok",
                 duration_ms=int((time.monotonic() - t0) * 1000),
             )
-            raise
-        self._record(
-            model=model,
-            kind="embed",
-            role="embed",
-            prompt_tokens=prompt_tokens if any_known else None,
-            completion_tokens=None,
-            total_tokens=total_tokens if any_known else None,
-            tokens_known=any_known,
-            status="ok",
-            duration_ms=int((time.monotonic() - t0) * 1000),
-        )
-        return out
+            return out
 
 
 class FakeLLMClient:

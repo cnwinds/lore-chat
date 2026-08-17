@@ -10,7 +10,7 @@ import logging
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from app.models.candidate import ImageWire, ThinkingProtocol
 from app.models.effort import Effort, coerce_to_options, pick_default_effort, supported_efforts
@@ -143,6 +143,15 @@ def _prefix_caps(model: str, base_url: str | None) -> ModelCapabilities | None:
             thinking_protocol=protocol,
             source="prefix",
         )
+    if mid.startswith("glm"):
+        return _with_efforts(
+            model=mid,
+            image=False,
+            thinking=True,
+            image_wire=wire,
+            thinking_protocol=protocol,
+            source="prefix",
+        )
     if mid.startswith(("o1", "o3", "o4")) or mid.startswith("gpt-5"):
         return _with_efforts(
             model=mid,
@@ -246,6 +255,81 @@ def merge_catalog_hits(
     return [by_id[k] for k in keys]
 
 
+CatalogKind = Literal["all", "llm", "embedding", "image"]
+
+
+def normalize_catalog_kind(
+    kind: str | None,
+    *,
+    default: CatalogKind = "all",
+) -> CatalogKind:
+    """统一 kind 别名；未知或空串回落 default（目录搜索默认 all，provider-models 默认 llm）。"""
+    k = (kind or "").strip().lower()
+    if k in {"embedding", "embed"}:
+        return "embedding"
+    if k in {"image", "imagegen"}:
+        return "image"
+    if k == "llm":
+        return "llm"
+    if k == "all":
+        return "all"
+    return default
+
+
+def search_known_catalog(
+    query: str = "",
+    *,
+    limit: int = 40,
+    kind: str | None = "all",
+    models_dev: ModelsDevStore | None = None,
+) -> list[CatalogHit]:
+    """合并 models.dev + 本地补充的唯一搜索入口（admin / provider fallback 共用）。"""
+    store = models_dev if models_dev is not None else get_active_models_dev_store()
+    kind_n = normalize_catalog_kind(kind)
+    limit_n = max(1, min(int(limit), 200))
+    remote = (
+        store.search(query, limit=limit_n, kind=kind_n) if store is not None else []
+    )
+    local = search_supplement(query, limit=limit_n, kind=kind_n)
+    return merge_catalog_hits(
+        remote, local, limit=limit_n, prefer_extra=bool((query or "").strip())
+    )
+
+
+def catalog_hit_for_model_id(
+    model_id: str,
+    *,
+    base_url: str | None = None,
+    models_dev: ModelsDevStore | None = None,
+) -> CatalogHit:
+    """把模型 id 解析为目录项：models.dev > 补充 JSON > 能力启发。"""
+    from app.models.models_dev import is_embedding_model
+
+    mid = (model_id or "").strip()
+    store = models_dev if models_dev is not None else get_active_models_dev_store()
+    if store is not None:
+        hit = store.lookup(mid)
+        if hit is not None:
+            return hit
+    for h in search_supplement(mid, limit=20, kind="all"):
+        if h.id.lower() == mid.lower():
+            return h
+    caps = lookup_capabilities(mid, base_url, models_dev=store)
+    embedding = is_embedding_model(mid)
+    return CatalogHit(
+        provider="remote",
+        id=mid,
+        name=mid,
+        image=False if embedding else caps.image,
+        thinking=False if embedding else caps.thinking,
+        effort=caps.effort if not embedding else "medium",
+        effort_options=() if embedding else caps.effort_options,
+        image_wire=caps.image_wire,
+        thinking_protocol="none" if embedding else caps.thinking_protocol,
+        embedding=embedding,
+    )
+
+
 # 进程级可选注入（admin / enrich 共用）
 _ACTIVE_STORE: ModelsDevStore | None = None
 
@@ -260,7 +344,11 @@ def get_active_models_dev_store() -> ModelsDevStore | None:
 
 
 def enrich_candidate_dict(item: dict[str, Any]) -> dict[str, Any]:
-    """能力预填；thinking_protocol / 缺省能力随目录自适应。"""
+    """能力预填；thinking_protocol / 缺省能力随目录自适应。
+
+    已保存的非空 effort_options 优先保留（选模型时可能来自某厂家更完整的档位）；
+    目录未列档但候选开启思考时，用协议启发补档，避免强度下拉被掏空。
+    """
     out = dict(item)
     model = str(out.get("model") or "")
     base_url = out.get("base_url")
@@ -276,13 +364,39 @@ def enrich_candidate_dict(item: dict[str, Any]) -> dict[str, Any]:
     if "image_wire" not in out:
         out["image_wire"] = caps.image_wire
     out["thinking_protocol"] = caps.thinking_protocol
-    out["effort_options"] = list(caps.effort_options)
-    if "effort" not in out:
-        out["effort"] = caps.effort if caps.thinking else "medium"
+
+    saved_opts = out.get("effort_options")
+    saved_list = (
+        [str(x).strip() for x in saved_opts if str(x).strip()]
+        if isinstance(saved_opts, (list, tuple))
+        else []
+    )
+    catalog_opts = list(caps.effort_options)
+    thinking_on = bool(out.get("thinking"))
+    if saved_list:
+        out["effort_options"] = saved_list
+    elif catalog_opts:
+        out["effort_options"] = catalog_opts
+    elif thinking_on:
+        # Agnes 等协议本来就无档位；其余用启发补全
+        proto = caps.thinking_protocol
+        if proto == "agnes" or _normalize_model_id(model).startswith("agnes-"):
+            out["effort_options"] = []
+        else:
+            out["effort_options"] = list(
+                supported_efforts(model, proto if proto != "none" else None)
+            )
     else:
-        out["effort"] = coerce_to_options(
-            str(out.get("effort")),
-            caps.effort_options,
-            model=model,
+        out["effort_options"] = []
+
+    opts = tuple(out["effort_options"])
+    if "effort" not in out:
+        out["effort"] = (
+            pick_default_effort(opts, model=model)
+            if opts
+            else (caps.effort if caps.thinking else "medium")
         )
+    elif opts:
+        out["effort"] = coerce_to_options(str(out.get("effort")), opts, model=model)
+    # 无档位时保留原 effort 字符串（请求侧再归一）；勿强行改成 medium 抹掉 max
     return out

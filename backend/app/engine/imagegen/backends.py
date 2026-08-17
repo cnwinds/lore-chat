@@ -482,6 +482,8 @@ _PROVIDER_CLS: dict[str, type] = {
     "zhipu": ZhipuImagesBackend,
     "bailian": BailianImagesBackend,
     "agnes": AgnesImagesBackend,
+    # 自定义：OpenAI 兼容 /images/generations
+    "custom": OpenAIImagesBackend,
 }
 
 

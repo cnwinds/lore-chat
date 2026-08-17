@@ -126,3 +126,66 @@ def test_search_providers_reject_duplicate(tmp_path: Path):
         assert False, "expected DuplicateSearchProviderError"
     except DuplicateSearchProviderError:
         pass
+
+
+def test_public_dict_configured_via_candidate_key(tmp_path: Path):
+    base = Settings(
+        kb_path=tmp_path,
+        openai_api_key="sk-none",
+        chat_models=[
+            {
+                "id": "c1",
+                "model": "gpt-4o",
+                "base_url": "https://example.com/v1",
+                "api_key": "sk-cand-abcd",
+            }
+        ],
+        utility_models=[
+            {
+                "id": "u1",
+                "model": "gpt-4o-mini",
+                "base_url": "https://example.com/v1",
+                "api_key": "sk-util-abcd",
+            }
+        ],
+    )
+    store = SettingsStore(tmp_path, base)
+    pub = store.public_dict()
+    assert pub["llm_api_key_configured"] is True
+
+
+def test_migrate_promotes_global_openai_into_candidates():
+    from app.models.candidate import migrate_settings_dict, sync_legacy_aliases
+
+    out = sync_legacy_aliases(
+        migrate_settings_dict(
+            {
+                "openai_api_key": "sk-real-key-1234",
+                "openai_base_url": "https://api.openai.com/v1",
+                "chat_models": [{"id": "c1", "model": "gpt-4o"}],
+                "utility_models": [{"id": "u1", "model": "gpt-4o-mini"}],
+            }
+        )
+    )
+    assert out["chat_models"][0]["api_key"] == "sk-real-key-1234"
+    assert out["chat_models"][0]["base_url"] == "https://api.openai.com/v1"
+    assert out["utility_models"][0]["api_key"] == "sk-real-key-1234"
+    assert out["embed_models"][0]["api_key"] == "sk-real-key-1234"
+    assert out["embed_models"][0]["base_url"] == "https://api.openai.com/v1"
+    assert out["embed_api_key"] == "sk-real-key-1234"
+    assert out["embed_base_url"] == "https://api.openai.com/v1"
+
+
+def test_store_promotes_then_configured(tmp_path: Path):
+    """仅有全局 openai_* 时，启动迁移写入候选后视为已配置。"""
+    base = Settings(
+        kb_path=tmp_path,
+        openai_api_key="sk-abcdefghijklmnop",
+        openai_base_url="https://api.openai.com/v1",
+        chat_models=[{"id": "c1", "model": "gpt-4o"}],
+        utility_models=[{"id": "u1", "model": "gpt-4o-mini"}],
+    )
+    store = SettingsStore(tmp_path, base)
+    s = store.get()
+    assert s.chat_models[0]["api_key"] == "sk-abcdefghijklmnop"
+    assert store.public_dict()["llm_api_key_configured"] is True

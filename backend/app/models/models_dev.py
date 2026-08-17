@@ -124,10 +124,30 @@ def _is_embedding_model(model_id: str, raw: dict[str, Any]) -> bool:
     family = str(raw.get("family") or "").lower()
     if "embed" in family:
         return True
-    blob = f"{model_id} {raw.get('name') or ''} {raw.get('description') or ''}".lower()
-    if "embedding" in blob or "-embed-" in blob or blob.endswith("-embed"):
+    mid = (model_id or "").strip().lower()
+    name = str(raw.get("name") or "").lower()
+    desc = str(raw.get("description") or "").lower()
+    blob = f"{mid} {name} {desc}"
+    # 常见向量模型命名（含百炼 / 开源 embedding）
+    markers = (
+        "embedding",
+        "embeddings",
+        "-embed-",
+        "-embed",
+        "embed-",
+        "text-embedding",
+        "multimodal-embedding",
+        "bge-",
+        "gte-",
+        "e5-",
+        "jina-embedding",
+        "nomic-embed",
+        "m3e-",
+        "向量",
+    )
+    if any(m in blob for m in markers):
         return True
-    if "embed" in model_id.lower() or "embed" in str(raw.get("name") or "").lower():
+    if mid.endswith("-embed") or mid.startswith("embed"):
         return True
     modalities = raw.get("modalities")
     if isinstance(modalities, dict):
@@ -136,6 +156,55 @@ def _is_embedding_model(model_id: str, raw: dict[str, Any]) -> bool:
             return "embed" in out.lower()
         if isinstance(out, (list, tuple, set)):
             return any("embed" in str(x).lower() for x in out)
+    return False
+
+
+def is_embedding_model(model_id: str, raw: dict[str, Any] | None = None) -> bool:
+    """公开：判断模型 id 是否为嵌入模型（无 raw 时仅用 id 启发式）。"""
+    return _is_embedding_model(model_id, raw or {})
+
+
+def is_image_gen_model(model_id: str) -> bool:
+    """判断是否为文生图 / 图像生成模型（非识图多模态对话）。
+
+    与 CatalogHit.image（输入可识图）正交；仅看模型 id 命名启发式。
+    """
+    mid = (model_id or "").strip().lower()
+    if not mid or is_embedding_model(mid):
+        return False
+    markers = (
+        "dall-e",
+        "dalle",
+        "gpt-image",
+        "cogview",
+        "glm-image",
+        "wanx",
+        "wan2.",
+        "wan2-",
+        "wan2_",
+        "flux",
+        "stable-diffusion",
+        "sdxl",
+        "imagen",
+        "kolors",
+        "seedream",
+        "seededit",
+        "agnes-image",
+        "image-generation",
+        "text2image",
+        "text-to-image",
+        "midjourney",
+        "ideogram",
+        "qwen-image",
+        "hunyuan-image",
+        "playground-v",
+    )
+    if any(m in mid for m in markers):
+        return True
+    if mid.endswith("-image") or "-image-" in mid or mid.startswith("image-"):
+        return True
+    if mid.endswith("-t2i") or "-t2i-" in mid:
+        return True
     return False
 
 
@@ -229,13 +298,15 @@ def filter_catalog_hits(
     q = (query or "").strip().lower()
     limit = max(1, min(int(limit), 100))
     kind_n = (kind or "all").strip().lower()
-    if kind_n not in {"all", "llm", "embedding", "embed"}:
+    if kind_n not in {"all", "llm", "embedding", "embed", "image", "imagegen"}:
         kind_n = "all"
     out = list(items)
     if kind_n in {"embedding", "embed"}:
         out = [h for h in out if h.embedding]
+    elif kind_n in {"image", "imagegen"}:
+        out = [h for h in out if is_image_gen_model(h.id)]
     elif kind_n == "llm":
-        out = [h for h in out if not h.embedding]
+        out = [h for h in out if not h.embedding and not is_image_gen_model(h.id)]
     if q:
         scored: list[tuple[int, CatalogHit]] = []
         for h in out:

@@ -19,11 +19,13 @@ ALL_EFFORTS: tuple[Effort, ...] = (
 _ALL_EFFORT_SET = frozenset(ALL_EFFORTS)
 
 _GENERIC_THREE: tuple[Effort, ...] = ("low", "medium", "high")
+_GENERIC_WITH_MAX: tuple[Effort, ...] = ("low", "medium", "high", "max")
 _OPENAI_GPT52: tuple[Effort, ...] = ("none", "low", "medium", "high", "xhigh")
 _OPENAI_GPT51: tuple[Effort, ...] = ("none", "low", "medium", "high")
 _OPENAI_GPT5: tuple[Effort, ...] = ("minimal", "low", "medium", "high")
 _OPENAI_O: tuple[Effort, ...] = ("low", "medium", "high")
 _OPENAI_BROAD: tuple[Effort, ...] = ("none", "minimal", "low", "medium", "high", "xhigh")
+_GLM_EFFORTS: tuple[Effort, ...] = ("low", "medium", "high", "max")
 
 
 def _norm_id(model: str) -> str:
@@ -88,7 +90,7 @@ def supported_efforts(model: str, protocol: str | None = None) -> tuple[Effort, 
     proto = (protocol or "").strip().lower()
 
     if proto in {"deepseek", "qwen"}:
-        return _GENERIC_THREE
+        return _GENERIC_WITH_MAX
     # Agnes：可思考，但无对外暴露的强度档
     if proto == "agnes" or mid.startswith("agnes-"):
         return ()
@@ -110,9 +112,13 @@ def supported_efforts(model: str, protocol: str | None = None) -> tuple[Effort, 
         return _OPENAI_BROAD
 
     if mid.startswith(("deepseek-", "qwen")):
-        return _GENERIC_THREE
+        return _GENERIC_WITH_MAX
 
-    # 未知：保守三档，避免下拉过宽
+    # 智谱 GLM 家族常见档位（含 max）
+    if mid.startswith("glm") or "/glm" in f"/{mid}":
+        return _GLM_EFFORTS
+
+    # 未知：保守三档（max 仅给明确支持的协议/前缀）
     return _GENERIC_THREE
 
 

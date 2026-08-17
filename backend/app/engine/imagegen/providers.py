@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-IMAGE_PROVIDER_TYPES = frozenset({"openai", "zhipu", "bailian", "agnes"})
+IMAGE_PROVIDER_TYPES = frozenset({"openai", "zhipu", "bailian", "agnes", "custom"})
 
 _DEFAULT_MODELS: dict[str, str] = {
     "openai": "dall-e-3",
@@ -39,13 +39,13 @@ _ENDPOINT_SUFFIXES: tuple[str, ...] = (
 def normalize_image_base_url(provider: str, raw: str | None) -> str:
     url = (raw or "").strip().rstrip("/")
     if not url:
-        return _DEFAULT_BASE_URLS[provider]
+        return _DEFAULT_BASE_URLS.get(provider, "")
     lower = url.lower()
     for suf in _ENDPOINT_SUFFIXES:
         if lower.endswith(suf):
             url = url[: -len(suf)].rstrip("/")
             break
-    return url or _DEFAULT_BASE_URLS[provider]
+    return url or _DEFAULT_BASE_URLS.get(provider, "")
 
 
 @dataclass(frozen=True)
@@ -61,7 +61,7 @@ class ImageGenProviderEntry:
 
     def resolved_model(self) -> str:
         raw = (self.model or "").strip()
-        return raw or _DEFAULT_MODELS[self.provider]
+        return raw or _DEFAULT_MODELS.get(self.provider, "")
 
     def model_dump(self) -> dict[str, Any]:
         return {

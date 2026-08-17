@@ -64,6 +64,24 @@ def test_parse_and_validate_image_providers():
     )
 
 
+def test_parse_custom_image_provider_requires_url():
+    entries = parse_image_providers(
+        [
+            {
+                "provider": "custom",
+                "api_key": "sk-x",
+                "base_url": "https://gateway.example/v1",
+                "model": "my-image",
+            }
+        ]
+    )
+    assert len(entries) == 1
+    assert entries[0].provider == "custom"
+    assert entries[0].resolved_base_url() == "https://gateway.example/v1"
+    assert entries[0].resolved_model() == "my-image"
+    assert normalize_image_base_url("custom", None) == ""
+
+
 def test_kind_from_http_safety_and_auth():
     assert _kind_from_http(401, "invalid api key") == ImageGenErrorKind.AUTH
     assert _kind_from_http(400, "content_policy_violation") == ImageGenErrorKind.SAFETY

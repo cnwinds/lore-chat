@@ -1910,6 +1910,64 @@ button.memory-fact-statement--jump:focus-visible {
   box-shadow: var(--shadow-sm);
 }
 
+.settings-group--folded {
+  gap: 0;
+  padding: 10px 14px;
+}
+
+.settings-fold-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+}
+
+.settings-fold-header:hover .settings-group-title {
+  color: var(--accent);
+}
+
+.settings-fold-chevron {
+  flex: 0 0 auto;
+  width: 1em;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  line-height: 1;
+}
+
+.settings-fold-header-main {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+
+.settings-fold-count {
+  flex: 0 0 auto;
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--text-muted);
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg-muted) 70%, var(--border));
+  border: 1px solid var(--border);
+}
+
+.settings-fold-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 4px;
+}
+
 .settings-group-header {
   display: flex;
   flex-direction: column;
@@ -1949,6 +2007,11 @@ button.memory-fact-statement--jump:focus-visible {
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 
+.settings-model-candidate--folded {
+  gap: 0;
+  padding: 8px 12px;
+}
+
 .settings-model-candidate--primary {
   border-color: var(--accent-border);
   box-shadow: inset 3px 0 0 var(--accent);
@@ -1968,6 +2031,32 @@ button.memory-fact-statement--jump:focus-visible {
   align-items: center;
   gap: 8px;
   min-width: 0;
+}
+
+.settings-candidate-fold-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+}
+
+.settings-candidate-fold-toggle:hover .settings-candidate-name {
+  color: var(--accent);
+}
+
+.settings-model-candidate-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .settings-model-candidate-main {
@@ -2360,7 +2449,7 @@ button.memory-fact-statement--jump:focus-visible {
   align-self: flex-start;
 }
 
-.settings-search-provider-name {
+.settings-candidate-name {
   display: inline-flex;
   align-items: center;
   min-height: 35px;
