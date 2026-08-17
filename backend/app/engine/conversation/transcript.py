@@ -4,6 +4,19 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
+# 写入/改写知识库或会话附件的工具：其 sources/attachments 才算「本轮产出」
+_TURN_OUTPUT_TOOLS = frozenset(
+    {
+        "write_doc",
+        "write_kb_file",
+        "generate_image",
+        "summarize_conversation",
+        "publish_from_sandbox",
+        "move_entry",
+        "edit_doc",
+    }
+)
+
 
 class ConversationTranscript:
     """从 conv dict 投影文本视图（不碰 SQLite）。"""
@@ -119,6 +132,67 @@ class ConversationTranscript:
         return "\n\n".join(parts)
 
     @classmethod
+    def turn_output_paths(cls, msg: dict) -> list[str]:
+        """本轮写入/改写的 KB 相对路径（去重保序）；不含检索命中。"""
+        out: list[str] = []
+        seen: set[str] = set()
+
+        def add_path(path: object) -> None:
+            if not isinstance(path, str):
+                return
+            p = path.replace("\\", "/").lstrip("/").strip()
+            if not p or p in seen:
+                return
+            seen.add(p)
+            out.append(p)
+
+        # 消息级 attachments：finalize 后的权威列表（生图/SVG 等）
+        for p in msg.get("attachments") or []:
+            add_path(p)
+
+        def walk_write_tools(blocks: object) -> None:
+            if not isinstance(blocks, list):
+                return
+            for block in blocks:
+                if not isinstance(block, dict):
+                    continue
+                if block.get("type") == "parallel":
+                    walk_write_tools(block.get("children"))
+                    continue
+                if block.get("type") != "tool":
+                    continue
+                if block.get("tool") not in _TURN_OUTPUT_TOOLS:
+                    continue
+                if block.get("status") != "done":
+                    continue
+                for p in block.get("attachments") or []:
+                    add_path(p)
+                for src in block.get("sources") or []:
+                    if isinstance(src, dict) and src.get("type") == "kb":
+                        add_path(src.get("path"))
+                add_path(block.get("path"))
+                add_path(block.get("rel_path"))
+
+        walk_write_tools(msg.get("timeline"))
+        return out
+
+    @classmethod
+    def format_turn_outputs(cls, paths: list[str]) -> str:
+        if not paths:
+            return ""
+        lines = "\n".join(f"- {p}" for p in paths)
+        return f"【本轮产出】\n{lines}"
+
+    @classmethod
+    def llm_assistant_content(cls, msg: dict) -> str:
+        """喂给下一轮 LLM 的助手内容：正文 + 确定性本轮产出路径。"""
+        text = cls.assistant_content(msg)
+        footer = cls.format_turn_outputs(cls.turn_output_paths(msg))
+        if text and footer:
+            return f"{text}\n\n{footer}"
+        return text or footer
+
+    @classmethod
     def llm_history(
         cls,
         conv: dict,
@@ -135,7 +209,7 @@ class ConversationTranscript:
                 if text:
                     candidates.append({"role": "user", "content": text})
             elif role == "assistant":
-                text = cls.assistant_content(msg)
+                text = cls.llm_assistant_content(msg)
                 if text:
                     candidates.append({"role": "assistant", "content": text})
 
