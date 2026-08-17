@@ -59,7 +59,7 @@ describe("reduceStreamEvent serverTimeline + deltas", () => {
   });
 
   it("appends text_delta to assistant.text under serverTimeline", () => {
-    let state = baseState({ serverTimeline: true });
+    const state = baseState({ serverTimeline: true });
     let result = reduceStreamEvent(state, "text_delta", {
       delta: "Hi",
       ts: "2026-01-01T00:00:00Z",
