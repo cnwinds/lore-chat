@@ -438,7 +438,7 @@ def test_sanitize_markdown_rejects_unrestorable_api_url():
 
 
 @pytest.mark.asyncio
-async def test_tool_kb_destination_omits_attachments(tmp_path):
+async def test_tool_kb_destination_includes_attachments_for_preview(tmp_path):
     from app.engine.agent.tool_impl.image_tools import ImageGenTools
 
     ig = _ig(
@@ -460,7 +460,7 @@ async def test_tool_kb_destination_omits_attachments(tmp_path):
             }
         )
     assert out["rel_path"] == "assets/hero.png"
-    assert "attachments" not in out
+    assert out["attachments"] == ["assets/hero.png"]
     assert (tmp_path / "assets/hero.png").read_bytes() == b"png"
 
 

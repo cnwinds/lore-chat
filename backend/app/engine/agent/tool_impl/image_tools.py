@@ -58,15 +58,14 @@ class ImageGenTools:
             summary += "，已写入知识库）"
         else:
             summary += "）"
-        out: dict = {
+        # 两种 destination 都挂 attachments：时间线工具卡依赖它内联预览；
+        # kb 与 chat_attachment 仅落盘路径不同，权威身份仍是 KB 相对路径。
+        return {
             "summary": summary,
             "sources": [{"type": "kb", "path": rel}],
             "rel_path": rel,
             "provider": provider,
             "aspect_ratio": result.get("aspect_ratio"),
             "destination": dest,
+            "attachments": [rel],
         }
-        # 仅聊天附件进时间线预览；kb 落盘供写 Markdown，不挂 attachments
-        if dest == "chat_attachment":
-            out["attachments"] = [rel]
-        return out

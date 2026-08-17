@@ -281,8 +281,9 @@ TOOL_DEFINITIONS: list[dict] = [
             "name": "generate_image",
             "description": (
                 "根据文字描述生成一张图片并保存到知识库。"
-                "默认 destination=chat_attachment，写入 媒体/生成/{年月}/，结果以附件形式出现在信息流；"
+                "默认 destination=chat_attachment，写入 媒体/生成/{年月}/；"
                 "若需写入指定知识库路径供文档引用，用 destination=kb 并提供 directory 与 filename（均必填）。"
+                "两种 destination 成功后都会在工具结果 attachments 中给出路径，信息流工具卡可内联预览。"
                 "文档中请用相对路径 Markdown 插图：![说明](相对路径)。"
                 "用户要多张图（多构思/多变体）时：在同一轮一次性发出多个 generate_image（不同 prompt），"
                 "系统会并行生图；勿等一张完成再调下一张。"

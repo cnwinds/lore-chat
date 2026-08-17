@@ -28,7 +28,7 @@
 | destination | 行为 |
 |---|---|
 | `chat_attachment`（工具默认） | 写入 `媒体/生成/{YYYY-MM}/` + 自动文件名；路径挂到消息/工具结果的 `attachments` |
-| `kb` | 经 `KnowledgeWriter` 按 `directory` + `filename` 写入二进制；返回相对路径供后续写 Markdown |
+| `kb` | 经 `KnowledgeWriter` 按 `directory` + `filename` 写入二进制；返回相对路径供后续写 Markdown；同样挂 `attachments`，供时间线工具卡内联预览 |
 
 说明：聊天粘贴/附件图写入 `媒体/上传/{YYYY-MM}/`（内容哈希文件名，同图幂等）；生图默认进 `媒体/生成/{YYYY-MM}/`，与上传分轨、共用顶层「媒体」。权威身份仍是 KB 路径，复用 download / 签名等现有能力。
 
