@@ -14,6 +14,7 @@ from app.api.http_deps import (
     container,
     normalize_chat_context,
 )
+from app.demo.identity import IDENTITY_GUEST
 from app.engine.chat.session_runner import consume_agent_ask, consume_agent_ingest
 from app.engine.chat.sse_keepalive import with_sse_keepalive
 from app.engine.chat.turn_inject import PendingInject
@@ -57,6 +58,12 @@ async def chat(body: ChatBody, request: Request):
     from app.engine.enabled_skills import EnabledSkillsError
 
     c = container(request)
+    is_guest = getattr(request.state, "identity", None) == IDENTITY_GUEST
+    if is_guest and body.conversation_id:
+        raise HTTPException(
+            403,
+            detail={"code": "demo_read_only", "detail": "演示环境的对话不会被保存"},
+        )
     doc_items, paths, primary = normalize_chat_context(body)
     # catalog 在 runner 内装配；此处仅预解析以便缺头时返回 400（非 SSE error）
     try:
