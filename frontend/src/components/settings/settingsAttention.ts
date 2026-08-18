@@ -20,6 +20,16 @@ export function isDraftApiKeyConfigured(
   return masked.includes("***") || masked === "****";
 }
 
+/** 检索链：至少一家搜索提供商有有效 Key。 */
+export function searchProvidersConfigured(
+  providers: Array<{
+    api_key?: string;
+    api_key_masked?: string;
+  }>,
+): boolean {
+  return providers.some((p) => isDraftApiKeyConfigured(p.api_key, p.api_key_masked));
+}
+
 /** 草稿态：链上至少一条具备 model + base_url + 有效 Key。 */
 export function draftChainNeedsSetup(
   candidates: Array<{

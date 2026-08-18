@@ -238,7 +238,7 @@ export function embedCandidatesFromLegacy(data: {
   const base = str(data.embed_base_url);
   const rawKey =
     typeof data.embed_api_key === "string" ? data.embed_api_key.trim() : "";
-  if (!model && !base && !rawKey) return [emptyEmbedCandidate()];
+  if (!model && !base && !rawKey) return [];
   return [
     {
       id: newId().slice(0, 12),

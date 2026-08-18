@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from app.config import Settings
@@ -6,6 +7,63 @@ from app.settings_store import EDITABLE_SETTING_KEYS, SettingsStore
 
 def test_kb_path_not_editable():
     assert "kb_path" not in EDITABLE_SETTING_KEYS
+
+
+def test_new_kb_does_not_seed_default_models(tmp_path: Path):
+    store = SettingsStore(tmp_path, Settings(kb_path=tmp_path))
+    s = store.get()
+    assert s.chat_models == []
+    assert s.utility_models == []
+    assert s.embed_models == []
+    assert s.big_model == ""
+    assert s.small_model == ""
+    assert s.embed_model == ""
+    path = tmp_path / ".kb" / "settings.json"
+    if path.is_file():
+        data = json.loads(path.read_text(encoding="utf-8"))
+        assert not data.get("chat_models")
+        assert not data.get("utility_models")
+        assert not data.get("embed_models")
+
+
+def test_store_explicit_empty_chains_not_resurrected_from_env(tmp_path: Path):
+    kb = tmp_path / ".kb"
+    kb.mkdir()
+    (kb / "settings.json").write_text(
+        json.dumps(
+            {
+                "chat_models": [],
+                "utility_models": [],
+                "embed_models": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    base = Settings(
+        kb_path=tmp_path,
+        big_model="gpt-4o",
+        small_model="gpt-4o-mini",
+        embed_model="text-embedding-3-small",
+        openai_base_url="https://api.openai.com/v1",
+    )
+    store = SettingsStore(tmp_path, base)
+    s = store.get()
+    assert s.chat_models == []
+    assert s.utility_models == []
+    assert s.embed_models == []
+    assert s.big_model == ""
+    assert s.small_model == ""
+    assert s.embed_model == ""
+
+
+def test_store_env_legacy_names_migrate_when_chain_key_absent(tmp_path: Path):
+    store = SettingsStore(
+        tmp_path,
+        Settings(kb_path=tmp_path, big_model="gpt-4o", small_model="gpt-4o-mini"),
+    )
+    s = store.get()
+    assert s.chat_models[0]["model"] == "gpt-4o"
+    assert s.utility_models[0]["model"] == "gpt-4o-mini"
 
 
 def test_load_defaults_then_override(tmp_path: Path):
@@ -27,7 +85,8 @@ def test_public_dict_masks_secrets(tmp_path: Path):
     pub = store.public_dict()
     assert pub["openai_api_key"] != "sk-abcdefghijklmnop"
     assert pub["openai_api_key"].endswith("mnop")
-    assert pub["llm_api_key_configured"] is True
+    # 全局 openai_api_key 不计入已配置；须写在 chat/utility 候选上
+    assert pub["llm_api_key_configured"] is False
     assert "kb_path" in pub
 
 
@@ -164,6 +223,7 @@ def test_migrate_promotes_global_openai_into_candidates():
                 "openai_base_url": "https://api.openai.com/v1",
                 "chat_models": [{"id": "c1", "model": "gpt-4o"}],
                 "utility_models": [{"id": "u1", "model": "gpt-4o-mini"}],
+                "embed_model": "text-embedding-3-small",
             }
         )
     )

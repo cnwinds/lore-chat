@@ -39,10 +39,10 @@ class Settings(BaseSettings):
     # 仅作旧配置迁移源；运行时不回退。默认可空，避免新安装被注入 api.openai.com。
     openai_base_url: str = ""
 
-    # Legacy 别名：迁移后与 chat/utility 链首同步；新配置以 *_models 为准
-    small_model: str = "gpt-4o-mini"
-    big_model: str = "gpt-4o"
-    embed_model: str = "text-embedding-3-small"
+    # Legacy 别名：仅作旧配置迁移源；空 = 未配置。新安装不预填厂家模型名。
+    small_model: str = ""
+    big_model: str = ""
+    embed_model: str = ""
 
     small_base_url: str | None = None
     small_api_key: str | None = None

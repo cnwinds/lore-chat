@@ -4,6 +4,7 @@ import {
   isDraftApiKeyConfigured,
   mergeSettingsAttention,
   priceRowNeedsSetup,
+  searchProvidersConfigured,
 } from "./settingsAttention";
 
 describe("isDraftApiKeyConfigured", () => {
@@ -16,6 +17,17 @@ describe("isDraftApiKeyConfigured", () => {
   it("accepts real key or saved mask", () => {
     expect(isDraftApiKeyConfigured("sk-real-key")).toBe(true);
     expect(isDraftApiKeyConfigured("", "sk***xxxx")).toBe(true);
+  });
+});
+
+describe("searchProvidersConfigured", () => {
+  it("requires a real or masked key", () => {
+    expect(searchProvidersConfigured([])).toBe(false);
+    expect(searchProvidersConfigured([{ api_key: "" }])).toBe(false);
+    expect(searchProvidersConfigured([{ api_key: "tv-real-key" }])).toBe(true);
+    expect(
+      searchProvidersConfigured([{ api_key: "", api_key_masked: "tv***xxxx" }]),
+    ).toBe(true);
   });
 });
 

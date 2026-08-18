@@ -83,12 +83,40 @@ def test_enrich_fills_effort_options_when_thinking_but_catalog_empty():
 
 def test_migrate_settings_dict_from_legacy():
     data = migrate_settings_dict(
-        {"big_model": "agnes-2.5-pro", "small_model": "gpt-4o-mini", "big_base_url": "https://apihub.agnes-ai.com/v1"}
+        {
+            "big_model": "agnes-2.5-pro",
+            "small_model": "gpt-4o-mini",
+            "embed_model": "text-embedding-3-small",
+            "big_base_url": "https://apihub.agnes-ai.com/v1",
+        }
     )
     assert data["chat_models"][0]["model"] == "agnes-2.5-pro"
     assert data["chat_models"][0]["image"] is True
     assert data["utility_models"][0]["model"] == "gpt-4o-mini"
     assert data["embed_models"][0]["model"] == "text-embedding-3-small"
+
+
+def test_migrate_settings_dict_empty_stays_empty():
+    data = migrate_settings_dict({})
+    assert data["chat_models"] == []
+    assert data["utility_models"] == []
+    assert data["embed_models"] == []
+
+
+def test_migrate_explicit_empty_chains_ignore_legacy_names():
+    data = migrate_settings_dict(
+        {
+            "chat_models": [],
+            "utility_models": [],
+            "embed_models": [],
+            "big_model": "gpt-4o",
+            "small_model": "gpt-4o-mini",
+            "embed_model": "text-embedding-3-small",
+        }
+    )
+    assert data["chat_models"] == []
+    assert data["utility_models"] == []
+    assert data["embed_models"] == []
 
 
 def test_resolve_embed_chain_from_embed_models(tmp_path):
@@ -115,6 +143,13 @@ def test_resolve_chain_from_legacy_settings(tmp_path):
     util = resolve_chain_candidates(s, "utility")
     assert chat[0].model == "gpt-4o"
     assert util[0].model == "gpt-4o-mini"
+
+
+def test_resolve_chain_empty_settings_returns_empty(tmp_path):
+    s = Settings(kb_path=tmp_path, chat_models=[], utility_models=[], embed_models=[])
+    assert resolve_chain_candidates(s, "chat") == []
+    assert resolve_chain_candidates(s, "utility") == []
+    assert resolve_chain_candidates(s, "embed") == []
 
 
 def test_classify_error():

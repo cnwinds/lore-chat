@@ -28,6 +28,11 @@ import {
 import { nowIsoDisplay } from "../utils/displayTime";
 import { newId } from "../utils/id";
 import {
+  readWebSearchEnabled,
+  WEB_SEARCH_CHANGED_EVENT,
+  writeWebSearchEnabled,
+} from "../utils/webSearchPreference";
+import {
   mergeGroupText,
   SEND_QUEUE_MAX,
   type SendQueueItem,
@@ -90,9 +95,7 @@ export function Chat({
   const [archiving, setArchiving] = useState(false);
   const [archiveModalOpen, setArchiveModalOpen] = useState(false);
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
-  const [webEnabled, setWebEnabled] = useState<boolean>(
-    () => localStorage.getItem("lorechat.webSearch") === "1",
-  );
+  const [webEnabled, setWebEnabled] = useState(() => readWebSearchEnabled());
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -221,6 +224,17 @@ export function Chat({
   }, [conversationId]);
 
   useEffect(() => {
+    const onChange = (e: Event) => {
+      const enabled = (e as CustomEvent<{ enabled?: boolean }>).detail?.enabled;
+      setWebEnabled(
+        typeof enabled === "boolean" ? enabled : readWebSearchEnabled(),
+      );
+    };
+    window.addEventListener(WEB_SEARCH_CHANGED_EVENT, onChange);
+    return () => window.removeEventListener(WEB_SEARCH_CHANGED_EVENT, onChange);
+  }, []);
+
+  useEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = "auto";
@@ -233,11 +247,9 @@ export function Chat({
   }, [input]);
 
   function toggleWebSearch() {
-    setWebEnabled((prev) => {
-      const next = !prev;
-      localStorage.setItem("lorechat.webSearch", next ? "1" : "0");
-      return next;
-    });
+    const next = !webEnabled;
+    writeWebSearchEnabled(next);
+    setWebEnabled(next);
   }
 
   async function send() {

@@ -117,19 +117,32 @@ def parse_candidates(raw: Any) -> list[ModelCandidate]:
     return out
 
 
+def _legacy_model_name(value: Any) -> str:
+    return str(value).strip() if value is not None else ""
+
+
+def _explicit_model_chain(data: dict[str, Any], key: str) -> bool:
+    """settings.json / patch 里出现的 list（含 []）视为用户明确配置，禁止再用 legacy 名回填。"""
+    return key in data and isinstance(data.get(key), list)
+
+
 def resolve_chain_candidates(settings: Any, chain: ModelChain) -> list[ModelCandidate]:
-    """返回有序候选；空链时从 legacy small/big/embed 合成一条。
+    """返回有序候选；空链且无 legacy 模型名时保持为空。
 
     不在运行时用全局 openai_* 回填：每条候选须自带 base_url / api_key
     （旧配置由 migrate_settings_dict 一次性提升）。
+    不因类默认值注入 gpt-4o 等占位模型。
     """
     if chain == "chat":
         configured = parse_candidates(getattr(settings, "chat_models", None))
         if configured:
             return configured
+        model = _legacy_model_name(getattr(settings, "big_model", None))
+        if not model:
+            return []
         return [
             _legacy_candidate(
-                model=getattr(settings, "big_model", "gpt-4o"),
+                model=model,
                 base_url=getattr(settings, "big_base_url", None),
                 api_key=getattr(settings, "big_api_key", None),
                 chain="chat",
@@ -139,7 +152,9 @@ def resolve_chain_candidates(settings: Any, chain: ModelChain) -> list[ModelCand
         configured = parse_candidates(getattr(settings, "embed_models", None))
         if configured:
             return configured
-        model = (getattr(settings, "embed_model", None) or "").strip() or "text-embedding-3-small"
+        model = _legacy_model_name(getattr(settings, "embed_model", None))
+        if not model:
+            return []
         return [
             ModelCandidate(
                 id="embed-legacy",
@@ -155,9 +170,12 @@ def resolve_chain_candidates(settings: Any, chain: ModelChain) -> list[ModelCand
     configured = parse_candidates(getattr(settings, "utility_models", None))
     if configured:
         return configured
+    model = _legacy_model_name(getattr(settings, "small_model", None))
+    if not model:
+        return []
     return [
         _legacy_candidate(
-            model=getattr(settings, "small_model", "gpt-4o-mini"),
+            model=model,
             base_url=getattr(settings, "small_base_url", None),
             api_key=getattr(settings, "small_api_key", None),
             chain="utility",
@@ -168,46 +186,60 @@ def resolve_chain_candidates(settings: Any, chain: ModelChain) -> list[ModelCand
 def migrate_settings_dict(data: dict[str, Any]) -> dict[str, Any]:
     """将旧 small/big/embed 字段一次性写入对应 *_models 链（若尚无新字段）。
 
+    键存在且为 list（含 []）= 显式链，不再用 legacy 模型名回填。
+    键缺失时：仅当 legacy 模型名非空才合成一条；不注入 gpt-4o 等占位名。
     并在候选缺少 base_url/api_key 时，从全局 openai_* 填入（取消「默认端点」后的兼容）。
     """
     out = dict(data)
-    if not parse_candidates(out.get("chat_models")):
-        big = out.get("big_model") or "gpt-4o"
-        out["chat_models"] = [
-            _legacy_candidate(
-                model=str(big),
-                base_url=out.get("big_base_url"),
-                api_key=out.get("big_api_key"),
-                chain="chat",
-            ).model_dump()
-        ]
-    if not parse_candidates(out.get("utility_models")):
-        small = out.get("small_model") or "gpt-4o-mini"
-        out["utility_models"] = [
-            _legacy_candidate(
-                model=str(small),
-                base_url=out.get("small_base_url"),
-                api_key=out.get("small_api_key"),
-                chain="utility",
-            ).model_dump()
-        ]
-    if not parse_candidates(out.get("embed_models")):
-        emb = (out.get("embed_model") or "").strip() or "text-embedding-3-small"
-        out["embed_models"] = [
-            ModelCandidate(
-                id="embed-migrated",
-                model=str(emb),
-                base_url=out.get("embed_base_url"),
-                api_key=out.get("embed_api_key"),
-                provider="custom",
-                image=False,
-                thinking=False,
-                effort_options=[],
-                thinking_protocol="none",
-            )
-            .ensure_id()
-            .model_dump()
-        ]
+    if not _explicit_model_chain(out, "chat_models"):
+        big = _legacy_model_name(out.get("big_model"))
+        out["chat_models"] = (
+            [
+                _legacy_candidate(
+                    model=big,
+                    base_url=out.get("big_base_url"),
+                    api_key=out.get("big_api_key"),
+                    chain="chat",
+                ).model_dump()
+            ]
+            if big
+            else []
+        )
+    if not _explicit_model_chain(out, "utility_models"):
+        small = _legacy_model_name(out.get("small_model"))
+        out["utility_models"] = (
+            [
+                _legacy_candidate(
+                    model=small,
+                    base_url=out.get("small_base_url"),
+                    api_key=out.get("small_api_key"),
+                    chain="utility",
+                ).model_dump()
+            ]
+            if small
+            else []
+        )
+    if not _explicit_model_chain(out, "embed_models"):
+        emb = _legacy_model_name(out.get("embed_model"))
+        out["embed_models"] = (
+            [
+                ModelCandidate(
+                    id="embed-migrated",
+                    model=emb,
+                    base_url=out.get("embed_base_url"),
+                    api_key=out.get("embed_api_key"),
+                    provider="custom",
+                    image=False,
+                    thinking=False,
+                    effort_options=[],
+                    thinking_protocol="none",
+                )
+                .ensure_id()
+                .model_dump()
+            ]
+            if emb
+            else []
+        )
     return promote_global_openai_endpoint(out)
 
 
@@ -281,7 +313,7 @@ def promote_global_openai_endpoint(data: dict[str, Any]) -> dict[str, Any]:
 
 
 def sync_legacy_aliases(settings_dict: dict[str, Any]) -> dict[str, Any]:
-    """链首候选回写 small/big/embed 别名，兼容仍读旧字段的代码/测试。"""
+    """链首候选回写 small/big/embed 别名；显式空链则清空别名，避免 env 名在运行时复活。"""
     out = dict(settings_dict)
     chat = parse_candidates(out.get("chat_models"))
     util = parse_candidates(out.get("utility_models"))
@@ -292,18 +324,30 @@ def sync_legacy_aliases(settings_dict: dict[str, Any]) -> dict[str, Any]:
         out["big_base_url"] = c0.base_url
         if c0.api_key is not None:
             out["big_api_key"] = c0.api_key
+    elif _explicit_model_chain(out, "chat_models"):
+        out["big_model"] = ""
+        out["big_base_url"] = None
+        out["big_api_key"] = None
     if util:
         u0 = util[0]
         out["small_model"] = u0.model
         out["small_base_url"] = u0.base_url
         if u0.api_key is not None:
             out["small_api_key"] = u0.api_key
+    elif _explicit_model_chain(out, "utility_models"):
+        out["small_model"] = ""
+        out["small_base_url"] = None
+        out["small_api_key"] = None
     if embed:
         e0 = embed[0]
         out["embed_model"] = e0.model
         out["embed_base_url"] = e0.base_url
         if e0.api_key is not None:
             out["embed_api_key"] = e0.api_key
+    elif _explicit_model_chain(out, "embed_models"):
+        out["embed_model"] = ""
+        out["embed_base_url"] = None
+        out["embed_api_key"] = None
     return out
 
 

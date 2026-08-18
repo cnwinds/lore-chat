@@ -575,6 +575,7 @@ type ChainEditorProps = {
   onClearCooldown: (candidateId: string) => void;
   saving: boolean;
   attention?: boolean;
+  hydrated?: boolean;
 };
 
 function ChainEditor({
@@ -585,6 +586,7 @@ function ChainEditor({
   onClearCooldown,
   saving,
   attention = false,
+  hydrated = true,
 }: ChainEditorProps) {
   const ids = candidates.map((c) => c.id);
   const { isOpen, toggle } = useSettingsItemFold(ids);
@@ -606,6 +608,7 @@ function ChainEditor({
       title={title}
       count={candidates.length}
       attention={attention}
+      defaultOpen={hydrated && (candidates.length === 0 || attention)}
     >
       <div className="settings-chain-list">
         {candidates.map((c, i) => {
@@ -662,7 +665,7 @@ function ChainEditor({
                   <button
                     type="button"
                     className="settings-icon-btn settings-icon-btn--danger"
-                    disabled={saving || candidates.length <= 1}
+                    disabled={saving}
                     onClick={() => onChange(candidates.filter((_, idx) => idx !== i))}
                     aria-label="删除"
                     title="删除"
@@ -833,6 +836,7 @@ type EmbedChainEditorProps = {
   onClearCooldown: (candidateId: string) => void;
   saving: boolean;
   attention?: boolean;
+  hydrated?: boolean;
 };
 
 function EmbedChainEditor({
@@ -842,6 +846,7 @@ function EmbedChainEditor({
   onClearCooldown,
   saving,
   attention = false,
+  hydrated = true,
 }: EmbedChainEditorProps) {
   const ids = candidates.map((c) => c.id);
   const { isOpen, toggle } = useSettingsItemFold(ids);
@@ -863,6 +868,7 @@ function EmbedChainEditor({
       title="嵌入模型"
       count={candidates.length}
       attention={attention}
+      defaultOpen={hydrated && (candidates.length === 0 || attention)}
     >
       <div className="settings-chain-list">
         {candidates.map((c, i) => {
@@ -919,7 +925,7 @@ function EmbedChainEditor({
                   <button
                     type="button"
                     className="settings-icon-btn settings-icon-btn--danger"
-                    disabled={saving || candidates.length <= 1}
+                    disabled={saving}
                     onClick={() => onChange(candidates.filter((_, idx) => idx !== i))}
                     aria-label="删除"
                     title="删除"
@@ -1052,6 +1058,7 @@ type Props = {
   imageCooldown: CooldownStatus;
   onClearImageCooldown: (providerId: string) => void;
   saving: boolean;
+  hydrated?: boolean;
 };
 
 export function ModelSettingsTab({
@@ -1074,6 +1081,7 @@ export function ModelSettingsTab({
   imageCooldown,
   onClearImageCooldown,
   saving,
+  hydrated = true,
 }: Props) {
   return (
     <>
@@ -1085,6 +1093,7 @@ export function ModelSettingsTab({
         onClearCooldown={onClearCooldown}
         saving={saving}
         attention={draftChainNeedsSetup(chatModels)}
+        hydrated={hydrated}
       />
 
       <ChainEditor
@@ -1095,6 +1104,7 @@ export function ModelSettingsTab({
         onClearCooldown={onClearCooldown}
         saving={saving}
         attention={draftChainNeedsSetup(utilityModels)}
+        hydrated={hydrated}
       />
 
       <EmbedChainEditor
@@ -1104,6 +1114,7 @@ export function ModelSettingsTab({
         onClearCooldown={onClearCooldown}
         saving={saving}
         attention={draftChainNeedsSetup(embedModels)}
+        hydrated={hydrated}
       />
 
       <SearchProviderEditor

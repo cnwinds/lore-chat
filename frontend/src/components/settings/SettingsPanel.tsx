@@ -14,9 +14,6 @@ import { AccountSettingsTab } from "./AccountSettingsTab";
 import { AgentSettingsTab } from "./AgentSettingsTab";
 import { KbBackupSettingsTab } from "./KbBackupSettingsTab";
 import {
-  emptyCandidate,
-  emptyEmbedCandidate,
-  embedCandidatesFromLegacy,
   ModelSettingsTab,
   maskApiKeyPlaceholder,
   parseCandidates,
@@ -37,7 +34,9 @@ import { SettingsAttentionDot } from "./SettingsAttentionDot";
 import {
   draftChainNeedsSetup,
   mergeSettingsAttention,
+  searchProvidersConfigured,
 } from "./settingsAttention";
+import { maybeEnableComposerWebSearch } from "../../utils/webSearchPreference";
 import type { SettingsAttention } from "../../api";
 import { useDemoCapability } from "../../hooks/useDemoCapability";
 
@@ -191,6 +190,20 @@ function bool(v: unknown, fallback: boolean): boolean {
   return fallback;
 }
 
+function draftCandidateHasContent(c: {
+  model?: string;
+  base_url?: string;
+  api_key?: string;
+  api_key_masked?: string;
+}): boolean {
+  return Boolean(
+    (c.model || "").trim() ||
+      (c.base_url || "").trim() ||
+      (c.api_key || "").trim() ||
+      (c.api_key_masked || "").trim(),
+  );
+}
+
 /** 浏览器当前访问源，用作 Public Base URL（无尾斜杠）。 */
 function clientAccessOrigin(): string {
   if (typeof window === "undefined") return "";
@@ -211,6 +224,7 @@ export function SettingsPanel({
   const { canWrite } = useDemoCapability();
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [settingsReady, setSettingsReady] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<SettingsTab>(readStoredSettingsTab);
@@ -218,13 +232,9 @@ export function SettingsPanel({
   const [kbPath, setKbPath] = useState("");
 
   const [publicBaseUrl, setPublicBaseUrl] = useState("");
-  const [chatModels, setChatModels] = useState<ModelCandidateDraft[]>([emptyCandidate()]);
-  const [utilityModels, setUtilityModels] = useState<ModelCandidateDraft[]>([
-    emptyCandidate(),
-  ]);
-  const [embedModels, setEmbedModels] = useState<EmbedCandidateDraft[]>([
-    emptyEmbedCandidate(),
-  ]);
+  const [chatModels, setChatModels] = useState<ModelCandidateDraft[]>([]);
+  const [utilityModels, setUtilityModels] = useState<ModelCandidateDraft[]>([]);
+  const [embedModels, setEmbedModels] = useState<EmbedCandidateDraft[]>([]);
   const [cooldown, setCooldown] = useState<CooldownStatus>({});
   const [searchProviders, setSearchProviders] = useState<SearchProviderDraft[]>([]);
   const [searchCooldown, setSearchCooldown] = useState<CooldownStatus>({});
@@ -257,6 +267,8 @@ export function SettingsPanel({
   const [importMode, setImportMode] = useState<"empty_only" | "overwrite">("empty_only");
   const [importFile, setImportFile] = useState<File | null>(null);
   const importFileRef = useRef<HTMLInputElement>(null);
+  /** 上次从服务端载入的搜索是否已配置（用于 0→1 时打开聊天框联网搜索） */
+  const searchConfiguredRef = useRef(false);
   /** 面板内本地态：覆盖服务端 usage 分区，避免未保存时不同步 */
   const [usageIncomplete, setUsageIncomplete] = useState<number | null>(null);
 
@@ -285,24 +297,17 @@ export function SettingsPanel({
       }
       const chat = parseCandidates(data.chat_models);
       const util = parseCandidates(data.utility_models);
-      setChatModels(chat.length ? chat : [emptyCandidate()]);
-      setUtilityModels(util.length ? util : [emptyCandidate()]);
-      const embeds = parseEmbedCandidates(data.embed_models);
-      setEmbedModels(
-        embeds.length
-          ? embeds
-          : embedCandidatesFromLegacy({
-              embed_model: data.embed_model,
-              embed_base_url: data.embed_base_url,
-              embed_api_key: data.embed_api_key,
-            }),
-      );
+      setChatModels(chat);
+      setUtilityModels(util);
+      setEmbedModels(parseEmbedCandidates(data.embed_models));
       setCooldown(
         data.model_cooldown && typeof data.model_cooldown === "object"
           ? (data.model_cooldown as CooldownStatus)
           : {},
       );
-      setSearchProviders(parseSearchProviders(data.search_providers));
+      const searchDrafts = parseSearchProviders(data.search_providers);
+      setSearchProviders(searchDrafts);
+      searchConfiguredRef.current = searchProvidersConfigured(searchDrafts);
       setSearchCooldown(
         data.search_cooldown && typeof data.search_cooldown === "object"
           ? (data.search_cooldown as CooldownStatus)
@@ -327,6 +332,7 @@ export function SettingsPanel({
       setSandboxMirrorRegion(
         data.sandbox_mirror_region === "global" ? "global" : "cn",
       );
+      setSettingsReady(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "加载设置失败");
     } finally {
@@ -409,7 +415,7 @@ export function SettingsPanel({
     try {
       const patch: Record<string, unknown> = {
         public_base_url: publicBaseUrl.trim() || null,
-        chat_models: chatModels.map((c) => ({
+        chat_models: chatModels.filter(draftCandidateHasContent).map((c) => ({
           id: c.id,
           model: c.model,
           provider: c.provider,
@@ -421,7 +427,7 @@ export function SettingsPanel({
           effort_options: c.effort_options,
           image_wire: c.image_wire,
         })),
-        utility_models: utilityModels.map((c) => ({
+        utility_models: utilityModels.filter(draftCandidateHasContent).map((c) => ({
           id: c.id,
           model: c.model,
           provider: c.provider,
@@ -433,7 +439,7 @@ export function SettingsPanel({
           effort_options: c.effort_options,
           image_wire: c.image_wire,
         })),
-        embed_models: embedModels.map((c) => ({
+        embed_models: embedModels.filter(draftCandidateHasContent).map((c) => ({
           id: c.id,
           model: c.model,
           provider: c.provider,
@@ -468,8 +474,13 @@ export function SettingsPanel({
         sandbox_mirror_region: sandboxMirrorRegion,
       };
 
+      const wasSearchConfigured = searchConfiguredRef.current;
       const saved = await putSettings(patch);
       setSaveMsg("已保存并生效");
+      maybeEnableComposerWebSearch(
+        wasSearchConfigured,
+        searchProvidersConfigured(searchProviders),
+      );
       await load();
       onAttentionChange?.();
       if (saved.llm_api_key_configured === true) {
@@ -655,6 +666,7 @@ export function SettingsPanel({
                       embedModels={embedModels}
                       onEmbedModelsChange={setEmbedModels}
                       cooldown={cooldown}
+                      hydrated={settingsReady}
                       onClearCooldown={
                         canWrite
                           ? async (candidateId) => {
