@@ -171,6 +171,22 @@ def _enrich_chains(data: dict) -> dict:
     return out
 
 
+def _merge_base_overrides(base_dump: dict, overrides: dict) -> dict:
+    """叠 .env / Settings 底与 settings.json。
+
+    class 默认的空 *_models 不是「用户明确清空」：不在 overrides 里时从 merge 去掉该键，
+    以便 migrate 从 BIG_MODEL 等 legacy 名合成。settings.json 里的 [] 或底里已有候选则保留。
+    """
+    merged = {**base_dump, **overrides}
+    for key in CHAIN_MODEL_SETTING_KEYS:
+        if key in overrides:
+            continue
+        raw = merged.get(key)
+        if isinstance(raw, list) and len(raw) == 0:
+            merged.pop(key, None)
+    return merged
+
+
 def _normalize_model_settings(data: dict) -> dict:
     """migrate → enrich → sync_legacy 单一管线（含搜索链）。"""
     out = migrate_settings_dict(dict(data))
@@ -220,7 +236,7 @@ class SettingsStore:
         self._overrides: dict = self._load_overrides()
         # 启动时若仅有 legacy 字段，或全局 openai_* 需提升到候选，迁移并落盘
         full_preview = _normalize_model_settings(
-            {**self._base.model_dump(), **self._overrides}
+            _merge_base_overrides(self._base.model_dump(), self._overrides)
         )
         need_write = False
         migrated = migrate_settings_dict(dict(self._overrides))
@@ -297,7 +313,9 @@ class SettingsStore:
         }
 
     def _build_settings(self, overrides: dict) -> Settings:
-        merged = _normalize_model_settings({**self._base.model_dump(), **overrides})
+        merged = _normalize_model_settings(
+            _merge_base_overrides(self._base.model_dump(), overrides)
+        )
         merged["kb_path"] = self._kb_path
         return Settings.model_validate(merged)
 
@@ -407,7 +425,9 @@ class SettingsStore:
         # 仅改 legacy 别名时，同步到对应链的首个候选
         merged_overrides = self._propagate_legacy_to_chains(merged_overrides, filtered)
 
-        full = _normalize_model_settings({**self._base.model_dump(), **merged_overrides})
+        full = _normalize_model_settings(
+            _merge_base_overrides(self._base.model_dump(), merged_overrides)
+        )
         merged_overrides = {
             k: v for k, v in full.items() if k in EDITABLE_SETTING_KEYS
         }
@@ -444,14 +464,12 @@ class SettingsStore:
                 continue
             chain = list(out.get(chain_k) or [])
             if not chain:
-                default_model = (
-                    "text-embedding-3-small"
-                    if chain_k == "embed_models"
-                    else "gpt-4o"
-                )
+                model = str(out.get(model_k) or "").strip()
+                if not model:
+                    continue
                 item = enrich_candidate_dict(
                     {
-                        "model": out.get(model_k) or default_model,
+                        "model": model,
                         "base_url": out.get(url_k),
                         "api_key": out.get(key_k),
                     }

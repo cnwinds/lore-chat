@@ -27,6 +27,9 @@ export function SettingsFoldSection({
   children,
 }: FoldSectionProps) {
   const [open, setOpen] = useState(defaultOpen);
+  useEffect(() => {
+    if (defaultOpen) setOpen(true);
+  }, [defaultOpen]);
   return (
     <section
       className={`settings-group settings-chain${open ? "" : " settings-group--folded"}`}

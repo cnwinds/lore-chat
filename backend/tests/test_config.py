@@ -1,6 +1,20 @@
 from app.config import Settings
 
 
+def test_settings_model_defaults_are_empty(tmp_path, monkeypatch):
+    monkeypatch.setenv("KB_PATH", str(tmp_path / "knowledge"))
+    monkeypatch.delenv("SMALL_MODEL", raising=False)
+    monkeypatch.delenv("BIG_MODEL", raising=False)
+    monkeypatch.delenv("EMBED_MODEL", raising=False)
+    s = Settings()
+    assert s.small_model == ""
+    assert s.big_model == ""
+    assert s.embed_model == ""
+    assert s.chat_models == []
+    assert s.utility_models == []
+    assert s.embed_models == []
+
+
 def test_settings_defaults(tmp_path, monkeypatch):
     monkeypatch.setenv("KB_PATH", str(tmp_path / "knowledge"))
     monkeypatch.setenv("SMALL_MODEL", "gpt-4o-mini")
