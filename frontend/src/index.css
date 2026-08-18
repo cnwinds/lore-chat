@@ -4657,7 +4657,8 @@ button.memory-fact-statement--jump:focus-visible {
 .timeline-gen-image,
 .chat-gen-image,
 .kb-md-image,
-.kb-attachment-image {
+.kb-attachment-image,
+.markdown-body img {
   display: block;
   max-width: 100%;
   height: auto;
@@ -5753,6 +5754,11 @@ button.source-link--inline.conversation-md-link {
   outline: 2px solid var(--editor-selection-block-border) !important;
   outline-offset: 2px;
   border-radius: var(--radius-sm);
+}
+
+.doc-live-preview .milkdown .ProseMirror img {
+  max-width: 100%;
+  height: auto;
 }
 
 .doc-live-preview .milkdown .ProseMirror img.ProseMirror-selectednode {
