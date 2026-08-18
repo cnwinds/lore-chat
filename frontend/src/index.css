@@ -1889,13 +1889,6 @@ button.memory-fact-statement--jump:focus-visible {
   outline-offset: 2px;
 }
 
-.memory-fact-statement-anchor .doc-overflow-menu {
-  top: auto;
-  bottom: calc(100% + 4px);
-  left: 0;
-  right: auto;
-}
-
 .memory-fact-edit {
   width: 100%;
   resize: vertical;
@@ -1928,26 +1921,6 @@ button.memory-fact-statement--jump:focus-visible {
 .memory-fact-actions .doc-icon-btn.memory-fact-icon-btn:hover:not(:disabled) {
   border-color: var(--border);
   background: var(--bg-hover);
-}
-
-/* 列表底部条目向上弹出，避免被 settings 滚动容器裁切 */
-.memory-fact-actions .doc-overflow-menu {
-  top: auto;
-  bottom: calc(100% + 4px);
-}
-
-.memory-fact-actions .doc-overflow-item:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.memory-fact-actions .doc-overflow-item--danger {
-  color: var(--danger, #b91c1c);
-}
-
-.memory-fact-actions .doc-overflow-item--danger:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--danger, #b91c1c) 12%, var(--bg-hover));
-  color: var(--danger, #b91c1c);
 }
 
 .settings-group {
@@ -3881,6 +3854,12 @@ button.memory-fact-statement--jump:focus-visible {
   box-shadow: var(--shadow-md);
 }
 
+.doc-overflow-menu--fixed {
+  position: fixed;
+  right: auto;
+  z-index: 80;
+}
+
 .doc-overflow-item {
   display: flex;
   align-items: center;
@@ -3903,6 +3882,20 @@ button.memory-fact-statement--jump:focus-visible {
 
 .doc-overflow-item.is-active {
   color: var(--accent);
+}
+
+.doc-overflow-item:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.doc-overflow-item--danger {
+  color: var(--danger, #b91c1c);
+}
+
+.doc-overflow-item--danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger, #b91c1c) 12%, var(--bg-hover));
+  color: var(--danger, #b91c1c);
 }
 
 .doc-meta {

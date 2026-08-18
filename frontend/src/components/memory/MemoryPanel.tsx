@@ -7,8 +7,8 @@ import {
   rejectMemoryFact,
   type MemoryFact,
 } from "../../api";
-import { useDismissOnOutsideClick } from "../../hooks/useDismissOnOutsideClick";
 import type { DocWidth } from "../../types/doc";
+import { FixedOverflowMenu } from "../FixedOverflowMenu";
 import {
   CheckIcon,
   DocIconBtn,
@@ -46,11 +46,6 @@ function MemoryFactMenu({
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
-  useDismissOnOutsideClick(rootRef, open, () => setOpen(false), {
-    escape: true,
-    pointerEvent: "mousedown",
-  });
-
   if (actions.length === 0) return null;
 
   return (
@@ -66,27 +61,31 @@ function MemoryFactMenu({
       >
         <MoreIcon />
       </DocIconBtn>
-      {open ? (
-        <div className="doc-overflow-menu" role="menu" aria-label="记忆操作">
-          {actions.map((action) => (
-            <button
-              key={action.id}
-              type="button"
-              role="menuitem"
-              className={`doc-overflow-item${action.danger ? " doc-overflow-item--danger" : ""}`}
-              disabled={disabled}
-              title={action.label}
-              onClick={() => {
-                action.onClick();
-                setOpen(false);
-              }}
-            >
-              {action.icon}
-              <span>{action.label}</span>
-            </button>
-          ))}
-        </div>
-      ) : null}
+      <FixedOverflowMenu
+        open={open}
+        anchorRef={rootRef}
+        align="end"
+        label="记忆操作"
+        onDismiss={() => setOpen(false)}
+      >
+        {actions.map((action) => (
+          <button
+            key={action.id}
+            type="button"
+            role="menuitem"
+            className={`doc-overflow-item${action.danger ? " doc-overflow-item--danger" : ""}`}
+            disabled={disabled}
+            title={action.label}
+            onClick={() => {
+              action.onClick();
+              setOpen(false);
+            }}
+          >
+            {action.icon}
+            <span>{action.label}</span>
+          </button>
+        ))}
+      </FixedOverflowMenu>
     </div>
   );
 }
@@ -107,11 +106,6 @@ function MemoryStatement({
   const canJump =
     Boolean(onOpenConversation) && conversationIds.length > 0 && !disabled;
   const multi = conversationIds.length > 1;
-
-  useDismissOnOutsideClick(rootRef, pickerOpen, () => setPickerOpen(false), {
-    escape: true,
-    pointerEvent: "mousedown",
-  });
 
   if (!canJump) {
     return <p className="memory-fact-statement">{statement}</p>;
@@ -141,8 +135,14 @@ function MemoryStatement({
       >
         {statement}
       </button>
-      {pickerOpen && multi ? (
-        <div className="doc-overflow-menu" role="menu" aria-label="来源会话">
+      {multi ? (
+        <FixedOverflowMenu
+          open={pickerOpen}
+          anchorRef={rootRef}
+          align="start"
+          label="来源会话"
+          onDismiss={() => setPickerOpen(false)}
+        >
           {conversationIds.map((cid) => (
             <button
               key={cid}
@@ -156,7 +156,7 @@ function MemoryStatement({
               会话 {cid.length > 8 ? `${cid.slice(0, 8)}…` : cid}
             </button>
           ))}
-        </div>
+        </FixedOverflowMenu>
       ) : null}
     </div>
   );
