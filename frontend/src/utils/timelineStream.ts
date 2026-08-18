@@ -149,6 +149,17 @@ export function updateTimeline(
         ...(Array.isArray(data.attachments)
           ? { attachments: data.attachments as string[] }
           : {}),
+        ...(typeof data.result_status === "string"
+          ? { result_status: data.result_status as string }
+          : {}),
+        ...(data.demo_preview && typeof data.demo_preview === "object"
+          ? {
+              demo_preview: data.demo_preview as Extract<
+                TimelineBlock,
+                { type: "tool" }
+              >["demo_preview"],
+            }
+          : {}),
       };
       // 生图轮询文案仅运行时有用；完成后与同步厂商一致
       if (block.tool === "generate_image") {

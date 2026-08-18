@@ -7237,3 +7237,50 @@ button.source-link--inline.conversation-md-link {
   box-shadow: var(--shadow-md, 0 8px 24px rgba(0, 0, 0, 0.18));
   font-size: var(--text-sm);
 }
+
+.demo-preview-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--panel-muted, var(--bg-elevated, var(--panel)));
+  overflow: hidden;
+}
+
+.demo-preview-card__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: var(--text-sm);
+}
+
+.demo-preview-card__head code {
+  font-size: 0.9em;
+}
+
+.demo-preview-card__badge {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: var(--text-xs, 12px);
+}
+
+.demo-preview-card__body {
+  padding: 10px 12px;
+  max-height: 320px;
+  overflow: auto;
+}
+
+.demo-disclaimer {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 1100;
+  padding: 6px 12px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
+  pointer-events: none;
+}

@@ -81,6 +81,14 @@ export type TimelineBlock =
       applied?: number;
       /** generate_image 等产出的本地相对路径 */
       attachments?: string[];
+      /** demo 写工具：preview_only */
+      result_status?: string;
+      demo_preview?: {
+        kind: "doc" | "doc_edit" | "doc_meta" | "memory";
+        path?: string;
+        content?: string;
+        action?: string;
+      };
     }
   | {
       type: "parallel";

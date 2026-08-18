@@ -19,6 +19,7 @@ import {
 import { toolDisplayDurationMs } from "../utils/toolDuration";
 import type { ConversationLinkTarget } from "../utils/conversationLinks";
 import { isLikelyImagePath } from "../utils/kbImageUrls";
+import { DemoPreviewCard, extractDemoPreview } from "./demo/DemoPreviewCard";
 
 type Props = {
   block: TimelineBlock;
@@ -186,6 +187,11 @@ function ToolBlockView({
   const statusIcon =
     block.status === "running" ? "⏳" : block.status === "interrupted" ? "⚠" : "✓";
 
+  const demoPreview = extractDemoPreview({
+    result_status: block.result_status,
+    demo_preview: block.demo_preview,
+  });
+
   return (
     <div className={`timeline-tool timeline-tool-${block.status}`}>
       <button
@@ -280,7 +286,13 @@ function ToolBlockView({
           </MarkdownContent>
         </div>
       )}
+      {open && demoPreview && (
+        <div className="timeline-tool-body">
+          <DemoPreviewCard preview={demoPreview} />
+        </div>
+      )}
       {open &&
+        !demoPreview &&
         block.summary &&
         !(block.progress_log && block.progress_log.length > 0) &&
         block.tool !== "sandbox_run" &&
@@ -298,7 +310,7 @@ function ToolBlockView({
           <div className="timeline-tool-summary">连接中断，未完成</div>
         </div>
       )}
-      {open && block.tool === "edit_doc" && block.preview && (
+      {open && !demoPreview && block.tool === "edit_doc" && block.preview && (
         <div className="timeline-tool-body timeline-tool-patch-preview">
           <div className="timeline-tool-patch-label">修改预览</div>
           <pre className="timeline-tool-patch-text">{block.preview}</pre>
