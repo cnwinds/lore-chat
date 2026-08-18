@@ -1,8 +1,8 @@
 <<<LORE_META
 title: SKILL
 source: import
-created: 2026-08-18 16:52:01
-updated: 2026-08-18 16:52:01
+created: 2026-08-18 17:31:28
+updated: 2026-08-18 17:31:28
 LORE_META>>>
 ---
 name: 竞品调研

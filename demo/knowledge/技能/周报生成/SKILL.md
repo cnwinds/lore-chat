@@ -1,8 +1,8 @@
 <<<LORE_META
 title: SKILL
 source: import
-created: 2026-08-18 16:51:58
-updated: 2026-08-18 16:51:58
+created: 2026-08-18 17:31:26
+updated: 2026-08-18 17:31:26
 LORE_META>>>
 ---
 name: 周报生成

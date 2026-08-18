@@ -1,8 +1,8 @@
 <<<LORE_META
 title: 混合检索与 RRF
 source: import
-created: 2026-08-18 17:13:02
-updated: 2026-08-18 17:13:02
+created: 2026-08-18 17:44:46
+updated: 2026-08-18 17:44:46
 LORE_META>>>
 # 混合检索与 RRF
 
@@ -14,7 +14,7 @@ LORE_META>>>
 
 ## 现阶段做法
 
-1. 入库时写入 `subject` / `grade` / `knowledge_point`。
+1. 入库时写入 subject / grade / knowledge_point。
 2. 先过滤再向量；过滤太严再放宽，不反过来。
 3. 融合用 Reciprocal Rank Fusion，k 先取 60，有空再调。
 
