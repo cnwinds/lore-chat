@@ -160,6 +160,7 @@ def build_agent_subgraph(
         memory_service=memory_service,
         sandbox_runtime=sandbox_runtime,
         image_gen=image_gen,
+        demo_mode=settings.demo_mode,
     )
     from app.engine.sandbox.factory import apply_sandbox_settings
 

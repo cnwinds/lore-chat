@@ -62,6 +62,7 @@ class ToolRegistry:
         memory_service=None,
         sandbox_runtime: SandboxRuntime | None = None,
         image_gen: ImageGen | None = None,
+        demo_mode: bool = False,
     ):
         del indexer  # 保留构造签名，索引经 knowledge_writer
         self.repo = repo
@@ -73,6 +74,7 @@ class ToolRegistry:
         self.disclosure_windows = disclosure_windows or DisclosureWindows()
         self.edit_doc_require_read = edit_doc_require_read
         self.sandbox_runtime = sandbox_runtime
+        self.demo_mode = demo_mode
 
         read_guard = DocReadGuard(require_read=edit_doc_require_read)
         self.kb_read = KbReadTools(

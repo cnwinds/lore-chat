@@ -93,6 +93,12 @@ async def dispatch_tool(
     active_doc_path: str | None = None,
     conversation_id: str | None = None,
 ) -> dict:
+    if getattr(registry, "demo_mode", False):
+        from app.engine.agent.tool_impl.demo_preview import demo_tool_result
+
+        demo_out = demo_tool_result(name, args)
+        if demo_out is not None:
+            return demo_out
     cache = getattr(registry, "_dispatch_handlers", None)
     if cache is None:
         cache = build_tool_dispatch(registry)

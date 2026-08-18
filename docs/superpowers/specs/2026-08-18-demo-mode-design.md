@@ -182,8 +182,8 @@ demo 下 guest 读取 `GET /api/admin/settings` 时，所有密钥字段（含 `
 | 处理 | 工具 |
 |------|------|
 | 原样保留 | `search_kb`、`read_doc`、`read_doc_meta`、`list_kb_structure`、`read_conversation_context`、`recall_memory`、`ask_user`、`web_search` |
-| 换成预览式（同名同 schema） | `write_doc`、`edit_doc`、`summarize_conversation`、`manage_memory`、`update_doc_meta` |
-| 移除 | `write_kb_file`、`move_entry`、`delete_kb`、`generate_image`、`fetch_url`、`sandbox_run`、`sandbox_job_status`、`sandbox_list_dir`、`sandbox_read_file`、`publish_from_sandbox`、`stage_to_sandbox` |
+| 换成预览式（同名同 schema） | `write_doc`、`edit_doc`、`manage_memory`、`update_doc_meta` |
+| 移除 | `write_kb_file`、`move_entry`、`delete_kb`、`generate_image`、`fetch_url`、`summarize_conversation`、`sandbox_run`、`sandbox_job_status`、`sandbox_list_dir`、`sandbox_read_file`、`publish_from_sandbox`、`stage_to_sandbox` |
 
 移除项的理由：
 
@@ -191,6 +191,7 @@ demo 下 guest 读取 `GET /api/admin/settings` 时，所有密钥字段（含 `
 - `generate_image`：按次付费，匿名访客可无限触发。
 - `sandbox_*`：演示站不部署沙箱。
 - `move_entry` / `delete_kb`：预览一次移动或删除难以呈现价值，而风险不对称。
+- `summarize_conversation`：demo 下访客对话恒为 ephemeral，没有可归档的具名会话对象。
 
 这些能力靠预置会话里的真实历史记录来展示，访客仍能看到它们存在过。
 
@@ -200,10 +201,10 @@ demo 下 guest 读取 `GET /api/admin/settings` 时，所有密钥字段（含 `
 
 `write_doc` 在 demo 下的实现：
 
-1. 真实跑 `PlacementPlanner`，得到 `directory` + `filename` + new/merge 决策
-2. 真实跑文档成文
-3. 返回 `{ "status": "preview_only", "would_write": { "path": "...", "mode": "merge" | "new" }, "content": "..." }`
-4. 发出时间线事件 `demo_preview_doc`，前端渲染为「将写入：技术/检索/向量库选型对比.md · 演示环境未落盘」的预览卡，卡内是完整 Markdown
+1. 复用 `resolve_kb_location` 校验模型给出的目标路径（`directory` + `filename`）；**不**调用 Organizer / PlacementPlanner（调用就会写盘）
+2. 用工具参数中的 `text`（及可选 `context`）作为预览正文
+3. 返回 `{ "status": "preview_only", "preview": { "kind": "doc", "path": "...", "write_mode": "...", "content": "..." }, "summary": "演示环境未落盘…" }`
+4. 前端在时间线渲染「将写入：… · 演示环境未落盘」预览卡，卡内是完整 Markdown
 
 `manage_memory` 同理，产出「将记住：…」卡。
 
