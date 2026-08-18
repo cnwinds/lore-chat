@@ -63,7 +63,7 @@ export function ChatInputBar({
   }
 
   return (
-    <div className="chat-input-bar">
+    <div className="chat-input-bar" data-demo-anchor="composer">
       <textarea
         ref={textareaRef}
         value={input}

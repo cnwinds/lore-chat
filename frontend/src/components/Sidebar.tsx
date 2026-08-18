@@ -250,17 +250,22 @@ export function Sidebar({
               {conversationGroups.map((group) => (
                 <div key={group.label} className="conversation-group">
                   <div className="conversation-group-label">{group.label}</div>
-                  {group.items.map((c) => {
+                  {group.items.map((c, index) => {
                     const active = activeConversationId === c.id;
                     const title =
                       c.title === "新对话" && titleOverrides[c.id]
                         ? titleOverrides[c.id]
                         : c.title;
+                    const isHighlight =
+                      group === conversationGroups[0] && index === 0;
                     return (
                       <div
                         key={c.id}
                         ref={active ? activeConversationRef : undefined}
                         className={`conversation-item${active ? " active" : ""}`}
+                        data-demo-anchor={
+                          isHighlight ? "highlight-conversation" : undefined
+                        }
                       >
                         <button
                           type="button"

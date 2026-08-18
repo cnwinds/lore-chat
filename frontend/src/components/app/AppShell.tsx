@@ -1,6 +1,7 @@
 import type { ComponentProps, ReactNode } from "react";
 import { Sidebar } from "../Sidebar";
 import { DemoBanner } from "../demo/DemoBanner";
+import { DemoTour } from "../demo/DemoTour";
 
 type Props = {
   panelFocus: boolean;
@@ -33,6 +34,7 @@ export function AppShell({
       data-has-merge-review={hasMergeReview ? "1" : "0"}
     >
       <DemoBanner />
+      <DemoTour />
       <Sidebar {...sidebarProps} />
       <main
         className={`main-panel${mainFloatWide ? " main-panel--float-wide" : ""}`}

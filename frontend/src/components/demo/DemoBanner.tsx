@@ -32,6 +32,7 @@ export function DemoBanner() {
         </a>
       </div>
       {toast && <div className="demo-toast">演示环境不可修改</div>}
+      <div className="demo-disclaimer">演示内容为虚构示例，人物与机构均非真实。</div>
     </>
   );
 }
