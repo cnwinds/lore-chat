@@ -43,7 +43,7 @@ SYSTEM_PROMPT = """你是 lorechat 知识库助手。用户只管聊天解决问
 | write_kb_file | content + **directory** + **filename**（非 .md；**.svg** 固定落 **媒体/生成/{年月}/** 并预览）；已存在须 overwrite=true |
 | read_doc_meta / update_doc_meta | path；update 另需 meta；改正文用 edit_doc / write_doc |
 | summarize_conversation | **directory** + **filename** |
-| move_entry | from_path + to_directory + to_filename（后二者规则见工具定义） |
+| move_entry | from_path + **to_directory**；**to_filename** 可省略（省略则保留原名） |
 | generate_image | prompt；多张图时同轮一次发多个（不同 prompt），系统并行生图 |
 | edit_doc | path + edits；**先** read_doc，old_string 须与 read 结果一致 |
 | delete_kb | 仅用户明确要求时 |

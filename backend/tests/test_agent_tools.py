@@ -637,6 +637,26 @@ def test_select_tools_force_write_keeps_write_doc():
     assert "write_doc" in names
 
 
+def test_kb_planning_tool_descriptions_match_precepts():
+    from app.engine.agent.prompts import SYSTEM_PROMPT
+    from app.engine.agent.tool_catalog import TOOL_DEFINITIONS
+
+    defs = {d["function"]["name"]: d["function"] for d in TOOL_DEFINITIONS}
+    list_desc = defs["list_kb_structure"]["description"]
+    write_desc = defs["write_doc"]["description"]
+    move_desc = defs["move_entry"]["description"]
+    assert "图片等二进制不在此列出" in list_desc
+    assert "可能截断" in list_desc
+    assert "规划新路径" in list_desc and "之前必须先调用" in list_desc
+    assert "并入已知文档" in list_desc and "不必为选路径再调" in list_desc
+    assert "写入前先 list_kb_structure" not in write_desc
+    assert "并入已知文档沿用已确认路径时不必再为选路径调用" in write_desc
+    assert "须先 list_kb_structure" in move_desc
+    assert "建议 list_kb_structure" not in move_desc
+    assert "to_filename" not in defs["move_entry"]["parameters"]["required"]
+    assert "**to_filename** 可省略" in SYSTEM_PROMPT
+
+
 @pytest.mark.asyncio
 async def test_list_kb_structure_tool(tmp_path):
     registry, repo, idx = _make_registry(tmp_path)
@@ -650,4 +670,31 @@ async def test_list_kb_structure_tool(tmp_path):
     assert "技术/docker" in result["summary"]
     assert any(d["path"] == "技术/docker" for d in result["directories"])
     assert result["total_docs"] >= 1
+
+
+@pytest.mark.asyncio
+async def test_list_kb_structure_omits_binaries_and_truncates(tmp_path):
+    registry, repo, _ = _make_registry(tmp_path)
+    repo.write_bytes("媒体/shot.png", b"\x89PNG\r\n", commit_msg="png")
+    for i in range(16):
+        repo.write_doc(
+            f"备忘/n{i:02d}.md",
+            {"title": f"n{i}"},
+            f"body {i}\n",
+            commit_msg="seed",
+        )
+    listed = await registry.execute("list_kb_structure", {})
+    files = [
+        f
+        for d in listed.get("directories", [])
+        if d["path"] == "备忘"
+        for f in d.get("files", [])
+    ]
+    assert "shot.png" not in listed.get("summary", "")
+    assert not any("shot.png" in f for f in files)
+    memo = next(d for d in listed["directories"] if d["path"] == "备忘")
+    assert memo["truncated"] is True
+    assert memo["doc_count"] == 16
+    assert len(memo["files"]) == 15
+
 

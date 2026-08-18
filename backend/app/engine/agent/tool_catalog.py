@@ -217,9 +217,12 @@ TOOL_DEFINITIONS: list[dict] = [
         "function": {
             "name": "list_kb_structure",
             "description": (
-                "列出知识库当前目录结构与各目录下的文档文件名（只读）。"
-                "在 write_doc、write_kb_file、summarize_conversation、move_entry 之前必须先调用本工具，"
-                "据此决定放入已有目录、新建子目录或 move_entry 调整结构；禁止凭记忆编造路径。"
+                "列出知识库当前目录结构与各目录下的 Markdown / 文本代码文件名（只读；"
+                "图片等二进制不在此列出，单目录文件名可能截断）。"
+                "规划新路径（新建 write_doc / write_kb_file / summarize_conversation / "
+                "publish_from_sandbox / generate_image 指定 kb 路径）或 move_entry 之前必须先调用本工具；"
+                "并入已知文档、沿用已确认路径时不必为选路径再调。"
+                "禁止凭记忆编造路径。"
             ),
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
@@ -337,7 +340,8 @@ TOOL_DEFINITIONS: list[dict] = [
             "name": "write_doc",
             "description": (
                 "将 Markdown 正文写入知识库。必须指定 directory 与 filename；"
-                "写入前先 list_kb_structure。可选 meta（title/tags/source）；"
+                "规划新路径时先 list_kb_structure；并入已知文档沿用已确认路径时不必再为选路径调用。"
+                "可选 meta（title/tags/source）；"
                 "正文勿含元数据头。已存在则默认合并，不存在则新建。"
                 "Skill 包放在「技能」目录下；Skill 的 name/description 触发头写在正文 --- YAML，勿放进 meta。"
                 "禁止 conv: 前缀、禁止会话 id 当目录名。"
@@ -442,7 +446,7 @@ TOOL_DEFINITIONS: list[dict] = [
                 "也支持矢量图 .svg（与 PNG/JPG 同为图片资产，可在聊天中预览；"
                 "**SVG 固定写入 媒体/生成/{年月}/**，directory 可传该路径或任意占位）。"
                 "禁止 .md（文档请用 write_doc）。不做 LLM 合并；已存在时须 overwrite=true 整文件覆盖。"
-                "写入前应先 list_kb_structure 规划路径。"
+                "规划新路径时应先 list_kb_structure；覆盖已确认路径时不必再为选路径调用。"
             ),
             "parameters": {
                 "type": "object",
@@ -540,7 +544,7 @@ TOOL_DEFINITIONS: list[dict] = [
             "description": (
                 "把当前整段会话通读后全局重构、去重、成文，归档为一篇知识库文档。"
                 "用户要求「总结/归档本次会话/整理成文档/生成会话纪要」时调用。"
-                "归档前应先 list_kb_structure 规划 directory 与 filename；必须指定二者。"
+                "归档前应先 list_kb_structure 规划 directory 与 filename（归档是新路径）；必须指定二者。"
             ),
             "parameters": {
                 "type": "object",
@@ -559,7 +563,7 @@ TOOL_DEFINITIONS: list[dict] = [
                 "与侧栏拖放移动行为一致：目录移动时 to_filename 为新文件夹名（省略则用原目录名）；"
                 "单文件移动时 to_filename 为目标文件名（省略则用原文件名）；"
                 "Markdown 须以 .md 结尾；目标为 to_directory/filename。"
-                "移动前建议 list_kb_structure；目标路径不得已存在。"
+                "移动前须先 list_kb_structure；目标路径不得已存在。"
             ),
             "parameters": {
                 "type": "object",
