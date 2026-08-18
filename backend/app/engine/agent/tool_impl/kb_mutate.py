@@ -9,10 +9,9 @@ from app.engine.knowledge_writer import (
     KnowledgeWriter,
     is_markdown_path,
 )
-from app.engine.memory.constants import is_memory_projection_path
-
-_MEMORY_FILE_DISABLED_MSG = (
-    "记忆已改由数据库管理，请到设置 → 记忆中编辑，或使用 manage_memory"
+from app.engine.memory.constants import (
+    MEMORY_FILE_DISABLED_MSG,
+    is_memory_projection_path,
 )
 from app.engine.organizer import Organizer
 from app.engine.patch import Edit, Insert, apply_edits, apply_insert
@@ -51,7 +50,7 @@ class KbMutateTools:
             return err
         if is_memory_projection_path(rel_path):
             return {
-                "summary": _MEMORY_FILE_DISABLED_MSG,
+                "summary": MEMORY_FILE_DISABLED_MSG,
                 "sources": [],
                 "error": "memory_file_disabled",
                 "status": "failed",
@@ -100,7 +99,7 @@ class KbMutateTools:
             }
         if is_memory_projection_path(path):
             return None, {
-                "summary": _MEMORY_FILE_DISABLED_MSG,
+                "summary": MEMORY_FILE_DISABLED_MSG,
                 "sources": [],
                 "error": "memory_file_disabled",
                 "status": "failed",
@@ -270,7 +269,7 @@ class KbMutateTools:
             return err
         if is_memory_projection_path(rel_path):
             return {
-                "summary": _MEMORY_FILE_DISABLED_MSG,
+                "summary": MEMORY_FILE_DISABLED_MSG,
                 "sources": [],
                 "error": "memory_file_disabled",
                 "status": "failed",
@@ -377,7 +376,7 @@ class KbMutateTools:
             return self._edit_doc_error("INVALID", "必须提供 edits 或 insert")
 
         if is_memory_projection_path(path):
-            return self._edit_doc_error("MEMORY_FILE_DISABLED", _MEMORY_FILE_DISABLED_MSG)
+            return self._edit_doc_error("MEMORY_FILE_DISABLED", MEMORY_FILE_DISABLED_MSG)
 
         if not self.repo.is_writable(path):
             return self._edit_doc_error("PROTECTED", f"路径不可写：{path}")

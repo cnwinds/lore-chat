@@ -1,12 +1,14 @@
 import { useMemo, useRef, useState, type DragEvent } from "react";
 import {
   fileTreeFileIcon,
+  isProtectedKbPath,
   isSpecialKbPath,
-  isSystemLayerPath,
+  MEMORY_DIR,
+  opensKbFloatInsteadOfExpand,
   type TreeNode,
 } from "../utils/fileTree";
-import { isMediaLeafDirectory } from "../utils/kbMediaPaths";
 import { dropEffectForTransfer } from "../utils/droppedFiles";
+import { SettingsAttentionDot } from "./settings/SettingsAttentionDot";
 
 function parentDirectoryFromPath(path: string): string {
   const idx = path.lastIndexOf("/");
@@ -45,6 +47,8 @@ type Props = {
   /** 展开态由 useKbTreeViewportUi 拥有 */
   expanded: Set<string>;
   onToggleFolder: (path: string) => void;
+  /** 记忆目录待确认红点 */
+  memoryAttention?: boolean;
 };
 
 export function FileTree({
@@ -68,6 +72,7 @@ export function FileTree({
   disabled,
   expanded,
   onToggleFolder,
+  memoryAttention = false,
 }: Props) {
   const activePathSet = useMemo(() => new Set(activePaths), [activePaths]);
   const [dragPath, setDragPath] = useState<string | null>(null);
@@ -102,7 +107,7 @@ export function FileTree({
     e.preventDefault();
     e.stopPropagation();
     onDropHighlightDir(null);
-    if (disabled || isSystemLayerPath(directory)) return;
+    if (disabled || isProtectedKbPath(directory)) return;
     if (e.dataTransfer.types.includes("Files")) {
       onDropFiles(e.dataTransfer, directory);
       return;
@@ -113,7 +118,7 @@ export function FileTree({
   }
 
   function allowDrop(e: DragEvent, directory: string) {
-    if (disabled || isSystemLayerPath(directory)) return;
+    if (disabled || isProtectedKbPath(directory)) return;
     e.preventDefault();
     e.stopPropagation();
     e.dataTransfer.dropEffect = dropEffectForTransfer(e.dataTransfer);
@@ -151,6 +156,7 @@ export function FileTree({
           onRenameCancel={onRenameCancel}
           onStartRename={onStartRename}
           disabled={disabled}
+          memoryAttention={memoryAttention}
         />
       ))}
     </div>
@@ -183,6 +189,7 @@ function TreeItem({
   onRenameCancel,
   onStartRename,
   disabled,
+  memoryAttention = false,
 }: {
   node: TreeNode;
   depth: number;
@@ -209,9 +216,10 @@ function TreeItem({
   onRenameCancel: () => void;
   onStartRename: (path: string, name: string) => void;
   disabled?: boolean;
+  memoryAttention?: boolean;
 }) {
   const pad = 8 + depth * 16;
-  const systemLayer = isSystemLayerPath(node.path);
+  const protectedKb = isProtectedKbPath(node.path);
   const specialKb = isSpecialKbPath(node.path);
 
   if (node.type === "folder") {
@@ -220,13 +228,14 @@ function TreeItem({
     const isRenaming = renamingPath === node.path;
     const selected = activePathSet.has(node.path);
     const hasChildFolders = node.children.some((c) => c.type === "folder");
-    const mediaLeaf = isMediaLeafDirectory(node.path, hasChildFolders);
+    const opensFloat = opensKbFloatInsteadOfExpand(node.path, hasChildFolders);
+    const showMemoryDot = node.path === MEMORY_DIR && memoryAttention;
     return (
       <>
         <div
-          className={`file-tree-row folder${specialKb ? " kb-special" : ""}${dropActive ? " drop-target" : ""}${selected ? " selected" : ""}${mediaLeaf ? " media-leaf" : ""}`}
+          className={`file-tree-row folder${specialKb ? " kb-special" : ""}${dropActive ? " drop-target" : ""}${selected ? " selected" : ""}${opensFloat ? " float-leaf" : ""}`}
           style={{ paddingLeft: pad }}
-          draggable={!disabled && !systemLayer && !isRenaming}
+          draggable={!disabled && !protectedKb && !isRenaming}
           onDragStart={(e) => setDragPayload(e, node.path)}
           onDragEnd={() => setDragSource(null)}
           onClick={(e) => {
@@ -239,12 +248,12 @@ function TreeItem({
               });
               return;
             }
-            if (onSelectFolder && mediaLeaf) {
+            if (onSelectFolder && opensFloat) {
               onSelectFolder(node.path, {
                 ctrlKey: false,
                 metaKey: false,
               });
-              // 媒体末级目录无文件行，不展开空壳
+              // 媒体末级 / 记忆根无文件行，不展开空壳
               return;
             }
             onToggleFolder(node.path);
@@ -256,7 +265,7 @@ function TreeItem({
           onDragOver={(e) => onFolderDragOver(e, node.path)}
           onDrop={(e) => onFolderDrop(e, node.path)}
         >
-          {mediaLeaf ? (
+          {opensFloat ? (
             <span className="file-tree-chevron file-tree-chevron--leaf" aria-hidden />
           ) : (
             <span className="file-tree-chevron">{isOpen ? "▼" : "▶"}</span>
@@ -278,7 +287,12 @@ function TreeItem({
               onClick={(e) => e.stopPropagation()}
             />
           ) : (
-            <span className="file-tree-label">{node.name}</span>
+            <span className="file-tree-label">
+              {node.name}
+              {showMemoryDot ? (
+                <SettingsAttentionDot title="有待确认记忆" />
+              ) : null}
+            </span>
           )}
         </div>
         {isOpen &&
@@ -310,6 +324,7 @@ function TreeItem({
               onRenameCancel={onRenameCancel}
               onStartRename={onStartRename}
               disabled={disabled}
+              memoryAttention={memoryAttention}
             />
           ))}
       </>
@@ -321,7 +336,7 @@ function TreeItem({
   const fileParentDir = parentDirectoryFromPath(node.path);
 
   function handleFileDragOver(e: DragEvent) {
-    if (disabled || isSystemLayerPath(node.path)) return;
+    if (disabled || isProtectedKbPath(node.path)) return;
     const files = e.dataTransfer.types.includes("Files");
     const kbPath = e.dataTransfer.types.includes("text/kb-path") ||
       e.dataTransfer.types.includes("text/plain");
@@ -333,7 +348,7 @@ function TreeItem({
   }
 
   function handleFileDrop(e: DragEvent) {
-    if (disabled || isSystemLayerPath(node.path)) return;
+    if (disabled || isProtectedKbPath(node.path)) return;
     if (e.dataTransfer.types.includes("Files")) {
       e.preventDefault();
       e.stopPropagation();
@@ -354,7 +369,7 @@ function TreeItem({
     <div
       className={`file-tree-row file${specialKb ? " kb-special" : ""}${selected ? " selected" : ""}`}
       style={{ paddingLeft: pad + 18 }}
-      draggable={!disabled && !systemLayer && !isRenaming}
+      draggable={!disabled && !protectedKb && !isRenaming}
       onDragOver={handleFileDragOver}
       onDrop={handleFileDrop}
       onDragStart={(e) => setDragPayload(e, node.path)}

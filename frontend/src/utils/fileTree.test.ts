@@ -4,24 +4,44 @@ import {
   collectAncestorFolderPaths,
   collectDefaultExpandedFolderPaths,
   fileTreeFileIcon,
+  isMemoryDirPath,
+  isProtectedKbPath,
   isSpecialKbPath,
   MEDIA_DIR,
+  MEMORY_DIR,
   nextUserExpandedAfterTreeChange,
+  opensKbFloatInsteadOfExpand,
   resolveExpandedFolderPaths,
   SKILLS_DIR,
   SYSTEM_LAYER_DIR,
 } from "./fileTree";
 
 describe("isSpecialKbPath", () => {
-  it("marks 系统 / 技能 / 媒体 trees including descendants", () => {
+  it("marks 系统 / 技能 / 记忆 / 媒体 trees including descendants", () => {
     expect(isSpecialKbPath(SYSTEM_LAYER_DIR)).toBe(true);
     expect(isSpecialKbPath(`${SYSTEM_LAYER_DIR}/戒律.md`)).toBe(true);
     expect(isSpecialKbPath(SKILLS_DIR)).toBe(true);
     expect(isSpecialKbPath(`${SKILLS_DIR}/demo`)).toBe(true);
     expect(isSpecialKbPath(`${SKILLS_DIR}/demo/SKILL.md`)).toBe(true);
+    expect(isSpecialKbPath(MEMORY_DIR)).toBe(true);
+    expect(isMemoryDirPath(`${MEMORY_DIR}/x`)).toBe(true);
+    expect(isProtectedKbPath(MEMORY_DIR)).toBe(true);
     expect(isSpecialKbPath(MEDIA_DIR)).toBe(true);
     expect(isSpecialKbPath(`${MEDIA_DIR}/生成/2026-08`)).toBe(true);
     expect(isSpecialKbPath("笔记/a.md")).toBe(false);
+  });
+});
+
+describe("opensKbFloatInsteadOfExpand", () => {
+  it("opens 记忆根与媒体末级, not media intermediates", () => {
+    expect(opensKbFloatInsteadOfExpand(MEMORY_DIR, false)).toBe(true);
+    expect(opensKbFloatInsteadOfExpand(MEMORY_DIR, true)).toBe(true);
+    expect(opensKbFloatInsteadOfExpand(`${MEDIA_DIR}/生成/2026-08`, false)).toBe(
+      true,
+    );
+    expect(opensKbFloatInsteadOfExpand(`${MEDIA_DIR}/生成`, true)).toBe(false);
+    expect(opensKbFloatInsteadOfExpand(MEDIA_DIR, false)).toBe(false);
+    expect(opensKbFloatInsteadOfExpand("笔记", false)).toBe(false);
   });
 });
 
@@ -39,25 +59,31 @@ describe("collectDefaultExpandedFolderPaths", () => {
     expect(expanded.has("a/b")).toBe(true);
     expect(expanded.has("a/b/c")).toBe(false);
     expect(expanded.has(SYSTEM_LAYER_DIR)).toBe(false);
+    expect(expanded.has(MEMORY_DIR)).toBe(false);
     expect(expanded.has(MEDIA_DIR)).toBe(false);
     expect(expanded.has(`${MEDIA_DIR}/上传`)).toBe(false);
   });
 });
 
 describe("buildFileTree fixed folders", () => {
-  it("orders 系统 → 技能 → 媒体 and injects empty media subfolders", () => {
+  it("orders 系统 → 技能 → 记忆 → 媒体 and injects empty media subfolders", () => {
     const tree = buildFileTree([`${SYSTEM_LAYER_DIR}/心法.md`, "a/x.md"]);
     expect(tree[0]?.type).toBe("folder");
     expect(tree[0]?.name).toBe(SYSTEM_LAYER_DIR);
     expect(tree[1]?.type).toBe("folder");
     expect(tree[1]?.name).toBe(SKILLS_DIR);
     expect(tree[2]?.type).toBe("folder");
-    expect(tree[2]?.name).toBe(MEDIA_DIR);
-    const media = tree[2];
+    expect(tree[2]?.name).toBe(MEMORY_DIR);
+    expect(tree[3]?.type).toBe("folder");
+    expect(tree[3]?.name).toBe(MEDIA_DIR);
+    const media = tree[3];
     if (media?.type !== "folder") throw new Error("expected media folder");
     const childNames = media.children.map((c) => c.name).sort();
     expect(childNames).toEqual(["上传", "生成"]);
     expect(tree.some((n) => n.name === "a")).toBe(true);
+    const memory = tree[2];
+    if (memory?.type !== "folder") throw new Error("expected memory folder");
+    expect(memory.children).toEqual([]);
   });
 
   it("keeps media folder structure but omits media files from the tree", () => {

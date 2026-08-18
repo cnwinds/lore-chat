@@ -7,6 +7,7 @@ import { Sidebar } from "../../components/Sidebar";
 import type { ComponentProps } from "react";
 import type { useDocPreviewLayout } from "./useDocPreviewLayout";
 import type { JumpTarget } from "../chat/useConversationJump";
+import { MEMORY_DIR } from "../../utils/fileTree";
 
 type DocPreview = ReturnType<typeof useDocPreviewLayout>;
 
@@ -20,6 +21,7 @@ function treeActivePaths(
     doc.pinnedPath,
     doc.floatPath,
     doc.mediaFolderPath,
+    doc.memoryPanelOpen ? MEMORY_DIR : null,
     composerPrimaryPath,
   ]) {
     if (p && !seen.has(p)) {
@@ -90,14 +92,20 @@ export function useConversationShell({
     }
   }
 
-  function selectConversation(id: string) {
+  function selectConversation(id: string, opts?: { keepPreviews?: boolean }) {
     setActiveConversationId(id);
-    doc.closeAllPreviews();
+    if (!opts?.keepPreviews) doc.closeAllPreviews();
   }
 
   const kbTreeActivePaths = useMemo(
     () => treeActivePaths(doc, composerPrimaryPath),
-    [doc.pinnedPath, doc.floatPath, doc.mediaFolderPath, composerPrimaryPath],
+    [
+      doc.pinnedPath,
+      doc.floatPath,
+      doc.mediaFolderPath,
+      doc.memoryPanelOpen,
+      composerPrimaryPath,
+    ],
   );
 
   const sidebarProps: ComponentProps<typeof Sidebar> = {

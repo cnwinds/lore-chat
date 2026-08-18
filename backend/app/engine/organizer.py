@@ -16,13 +16,12 @@ from app.engine.knowledge_writer import KnowledgeWriter, sanitize_doc_meta
 from app.engine.agent_choice import AgentChoiceResolution
 from app.engine.conversation_archive import ConversationArchiveWorkflow
 from app.engine.merge_workflow import MergeResult, MergeWorkflow
-from app.engine.memory.constants import is_memory_projection_path
+from app.engine.memory.constants import (
+    MEMORY_FILE_DISABLED_MSG,
+    is_memory_projection_path,
+)
 from app.engine.write_policy import WriteMode, resolve_write_mode
 from app.models.llm import LLMClient
-
-_MEMORY_FILE_DISABLED_MSG = (
-    "记忆已改由数据库管理，请到设置 → 记忆中编辑，或使用 manage_memory"
-)
 
 
 @dataclass
@@ -105,7 +104,7 @@ class Organizer:
                 status="rejected",
                 rel_path=None,
                 question_id=None,
-                message=_MEMORY_FILE_DISABLED_MSG,
+                message=MEMORY_FILE_DISABLED_MSG,
             )
 
         decision = self.planner.decision_for_forced_path(forced_rel_path)

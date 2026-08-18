@@ -8,14 +8,13 @@ from app.config import Settings
 from app.engine.conversation.transcript import ConversationTranscript
 from app.engine.document_synthesis import DocumentSynthesis
 from app.engine.knowledge_writer import KnowledgeWriter
-from app.engine.memory.constants import is_memory_projection_path
+from app.engine.memory.constants import (
+    MEMORY_FILE_DISABLED_MSG,
+    is_memory_projection_path,
+)
 from app.engine.placement import PlacementPlanner
 from app.models.llm import LLMClient
 from app.storage.repo import KnowledgeRepo
-
-_MEMORY_FILE_DISABLED_MSG = (
-    "记忆已改由数据库管理，请到设置 → 记忆中编辑，或使用 manage_memory"
-)
 
 
 @dataclass
@@ -91,7 +90,7 @@ class ConversationArchiveWorkflow:
                 status="rejected",
                 rel_path=None,
                 question_id=None,
-                message=_MEMORY_FILE_DISABLED_MSG,
+                message=MEMORY_FILE_DISABLED_MSG,
             )
         decision = self.planner.decision_for_forced_path(forced_rel_path)
         # 归档正文已是完整终稿，覆盖目标路径，避免再与旧稿 LLM 合并

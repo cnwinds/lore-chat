@@ -4,6 +4,13 @@ from pathlib import PurePosixPath
 
 MEMORY_DOC_REL = "系统/记忆.md"
 
+# 用户可见的记忆编辑入口（侧栏虚拟目录浮窗）
+MEMORY_PANEL_HINT = "知识库 → 记忆"
+
+MEMORY_FILE_DISABLED_MSG = (
+    f"记忆已改由数据库管理，请到{MEMORY_PANEL_HINT}中编辑，或使用 manage_memory"
+)
+
 
 def normalize_kb_rel(path: str) -> str:
     """折叠 . / .. 与多余斜杠，得到稳定相对路径。"""

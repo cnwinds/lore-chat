@@ -20,6 +20,7 @@ import { useComposerPreviewBridge } from "./hooks/useComposerPreviewBridge";
 import { useEnabledSkillsAttach } from "./hooks/useEnabledSkillsAttach";
 import type { JumpTarget } from "./hooks/chat/useConversationJump";
 import { MediaGalleryFloatLayer } from "./components/app/MediaGalleryFloatLayer";
+import { MemoryFloatLayer } from "./components/app/MemoryFloatLayer";
 import { SkillPickModal } from "./components/SkillPickModal";
 
 type Gate = "loading" | "setup" | "login" | "app";
@@ -130,7 +131,9 @@ function AppMain() {
         sidebarProps={{
           ...conversation.sidebarProps,
           onOpenSettings: () => setSettingsOpen(true),
-          settingsAttention: displayAttention.any,
+          settingsAttention:
+            displayAttention.model.any || displayAttention.usage.any,
+          memoryAttention: displayAttention.memory.any,
           onDocsChange: setKbPaths,
         }}
         chat={
@@ -156,7 +159,18 @@ function AppMain() {
           />
         }
         docFloat={
-          doc.showMediaGallery ? (
+          doc.showMemoryPanel ? (
+            <MemoryFloatLayer
+              docWidth={doc.floatWidth}
+              onClose={doc.closeMemoryPanel}
+              onToggleWidth={doc.toggleFloatWidth}
+              onAttentionChange={refreshAttention}
+              onOpenConversation={(id) => {
+                doc.closeMemoryPanel();
+                conversation.selectConversation(id, { keepPreviews: true });
+              }}
+            />
+          ) : doc.showMediaGallery ? (
             <MediaGalleryFloatLayer
               directory={doc.mediaFolderPath!}
               refreshKey={doc.mediaRefreshKey}
@@ -211,12 +225,6 @@ function AppMain() {
               attention={attention}
               onAttentionChange={refreshAttention}
               onLiveAttentionChange={setLiveAttention}
-              onOpenConversation={(id) => {
-                setSettingsOpen(false);
-                clearLlmSetupGuide();
-                setLiveAttention(null);
-                conversation.selectConversation(id);
-              }}
             />
             <SkillPickModal
               open={skillPick !== null}

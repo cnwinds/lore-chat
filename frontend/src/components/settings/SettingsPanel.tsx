@@ -13,7 +13,6 @@ import {
 import { AccountSettingsTab } from "./AccountSettingsTab";
 import { AgentSettingsTab } from "./AgentSettingsTab";
 import { KbBackupSettingsTab } from "./KbBackupSettingsTab";
-import { MemorySettingsTab } from "./MemorySettingsTab";
 import {
   emptyCandidate,
   emptyEmbedCandidate,
@@ -125,26 +124,24 @@ function parseImageProviders(raw: unknown): ImageProviderDraft[] {
 type Props = {
   open: boolean;
   onClose: () => void;
-  onOpenConversation?: (conversationId: string) => void;
   /** 首次进入且未配置主 API Key 时：打开设置并切到「模型」Tab，展示引导文案 */
   showLlmSetupGuide?: boolean;
   onLlmConfigured?: () => void;
   /** 服务端红点；面板打开时用草稿/本地态合并后经 onLiveAttentionChange 回传 */
   attention?: SettingsAttention | null;
-  /** 记忆/用量等变更后刷新服务端红点 */
+  /** 用量等变更后刷新服务端红点 */
   onAttentionChange?: () => void;
   /** 面板打开期间的合并红点（关闭时传 null） */
   onLiveAttentionChange?: (live: SettingsAttention | null) => void;
 };
 
-type SettingsTab = "model" | "search" | "agent" | "kb" | "memory" | "usage" | "account";
+type SettingsTab = "model" | "search" | "agent" | "kb" | "usage" | "account";
 
 const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
   { id: "model", label: "模型" },
   { id: "search", label: "检索" },
   { id: "agent", label: "Agent" },
   { id: "kb", label: "知识库" },
-  { id: "memory", label: "记忆" },
   { id: "usage", label: "用量" },
   { id: "account", label: "账户" },
 ];
@@ -204,7 +201,6 @@ function clientAccessOrigin(): string {
 export function SettingsPanel({
   open,
   onClose,
-  onOpenConversation,
   showLlmSetupGuide = false,
   onLlmConfigured,
   attention = null,
@@ -259,8 +255,7 @@ export function SettingsPanel({
   const [importMode, setImportMode] = useState<"empty_only" | "overwrite">("empty_only");
   const [importFile, setImportFile] = useState<File | null>(null);
   const importFileRef = useRef<HTMLInputElement>(null);
-  /** 面板内本地态：覆盖服务端 memory/usage 分区，避免未保存时不同步 */
-  const [memoryPending, setMemoryPending] = useState<number | null>(null);
+  /** 面板内本地态：覆盖服务端 usage 分区，避免未保存时不同步 */
   const [usageIncomplete, setUsageIncomplete] = useState<number | null>(null);
 
   const load = useCallback(async () => {
@@ -388,7 +383,6 @@ export function SettingsPanel({
           };
     return mergeSettingsAttention(server, {
       model: modelOverlay,
-      memoryPending: open ? memoryPending : null,
       usageIncomplete: open ? usageIncomplete : null,
     });
   }, [
@@ -398,7 +392,6 @@ export function SettingsPanel({
     utilityModels,
     embedModels,
     attention,
-    memoryPending,
     usageIncomplete,
   ]);
 
@@ -581,7 +574,6 @@ export function SettingsPanel({
 
   const tabAttentionFlags: Partial<Record<SettingsTab, boolean>> = {
     model: liveAttention.model.any,
-    memory: liveAttention.memory.any,
     usage: liveAttention.usage.any,
   };
 
@@ -789,14 +781,6 @@ export function SettingsPanel({
                   </footer>
                 ) : null}
               </form>
-
-              {activeTab === "memory" ? (
-                <MemorySettingsTab
-                  onOpenConversation={onOpenConversation}
-                  onAttentionChange={onAttentionChange}
-                  onPendingCountChange={setMemoryPending}
-                />
-              ) : null}
 
               {activeTab === "usage" ? (
                 <UsageSettingsTab

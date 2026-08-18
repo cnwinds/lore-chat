@@ -19,7 +19,7 @@ import { useFileTreeInteraction } from "../hooks/useFileTreeInteraction";
 import { useDragAutoScroll } from "../hooks/useDragAutoScroll";
 import { useDismissOnOutsideClick } from "../hooks/useDismissOnOutsideClick";
 import { useKbTreeViewportUi } from "../hooks/useKbTreeViewportUi";
-import { isSystemLayerPath, SKILLS_DIR } from "../utils/fileTree";
+import { isProtectedKbPath, SKILLS_DIR } from "../utils/fileTree";
 import { SettingsAttentionDot } from "./settings/SettingsAttentionDot";
 
 /** 与 portal style / CSS 共用：知识库 tip 最大高度上限（px） */
@@ -35,8 +35,10 @@ type Props = {
   collapsed?: boolean;
   onToggleCollapsed?: () => void;
   onOpenSettings?: () => void;
-  /** 设置内有待办（未配模型 / 待确认记忆 / 缺价目） */
+  /** 设置内有待办（未配模型 / 缺价目）；记忆红点在侧栏「记忆」目录 */
   settingsAttention?: boolean;
+  /** 待确认记忆：侧栏「记忆」目录红点 */
+  memoryAttention?: boolean;
   onSelectFile: (path: string, mods?: SelectMods) => void;
   onSelectFolder?: (path: string, mods?: SelectMods) => void;
   onOpenEnabledSkills?: () => void;
@@ -58,6 +60,7 @@ export function Sidebar({
   onToggleCollapsed,
   onOpenSettings,
   settingsAttention = false,
+  memoryAttention = false,
   onSelectFile,
   onSelectFolder,
   onOpenEnabledSkills,
@@ -183,7 +186,8 @@ export function Sidebar({
           role="menu"
         >
           {(tree.menu.ctx.kind === "file" ||
-            (tree.menu.ctx.kind === "folder" && !isSystemLayerPath(tree.menu.ctx.path))) && (
+            (tree.menu.ctx.kind === "folder" &&
+              !isProtectedKbPath(tree.menu.ctx.path))) && (
             <button type="button" role="menuitem" onClick={() => void tree.handleMenuAction("download")}>
               下载
             </button>
@@ -202,12 +206,12 @@ export function Sidebar({
                 启用 Skill…
               </button>
             )}
-          {!isSystemLayerPath(tree.menu.ctx.path) && (
+          {!isProtectedKbPath(tree.menu.ctx.path) && (
             <button type="button" role="menuitem" onClick={() => void tree.handleMenuAction("rename")}>
               重命名
             </button>
           )}
-          {!isSystemLayerPath(tree.menu.ctx.path) && (
+          {!isProtectedKbPath(tree.menu.ctx.path) && (
             <button type="button" role="menuitem" onClick={() => void tree.handleMenuAction("delete")}>
               删除
             </button>
@@ -325,6 +329,10 @@ export function Sidebar({
                           <strong>单击</strong> Markdown 打开预览；图片用灯箱；附件下载
                         </li>
                         <li>
+                          <strong>单击「记忆」</strong>{" "}
+                          以浮窗打开长期画像（确认 / 拒绝 / 编辑 / 遗忘）；数据在数据库，不落盘
+                        </li>
+                        <li>
                           <strong>单击媒体末级目录</strong>（如「媒体/生成/2026-08」）以浮窗打开图片瓦片图库；媒体树下不列出文件
                         </li>
                         <li>
@@ -380,6 +388,7 @@ export function Sidebar({
                   onSelectFolder={onSelectFolder}
                   expanded={viewport.expanded}
                   onToggleFolder={viewport.toggleFolder}
+                  memoryAttention={memoryAttention}
                   {...tree.fileTreeProps}
                 />
               </div>

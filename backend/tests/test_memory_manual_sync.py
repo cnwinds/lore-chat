@@ -1,6 +1,6 @@
 """记忆.md 文件投影已取消：相关写入须被拒绝。"""
 
-from app.engine.memory.constants import MEMORY_DOC_REL
+from app.engine.memory.constants import MEMORY_DOC_REL, MEMORY_FILE_DISABLED_MSG
 from app.engine.memory.service import MemoryService
 from app.engine.memory.store import MemoryStore
 from app.storage.repo import KnowledgeRepo
@@ -61,7 +61,7 @@ def test_persist_document_rejects_memory_projection(tmp_path):
         )
         raise AssertionError("expected reject")
     except ValueError as e:
-        assert "数据库" in str(e)
+        assert str(e) == MEMORY_FILE_DISABLED_MSG
 
 
 def test_ingest_and_summarize_reject_memory_projection_path(tmp_path):

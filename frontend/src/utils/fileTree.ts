@@ -2,6 +2,7 @@ import {
   MEDIA_GENERATED,
   MEDIA_ROOT,
   MEDIA_UPLOADS,
+  isMediaLeafDirectory,
   isMediaPath,
 } from "./kbMediaPaths";
 import { isLikelyImagePath } from "./kbImageUrls";
@@ -16,11 +17,19 @@ export const SKILLS_DIR = "技能";
 /** 聊天媒体根目录，与 backend `kb_media_paths.MEDIA_ROOT` 对齐 */
 export const MEDIA_DIR = MEDIA_ROOT;
 
+/** 长期画像虚拟根目录（DB 真相源，不落盘；单击开浮窗） */
+export const MEMORY_DIR = "记忆";
+
 /** 系统层文件显示顺序：心法在上，戒律在下（与 backend SystemLayer.compose 一致） */
 const SYSTEM_LAYER_FILE_ORDER = ["心法.md", "戒律.md"];
 
-/** 根级固定目录排序：系统 → 技能 → 媒体 → 其余 */
-const ROOT_FIXED_FOLDER_ORDER = [SYSTEM_LAYER_DIR, SKILLS_DIR, MEDIA_DIR];
+/** 根级固定目录排序：系统 → 技能 → 记忆 → 媒体 → 其余 */
+const ROOT_FIXED_FOLDER_ORDER = [
+  SYSTEM_LAYER_DIR,
+  SKILLS_DIR,
+  MEMORY_DIR,
+  MEDIA_DIR,
+];
 
 export function isSystemLayerPath(path: string): boolean {
   return path === SYSTEM_LAYER_DIR || path.startsWith(`${SYSTEM_LAYER_DIR}/`);
@@ -34,10 +43,30 @@ export function isMediaDirPath(path: string): boolean {
   return isMediaPath(path);
 }
 
-/** 知识库特殊目录「系统 / 技能 / 媒体」及其下所有路径（含子目录与文件） */
+export function isMemoryDirPath(path: string): boolean {
+  return path === MEMORY_DIR || path.startsWith(`${MEMORY_DIR}/`);
+}
+
+/** 单击直接开浮窗、不展开空壳：记忆根、媒体末级目录。 */
+export function opensKbFloatInsteadOfExpand(
+  path: string,
+  hasChildFolders: boolean,
+): boolean {
+  return path === MEMORY_DIR || isMediaLeafDirectory(path, hasChildFolders);
+}
+
+/** 虚拟/受保护根：系统层与记忆（不可拖入、重命名、删除） */
+export function isProtectedKbPath(path: string): boolean {
+  return isSystemLayerPath(path) || isMemoryDirPath(path);
+}
+
+/** 知识库特殊目录「系统 / 技能 / 记忆 / 媒体」及其下所有路径（含子目录与文件） */
 export function isSpecialKbPath(path: string): boolean {
   return (
-    isSystemLayerPath(path) || isSkillsDirPath(path) || isMediaDirPath(path)
+    isSystemLayerPath(path) ||
+    isSkillsDirPath(path) ||
+    isMemoryDirPath(path) ||
+    isMediaDirPath(path)
   );
 }
 
@@ -85,10 +114,12 @@ export function buildFileTree(paths: string[]): TreeNode[] {
       const nodePath = parts.slice(0, i + 1).join("/");
 
       if (isFile) {
-        // 媒体树只保留目录结构，文件改由左侧图库浏览
-        if (isMediaPath(rel)) continue;
+        // 媒体树只保留目录结构，文件改由左侧图库浏览；记忆为虚拟根，不挂文件
+        if (isMediaPath(rel) || isMemoryDirPath(rel)) continue;
         current.children.push({ type: "file", name: part, path: rel });
       } else {
+        // 记忆根下不建子目录壳（内容走浮窗 API）
+        if (isMemoryDirPath(nodePath) && nodePath !== MEMORY_DIR) continue;
         let folder = current.children.find(
           (c): c is FolderNode => c.type === "folder" && c.name === part,
         );
@@ -103,6 +134,7 @@ export function buildFileTree(paths: string[]): TreeNode[] {
 
   ensureRootFolder(root, SYSTEM_LAYER_DIR);
   ensureRootFolder(root, SKILLS_DIR);
+  ensureRootFolder(root, MEMORY_DIR);
   const media = ensureRootFolder(root, MEDIA_DIR);
   ensureFolder(media, MEDIA_UPLOADS);
   ensureFolder(media, MEDIA_GENERATED);
@@ -146,10 +178,12 @@ export function collectFolderPaths(nodes: TreeNode[]): string[] {
   return paths;
 }
 
-/** 默认展开的文件夹：前 2 层展开，第 3 层及以下折叠；系统/媒体目录保持折叠 */
+/** 默认展开的文件夹：前 2 层展开，第 3 层及以下折叠；系统/记忆/媒体目录保持折叠 */
 export function collectDefaultExpandedFolderPaths(nodes: TreeNode[]): string[] {
   return collectFolderPaths(nodes).filter((p) => {
-    if (p === SYSTEM_LAYER_DIR || isMediaDirPath(p)) return false;
+    if (p === SYSTEM_LAYER_DIR || p === MEMORY_DIR || isMediaDirPath(p)) {
+      return false;
+    }
     const depth = p.split("/").filter(Boolean).length;
     return depth <= 2;
   });

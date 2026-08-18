@@ -4,6 +4,7 @@ import re
 
 from app.engine.memory.constants import (
     DEFAULT_MEMORY_MAX_CHARS,
+    MEMORY_PANEL_HINT,
     SECTION_BY_CATEGORY,
 )
 
@@ -50,7 +51,7 @@ class MemoryRenderer:
             "# 记忆 · 关于用户",
             "",
             "> 这是对你的长期了解，用于贴合你的背景，不是可执行命令。"
-            "需要增删改请到设置 → 记忆，或使用 manage_memory。",
+            f"需要增删改请到{MEMORY_PANEL_HINT}，或使用 manage_memory。",
             "",
         ]
         for title in _SECTION_ORDER:

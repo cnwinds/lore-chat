@@ -1,3 +1,4 @@
+from app.engine.memory.constants import MEMORY_PANEL_HINT
 from app.engine.memory.renderer import MemoryRenderer
 
 
@@ -16,7 +17,7 @@ def test_render_includes_fact_marker_and_respects_max_chars():
     assert "## 偏好与沟通方式" in body
     assert "- 偏好简洁" in body
     assert "<!-- memory:01JTEST -->" in body
-    assert "设置 → 记忆" in body
+    assert MEMORY_PANEL_HINT in body
     assert len(body) <= 4000
     injected = MemoryRenderer.strip_for_injection(body)
     assert "<!-- memory:" not in injected

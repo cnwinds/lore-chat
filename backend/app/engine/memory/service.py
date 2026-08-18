@@ -169,7 +169,7 @@ class MemoryService:
         return {"facts": candidates + others, "count": len(items)}
 
     def count_pending_candidates(self) -> int:
-        """设置红点：待确认记忆条数。"""
+        """主界面红点：待确认记忆条数。"""
         return len(self.store.list_candidates())
 
     def confirm_candidate(self, fact_id: str) -> dict:

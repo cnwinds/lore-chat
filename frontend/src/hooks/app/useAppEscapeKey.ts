@@ -11,7 +11,10 @@ export function useAppEscapeKey(
 ) {
   useEffect(() => {
     const hasPreview = Boolean(
-      doc.floatPath || doc.pinnedPath || doc.mediaFolderPath,
+      doc.floatPath ||
+        doc.pinnedPath ||
+        doc.mediaFolderPath ||
+        doc.memoryPanelOpen,
     );
     if (!hasPreview && !snippetSource) return;
     function onKeyDown(e: KeyboardEvent) {
@@ -27,6 +30,10 @@ export function useAppEscapeKey(
       }
       if (doc.pinnedFocus) {
         doc.exitPinnedFocus();
+        return;
+      }
+      if (doc.memoryPanelOpen) {
+        doc.closeMemoryPanel();
         return;
       }
       if (doc.mediaFolderPath) {
@@ -47,6 +54,7 @@ export function useAppEscapeKey(
     doc.floatPath,
     doc.pinnedPath,
     doc.mediaFolderPath,
+    doc.memoryPanelOpen,
     doc.floatFocus,
     doc.pinnedFocus,
     snippetSource,

@@ -15,7 +15,10 @@ from app.api.http_deps import (
     kb_path_exists_detail,
     kb_tree_service,
 )
-from app.engine.memory.constants import is_memory_projection_path
+from app.engine.memory.constants import (
+    MEMORY_FILE_DISABLED_MSG,
+    is_memory_projection_path,
+)
 from app.engine.patch import diff_affected_range
 
 router = APIRouter()
@@ -237,10 +240,7 @@ async def doc(path: str, request: Request):
 async def update_doc(body: UpdateDocBody, request: Request):
     c = container(request)
     if is_memory_projection_path(body.path):
-        raise HTTPException(
-            400,
-            "记忆已改由数据库管理，请到设置 → 记忆中编辑，或使用 manage_memory",
-        )
+        raise HTTPException(400, MEMORY_FILE_DISABLED_MSG)
     if not c.repo.is_writable(body.path):
         raise HTTPException(403, "禁止编辑该路径")
     try:

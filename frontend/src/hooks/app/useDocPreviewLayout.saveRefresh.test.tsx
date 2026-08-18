@@ -131,6 +131,28 @@ describe("useDocPreviewLayout refresh after local save", () => {
     expect(result.current.mediaFolderPath).toBe("媒体/生成/2026");
     expect(result.current.pinnedPath).toBe("notes/a.md");
   });
+
+  it("openMemoryPanel clears float/media and keeps pinned", () => {
+    const refreshSidebar = vi.fn();
+    const { result } = renderHook(() => useDocPreviewLayout(refreshSidebar));
+
+    act(() => {
+      result.current.openDocPreview("notes/a.md", undefined, { pin: true });
+      result.current.openDocPreview("notes/b.md");
+      result.current.openMemoryPanel();
+    });
+    expect(result.current.memoryPanelOpen).toBe(true);
+    expect(result.current.showMemoryPanel).toBe(true);
+    expect(result.current.floatPath).toBeNull();
+    expect(result.current.mediaFolderPath).toBeNull();
+    expect(result.current.pinnedPath).toBe("notes/a.md");
+    expect(result.current.mainFloatWide).toBe(true);
+
+    act(() => {
+      result.current.openMemoryPanel();
+    });
+    expect(result.current.memoryPanelOpen).toBe(false);
+  });
 });
 
 describe("buildDocViewerHandlers onSaved preserves pane position", () => {

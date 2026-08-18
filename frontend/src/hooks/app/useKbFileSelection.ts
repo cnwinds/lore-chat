@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { isSystemLayerPath } from "../../utils/fileTree";
+import { isProtectedKbPath } from "../../utils/fileTree";
 
 export function useKbFileSelection() {
   const [selectionMode, setSelectionMode] = useState(false);
@@ -20,7 +20,7 @@ export function useKbFileSelection() {
   }
 
   function handleToggleSelect(path: string, shiftKey?: boolean) {
-    if (isSystemLayerPath(path)) return;
+    if (isProtectedKbPath(path)) return;
     setSelectedPaths((prev) => {
       const next = new Set(prev);
       const sameFolder = (a: string, b: string) =>
@@ -31,7 +31,7 @@ export function useKbFileSelection() {
         const folder = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
         const folderDocs = docs
           .filter((p) => {
-            if (isSystemLayerPath(p)) return false;
+            if (isProtectedKbPath(p)) return false;
             const currentFolder = p.includes("/") ? p.slice(0, p.lastIndexOf("/")) : "";
             return currentFolder === folder;
           })
@@ -57,7 +57,7 @@ export function useKbFileSelection() {
     setSelectedPaths((prev) => {
       const next = new Set(prev);
       paths.forEach((path) => {
-        if (!isSystemLayerPath(path)) next.add(path);
+        if (!isProtectedKbPath(path)) next.add(path);
       });
       return next;
     });

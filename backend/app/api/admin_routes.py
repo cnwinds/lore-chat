@@ -71,7 +71,7 @@ def get_settings(request: Request) -> dict[str, Any]:
 
 @router.get("/settings-attention")
 def get_settings_attention(request: Request) -> dict[str, Any]:
-    """主界面/设置页红点：未配模型链、记忆待确认、价目表缺单价。"""
+    """主界面红点：未配模型链、记忆待确认、价目表缺单价。"""
     from app.settings_attention import (
         build_settings_attention,
         count_incomplete_prices,

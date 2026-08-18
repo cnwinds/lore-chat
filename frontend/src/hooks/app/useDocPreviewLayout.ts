@@ -39,6 +39,7 @@ export function useDocPreviewLayout(refreshSidebar: () => void) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mediaFolderPath, setMediaFolderPath] = useState<string | null>(null);
   const [mediaRefreshKey, setMediaRefreshKey] = useState(0);
+  const [memoryPanelOpen, setMemoryPanelOpen] = useState(false);
   const floatCloseRef = useRef<(() => void) | null>(null);
   const pinnedCloseRef = useRef<(() => void) | null>(null);
 
@@ -72,11 +73,16 @@ export function useDocPreviewLayout(refreshSidebar: () => void) {
     setPinnedHighlight(undefined);
     setPinnedFocus(false);
     setMediaFolderPath(null);
+    setMemoryPanelOpen(false);
     setSidebarCollapsed(false);
   }
 
   function closeMediaFolder() {
     setMediaFolderPath(null);
+  }
+
+  function closeMemoryPanel() {
+    setMemoryPanelOpen(false);
   }
 
   /** 打开媒体目录图库（聊天区左侧浮窗，与文档浮窗同槽；保留右侧 pinned）。 */
@@ -90,8 +96,23 @@ export function useDocPreviewLayout(refreshSidebar: () => void) {
     setFloatPath(null);
     setFloatHighlight(undefined);
     setFloatFocus(false);
+    setMemoryPanelOpen(false);
     setMediaFolderPath(norm);
     // 图库默认宽浮窗，便于瓦片排布（不持久化，避免覆盖文档浮窗偏好）
+    setFloatWidth("wide");
+  }
+
+  /** 打开长期画像浮窗（与媒体/文档浮窗同槽；保留右侧 pinned）。 */
+  function openMemoryPanel() {
+    if (memoryPanelOpen) {
+      closeMemoryPanel();
+      return;
+    }
+    setFloatPath(null);
+    setFloatHighlight(undefined);
+    setFloatFocus(false);
+    setMediaFolderPath(null);
+    setMemoryPanelOpen(true);
     setFloatWidth("wide");
   }
 
@@ -133,6 +154,7 @@ export function useDocPreviewLayout(refreshSidebar: () => void) {
 
     if (wantPin) {
       setMediaFolderPath(null);
+      setMemoryPanelOpen(false);
       setPinnedPath(path);
       setPinnedHighlight(excerpt);
       setPinnedWidth(getStoredPanelWidth());
@@ -145,6 +167,7 @@ export function useDocPreviewLayout(refreshSidebar: () => void) {
     }
 
     setMediaFolderPath(null);
+    setMemoryPanelOpen(false);
     setFloatPath(path);
     setFloatHighlight(excerpt);
     setFloatFocus(false);
@@ -154,6 +177,7 @@ export function useDocPreviewLayout(refreshSidebar: () => void) {
   function pinDocPreview() {
     if (!floatPath) return;
     setMediaFolderPath(null);
+    setMemoryPanelOpen(false);
     setPinnedPath(floatPath);
     setPinnedHighlight(floatHighlight);
     setPinnedWidth(getStoredPanelWidth());
@@ -163,6 +187,7 @@ export function useDocPreviewLayout(refreshSidebar: () => void) {
   function unpinDocPreview() {
     if (!pinnedPath) return;
     setMediaFolderPath(null);
+    setMemoryPanelOpen(false);
     setFloatPath(pinnedPath);
     setFloatHighlight(pinnedHighlight);
     setFloatFocus(false);
@@ -243,10 +268,12 @@ export function useDocPreviewLayout(refreshSidebar: () => void) {
   const showFloat = Boolean(floatPath);
   const showPinned = Boolean(pinnedPath);
   const showMediaGallery = Boolean(mediaFolderPath);
+  const showMemoryPanel = memoryPanelOpen;
   const panelFocus = Boolean(pinnedFocus && pinnedPath);
   const floatFocusActive = Boolean(floatFocus && floatPath);
   const mainFloatWide = Boolean(
-    ((floatPath && !floatFocus) || mediaFolderPath) && floatWidth === "wide",
+    ((floatPath && !floatFocus) || mediaFolderPath || memoryPanelOpen) &&
+      floatWidth === "wide",
   );
 
   return {
@@ -263,6 +290,7 @@ export function useDocPreviewLayout(refreshSidebar: () => void) {
     pinnedRefreshKey,
     mediaFolderPath,
     mediaRefreshKey,
+    memoryPanelOpen,
     /** 聊天来源高亮用右侧栏文档 */
     previewPath: pinnedPath,
     sidebarCollapsed,
@@ -274,11 +302,13 @@ export function useDocPreviewLayout(refreshSidebar: () => void) {
     closeFloatPreview,
     closePinnedPreview,
     closeMediaFolder,
+    closeMemoryPanel,
     closeAllPreviews,
     refreshKb,
     remapOpenPath,
     openDocPreview,
     openMediaFolder,
+    openMemoryPanel,
     pinDocPreview,
     unpinDocPreview,
     toggleFloatWidth,
@@ -292,6 +322,7 @@ export function useDocPreviewLayout(refreshSidebar: () => void) {
     showFloat,
     showPinned,
     showMediaGallery,
+    showMemoryPanel,
     mainFloatWide,
     contextValue: {
       previewPath: pinnedPath,

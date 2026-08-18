@@ -86,20 +86,20 @@ export function MediaGalleryPanel({
 
   return (
     <div
-      className={`media-gallery-panel media-gallery-panel--${docWidth}`}
+      className={`kb-float-panel kb-float-panel--${docWidth}`}
       aria-label={`媒体图库：${directory}`}
     >
-      <header className="media-gallery-header">
-        <div className="media-gallery-header-main">
-          <div className="media-gallery-kicker">媒体图库</div>
-          <h2 className="media-gallery-title" title={directory}>
+      <header className="kb-float-header">
+        <div className="kb-float-header-main">
+          <div className="kb-float-kicker">媒体图库</div>
+          <h2 className="kb-float-title" title={directory}>
             {title}
           </h2>
-          <nav className="media-gallery-crumb" aria-label="路径">
+          <nav className="kb-float-crumb" aria-label="路径">
             {segments.map((seg, i) => (
-              <span key={`${i}-${seg}`} className="media-gallery-crumb-seg">
+              <span key={`${i}-${seg}`} className="kb-float-crumb-seg">
                 {i > 0 ? (
-                  <span className="media-gallery-crumb-sep" aria-hidden>
+                  <span className="kb-float-crumb-sep" aria-hidden>
                     /
                   </span>
                 ) : null}
@@ -110,7 +110,7 @@ export function MediaGalleryPanel({
             ))}
           </nav>
         </div>
-        <div className="media-gallery-header-actions">
+        <div className="kb-float-header-actions">
           {onToggleWidth ? (
             <button
               type="button"
@@ -133,7 +133,7 @@ export function MediaGalleryPanel({
         </div>
       </header>
 
-      <div className="media-gallery-meta">
+      <div className="kb-float-meta">
         {loading
           ? "加载中…"
           : error
@@ -143,13 +143,13 @@ export function MediaGalleryPanel({
               }`}
       </div>
 
-      <div className="media-gallery-body">
-        {error && <div className="media-gallery-error">错误：{error}</div>}
+      <div className="kb-float-body">
+        {error && <div className="kb-float-error">错误：{error}</div>}
         {!loading && !error && images.length === 0 && others.length === 0 && (
-          <div className="media-gallery-empty">
-            <div className="media-gallery-empty-mark" aria-hidden />
+          <div className="kb-float-empty">
+            <div className="kb-float-empty-mark" aria-hidden />
             <p>此目录暂无文件</p>
-            <p className="media-gallery-empty-hint">
+            <p className="kb-float-empty-hint">
               生成或上传的图片会出现在这里
             </p>
           </div>

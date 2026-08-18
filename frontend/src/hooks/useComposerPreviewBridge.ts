@@ -3,13 +3,37 @@ import { downloadUrl, isMarkdownPath, type SourceRef } from "../api";
 import { isLikelyImagePath } from "../utils/kbImageUrls";
 import { isMediaPath, MEDIA_ROOT, normalizeKbRel } from "../utils/kbMediaPaths";
 import { pathBasename } from "../utils/kbPath";
-import { SKILLS_DIR } from "../utils/fileTree";
+import { MEMORY_DIR, SKILLS_DIR } from "../utils/fileTree";
 import { useImageLightbox } from "./useImageLightbox";
 import type { useComposerDocState } from "./useComposerDocState";
 import type { useDocPreviewLayout } from "./app/useDocPreviewLayout";
 
 type Composer = ReturnType<typeof useComposerDocState>;
 type DocLayout = ReturnType<typeof useDocPreviewLayout>;
+
+export type FolderSelectAction =
+  | { kind: "open-skills" }
+  | { kind: "ignore" }
+  | { kind: "tray"; path: string }
+  | { kind: "open-memory" }
+  | { kind: "open-media"; path: string }
+  | { kind: "none" };
+
+/** 侧栏点选文件夹：技能启用集 / 记忆浮窗 / 媒体图库 / 托盘。 */
+export function resolveFolderSelect(
+  path: string,
+  mods?: { ctrlKey?: boolean; metaKey?: boolean },
+): FolderSelectAction {
+  if (mods?.ctrlKey || mods?.metaKey) {
+    if (path === SKILLS_DIR) return { kind: "open-skills" };
+    if (path === MEMORY_DIR) return { kind: "ignore" };
+    return { kind: "tray", path };
+  }
+  const norm = normalizeKbRel(path);
+  if (norm === MEMORY_DIR) return { kind: "open-memory" };
+  if (!norm || norm === MEDIA_ROOT || !isMediaPath(norm)) return { kind: "none" };
+  return { kind: "open-media", path: norm };
+}
 
 type Options = {
   composer: Composer;
@@ -112,18 +136,21 @@ export function useComposerPreviewBridge({
     path: string,
     mods?: { ctrlKey?: boolean; metaKey?: boolean },
   ) {
-    if (mods?.ctrlKey || mods?.metaKey) {
-      if (path === SKILLS_DIR) {
-        onOpenEnabledSkills();
-        return;
-      }
-      addDocToComposer(path, { setAsPrimary: false });
+    const action = resolveFolderSelect(path, mods);
+    if (action.kind === "open-skills") {
+      onOpenEnabledSkills();
       return;
     }
-    // 仅媒体目录（非根）开图库；末级判定由 FileTree 负责
-    const norm = normalizeKbRel(path);
-    if (!norm || norm === MEDIA_ROOT || !isMediaPath(norm)) return;
-    doc.openMediaFolder(norm);
+    if (action.kind === "ignore" || action.kind === "none") return;
+    if (action.kind === "tray") {
+      addDocToComposer(action.path, { setAsPrimary: false });
+      return;
+    }
+    if (action.kind === "open-memory") {
+      doc.openMemoryPanel();
+      return;
+    }
+    doc.openMediaFolder(action.path);
   }
 
   function handleKbPathChanged(fromPath: string, toPath: string) {

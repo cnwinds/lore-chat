@@ -84,7 +84,7 @@
 
   --system-layer: #b45309;
   --system-layer-soft: rgba(180, 83, 9, 0.1);
-  /* 知识库特殊目录（系统/技能/媒体）统一底色，不用黄字 */
+  /* 知识库特殊目录（系统/技能/记忆/媒体）统一底色，不用黄字 */
   --kb-special-bg: rgba(71, 85, 105, 0.09);
   --kb-special-bg-hover: rgba(71, 85, 105, 0.14);
 
@@ -358,8 +358,8 @@ a:hover {
   min-width: 480px;
 }
 
-/* —— 媒体图库（浮窗内内容） —— */
-.media-gallery-panel {
+/* —— 知识库左缘浮窗内容壳（媒体图库 / 记忆画像共用） —— */
+.kb-float-panel {
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -367,7 +367,7 @@ a:hover {
   background: var(--bg-surface);
 }
 
-.media-gallery-header {
+.kb-float-header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -383,12 +383,12 @@ a:hover {
     var(--bg-surface);
 }
 
-.media-gallery-header-main {
+.kb-float-header-main {
   min-width: 0;
   flex: 1;
 }
 
-.media-gallery-kicker {
+.kb-float-kicker {
   font-size: 11px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -396,7 +396,7 @@ a:hover {
   margin-bottom: 4px;
 }
 
-.media-gallery-title {
+.kb-float-title {
   margin: 0;
   font-size: var(--font-h2);
   font-weight: 650;
@@ -408,7 +408,7 @@ a:hover {
   white-space: nowrap;
 }
 
-.media-gallery-crumb {
+.kb-float-crumb {
   margin-top: 6px;
   font-size: var(--text-xs);
   color: var(--text-muted);
@@ -416,24 +416,24 @@ a:hover {
   word-break: break-all;
 }
 
-.media-gallery-crumb-sep {
+.kb-float-crumb-sep {
   margin: 0 0.25em;
   opacity: 0.55;
 }
 
-.media-gallery-crumb-seg .is-current {
+.kb-float-crumb-seg .is-current {
   color: var(--text-secondary);
   font-weight: 550;
 }
 
-.media-gallery-header-actions {
+.kb-float-header-actions {
   display: flex;
   align-items: center;
   gap: 2px;
   flex-shrink: 0;
 }
 
-.media-gallery-meta {
+.kb-float-meta {
   padding: 8px 16px;
   font-size: var(--text-sm);
   color: var(--text-secondary);
@@ -441,7 +441,7 @@ a:hover {
   font-variant-numeric: tabular-nums;
 }
 
-.media-gallery-body {
+.kb-float-body {
   flex: 1;
   min-height: 0;
   overflow: auto;
@@ -455,13 +455,13 @@ a:hover {
     var(--bg-surface);
 }
 
-.media-gallery-error {
+.kb-float-error {
   color: var(--danger);
   font-size: var(--text-sm);
   margin-bottom: 12px;
 }
 
-.media-gallery-empty {
+.kb-float-empty {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -472,7 +472,7 @@ a:hover {
   color: var(--text-secondary);
 }
 
-.media-gallery-empty-mark {
+.kb-float-empty-mark {
   width: 56px;
   height: 56px;
   margin-bottom: 8px;
@@ -488,15 +488,17 @@ a:hover {
     );
 }
 
-.media-gallery-empty p {
+.kb-float-empty p {
   margin: 0;
   font-size: var(--text-base);
 }
 
-.media-gallery-empty-hint {
+.kb-float-empty-hint {
   font-size: var(--text-sm) !important;
   color: var(--text-muted) !important;
 }
+
+/* —— 媒体图库（浮窗内瓦片） —— */
 
 .media-gallery-grid {
   display: grid;
@@ -1242,6 +1244,10 @@ a:hover {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
 }
 
 .file-tree-folder-all-btn,

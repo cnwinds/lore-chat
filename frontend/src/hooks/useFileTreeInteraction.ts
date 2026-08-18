@@ -2,7 +2,7 @@ import { useCallback, useRef, useState, type DragEvent } from "react";
 import { isKbFolderMoveInvalid } from "../utils/kbTreeMove";
 import { downloadKbDirectory, downloadUrl } from "../api";
 import type { FileTreeNodeContext } from "../components/FileTree";
-import { isSystemLayerPath } from "../utils/fileTree";
+import { isProtectedKbPath } from "../utils/fileTree";
 import {
   collectDroppedFiles,
   dropEffectForTransfer,
@@ -41,7 +41,7 @@ export function useFileTreeInteraction({
   const menuRef = useRef<HTMLDivElement>(null);
 
   const startRename = useCallback((path: string, name: string) => {
-    if (isSystemLayerPath(path)) return;
+    if (isProtectedKbPath(path)) return;
     setRenamingPath(path);
     setRenamingValue(name);
   }, []);
@@ -60,7 +60,7 @@ export function useFileTreeInteraction({
 
   const openContextMenu = useCallback(
     (e: React.MouseEvent, ctx: FileTreeNodeContext) => {
-      if (isSystemLayerPath(ctx.path) && ctx.kind === "folder") return;
+      if (isProtectedKbPath(ctx.path) && ctx.kind === "folder") return;
       setMenu({ x: e.clientX, y: e.clientY, ctx });
     },
     [],
@@ -146,7 +146,7 @@ export function useFileTreeInteraction({
 
   const handleDropFiles = useCallback(
     async (dataTransfer: DataTransfer, directory: string) => {
-      if (isSystemLayerPath(directory)) return;
+      if (isProtectedKbPath(directory)) return;
       const items = await collectDroppedFiles(dataTransfer);
       clearExternalDrag();
       finishInternalDrag();
@@ -158,7 +158,7 @@ export function useFileTreeInteraction({
 
   const handleMovePath = useCallback(
     async (fromPath: string, toDirectory: string) => {
-      if (isSystemLayerPath(fromPath) || isSystemLayerPath(toDirectory)) return;
+      if (isProtectedKbPath(fromPath) || isProtectedKbPath(toDirectory)) return;
       if (isKbFolderMoveInvalid(fromPath, toDirectory)) return;
       const base = fromPath.split("/").pop();
       if (!base) return;
