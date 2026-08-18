@@ -15,6 +15,7 @@ from app.models.catalog import (
     search_known_catalog,
 )
 from app.models.models_dev import CatalogHit, ModelsDevStore, is_image_gen_model
+from app.models.provider_http import provider_extra_headers
 
 _log = logging.getLogger("lorechat.provider_models")
 
@@ -23,24 +24,42 @@ def normalize_provider_base_url(base_url: str) -> str:
     return (base_url or "").strip().rstrip("/")
 
 
+def _get_models_payload(
+    client: httpx.Client, url: str, headers: dict[str, str]
+) -> list[str]:
+    resp = client.get(url, headers=headers)
+    resp.raise_for_status()
+    return parse_models_list_payload(resp.json())
+
+
 def fetch_remote_model_ids(
     *,
     base_url: str,
     api_key: str | None,
     timeout_sec: float = 8.0,
+    kind: str | None = None,
 ) -> list[str]:
-    """GET {base}/models → 模型 id 列表。失败抛 httpx/ValueError。"""
+    """GET {base}/models → 模型 id 列表。失败抛 httpx/ValueError。
+
+    OpenRouter 生图另有 /images/models；kind=image 时优先试该端点。
+    """
     root = normalize_provider_base_url(base_url)
     if not root:
         raise ValueError("base_url required")
     headers: dict[str, str] = {"Accept": "application/json"}
+    headers.update(provider_extra_headers(root))
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
     with httpx.Client(timeout=timeout_sec) as client:
-        resp = client.get(f"{root}/models", headers=headers)
-        resp.raise_for_status()
-        data = resp.json()
-    return parse_models_list_payload(data)
+        kind_n = normalize_catalog_kind(kind, default="all")
+        if kind_n == "image" and "openrouter.ai" in root.lower():
+            try:
+                ids = _get_models_payload(client, f"{root}/images/models", headers)
+                if ids:
+                    return ids
+            except Exception as e:
+                _log.info("openrouter images/models failed, fallback to /models: %s", e)
+        return _get_models_payload(client, f"{root}/models", headers)
 
 
 def parse_models_list_payload(data: Any) -> list[str]:
@@ -125,7 +144,10 @@ def list_provider_models(
     hits: list[CatalogHit] = []
     try:
         ids = fetch_remote_model_ids(
-            base_url=base_url, api_key=api_key, timeout_sec=timeout_sec
+            base_url=base_url,
+            api_key=api_key,
+            timeout_sec=timeout_sec,
+            kind=kind_norm,
         )
         hits = [
             catalog_hit_for_model_id(mid, base_url=base_url, models_dev=store)

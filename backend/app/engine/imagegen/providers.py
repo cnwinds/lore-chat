@@ -9,13 +9,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-IMAGE_PROVIDER_TYPES = frozenset({"openai", "zhipu", "bailian", "agnes", "custom"})
+IMAGE_PROVIDER_TYPES = frozenset(
+    {"openai", "zhipu", "bailian", "agnes", "openrouter", "custom"}
+)
 
 _DEFAULT_MODELS: dict[str, str] = {
     "openai": "dall-e-3",
     "zhipu": "cogview-4",
     "bailian": "wanx-v1",
     "agnes": "agnes-image-2.1-flash",
+    "openrouter": "bytedance-seed/seedream-4.5",
 }
 
 _DEFAULT_BASE_URLS: dict[str, str] = {
@@ -23,6 +26,7 @@ _DEFAULT_BASE_URLS: dict[str, str] = {
     "zhipu": "https://open.bigmodel.cn/api/paas/v4",
     "bailian": "https://dashscope.aliyuncs.com",
     "agnes": "https://apihub.agnes-ai.com/v1",
+    "openrouter": "https://openrouter.ai/api/v1",
 }
 
 # 用户常把文档里的完整 POST path 贴进 base_url；运行时剥掉后缀只保留 API 根。
@@ -33,6 +37,7 @@ _ENDPOINT_SUFFIXES: tuple[str, ...] = (
     "/api/v1/services/aigc/image2image/image-synthesis",
     "/images/generations",
     "/v1/images/generations",
+    "/images",
 )
 
 

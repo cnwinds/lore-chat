@@ -7,10 +7,15 @@ export type LlmProviderPresetId =
   | "bailian"
   | "deepseek"
   | "agnes"
+  | "openrouter"
   | "custom";
 
 /** 嵌入模型厂家预设。 */
-export type EmbedProviderPresetId = "bailian" | "siliconflow" | "custom";
+export type EmbedProviderPresetId =
+  | "bailian"
+  | "siliconflow"
+  | "openrouter"
+  | "custom";
 
 /** OpenAI 兼容 Chat Completions 根地址。 */
 export const LLM_PROVIDER_DEFAULT_BASE_URL: Record<
@@ -22,6 +27,7 @@ export const LLM_PROVIDER_DEFAULT_BASE_URL: Record<
   bailian: "https://dashscope.aliyuncs.com/compatible-mode/v1",
   deepseek: "https://api.deepseek.com",
   agnes: "https://apihub.agnes-ai.com/v1",
+  openrouter: "https://openrouter.ai/api/v1",
 };
 
 export const EMBED_PROVIDER_DEFAULT_BASE_URL: Record<
@@ -30,6 +36,7 @@ export const EMBED_PROVIDER_DEFAULT_BASE_URL: Record<
 > = {
   bailian: "https://dashscope.aliyuncs.com/compatible-mode/v1",
   siliconflow: "https://api.siliconflow.cn/v1",
+  openrouter: "https://openrouter.ai/api/v1",
 };
 
 export const LLM_PROVIDER_OPTIONS: {
@@ -41,6 +48,7 @@ export const LLM_PROVIDER_OPTIONS: {
   { id: "bailian", label: "百炼 / 通义" },
   { id: "deepseek", label: "DeepSeek" },
   { id: "agnes", label: "Agnes" },
+  { id: "openrouter", label: "OpenRouter" },
   { id: "custom", label: "自定义" },
 ];
 
@@ -50,6 +58,7 @@ export const EMBED_PROVIDER_OPTIONS: {
 }[] = [
   { id: "bailian", label: "百炼" },
   { id: "siliconflow", label: "硅基流动" },
+  { id: "openrouter", label: "OpenRouter" },
   { id: "custom", label: "自定义" },
 ];
 

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
+from app.models.model_id import model_id_has_prefix
+
 # 跨厂商并集；具体模型只暴露自己支持的子集
 Effort = Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"]
 
@@ -62,7 +64,7 @@ def pick_default_effort(options: tuple[Effort, ...], *, model: str = "") -> Effo
     if not options:
         return "medium"
     mid = _norm_id(model)
-    if mid.startswith("gpt-5.2") or mid.startswith("gpt-5.1"):
+    if model_id_has_prefix(mid, "gpt-5.2") or model_id_has_prefix(mid, "gpt-5.1"):
         if "none" in options:
             return "none"
     if "medium" in options:
@@ -92,30 +94,28 @@ def supported_efforts(model: str, protocol: str | None = None) -> tuple[Effort, 
     if proto in {"deepseek", "qwen"}:
         return _GENERIC_WITH_MAX
     # Agnes：可思考，但无对外暴露的强度档
-    if proto == "agnes" or mid.startswith("agnes-"):
+    if proto == "agnes" or model_id_has_prefix(mid, "agnes-"):
         return ()
 
     # OpenAI GPT-5.x 家族（含 codex / pro / instant 等后缀）
-    if mid.startswith("gpt-5.2") or "/gpt-5.2" in mid:
+    if model_id_has_prefix(mid, "gpt-5.2"):
         return _OPENAI_GPT52
-    if mid.startswith("gpt-5.1") or "/gpt-5.1" in mid:
+    if model_id_has_prefix(mid, "gpt-5.1"):
         return _OPENAI_GPT51
-    if mid.startswith("gpt-5") or "/gpt-5" in mid:
+    if model_id_has_prefix(mid, "gpt-5"):
         return _OPENAI_GPT5
 
-    if mid.startswith(("o1", "o3", "o4")) or any(
-        f"/{p}" in f"/{mid}" for p in ("o1", "o3", "o4")
-    ):
+    if model_id_has_prefix(mid, "o1", "o3", "o4"):
         return _OPENAI_O
 
     if proto == "openai_kwargs":
         return _OPENAI_BROAD
 
-    if mid.startswith(("deepseek-", "qwen")):
+    if model_id_has_prefix(mid, "deepseek-", "qwen"):
         return _GENERIC_WITH_MAX
 
     # 智谱 GLM 家族常见档位（含 max）
-    if mid.startswith("glm") or "/glm" in f"/{mid}":
+    if model_id_has_prefix(mid, "glm"):
         return _GLM_EFFORTS
 
     # 未知：保守三档（max 仅给明确支持的协议/前缀）

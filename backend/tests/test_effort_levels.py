@@ -7,6 +7,7 @@ from app.models.effort import (
     pick_default_effort,
     supported_efforts,
 )
+from app.models.model_id import model_id_has_prefix
 from app.models.thinking import thinking_request_kwargs
 
 
@@ -14,6 +15,14 @@ def test_gpt52_efforts_include_none_and_xhigh():
     opts = supported_efforts("gpt-5.2", "openai_kwargs")
     assert opts == ("none", "low", "medium", "high", "xhigh")
     assert default_effort("gpt-5.2", "openai_kwargs") == "none"
+    assert supported_efforts("openai/gpt-5.2") == (
+        "none",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+    )
+    assert default_effort("openai/gpt-5.2") == "none"
 
 
 def test_deepseek_efforts_include_max():
@@ -23,10 +32,22 @@ def test_deepseek_efforts_include_max():
         "high",
         "max",
     )
+    assert supported_efforts("deepseek/deepseek-v4-pro") == (
+        "low",
+        "medium",
+        "high",
+        "max",
+    )
 
 
 def test_glm_efforts_include_max():
     assert supported_efforts("glm-5.3") == ("low", "medium", "high", "max")
+
+
+def test_model_id_has_prefix_matches_slash_tail():
+    assert model_id_has_prefix("deepseek/deepseek-v4-pro", "deepseek-")
+    assert model_id_has_prefix("openai/gpt-5.2", "gpt-5.2")
+    assert not model_id_has_prefix("openai/gpt-4o", "gpt-5")
 
 
 def test_unknown_model_efforts_no_max():

@@ -221,6 +221,13 @@ def test_supplement_search_agnes():
     assert all(h.thinking_protocol == "agnes" for h in hits if h.id.startswith("agnes-2.5"))
 
 
+def test_supplement_search_openrouter_image_and_embed():
+    imgs = search_supplement("seedream", kind="image")
+    assert any(h.id == "bytedance-seed/seedream-4.5" for h in imgs)
+    embs = search_supplement("qwen3-embedding", kind="embedding")
+    assert any(h.id == "qwen/qwen3-embedding-8b" for h in embs)
+
+
 def test_merge_catalog_hits_prefers_primary():
     from app.models.models_dev import CatalogHit
 

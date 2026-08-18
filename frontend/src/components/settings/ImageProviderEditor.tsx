@@ -9,7 +9,13 @@ import {
 } from "./SettingsFold";
 import { ProviderApiKeyLabel } from "./ProviderApiKeyLabel";
 
-export type ImageProviderId = "openai" | "zhipu" | "bailian" | "agnes" | "custom";
+export type ImageProviderId =
+  | "openai"
+  | "zhipu"
+  | "bailian"
+  | "agnes"
+  | "openrouter"
+  | "custom";
 
 /** 与 backend `imagegen/providers._DEFAULT_BASE_URLS` 对齐 */
 export const IMAGE_PROVIDER_DEFAULT_BASE_URL: Record<
@@ -20,6 +26,7 @@ export const IMAGE_PROVIDER_DEFAULT_BASE_URL: Record<
   zhipu: "https://open.bigmodel.cn/api/paas/v4",
   bailian: "https://dashscope.aliyuncs.com",
   agnes: "https://apihub.agnes-ai.com/v1",
+  openrouter: "https://openrouter.ai/api/v1",
 };
 
 /** 与 backend `imagegen/providers._DEFAULT_MODELS` 对齐 */
@@ -31,6 +38,7 @@ export const IMAGE_PROVIDER_DEFAULT_MODEL: Record<
   zhipu: "cogview-4",
   bailian: "wanx-v1",
   agnes: "agnes-image-2.1-flash",
+  openrouter: "bytedance-seed/seedream-4.5",
 };
 
 export const IMAGE_PROVIDER_OPTIONS: {
@@ -41,6 +49,7 @@ export const IMAGE_PROVIDER_OPTIONS: {
   { id: "zhipu", label: "智谱 CogView" },
   { id: "bailian", label: "百炼万相" },
   { id: "agnes", label: "Agnes Image" },
+  { id: "openrouter", label: "OpenRouter Images" },
   { id: "custom", label: "自定义" },
 ];
 

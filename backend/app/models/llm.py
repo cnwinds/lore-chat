@@ -200,7 +200,14 @@ class OpenAILLMClient:
         cache_key = (base, key or "")
         client = self._client_cache.get(cache_key)
         if client is None:
-            client = OpenAI(api_key=key, base_url=base)
+            from app.models.provider_http import provider_extra_headers
+
+            extra = provider_extra_headers(base)
+            client = OpenAI(
+                api_key=key,
+                base_url=base,
+                **({"default_headers": extra} if extra else {}),
+            )
             self._client_cache[cache_key] = client
         return client
 
