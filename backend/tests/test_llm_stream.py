@@ -20,6 +20,21 @@ def _chunk(*, content=None, reasoning=None, tool_calls=None, finish_reason=None)
     return SimpleNamespace(choices=[choice])
 
 
+def _mock_select():
+    return SimpleNamespace(
+        candidate=SimpleNamespace(
+            id="test",
+            model="test-model",
+            thinking=False,
+            effort="",
+            effort_options=(),
+            thinking_protocol="none",
+        ),
+        failover=False,
+        skipped=[],
+    )
+
+
 def test_api_messages_have_images():
     assert not _api_messages_have_images([{"role": "user", "content": "hi"}])
     assert _api_messages_have_images(
@@ -76,22 +91,7 @@ def test_stream_with_images_uses_non_stream_completion():
                 }
             ],
         ),
-        patch.object(
-            llm,
-            "_select",
-            return_value=SimpleNamespace(
-                candidate=SimpleNamespace(
-                    id="vision",
-                    model="agnes-2.5-flash",
-                    thinking=False,
-                    effort="",
-                    effort_options=(),
-                    thinking_protocol="none",
-                ),
-                failover=False,
-                skipped=[],
-            ),
-        ),
+        patch.object(llm, "_select", return_value=_mock_select()),
     ):
         chunks = list(llm.stream_chat_with_tools(vision_messages, [], big=True))
 
@@ -118,7 +118,10 @@ def test_stream_yields_think_delta_from_reasoning_content():
     mock_client = MagicMock()
     mock_client.chat.completions.create.return_value = iter(stream)
 
-    with patch.object(llm, "_client_for", return_value=mock_client):
+    with (
+        patch.object(llm, "_client_for", return_value=mock_client),
+        patch.object(llm, "_select", return_value=_mock_select()),
+    ):
         chunks = list(
             llm.stream_chat_with_tools(
                 [{"role": "user", "content": "hi"}],
@@ -155,7 +158,10 @@ def test_stream_logs_truncated_tool_calls(caplog):
     mock_client = MagicMock()
     mock_client.chat.completions.create.return_value = iter(stream)
 
-    with patch.object(llm, "_client_for", return_value=mock_client):
+    with (
+        patch.object(llm, "_client_for", return_value=mock_client),
+        patch.object(llm, "_select", return_value=_mock_select()),
+    ):
         chunks = list(
             llm.stream_chat_with_tools(
                 [{"role": "user", "content": "hi"}],
