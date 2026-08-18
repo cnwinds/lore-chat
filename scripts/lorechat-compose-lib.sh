@@ -13,6 +13,8 @@
 #
 # 可选：
 #   LORECHAT_STACK_MODE_FILE  默认 ${LORECHAT_RUNTIME}/run-mode
+#   LORECHAT_COMPOSE_DEMO=1   叠加 docker-compose.demo.yml（演示站）
+#   LORECHAT_COMPOSE_DEMO_FILE  demo 叠加文件路径
 
 # 镜像 pin：scripts/opensandbox-pins.sh（由 gen-deploy-launchers.py 从 config.toml / sandbox compose 生成）
 # shellcheck source=opensandbox-pins.sh
@@ -111,13 +113,18 @@ lorechat_warn_work_images() {
   echo "[Lore Chat] 首次下载可能较慢，请耐心等待。"
 }
 
-# $1 = chat|work；其余为 compose 参数。若 LORECHAT_COMPOSE_DEV=1 则叠加 docker-compose.dev.yml
+# $1 = chat|work；其余为 compose 参数。
+# LORECHAT_COMPOSE_DEV=1 → docker-compose.dev.yml
+# LORECHAT_COMPOSE_DEMO=1 → docker-compose.demo.yml
 lorechat_compose() {
   local mode="$1"
   shift
   local -a files=(-f "${LORECHAT_COMPOSE_BASE}")
   if [[ "${mode}" == "work" ]]; then
     files+=(-f "${LORECHAT_COMPOSE_SANDBOX}")
+  fi
+  if [[ "${LORECHAT_COMPOSE_DEMO:-}" == "1" ]]; then
+    files+=(-f "${LORECHAT_COMPOSE_DEMO_FILE:-${LORECHAT_COMPOSE_DIR}/docker-compose.demo.yml}")
   fi
   if [[ "${LORECHAT_COMPOSE_DEV:-}" == "1" ]]; then
     files+=(-f "${LORECHAT_COMPOSE_DEV_FILE:-${LORECHAT_COMPOSE_DIR}/docker-compose.dev.yml}")
@@ -130,6 +137,9 @@ lorechat_compose() {
 }
 
 lorechat_teardown_stack() {
+  # demo 叠加与否不影响同名项目 down；两套都试一遍清干净。
+  LORECHAT_COMPOSE_DEMO=1 lorechat_compose work down --remove-orphans >/dev/null 2>&1 || true
+  LORECHAT_COMPOSE_DEMO=1 lorechat_compose chat down --remove-orphans >/dev/null 2>&1 || true
   lorechat_compose work down --remove-orphans >/dev/null 2>&1 || true
   lorechat_compose chat down --remove-orphans >/dev/null 2>&1 || true
 }

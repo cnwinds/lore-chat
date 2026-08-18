@@ -30,9 +30,15 @@ def _ensure_app_importable() -> None:
 
 
 def _wipe(kb_path: Path) -> None:
-    if kb_path.exists():
-        shutil.rmtree(kb_path)
-    kb_path.mkdir(parents=True, exist_ok=True)
+    """清空知识库目录内容。挂载点本身不可删（Docker bind mount 会 Device busy）。"""
+    if not kb_path.exists():
+        kb_path.mkdir(parents=True, exist_ok=True)
+        return
+    for child in kb_path.iterdir():
+        if child.is_dir() and not child.is_symlink():
+            shutil.rmtree(child)
+        else:
+            child.unlink(missing_ok=True)
 
 
 def _copy_knowledge(content_dir: Path, kb_path: Path) -> int:

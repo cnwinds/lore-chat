@@ -2,6 +2,8 @@
 #
 # backend 镜像的构建上下文是 ../backend，镜像里不含 demo/ 与 docker/；
 # 这里用只读挂载把内容与 entrypoint 送进容器，避免为演示站改动基础镜像。
+#
+# 本地也可用：./lorechat.sh start --demo [--dev]
 services:
   backend:
     environment:

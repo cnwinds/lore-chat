@@ -21,8 +21,10 @@ LORECHAT_COMPOSE_ENV="${ROOT}/.env"
 LORECHAT_COMPOSE_BASE="${ROOT}/docker/docker-compose.yml"
 LORECHAT_COMPOSE_SANDBOX="${ROOT}/docker/docker-compose.sandbox.yml"
 LORECHAT_COMPOSE_DEV_FILE="${ROOT}/docker/docker-compose.dev.yml"
+LORECHAT_COMPOSE_DEMO_FILE="${ROOT}/docker/docker-compose.demo.yml"
 LORECHAT_DEFAULT_SANDBOX_IMAGE="lorechat-sandbox-agent:local"
 COMPOSE_DEV_FILE="${RUNTIME}/compose-dev"
+COMPOSE_DEMO_FILE="${RUNTIME}/compose-demo"
 PROXY_RELAY_PID_FILE="${RUNTIME}/proxy-relay.pid"
 PROXY_RELAY_LOG="${RUNTIME}/proxy-relay.log"
 
@@ -33,7 +35,7 @@ Usage: ./lorechat.sh <command> [options]
 Commands:
   setup                   Create backend venv, install deps, copy env examples
   dev                     Host development (uvicorn --reload + Vite HMR)
-  start [--chat|--work] [--dev]
+  start [--chat|--work] [--demo] [--dev]
                           Docker Compose (local build); --dev mounts source + hot reload
   stop                    Stop Docker Compose stack (or local dev helpers)
   restart                 stop then start (or re-run last mode)
@@ -43,6 +45,7 @@ Commands:
 Modes (start):
   --chat   Core stack only (default)
   --work   Core + OpenSandbox (first run may pull large images)
+  --demo   演示站：DEMO_MODE=1，启动时从 demo/ 重建知识库（访客只读）
   --dev    Bind-mount backend/frontend; uvicorn --reload + Vite HMR (no rebuild on edit)
 
 Environment:
@@ -190,15 +193,17 @@ ensure_docker_compose() {
   fi
 }
 
-# 解析 start 参数：--chat|--work 与可选 --dev（顺序不限）
-# 结果写入 LORECHAT_STACK_MODE / LORECHAT_COMPOSE_DEV（勿用 $() 调用，否则 set -u 下侧效应丢失）
+# 解析 start 参数：--chat|--work 与可选 --dev / --demo（顺序不限）
+# 结果写入 LORECHAT_STACK_MODE / LORECHAT_COMPOSE_DEV / LORECHAT_COMPOSE_DEMO
 lorechat_parse_start_args() {
   local stack_flag=""
   LORECHAT_COMPOSE_DEV=0
+  LORECHAT_COMPOSE_DEMO=0
   local arg
   for arg in "$@"; do
     case "${arg}" in
       --dev|dev) LORECHAT_COMPOSE_DEV=1 ;;
+      --demo|demo) LORECHAT_COMPOSE_DEMO=1 ;;
       --chat|chat|--work|work|"")
         if [[ -n "${stack_flag}" && -n "${arg}" ]]; then
           echo "[Lore Chat] 只能指定一个栈模式（--chat 或 --work）" >&2
@@ -207,11 +212,15 @@ lorechat_parse_start_args() {
         stack_flag="${arg}"
         ;;
       *)
-        echo "[Lore Chat] 未知参数: ${arg}（用 --chat / --work / --dev）" >&2
+        echo "[Lore Chat] 未知参数: ${arg}（用 --chat / --work / --demo / --dev）" >&2
         return 1
         ;;
     esac
   done
+  # 演示站默认 chat（无需沙箱）；显式 --work --demo 仍可用
+  if [[ "${LORECHAT_COMPOSE_DEMO}" == "1" && -z "${stack_flag}" ]]; then
+    stack_flag="--chat"
+  fi
   LORECHAT_STACK_MODE="$(lorechat_resolve_stack_mode "${stack_flag}")" || return 1
 }
 
@@ -221,6 +230,7 @@ do_start() {
   lorechat_parse_start_args "$@" || exit 1
   local stack_mode="${LORECHAT_STACK_MODE}"
   export LORECHAT_COMPOSE_DEV
+  export LORECHAT_COMPOSE_DEMO
   if [[ "${stack_mode}" == "work" ]]; then
     lorechat_warn_work_images
   fi
@@ -229,11 +239,18 @@ do_start() {
   lorechat_save_stack_mode "${stack_mode}"
   if [[ "${LORECHAT_COMPOSE_DEV}" == "1" ]]; then
     echo "1" >"${COMPOSE_DEV_FILE}"
-    echo "[Lore Chat] Starting Docker Compose (mode: ${stack_mode}, --dev hot-reload) ..."
   else
     rm -f "${COMPOSE_DEV_FILE}"
-    echo "[Lore Chat] Starting Docker Compose (mode: ${stack_mode}, local --build) ..."
   fi
+  if [[ "${LORECHAT_COMPOSE_DEMO}" == "1" ]]; then
+    echo "1" >"${COMPOSE_DEMO_FILE}"
+  else
+    rm -f "${COMPOSE_DEMO_FILE}"
+  fi
+  local mode_label="${stack_mode}"
+  [[ "${LORECHAT_COMPOSE_DEMO}" == "1" ]] && mode_label="${mode_label}+demo"
+  [[ "${LORECHAT_COMPOSE_DEV}" == "1" ]] && mode_label="${mode_label}+dev"
+  echo "[Lore Chat] Starting Docker Compose (mode: ${mode_label}) ..."
   lorechat_teardown_stack
   # 开发叠加用预构建/已有镜像挂载源码即可；仍 --build 以同步 Dockerfile 依赖
   lorechat_compose "${stack_mode}" up -d --build
@@ -241,6 +258,9 @@ do_start() {
   port="$(grep -E '^WEB_PORT=' "${ROOT}/.env" 2>/dev/null | cut -d= -f2- || true)"
   port="${port:-8080}"
   echo "[Lore Chat] Ready → http://localhost:${port}"
+  if [[ "${LORECHAT_COMPOSE_DEMO}" == "1" ]]; then
+    echo "[Lore Chat] Demo mode: 访客只读；启动时从 demo/ 重建知识库"
+  fi
   if [[ "${LORECHAT_COMPOSE_DEV}" == "1" ]]; then
     echo "[Lore Chat] Dev mounts: backend/app → uvicorn --reload；frontend → Vite HMR"
   fi
@@ -281,6 +301,9 @@ do_restart() {
     do_dev
   else
     start_args=("--${stack_mode}")
+    if [[ -f "${COMPOSE_DEMO_FILE}" ]] && [[ "$(tr -d '[:space:]' <"${COMPOSE_DEMO_FILE}")" == "1" ]]; then
+      start_args+=(--demo)
+    fi
     if [[ -f "${COMPOSE_DEV_FILE}" ]] && [[ "$(tr -d '[:space:]' <"${COMPOSE_DEV_FILE}")" == "1" ]]; then
       start_args+=(--dev)
     fi
@@ -293,6 +316,9 @@ do_log() {
     ensure_docker_compose
     if [[ -f "${COMPOSE_DEV_FILE}" ]] && [[ "$(tr -d '[:space:]' <"${COMPOSE_DEV_FILE}")" == "1" ]]; then
       export LORECHAT_COMPOSE_DEV=1
+    fi
+    if [[ -f "${COMPOSE_DEMO_FILE}" ]] && [[ "$(tr -d '[:space:]' <"${COMPOSE_DEMO_FILE}")" == "1" ]]; then
+      export LORECHAT_COMPOSE_DEMO=1
     fi
     lorechat_compose "$(lorechat_read_stack_mode)" logs -f --tail=50
     return
