@@ -1,0 +1,150 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1180" viewBox="0 0 1920 1180" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Source Han Sans SC',sans-serif">
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="3" stdDeviation="5" flood-color="#0F172A" flood-opacity="0.08"/>
+    </filter>
+    <marker id="ar-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#3B82F6"/>
+    </marker>
+    <marker id="ar-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#10B981"/>
+    </marker>
+    <marker id="ar-cyan" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#06B6D4"/>
+    </marker>
+  </defs>
+
+  <!-- 背景 -->
+  <rect width="1920" height="1180" fill="#FFFFFF"/>
+
+  <!-- 主标题 -->
+  <text x="80" y="80" font-size="34" font-weight="800" fill="#0F172A">本地检索数据流 · 数据不出校园</text>
+  <text x="82" y="116" font-size="18" fill="#64748B">面向教培机构合作会谈 · 资料只在校园本地服务器上处理与存储 · 2026-08-18</text>
+
+  <!-- 校园本地服务器大框 -->
+  <rect x="60" y="170" width="1520" height="830" rx="24" fill="#F8FAFC" stroke="#059669" stroke-width="3"/>
+  <circle cx="100" cy="196" r="6" fill="#10B981"/>
+  <text x="116" y="202" font-size="19" font-weight="700" fill="#047857">校园本地服务器 / 机构内网 —— 以下所有环节全部在校内运行</text>
+
+  <!-- 右上角徽章 -->
+  <g filter="url(#shadow)">
+    <rect x="1210" y="190" width="350" height="46" rx="23" fill="#10B981"/>
+    <text x="1385" y="219" text-anchor="middle" font-size="18" font-weight="700" fill="#FFFFFF">✅ 全程在校内 · 断网可用</text>
+  </g>
+
+  <!-- 入库行标题 -->
+  <text x="110" y="250" font-size="18" font-weight="700" fill="#1F2937">① 入库：老师资料 → 本地可检索索引（写路径，全程本地）</text>
+
+  <!-- 节点1 教师资料 -->
+  <g filter="url(#shadow)">
+    <rect x="110" y="270" width="240" height="140" rx="16" fill="#EFF6FF" stroke="#3B82F6" stroke-width="2.5"/>
+    <text x="230" y="312" text-anchor="middle" font-size="24" font-weight="700" fill="#1E3A8A">老师现有资料</text>
+    <text x="230" y="346" text-anchor="middle" font-size="15" fill="#334155">试卷 PDF · 讲义 · 共享盘</text>
+    <text x="230" y="374" text-anchor="middle" font-size="14" fill="#64748B">原样留在机构，不迁移</text>
+  </g>
+  <line x1="350" y1="340" x2="382" y2="340" stroke="#3B82F6" stroke-width="3.5" marker-end="url(#ar-blue)"/>
+
+  <!-- 节点2 解析分块 -->
+  <g filter="url(#shadow)">
+    <rect x="390" y="270" width="240" height="140" rx="16" fill="#EFF6FF" stroke="#3B82F6" stroke-width="2.5"/>
+    <text x="510" y="312" text-anchor="middle" font-size="24" font-weight="700" fill="#1E3A8A">解析 + 分块</text>
+    <text x="510" y="346" text-anchor="middle" font-size="15" fill="#334155">默认 512 字 + 80 重叠</text>
+    <text x="510" y="374" text-anchor="middle" font-size="14" fill="#64748B">长文档 1024 字 + 150</text>
+  </g>
+  <line x1="630" y1="340" x2="662" y2="340" stroke="#3B82F6" stroke-width="3.5" marker-end="url(#ar-blue)"/>
+
+  <!-- 节点3 本地嵌入（关键） -->
+  <g filter="url(#shadow)">
+    <rect x="670" y="270" width="240" height="140" rx="16" fill="#ECFDF5" stroke="#10B981" stroke-width="3.5"/>
+    <text x="790" y="312" text-anchor="middle" font-size="24" font-weight="700" fill="#065F46">本地嵌入模型 ⭐</text>
+    <text x="790" y="346" text-anchor="middle" font-size="15" fill="#334155">BGE / GTE · Ollama 部署</text>
+    <text x="790" y="374" text-anchor="middle" font-size="14" font-weight="600" fill="#047857">关键：文本不出服务器</text>
+  </g>
+  <line x1="910" y1="340" x2="942" y2="340" stroke="#3B82F6" stroke-width="3.5" marker-end="url(#ar-blue)"/>
+
+  <!-- 节点4 向量库 -->
+  <g filter="url(#shadow)">
+    <rect x="950" y="270" width="240" height="140" rx="16" fill="#F5F3FF" stroke="#8B5CF6" stroke-width="2.5"/>
+    <text x="1070" y="312" text-anchor="middle" font-size="24" font-weight="700" fill="#5B21B6">向量库 · 自托管</text>
+    <text x="1070" y="346" text-anchor="middle" font-size="15" fill="#334155">pgvector / Qdrant</text>
+    <text x="1070" y="374" text-anchor="middle" font-size="14" fill="#64748B">学科 / 年级 / 知识点过滤</text>
+  </g>
+  <line x1="1190" y1="340" x2="1222" y2="340" stroke="#3B82F6" stroke-width="3.5" marker-end="url(#ar-blue)"/>
+
+  <!-- 节点5 来源索引 -->
+  <g filter="url(#shadow)">
+    <rect x="1230" y="270" width="240" height="140" rx="16" fill="#ECFEFF" stroke="#06B6D4" stroke-width="2.5"/>
+    <text x="1350" y="312" text-anchor="middle" font-size="24" font-weight="700" fill="#155E75">建立来源索引</text>
+    <text x="1350" y="346" text-anchor="middle" font-size="15" fill="#334155">chunk ID → 原文件 + 页码</text>
+    <text x="1350" y="374" text-anchor="middle" font-size="14" fill="#64748B">命中即带回出处</text>
+  </g>
+
+  <!-- 查询连线：向量库 → 检索服务 -->
+  <path d="M 1070 410 L 1070 510 L 570 510 L 570 576" fill="none" stroke="#06B6D4" stroke-width="3" marker-end="url(#ar-cyan)"/>
+  <text x="820" y="536" text-anchor="middle" font-size="15" font-weight="600" fill="#0E7490">查询 · 仅在本库检索</text>
+
+  <!-- 检索行标题 -->
+  <text x="110" y="560" font-size="18" font-weight="700" fill="#1F2937">② 检索：老师提问 → 带来源的结果（读路径，全程本地）</text>
+
+  <!-- 节点6 教师提问 -->
+  <g filter="url(#shadow)">
+    <rect x="110" y="580" width="240" height="140" rx="16" fill="#FFF7ED" stroke="#F59E0B" stroke-width="2.5"/>
+    <text x="230" y="622" text-anchor="middle" font-size="24" font-weight="700" fill="#92400E">老师提问</text>
+    <text x="230" y="656" text-anchor="middle" font-size="15" fill="#334155">“找 XX 知识点的题”</text>
+    <text x="230" y="684" text-anchor="middle" font-size="14" fill="#64748B">年级 / 知识点过滤</text>
+  </g>
+  <line x1="350" y1="650" x2="422" y2="650" stroke="#10B981" stroke-width="3.5" marker-end="url(#ar-green)"/>
+
+  <!-- 节点7 检索服务 -->
+  <g filter="url(#shadow)">
+    <rect x="430" y="580" width="240" height="140" rx="16" fill="#ECFEFF" stroke="#06B6D4" stroke-width="2.5"/>
+    <text x="550" y="622" text-anchor="middle" font-size="24" font-weight="700" fill="#155E75">检索服务</text>
+    <text x="550" y="656" text-anchor="middle" font-size="15" fill="#334155">向量 + 关键词混合检索</text>
+    <text x="550" y="684" text-anchor="middle" font-size="14" fill="#64748B">只用本地向量库</text>
+  </g>
+  <line x1="670" y1="650" x2="812" y2="650" stroke="#10B981" stroke-width="3.5" marker-end="url(#ar-green)"/>
+
+  <!-- 节点8 结果返回 -->
+  <g filter="url(#shadow)">
+    <rect x="820" y="580" width="650" height="140" rx="16" fill="#F0FDF4" stroke="#22C55E" stroke-width="3"/>
+    <text x="1145" y="622" text-anchor="middle" font-size="24" font-weight="700" fill="#166534">检索结果 · 每条带来源</text>
+    <text x="1145" y="656" text-anchor="middle" font-size="15" fill="#334155">原文件 + 页码 / 章节，点击可回原文核对</text>
+    <text x="1145" y="684" text-anchor="middle" font-size="14" font-weight="600" fill="#15803D">回应教师最看重：来源能点回去</text>
+  </g>
+
+  <!-- 隔离线：数据不出校园 -->
+  <line x1="1600" y1="250" x2="1600" y2="850" stroke="#EF4444" stroke-width="3"/>
+  <text x="1603" y="238" font-size="15" font-weight="700" fill="#DC2626">数据不出校园</text>
+
+  <!-- 云端卡（不经过） -->
+  <g filter="url(#shadow)">
+    <rect x="1620" y="250" width="250" height="600" rx="16" fill="#F9FAFB" stroke="#EF4444" stroke-width="2.5" stroke-dasharray="8 6"/>
+    <text x="1644" y="297" font-size="20" font-weight="700" fill="#DC2626">✕ 外部云端</text>
+    <line x1="1638" y1="318" x2="1852" y2="318" stroke="#E5E7EB" stroke-width="2"/>
+    <text x="1644" y="356" font-size="16" fill="#6B7280">✕ OpenAI 云端嵌入</text>
+    <text x="1644" y="398" font-size="16" fill="#6B7280">✕ Pinecone 云托管</text>
+    <text x="1644" y="440" font-size="16" fill="#6B7280">✕ 其它公共云 / 遥测</text>
+    <line x1="1638" y1="472" x2="1852" y2="472" stroke="#E5E7EB" stroke-width="2"/>
+    <text x="1644" y="512" font-size="17" font-weight="700" fill="#DC2626">这里全部不走</text>
+    <text x="1644" y="548" font-size="14" fill="#9CA3AF">资料与检索均不经过第三方</text>
+  </g>
+
+  <!-- 底部卡片A：三层保障 -->
+  <g filter="url(#shadow)">
+    <rect x="60" y="1030" width="920" height="130" rx="16" fill="#FFFFFF" stroke="#E5E7EB" stroke-width="2"/>
+    <text x="84" y="1062" font-size="18" font-weight="700" fill="#047857">三个硬保障（对合作方的话术）</text>
+    <text x="84" y="1090" font-size="15" fill="#374151">① 全部组件本地部署：pgvector / Qdrant 自托管，明确排除 Pinecone 及一切云托管版</text>
+    <text x="84" y="1116" font-size="15" fill="#374151">② 嵌入环节也在本校服务器完成（BGE / GTE），资料文本不进任何云端 API</text>
+    <text x="84" y="1142" font-size="15" fill="#374151">③ 默认不出网：部署时关闭遥测上报，并做断网验证</text>
+  </g>
+
+  <!-- 底部卡片B：来源可回 -->
+  <g filter="url(#shadow)">
+    <rect x="1000" y="1030" width="860" height="130" rx="16" fill="#FFFFFF" stroke="#E5E7EB" stroke-width="2"/>
+    <text x="1024" y="1062" font-size="18" font-weight="700" fill="#0E7490">为什么结果一定带得回来</text>
+    <text x="1024" y="1090" font-size="15" fill="#374151">入库时每块文本登记 chunk ID → 原文件 + 页码 / 章节；检索命中直接回指原始资料</text>
+    <text x="1024" y="1116" font-size="15" fill="#374151">教师点击即可回到试卷 / 讲义原文核对 —— 访谈中教师排名第一的需求</text>
+    <text x="1024" y="1142" font-size="15" fill="#374151">（试点验证目标：找题 ≤ 10 分钟、年级零错漏）</text>
+  </g>
+</svg>

@@ -22,7 +22,7 @@
 
 1. 准备一台普通实例（`DEMO_MODE=0`、空 KB、配好模型链与搜索 provider）
 2. `cd demo && python -m seed.run --base-url http://localhost:8080 --password <管理员密码>`
-3. 人工定稿：Markdown 直接改；会话与记忆用 `tools/dump.py` 导出改完再 `tools/load.py` 导回
+3. 人工定稿：Markdown 直接改；会话与记忆用 `tools/dump.py` 导出改完再 `tools/load.py` 导回。**移动或重命名文档后，必须把会话 JSON 里的旧路径一并改掉**，否则时间线里的链接会 404，看起来像系统坏了。
 4. `cd demo && python -m tools.dump --kb <实例 KB 路径> --out .`
 5. 提交 `demo/`
 

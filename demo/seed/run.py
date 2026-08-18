@@ -130,18 +130,30 @@ def run(
     assets_dir: Path,
     pause: float,
     session_cookie: str | None = None,
+    only_keys: set[str] | None = None,
+    skip_import: bool = False,
 ) -> None:
     script = load_script(script_path)
     problems = validate_script(script)
     if problems:
         raise SystemExit("剧本校验失败：\n" + "\n".join(problems))
 
+    conversations = list(script["conversations"])
+    if only_keys:
+        conversations = [c for c in conversations if c.get("key") in only_keys]
+        missing = only_keys - {c.get("key") for c in conversations}
+        if missing:
+            raise SystemExit("剧本里没有这些 key：" + ", ".join(sorted(missing)))
+
     with httpx.Client(base_url=base_url, timeout=60.0, follow_redirects=True) as client:
         _authenticate(client, password, session_cookie)
-        imported = _import_assets(client, assets_dir)
-        print(f"已导入前置资产 {imported} 篇")
+        if skip_import:
+            print("跳过前置资产导入")
+        else:
+            imported = _import_assets(client, assets_dir)
+            print(f"已导入前置资产 {imported} 篇")
 
-        for conv in script["conversations"]:
+        for conv in conversations:
             _enable_skills(client, conv.get("skills") or [])
             cid = client.post("/api/conversations").json()["id"]
             print(f"[{conv['key']}] conversation_id={cid}")
@@ -164,7 +176,18 @@ def main() -> None:
     parser.add_argument("--script", type=Path, default=here / "script.yaml")
     parser.add_argument("--assets", type=Path, default=here.parent / "assets")
     parser.add_argument("--pause", type=float, default=2.0, help="轮次间隔秒数")
+    parser.add_argument(
+        "--only",
+        default="",
+        help="只跑这些会话 key，逗号分隔；默认全部",
+    )
+    parser.add_argument(
+        "--skip-import",
+        action="store_true",
+        help="不导入前置资产（在已有 KB 上补跑某条会话时用）",
+    )
     args = parser.parse_args()
+    only = {k.strip() for k in args.only.split(",") if k.strip()}
     run(
         args.base_url,
         args.password or None,
@@ -172,6 +195,8 @@ def main() -> None:
         args.assets,
         args.pause,
         session_cookie=args.session_cookie or None,
+        only_keys=only or None,
+        skip_import=args.skip_import,
     )
 
 

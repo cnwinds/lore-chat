@@ -12,8 +12,10 @@ def test_script_parses():
     assert load_script(SCRIPT)["conversations"]
 
 
-def test_script_has_six_conversations():
-    assert len(load_script(SCRIPT)["conversations"]) == 6
+def test_script_has_expected_conversations():
+    keys = [c["key"] for c in load_script(SCRIPT)["conversations"]]
+    assert "data-flow-svg" in keys
+    assert len(keys) == 7
 
 
 def test_script_keys_are_unique():
