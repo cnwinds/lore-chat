@@ -125,6 +125,12 @@ cp .env.docker.example .env
 
 生产式本地构建（无热重载）：`./lorechat.sh start --chat` 或 `--work`。
 
+## 公开演示模式
+
+设置 `DEMO_MODE=1` 后，实例会对匿名访客开放只读体验：可以浏览知识库、预置会话与记忆面板，可以提问（对话不保存），但所有写操作在 HTTP 与 Agent 工具两层都被拒绝。管理员仍可用密码登录取得完整权限。
+
+演示内容的生产与固化见 [`demo/README.md`](demo/README.md)。
+
 ## 更多
 
 | | |
