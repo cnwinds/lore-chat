@@ -144,3 +144,10 @@ def build_system_prompt(
             "</user_memory>"
         )
     return prefix + SYSTEM_PROMPT + memory_block + _current_date_context() + suffix
+
+
+DEMO_ENVIRONMENT_CONTRACT = (
+    "[运行环境] 当前是公开演示环境。知识库与长期记忆为只读；"
+    "写类工具只产出预览，不会真正落盘；本次对话不会被保存。"
+    "正常按用户意图使用工具，并如实说明预览与真实写入的区别。"
+)

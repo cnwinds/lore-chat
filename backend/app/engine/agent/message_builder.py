@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import PurePosixPath
 
-from app.engine.agent.prompts import build_system_prompt
+from app.engine.agent.prompts import DEMO_ENVIRONMENT_CONTRACT, build_system_prompt
 from app.engine.knowledge_writer import is_markdown_path
 from app.storage.kb_text_files import is_kb_text_file
 
@@ -36,6 +36,7 @@ def build_agent_messages(
     primary_doc_path: str | None,
     extra_system_messages: list[dict] | None = None,
     attachments: list[str] | None = None,
+    demo_mode: bool = False,
 ) -> list[dict]:
     messages: list[dict] = [
         {
@@ -45,6 +46,8 @@ def build_agent_messages(
             ),
         },
     ]
+    if demo_mode:
+        messages.append({"role": "system", "content": DEMO_ENVIRONMENT_CONTRACT})
     paths = list(active_doc_paths or [])
     primary = primary_doc_path or active_doc_path
     if active_doc_path and active_doc_path not in paths:

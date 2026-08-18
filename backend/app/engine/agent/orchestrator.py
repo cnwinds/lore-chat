@@ -92,6 +92,7 @@ class AgentOrchestrator:
             primary_doc_path=primary_doc_path,
             extra_system_messages=skill_msgs or None,
             attachments=attachments,
+            demo_mode=bool(getattr(self.settings, "demo_mode", False)),
         )
         tools_for_run = select_tools(
             mode,
