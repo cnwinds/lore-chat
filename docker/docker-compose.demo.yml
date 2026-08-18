@@ -1,0 +1,14 @@
+# 演示站叠加层：docker compose -f docker-compose.yml -f docker-compose.demo.yml up -d
+#
+# backend 镜像的构建上下文是 ../backend，镜像里不含 demo/ 与 docker/；
+# 这里用只读挂载把内容与 entrypoint 送进容器，避免为演示站改动基础镜像。
+services:
+  backend:
+    environment:
+      DEMO_MODE: "1"
+    volumes:
+      - ./data/knowledge:/data/knowledge
+      - ./data/backups:/data/backups
+      - ../demo:/app/demo:ro
+      - ./demo-entrypoint.sh:/app/docker/demo-entrypoint.sh:ro
+    entrypoint: ["/bin/sh", "/app/docker/demo-entrypoint.sh"]
