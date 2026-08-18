@@ -66,6 +66,8 @@ def get_settings(request: Request) -> dict[str, Any]:
         data["image_cooldown"] = container.image_cooldown.public_status()
     else:
         data["image_cooldown"] = {}
+    if getattr(request.state, "identity", None) == IDENTITY_GUEST:
+        data = redact_secrets_for_guest(data)
     return data
 
 

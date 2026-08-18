@@ -81,3 +81,10 @@ def test_admin_is_not_restricted(demo_app):
         client.cookies.set("lorechat_session", sid)
         r = client.put("/api/doc", json={"path": "技术/x.md", "text": "hi"})
         assert r.status_code != 403
+
+
+def test_guest_settings_leak_no_key_fragment(demo_app, guest):
+    demo_app.state.settings_store.get().openai_api_key = "sk-live-abcdefgh1234"
+    body = guest.get("/api/admin/settings").json()
+    assert body["openai_api_key"] == "***"
+    assert "1234" not in str(body)
