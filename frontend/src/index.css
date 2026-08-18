@@ -7197,3 +7197,43 @@ button.source-link--inline.conversation-md-link {
   opacity: 0.6;
   cursor: wait;
 }
+
+.demo-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 8px 16px;
+  background: var(--accent);
+  color: var(--text-on-accent);
+  font-size: var(--text-sm);
+}
+
+.demo-banner a {
+  color: inherit;
+  text-decoration: underline;
+  font-weight: 600;
+}
+
+.app-shell:has(.demo-banner) {
+  padding-top: 36px;
+}
+
+.demo-toast {
+  position: fixed;
+  top: 56px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1300;
+  padding: 10px 16px;
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-md, 0 8px 24px rgba(0, 0, 0, 0.18));
+  font-size: var(--text-sm);
+}

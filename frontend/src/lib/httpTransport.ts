@@ -26,6 +26,18 @@ function raiseUnauthorized(status: number): void {
   }
 }
 
+export function isDemoReadOnlyError(body: unknown): boolean {
+  if (!body || typeof body !== "object") return false;
+  const record = body as Record<string, unknown>;
+  if (record.code === "demo_read_only") return true;
+  const detail = record.detail;
+  return (
+    !!detail &&
+    typeof detail === "object" &&
+    (detail as Record<string, unknown>).code === "demo_read_only"
+  );
+}
+
 export async function openJson<T>(path: string, init?: RequestInit): Promise<T> {
   const r = await fetch(`${BASE}${path}`, {
     credentials: "include",
@@ -34,13 +46,15 @@ export async function openJson<T>(path: string, init?: RequestInit): Promise<T> 
   if (!r.ok) {
     let detail = r.statusText;
     let pathExists: PathExistsDetail | undefined;
+    let parsedBody: unknown;
     try {
-      const body = await r.json();
+      parsedBody = await r.json();
+      const body = parsedBody as Record<string, unknown>;
       if (
         r.status === 409 &&
         body.detail &&
         typeof body.detail === "object" &&
-        body.detail.code === "PATH_EXISTS"
+        (body.detail as PathExistsDetail).code === "PATH_EXISTS"
       ) {
         pathExists = body.detail as PathExistsDetail;
         detail = pathExists.message;
@@ -58,6 +72,9 @@ export async function openJson<T>(path: string, init?: RequestInit): Promise<T> 
       } catch {
         /* ignore */
       }
+    }
+    if (r.status === 403 && isDemoReadOnlyError(parsedBody)) {
+      window.dispatchEvent(new CustomEvent("demo:read-only"));
     }
     const err = new Error(detail || `请求失败 (${r.status})`) as ApiError;
     err.status = r.status;

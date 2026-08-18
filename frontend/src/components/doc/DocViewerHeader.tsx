@@ -18,6 +18,7 @@ import {
   WidthNarrowIcon,
 } from "../DocToolbarIcons";
 import { type OutlineItem } from "../../utils/docOutline";
+import { useDemoCapability } from "../../hooks/useDemoCapability";
 
 type Props = {
   mode: DocMode;
@@ -84,13 +85,15 @@ export function DocViewerHeader({
   onOpenConversation,
   onMergeEditingToggle,
 }: Props) {
+  const { canWrite } = useDemoCapability();
+  const locked = readOnly || !canWrite;
   const conversationId =
     typeof doc?.meta?.conversation_id === "string"
       ? doc.meta.conversation_id
       : null;
 
   const overflowItems: OverflowItem[] = [
-    ...(dirty && !readOnly
+    ...(dirty && !locked
       ? [
           {
             id: "view-diff",
@@ -100,7 +103,7 @@ export function DocViewerHeader({
           },
         ]
       : []),
-    ...(mergeReview
+    ...(mergeReview && canWrite
       ? [
           {
             id: "merge-edit",
@@ -125,7 +128,7 @@ export function DocViewerHeader({
 
   const showLayoutActions = mode === "float" || mode === "panel";
   const canSave =
-    !readOnly &&
+    !locked &&
     (mergeReview && mergeEditing ? !saving && !loading : dirty && !saving && !loading);
 
   return (
@@ -178,7 +181,7 @@ export function DocViewerHeader({
             <MarkdownIcon />
           </DocIconBtn>
         </div>
-        {!readOnly && (
+        {!locked && (
           <>
             {dirty && (
               <DocIconBtn

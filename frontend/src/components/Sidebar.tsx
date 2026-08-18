@@ -21,6 +21,7 @@ import { useDismissOnOutsideClick } from "../hooks/useDismissOnOutsideClick";
 import { useKbTreeViewportUi } from "../hooks/useKbTreeViewportUi";
 import { isProtectedKbPath, SKILLS_DIR } from "../utils/fileTree";
 import { SettingsAttentionDot } from "./settings/SettingsAttentionDot";
+import { useDemoCapability } from "../hooks/useDemoCapability";
 
 /** 与 portal style / CSS 共用：知识库 tip 最大高度上限（px） */
 const KB_HINT_POPOVER_MAX_PX = 420;
@@ -71,6 +72,7 @@ export function Sidebar({
   onKbPathsDeleted,
   onDocsChange,
 }: Props) {
+  const { canWrite } = useDemoCapability();
   const [docs, setDocs] = useState<string[]>([]);
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [kbHintOpen, setKbHintOpen] = useState(false);
@@ -271,14 +273,16 @@ export function Sidebar({
                             {c.message_count > 0 ? ` · ${c.message_count} 条` : ""}
                           </span>
                         </button>
-                        <button
-                          type="button"
-                          className="conversation-delete"
-                          title="删除对话"
-                          onClick={(e) => handleDeleteConversation(e, c.id)}
-                        >
-                          ×
-                        </button>
+                        {canWrite && (
+                          <button
+                            type="button"
+                            className="conversation-delete"
+                            title="删除对话"
+                            onClick={(e) => handleDeleteConversation(e, c.id)}
+                          >
+                            ×
+                          </button>
+                        )}
                       </div>
                     );
                   })}
@@ -289,10 +293,11 @@ export function Sidebar({
 
           <section
             className="sidebar-section sidebar-tree-section"
-            onDragEnter={tree.onKbSectionDragEnter}
-            onDragLeave={tree.onKbSectionDragLeave}
-            onDragOver={tree.onRootDragOver}
-            onDrop={tree.onRootDrop}
+            data-demo-anchor="kb-tree"
+            onDragEnter={canWrite ? tree.onKbSectionDragEnter : undefined}
+            onDragLeave={canWrite ? tree.onKbSectionDragLeave : undefined}
+            onDragOver={canWrite ? tree.onRootDragOver : undefined}
+            onDrop={canWrite ? tree.onRootDrop : undefined}
           >
             <div className="sidebar-section-head">
               <div className="sidebar-section-title" ref={kbHintRef}>
@@ -389,16 +394,28 @@ export function Sidebar({
                   expanded={viewport.expanded}
                   onToggleFolder={viewport.toggleFolder}
                   memoryAttention={memoryAttention}
-                  {...tree.fileTreeProps}
+                  {...(canWrite
+                    ? tree.fileTreeProps
+                    : {
+                        ...tree.fileTreeProps,
+                        onDropFiles: () => undefined,
+                        onMovePath: () => undefined,
+                        onContextMenu: () => undefined,
+                        onStartRename: () => undefined,
+                        onInternalDragStart: () => undefined,
+                        disabled: true,
+                      })}
                 />
               </div>
-              <KbFloatingRootDrop
-                visible={tree.showFloatingRoot}
-                active={tree.floatingRootActive}
-                uploadMode={tree.floatingRootUploadMode}
-                onDragOver={tree.onFloatingRootDragOver}
-                onDrop={tree.onFloatingRootDrop}
-              />
+              {canWrite && (
+                <KbFloatingRootDrop
+                  visible={tree.showFloatingRoot}
+                  active={tree.floatingRootActive}
+                  uploadMode={tree.floatingRootUploadMode}
+                  onDragOver={tree.onFloatingRootDragOver}
+                  onDrop={tree.onFloatingRootDrop}
+                />
+              )}
             </div>
           </section>
 

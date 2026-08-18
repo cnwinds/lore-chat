@@ -19,6 +19,7 @@ import {
   XIcon,
 } from "../DocToolbarIcons";
 import { SettingsAttentionDot } from "../settings/SettingsAttentionDot";
+import { useDemoCapability } from "../../hooks/useDemoCapability";
 
 type Props = {
   docWidth?: DocWidth;
@@ -213,6 +214,7 @@ export function MemoryPanel({
   onOpenConversation,
   onAttentionChange,
 }: Props) {
+  const { canWrite } = useDemoCapability();
   const [facts, setFacts] = useState<MemoryFact[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -364,7 +366,7 @@ export function MemoryPanel({
                     )}
                   </div>
                   <div className="memory-fact-actions">
-                    {editing ? (
+                    {canWrite && editing ? (
                       <>
                         <DocIconBtn
                           label="保存"
@@ -385,7 +387,8 @@ export function MemoryPanel({
                           <XIcon />
                         </DocIconBtn>
                       </>
-                    ) : (
+                    ) : null}
+                    {canWrite && !editing ? (
                       <MemoryFactMenu
                         disabled={busy}
                         actions={buildActions(
@@ -407,7 +410,7 @@ export function MemoryPanel({
                           },
                         )}
                       />
-                    )}
+                    ) : null}
                   </div>
                 </li>
               );

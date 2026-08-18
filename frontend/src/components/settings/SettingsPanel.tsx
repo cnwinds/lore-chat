@@ -39,6 +39,7 @@ import {
   mergeSettingsAttention,
 } from "./settingsAttention";
 import type { SettingsAttention } from "../../api";
+import { useDemoCapability } from "../../hooks/useDemoCapability";
 
 const SEARCH_PROVIDER_IDS = new Set(
   SEARCH_PROVIDER_OPTIONS.map((o) => o.id),
@@ -207,6 +208,7 @@ export function SettingsPanel({
   onAttentionChange,
   onLiveAttentionChange,
 }: Props) {
+  const { canWrite } = useDemoCapability();
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
@@ -272,7 +274,7 @@ export function SettingsPanel({
       } else {
         const auto = clientAccessOrigin();
         setPublicBaseUrl(auto);
-        if (auto) {
+        if (auto && canWrite) {
           try {
             await putSettings({ public_base_url: auto });
             setSaveMsg("已根据当前访问地址自动填写并保存 Public Base URL");
@@ -330,7 +332,7 @@ export function SettingsPanel({
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [canWrite]);
 
   useEffect(() => {
     if (open) {
@@ -653,52 +655,75 @@ export function SettingsPanel({
                       embedModels={embedModels}
                       onEmbedModelsChange={setEmbedModels}
                       cooldown={cooldown}
-                      onClearCooldown={async (candidateId) => {
-                        try {
-                          const res = await clearModelCooldown({ candidate_id: candidateId });
-                          if (res.model_cooldown && typeof res.model_cooldown === "object") {
-                            setCooldown(res.model_cooldown as CooldownStatus);
-                          }
-                        } catch (err) {
-                          setError(err instanceof Error ? err.message : "清除冷却失败");
-                        }
-                      }}
+                      onClearCooldown={
+                        canWrite
+                          ? async (candidateId) => {
+                              try {
+                                const res = await clearModelCooldown({
+                                  candidate_id: candidateId,
+                                });
+                                if (
+                                  res.model_cooldown &&
+                                  typeof res.model_cooldown === "object"
+                                ) {
+                                  setCooldown(res.model_cooldown as CooldownStatus);
+                                }
+                              } catch (err) {
+                                setError(
+                                  err instanceof Error ? err.message : "清除冷却失败",
+                                );
+                              }
+                            }
+                          : () => undefined
+                      }
                       searchProviders={searchProviders}
                       onSearchProvidersChange={setSearchProviders}
                       searchCooldown={searchCooldown}
-                      onClearSearchCooldown={async (candidateId) => {
-                        try {
-                          const res = await clearSearchCooldown({
-                            provider_id: candidateId,
-                          });
-                          if (
-                            res.search_cooldown &&
-                            typeof res.search_cooldown === "object"
-                          ) {
-                            setSearchCooldown(res.search_cooldown as CooldownStatus);
-                          }
-                        } catch (err) {
-                          setError(err instanceof Error ? err.message : "清除冷却失败");
-                        }
-                      }}
+                      onClearSearchCooldown={
+                        canWrite
+                          ? async (candidateId) => {
+                              try {
+                                const res = await clearSearchCooldown({
+                                  provider_id: candidateId,
+                                });
+                                if (
+                                  res.search_cooldown &&
+                                  typeof res.search_cooldown === "object"
+                                ) {
+                                  setSearchCooldown(res.search_cooldown as CooldownStatus);
+                                }
+                              } catch (err) {
+                                setError(
+                                  err instanceof Error ? err.message : "清除冷却失败",
+                                );
+                              }
+                            }
+                          : () => undefined
+                      }
                       imageProviders={imageProviders}
                       onImageProvidersChange={setImageProviders}
                       imageCooldown={imageCooldown}
-                      onClearImageCooldown={async (candidateId) => {
-                        try {
-                          const res = await clearImageCooldown({
-                            provider_id: candidateId,
-                          });
-                          if (
-                            res.image_cooldown &&
-                            typeof res.image_cooldown === "object"
-                          ) {
-                            setImageCooldown(res.image_cooldown as CooldownStatus);
-                          }
-                        } catch (err) {
-                          setError(err instanceof Error ? err.message : "清除冷却失败");
-                        }
-                      }}
+                      onClearImageCooldown={
+                        canWrite
+                          ? async (candidateId) => {
+                              try {
+                                const res = await clearImageCooldown({
+                                  provider_id: candidateId,
+                                });
+                                if (
+                                  res.image_cooldown &&
+                                  typeof res.image_cooldown === "object"
+                                ) {
+                                  setImageCooldown(res.image_cooldown as CooldownStatus);
+                                }
+                              } catch (err) {
+                                setError(
+                                  err instanceof Error ? err.message : "清除冷却失败",
+                                );
+                              }
+                            }
+                          : () => undefined
+                      }
                       saving={saving}
                     />
                   </div>
@@ -754,25 +779,39 @@ export function SettingsPanel({
                     id="settings-panel-kb"
                     aria-labelledby="settings-tab-kb"
                   >
-                    <KbBackupSettingsTab
-                      kbPath={kbPath}
-                      backupError={backupError}
-                      backupMsg={backupMsg}
-                      backupBusy={backupBusy}
-                      saving={saving}
-                      importFile={importFile}
-                      importFileRef={importFileRef}
-                      importMode={importMode}
-                      onImportFileChange={setImportFile}
-                      onImportModeChange={setImportMode}
-                      onExport={() => void handleExport()}
-                      onImport={() => void handleImport()}
-                      onReindex={() => void handleReindex()}
-                    />
+                    {canWrite ? (
+                      <KbBackupSettingsTab
+                        kbPath={kbPath}
+                        backupError={backupError}
+                        backupMsg={backupMsg}
+                        backupBusy={backupBusy}
+                        saving={saving}
+                        importFile={importFile}
+                        importFileRef={importFileRef}
+                        importMode={importMode}
+                        onImportFileChange={setImportFile}
+                        onImportModeChange={setImportMode}
+                        onExport={() => void handleExport()}
+                        onImport={() => void handleImport()}
+                        onReindex={() => void handleReindex()}
+                      />
+                    ) : (
+                      <div className="settings-group">
+                        <h3 className="settings-group-title">存储位置</h3>
+                        <label className="settings-field">
+                          <span>知识库路径（只读）</span>
+                          <input value={kbPath} readOnly className="settings-readonly" />
+                        </label>
+                        <p className="settings-group-hint">
+                          演示环境为只读，不可导入导出或重建索引。
+                        </p>
+                      </div>
+                    )}
                   </div>
                 ) : null}
 
-                {activeTab === "model" || activeTab === "search" || activeTab === "agent" ? (
+                {canWrite &&
+                (activeTab === "model" || activeTab === "search" || activeTab === "agent") ? (
                   <footer className="settings-form-footer">
                     <button type="submit" className="settings-btn settings-btn--primary" disabled={saving}>
                       {saving ? "保存中…" : "保存设置"}
@@ -788,7 +827,7 @@ export function SettingsPanel({
                 />
               ) : null}
 
-              {activeTab === "account" ? (
+              {activeTab === "account" && canWrite ? (
                 <div
                   className="settings-tab-panel"
                   role="tabpanel"
