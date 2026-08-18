@@ -68,7 +68,7 @@ def test_resolve_api_key_prefers_body_then_candidate():
 
 
 def test_list_provider_models_from_remote(monkeypatch):
-    def fake_fetch(*, base_url, api_key, timeout_sec=8.0):
+    def fake_fetch(*, base_url, api_key, timeout_sec=8.0, kind=None):
         assert base_url.endswith("/v1") or "example.com" in base_url
         return [
             "deepseek-v4-pro",
@@ -130,7 +130,11 @@ def test_is_embedding_heuristic_covers_bailian_style():
     assert is_image_gen_model("dall-e-3")
     assert is_image_gen_model("wan2.6-t2i")
     assert is_image_gen_model("agnes-image-2.1-flash")
+    assert is_image_gen_model("bytedance-seed/seedream-4.5")
+    assert is_image_gen_model("google/gemini-2.5-flash-image")
+    assert is_embedding_model("openai/text-embedding-3-small")
     assert not is_image_gen_model("gpt-4o")
+    assert not is_image_gen_model("openai/gpt-4o")
     assert not is_image_gen_model("text-embedding-v3")
 
 
@@ -139,7 +143,7 @@ def test_list_provider_models_image_fallback_when_remote_empty(monkeypatch):
 
     reload_supplement_for_tests()
 
-    def fake_fetch(*, base_url, api_key, timeout_sec=8.0):
+    def fake_fetch(*, base_url, api_key, timeout_sec=8.0, kind=None):
         return ["gpt-4o", "qwen-plus"]
 
     monkeypatch.setattr(
@@ -155,11 +159,12 @@ def test_list_provider_models_image_fallback_when_remote_empty(monkeypatch):
     ids = [i["id"] for i in out["items"]]
     assert "dall-e-3" in ids
     assert "cogview-4" in ids
+    assert "bytedance-seed/seedream-4.5" in ids
     assert "gpt-4o" not in ids
 
 
 def test_list_provider_models_fallback_on_error(monkeypatch):
-    def boom(*, base_url, api_key, timeout_sec=8.0):
+    def boom(*, base_url, api_key, timeout_sec=8.0, kind=None):
         raise httpx.ConnectError("nope")
 
     monkeypatch.setattr("app.models.provider_models.fetch_remote_model_ids", boom)
@@ -192,3 +197,55 @@ def test_settings_have_llm_ignores_global_openai_only(tmp_path):
     s = base
     # 若链上无 key，即使有全局 openai 也不算已配置
     assert settings_have_llm_api_key(s) is False
+
+
+def test_provider_extra_headers_openrouter_only():
+    from app.models.provider_http import provider_extra_headers
+
+    h = provider_extra_headers("https://openrouter.ai/api/v1")
+    assert h["HTTP-Referer"]
+    assert h["X-Title"] == "Lore Chat"
+    assert provider_extra_headers("https://api.openai.com/v1") == {}
+
+
+def test_fetch_openrouter_image_models_prefers_images_catalog(monkeypatch):
+    from app.models.provider_models import fetch_remote_model_ids
+
+    calls: list[str] = []
+
+    class FakeResp:
+        def __init__(self, payload):
+            self._payload = payload
+            self.status_code = 200
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return self._payload
+
+    class FakeClient:
+        def __init__(self, *a, **k):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def get(self, url, headers=None):
+            calls.append(url)
+            if url.endswith("/images/models"):
+                return FakeResp({"data": [{"id": "bytedance-seed/seedream-4.5"}]})
+            return FakeResp({"data": [{"id": "openai/gpt-4o"}]})
+
+    monkeypatch.setattr(httpx, "Client", FakeClient)
+    ids = fetch_remote_model_ids(
+        base_url="https://openrouter.ai/api/v1",
+        api_key="sk-or",
+        kind="image",
+    )
+    assert ids == ["bytedance-seed/seedream-4.5"]
+    assert any(u.endswith("/images/models") for u in calls)
+    assert not any(u.endswith("/models") and not u.endswith("/images/models") for u in calls)

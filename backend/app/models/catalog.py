@@ -14,6 +14,7 @@ from typing import Any, Literal
 
 from app.models.candidate import ImageWire, ThinkingProtocol
 from app.models.effort import Effort, coerce_to_options, pick_default_effort, supported_efforts
+from app.models.model_id import model_id_has_prefix, normalize_model_id
 from app.models.models_dev import (
     CatalogHit,
     ModelsDevStore,
@@ -88,7 +89,7 @@ def reload_supplement_for_tests() -> None:
 
 
 def _normalize_model_id(model: str) -> str:
-    return (model or "").strip().lower()
+    return normalize_model_id(model)
 
 
 def _from_hit(hit: CatalogHit, *, source: str) -> ModelCapabilities:
@@ -116,7 +117,7 @@ def _prefix_caps(model: str, base_url: str | None) -> ModelCapabilities | None:
     mid = _normalize_model_id(model)
     protocol = infer_thinking_protocol(mid, base_url)
     wire = infer_image_wire(mid, protocol)
-    if mid.startswith("agnes-") or "agnes-ai.com" in (base_url or "").lower():
+    if model_id_has_prefix(mid, "agnes-") or "agnes-ai.com" in (base_url or "").lower():
         return _with_efforts(
             model=mid,
             image=True,
@@ -125,7 +126,7 @@ def _prefix_caps(model: str, base_url: str | None) -> ModelCapabilities | None:
             thinking_protocol=protocol,
             source="prefix",
         )
-    if mid.startswith("deepseek-"):
+    if model_id_has_prefix(mid, "deepseek-"):
         return _with_efforts(
             model=mid,
             image=False,
@@ -134,7 +135,7 @@ def _prefix_caps(model: str, base_url: str | None) -> ModelCapabilities | None:
             thinking_protocol=protocol,
             source="prefix",
         )
-    if mid.startswith("qwen"):
+    if model_id_has_prefix(mid, "qwen"):
         return _with_efforts(
             model=mid,
             image=True,
@@ -143,7 +144,7 @@ def _prefix_caps(model: str, base_url: str | None) -> ModelCapabilities | None:
             thinking_protocol=protocol,
             source="prefix",
         )
-    if mid.startswith("glm"):
+    if model_id_has_prefix(mid, "glm"):
         return _with_efforts(
             model=mid,
             image=False,
@@ -152,7 +153,7 @@ def _prefix_caps(model: str, base_url: str | None) -> ModelCapabilities | None:
             thinking_protocol=protocol,
             source="prefix",
         )
-    if mid.startswith(("o1", "o3", "o4")) or mid.startswith("gpt-5"):
+    if model_id_has_prefix(mid, "o1", "o3", "o4", "gpt-5"):
         return _with_efforts(
             model=mid,
             image=True,
@@ -380,7 +381,7 @@ def enrich_candidate_dict(item: dict[str, Any]) -> dict[str, Any]:
     elif thinking_on:
         # Agnes 等协议本来就无档位；其余用启发补全
         proto = caps.thinking_protocol
-        if proto == "agnes" or _normalize_model_id(model).startswith("agnes-"):
+        if proto == "agnes" or model_id_has_prefix(model, "agnes-"):
             out["effort_options"] = []
         else:
             out["effort_options"] = list(

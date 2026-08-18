@@ -5,7 +5,7 @@ import {
 } from "./ImageProviderEditor";
 
 describe("imageModelsListBaseUrl", () => {
-  it("keeps openai/zhipu/agnes roots", () => {
+  it("keeps openai/zhipu/agnes/openrouter roots", () => {
     expect(imageModelsListBaseUrl("openai", "")).toBe(
       IMAGE_PROVIDER_DEFAULT_BASE_URL.openai,
     );
@@ -14,6 +14,9 @@ describe("imageModelsListBaseUrl", () => {
     ).toBe("https://open.bigmodel.cn/api/paas/v4");
     expect(imageModelsListBaseUrl("agnes", "")).toBe(
       IMAGE_PROVIDER_DEFAULT_BASE_URL.agnes,
+    );
+    expect(imageModelsListBaseUrl("openrouter", "")).toBe(
+      IMAGE_PROVIDER_DEFAULT_BASE_URL.openrouter,
     );
   });
 

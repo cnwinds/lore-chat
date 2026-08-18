@@ -59,6 +59,9 @@ describe("inferProviderFromBaseUrl", () => {
   it("matches known preset URLs", () => {
     expect(inferProviderFromBaseUrl("https://api.deepseek.com")).toBe("deepseek");
     expect(inferProviderFromBaseUrl("https://api.deepseek.com/")).toBe("deepseek");
+    expect(inferProviderFromBaseUrl("https://openrouter.ai/api/v1")).toBe(
+      "openrouter",
+    );
   });
 
   it("falls back to custom", () => {
@@ -70,6 +73,7 @@ describe("inferProviderFromBaseUrl", () => {
 describe("llmProviderLabel", () => {
   it("returns vendor label for title", () => {
     expect(llmProviderLabel("bailian")).toBe("百炼 / 通义");
+    expect(llmProviderLabel("openrouter")).toBe("OpenRouter");
     expect(llmProviderLabel("custom")).toBe("自定义");
   });
 });
@@ -78,6 +82,9 @@ describe("inferEmbedProviderFromBaseUrl", () => {
   it("matches siliconflow and bailian", () => {
     expect(inferEmbedProviderFromBaseUrl("https://api.siliconflow.cn/v1")).toBe(
       "siliconflow",
+    );
+    expect(inferEmbedProviderFromBaseUrl("https://openrouter.ai/api/v1")).toBe(
+      "openrouter",
     );
     expect(
       inferEmbedProviderFromBaseUrl(
@@ -90,6 +97,7 @@ describe("inferEmbedProviderFromBaseUrl", () => {
 describe("embedProviderLabel", () => {
   it("returns Chinese labels", () => {
     expect(embedProviderLabel("siliconflow")).toBe("硅基流动");
+    expect(embedProviderLabel("openrouter")).toBe("OpenRouter");
     expect(embedProviderLabel("bailian")).toBe("百炼");
   });
 });
@@ -106,6 +114,22 @@ describe("inferCapsFromModel", () => {
       "low",
       "medium",
       "high",
+    ]);
+  });
+
+  it("reads OpenRouter-style vendor/model ids", () => {
+    expect(inferCapsFromModel("deepseek/deepseek-v4-pro").thinking_protocol).toBe(
+      "deepseek",
+    );
+    expect(inferCapsFromModel("openai/gpt-5.2").thinking_protocol).toBe(
+      "openai_kwargs",
+    );
+    expect(supportedEfforts("openai/gpt-5.2")).toEqual([
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
     ]);
   });
 });

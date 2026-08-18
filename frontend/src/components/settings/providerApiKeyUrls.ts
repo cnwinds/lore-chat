@@ -8,6 +8,7 @@ export const PROVIDER_API_KEY_URLS: Record<string, string> = {
   bailian: "https://bailian.console.aliyun.com/?tab=model#/api-key",
   deepseek: "https://platform.deepseek.com/api_keys",
   agnes: "https://platform.agnes-ai.com/",
+  openrouter: "https://openrouter.ai/settings/keys",
   siliconflow: "https://cloud.siliconflow.cn/account/ak",
   tavily: "https://app.tavily.com/home",
   serper: "https://serper.dev/api-key",

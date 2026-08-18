@@ -15,6 +15,7 @@ import httpx
 
 from app.models.candidate import ImageWire, ThinkingProtocol
 from app.models.effort import Effort, parse_reasoning_options, pick_default_effort
+from app.models.model_id import model_id_has_prefix
 
 
 @dataclass(frozen=True)
@@ -75,21 +76,19 @@ def _read_json_file(path: Path) -> Any:
 
 
 def infer_thinking_protocol(model_id: str, base_url: str | None = None) -> ThinkingProtocol:
-    mid = (model_id or "").strip().lower()
-    if mid.startswith("agnes-") or "agnes-ai.com" in (base_url or "").lower():
+    if model_id_has_prefix(model_id, "agnes-") or "agnes-ai.com" in (base_url or "").lower():
         return "agnes"
-    if mid.startswith("deepseek-"):
+    if model_id_has_prefix(model_id, "deepseek-"):
         return "deepseek"
-    if mid.startswith("qwen"):
+    if model_id_has_prefix(model_id, "qwen"):
         return "qwen"
-    if mid.startswith(("o1", "o3", "o4")) or mid.startswith("gpt-5"):
+    if model_id_has_prefix(model_id, "o1", "o3", "o4", "gpt-5"):
         return "openai_kwargs"
     return "none"
 
 
 def infer_image_wire(model_id: str, protocol: ThinkingProtocol) -> ImageWire:
-    mid = (model_id or "").strip().lower()
-    if protocol == "agnes" or mid.startswith("agnes-"):
+    if protocol == "agnes" or model_id_has_prefix(model_id, "agnes-"):
         return "url"
     return "data"
 

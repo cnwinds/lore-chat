@@ -24,6 +24,7 @@ from app.engine.imagegen.types import (
     ImageGenRequest,
 )
 from app.engine.progress import emit_progress
+from app.models.provider_http import provider_extra_headers
 
 _SAFETY_RE = re.compile(
     r"safety|content.?policy|content.?filter|违规|审核|敏感|blocked|moderation",
@@ -33,7 +34,13 @@ _SAFETY_RE = re.compile(
 
 def _kind_from_http(status: int | None, body_text: str) -> ImageGenErrorKind:
     lower = (body_text or "").lower()
-    if status == 401 or "invalid api key" in lower or "unauthorized" in lower:
+    if (
+        status == 401
+        or status == 402
+        or "invalid api key" in lower
+        or "unauthorized" in lower
+        or "insufficient credits" in lower
+    ):
         return ImageGenErrorKind.AUTH
     if status == 429 or "rate limit" in lower or "quota" in lower:
         return ImageGenErrorKind.RATE_LIMIT
@@ -89,6 +96,22 @@ def _parse_openai_like_data(data: dict) -> tuple[str | None, str | None]:
     )
 
 
+def _generated_from_b64(b64: str, media_type: str | None = None) -> GeneratedImage:
+    raw = b64
+    if "," in raw and raw.strip().lower().startswith("data:"):
+        raw = raw.split(",", 1)[1]
+    ctype = (media_type or "image/png").split(";")[0].strip() or "image/png"
+    ext = "png"
+    lower = ctype.lower()
+    if "jpeg" in lower or "jpg" in lower:
+        ext = "jpg"
+    elif "webp" in lower:
+        ext = "webp"
+    elif "svg" in lower:
+        ext = "svg"
+    return GeneratedImage(data=base64.b64decode(raw), content_type=ctype, extension=ext)
+
+
 class ImageGenBackend(Protocol):
     async def generate(self, request: ImageGenRequest) -> GeneratedImage: ...
 
@@ -136,7 +159,7 @@ async def _generate_openai_like(
                 msg = err if isinstance(err, str) else str(err)
                 raise ImageGenError(
                     f"{label}生图失败：{msg}",
-                    kind=_kind_from_http(None, msg),
+                    kind=_kind_from_http(resp.status_code, msg),
                 )
             img_url, b64 = _parse_openai_like_data(data)
             if b64:
@@ -228,14 +251,7 @@ class AgnesImagesBackend:
                     )
                 img_url, b64 = _parse_openai_like_data(data)
                 if b64:
-                    raw = b64
-                    if "," in raw and raw.strip().lower().startswith("data:"):
-                        raw = raw.split(",", 1)[1]
-                    return GeneratedImage(
-                        data=base64.b64decode(raw),
-                        content_type="image/png",
-                        extension="png",
-                    )
+                    return _generated_from_b64(b64)
                 if img_url:
                     return await _download_url(client, img_url)
         except ImageGenError:
@@ -249,6 +265,78 @@ class AgnesImagesBackend:
                 f"Agnes 生图网络错误：{e}", kind=ImageGenErrorKind.TRANSIENT
             ) from e
         raise ImageGenError("Agnes 生图响应无图片数据", kind=ImageGenErrorKind.UNKNOWN)
+
+
+def _openrouter_headers(entry: ImageGenProviderEntry) -> dict[str, str]:
+    headers = {
+        "Authorization": f"Bearer {entry.api_key}",
+        "Content-Type": "application/json",
+    }
+    headers.update(provider_extra_headers(entry.resolved_base_url()))
+    return headers
+
+
+class OpenRouterImagesBackend:
+    """OpenRouter 统一生图 API：POST {base}/images（非 OpenAI /images/generations）。
+
+    契约：aspect_ratio + n；响应 data[].b64_json（可带 media_type）。
+    """
+
+    def __init__(self, entry: ImageGenProviderEntry):
+        self._entry = entry
+
+    async def generate(self, request: ImageGenRequest) -> GeneratedImage:
+        url = f"{self._entry.resolved_base_url()}/images"
+        payload: dict = {
+            "model": self._entry.resolved_model(),
+            "prompt": request.prompt,
+            "n": 1,
+            "aspect_ratio": request.aspect_ratio,
+            "output_format": "png",
+        }
+        headers = _openrouter_headers(self._entry)
+        emit_progress("OpenRouter 生图中…")
+        try:
+            async with httpx.AsyncClient(timeout=180.0) as client:
+                resp = await client.post(url, headers=headers, json=payload)
+                if resp.status_code >= 400:
+                    _raise_http(resp)
+                data = resp.json()
+                if not isinstance(data, dict):
+                    raise ImageGenError(
+                        "OpenRouter 响应非 JSON 对象", kind=ImageGenErrorKind.UNKNOWN
+                    )
+                if data.get("error"):
+                    err = data["error"]
+                    msg = err if isinstance(err, str) else str(err)
+                    raise ImageGenError(
+                        f"OpenRouter 生图失败：{msg}",
+                        kind=_kind_from_http(resp.status_code, msg),
+                    )
+                img_url, b64 = _parse_openai_like_data(data)
+                media_type = None
+                items = data.get("data")
+                if isinstance(items, list) and items and isinstance(items[0], dict):
+                    mt = items[0].get("media_type")
+                    if mt:
+                        media_type = str(mt)
+                if b64:
+                    return _generated_from_b64(b64, media_type)
+                if img_url:
+                    return await _download_url(client, img_url)
+        except ImageGenError:
+            raise
+        except httpx.TimeoutException as e:
+            raise ImageGenError(
+                f"OpenRouter 生图超时：{e}", kind=ImageGenErrorKind.TRANSIENT
+            ) from e
+        except httpx.HTTPError as e:
+            raise ImageGenError(
+                f"OpenRouter 生图网络错误：{e}", kind=ImageGenErrorKind.TRANSIENT
+            ) from e
+        raise ImageGenError(
+            "OpenRouter 生图响应无图片数据", kind=ImageGenErrorKind.UNKNOWN
+        )
 
 
 def _bailian_uses_multimodal(model: str) -> bool:
@@ -482,6 +570,7 @@ _PROVIDER_CLS: dict[str, type] = {
     "zhipu": ZhipuImagesBackend,
     "bailian": BailianImagesBackend,
     "agnes": AgnesImagesBackend,
+    "openrouter": OpenRouterImagesBackend,
     # 自定义：OpenAI 兼容 /images/generations
     "custom": OpenAIImagesBackend,
 }

@@ -281,5 +281,53 @@
         "thinking_protocol": "openai_kwargs"
       }
     }
+  },
+  "openrouter": {
+    "models": {
+      "openai/text-embedding-3-small": {
+        "id": "openai/text-embedding-3-small",
+        "name": "OpenAI Text Embedding 3 Small",
+        "attachment": false,
+        "reasoning": false,
+        "reasoning_options": [],
+        "modalities": { "input": ["text"], "output": ["embedding"] }
+      },
+      "qwen/qwen3-embedding-8b": {
+        "id": "qwen/qwen3-embedding-8b",
+        "name": "Qwen3 Embedding 8B",
+        "attachment": false,
+        "reasoning": false,
+        "reasoning_options": [],
+        "modalities": { "input": ["text"], "output": ["embedding"] }
+      }
+    }
+  },
+  "openrouter-images": {
+    "models": {
+      "bytedance-seed/seedream-4.5": {
+        "id": "bytedance-seed/seedream-4.5",
+        "name": "Seedream 4.5",
+        "attachment": false,
+        "reasoning": false,
+        "reasoning_options": [],
+        "modalities": { "input": ["text"], "output": ["image"] }
+      },
+      "google/gemini-2.5-flash-image": {
+        "id": "google/gemini-2.5-flash-image",
+        "name": "Gemini 2.5 Flash Image",
+        "attachment": false,
+        "reasoning": false,
+        "reasoning_options": [],
+        "modalities": { "input": ["text"], "output": ["image"] }
+      },
+      "black-forest-labs/flux.2-pro": {
+        "id": "black-forest-labs/flux.2-pro",
+        "name": "FLUX.2 Pro",
+        "attachment": false,
+        "reasoning": false,
+        "reasoning_options": [],
+        "modalities": { "input": ["text"], "output": ["image"] }
+      }
+    }
   }
 }

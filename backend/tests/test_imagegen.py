@@ -7,7 +7,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.config import Settings
-from app.engine.imagegen.backends import AgnesImagesBackend, BailianImagesBackend, OpenAIImagesBackend, _kind_from_http
+from app.engine.imagegen.backends import (
+    AgnesImagesBackend,
+    BailianImagesBackend,
+    OpenAIImagesBackend,
+    OpenRouterImagesBackend,
+    _kind_from_http,
+)
 from app.engine.imagegen.providers import (
     DuplicateImageProviderError,
     ImageGenProviderEntry,
@@ -22,6 +28,7 @@ from app.engine.imagegen.types import (
     ImageGenError,
     ImageGenErrorKind,
     ImageGenRequest,
+    FAILOVER_KINDS,
 )
 from app.engine.kb_markdown_images import sanitize_markdown_image_srcs_for_storage
 from app.engine.knowledge_writer import KnowledgeWriter
@@ -86,6 +93,9 @@ def test_kind_from_http_safety_and_auth():
     assert _kind_from_http(401, "invalid api key") == ImageGenErrorKind.AUTH
     assert _kind_from_http(400, "content_policy_violation") == ImageGenErrorKind.SAFETY
     assert _kind_from_http(429, "rate limit") == ImageGenErrorKind.RATE_LIMIT
+    assert _kind_from_http(402, "Insufficient credits") == ImageGenErrorKind.AUTH
+    assert _kind_from_http(None, "insufficient credits") == ImageGenErrorKind.AUTH
+    assert ImageGenErrorKind.AUTH not in FAILOVER_KINDS
     assert _kind_from_http(503, "busy") == ImageGenErrorKind.TRANSIENT
 
 
@@ -533,3 +543,79 @@ async def test_agnes_images_backend_uses_extra_body_and_return_base64(monkeypatc
     assert body["return_base64"] is True
     assert "response_format" not in body  # 不可顶层
     assert "extra_body" not in body  # 文生图 Base64 无需 extra_body
+
+
+def test_openrouter_defaults_and_parse():
+    entries = parse_image_providers(
+        [{"provider": "openrouter", "api_key": "sk-or-test"}]
+    )
+    assert len(entries) == 1
+    e = entries[0]
+    assert e.provider == "openrouter"
+    assert e.resolved_model() == "bytedance-seed/seedream-4.5"
+    assert e.resolved_base_url() == "https://openrouter.ai/api/v1"
+    assert (
+        normalize_image_base_url(
+            "openrouter", "https://openrouter.ai/api/v1/images"
+        )
+        == "https://openrouter.ai/api/v1"
+    )
+
+
+@pytest.mark.asyncio
+async def test_openrouter_images_backend_posts_unified_images(monkeypatch):
+    import base64
+
+    entry = ImageGenProviderEntry(
+        id="openrouter",
+        provider="openrouter",
+        api_key="sk-or-test",
+        model="google/gemini-2.5-flash-image",
+    )
+    backend = OpenRouterImagesBackend(entry)
+    png = base64.b64encode(b"\x89PNG\r\n\x1a\nfake").decode("ascii")
+    captured: dict = {}
+
+    class FakeResp:
+        status_code = 200
+        text = "{}"
+
+        def json(self):
+            return {
+                "created": 1,
+                "data": [{"b64_json": png, "media_type": "image/png"}],
+            }
+
+    class FakeClient:
+        def __init__(self, *a, **k):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def post(self, url, headers=None, json=None):
+            captured["url"] = url
+            captured["headers"] = headers
+            captured["json"] = json
+            return FakeResp()
+
+    import httpx
+
+    monkeypatch.setattr(httpx, "AsyncClient", FakeClient)
+    img = await backend.generate(ImageGenRequest(prompt="a cat", aspect_ratio="16:9"))
+    assert img.extension == "png"
+    assert img.data.startswith(b"\x89PNG")
+    assert captured["url"] == "https://openrouter.ai/api/v1/images"
+    assert captured["headers"]["HTTP-Referer"]
+    assert captured["headers"]["X-Title"] == "Lore Chat"
+    body = captured["json"]
+    assert body["model"] == "google/gemini-2.5-flash-image"
+    assert body["prompt"] == "a cat"
+    assert body["n"] == 1
+    assert body["aspect_ratio"] == "16:9"
+    assert body["output_format"] == "png"
+    assert "size" not in body
+

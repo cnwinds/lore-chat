@@ -66,29 +66,41 @@ export {
   parseProviderPresetId,
 } from "./providerPresets";
 
+/** OpenRouter 等网关用 vendor/model；前缀启发看全名与末段。 */
+function modelIdTail(model: string): string {
+  const mid = model.trim().toLowerCase();
+  const i = mid.lastIndexOf("/");
+  return i >= 0 ? mid.slice(i + 1) : mid;
+}
+
+function modelHasPrefix(model: string, ...prefixes: string[]): boolean {
+  const mid = model.trim().toLowerCase();
+  const tail = modelIdTail(mid);
+  return prefixes.some((p) => mid.startsWith(p) || tail.startsWith(p));
+}
+
 /** 与后端 effort.supported_efforts 对齐 */
 export function supportedEfforts(model: string, protocol?: string): string[] {
-  const mid = model.trim().toLowerCase();
   const proto = (protocol || "").trim().toLowerCase();
-  if (proto === "agnes" || mid.startsWith("agnes-")) {
+  if (proto === "agnes" || modelHasPrefix(model, "agnes-")) {
     return [];
   }
   if (proto === "deepseek" || proto === "qwen") {
     return ["low", "medium", "high", "max"];
   }
-  if (mid.startsWith("gpt-5.2")) return ["none", "low", "medium", "high", "xhigh"];
-  if (mid.startsWith("gpt-5.1")) return ["none", "low", "medium", "high"];
-  if (mid.startsWith("gpt-5")) return ["minimal", "low", "medium", "high"];
-  if (mid.startsWith("o1") || mid.startsWith("o3") || mid.startsWith("o4")) {
+  if (modelHasPrefix(model, "gpt-5.2")) return ["none", "low", "medium", "high", "xhigh"];
+  if (modelHasPrefix(model, "gpt-5.1")) return ["none", "low", "medium", "high"];
+  if (modelHasPrefix(model, "gpt-5")) return ["minimal", "low", "medium", "high"];
+  if (modelHasPrefix(model, "o1", "o3", "o4")) {
     return ["low", "medium", "high"];
   }
   if (proto === "openai_kwargs") {
     return ["none", "minimal", "low", "medium", "high", "xhigh"];
   }
-  if (mid.startsWith("deepseek-") || mid.startsWith("qwen")) {
+  if (modelHasPrefix(model, "deepseek-", "qwen")) {
     return ["low", "medium", "high", "max"];
   }
-  if (mid.startsWith("glm")) {
+  if (modelHasPrefix(model, "glm")) {
     return ["low", "medium", "high", "max"];
   }
   return ["low", "medium", "high"];
@@ -97,8 +109,7 @@ export function supportedEfforts(model: string, protocol?: string): string[] {
 export function defaultEffort(model: string, protocol?: string): string {
   const opts = supportedEfforts(model, protocol);
   if (!opts.length) return "medium";
-  const mid = model.trim().toLowerCase();
-  if (mid.startsWith("gpt-5.2") || mid.startsWith("gpt-5.1")) {
+  if (modelHasPrefix(model, "gpt-5.2") || modelHasPrefix(model, "gpt-5.1")) {
     return opts.includes("none") ? "none" : opts[0];
   }
   return opts.includes("medium") ? "medium" : opts[Math.floor(opts.length / 2)];
@@ -161,18 +172,15 @@ export function inferThinkingProtocol(
   model: string,
   baseUrl?: string,
 ): ModelCandidateDraft["thinking_protocol"] {
-  const mid = model.trim().toLowerCase();
-  if (mid.startsWith("agnes-") || (baseUrl || "").toLowerCase().includes("agnes-ai.com")) {
+  if (
+    modelHasPrefix(model, "agnes-") ||
+    (baseUrl || "").toLowerCase().includes("agnes-ai.com")
+  ) {
     return "agnes";
   }
-  if (mid.startsWith("deepseek-")) return "deepseek";
-  if (mid.startsWith("qwen")) return "qwen";
-  if (
-    mid.startsWith("o1") ||
-    mid.startsWith("o3") ||
-    mid.startsWith("o4") ||
-    mid.startsWith("gpt-5")
-  ) {
+  if (modelHasPrefix(model, "deepseek-")) return "deepseek";
+  if (modelHasPrefix(model, "qwen")) return "qwen";
+  if (modelHasPrefix(model, "o1", "o3", "o4", "gpt-5")) {
     return "openai_kwargs";
   }
   return "none";
@@ -191,11 +199,13 @@ export function inferCapsFromModel(
   | "effort"
   | "effort_options"
 > {
-  const mid = model.trim().toLowerCase();
   const protocol = inferThinkingProtocol(model, baseUrl);
   const opts = supportedEfforts(model, protocol);
   const effort = defaultEffort(model, protocol);
-  if (mid.startsWith("agnes-") || (baseUrl || "").toLowerCase().includes("agnes-ai.com")) {
+  if (
+    modelHasPrefix(model, "agnes-") ||
+    (baseUrl || "").toLowerCase().includes("agnes-ai.com")
+  ) {
     return {
       image: true,
       thinking: true,
@@ -205,7 +215,7 @@ export function inferCapsFromModel(
       effort_options: opts,
     };
   }
-  if (mid.startsWith("deepseek-")) {
+  if (modelHasPrefix(model, "deepseek-")) {
     return {
       image: false,
       thinking: true,
@@ -215,7 +225,7 @@ export function inferCapsFromModel(
       effort_options: opts,
     };
   }
-  if (mid.startsWith("qwen")) {
+  if (modelHasPrefix(model, "qwen")) {
     return {
       image: true,
       thinking: true,
@@ -225,7 +235,7 @@ export function inferCapsFromModel(
       effort_options: opts,
     };
   }
-  if (mid.startsWith("glm")) {
+  if (modelHasPrefix(model, "glm")) {
     return {
       image: false,
       thinking: true,
@@ -235,12 +245,7 @@ export function inferCapsFromModel(
       effort_options: opts,
     };
   }
-  if (
-    mid.startsWith("o1") ||
-    mid.startsWith("o3") ||
-    mid.startsWith("o4") ||
-    mid.startsWith("gpt-5")
-  ) {
+  if (modelHasPrefix(model, "o1", "o3", "o4", "gpt-5")) {
     return {
       image: true,
       thinking: true,

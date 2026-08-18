@@ -8,6 +8,7 @@ describe("providerApiKeyUrl", () => {
     expect(providerApiKeyUrl("bailian")).toContain("aliyun.com");
     expect(providerApiKeyUrl("deepseek")).toContain("deepseek.com");
     expect(providerApiKeyUrl("agnes")).toContain("agnes-ai.com");
+    expect(providerApiKeyUrl("openrouter")).toContain("openrouter.ai");
     expect(providerApiKeyUrl("siliconflow")).toContain("siliconflow");
     expect(providerApiKeyUrl("tavily")).toContain("tavily");
     expect(providerApiKeyUrl("serper")).toContain("serper");

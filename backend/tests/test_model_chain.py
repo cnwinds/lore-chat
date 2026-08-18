@@ -28,6 +28,20 @@ def test_catalog_agnes_and_deepseek():
     unknown = lookup_capabilities("totally-unknown-model-xyz")
     assert unknown.image is False
     assert unknown.thinking is False
+
+
+def test_catalog_openrouter_slash_ids():
+    d = lookup_capabilities("deepseek/deepseek-v4-pro")
+    assert d.thinking is True
+    assert d.thinking_protocol == "deepseek"
+    g = lookup_capabilities("openai/gpt-5.2")
+    assert g.thinking is True
+    assert g.thinking_protocol == "openai_kwargs"
+    prefixed = lookup_capabilities("openrouter/deepseek-v9-pro")
+    assert prefixed.source == "prefix"
+    assert prefixed.thinking_protocol == "deepseek"
+    img = lookup_capabilities("bytedance-seed/seedream-4.5")
+    assert img.source == "supplement"
     o = lookup_capabilities("o3-mini")
     assert o.thinking_protocol == "openai_kwargs"
 
