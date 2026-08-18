@@ -47,6 +47,21 @@ def _login(client: httpx.Client, password: str) -> None:
     r.raise_for_status()
 
 
+def _authenticate(
+    client: httpx.Client, password: str | None, session_cookie: str | None
+) -> None:
+    if session_cookie:
+        client.cookies.set("lorechat_session", session_cookie)
+        status = client.get("/api/auth/status")
+        status.raise_for_status()
+        if not status.json().get("authenticated"):
+            raise SystemExit("session cookie 无效或已过期")
+        return
+    if not password:
+        raise SystemExit("需要 --password 或 --session-cookie")
+    _login(client, password)
+
+
 def _overwrite_doc(client: httpx.Client, rel_path: str, text: str) -> None:
     r = client.put("/api/doc", json={"path": rel_path, "body": text})
     r.raise_for_status()
@@ -108,14 +123,21 @@ def _run_turn(client: httpx.Client, cid: str, turn: dict) -> None:
         raise SystemExit("回合结束但未收到 done 事件，检查实例日志")
 
 
-def run(base_url: str, password: str, script_path: Path, assets_dir: Path, pause: float) -> None:
+def run(
+    base_url: str,
+    password: str | None,
+    script_path: Path,
+    assets_dir: Path,
+    pause: float,
+    session_cookie: str | None = None,
+) -> None:
     script = load_script(script_path)
     problems = validate_script(script)
     if problems:
         raise SystemExit("剧本校验失败：\n" + "\n".join(problems))
 
     with httpx.Client(base_url=base_url, timeout=60.0, follow_redirects=True) as client:
-        _login(client, password)
+        _authenticate(client, password, session_cookie)
         imported = _import_assets(client, assets_dir)
         print(f"已导入前置资产 {imported} 篇")
 
@@ -133,12 +155,24 @@ def main() -> None:
     here = Path(__file__).resolve().parent
     parser = argparse.ArgumentParser(description="按剧本真跑演示内容")
     parser.add_argument("--base-url", required=True)
-    parser.add_argument("--password", required=True, help="目标实例的管理员密码")
+    parser.add_argument("--password", default="", help="目标实例的管理员密码")
+    parser.add_argument(
+        "--session-cookie",
+        default="",
+        help="已登录的 lorechat_session；与 --password 二选一",
+    )
     parser.add_argument("--script", type=Path, default=here / "script.yaml")
     parser.add_argument("--assets", type=Path, default=here.parent / "assets")
     parser.add_argument("--pause", type=float, default=2.0, help="轮次间隔秒数")
     args = parser.parse_args()
-    run(args.base_url, args.password, args.script, args.assets, args.pause)
+    run(
+        args.base_url,
+        args.password or None,
+        args.script,
+        args.assets,
+        args.pause,
+        session_cookie=args.session_cookie or None,
+    )
 
 
 if __name__ == "__main__":
