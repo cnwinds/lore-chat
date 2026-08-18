@@ -127,7 +127,10 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
         settings, repo, llm, system_layer_prefix=system_layer.prefix
     )
     knowledge_writer = KnowledgeWriter(
-        repo, index.indexer, skills_dir=settings.skills_dir
+        repo,
+        index.indexer,
+        skills_dir=settings.skills_dir,
+        read_only=bool(settings.demo_mode),
     )
     memory_service = MemoryService(
         memory_store,

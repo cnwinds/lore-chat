@@ -93,6 +93,10 @@ def _file_rel(directory: str, filename: str) -> str:
     return f"{d}/{fn}" if d else fn
 
 
+class KnowledgeWriterReadOnly(RuntimeError):
+    """只读部署（如公开演示站）下的写入尝试。"""
+
+
 class KnowledgeWriter:
     """知识库落盘、索引与 changelog 的唯一 seam（Markdown 文档与文本/附件文件）。"""
 
@@ -102,10 +106,16 @@ class KnowledgeWriter:
         indexer: Indexer | None = None,
         *,
         skills_dir: str = "技能",
+        read_only: bool = False,
     ):
         self.repo = repo
         self.indexer = indexer
         self.skills_dir = skills_dir.replace("\\", "/").strip("/") or "技能"
+        self.read_only = read_only
+
+    def _assert_writable(self) -> None:
+        if self.read_only:
+            raise KnowledgeWriterReadOnly("当前部署为只读，知识库不可写入")
 
     def persist_document(
         self,
@@ -116,6 +126,7 @@ class KnowledgeWriter:
         commit_msg: str,
         changelog_line: str,
     ) -> str:
+        self._assert_writable()
         from app.engine.skills_dir import require_skill_md_in_skills_dir
 
         norm = rel_path.replace("\\", "/").lstrip("/")
@@ -140,6 +151,7 @@ class KnowledgeWriter:
         merge: bool = True,
     ) -> dict:
         """只改结构化元数据，正文不动；经 persist_document 以刷新索引与 changelog。"""
+        self._assert_writable()
         norm = rel_path.replace("\\", "/").lstrip("/")
         if is_memory_projection_path(norm):
             raise ValueError(MEMORY_FILE_DISABLED_MSG)
@@ -299,6 +311,7 @@ class KnowledgeWriter:
         data: bytes,
         allow_binary: bool = True,
     ) -> dict:
+        self._assert_writable()
         fn = _safe_basename(filename)
         if is_markdown_path(fn):
             try:
@@ -461,6 +474,7 @@ class KnowledgeWriter:
         to_directory: str,
         to_filename: str | None = None,
     ) -> str:
+        self._assert_writable()
         from_norm = from_path.replace("\\", "/").lstrip("/")
         if self.repo.is_protected(from_norm):
             raise ValueError(f"禁止移动：{from_path}")
@@ -508,6 +522,7 @@ class KnowledgeWriter:
         return new_path
 
     def delete_entry(self, path: str) -> list[str]:
+        self._assert_writable()
         norm = path.replace("\\", "/").rstrip("/")
         if self.repo.is_protected(norm):
             raise ValueError(f"禁止删除：{path}")
