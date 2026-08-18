@@ -1,5 +1,16 @@
 import { useEffect, useState } from "react";
-import { getAuthStatus, type SourceRef, type SettingsAttention } from "./api";
+import {
+  getAuthStatus,
+  postGuestSession,
+  type SourceRef,
+  type SettingsAttention,
+} from "./api";
+import {
+  DEFAULT_CAPABILITY,
+  DemoCapabilityContext,
+  resolveDemoCapability,
+  type DemoCapability,
+} from "./hooks/useDemoCapability";
 import { LoginPage } from "./components/auth/LoginPage";
 import { SetupPage } from "./components/auth/SetupPage";
 import { Chat } from "./components/Chat";
@@ -27,10 +38,19 @@ type Gate = "loading" | "setup" | "login" | "app";
 
 export default function App() {
   const [gate, setGate] = useState<Gate>("loading");
+  const [capability, setCapability] = useState<DemoCapability>(DEFAULT_CAPABILITY);
 
   useEffect(() => {
     getAuthStatus()
-      .then((s) => {
+      .then(async (s) => {
+        if (s.demo && s.role !== "admin") {
+          const issued = s.role === "guest" ? s : { ...s, role: "guest" as const };
+          if (s.role !== "guest") await postGuestSession();
+          setCapability(resolveDemoCapability(issued));
+          setGate("app");
+          return;
+        }
+        setCapability(resolveDemoCapability(s));
         if (s.setup_required) setGate("setup");
         else if (!s.authenticated) setGate("login");
         else setGate("app");
@@ -45,9 +65,31 @@ export default function App() {
   }, []);
 
   if (gate === "loading") return null;
-  if (gate === "setup") return <SetupPage onDone={() => setGate("app")} />;
-  if (gate === "login") return <LoginPage onDone={() => setGate("app")} />;
-  return <AppMain />;
+  if (gate === "setup")
+    return (
+      <SetupPage
+        onDone={async () => {
+          const s = await getAuthStatus();
+          setCapability(resolveDemoCapability(s));
+          setGate("app");
+        }}
+      />
+    );
+  if (gate === "login")
+    return (
+      <LoginPage
+        onDone={async () => {
+          const s = await getAuthStatus();
+          setCapability(resolveDemoCapability(s));
+          setGate("app");
+        }}
+      />
+    );
+  return (
+    <DemoCapabilityContext.Provider value={capability}>
+      <AppMain />
+    </DemoCapabilityContext.Provider>
+  );
 }
 
 function AppMain() {

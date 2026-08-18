@@ -25,10 +25,18 @@ export type { ApiError, PathExistsDetail };
 export type AuthStatus = {
   setup_required: boolean;
   authenticated: boolean;
+  demo: boolean;
+  role: "admin" | "guest" | "none";
 };
 
 export function getAuthStatus() {
   return apiFetch<AuthStatus>("/api/auth/status");
+}
+
+export function postGuestSession() {
+  return apiFetch<{ ok: boolean; role: string }>("/api/auth/guest", {
+    method: "POST",
+  });
 }
 
 export function setupAuth(password: string) {
