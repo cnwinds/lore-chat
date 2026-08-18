@@ -152,6 +152,9 @@ class Settings(BaseSettings):
     # 沙箱软件源：cn=国内镜像（阿里云/npmmirror），global=官方源
     sandbox_mirror_region: str = "cn"
 
+    # 公开演示站：访客只读 + 对话不落库。部署级开关，禁止经设置页热改
+    demo_mode: bool = False
+
 
 EDITABLE_SETTING_KEYS: frozenset[str] = frozenset(
     name
@@ -159,6 +162,8 @@ EDITABLE_SETTING_KEYS: frozenset[str] = frozenset(
     if name
     not in {
         "kb_path",
+        # 公开演示站开关：热改等于允许从 UI 关掉只读门禁
+        "demo_mode",
         # 部署级能力开关：勿经 UI 热改，避免与 Compose 编排脱节
         "sandbox_enabled",
         "opensandbox_domain",
