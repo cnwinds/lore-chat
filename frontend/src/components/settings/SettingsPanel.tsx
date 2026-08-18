@@ -344,7 +344,6 @@ export function SettingsPanel({
       setBackupError(null);
       setImportFile(null);
       setImportMode("empty_only");
-      setMemoryPending(null);
       setUsageIncomplete(null);
       if (importFileRef.current) importFileRef.current.value = "";
     } else {
