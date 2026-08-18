@@ -24,8 +24,15 @@ jobs:
           python -m pip install -U pip
           pip install -r requirements.txt
 
+      - name: 检查演示内容目录
+        working-directory: .
+        run: python scripts/check_demo_content.py demo
+
       - name: Run pytest
         run: pytest
+
+      - name: Run demo toolchain pytest
+        run: pytest ../demo/tests
 
   frontend:
     name: Frontend (lint / test / build)
