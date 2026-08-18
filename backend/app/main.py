@@ -16,6 +16,7 @@ from app.auth.middleware import AuthMiddleware
 from app.auth.routes import router as auth_router
 from app.config import Settings, get_settings
 from app.demo.guest_sessions import GuestSessionStore
+from app.demo.guard import DemoGuardMiddleware
 from app.models.llm import LLMClient
 from app.deps import build_container
 from app.api.admin_routes import router as admin_router
@@ -195,8 +196,9 @@ def create_app(settings: Settings | None = None, llm: LLMClient | None = None) -
         allow_methods=["*"],
         allow_headers=["*"],
     )
-    app.add_middleware(AuthMiddleware)
     app.add_middleware(MaintenanceGuardMiddleware)
+    app.add_middleware(DemoGuardMiddleware)
+    app.add_middleware(AuthMiddleware)
     app.include_router(auth_router)
     app.include_router(admin_router)
     app.include_router(usage_router)
