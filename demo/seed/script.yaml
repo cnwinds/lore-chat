@@ -1,0 +1,65 @@
+# 演示内容剧本。每条会话对应 spec §10.3 表格的一行。
+# 真跑用普通实例（DEMO_MODE=0），跑完人工定稿。
+persona: 林知遥
+conversations:
+  - key: retrieval-selection
+    note: 联网调研 + 多来源对比 + 落库；首屏高光会话
+    skills: []
+    turns:
+      - text: >-
+          我在做一个面向教培场景的 AI 学习产品，要给老师和学生的资料做检索。
+          向量库这块现在有哪些主流选择，各自适合什么规模？帮我横向比一下。
+        web_enabled: true
+      - text: 我们初期数据量不大，但要本地部署、不能把资料传到外部服务。按这个约束再收敛一下。
+        web_enabled: true
+      - text: 把结论整理成一篇笔记存进知识库。
+        web_enabled: false
+
+  - key: chunking-experiment
+    note: edit_doc 局部编辑；新建实验记录
+    skills: []
+    turns:
+      - text: 打开那篇向量库选型的笔记，我们实测了几组分块参数，想把实测数据补进去。
+        web_enabled: false
+      - text: >-
+          实测是这样：512 字无重叠召回偏低；512 字 + 80 字重叠明显变好；
+          1024 字 + 150 字重叠在长文档上最好但短问答会带噪声。把这段补到笔记的对应小节。
+        web_enabled: false
+      - text: 另外把这次实验的完整过程单独记一篇实验记录。
+        web_enabled: false
+
+  - key: interview-notes
+    note: 非结构化 → 结构化；AI 判断归位，用户全程不指定路径
+    skills: []
+    turns:
+      - text: >-
+          这是我今天跟一位初中数学老师聊完的原始记录，很乱，帮我整理一下：
+          （此处在真跑前替换为一段 400-600 字的虚构访谈原文，对象化名「王老师」）
+        web_enabled: false
+      - text: 这次访谈里有几个问题问得不好，帮我把有效的问题沉淀到访谈问题库里。
+        web_enabled: false
+
+  - key: merge-retrieval-docs
+    note: 多文档合并的审阅会话；目录收敛
+    skills: []
+    turns:
+      - text: 技术/检索 下面这几篇内容有重叠，读一下，然后告诉我该怎么合并才不丢信息。
+        web_enabled: false
+      - text: 按你说的合并方案来。
+        web_enabled: false
+
+  - key: weekly-report
+    note: Skill 启用 → 读多篇资料 → 跑完整流程
+    skills: ["技能/周报生成"]
+    turns:
+      - text: 按周报 Skill 出这周的周报。
+        web_enabled: false
+
+  - key: partnership-prep
+    note: 跨会话记忆生效；未交代背景却引用访谈纪要与周报
+    skills: []
+    turns:
+      - text: 下周要跟一家教培机构谈合作，帮我准备一份材料。
+        web_enabled: false
+      - text: 对方最关心数据放在哪、会不会外传，这块再展开一点。
+        web_enabled: false
