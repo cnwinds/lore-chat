@@ -35,3 +35,26 @@ def test_guest_chat_with_conversation_id_is_rejected(guest):
 def test_guest_chat_creates_no_conversation(demo_app, guest):
     guest.post("/api/chat", json={"text": "Lore 是什么"})
     assert guest.get("/api/conversations").json()["conversations"] == []
+
+
+def test_guest_hits_session_quota(demo_app, guest):
+    demo_app.state.demo_quota._per_session = 1
+    assert guest.post("/api/chat", json={"text": "一"}).status_code == 200
+    r = guest.post("/api/chat", json={"text": "二"})
+    assert r.status_code == 403
+    assert r.json()["detail"]["code"] == "demo_quota_exceeded"
+
+
+def test_guest_input_length_is_capped(guest):
+    r = guest.post("/api/chat", json={"text": "长" * 2001})
+    assert r.status_code == 400
+    assert r.json()["detail"]["code"] == "demo_input_too_long"
+
+
+def test_demo_lowers_tool_call_budget(tmp_path):
+    from app.config import Settings
+    from app.demo.quota import GUEST_MAX_TOOL_CALLS
+    from app.engine.agent.tool_loop import resolve_max_tool_calls
+
+    settings = Settings(kb_path=tmp_path / "kb", demo_mode=True, agent_max_tool_calls=25)
+    assert resolve_max_tool_calls(settings) <= GUEST_MAX_TOOL_CALLS

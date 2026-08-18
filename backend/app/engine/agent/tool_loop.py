@@ -42,6 +42,16 @@ _LIMIT_MSG = "（已达工具调用上限，以上为目前能给出的结论。
 _NON_SERIALIZABLE_KEYS = frozenset({"hits", "ingest_result"})
 
 
+def resolve_max_tool_calls(settings: Settings) -> int:
+    """demo 下取配置与访客预算的较小值，避免匿名滥用。"""
+    max_tool_calls = settings.agent_max_tool_calls
+    if getattr(settings, "demo_mode", False):
+        from app.demo.quota import GUEST_MAX_TOOL_CALLS
+
+        max_tool_calls = min(max_tool_calls, GUEST_MAX_TOOL_CALLS)
+    return max_tool_calls
+
+
 def tool_awaits_user(out: dict) -> bool:
     """工具结果是否要求本轮停下来等用户（ask_user / sandbox_confirm）。"""
     if out.get("awaiting_user") or out.get("awaiting_confirm"):
@@ -85,18 +95,19 @@ class AgentToolLoop:
             conversation_id=conversation_id,
             turn_id=turn_id,
             run_id=run_id,
-            tool_limit=self.settings.agent_max_tool_calls,
+            tool_limit=resolve_max_tool_calls(self.settings),
         )
+        max_tool_calls = resolve_max_tool_calls(self.settings)
         _log.info(
             "agent run start cid=%s turn_id=%s run_id=%s tool_limit=%d",
             conversation_id or "-",
             turn_id or "-",
             run_id,
-            self.settings.agent_max_tool_calls,
+            max_tool_calls,
         )
 
         try:
-            while tool_call_count < self.settings.agent_max_tool_calls:
+            while tool_call_count < max_tool_calls:
                 llm_rounds += 1
                 result: ChatWithToolsResult | None = None
                 with usage_context(

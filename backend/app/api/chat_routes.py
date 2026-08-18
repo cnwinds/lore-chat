@@ -15,6 +15,8 @@ from app.api.http_deps import (
     normalize_chat_context,
 )
 from app.demo.identity import IDENTITY_GUEST
+from app.demo.quota import GUEST_MAX_INPUT_CHARS, DemoQuotaExceeded
+from app.auth.routes import GUEST_COOKIE
 from app.engine.chat.session_runner import consume_agent_ask, consume_agent_ingest
 from app.engine.chat.sse_keepalive import with_sse_keepalive
 from app.engine.chat.turn_inject import PendingInject
@@ -64,6 +66,14 @@ async def chat(body: ChatBody, request: Request):
             403,
             detail={"code": "demo_read_only", "detail": "演示环境的对话不会被保存"},
         )
+    if is_guest and len(body.text or "") > GUEST_MAX_INPUT_CHARS:
+        raise HTTPException(
+            400,
+            detail={
+                "code": "demo_input_too_long",
+                "detail": f"演示环境单条提问不超过 {GUEST_MAX_INPUT_CHARS} 字",
+            },
+        )
     doc_items, paths, primary = normalize_chat_context(body)
     # catalog 在 runner 内装配；此处仅预解析以便缺头时返回 400（非 SSE error）
     try:
@@ -84,17 +94,44 @@ async def chat(body: ChatBody, request: Request):
             except KeyError as e:
                 raise HTTPException(404, "对话不存在") from e
             history = c.conversations.llm_history(source)
+        if is_guest:
+            quota = request.app.state.demo_quota
+            guest_sid = request.cookies.get(GUEST_COOKIE) or ""
+            client = request.client
+            try:
+                quota.acquire(guest_sid, client.host if client else None)
+            except DemoQuotaExceeded as e:
+                raise HTTPException(
+                    429 if e.code == "demo_busy" else 403,
+                    detail={"code": e.code, "detail": e.message},
+                ) from e
+
+            async def _ephemeral():
+                try:
+                    async for ev in c.chat_runner.stream_ephemeral(
+                        body.text,
+                        doc_paths=paths,
+                        skill_catalog=skill_catalog,
+                        primary_doc=primary,
+                        web_enabled=body.web_enabled,
+                        history=history,
+                    ):
+                        yield ev
+                finally:
+                    quota.release()
+
+            stream = _ephemeral()
+        else:
+            stream = c.chat_runner.stream_ephemeral(
+                body.text,
+                doc_paths=paths,
+                skill_catalog=skill_catalog,
+                primary_doc=primary,
+                web_enabled=body.web_enabled,
+                history=history,
+            )
         return StreamingResponse(
-            with_sse_keepalive(
-                c.chat_runner.stream_ephemeral(
-                    body.text,
-                    doc_paths=paths,
-                    skill_catalog=skill_catalog,
-                    primary_doc=primary,
-                    web_enabled=body.web_enabled,
-                    history=history,
-                )
-            ),
+            with_sse_keepalive(stream),
             media_type="text/event-stream",
             headers=_SSE_HEADERS,
         )
