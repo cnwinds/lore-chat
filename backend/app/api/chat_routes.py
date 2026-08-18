@@ -77,6 +77,13 @@ async def chat(body: ChatBody, request: Request):
             raise HTTPException(404, "对话不存在") from e
 
     if not body.conversation_id:
+        history = None
+        if body.ephemeral_from:
+            try:
+                source = c.conversations.get(body.ephemeral_from)
+            except KeyError as e:
+                raise HTTPException(404, "对话不存在") from e
+            history = c.conversations.llm_history(source)
         return StreamingResponse(
             with_sse_keepalive(
                 c.chat_runner.stream_ephemeral(
@@ -85,6 +92,7 @@ async def chat(body: ChatBody, request: Request):
                     skill_catalog=skill_catalog,
                     primary_doc=primary,
                     web_enabled=body.web_enabled,
+                    history=history,
                 )
             ),
             media_type="text/event-stream",

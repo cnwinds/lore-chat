@@ -87,6 +87,7 @@ class ChatSessionRunner:
         skill_catalog: list[dict[str, str]] | None = None,
         primary_doc: str | None,
         web_enabled: bool,
+        history: list[dict] | None = None,
     ) -> AsyncIterator[str]:
         catalog = self.resolve_skill_catalog(skill_catalog)
         try:
@@ -97,7 +98,7 @@ class ChatSessionRunner:
                 active_doc_paths=doc_paths,
                 primary_doc_path=primary_doc,
                 skill_catalog=catalog,
-                history=None,
+                history=history,
                 conversation_id=None,
                 web_enabled=web_enabled,
             ):
