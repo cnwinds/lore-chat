@@ -15,6 +15,7 @@ from app.backup.guard import MaintenanceGuardMiddleware
 from app.auth.middleware import AuthMiddleware
 from app.auth.routes import router as auth_router
 from app.config import Settings, get_settings
+from app.demo.guest_sessions import GuestSessionStore
 from app.models.llm import LLMClient
 from app.deps import build_container
 from app.api.admin_routes import router as admin_router
@@ -157,6 +158,7 @@ def create_app(settings: Settings | None = None, llm: LLMClient | None = None) -
     app.state.auth_store = AuthStore(base_settings.kb_path)
     app.state.session_store = SessionStore(base_settings.kb_path)
     app.state.maintenance_lock = MaintenanceLock()
+    app.state.guest_sessions = GuestSessionStore()
 
     @app.exception_handler(Exception)
     async def unhandled_exception_handler(request: Request, exc: Exception):

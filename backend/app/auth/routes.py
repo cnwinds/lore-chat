@@ -8,7 +8,9 @@ from app.auth.store import AuthAlreadySetupError, AuthError
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 COOKIE = "lorechat_session"
+GUEST_COOKIE = "lorechat_guest"
 _COOKIE_MAX_AGE_SECONDS = 7 * 24 * 3600
+_GUEST_COOKIE_MAX_AGE_SECONDS = 2 * 3600
 
 
 class SetupBody(BaseModel):
@@ -24,6 +26,10 @@ class ChangePasswordBody(BaseModel):
     new_password: str
 
 
+def _demo_enabled(request: Request) -> bool:
+    return bool(request.app.state.settings_store.get().demo_mode)
+
+
 def _set_session_cookie(response: Response, session_id: str) -> None:
     response.set_cookie(
         COOKIE,
@@ -35,19 +41,52 @@ def _set_session_cookie(response: Response, session_id: str) -> None:
     )
 
 
+@router.post("/guest")
+def auth_guest(request: Request, response: Response):
+    if not _demo_enabled(request):
+        return Response(
+            status_code=403,
+            content='{"detail": "demo mode disabled", "code": "demo_disabled"}',
+            media_type="application/json",
+        )
+    guests = request.app.state.guest_sessions
+    client = request.client
+    sid = guests.create(ip=client.host if client else None)
+    response.set_cookie(
+        GUEST_COOKIE,
+        sid,
+        httponly=True,
+        samesite="lax",
+        path="/",
+        max_age=_GUEST_COOKIE_MAX_AGE_SECONDS,
+    )
+    return {"ok": True, "role": "guest"}
+
+
 @router.get("/status")
 def auth_status(request: Request):
     auth = request.app.state.auth_store
     sessions = request.app.state.session_store
     sid = request.cookies.get(COOKIE)
+    authenticated = sessions.validate(sid)
+    demo = _demo_enabled(request)
+    role = getattr(request.state, "identity", "none")
     return {
-        "setup_required": auth.is_setup_required(),
-        "authenticated": sessions.validate(sid),
+        "setup_required": False if demo else auth.is_setup_required(),
+        "authenticated": authenticated,
+        "demo": demo,
+        "role": role,
     }
 
 
 @router.post("/setup")
 def auth_setup(body: SetupBody, request: Request, response: Response):
+    if _demo_enabled(request):
+        return Response(
+            status_code=403,
+            content='{"detail": "setup disabled in demo", "code": "demo_setup_disabled"}',
+            media_type="application/json",
+        )
     auth = request.app.state.auth_store
     sessions = request.app.state.session_store
     try:
