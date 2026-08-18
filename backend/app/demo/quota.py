@@ -45,7 +45,8 @@ class DemoQuota:
                 raise DemoQuotaExceeded("demo_busy", "演示站正忙，请稍后再试")
             if self._session_counts[session_id] >= self._per_session:
                 raise DemoQuotaExceeded(
-                    "demo_quota_exceeded", "本次演示的提问额度已用完"
+                    "demo_quota_exceeded",
+                    "本次演示的提问额度已用完。可以部署你自己的 Lore：https://github.com/cnwinds/lore-chat",
                 )
             if ip:
                 hits = self._ip_hits[ip]
@@ -53,13 +54,15 @@ class DemoQuota:
                     hits.popleft()
                 if len(hits) >= self._per_ip_hourly:
                     raise DemoQuotaExceeded(
-                        "demo_quota_exceeded", "本小时的提问额度已用完"
+                        "demo_quota_exceeded",
+                        "本小时的提问额度已用完。可以部署你自己的 Lore：https://github.com/cnwinds/lore-chat",
                     )
             while self._day_hits and now - self._day_hits[0] > _DAY:
                 self._day_hits.popleft()
             if len(self._day_hits) >= self._daily_total:
                 raise DemoQuotaExceeded(
-                    "demo_quota_exceeded", "今天的演示额度已用完"
+                    "demo_quota_exceeded",
+                    "今天的演示额度已用完。可以部署你自己的 Lore：https://github.com/cnwinds/lore-chat",
                 )
 
             self._session_counts[session_id] += 1

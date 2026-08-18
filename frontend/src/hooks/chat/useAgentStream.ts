@@ -54,6 +54,8 @@ type UseAgentStreamOptions = {
   webEnabled: boolean;
   docContextItems: DocContextItem[];
   primaryDocPath: string | null;
+  /** false：演示访客等不落盘场景，不创建会话、不带 conversation_id */
+  canPersistChat?: boolean;
   msgs: ChatMessage[];
   setMsgs: Dispatch<SetStateAction<ChatMessage[]>>;
   setSummarized: Dispatch<SetStateAction<boolean>>;
@@ -76,6 +78,7 @@ export function useAgentStream({
   webEnabled,
   docContextItems,
   primaryDocPath,
+  canPersistChat = true,
   msgs,
   setMsgs,
   setSummarized,
@@ -367,20 +370,31 @@ export function useAgentStream({
     let aborted = false;
     let detached = false;
     let awaitingUser = false;
-    let cid: string | null = null;
+    let persistCid: string | null = null;
+    let observeCid: string | null = null;
     try {
-      cid = await ensureConversationId();
-      streamConversationIdRef.current = cid;
-      msgsConversationIdRef.current = cid;
-      setStreamViewId(cid);
-      if (isFirstUserQuestion) {
-        onFirstQuestionTitle?.(cid, titleFromText(display));
+      if (canPersistChat) {
+        persistCid = await ensureConversationId();
+        observeCid = persistCid;
+        streamConversationIdRef.current = persistCid;
+        msgsConversationIdRef.current = persistCid;
+        setStreamViewId(persistCid);
+        if (isFirstUserQuestion) {
+          onFirstQuestionTitle?.(persistCid, titleFromText(display));
+        }
+      } else {
+        // 访客：不创建会话；正在看预置会话时用 ephemeral_from 带上历史
+        observeCid = conversationIdRef.current;
+        streamConversationIdRef.current = observeCid;
+        msgsConversationIdRef.current = observeCid;
+        setStreamViewId(observeCid);
       }
       const ctx = docCtx ?? resolveDocContext();
       const clientMessageId = newId();
       const result = await consumeEvents(
         chatStream(apiText, {
-          conversationId: cid,
+          conversationId: canPersistChat ? persistCid : null,
+          ephemeralFrom: canPersistChat ? undefined : (observeCid ?? undefined),
           activeDocPaths: ctx.trayPaths,
           docContext: ctx.docContext.length ? ctx.docContext : undefined,
           primaryDocPath: ctx.primary,
@@ -390,7 +404,7 @@ export function useAgentStream({
           reuseUserMessageId,
           signal: controller.signal,
         }),
-        cid,
+        observeCid,
       );
       streamFailed = result.streamFailed;
       awaitingUser = result.awaitingUser;
@@ -404,14 +418,15 @@ export function useAgentStream({
       } else {
         streamFailed = true;
         const msg = err instanceof Error ? err.message : "请求失败";
-        patchAssistant(cid, (prevMsg) => ({
+        patchAssistant(observeCid, (prevMsg) => ({
           ...prevMsg,
           text: `错误：${msg}`,
           status: "error",
         }));
       }
     } finally {
-      await finishObservation(cid, {
+      // 访客不重载服务端会话，避免冲掉本地 ephemeral 续聊气泡
+      await finishObservation(canPersistChat ? persistCid : null, {
         streamFailed,
         aborted,
         detached,

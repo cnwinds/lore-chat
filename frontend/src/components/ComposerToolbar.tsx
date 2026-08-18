@@ -1,5 +1,7 @@
 import type { ChangeEvent, RefObject } from "react";
 
+import { useDemoCapability } from "../hooks/useDemoCapability";
+
 type Props = {
   webEnabled: boolean;
   onToggleWeb: () => void;
@@ -103,6 +105,7 @@ export function ComposerToolbar({
   fileInputRef,
   onFileChange,
 }: Props) {
+  const { canWrite } = useDemoCapability();
   const archiveLinked = summarized && summaryPath;
   const archiveDisabled =
     streaming ||
@@ -163,15 +166,17 @@ export function ComposerToolbar({
         </button>
       </div>
       <div className="composer-toolbar-right">
-        <button
-          type="button"
-          className={`composer-archive-btn${archiveLinked ? " composer-archive-btn--linked" : ""}`}
-          onClick={handleArchiveClick}
-          disabled={archiveDisabled}
-          title={archiveTitle}
-        >
-          {archiveLabel}
-        </button>
+        {canWrite ? (
+          <button
+            type="button"
+            className={`composer-archive-btn${archiveLinked ? " composer-archive-btn--linked" : ""}`}
+            onClick={handleArchiveClick}
+            disabled={archiveDisabled}
+            title={archiveTitle}
+          >
+            {archiveLabel}
+          </button>
+        ) : null}
         {streaming && onStop ? (
           <button
             type="button"

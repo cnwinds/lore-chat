@@ -6,6 +6,7 @@ import { createStreamOwnership } from "../hooks/chat/streamOwnership";
 import { useConversationMemoryEvents } from "../hooks/chat/useConversationMemoryEvents";
 import { useSendQueue } from "../hooks/chat/useSendQueue";
 import { useOutboundOrchestrator } from "../hooks/chat/useOutboundOrchestrator";
+import { useDemoCapability } from "../hooks/useDemoCapability";
 import type { JumpTarget } from "../hooks/chat/useConversationJump";
 import {
   getConversation,
@@ -78,6 +79,12 @@ export function Chat({
   onTrayRemove,
 }: Props) {
   const { previewPath, openDoc, refreshKb } = useDocPreview();
+  const { canPersistChat, canWrite } = useDemoCapability();
+  const [guestContinueHint, setGuestContinueHint] = useState(true);
+
+  useEffect(() => {
+    setGuestContinueHint(true);
+  }, [conversationId]);
 
   const [input, setInput] = useState("");
   const [archiving, setArchiving] = useState(false);
@@ -143,6 +150,7 @@ export function Chat({
     webEnabled,
     docContextItems,
     primaryDocPath,
+    canPersistChat,
     msgs,
     setMsgs,
     setSummarized,
@@ -275,6 +283,7 @@ export function Chat({
 
     const shouldQueue = streamingForView || sendQueue.items.length > 0;
     if (!shouldQueue) {
+      setGuestContinueHint(false);
       await runAgentStream(
         text,
         text,
@@ -288,7 +297,7 @@ export function Chat({
       return;
     }
 
-    if (!conversationId) {
+    if (!conversationId && canPersistChat) {
       try {
         await ensureConversationId();
       } catch (err) {
@@ -647,6 +656,20 @@ export function Chat({
         onQuestionResolved={handleQuestionResolved}
         onRetryReply={handleRetryAssistantReply}
       />
+      {!canPersistChat && conversationId && guestContinueHint ? (
+        <div className="chat-guest-continue" role="status">
+          <button
+            type="button"
+            className="chat-guest-continue-btn"
+            onClick={() => {
+              setGuestContinueHint(false);
+              textareaRef.current?.focus();
+            }}
+          >
+            从这里继续提问（不保存）
+          </button>
+        </div>
+      ) : null}
       <div className="chat-composer-wrap">
         <ComposerSendQueue
           items={sendQueue.items}
@@ -708,7 +731,7 @@ export function Chat({
               conversationId={conversationId}
               summarized={summarized}
               summaryPath={summaryPath}
-              canArchive={msgs.some((m) => m.role === "user")}
+              canArchive={canWrite && msgs.some((m) => m.role === "user")}
               onArchive={openArchiveModal}
               onOpenSummary={(path) => openDoc(path, undefined, { pin: true })}
               onAttachClick={() => fileInputRef.current?.click()}

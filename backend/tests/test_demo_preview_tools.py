@@ -63,15 +63,25 @@ def test_registry_in_demo_never_writes(tmp_path):
     import asyncio
 
     from app.config import Settings
+    from app.demo.runtime import bind_demo_guest, reset_demo_guest
     from app.deps import build_container
     from app.models.llm import FakeLLMClient
 
     settings = Settings(kb_path=tmp_path / "knowledge", demo_mode=True)
-    container = build_container(settings, llm=FakeLLMClient(chat_responses=["x"], embed_dim=8))
-    out = asyncio.run(
-        container.agent.tools.execute(
-            "write_kb_file", {"directory": "技术", "filename": "a.sh", "text": "echo"}
-        )
+    container = build_container(
+        settings, llm=FakeLLMClient(chat_responses=["x"], embed_dim=8)
     )
+
+    async def _run():
+        token = bind_demo_guest(True)
+        try:
+            return await container.agent.tools.execute(
+                "write_kb_file",
+                {"directory": "技术", "filename": "a.sh", "text": "echo"},
+            )
+        finally:
+            reset_demo_guest(token)
+
+    out = asyncio.run(_run())
     assert out["error"] == "demo_tool_unavailable"
     assert not (tmp_path / "knowledge" / "技术" / "a.sh").exists()

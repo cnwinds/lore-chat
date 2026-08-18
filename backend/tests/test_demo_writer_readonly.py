@@ -37,6 +37,18 @@ def test_update_document_meta_is_refused(writer):
         writer.update_document_meta("技术/a.md", {"title": "x"})
 
 
+def test_save_edit_is_refused(writer):
+    with pytest.raises(KnowledgeWriterReadOnly):
+        writer.save_edit(
+            "技术/a.md", {}, "old", "new", affected_start=0, affected_end=3
+        )
+
+
+def test_write_text_file_is_refused(writer):
+    with pytest.raises(KnowledgeWriterReadOnly):
+        writer.write_text_file(directory="技术", filename="a.txt", content="x")
+
+
 def test_reads_still_work(tmp_path):
     repo = KnowledgeRepo(tmp_path / "knowledge")
     rw = KnowledgeWriter(repo, None)

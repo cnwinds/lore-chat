@@ -57,4 +57,5 @@ def test_demo_lowers_tool_call_budget(tmp_path):
     from app.engine.agent.tool_loop import resolve_max_tool_calls
 
     settings = Settings(kb_path=tmp_path / "kb", demo_mode=True, agent_max_tool_calls=25)
-    assert resolve_max_tool_calls(settings) <= GUEST_MAX_TOOL_CALLS
+    assert resolve_max_tool_calls(settings, demo_guest=True) <= GUEST_MAX_TOOL_CALLS
+    assert resolve_max_tool_calls(settings, demo_guest=False) == 25

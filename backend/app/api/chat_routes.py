@@ -14,7 +14,7 @@ from app.api.http_deps import (
     container,
     normalize_chat_context,
 )
-from app.demo.identity import IDENTITY_GUEST
+from app.demo.identity import IDENTITY_GUEST, resolve_identity
 from app.demo.quota import GUEST_MAX_INPUT_CHARS, DemoQuotaExceeded
 from app.auth.routes import GUEST_COOKIE
 from app.engine.chat.session_runner import consume_agent_ask, consume_agent_ingest
@@ -60,7 +60,7 @@ async def chat(body: ChatBody, request: Request):
     from app.engine.enabled_skills import EnabledSkillsError
 
     c = container(request)
-    is_guest = getattr(request.state, "identity", None) == IDENTITY_GUEST
+    is_guest = resolve_identity(request) == IDENTITY_GUEST
     if is_guest and body.conversation_id:
         raise HTTPException(
             403,
@@ -87,13 +87,10 @@ async def chat(body: ChatBody, request: Request):
             raise HTTPException(404, "对话不存在") from e
 
     if not body.conversation_id:
-        history = None
-        if body.ephemeral_from:
-            try:
-                source = c.conversations.get(body.ephemeral_from)
-            except KeyError as e:
-                raise HTTPException(404, "对话不存在") from e
-            history = c.conversations.llm_history(source)
+        try:
+            history = c.chat_runner.resolve_ephemeral_history(body.ephemeral_from)
+        except KeyError as e:
+            raise HTTPException(404, "对话不存在") from e
         if is_guest:
             quota = request.app.state.demo_quota
             guest_sid = request.cookies.get(GUEST_COOKIE) or ""
@@ -115,6 +112,7 @@ async def chat(body: ChatBody, request: Request):
                         primary_doc=primary,
                         web_enabled=body.web_enabled,
                         history=history,
+                        demo_guest=True,
                     ):
                         yield ev
                 finally:
@@ -129,6 +127,7 @@ async def chat(body: ChatBody, request: Request):
                 primary_doc=primary,
                 web_enabled=body.web_enabled,
                 history=history,
+                demo_guest=False,
             )
         return StreamingResponse(
             with_sse_keepalive(stream),

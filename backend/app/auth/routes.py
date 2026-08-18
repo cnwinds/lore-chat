@@ -13,6 +13,17 @@ _COOKIE_MAX_AGE_SECONDS = 7 * 24 * 3600
 _GUEST_COOKIE_MAX_AGE_SECONDS = 2 * 3600
 
 
+def set_guest_cookie(response: Response, session_id: str) -> None:
+    response.set_cookie(
+        GUEST_COOKIE,
+        session_id,
+        httponly=True,
+        samesite="lax",
+        path="/",
+        max_age=_GUEST_COOKIE_MAX_AGE_SECONDS,
+    )
+
+
 class SetupBody(BaseModel):
     password: str
 
@@ -52,14 +63,7 @@ def auth_guest(request: Request, response: Response):
     guests = request.app.state.guest_sessions
     client = request.client
     sid = guests.create(ip=client.host if client else None)
-    response.set_cookie(
-        GUEST_COOKIE,
-        sid,
-        httponly=True,
-        samesite="lax",
-        path="/",
-        max_age=_GUEST_COOKIE_MAX_AGE_SECONDS,
-    )
+    set_guest_cookie(response, sid)
     return {"ok": True, "role": "guest"}
 
 

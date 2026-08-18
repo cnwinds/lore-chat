@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   getAuthStatus,
   postGuestSession,
@@ -58,8 +58,25 @@ export default function App() {
       .catch(() => setGate("login"));
   }, []);
 
+  const capabilityRef = useRef(capability);
+  capabilityRef.current = capability;
+
   useEffect(() => {
-    const onUnauthorized = () => setGate("login");
+    const onUnauthorized = () => {
+      const cap = capabilityRef.current;
+      // 演示访客 cookie 过期时重新签发，勿踢回登录页
+      if (cap.isDemo && !cap.canWrite) {
+        void postGuestSession()
+          .then(() => getAuthStatus())
+          .then((s) => {
+            setCapability(resolveDemoCapability(s));
+            setGate("app");
+          })
+          .catch(() => setGate("login"));
+        return;
+      }
+      setGate("login");
+    };
     window.addEventListener("auth:unauthorized", onUnauthorized);
     return () => window.removeEventListener("auth:unauthorized", onUnauthorized);
   }, []);

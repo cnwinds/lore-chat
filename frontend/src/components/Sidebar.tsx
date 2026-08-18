@@ -32,6 +32,8 @@ type Props = {
   refreshKey?: number;
   activePaths?: string[];
   activeConversationId: string | null;
+  /** 演示高光会话 id；未提供时回落到列表首项 */
+  highlightConversationId?: string | null;
   titleOverrides?: Record<string, string>;
   collapsed?: boolean;
   onToggleCollapsed?: () => void;
@@ -56,6 +58,7 @@ export function Sidebar({
   refreshKey = 0,
   activePaths = [],
   activeConversationId,
+  highlightConversationId = null,
   titleOverrides = {},
   collapsed = false,
   onToggleCollapsed,
@@ -72,7 +75,7 @@ export function Sidebar({
   onKbPathsDeleted,
   onDocsChange,
 }: Props) {
-  const { canWrite } = useDemoCapability();
+  const { canWrite, canPersistChat } = useDemoCapability();
   const [docs, setDocs] = useState<string[]>([]);
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [kbHintOpen, setKbHintOpen] = useState(false);
@@ -239,9 +242,11 @@ export function Sidebar({
           <section className="sidebar-section sidebar-chat-section">
             <div className="sidebar-section-head">
               <h4>对话</h4>
-              <button type="button" className="sidebar-new-chat" onClick={onNewChat}>
-                ＋ 新建
-              </button>
+              {canPersistChat ? (
+                <button type="button" className="sidebar-new-chat" onClick={onNewChat}>
+                  ＋ 新建
+                </button>
+              ) : null}
             </div>
             <div className="conversation-list">
               {conversations.length === 0 && (
@@ -250,14 +255,17 @@ export function Sidebar({
               {conversationGroups.map((group) => (
                 <div key={group.label} className="conversation-group">
                   <div className="conversation-group-label">{group.label}</div>
-                  {group.items.map((c, index) => {
+                  {group.items.map((c) => {
                     const active = activeConversationId === c.id;
                     const title =
                       c.title === "新对话" && titleOverrides[c.id]
                         ? titleOverrides[c.id]
                         : c.title;
-                    const isHighlight =
-                      group === conversationGroups[0] && index === 0;
+                    const fallbackHighlightId =
+                      conversationGroups[0]?.items[0]?.id;
+                    const highlightId =
+                      highlightConversationId || fallbackHighlightId;
+                    const isHighlight = c.id === highlightId;
                     return (
                       <div
                         key={c.id}

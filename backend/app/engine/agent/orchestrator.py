@@ -62,60 +62,68 @@ class AgentOrchestrator:
         inject_broker=None,
         on_inject_applied=None,
         attachments: list[str] | None = None,
+        demo_guest: bool = False,
     ) -> AsyncIterator[str]:
-        system_layer_text = (
-            self.system_layer.compose_rules() if self.system_layer else ""
-        )
-        user_memory = (
-            self.system_layer.memory_context() if self.system_layer else ""
-        )
-        catalog = list(skill_catalog) if skill_catalog else []
-        skill_msgs = build_skill_catalog_system_messages(catalog)
-        search_configured = (
-            self.tools.web_search is not None
-            and self.tools.web_search.provider is not None
-        )
-        imagegen_configured = bool(
-            self.tools.image_tools.image_gen is not None
-            and self.tools.image_tools.image_gen.configured
-        )
-        web_search_enabled = web_enabled and search_configured
-        messages = build_agent_messages(
-            user_text,
-            mode=mode,
-            web_enabled=web_search_enabled,
-            system_layer_text=system_layer_text,
-            user_memory=user_memory,
-            history=history,
-            active_doc_path=active_doc_path,
-            active_doc_paths=active_doc_paths,
-            primary_doc_path=primary_doc_path,
-            extra_system_messages=skill_msgs or None,
-            attachments=attachments,
-            demo_mode=bool(getattr(self.settings, "demo_mode", False)),
-        )
-        tools_for_run = select_tools(
-            mode,
-            web_enabled,
-            search_configured=search_configured,
-            imagegen_configured=imagegen_configured,
-            sandbox_enabled=bool(
-                self.settings.sandbox_enabled and self.tools.sandbox_runtime is not None
-            ),
-            disclosure_windows=self.tools.disclosure_windows,
-            demo=bool(getattr(self.settings, "demo_mode", False)),
-        )
-        primary = primary_doc_path or active_doc_path
-        start = time.monotonic()
-        async for ev in self._tool_loop.stream(
-            messages,
-            tools_for_run=tools_for_run,
-            conversation_id=conversation_id,
-            active_doc_path=primary,
-            started_at=start,
-            turn_id=turn_id,
-            run_id=run_id,
-            inject_broker=inject_broker,
-            on_inject_applied=on_inject_applied,
-        ):
-            yield ev
+        from app.demo.runtime import bind_demo_guest, reset_demo_guest
+
+        token = bind_demo_guest(demo_guest)
+        try:
+            system_layer_text = (
+                self.system_layer.compose_rules() if self.system_layer else ""
+            )
+            user_memory = (
+                self.system_layer.memory_context() if self.system_layer else ""
+            )
+            catalog = list(skill_catalog) if skill_catalog else []
+            skill_msgs = build_skill_catalog_system_messages(catalog)
+            search_configured = (
+                self.tools.web_search is not None
+                and self.tools.web_search.provider is not None
+            )
+            imagegen_configured = bool(
+                self.tools.image_tools.image_gen is not None
+                and self.tools.image_tools.image_gen.configured
+            )
+            web_search_enabled = web_enabled and search_configured
+            messages = build_agent_messages(
+                user_text,
+                mode=mode,
+                web_enabled=web_search_enabled,
+                system_layer_text=system_layer_text,
+                user_memory=user_memory,
+                history=history,
+                active_doc_path=active_doc_path,
+                active_doc_paths=active_doc_paths,
+                primary_doc_path=primary_doc_path,
+                extra_system_messages=skill_msgs or None,
+                attachments=attachments,
+                demo_mode=demo_guest,
+            )
+            tools_for_run = select_tools(
+                mode,
+                web_enabled,
+                search_configured=search_configured,
+                imagegen_configured=imagegen_configured,
+                sandbox_enabled=bool(
+                    self.settings.sandbox_enabled
+                    and self.tools.sandbox_runtime is not None
+                ),
+                disclosure_windows=self.tools.disclosure_windows,
+                demo=demo_guest,
+            )
+            primary = primary_doc_path or active_doc_path
+            start = time.monotonic()
+            async for ev in self._tool_loop.stream(
+                messages,
+                tools_for_run=tools_for_run,
+                conversation_id=conversation_id,
+                active_doc_path=primary,
+                started_at=start,
+                turn_id=turn_id,
+                run_id=run_id,
+                inject_broker=inject_broker,
+                on_inject_applied=on_inject_applied,
+            ):
+                yield ev
+        finally:
+            reset_demo_guest(token)

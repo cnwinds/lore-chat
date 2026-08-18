@@ -227,6 +227,52 @@ describe("useAgentStream", () => {
     expect(options.onConversationCreated).toHaveBeenCalledWith("new-cid");
   });
 
+  it("when canPersistChat is false does not create conversation and sends ephemeral_from", async () => {
+    const options = baseOptions({
+      canPersistChat: false,
+      conversationId: "preset-cid",
+      conversationIdRef: { current: "preset-cid" },
+      onConversationCreated: vi.fn(),
+    });
+    const { result } = renderHook(() => useAgentStream(options));
+
+    await act(async () => {
+      await result.current.runAgentStream("为什么");
+    });
+
+    expect(api.createConversation).not.toHaveBeenCalled();
+    expect(options.onConversationCreated).not.toHaveBeenCalled();
+    expect(api.chatStream).toHaveBeenCalledWith(
+      "为什么",
+      expect.objectContaining({
+        conversationId: null,
+        ephemeralFrom: "preset-cid",
+      }),
+    );
+  });
+
+  it("when canPersistChat is false and no conversation, omits conversation_id and ephemeral_from", async () => {
+    const options = baseOptions({
+      canPersistChat: false,
+      conversationId: null,
+      conversationIdRef: { current: null },
+    });
+    const { result } = renderHook(() => useAgentStream(options));
+
+    await act(async () => {
+      await result.current.runAgentStream("你好");
+    });
+
+    expect(api.createConversation).not.toHaveBeenCalled();
+    expect(api.chatStream).toHaveBeenCalledWith(
+      "你好",
+      expect.objectContaining({
+        conversationId: null,
+        ephemeralFrom: undefined,
+      }),
+    );
+  });
+
   it("keeps observing when conversationId is assigned mid-stream (null → id)", async () => {
     let releaseStream: (() => void) | undefined;
     const gate = new Promise<void>((resolve) => {

@@ -83,6 +83,45 @@ def test_admin_is_not_restricted(demo_app):
         assert r.status_code != 403
 
 
+def test_admin_can_persist_document(demo_app):
+    """DEMO_MODE 不锁死 admin 的 KnowledgeWriter。"""
+    with TestClient(demo_app) as client:
+        sid = demo_app.state.session_store.create()
+        client.cookies.set("lorechat_session", sid)
+        writer = demo_app.state.container.knowledge_writer
+        kb = demo_app.state.settings_store.get().kb_path
+        writer.persist_document(
+            "技术/admin-ok.md",
+            {"title": "ok"},
+            "body",
+            commit_msg="test",
+            changelog_line="test",
+        )
+        assert (kb / "技术" / "admin-ok.md").is_file()
+        # 证明 HTTP 上下文下 admin 不是 demo_guest
+        assert client.get("/api/tree").status_code == 200
+
+
+def test_guest_writer_is_refused_under_request_context(demo_app):
+    from app.demo.runtime import bind_demo_guest, reset_demo_guest
+    from app.engine.knowledge_writer import KnowledgeWriterReadOnly
+
+    with TestClient(demo_app):
+        writer = demo_app.state.container.knowledge_writer
+        token = bind_demo_guest(True)
+        try:
+            with pytest.raises(KnowledgeWriterReadOnly):
+                writer.persist_document(
+                    "技术/nope.md",
+                    {"title": "x"},
+                    "body",
+                    commit_msg="x",
+                    changelog_line="x",
+                )
+        finally:
+            reset_demo_guest(token)
+
+
 def test_guest_settings_leak_no_key_fragment(demo_app, guest):
     demo_app.state.settings_store.get().openai_api_key = "sk-live-abcdefgh1234"
     body = guest.get("/api/admin/settings").json()

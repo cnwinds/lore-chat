@@ -463,6 +463,8 @@ export async function chat(text: string, conversationId?: string | null) {
 
 export type ChatStreamOptions = {
   conversationId?: string | null;
+  /** 不落盘续聊：加载该会话 transcript 作 history，不写回源会话 */
+  ephemeralFrom?: string | null;
   activeDocPaths?: string[];
   docContext?: DocContextItem[];
   primaryDocPath?: string | null;
@@ -481,6 +483,7 @@ export async function* chatStream(
 ): AsyncGenerator<ChatStreamEvent> {
   const {
     conversationId,
+    ephemeralFrom,
     activeDocPaths = [],
     docContext,
     primaryDocPath,
@@ -493,6 +496,7 @@ export async function* chatStream(
   const body: Record<string, unknown> = {
     text,
     conversation_id: conversationId ?? undefined,
+    ephemeral_from: ephemeralFrom ?? undefined,
     client_message_id: clientMessageId ?? undefined,
     primary_doc_path: primaryDocPath ?? undefined,
     web_enabled: webEnabled,

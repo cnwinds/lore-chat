@@ -12,6 +12,7 @@ import {
   type UsagePrice,
   type UsageSummary,
 } from "../../api";
+import { useDemoCapability } from "../../hooks/useDemoCapability";
 import { priceRowNeedsSetup } from "./settingsAttention";
 import { SettingsAttentionDot } from "./SettingsAttentionDot";
 
@@ -238,6 +239,7 @@ export function UsageSettingsTab({
   onAttentionChange?: () => void;
   onIncompletePriceCountChange?: (count: number) => void;
 } = {}) {
+  const { canWrite } = useDemoCapability();
   const [granularity, setGranularity] = useState<Granularity>("day");
   const [summary, setSummary] = useState<UsageSummary | null>(null);
   const [events, setEvents] = useState<UsageEvent[]>([]);
@@ -579,18 +581,20 @@ export function UsageSettingsTab({
                               : "对话"}
                         </span>
                       </div>
-                      <button
-                        type="button"
-                        className={`settings-btn settings-btn--compact${
-                          dirty
-                            ? " settings-btn--primary"
-                            : " settings-btn--secondary"
-                        }`}
-                        disabled={!dirty || saving}
-                        onClick={() => void savePrice(row)}
-                      >
-                        {saving ? "保存中" : dirty ? "保存" : "已保存"}
-                      </button>
+                      {canWrite ? (
+                        <button
+                          type="button"
+                          className={`settings-btn settings-btn--compact${
+                            dirty
+                              ? " settings-btn--primary"
+                              : " settings-btn--secondary"
+                          }`}
+                          disabled={!dirty || saving}
+                          onClick={() => void savePrice(row)}
+                        >
+                          {saving ? "保存中" : dirty ? "保存" : "已保存"}
+                        </button>
+                      ) : null}
                     </div>
 
                     {fields.chat ? (
@@ -605,6 +609,7 @@ export function UsageSettingsTab({
                               aria-label={`${row.model} Input 每百万 tokens`}
                               placeholder="/ MTok"
                               value={row.prompt_per_1m ?? ""}
+                              disabled={!canWrite}
                               onChange={(e) =>
                                 updatePrice(
                                   row.model,
@@ -623,6 +628,7 @@ export function UsageSettingsTab({
                               aria-label={`${row.model} Output 每百万 tokens`}
                               placeholder="/ MTok"
                               value={row.completion_per_1m ?? ""}
+                              disabled={!canWrite}
                               onChange={(e) =>
                                 updatePrice(
                                   row.model,
@@ -641,6 +647,7 @@ export function UsageSettingsTab({
                               aria-label={`${row.model} Cache Input 每百万 tokens`}
                               placeholder="/ MTok"
                               value={row.cache_input_per_1m ?? ""}
+                              disabled={!canWrite}
                               onChange={(e) =>
                                 updatePrice(
                                   row.model,
@@ -666,6 +673,7 @@ export function UsageSettingsTab({
                               aria-label={`${row.model} Embed 每百万 tokens`}
                               placeholder="/ MTok"
                               value={row.embed_per_1m ?? ""}
+                              disabled={!canWrite}
                               onChange={(e) =>
                                 updatePrice(
                                   row.model,
@@ -709,12 +717,15 @@ export function UsageSettingsTab({
               <span>统计时区</span>
               <input
                 value={prefs?.timezone ?? "Asia/Shanghai"}
+                disabled={!canWrite}
                 onChange={(e) =>
                   setPrefs((p) =>
                     p ? { ...p, timezone: e.target.value } : p,
                   )
                 }
-                onBlur={(e) => void savePrefs({ timezone: e.target.value })}
+                onBlur={(e) =>
+                  canWrite ? void savePrefs({ timezone: e.target.value }) : undefined
+                }
               />
             </label>
             <label className="settings-field">
@@ -723,6 +734,7 @@ export function UsageSettingsTab({
                 type="number"
                 min={1}
                 value={prefs?.retention_days ?? 365}
+                disabled={!canWrite}
                 onChange={(e) =>
                   setPrefs((p) =>
                     p
@@ -734,27 +746,31 @@ export function UsageSettingsTab({
                   )
                 }
                 onBlur={(e) =>
-                  void savePrefs({
-                    retention_days: Number(e.target.value) || 365,
-                  })
+                  canWrite
+                    ? void savePrefs({
+                        retention_days: Number(e.target.value) || 365,
+                      })
+                    : undefined
                 }
               />
             </label>
-            <div className="usage-danger">
-              <div className="usage-danger-copy">
-                <span className="usage-danger-title">清空用量记录</span>
-                <span className="usage-danger-desc">
-                  删除全部调用明细与汇总；价目表保留
-                </span>
+            {canWrite ? (
+              <div className="usage-danger">
+                <div className="usage-danger-copy">
+                  <span className="usage-danger-title">清空用量记录</span>
+                  <span className="usage-danger-desc">
+                    删除全部调用明细与汇总；价目表保留
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  className="settings-btn settings-btn--compact usage-danger-btn"
+                  onClick={() => void handleClear()}
+                >
+                  清空
+                </button>
               </div>
-              <button
-                type="button"
-                className="settings-btn settings-btn--compact usage-danger-btn"
-                onClick={() => void handleClear()}
-              >
-                清空
-              </button>
-            </div>
+            ) : null}
           </div>
         ) : null}
       </section>

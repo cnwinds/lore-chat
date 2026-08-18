@@ -40,6 +40,17 @@ def test_touch_message_counts_per_session():
     assert store.message_count(sid) == 2
 
 
+def test_create_records_created_at():
+    store = GuestSessionStore()
+    before = time.monotonic()
+    sid = store.create(ip="1.2.3.4")
+    after = time.monotonic()
+    with store._lock:
+        session = store._sessions[sid]
+    assert before <= session.created_at <= after
+    assert session.expires_at > session.created_at
+
+
 def test_store_writes_nothing_to_disk(tmp_path):
     """访客 session 落盘会污染演示知识库并造成并发写竞态。"""
     before = set(tmp_path.rglob("*"))

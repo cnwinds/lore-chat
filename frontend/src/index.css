@@ -4302,6 +4302,26 @@ button.memory-fact-statement--jump:focus-visible {
   line-height: 1.4;
 }
 
+.chat-guest-continue {
+  display: flex;
+  justify-content: center;
+  margin: 8px 16px 0;
+}
+
+.chat-guest-continue-btn {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  border-radius: var(--radius-sm);
+  padding: 6px 14px;
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.chat-guest-continue-btn:hover {
+  background: var(--surface-hover, var(--system-layer-soft));
+}
+
 .chat-memory-notice-dismiss {
   border: none;
   background: transparent;

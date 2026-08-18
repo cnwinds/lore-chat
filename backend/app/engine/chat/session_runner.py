@@ -79,6 +79,15 @@ class ChatSessionRunner:
             reuse_user_message_id=reuse_user_message_id,
         )
 
+    def resolve_ephemeral_history(
+        self, ephemeral_from: str | None
+    ) -> list[dict] | None:
+        """加载预置会话 transcript；不存在时抛 KeyError。"""
+        if not ephemeral_from:
+            return None
+        source = self.conversations.get(ephemeral_from)
+        return self.conversations.llm_history(source)
+
     async def stream_ephemeral(
         self,
         text: str,
@@ -88,8 +97,12 @@ class ChatSessionRunner:
         primary_doc: str | None,
         web_enabled: bool,
         history: list[dict] | None = None,
+        ephemeral_from: str | None = None,
+        demo_guest: bool = False,
     ) -> AsyncIterator[str]:
         catalog = self.resolve_skill_catalog(skill_catalog)
+        if history is None and ephemeral_from:
+            history = self.resolve_ephemeral_history(ephemeral_from)
         try:
             async for ev in self.agent.run(
                 text,
@@ -101,6 +114,7 @@ class ChatSessionRunner:
                 history=history,
                 conversation_id=None,
                 web_enabled=web_enabled,
+                demo_guest=demo_guest,
             ):
                 yield ev
         except Exception as e:

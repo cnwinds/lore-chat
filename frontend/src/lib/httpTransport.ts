@@ -100,10 +100,31 @@ export async function openSse(
   });
   if (!r.ok) {
     let detail = r.statusText;
+    let parsedBody: unknown;
     try {
-      detail = (await r.text()) || detail;
+      const text = await r.text();
+      detail = text || detail;
+      try {
+        parsedBody = JSON.parse(text);
+        const body = parsedBody as Record<string, unknown>;
+        if (typeof body.detail === "string") detail = body.detail;
+        else if (
+          body.detail &&
+          typeof body.detail === "object" &&
+          typeof (body.detail as { detail?: unknown }).detail === "string"
+        ) {
+          detail = (body.detail as { detail: string }).detail;
+        } else if (typeof body.message === "string") {
+          detail = body.message;
+        }
+      } catch {
+        /* plain text body */
+      }
     } catch {
       /* ignore */
+    }
+    if (r.status === 403 && isDemoReadOnlyError(parsedBody)) {
+      window.dispatchEvent(new CustomEvent("demo:read-only"));
     }
     const err = new Error(detail || `请求失败 (${r.status})`) as ApiError;
     err.status = r.status;

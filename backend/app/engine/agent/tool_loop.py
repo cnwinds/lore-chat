@@ -42,10 +42,12 @@ _LIMIT_MSG = "（已达工具调用上限，以上为目前能给出的结论。
 _NON_SERIALIZABLE_KEYS = frozenset({"hits", "ingest_result"})
 
 
-def resolve_max_tool_calls(settings: Settings) -> int:
-    """demo 下取配置与访客预算的较小值，避免匿名滥用。"""
+def resolve_max_tool_calls(settings: Settings, *, demo_guest: bool | None = None) -> int:
+    """访客请求取配置与访客预算的较小值，避免匿名滥用；admin 不受限。"""
+    from app.demo.runtime import is_demo_guest
+
     max_tool_calls = settings.agent_max_tool_calls
-    if getattr(settings, "demo_mode", False):
+    if demo_guest if demo_guest is not None else is_demo_guest():
         from app.demo.quota import GUEST_MAX_TOOL_CALLS
 
         max_tool_calls = min(max_tool_calls, GUEST_MAX_TOOL_CALLS)

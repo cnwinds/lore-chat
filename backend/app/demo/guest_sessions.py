@@ -13,6 +13,7 @@ DEFAULT_CAPACITY = 10000
 @dataclass
 class _GuestSession:
     expires_at: float
+    created_at: float
     ip: str | None = None
     message_count: int = field(default=0)
 
@@ -32,9 +33,10 @@ class GuestSessionStore:
 
     def create(self, ip: str | None = None) -> str:
         sid = secrets.token_urlsafe(24)
+        now = time.monotonic()
         with self._lock:
             self._sessions[sid] = _GuestSession(
-                expires_at=time.monotonic() + self._ttl, ip=ip
+                expires_at=now + self._ttl, created_at=now, ip=ip
             )
             while len(self._sessions) > self._capacity:
                 self._sessions.popitem(last=False)

@@ -34,6 +34,14 @@ def test_guest_cookie_grants_read_access(demo_client):
     assert r.status_code == 200
 
 
+def test_protected_route_auto_issues_guest_cookie(demo_client):
+    """无 cookie 访问受保护读接口时自动签发访客身份。"""
+    r = demo_client.get("/api/tree")
+    assert r.status_code == 200
+    assert "lorechat_guest" in r.cookies
+    assert demo_client.get("/api/auth/status").json()["role"] == "guest"
+
+
 def test_status_role_is_guest_after_issue(demo_client):
     demo_client.post("/api/auth/guest")
     assert demo_client.get("/api/auth/status").json()["role"] == "guest"

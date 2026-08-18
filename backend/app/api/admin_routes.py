@@ -11,7 +11,7 @@ from app.backup.export_kb import build_export_zip
 from app.backup.import_kb import ImportResult, import_kb
 from app.backup.lock import MaintenanceActiveError
 from app.backup.reindex import reindex_all
-from app.demo.identity import IDENTITY_GUEST
+from app.demo.identity import IDENTITY_GUEST, resolve_identity
 from app.demo.redact import redact_secrets_for_guest
 from app.deps import apply_settings, dispose_container, remount_container
 from app.models.candidate import model_routing_changed
@@ -68,7 +68,7 @@ def get_settings(request: Request) -> dict[str, Any]:
         data["image_cooldown"] = container.image_cooldown.public_status()
     else:
         data["image_cooldown"] = {}
-    if getattr(request.state, "identity", None) == IDENTITY_GUEST:
+    if resolve_identity(request) == IDENTITY_GUEST:
         data = redact_secrets_for_guest(data)
     return data
 

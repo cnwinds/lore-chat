@@ -130,7 +130,8 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
         repo,
         index.indexer,
         skills_dir=settings.skills_dir,
-        read_only=bool(settings.demo_mode),
+        # 只读按请求身份（is_demo_guest），不因 DEMO_MODE 全局锁死 admin
+        read_only=False,
     )
     memory_service = MemoryService(
         memory_store,

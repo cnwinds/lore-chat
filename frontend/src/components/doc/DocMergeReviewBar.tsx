@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { getMergeSession } from "../../api";
 import type { MergeReviewInfo } from "../../hooks/doc/useDocDirtyPrompt";
+import { useDemoCapability } from "../../hooks/useDemoCapability";
 
 type Props = {
   mergeReview: MergeReviewInfo;
@@ -15,6 +16,7 @@ export function DocMergeReviewBar({
   onMergeRegenerate,
   onMergeReject,
 }: Props) {
+  const { canWrite } = useDemoCapability();
   const [mergeBusyAction, setMergeBusyAction] = useState<
     "reject" | "regenerate" | "accept" | null
   >(null);
@@ -57,40 +59,44 @@ export function DocMergeReviewBar({
   return (
     <footer className="doc-merge-review-bar">
       <span>正在审阅合并结果（源自 {mergeReview.sourcePaths.length} 篇）</span>
-      <div className="doc-merge-review-actions">
-        <button
-          type="button"
-          onClick={() =>
-            void (async () => {
-              if (!(await ensureMergeActionConfirmed("reject"))) return;
-              await runMergeAction("reject", onMergeReject);
-            })()
-          }
-          disabled={mergeBusyAction !== null}
-        >
-          删除此文
-        </button>
-        <button
-          type="button"
-          onClick={() =>
-            void (async () => {
-              if (!(await ensureMergeActionConfirmed("regenerate"))) return;
-              await runMergeAction("regenerate", onMergeRegenerate);
-            })()
-          }
-          disabled={mergeBusyAction !== null}
-        >
-          重新生成
-        </button>
-        <button
-          type="button"
-          className="doc-merge-review-accept"
-          onClick={() => void runMergeAction("accept", onMergeAccept)}
-          disabled={mergeBusyAction !== null}
-        >
-          采用
-        </button>
-      </div>
+      {canWrite ? (
+        <div className="doc-merge-review-actions">
+          <button
+            type="button"
+            onClick={() =>
+              void (async () => {
+                if (!(await ensureMergeActionConfirmed("reject"))) return;
+                await runMergeAction("reject", onMergeReject);
+              })()
+            }
+            disabled={mergeBusyAction !== null}
+          >
+            删除此文
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              void (async () => {
+                if (!(await ensureMergeActionConfirmed("regenerate"))) return;
+                await runMergeAction("regenerate", onMergeRegenerate);
+              })()
+            }
+            disabled={mergeBusyAction !== null}
+          >
+            重新生成
+          </button>
+          <button
+            type="button"
+            className="doc-merge-review-accept"
+            onClick={() => void runMergeAction("accept", onMergeAccept)}
+            disabled={mergeBusyAction !== null}
+          >
+            采用
+          </button>
+        </div>
+      ) : (
+        <span className="doc-merge-review-readonly">演示环境只读，无法接受或拒绝合并</span>
+      )}
     </footer>
   );
 }

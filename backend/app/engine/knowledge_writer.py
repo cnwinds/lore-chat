@@ -114,7 +114,9 @@ class KnowledgeWriter:
         self.read_only = read_only
 
     def _assert_writable(self) -> None:
-        if self.read_only:
+        from app.demo.runtime import is_demo_guest
+
+        if self.read_only or is_demo_guest():
             raise KnowledgeWriterReadOnly("当前部署为只读，知识库不可写入")
 
     def persist_document(
@@ -189,6 +191,7 @@ class KnowledgeWriter:
         commit_msg: str | None = None,
         changelog_line: str | None = None,
     ) -> str:
+        self._assert_writable()
         from app.engine.skills_dir import require_skill_md_in_skills_dir
 
         norm = rel_path.replace("\\", "/").lstrip("/")
@@ -222,6 +225,7 @@ class KnowledgeWriter:
         self.indexer.reindex_doc(norm, body)
 
     def move_document(self, from_path: str, to_directory: str, to_filename: str) -> str:
+        self._assert_writable()
         from_norm = from_path.replace("\\", "/").lstrip("/")
         to_path = join_kb_path(to_directory, to_filename)
         new_path = self.repo.move_doc(
@@ -374,6 +378,7 @@ class KnowledgeWriter:
         overwrite: bool = False,
     ) -> dict:
         """写入白名单文本资产（非 Markdown）或 SVG；不做 LLM 合并。"""
+        self._assert_writable()
         fn = _safe_basename(filename)
         if is_markdown_path(fn):
             raise ValueError("Markdown 请使用 write_doc，勿用 write_kb_file")
@@ -417,6 +422,7 @@ class KnowledgeWriter:
         to_directory: str,
         to_name: str | None = None,
     ) -> str:
+        self._assert_writable()
         from_norm = from_path.replace("\\", "/").strip("/")
         if not from_norm:
             raise ValueError("不能移动根目录")
@@ -543,6 +549,7 @@ class KnowledgeWriter:
         meta_overrides: dict | None = None,
     ) -> None:
         """按 PlacementDecision 落盘（replace / merge / new）。"""
+        self._assert_writable()
         rel_path = decision.rel_path
         exists = False
         try:
