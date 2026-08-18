@@ -102,6 +102,7 @@ class AgentOrchestrator:
                 self.settings.sandbox_enabled and self.tools.sandbox_runtime is not None
             ),
             disclosure_windows=self.tools.disclosure_windows,
+            demo=bool(getattr(self.settings, "demo_mode", False)),
         )
         primary = primary_doc_path or active_doc_path
         start = time.monotonic()

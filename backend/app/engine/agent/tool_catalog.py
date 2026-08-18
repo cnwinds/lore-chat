@@ -920,6 +920,7 @@ def select_tools(
     imagegen_configured: bool = True,
     sandbox_enabled: bool = False,
     disclosure_windows: DisclosureWindows | None = None,
+    demo: bool = False,
 ) -> list[dict]:
     """按 mode / 联网 / 沙箱能力硬门过滤下发给模型的工具集。
 
@@ -928,6 +929,7 @@ def select_tools(
     - mode=no_write：移除 write_doc / write_kb_file / update_doc_meta / manage_memory / publish_from_sandbox / generate_image（保留 stage_to_sandbox）。
     - mode=force_write：保留 write_doc（/api/ingest 依赖 prompt 强制调用）。
     - sandbox_enabled=False：移除全部沙箱工具。
+    - demo=True：移除 DEMO_BLOCKED_TOOLS（详见 tool_impl/demo_preview.py）。
     - disclosure_windows：注入 read_doc / fetch_url 的实际窗口字数（与 Settings 一致）。
 
     /api/chat 使用 mode=default。ingest/ask 为测试与脚本同步 API，见
@@ -947,6 +949,10 @@ def select_tools(
         excluded.add("generate_image")
     if not sandbox_enabled:
         excluded |= SANDBOX_TOOLS
+    if demo:
+        from app.engine.agent.tool_impl.demo_preview import DEMO_BLOCKED_TOOLS
+
+        excluded |= DEMO_BLOCKED_TOOLS
     windows = disclosure_windows or DisclosureWindows()
     selected: list[dict] = []
     for d in TOOL_DEFINITIONS:
