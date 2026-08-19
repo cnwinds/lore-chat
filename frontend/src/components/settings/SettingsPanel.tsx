@@ -14,22 +14,12 @@ import { AccountSettingsTab } from "./AccountSettingsTab";
 import { AgentSettingsTab } from "./AgentSettingsTab";
 import { KbBackupSettingsTab } from "./KbBackupSettingsTab";
 import { ModelSettingsTab } from "./ModelSettingsTab";
-import { parseCandidates } from "./modelChainDrafts";
+import type { EmbedCandidateDraft, ModelCandidateDraft } from "./providerPresets";
 import {
-  maskApiKeyPlaceholder,
-  parseEmbedCandidates,
-  type EmbedCandidateDraft,
-  type ModelCandidateDraft,
-} from "./providerPresets";
-import {
-  SEARCH_PROVIDER_OPTIONS,
   type SearchProviderDraft,
-  type SearchProviderId,
 } from "./SearchProviderEditor";
 import {
-  IMAGE_PROVIDER_OPTIONS,
   type ImageProviderDraft,
-  type ImageProviderId,
 } from "./ImageProviderEditor";
 import type { CooldownStatus } from "./settingsTypes";
 import { SearchSettingsTab } from "./SearchSettingsTab";
@@ -47,89 +37,9 @@ import {
   mergeSettingsAttention,
   searchProvidersConfigured,
 } from "./settingsAttention";
+import { hydrateSettingsDrafts, toSettingsPatch } from "./settingsDrafts";
 import { maybeEnableComposerWebSearch } from "../../utils/webSearchPreference";
 import type { SettingsAttention } from "../../api";
-
-const SEARCH_PROVIDER_IDS = new Set(
-  SEARCH_PROVIDER_OPTIONS.map((o) => o.id),
-);
-
-const IMAGE_PROVIDER_IDS = new Set(
-  IMAGE_PROVIDER_OPTIONS.map((o) => o.id),
-);
-
-function parseProviderChainDrafts<T extends string>(
-  raw: unknown,
-  allowed: Set<string>,
-  opts?: {
-    /** provider：同厂家只保留一条；id：同厂家可多条、按 id 去重 */
-    uniqueBy?: "provider" | "id";
-    extra?: (row: Record<string, unknown>) => Record<string, string>;
-  },
-): Array<{
-  id: string;
-  provider: T;
-  api_key: string;
-  api_key_masked?: string;
-} & Record<string, string>> {
-  if (!Array.isArray(raw)) return [];
-  const uniqueBy = opts?.uniqueBy ?? "provider";
-  const seen = new Set<string>();
-  const out: Array<{
-    id: string;
-    provider: T;
-    api_key: string;
-    api_key_masked?: string;
-  } & Record<string, string>> = [];
-  for (const item of raw) {
-    if (!item || typeof item !== "object") continue;
-    const row = item as Record<string, unknown>;
-    const provider = String(row.provider || "").trim().toLowerCase();
-    if (!allowed.has(provider)) continue;
-    let id = String(row.id || "").trim();
-    if (!id) {
-      id = provider;
-      if (uniqueBy === "id") {
-        let n = 2;
-        while (seen.has(id)) {
-          id = `${provider}-${n}`;
-          n += 1;
-        }
-      }
-    }
-    const dedupeKey = uniqueBy === "provider" ? provider : id;
-    if (seen.has(dedupeKey)) continue;
-    seen.add(dedupeKey);
-    const rawKey = typeof row.api_key === "string" ? row.api_key.trim() : "";
-    out.push({
-      id,
-      provider: provider as T,
-      api_key: "",
-      ...(rawKey ? { api_key_masked: maskApiKeyPlaceholder(rawKey) } : {}),
-      ...(opts?.extra ? opts.extra(row) : {}),
-    });
-  }
-  return out;
-}
-
-function parseSearchProviders(raw: unknown): SearchProviderDraft[] {
-  return parseProviderChainDrafts<SearchProviderId>(
-    raw,
-    SEARCH_PROVIDER_IDS,
-    { uniqueBy: "provider" },
-  ) as SearchProviderDraft[];
-}
-
-/** 生图：同厂家可多条，仅按 id 去重。 */
-function parseImageProviders(raw: unknown): ImageProviderDraft[] {
-  return parseProviderChainDrafts<ImageProviderId>(raw, IMAGE_PROVIDER_IDS, {
-    uniqueBy: "id",
-    extra: (row) => ({
-      base_url: typeof row.base_url === "string" ? row.base_url : "",
-      model: typeof row.model === "string" ? row.model : "",
-    }),
-  }) as ImageProviderDraft[];
-}
 
 type Props = {
   open: boolean;
@@ -183,36 +93,6 @@ const EMPTY_ATTENTION: SettingsAttention = {
   memory: { any: false, pending_count: 0 },
   usage: { any: false, incomplete_price_count: 0 },
 };
-
-function str(v: unknown): string {
-  if (v === null || v === undefined) return "";
-  return String(v);
-}
-
-function num(v: unknown, fallback: number): number {
-  if (typeof v === "number" && !Number.isNaN(v)) return v;
-  const n = Number(v);
-  return Number.isNaN(n) ? fallback : n;
-}
-
-function bool(v: unknown, fallback: boolean): boolean {
-  if (typeof v === "boolean") return v;
-  return fallback;
-}
-
-function draftCandidateHasContent(c: {
-  model?: string;
-  base_url?: string;
-  api_key?: string;
-  api_key_masked?: string;
-}): boolean {
-  return Boolean(
-    (c.model || "").trim() ||
-      (c.base_url || "").trim() ||
-      (c.api_key || "").trim() ||
-      (c.api_key_masked || "").trim(),
-  );
-}
 
 /** 浏览器当前访问源，用作 Public Base URL（无尾斜杠）。 */
 function clientAccessOrigin(): string {
@@ -288,60 +168,39 @@ export function SettingsPanel({
     setSaveMsg(null);
     try {
       const data = await getSettings();
-      setKbPath(str(data.kb_path));
-
-      const existingPublic = str(data.public_base_url).trim();
-      if (existingPublic) {
-        setPublicBaseUrl(existingPublic);
-      } else {
-        const auto = clientAccessOrigin();
-        setPublicBaseUrl(auto);
-        if (auto) {
-          try {
-            await putSettings({ public_base_url: auto });
-            setSaveMsg("已根据当前访问地址自动填写并保存 Public Base URL");
-          } catch {
-            /* 仍保留表单预填，用户可手动保存 */
-          }
+      const drafts = hydrateSettingsDrafts(data, {
+        fallbackPublicBaseUrl: clientAccessOrigin(),
+      });
+      setKbPath(drafts.kbPath);
+      setPublicBaseUrl(drafts.publicBaseUrl);
+      if (drafts.publicBaseUrlFromFallback && drafts.publicBaseUrl) {
+        try {
+          await putSettings({ public_base_url: drafts.publicBaseUrl });
+          setSaveMsg("已根据当前访问地址自动填写并保存 Public Base URL");
+        } catch {
+          /* 仍保留表单预填，用户可手动保存 */
         }
       }
-      const chat = parseCandidates(data.chat_models);
-      const util = parseCandidates(data.utility_models);
-      setChatModels(chat);
-      setUtilityModels(util);
-      setEmbedModels(parseEmbedCandidates(data.embed_models));
-      setCooldown(
-        data.model_cooldown && typeof data.model_cooldown === "object"
-          ? (data.model_cooldown as CooldownStatus)
-          : {},
+      setChatModels(drafts.chatModels);
+      setUtilityModels(drafts.utilityModels);
+      setEmbedModels(drafts.embedModels);
+      setCooldown(drafts.modelCooldown);
+      setSearchProviders(drafts.searchProviders);
+      searchConfiguredRef.current = searchProvidersConfigured(
+        drafts.searchProviders,
       );
-      const searchDrafts = parseSearchProviders(data.search_providers);
-      setSearchProviders(searchDrafts);
-      searchConfiguredRef.current = searchProvidersConfigured(searchDrafts);
-      setSearchCooldown(
-        data.search_cooldown && typeof data.search_cooldown === "object"
-          ? (data.search_cooldown as CooldownStatus)
-          : {},
-      );
-      setImageProviders(parseImageProviders(data.image_providers));
-      setImageCooldown(
-        data.image_cooldown && typeof data.image_cooldown === "object"
-          ? (data.image_cooldown as CooldownStatus)
-          : {},
-      );
-
-      setMinVectorScore(num(data.min_vector_score, 0.45));
-      setRrfK(num(data.rrf_k, 60));
-      setLaneCandidateK(num(data.lane_candidate_k, 20));
-
-      setAgentMaxToolCalls(num(data.agent_max_tool_calls, 25));
-      setAgentParallelTools(bool(data.agent_parallel_tools, true));
-      setAgentMaxParallel(num(data.agent_max_parallel, 4));
-      setSandboxEnabled(bool(data.sandbox_enabled, false));
-      setSandboxTrustMode(bool(data.sandbox_trust_mode, true));
-      setSandboxMirrorRegion(
-        data.sandbox_mirror_region === "global" ? "global" : "cn",
-      );
+      setSearchCooldown(drafts.searchCooldown);
+      setImageProviders(drafts.imageProviders);
+      setImageCooldown(drafts.imageCooldown);
+      setMinVectorScore(drafts.minVectorScore);
+      setRrfK(drafts.rrfK);
+      setLaneCandidateK(drafts.laneCandidateK);
+      setAgentMaxToolCalls(drafts.agentMaxToolCalls);
+      setAgentParallelTools(drafts.agentParallelTools);
+      setAgentMaxParallel(drafts.agentMaxParallel);
+      setSandboxEnabled(drafts.sandboxEnabled);
+      setSandboxTrustMode(drafts.sandboxTrustMode);
+      setSandboxMirrorRegion(drafts.sandboxMirrorRegion);
       setSettingsReady(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "加载设置失败");
@@ -442,66 +301,22 @@ export function SettingsPanel({
     setError(null);
     setSaveMsg(null);
     try {
-      const patch: Record<string, unknown> = {
-        public_base_url: publicBaseUrl.trim() || null,
-        chat_models: chatModels.filter(draftCandidateHasContent).map((c) => ({
-          id: c.id,
-          model: c.model,
-          provider: c.provider,
-          base_url: c.base_url.trim() || null,
-          api_key: c.api_key.trim() || null,
-          image: c.image,
-          thinking: c.thinking,
-          effort: c.effort,
-          effort_options: c.effort_options,
-          image_wire: c.image_wire,
-        })),
-        utility_models: utilityModels.filter(draftCandidateHasContent).map((c) => ({
-          id: c.id,
-          model: c.model,
-          provider: c.provider,
-          base_url: c.base_url.trim() || null,
-          api_key: c.api_key.trim() || null,
-          image: c.image,
-          thinking: c.thinking,
-          effort: c.effort,
-          effort_options: c.effort_options,
-          image_wire: c.image_wire,
-        })),
-        embed_models: embedModels.filter(draftCandidateHasContent).map((c) => ({
-          id: c.id,
-          model: c.model,
-          provider: c.provider,
-          base_url: c.base_url.trim() || null,
-          api_key: c.api_key.trim() || null,
-          image: false,
-          thinking: false,
-          effort: "medium",
-          effort_options: [],
-          image_wire: "data",
-          thinking_protocol: "none",
-        })),
-        search_providers: searchProviders.map((p) => ({
-          id: p.id,
-          provider: p.provider,
-          api_key: p.api_key.trim() || null,
-        })),
-        image_providers: imageProviders.map((p) => ({
-          id: p.id,
-          provider: p.provider,
-          api_key: p.api_key.trim() || null,
-          base_url: p.base_url.trim() || null,
-          model: p.model.trim() || null,
-        })),
-        min_vector_score: minVectorScore,
-        rrf_k: rrfK,
-        lane_candidate_k: laneCandidateK,
-        agent_max_tool_calls: agentMaxToolCalls,
-        agent_parallel_tools: agentParallelTools,
-        agent_max_parallel: agentMaxParallel,
-        sandbox_trust_mode: sandboxTrustMode,
-        sandbox_mirror_region: sandboxMirrorRegion,
-      };
+      const patch = toSettingsPatch({
+        publicBaseUrl,
+        chatModels,
+        utilityModels,
+        embedModels,
+        searchProviders,
+        imageProviders,
+        minVectorScore,
+        rrfK,
+        laneCandidateK,
+        agentMaxToolCalls,
+        agentParallelTools,
+        agentMaxParallel,
+        sandboxTrustMode,
+        sandboxMirrorRegion,
+      });
 
       const wasSearchConfigured = searchConfiguredRef.current;
       const saved = await putSettings(patch);
