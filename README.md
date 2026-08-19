@@ -89,10 +89,10 @@ irm https://raw.githubusercontent.com/cnwinds/lore-chat/master/deploy/get-lorech
 默认拉取 **`latest`**。要锁定发行版，在安装目录 `.env` 中设置后执行 `./lorechat.sh update`：
 
 ```bash
-LORECHAT_IMAGE_TAG=v0.1.0
+LORECHAT_IMAGE_TAG=0.1.0
 ```
 
-也可直接拉取对应标签的镜像，例如 `ghcr.io/cnwinds/lore-chat-backend:v0.1.0`（还有 `lore-chat-web`、`lore-chat-sandbox-agent`）。镜像标签与 Git tag 相同，均为 **`v0.1.0`**。版本说明见 [CHANGELOG.md](CHANGELOG.md) 与 [GitHub Releases](https://github.com/cnwinds/lore-chat/releases)。
+也可直接拉取对应标签的镜像，例如 `ghcr.io/cnwinds/lore-chat-backend:0.1.0`（还有 `lore-chat-web`、`lore-chat-sandbox-agent`）。Git 标签是 `v0.1.0`，**镜像标签不带 `v`**。版本说明见 [CHANGELOG.md](CHANGELOG.md) 与 [GitHub Releases](https://github.com/cnwinds/lore-chat/releases)。
 
 ## 本地开发
 

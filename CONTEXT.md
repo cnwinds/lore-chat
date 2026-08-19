@@ -66,7 +66,7 @@
 
 ## 运行数据（Docker）
 
-- **一键拉取（小白）**：单文件启动器 [`deploy/lorechat.sh`](deploy/lorechat.sh) / [`deploy/lorechat.ps1`](deploy/lorechat.ps1)（由 [`scripts/gen-deploy-launchers.py`](scripts/gen-deploy-launchers.py) 生成；运行时在脚本旁写出 compose / 沙箱配置）。数据默认 `./data/knowledge/`、`./data/backups/`。镜像 tag：`LORECHAT_IMAGE_TAG`（`latest` 或 `v0.1.0` 这类，与 git tag 相同）；发版流程见 [AGENTS.md](AGENTS.md#二版本发布)
+- **一键拉取（小白）**：单文件启动器 [`deploy/lorechat.sh`](deploy/lorechat.sh) / [`deploy/lorechat.ps1`](deploy/lorechat.ps1)（由 [`scripts/gen-deploy-launchers.py`](scripts/gen-deploy-launchers.py) 生成；运行时在脚本旁写出 compose / 沙箱配置）。数据默认 `./data/knowledge/`、`./data/backups/`。镜像 tag：`LORECHAT_IMAGE_TAG`（`latest` 或 `0.1.0` 这类，不带 `v`；git tag 仍是 `v0.1.0`）；发版流程见 [AGENTS.md](AGENTS.md#二版本发布)
 - **源码构建（开发者）**：`docker/docker-compose.yml` + 根 `./lorechat.sh start --chat|--work`（共用 [`scripts/lorechat-compose-lib.sh`](scripts/lorechat-compose-lib.sh)）
 - **可选执行能力**：叠加 sandbox compose；`SANDBOX_ENABLED` / `GET /api/health` → `capabilities.sandbox`。见 [ADR 2026-08-06](docs/adr/2026-08-06-opensandbox-runtime.md)
 - OpenSandbox 配置源：`docker/opensandbox/config.toml`（嵌入预构建启动器；开发路径挂载 `docker/opensandbox/`）

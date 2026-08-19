@@ -193,13 +193,13 @@ WEB_PORT=8080
 # BIG_MODEL=
 # EMBED_MODEL=
 
-# GHCR 镜像标签：latest（默认）或发行版如 v0.1.0（与 git tag 相同）
+# GHCR 镜像标签：latest（默认）或发行版如 0.1.0（不要加 v；git tag 才是 v0.1.0）
 LORECHAT_IMAGE_TAG=latest
 
 # 需要换完整镜像名时再取消注释
-# LORECHAT_BACKEND_IMAGE=ghcr.io/cnwinds/lore-chat-backend:v0.1.0
-# LORECHAT_WEB_IMAGE=ghcr.io/cnwinds/lore-chat-web:v0.1.0
-# SANDBOX_IMAGE=ghcr.io/cnwinds/lore-chat-sandbox-agent:v0.1.0
+# LORECHAT_BACKEND_IMAGE=ghcr.io/cnwinds/lore-chat-backend:0.1.0
+# LORECHAT_WEB_IMAGE=ghcr.io/cnwinds/lore-chat-web:0.1.0
+# SANDBOX_IMAGE=ghcr.io/cnwinds/lore-chat-sandbox-agent:0.1.0
 LORECHAT_EOF
 
   if [[ ! -f "${ROOT}/.env" ]]; then

@@ -7,7 +7,7 @@
 1. 浏览模块地图与 seam 约定：[CONTEXT.md](CONTEXT.md)
 2. 相关架构决策见 [`docs/adr/`](docs/adr/)
 3. 提示词相关改动须遵守根目录 [AGENTS.md](AGENTS.md)（根因治理，禁止孤例补丁）
-4. **发布版本**须遵守 [AGENTS.md「版本发布」](AGENTS.md#二版本发布)：改 `VERSION` + `CHANGELOG.md`，在 `master` 打 annotated tag `vX.Y.Z` 并推送；CI 发布 GHCR `latest` / `vX.Y.Z` 镜像并创建 GitHub Release
+4. **发布版本**须遵守 [AGENTS.md「版本发布」](AGENTS.md#二版本发布)：改 `VERSION` + `CHANGELOG.md`，在 `master` 打 annotated tag `vX.Y.Z` 并推送；CI 发布 GHCR `latest` / `X.Y.Z` 镜像并创建 GitHub Release
 
 **请勿提交**：API 密钥、本机 `.env`、以及 `docker/data/` / `deploy/data/` / 启动器旁 `data/` / `backend/knowledge/` 下的运行时知识库与备份（这些目录为本地私有数据）。
 
@@ -61,7 +61,7 @@ npm test
 npm run build
 ```
 
-CI：PR 跑 [ci.yml](.github/workflows/ci.yml)；推送到 `master`/`main` 或 `v*` tag 时由 [publish-images.yml](.github/workflows/publish-images.yml) 先跑同一套检查再推镜像。`master` 更新 `latest`；`vX.Y.Z` tag 额外打出 `vX.Y.Z`、`vX.Y`（及不带 `v` 的别名）并写 GitHub Release。检查步骤见 [ci-checks.yml](.github/workflows/ci-checks.yml)。发布操作步骤见 [AGENTS.md](AGENTS.md#二版本发布)。
+CI：PR 跑 [ci.yml](.github/workflows/ci.yml)；推送到 `master`/`main` 或 `v*` tag 时由 [publish-images.yml](.github/workflows/publish-images.yml) 先跑同一套检查再推镜像。`master` 更新 `latest`；`vX.Y.Z` git tag 额外打出镜像 `X.Y.Z`、`X.Y` 并写 GitHub Release。检查步骤见 [ci-checks.yml](.github/workflows/ci-checks.yml)。发布操作步骤见 [AGENTS.md](AGENTS.md#二版本发布)。
 
 ## Pull Request
 
