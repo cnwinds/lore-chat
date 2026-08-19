@@ -86,6 +86,14 @@ irm https://raw.githubusercontent.com/cnwinds/lore-chat/master/deploy/get-lorech
 
 打开 http://localhost:8080 。未配置 API Key 时，页面会引导填写。
 
+默认拉取 **`latest`**。要锁定发行版，在安装目录 `.env` 中设置后执行 `./lorechat.sh update`：
+
+```bash
+LORECHAT_IMAGE_TAG=0.1.0
+```
+
+也可直接拉取对应标签的镜像，例如 `ghcr.io/cnwinds/lore-chat-backend:0.1.0`（还有 `lore-chat-web`、`lore-chat-sandbox-agent`）。镜像标签**不带** `v`。版本说明见 [CHANGELOG.md](CHANGELOG.md) 与 [GitHub Releases](https://github.com/cnwinds/lore-chat/releases)。
+
 ## 本地开发
 
 贡献流程、本机 venv / Vite 等见 [CONTRIBUTING.md](CONTRIBUTING.md)。
@@ -138,6 +146,7 @@ cp .env.docker.example .env
 | | |
 |--|--|
 | 环境变量 | [`backend/.env.example`](backend/.env.example) |
+| 版本与变更 | [`VERSION`](VERSION) · [CHANGELOG.md](CHANGELOG.md) |
 | 模块地图 | [CONTEXT.md](CONTEXT.md) |
 | 架构决策 | [docs/adr/](docs/adr/) |
 | 安全披露 | [SECURITY.md](SECURITY.md) |

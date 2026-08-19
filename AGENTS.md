@@ -1,4 +1,11 @@
-# 项目开发规范：提示词编写
+# Lore Chat — Agent 约定
+
+本文件约束在本仓库工作的 AI。**改提示词**或**做版本发布**前先读对应章节；日常写代码仍以 [CONTEXT.md](CONTEXT.md) 与 [docs/adr/](docs/adr/) 为准。
+
+- [一、提示词编写](#一提示词编写)
+- [二、版本发布](#二版本发布)
+
+# 一、提示词编写
 
 本文件约束 **lore-chat 开发时如何编写与修改提示词**（system prompt、抽取器 prompt、工具描述中的行为说明等）。改代码里的提示词前先读本节；评审提示词改动时对照本节。
 
@@ -112,3 +119,128 @@
 - [ ] 与代码硬约束无重复、无矛盾
 - [ ] 若动记忆抽取：已体现关于主人 / 耐久性 / 语境保全门槛与口诀
 - [ ] 有正反例或测试意图，覆盖根因同类而非仅原句
+
+---
+
+# 二、版本发布
+
+用户说「发布」「打版本」「出 0.x.y」时，**必须按本节执行**，不要另发明流程。版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)；`CHANGELOG.md` 遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
+
+## 2.1 产物与标签
+
+发行版来自 **`master` 上的 annotated tag `vX.Y.Z`**（例如 `v0.1.0`）。推送 tag 后，[publish-images.yml](.github/workflows/publish-images.yml) 先跑与 PR 相同的检查，再推送三张 GHCR 镜像：
+
+| 镜像 | 用途 |
+|------|------|
+| `ghcr.io/cnwinds/lore-chat-backend` | API |
+| `ghcr.io/cnwinds/lore-chat-web` | 前端 Nginx |
+| `ghcr.io/cnwinds/lore-chat-sandbox-agent` | Work 模式沙箱 Agent |
+
+每个发行版打出：
+
+- **`X.Y.Z`**（如 `0.1.0`）— 用户应锁定的版本
+- **`X.Y`**（如 `0.1`）— 同 minor 最新 patch
+- **`latest`** — 最新发行版；推送到 `master`/`main` 也会更新 `latest`（滚动预览）
+
+Git 标签带 `v`（`v0.1.0`）；**镜像标签不带 `v`**（`0.1.0`）。不要让用户去拉 `v0.1.0`。
+
+用户侧锁定方式（预构建启动器 `.env`）：
+
+```bash
+LORECHAT_IMAGE_TAG=0.1.0
+```
+
+留空或 `latest` 则跟随最新发行 / master 滚动。完整镜像名仍可用 `LORECHAT_BACKEND_IMAGE` / `LORECHAT_WEB_IMAGE` / `SANDBOX_IMAGE` 覆盖。
+
+源码仓库根目录 [`VERSION`](VERSION) 是产品版本的唯一手写来源，必须与即将打的 tag 去掉 `v` 后一致。
+
+## 2.2 何时发、怎么定版本
+
+- **patch**（`0.1.0` → `0.1.1`）：缺陷修复、安全补丁、文档/流程且用户可感知
+- **minor**（`0.1.1` → `0.2.0`）：向后兼容的功能
+- **major**（`1.0.0` 起）：破坏性变更。`0.x` 期间允许不兼容，但仍用 minor 表达「一批能力」，不要无必要跳 major
+- 工作区有未提交改动、不在 `master`、或 `CHANGELOG.md` 的 `[Unreleased]` 为空时，**停止发布**，先问用户
+
+## 2.3 发布清单（按顺序，不可跳）
+
+在仓库根目录操作。**不要** `--no-verify`、**不要** `push --force`、**不要** 改写已推送的 tag、**不要** 把 `knowledge/` / `.env` / 密钥打进提交。
+
+1. **对齐主干**
+   ```bash
+   git checkout master
+   git pull --ff-only origin master
+   git status   # 必须干净
+   ```
+2. **确认版本** `X.Y.Z`（用户指定；未指定则根据 Unreleased 与上次 tag 建议，并征得同意）。
+3. **写 `VERSION`**：文件内容一行，仅为 `X.Y.Z`。
+4. **写 `CHANGELOG.md`**
+   - 把 `[Unreleased]` 下已交付项移到 `## [X.Y.Z] - YYYY-MM-DD`
+   - 保留空的 `## [Unreleased]`
+   - 文风写用户能感知的变化，不堆文件名
+   - 文末 compare / tag 链接改到新版本（见现有格式）
+5. **不要**为发版去改 `frontend/package.json` 的 `0.0.0`（那是前端包占位，不是产品版本）。
+6. **提交**（仅 VERSION + CHANGELOG；若本次发版还包含流程/CI 改动，可同 commit，但与发版无关的功能必须已经在先前 commit）
+   ```bash
+   git add VERSION CHANGELOG.md
+   git commit -m "$(cat <<'EOF'
+   chore(release): X.Y.Z
+
+   EOF
+   )"
+   ```
+7. **打 annotated tag**
+   ```bash
+   git tag -a "vX.Y.Z" -m "Lore Chat X.Y.Z"
+   ```
+8. **推送分支与 tag**（tag 推上去才会出版本镜像与 GitHub Release）
+   ```bash
+   git push origin master
+   git push origin "vX.Y.Z"
+   ```
+9. **等待 CI**：GitHub Actions 工作流 `Publish images`。检查失败则**不要**删 tag 凑合；修代码后发 **patch**。
+10. **验收**
+    - GitHub Release `vX.Y.Z` 已创建，说明来自 CHANGELOG 该节（工作流自动 `gh release create`；已存在则更新 notes）
+    - 三张镜像均可拉：`:<X.Y.Z>` 与 `:latest`
+      ```bash
+      docker pull ghcr.io/cnwinds/lore-chat-backend:X.Y.Z
+      docker pull ghcr.io/cnwinds/lore-chat-web:X.Y.Z
+      docker pull ghcr.io/cnwinds/lore-chat-sandbox-agent:X.Y.Z
+      ```
+11. **首次把 GHCR 包设为 Public**（否则未登录用户拉不下来）。每个包一次：
+    ```bash
+    gh api --method PUT -H "Accept: application/vnd.github+json" \
+      /user/packages/container/lore-chat-backend/visibility \
+      -f visibility=public
+    # 对 lore-chat-web、lore-chat-sandbox-agent 各做一次
+    ```
+    若 API 不可用，让用户在 GitHub → Packages 里把三个容器包 Visibility 改为 Public。
+
+**禁止**：agent 本地 `docker build` 冒充发版；禁止只推 `master` 不打 tag（那样没有 `0.1.0` 镜像）；禁止用 `vX.Y.Z` 当镜像 tag 写进 README。
+
+## 2.4 发版后用户怎么用
+
+默认一键脚本拉 **`latest`**。锁定发行版：
+
+```bash
+# 安装目录下的 .env
+LORECHAT_IMAGE_TAG=0.1.0
+```
+
+然后 `./lorechat.sh update`（或 `start`）。详见 README「使用发布镜像」。
+
+## 2.5 失败与更正
+
+| 情况 | 做法 |
+|------|------|
+| 检查没过、tag 已推 | 修 bug，按清单发 **patch**（新 commit + 新 tag），不要 force 改旧 tag |
+| CHANGELOG 写错但镜像已出 | patch 更正文档，或 `gh release edit` 只改说明；镜像内容不变则不必重打镜像 tag |
+| 发错 major/minor | 发正确的新版本；不要删除已公开的 tag / 镜像 |
+
+## 2.6 发布检查清单（提交 tag 前）
+
+- [ ] 在 `master` 且工作区干净
+- [ ] `VERSION` 与 tag `vX.Y.Z`、CHANGELOG 标题 `[X.Y.Z]` 三者一致
+- [ ] `[Unreleased]` 已腾空，新节有日期与用户可读条目
+- [ ] 未把运行时数据、密钥写入提交
+- [ ] 将推送 `master` **和** `vX.Y.Z`
+- [ ] 已提醒：镜像 tag 是 `X.Y.Z` 不是 `vX.Y.Z`

@@ -22,7 +22,12 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "scripts"
 DEPLOY = ROOT / "deploy"
 DOCKER = ROOT / "docker"
-GHCR_SANDBOX = "ghcr.io/cnwinds/lore-chat-sandbox-agent:latest"
+GHCR_OWNER = "cnwinds"
+GHCR_SANDBOX = (
+    f"ghcr.io/{GHCR_OWNER}/lore-chat-sandbox-agent:"
+    "${LORECHAT_IMAGE_TAG:-latest}"
+)
+GHCR_SANDBOX_LATEST = f"ghcr.io/{GHCR_OWNER}/lore-chat-sandbox-agent:latest"
 
 
 def read(path: Path) -> str:
@@ -126,7 +131,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${{BASH_SOURCE[0]}}")" && pwd)"
 RUNTIME="${{ROOT}}/.lorechat"
 MODE_FILE="${{RUNTIME}}/run-mode"
-DEFAULT_SANDBOX_IMAGE="{GHCR_SANDBOX}"
+DEFAULT_SANDBOX_IMAGE="{GHCR_SANDBOX_LATEST}"
 OPENSANDBOX_SERVER_IMAGE="{pins["server"]}"
 OPENSANDBOX_EXECD_IMAGE="{pins["execd"]}"
 OPENSANDBOX_EGRESS_IMAGE="{pins["egress"]}"
@@ -219,11 +224,20 @@ resolve_mode() {{
 }}
 
 sandbox_image_ref() {{
-  local from_env=""
+  local pinned="" tag=""
   if [[ -f "${{ROOT}}/.env" ]]; then
-    from_env="$(grep -E '^SANDBOX_IMAGE=' "${{ROOT}}/.env" 2>/dev/null | cut -d= -f2- | tr -d '\\r' || true)"
+    pinned="$(grep -E '^SANDBOX_IMAGE=' "${{ROOT}}/.env" 2>/dev/null | cut -d= -f2- | tr -d '\\r' || true)"
+    tag="$(grep -E '^LORECHAT_IMAGE_TAG=' "${{ROOT}}/.env" 2>/dev/null | cut -d= -f2- | tr -d '\\r' || true)"
   fi
-  echo "${{from_env:-${{SANDBOX_IMAGE:-${{DEFAULT_SANDBOX_IMAGE}}}}}}"
+  if [[ -n "${{pinned}}" ]]; then
+    echo "${{pinned}}"
+    return
+  fi
+  if [[ -n "${{SANDBOX_IMAGE:-}}" ]]; then
+    echo "${{SANDBOX_IMAGE}}"
+    return
+  fi
+  echo "ghcr.io/cnwinds/lore-chat-sandbox-agent:${{tag:-${{LORECHAT_IMAGE_TAG:-latest}}}}"
 }}
 
 image_present() {{
@@ -358,7 +372,7 @@ $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $Runtime = Join-Path $Root ".lorechat"
 $ModeFile = Join-Path $Runtime "run-mode"
-$DefaultSandboxImage = "{GHCR_SANDBOX}"
+$DefaultSandboxImage = "{GHCR_SANDBOX_LATEST}"
 $OpensandboxServerImage = "{pins["server"]}"
 $OpensandboxExecdImage = "{pins["execd"]}"
 $OpensandboxEgressImage = "{pins["egress"]}"
@@ -436,15 +450,24 @@ function Resolve-Mode([string]$Flag) {{
 
 function Get-SandboxImageRef {{
   $envPath = Join-Path $Root ".env"
+  $pinned = $null
+  $tag = "latest"
   if (Test-Path $envPath) {{
     $line = Get-Content $envPath | Where-Object {{ $_ -match "^SANDBOX_IMAGE=" }} | Select-Object -First 1
     if ($line) {{
       $val = ($line -split "=", 2)[1].Trim()
-      if ($val) {{ return $val }}
+      if ($val) {{ $pinned = $val }}
+    }}
+    $tagLine = Get-Content $envPath | Where-Object {{ $_ -match "^LORECHAT_IMAGE_TAG=" }} | Select-Object -First 1
+    if ($tagLine) {{
+      $t = ($tagLine -split "=", 2)[1].Trim()
+      if ($t) {{ $tag = $t }}
     }}
   }}
+  if ($pinned) {{ return $pinned }}
   if ($env:SANDBOX_IMAGE) {{ return $env:SANDBOX_IMAGE }}
-  return $DefaultSandboxImage
+  if ($env:LORECHAT_IMAGE_TAG) {{ $tag = $env:LORECHAT_IMAGE_TAG }}
+  return "ghcr.io/cnwinds/lore-chat-sandbox-agent:$tag"
 }}
 
 function Test-DockerImage([string]$Image) {{

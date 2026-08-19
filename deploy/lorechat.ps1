@@ -42,7 +42,7 @@ name: lore-chat
 
 services:
   backend:
-    image: ${LORECHAT_BACKEND_IMAGE:-ghcr.io/cnwinds/lore-chat-backend:latest}
+    image: ${LORECHAT_BACKEND_IMAGE:-ghcr.io/cnwinds/lore-chat-backend:${LORECHAT_IMAGE_TAG:-latest}}
     container_name: lorechat-backend
     env_file:
       - .env
@@ -72,7 +72,7 @@ services:
       start_period: 40s
 
   web:
-    image: ${LORECHAT_WEB_IMAGE:-ghcr.io/cnwinds/lore-chat-web:latest}
+    image: ${LORECHAT_WEB_IMAGE:-ghcr.io/cnwinds/lore-chat-web:${LORECHAT_IMAGE_TAG:-latest}}
     container_name: lorechat-web
     ports:
       - "${WEB_PORT:-8080}:80"
@@ -88,7 +88,7 @@ networks:
     name: lorechat-net
 '@
   Write-BundleFile 'docker-compose.sandbox.yml' @'
-# Work overlay for prebuilt images (default SANDBOX_IMAGE=ghcr.io/cnwinds/lore-chat-sandbox-agent:latest).
+# Work overlay for prebuilt images (default SANDBOX_IMAGE=ghcr.io/cnwinds/lore-chat-sandbox-agent:${LORECHAT_IMAGE_TAG:-latest}).
 # Embedded by gen-deploy-launchers.py from docker/docker-compose.sandbox.yml.
 # 带执行能力（OpenSandbox）的叠加编排。
 # 默认 docker-compose.yml 不含沙箱；需要执行能力时额外 -f 本文件。
@@ -112,7 +112,7 @@ services:
       OPENSANDBOX_USE_SERVER_PROXY: "false"
       OPENSANDBOX_API_KEY: ${OPENSANDBOX_API_KEY:-}
       OPENSANDBOX_WORKSPACE_VOLUME: lorechat-sandbox-workspace
-      SANDBOX_IMAGE: ${SANDBOX_IMAGE:-ghcr.io/cnwinds/lore-chat-sandbox-agent:latest}
+      SANDBOX_IMAGE: ${SANDBOX_IMAGE:-ghcr.io/cnwinds/lore-chat-sandbox-agent:${LORECHAT_IMAGE_TAG:-latest}}
       # 默认信任：沙箱命令不征询；可在设置里关闭
       SANDBOX_TRUST_MODE: ${SANDBOX_TRUST_MODE:-true}
       SANDBOX_MIRROR_REGION: ${SANDBOX_MIRROR_REGION:-cn}
@@ -184,10 +184,13 @@ WEB_PORT=8080
 # BIG_MODEL=
 # EMBED_MODEL=
 
-SANDBOX_IMAGE=ghcr.io/cnwinds/lore-chat-sandbox-agent:latest
+# GHCR 镜像标签：latest（默认）或发行版如 0.1.0（不要加 v）
+LORECHAT_IMAGE_TAG=latest
 
-# LORECHAT_BACKEND_IMAGE=ghcr.io/cnwinds/lore-chat-backend:latest
-# LORECHAT_WEB_IMAGE=ghcr.io/cnwinds/lore-chat-web:latest
+# 需要换完整镜像名时再取消注释
+# LORECHAT_BACKEND_IMAGE=ghcr.io/cnwinds/lore-chat-backend:0.1.0
+# LORECHAT_WEB_IMAGE=ghcr.io/cnwinds/lore-chat-web:0.1.0
+# SANDBOX_IMAGE=ghcr.io/cnwinds/lore-chat-sandbox-agent:0.1.0
 '@
 
   $envPath = Join-Path $Root ".env"
@@ -236,15 +239,24 @@ function Resolve-Mode([string]$Flag) {
 
 function Get-SandboxImageRef {
   $envPath = Join-Path $Root ".env"
+  $pinned = $null
+  $tag = "latest"
   if (Test-Path $envPath) {
     $line = Get-Content $envPath | Where-Object { $_ -match "^SANDBOX_IMAGE=" } | Select-Object -First 1
     if ($line) {
       $val = ($line -split "=", 2)[1].Trim()
-      if ($val) { return $val }
+      if ($val) { $pinned = $val }
+    }
+    $tagLine = Get-Content $envPath | Where-Object { $_ -match "^LORECHAT_IMAGE_TAG=" } | Select-Object -First 1
+    if ($tagLine) {
+      $t = ($tagLine -split "=", 2)[1].Trim()
+      if ($t) { $tag = $t }
     }
   }
+  if ($pinned) { return $pinned }
   if ($env:SANDBOX_IMAGE) { return $env:SANDBOX_IMAGE }
-  return $DefaultSandboxImage
+  if ($env:LORECHAT_IMAGE_TAG) { $tag = $env:LORECHAT_IMAGE_TAG }
+  return "ghcr.io/cnwinds/lore-chat-sandbox-agent:$tag"
 }
 
 function Test-DockerImage([string]$Image) {

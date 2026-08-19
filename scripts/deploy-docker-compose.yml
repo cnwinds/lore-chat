@@ -2,7 +2,7 @@ name: lore-chat
 
 services:
   backend:
-    image: ${LORECHAT_BACKEND_IMAGE:-ghcr.io/cnwinds/lore-chat-backend:latest}
+    image: ${LORECHAT_BACKEND_IMAGE:-ghcr.io/cnwinds/lore-chat-backend:${LORECHAT_IMAGE_TAG:-latest}}
     container_name: lorechat-backend
     env_file:
       - .env
@@ -32,7 +32,7 @@ services:
       start_period: 40s
 
   web:
-    image: ${LORECHAT_WEB_IMAGE:-ghcr.io/cnwinds/lore-chat-web:latest}
+    image: ${LORECHAT_WEB_IMAGE:-ghcr.io/cnwinds/lore-chat-web:${LORECHAT_IMAGE_TAG:-latest}}
     container_name: lorechat-web
     ports:
       - "${WEB_PORT:-8080}:80"

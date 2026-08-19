@@ -71,3 +71,6 @@ jobs:
             deploy/lorechat.sh \
             deploy/lorechat.ps1 \
             scripts/opensandbox-pins.sh
+
+      - name: Changelog section helper
+        run: python3 scripts/changelog_section.py --self-test
