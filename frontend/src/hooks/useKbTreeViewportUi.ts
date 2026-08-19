@@ -26,6 +26,8 @@ type Options = {
   activePaths?: string[];
   collapsed: boolean;
   scrollRef: RefObject<HTMLElement | null>;
+  /** 演示访客等：首次与之后均不套用默认展开，也不读写展开偏好 */
+  startCollapsed?: boolean;
 };
 
 /** 滚动恢复阶段：pending → restoring → idle */
@@ -43,6 +45,7 @@ export function useKbTreeViewportUi({
   activePaths = [],
   collapsed,
   scrollRef,
+  startCollapsed = false,
 }: Options) {
   const tree = useMemo(() => buildFileTree(paths), [paths]);
   const scrollEnabled = paths.length > 0;
@@ -70,16 +73,21 @@ export function useKbTreeViewportUi({
 
     if (!didHydrateRef.current) {
       didHydrateRef.current = true;
-      const stored = loadKbTreeUi();
-      setUserExpanded(
-        new Set(resolveExpandedFolderPaths(tree, stored?.expandedPaths)),
-      );
+      if (startCollapsed) {
+        setUserExpanded(new Set());
+      } else {
+        const stored = loadKbTreeUi();
+        setUserExpanded(
+          new Set(resolveExpandedFolderPaths(tree, stored?.expandedPaths)),
+        );
+      }
       setSessionReveal(new Set());
       setHydrated(true);
       return;
     }
 
-    const persisted = hasPersistedExpanded();
+    // startCollapsed：只剪枝，绝不回退到「默认展开前两层」
+    const persisted = startCollapsed || hasPersistedExpanded();
     setUserExpanded((prev) => {
       const nextPaths = nextUserExpandedAfterTreeChange(tree, prev, persisted);
       if (
@@ -88,23 +96,25 @@ export function useKbTreeViewportUi({
       ) {
         return prev;
       }
-      if (persisted) saveKbTreeExpandedIfPersisted(nextPaths);
+      if (!startCollapsed && hasPersistedExpanded()) {
+        saveKbTreeExpandedIfPersisted(nextPaths);
+      }
       return new Set(nextPaths);
     });
     setSessionReveal((prev) => {
       if (prev.size === 0) return prev;
       return new Set(resolveExpandedFolderPaths(tree, [...prev]));
     });
-  }, [tree]);
+  }, [tree, startCollapsed]);
 
   useEffect(() => {
     if (!didHydrateRef.current) return;
-    if (hasPersistedExpanded()) {
+    if (!startCollapsed && hasPersistedExpanded()) {
       setSessionReveal((prev) => (prev.size === 0 ? prev : new Set()));
       return;
     }
     setSessionReveal(new Set(collectAncestorFolderPaths(activePaths)));
-  }, [activePaths]);
+  }, [activePaths, startCollapsed]);
 
   function toggleFolder(path: string) {
     const closing = expanded.has(path);
@@ -112,7 +122,7 @@ export function useKbTreeViewportUi({
       const next = new Set(prev);
       if (closing) next.delete(path);
       else next.add(path);
-      saveKbTreeExpanded([...next]);
+      if (!startCollapsed) saveKbTreeExpanded([...next]);
       return next;
     });
     if (closing) {

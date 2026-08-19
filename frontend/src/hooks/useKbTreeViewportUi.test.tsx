@@ -57,16 +57,18 @@ function renderViewportHook(
     collapsed?: boolean;
     paths?: string[];
     activePaths?: string[];
+    startCollapsed?: boolean;
   } = {},
 ) {
   return renderHook(
-    ({ collapsed, paths, activePaths }) => {
+    ({ collapsed, paths, activePaths, startCollapsed }) => {
       const ref = useRef<HTMLElement | null>(el as unknown as HTMLElement);
       return useKbTreeViewportUi({
         paths,
         activePaths,
         collapsed,
         scrollRef: ref,
+        startCollapsed,
       });
     },
     {
@@ -74,6 +76,7 @@ function renderViewportHook(
         collapsed: opts.collapsed ?? false,
         paths: opts.paths ?? SAMPLE_PATHS,
         activePaths: opts.activePaths ?? ([] as string[]),
+        startCollapsed: opts.startCollapsed ?? false,
       },
     },
   );
@@ -125,6 +128,24 @@ describe("useKbTreeViewportUi", () => {
     const { result } = renderViewportHook(el);
     expect(result.current.expanded.has("a")).toBe(true);
     expect(result.current.expanded.has("a/b")).toBe(true);
+  });
+
+  it("startCollapsed hydrates empty and ignores stored expanded", () => {
+    saveKbTreeExpanded(["a", "a/b"]);
+    const el = makeScrollEl({ clientHeight: 200, scrollHeight: 800 });
+    const { result } = renderViewportHook(el, { startCollapsed: true });
+    expect(result.current.expanded.has("a")).toBe(false);
+    expect(result.current.expanded.has("a/b")).toBe(false);
+  });
+
+  it("startCollapsed toggle does not persist preference", () => {
+    const el = makeScrollEl({ clientHeight: 200, scrollHeight: 800 });
+    const { result } = renderViewportHook(el, { startCollapsed: true });
+    act(() => {
+      result.current.toggleFolder("a");
+    });
+    expect(result.current.expanded.has("a")).toBe(true);
+    expect(loadKbTreeUi()?.expandedPaths).toBeUndefined();
   });
 
   it("toggleFolder persists user expanded preference", () => {
@@ -244,6 +265,7 @@ describe("useKbTreeViewportUi", () => {
       collapsed: false,
       paths: ["a/b/c/z.md"],
       activePaths: ["a/b/c/z.md"],
+      startCollapsed: false,
     });
     expect(result.current.expanded.has("a")).toBe(true);
     expect(result.current.expanded.has("a/b")).toBe(true);
@@ -257,5 +279,25 @@ describe("useKbTreeViewportUi", () => {
     });
     expect(second.result.current.expanded.has("a")).toBe(true);
     expect(second.result.current.expanded.has("a/b/c")).toBe(false);
+  });
+
+  it("startCollapsed still reveals ancestors for open docs", () => {
+    const el = makeScrollEl({ clientHeight: 200, scrollHeight: 800 });
+    const { result, rerender } = renderViewportHook(el, {
+      paths: ["a/b/c/z.md"],
+      activePaths: [],
+      startCollapsed: true,
+    });
+    expect(result.current.expanded.size).toBe(0);
+
+    rerender({
+      collapsed: false,
+      paths: ["a/b/c/z.md"],
+      activePaths: ["a/b/c/z.md"],
+      startCollapsed: true,
+    });
+    expect(result.current.expanded.has("a")).toBe(true);
+    expect(result.current.expanded.has("a/b")).toBe(true);
+    expect(result.current.expanded.has("a/b/c")).toBe(true);
   });
 });

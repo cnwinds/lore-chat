@@ -14,8 +14,13 @@ def test_script_parses():
 
 def test_script_has_expected_conversations():
     keys = [c["key"] for c in load_script(SCRIPT)["conversations"]]
-    assert "data-flow-svg" in keys
-    assert len(keys) == 7
+    assert "partnership-prep" in keys
+    assert "data-flow-svg" not in keys
+    assert len(keys) == 6
+    partnership = next(
+        c for c in load_script(SCRIPT)["conversations"] if c["key"] == "partnership-prep"
+    )
+    assert any("数据流示意" in t["text"] for t in partnership["turns"])
 
 
 def test_script_keys_are_unique():

@@ -9,14 +9,28 @@ from app.index.types import Hit
 
 
 def prepare_fts_query(text: str, *, max_len: int = 300) -> str:
-    """将自由文本转为 FTS5 MATCH 短语，避免 `、* 等字符触发语法错误。"""
+    """将自由文本转为 FTS5 MATCH 表达式。
+
+    - 单个词：整段短语匹配
+    - 空白分隔多词：按 OR 拼接（Agent 常把中文关键词用空格堆在一起；
+      整段带空格的短语在正文里几乎不存在，会导致 0 命中）
+    - trigram 对不足 3 个码点的词几乎无效，多词时优先用 ≥3 字的词
+    """
     text = " ".join(text.split())
     if not text:
         return ""
     if len(text) > max_len:
         text = text[:max_len]
-    escaped = text.replace('"', '""')
-    return f'"{escaped}"'
+
+    def phrase(part: str) -> str:
+        return '"' + part.replace('"', '""') + '"'
+
+    parts = text.split(" ")
+    if len(parts) == 1:
+        return phrase(parts[0])
+
+    usable = [p for p in parts if len(list(p)) >= 3] or parts
+    return " OR ".join(phrase(p) for p in usable)
 
 
 class FullTextIndex:
@@ -59,8 +73,28 @@ class FullTextIndex:
                     (match, k),
                 ).fetchall()
             except sqlite3.OperationalError:
-                return []
+                rows = []
+            # Trigram MATCH 对不足 3 码点的查询无效；多词全 miss 时也用 LIKE 兜底
+            if not rows:
+                rows = self._like_fallback(text, k)
         hits: list[Hit] = []
         for doc_id, source, body, rank in rows:
             hits.append(Hit(doc_id=doc_id, chunk=body, score=-float(rank), source=source))
         return hits
+
+    def _like_fallback(self, text: str, k: int) -> list[tuple]:
+        tokens = [t for t in text.split() if t] or [text]
+        # 长词优先，更可能命中有意义片段
+        tokens = sorted(tokens, key=lambda t: len(list(t)), reverse=True)
+        for tok in tokens:
+            escaped = (
+                tok.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            )
+            rows = self.conn.execute(
+                "SELECT doc_id, source, body, 0.0 AS rank "
+                "FROM chunks WHERE body LIKE ? ESCAPE '\\' LIMIT ?",
+                (f"%{escaped}%", k),
+            ).fetchall()
+            if rows:
+                return rows
+        return []

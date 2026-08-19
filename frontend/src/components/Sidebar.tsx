@@ -76,7 +76,7 @@ export function Sidebar({
   onKbPathsDeleted,
   onDocsChange,
 }: Props) {
-  const { canWrite, canPersistChat } = useDemoCapability();
+  const { canWrite, canPersistChat, isDemo } = useDemoCapability();
   const [docs, setDocs] = useState<string[]>([]);
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [kbHintOpen, setKbHintOpen] = useState(false);
@@ -93,6 +93,7 @@ export function Sidebar({
     activePaths,
     collapsed,
     scrollRef: treeScrollRef,
+    startCollapsed: isDemo && !canWrite,
   });
 
   const conversationGroups = useMemo(

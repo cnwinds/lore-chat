@@ -58,7 +58,7 @@ conversations:
         web_enabled: false
 
   - key: partnership-prep
-    note: 跨会话记忆生效；未交代背景却引用访谈纪要与周报
+    note: 跨会话记忆生效；会谈材料落库后接画 SVG 数据流并嵌回正文
     skills: []
     turns:
       - text: >-
@@ -69,11 +69,6 @@ conversations:
           对方最关心数据放在哪、会不会外传。结合已有访谈、技术选型和这周已经记下的进展来写，
           直接出一份可带去会议的材料，不要再向我要背景。
         web_enabled: false
-
-  - key: data-flow-svg
-    note: write_kb_file 生成 SVG，时间线内联预览（演示站不开放生图，靠预置记录展示）
-    skills: []
-    turns:
       - text: >-
           合作材料里「数据不出校园」那几层保障，对方看文字还是容易糊。
           根据已有的选型笔记和合作材料，画一张本地检索数据流示意图：

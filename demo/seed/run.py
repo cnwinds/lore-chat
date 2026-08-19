@@ -123,6 +123,16 @@ def _run_turn(client: httpx.Client, cid: str, turn: dict) -> None:
         raise SystemExit("回合结束但未收到 done 事件，检查实例日志")
 
 
+def _ensure_kb_indexed(client: httpx.Client) -> None:
+    """会话之间强制全量重建检索索引，避免下一会话 search_kb 仍看到空索引。"""
+    r = client.post("/api/admin/reindex")
+    if r.status_code == 401:
+        print("  警告：无管理员权限，跳过 reindex")
+        return
+    r.raise_for_status()
+    print("  已 reindex")
+
+
 def run(
     base_url: str,
     password: str | None,
@@ -152,6 +162,7 @@ def run(
         else:
             imported = _import_assets(client, assets_dir)
             print(f"已导入前置资产 {imported} 篇")
+            _ensure_kb_indexed(client)
 
         for conv in conversations:
             _enable_skills(client, conv.get("skills") or [])
@@ -161,6 +172,8 @@ def run(
                 print(f"  第 {index} 轮…")
                 _run_turn(client, cid, turn)
                 time.sleep(pause)
+            # 本会话可能写入了文档；下一会话检索前先刷索引
+            _ensure_kb_indexed(client)
 
 
 def main() -> None:
