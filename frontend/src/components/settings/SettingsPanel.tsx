@@ -31,6 +31,13 @@ import {
 import { SearchSettingsTab } from "./SearchSettingsTab";
 import { UsageSettingsTab } from "./UsageSettingsTab";
 import { SettingsAttentionDot } from "./SettingsAttentionDot";
+import { StarterPackGuide } from "./StarterPackGuide";
+import {
+  applyFreeStarterPack,
+  starterPackPhase,
+  withStarterPackKeys,
+  type StarterPackDrafts,
+} from "./starterPack";
 import {
   draftChainNeedsSetup,
   mergeSettingsAttention,
@@ -269,6 +276,7 @@ export function SettingsPanel({
   const searchConfiguredRef = useRef(false);
   /** 面板内本地态：覆盖服务端 usage 分区，避免未保存时不同步 */
   const [usageIncomplete, setUsageIncomplete] = useState<number | null>(null);
+  const [starterDismissed, setStarterDismissed] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -351,6 +359,7 @@ export function SettingsPanel({
       setImportFile(null);
       setImportMode("empty_only");
       setUsageIncomplete(null);
+      setStarterDismissed(false);
       if (importFileRef.current) importFileRef.current.value = "";
     } else {
       onLiveAttentionChange?.(null);
@@ -362,6 +371,17 @@ export function SettingsPanel({
       setActiveTab("model");
     }
   }, [open, showLlmSetupGuide]);
+
+  const starterDrafts = useMemo(
+    () => ({
+      chat: chatModels,
+      utility: utilityModels,
+      embed: embedModels,
+      search: searchProviders,
+    }),
+    [chatModels, utilityModels, embedModels, searchProviders],
+  );
+  const starterPhase = starterPackPhase(starterDrafts, starterDismissed);
 
   useEffect(() => {
     writeStoredSettingsTab(activeTab);
@@ -404,6 +424,13 @@ export function SettingsPanel({
     if (!open) return;
     onLiveAttentionChange?.(liveAttention);
   }, [open, liveAttention, onLiveAttentionChange]);
+
+  function applyStarterDrafts(next: StarterPackDrafts) {
+    setChatModels(next.chat);
+    setUtilityModels(next.utility);
+    setEmbedModels(next.embed);
+    setSearchProviders(next.search);
+  }
 
   async function handleSaveSettings(e: FormEvent) {
     e.preventDefault();
@@ -648,12 +675,23 @@ export function SettingsPanel({
                     id="settings-panel-model"
                     aria-labelledby="settings-tab-model"
                   >
-                    {showLlmSetupGuide ? (
+                    <StarterPackGuide
+                      phase={starterPhase}
+                      drafts={starterDrafts}
+                      saving={saving}
+                      onApply={() => applyStarterDrafts(applyFreeStarterPack(starterDrafts))}
+                      onDismiss={() => setStarterDismissed(true)}
+                      onKeysChange={(patch) =>
+                        applyStarterDrafts(withStarterPackKeys(starterDrafts, patch))
+                      }
+                    />
+                    {starterPhase === "hidden" && showLlmSetupGuide ? (
                       <p className="settings-setup-guide" role="status">
-                        尚未配置 API Key。请为对话/辅助模型添加候选，填写 Base URL 与 API
-                        Key（OpenAI 兼容）。保存后即可开始对话。
+                        在下方选择厂家，填写 Base URL 与 API
+                        Key。保存后即可开始对话。
                       </p>
                     ) : null}
+                    {starterPhase === "offer" ? null : (
                     <ModelSettingsTab
                       publicBaseUrl={publicBaseUrl}
                       onPublicBaseUrlChange={setPublicBaseUrl}
@@ -713,6 +751,7 @@ export function SettingsPanel({
                       }}
                       saving={saving}
                     />
+                    )}
                   </div>
                 ) : null}
 
@@ -784,7 +823,9 @@ export function SettingsPanel({
                   </div>
                 ) : null}
 
-                {activeTab === "model" || activeTab === "search" || activeTab === "agent" ? (
+                {(activeTab === "search" ||
+                  activeTab === "agent" ||
+                  (activeTab === "model" && starterPhase !== "offer")) ? (
                   <footer className="settings-form-footer">
                     <button type="submit" className="settings-btn settings-btn--primary" disabled={saving}>
                       {saving ? "保存中…" : "保存设置"}
