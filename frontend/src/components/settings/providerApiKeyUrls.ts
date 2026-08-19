@@ -11,8 +11,8 @@ export const PROVIDER_API_KEY_URLS: Record<string, string> = {
   openrouter: "https://openrouter.ai/settings/keys",
   siliconflow: "https://cloud.siliconflow.cn/account/ak",
   tavily: "https://app.tavily.com/home",
-  serper: "https://serper.dev/api-key",
-  brave: "https://api.search.brave.com/app/keys",
+  serper: "https://serper.dev/api-keys",
+  brave: "https://api-dashboard.search.brave.com/app/keys",
 };
 
 /** 已知厂家返回 Key 管理页 URL；custom / 未知返回 null。 */

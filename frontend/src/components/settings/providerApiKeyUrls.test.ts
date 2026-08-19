@@ -11,8 +11,10 @@ describe("providerApiKeyUrl", () => {
     expect(providerApiKeyUrl("openrouter")).toContain("openrouter.ai");
     expect(providerApiKeyUrl("siliconflow")).toContain("siliconflow");
     expect(providerApiKeyUrl("tavily")).toContain("tavily");
-    expect(providerApiKeyUrl("serper")).toContain("serper");
-    expect(providerApiKeyUrl("brave")).toContain("brave.com");
+    expect(providerApiKeyUrl("serper")).toBe("https://serper.dev/api-keys");
+    expect(providerApiKeyUrl("brave")).toBe(
+      "https://api-dashboard.search.brave.com/app/keys",
+    );
   });
 
   it("returns null for custom / empty / unknown", () => {
