@@ -14,6 +14,7 @@ import { KbFloatingRootDrop } from "./KbFloatingRootDrop";
 import { KbTreeProgressBar } from "./KbTreeProgressBar";
 import { LoreLogo } from "./LoreLogo";
 import { ThemeToggle } from "./ThemeToggle";
+import { DemoBrandBadge } from "./demo/DemoBanner";
 import { useKbTreeActions } from "../hooks/useKbTreeActions";
 import { useFileTreeInteraction } from "../hooks/useFileTreeInteraction";
 import { useDragAutoScroll } from "../hooks/useDragAutoScroll";
@@ -238,6 +239,7 @@ export function Sidebar({
         <>
           <div className="sidebar-brand">
             <LoreLogo variant="wordmark" className="sidebar-brand-wordmark" />
+            <DemoBrandBadge />
           </div>
           <section className="sidebar-section sidebar-chat-section">
             <div className="sidebar-section-head">
@@ -410,13 +412,14 @@ export function Sidebar({
                   {...(canWrite
                     ? tree.fileTreeProps
                     : {
+                        // 演示访客：可浏览/打开文档，仅关闭写入相关交互
+                        //（勿设 disabled——.file-tree--busy 会整树灰掉且 pointer-events:none）
                         ...tree.fileTreeProps,
                         onDropFiles: () => undefined,
                         onMovePath: () => undefined,
                         onContextMenu: () => undefined,
                         onStartRename: () => undefined,
                         onInternalDragStart: () => undefined,
-                        disabled: true,
                       })}
                 />
               </div>

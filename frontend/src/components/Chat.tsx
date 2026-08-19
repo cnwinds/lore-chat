@@ -84,7 +84,7 @@ export function Chat({
   onTrayRemove,
 }: Props) {
   const { previewPath, openDoc, refreshKb } = useDocPreview();
-  const { canPersistChat, canWrite } = useDemoCapability();
+  const { canPersistChat, canWrite, isDemo } = useDemoCapability();
   const [guestContinueHint, setGuestContinueHint] = useState(true);
 
   useEffect(() => {
@@ -106,6 +106,13 @@ export function Chat({
   const resumeActiveTurnRef = useRef<
     (cid: string, startedAt?: string | null) => Promise<boolean>
   >(async () => false);
+
+  // 演示访客：每次进入默认打开联网搜索（当次仍可手动关掉）
+  useEffect(() => {
+    if (!isDemo || canWrite) return;
+    writeWebSearchEnabled(true);
+    setWebEnabled(true);
+  }, [isDemo, canWrite]);
 
   const {
     msgs,
@@ -708,7 +715,7 @@ export function Chat({
           onSetAllMerge={sendQueue.setAllMerge}
           onClear={sendQueue.clear}
         />
-        <div className="composer-card">
+        <div className="composer-card" data-demo-anchor="composer">
           <ComposerTray
             items={docTrayItems}
             primaryPath={primaryDocPath}

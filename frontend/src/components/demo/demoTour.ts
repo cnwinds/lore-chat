@@ -5,8 +5,6 @@ export type TourStep = {
   anchor: string;
 };
 
-export const TOUR_SEEN_KEY = "lore.demo.tourSeen";
-
 export const TOUR_STEPS: readonly TourStep[] = [
   {
     id: "tree",
@@ -28,6 +26,17 @@ export const TOUR_STEPS: readonly TourStep[] = [
   },
 ];
 
-export function shouldShowTour(isGuest: boolean, seen: string | null): boolean {
-  return isGuest && !seen;
+/** 演示访客每次进入页面都展示引导（不持久化「已看过」）。 */
+export function shouldShowTour(isGuest: boolean): boolean {
+  return isGuest;
+}
+
+/** 三步锚点均已挂到 DOM 且有布局尺寸，才开始引导。 */
+export function areTourAnchorsReady(root: ParentNode = document): boolean {
+  return TOUR_STEPS.every((step) => {
+    const el = root.querySelector(`[data-demo-anchor="${step.anchor}"]`);
+    if (!(el instanceof HTMLElement)) return false;
+    const r = el.getBoundingClientRect();
+    return r.width > 0 && r.height > 0;
+  });
 }
