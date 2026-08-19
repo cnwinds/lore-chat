@@ -22,7 +22,9 @@ from app.engine.imagegen.providers import (
     image_routing_changed,
 )
 from app.models.catalog import (
+    capabilities_public_dict,
     get_active_models_dev_store,
+    lookup_capabilities,
     normalize_catalog_kind,
     search_known_catalog,
     set_active_models_dev_store,
@@ -214,6 +216,25 @@ def get_model_catalog(
         )
     ]
     return {"ok": True, "source": source, "status": store.status(), "items": items}
+
+
+@router.get("/model-capabilities")
+def get_model_capabilities(
+    request: Request,
+    model: str = "",
+    base_url: str | None = None,
+) -> dict[str, Any]:
+    """单模型能力 lookup：与 settings enrich / 选模同源（lookup_capabilities）。"""
+    mid = (model or "").strip()
+    if not mid:
+        raise HTTPException(status_code=422, detail="model required")
+    store = _models_dev_for_request(request)
+    caps = lookup_capabilities(
+        mid,
+        base_url if isinstance(base_url, str) else None,
+        models_dev=store,
+    )
+    return capabilities_public_dict(caps, model=mid)
 
 
 @router.post("/provider-models")

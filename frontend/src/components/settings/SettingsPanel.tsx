@@ -679,7 +679,9 @@ export function SettingsPanel({
                       phase={starterPhase}
                       drafts={starterDrafts}
                       saving={saving}
-                      onApply={() => applyStarterDrafts(applyFreeStarterPack(starterDrafts))}
+                      onApply={() => {
+                        void applyFreeStarterPack(starterDrafts).then(applyStarterDrafts);
+                      }}
                       onDismiss={() => setStarterDismissed(true)}
                       onKeysChange={(patch) =>
                         applyStarterDrafts(withStarterPackKeys(starterDrafts, patch))

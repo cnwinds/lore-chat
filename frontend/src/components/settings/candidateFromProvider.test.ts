@@ -9,7 +9,6 @@ import {
   inferProviderFromBaseUrl,
   llmProviderLabel,
 } from "./providerPresets";
-import { inferCapsFromModel, supportedEfforts } from "./ModelSettingsTab";
 
 describe("candidateFromProvider", () => {
   it("leaves custom preset empty for user to fill", () => {
@@ -111,37 +110,5 @@ describe("embedProviderLabel", () => {
     expect(embedProviderLabel("siliconflow")).toBe("硅基流动");
     expect(embedProviderLabel("openrouter")).toBe("OpenRouter");
     expect(embedProviderLabel("bailian")).toBe("百炼");
-  });
-});
-
-describe("inferCapsFromModel", () => {
-  it("marks glm as thinking with max effort options", () => {
-    const caps = inferCapsFromModel("glm-5.3");
-    expect(caps.thinking).toBe(true);
-    expect(caps.effort_options).toEqual(["low", "medium", "high", "max"]);
-  });
-
-  it("keeps unknown models without max", () => {
-    expect(supportedEfforts("totally-unknown-xyz")).toEqual([
-      "low",
-      "medium",
-      "high",
-    ]);
-  });
-
-  it("reads OpenRouter-style vendor/model ids", () => {
-    expect(inferCapsFromModel("deepseek/deepseek-v4-pro").thinking_protocol).toBe(
-      "deepseek",
-    );
-    expect(inferCapsFromModel("openai/gpt-5.2").thinking_protocol).toBe(
-      "openai_kwargs",
-    );
-    expect(supportedEfforts("openai/gpt-5.2")).toEqual([
-      "none",
-      "low",
-      "medium",
-      "high",
-      "xhigh",
-    ]);
   });
 });

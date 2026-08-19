@@ -170,6 +170,29 @@ export function searchModelCatalog(
   );
 }
 
+/** 单模型能力：与后端 lookup_capabilities / settings enrich 同源。 */
+export type ModelCapabilitiesResponse = {
+  ok: boolean;
+  model: string;
+  image: boolean;
+  thinking: boolean;
+  effort: string;
+  effort_options: string[];
+  image_wire: "data" | "url";
+  thinking_protocol: string;
+  source?: string;
+};
+
+export function lookupModelCapabilities(model: string, baseUrl?: string) {
+  const params = new URLSearchParams();
+  params.set("model", model.trim());
+  const bu = (baseUrl || "").trim();
+  if (bu) params.set("base_url", bu);
+  return apiFetch<ModelCapabilitiesResponse>(
+    `/api/admin/model-capabilities?${params.toString()}`,
+  );
+}
+
 export type ProviderModelsResponse = {
   ok: boolean;
   source: "provider" | "catalog_fallback" | string;

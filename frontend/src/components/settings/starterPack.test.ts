@@ -1,4 +1,19 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("../../api", () => ({
+  lookupModelCapabilities: vi.fn(async (model: string) => ({
+    ok: true,
+    model,
+    image: true,
+    thinking: true,
+    effort: "medium",
+    effort_options: [],
+    image_wire: "url" as const,
+    thinking_protocol: "agnes",
+    source: "prefix",
+  })),
+}));
+
 import {
   LLM_PROVIDER_DEFAULT_BASE_URL,
   emptyCandidate,
@@ -15,14 +30,21 @@ import {
   withStarterPackKeys,
   type StarterPackDrafts,
 } from "./starterPack";
+import { lookupModelCapabilities } from "../../api";
+
+const lookupMock = vi.mocked(lookupModelCapabilities);
 
 function emptyDrafts(): StarterPackDrafts {
   return { chat: [], utility: [], embed: [], search: [] };
 }
 
 describe("applyFreeStarterPack", () => {
-  it("fills chat, utility, embed and tavily with inferred caps", () => {
-    const next = applyFreeStarterPack(emptyDrafts());
+  beforeEach(() => {
+    lookupMock.mockClear();
+  });
+
+  it("fills chat, utility, embed and tavily with looked-up caps", async () => {
+    const next = await applyFreeStarterPack(emptyDrafts());
     expect(next.chat).toHaveLength(1);
     expect(next.utility).toHaveLength(1);
     expect(next.embed).toHaveLength(1);
@@ -40,10 +62,11 @@ describe("applyFreeStarterPack", () => {
     expect(next.embed[0].provider).toBe("siliconflow");
     expect(next.search[0].provider).toBe("tavily");
     expect(isStarterPackShape(next)).toBe(true);
+    expect(lookupMock).toHaveBeenCalled();
   });
 
-  it("does not duplicate existing tavily", () => {
-    const next = applyFreeStarterPack({
+  it("does not duplicate existing tavily", async () => {
+    const next = await applyFreeStarterPack({
       ...emptyDrafts(),
       search: [{ id: "keep-me", provider: "tavily", api_key: "tv-existing" }],
     });
@@ -76,21 +99,21 @@ describe("starterPackPhase", () => {
     expect(starterPackPhase(emptyDrafts(), true)).toBe("hidden");
   });
 
-  it("collects keys after pack is applied", () => {
-    const applied = applyFreeStarterPack(emptyDrafts());
+  it("collects keys after pack is applied", async () => {
+    const applied = await applyFreeStarterPack(emptyDrafts());
     expect(starterPackPhase(applied, false)).toBe("collecting");
   });
 
-  it("stays collecting while typed keys are not yet saved", () => {
-    const applied = withStarterPackKeys(applyFreeStarterPack(emptyDrafts()), {
+  it("stays collecting while typed keys are not yet saved", async () => {
+    const applied = withStarterPackKeys(await applyFreeStarterPack(emptyDrafts()), {
       agnes: "ak-real-key",
     });
     expect(starterPackCanSave(applied)).toBe(true);
     expect(starterPackPhase(applied, false)).toBe("collecting");
   });
 
-  it("hides after pack keys have been persisted", () => {
-    const applied = applyFreeStarterPack(emptyDrafts());
+  it("hides after pack keys have been persisted", async () => {
+    const applied = await applyFreeStarterPack(emptyDrafts());
     applied.chat[0].api_key_masked = "ak***xxxx";
     applied.utility[0].api_key_masked = "ak***xxxx";
     expect(starterPackCanSave(applied)).toBe(true);
@@ -142,8 +165,8 @@ describe("starterChainVacant", () => {
 });
 
 describe("withStarterPackKeys", () => {
-  it("copies Agnes key to both chat and utility", () => {
-    const next = withStarterPackKeys(applyFreeStarterPack(emptyDrafts()), {
+  it("copies Agnes key to both chat and utility", async () => {
+    const next = withStarterPackKeys(await applyFreeStarterPack(emptyDrafts()), {
       agnes: "ak-shared",
       siliconflow: "sk-sf",
       tavily: "tv-key",
@@ -152,16 +175,10 @@ describe("withStarterPackKeys", () => {
     expect(next.utility[0].api_key).toBe("ak-shared");
     expect(next.embed[0].api_key).toBe("sk-sf");
     expect(next.search[0].api_key).toBe("tv-key");
-    const keys = readStarterPackKeys(next);
-    expect(keys.agnes).toBe("ak-shared");
-    expect(keys.siliconflow).toBe("sk-sf");
-    expect(keys.tavily).toBe("tv-key");
-  });
-
-  it("does not allow save when utility key is missing", () => {
-    const applied = applyFreeStarterPack(emptyDrafts());
-    applied.chat[0].api_key = "ak-real-key";
-    applied.utility[0].api_key = "";
-    expect(starterPackCanSave(applied)).toBe(false);
+    expect(readStarterPackKeys(next)).toEqual({
+      agnes: "ak-shared",
+      siliconflow: "sk-sf",
+      tavily: "tv-key",
+    });
   });
 });

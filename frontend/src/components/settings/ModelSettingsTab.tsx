@@ -17,6 +17,7 @@ import {
 } from "./SettingsFold";
 import { draftChainNeedsSetup } from "./settingsAttention";
 import { ProviderApiKeyLabel } from "./ProviderApiKeyLabel";
+import { resolveModelCaps } from "./modelCapabilities";
 import {
   EMBED_PROVIDER_DEFAULT_BASE_URL,
   EMBED_PROVIDER_OPTIONS,
@@ -66,61 +67,6 @@ export {
   parseProviderPresetId,
 } from "./providerPresets";
 
-/** OpenRouter 等网关用 vendor/model；前缀启发看全名与末段。 */
-function modelIdTail(model: string): string {
-  const mid = model.trim().toLowerCase();
-  const i = mid.lastIndexOf("/");
-  return i >= 0 ? mid.slice(i + 1) : mid;
-}
-
-function modelHasPrefix(model: string, ...prefixes: string[]): boolean {
-  const mid = model.trim().toLowerCase();
-  const tail = modelIdTail(mid);
-  return prefixes.some((p) => mid.startsWith(p) || tail.startsWith(p));
-}
-
-/** 与后端 effort.supported_efforts 对齐 */
-export function supportedEfforts(model: string, protocol?: string): string[] {
-  const proto = (protocol || "").trim().toLowerCase();
-  if (proto === "agnes" || modelHasPrefix(model, "agnes-")) {
-    return [];
-  }
-  if (proto === "deepseek" || proto === "qwen") {
-    return ["low", "medium", "high", "max"];
-  }
-  if (modelHasPrefix(model, "gpt-5.2")) return ["none", "low", "medium", "high", "xhigh"];
-  if (modelHasPrefix(model, "gpt-5.1")) return ["none", "low", "medium", "high"];
-  if (modelHasPrefix(model, "gpt-5")) return ["minimal", "low", "medium", "high"];
-  if (modelHasPrefix(model, "o1", "o3", "o4")) {
-    return ["low", "medium", "high"];
-  }
-  if (proto === "openai_kwargs") {
-    return ["none", "minimal", "low", "medium", "high", "xhigh"];
-  }
-  if (modelHasPrefix(model, "deepseek-", "qwen")) {
-    return ["low", "medium", "high", "max"];
-  }
-  if (modelHasPrefix(model, "glm")) {
-    return ["low", "medium", "high", "max"];
-  }
-  return ["low", "medium", "high"];
-}
-
-export function defaultEffort(model: string, protocol?: string): string {
-  const opts = supportedEfforts(model, protocol);
-  if (!opts.length) return "medium";
-  if (modelHasPrefix(model, "gpt-5.2") || modelHasPrefix(model, "gpt-5.1")) {
-    return opts.includes("none") ? "none" : opts[0];
-  }
-  return opts.includes("medium") ? "medium" : opts[Math.floor(opts.length / 2)];
-}
-
-export function coerceEffort(value: string | undefined, model: string, protocol?: string): string {
-  const opts = supportedEfforts(model, protocol);
-  if (value && opts.includes(value)) return value;
-  return defaultEffort(model, protocol);
-}
-
 export function pickEffortInOptions(effort: string, opts: string[]): string {
   if (!opts.length) return effort || "medium";
   if (opts.includes(effort)) return effort;
@@ -135,10 +81,10 @@ export function parseCandidates(raw: unknown): ModelCandidateDraft[] {
     .map((x) => {
       const model = str(x.model);
       const protocol = str(x.thinking_protocol) || "none";
-      // 空数组 = 目录声明无强度档，不得回落启发式臆造
+      // 空数组 = 目录声明无强度档；缺字段不再本地前缀臆造
       const opts = Array.isArray(x.effort_options)
         ? x.effort_options.map(String)
-        : supportedEfforts(model, protocol);
+        : [];
       const effort = pickEffortInOptions(str(x.effort), opts);
       const base = str(x.base_url);
       const rawKey = typeof x.api_key === "string" ? x.api_key.trim() : "";
@@ -167,104 +113,6 @@ function str(v: unknown): string {
   return String(v);
 }
 
-/** 与后端 catalog 前缀启发对齐：思考协议自适应，无需手选。 */
-export function inferThinkingProtocol(
-  model: string,
-  baseUrl?: string,
-): ModelCandidateDraft["thinking_protocol"] {
-  if (
-    modelHasPrefix(model, "agnes-") ||
-    (baseUrl || "").toLowerCase().includes("agnes-ai.com")
-  ) {
-    return "agnes";
-  }
-  if (modelHasPrefix(model, "deepseek-")) return "deepseek";
-  if (modelHasPrefix(model, "qwen")) return "qwen";
-  if (modelHasPrefix(model, "o1", "o3", "o4", "gpt-5")) {
-    return "openai_kwargs";
-  }
-  return "none";
-}
-
-/** 与后端 catalog 前缀启发对齐（含 glm 思考）。 */
-export function inferCapsFromModel(
-  model: string,
-  baseUrl?: string,
-): Pick<
-  ModelCandidateDraft,
-  | "image"
-  | "thinking"
-  | "image_wire"
-  | "thinking_protocol"
-  | "effort"
-  | "effort_options"
-> {
-  const protocol = inferThinkingProtocol(model, baseUrl);
-  const opts = supportedEfforts(model, protocol);
-  const effort = defaultEffort(model, protocol);
-  if (
-    modelHasPrefix(model, "agnes-") ||
-    (baseUrl || "").toLowerCase().includes("agnes-ai.com")
-  ) {
-    return {
-      image: true,
-      thinking: true,
-      image_wire: "url",
-      thinking_protocol: protocol,
-      effort,
-      effort_options: opts,
-    };
-  }
-  if (modelHasPrefix(model, "deepseek-")) {
-    return {
-      image: false,
-      thinking: true,
-      image_wire: "data",
-      thinking_protocol: protocol,
-      effort,
-      effort_options: opts,
-    };
-  }
-  if (modelHasPrefix(model, "qwen")) {
-    return {
-      image: true,
-      thinking: true,
-      image_wire: "data",
-      thinking_protocol: protocol,
-      effort,
-      effort_options: opts,
-    };
-  }
-  if (modelHasPrefix(model, "glm")) {
-    return {
-      image: false,
-      thinking: true,
-      image_wire: "data",
-      thinking_protocol: protocol,
-      effort,
-      effort_options: opts,
-    };
-  }
-  if (modelHasPrefix(model, "o1", "o3", "o4", "gpt-5")) {
-    return {
-      image: true,
-      thinking: true,
-      image_wire: "data",
-      thinking_protocol: protocol,
-      effort,
-      effort_options: opts,
-    };
-  }
-  return {
-    image: false,
-    thinking: false,
-    image_wire: "data",
-    thinking_protocol: "none",
-    effort: "medium",
-    effort_options: opts,
-  };
-}
-
 function capsFromCatalogItem(
   item: ModelCatalogItem,
 ): Pick<
@@ -279,7 +127,7 @@ function capsFromCatalogItem(
 > {
   const opts = Array.isArray(item.effort_options)
     ? item.effort_options.map(String)
-    : supportedEfforts(item.id, item.thinking_protocol);
+    : [];
   return {
     model: item.id,
     image: item.image,
@@ -388,7 +236,7 @@ function ModelNameField({
     return () => window.clearTimeout(handle);
   }, [open, catalogKind, baseUrl, apiKey, candidateId, hasBase]);
 
-  function applyTyped(name: string) {
+  async function applyTyped(name: string) {
     if (!applyCapabilities) {
       onPatch({ model: name });
       return;
@@ -398,19 +246,19 @@ function ModelNameField({
       onPatch({ ...capsFromCatalogItem(hit), caps_user_edited: false });
       return;
     }
-    const inferred = inferCapsFromModel(name, baseUrl);
+    const looked = await resolveModelCaps(name, baseUrl);
     if (capsUserEdited) {
       onPatch({
         model: name,
-        thinking_protocol: inferred.thinking_protocol,
-        effort_options: inferred.effort_options,
+        thinking_protocol: looked.thinking_protocol,
+        effort_options: looked.effort_options,
       });
     } else {
       onPatch({
         model: name,
-        thinking_protocol: inferred.thinking_protocol,
-        effort_options: inferred.effort_options,
-        effort: coerceEffort(inferred.effort, name, inferred.thinking_protocol),
+        ...looked,
+        effort: pickEffortInOptions(looked.effort, looked.effort_options),
+        caps_user_edited: false,
       });
     }
   }
@@ -460,10 +308,9 @@ function ModelNameField({
                         model: fromCat.model,
                         thinking_protocol: fromCat.thinking_protocol,
                         effort_options: fromCat.effort_options,
-                        effort: coerceEffort(
+                        effort: pickEffortInOptions(
                           fromCat.effort,
-                          fromCat.model,
-                          fromCat.thinking_protocol,
+                          fromCat.effort_options,
                         ),
                       });
                     } else {

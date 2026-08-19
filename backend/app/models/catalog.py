@@ -200,6 +200,22 @@ def lookup_capabilities(
     return ModelCapabilities()
 
 
+def capabilities_public_dict(caps: ModelCapabilities, *, model: str) -> dict[str, Any]:
+    """HTTP / UI 共用的能力字段（与 catalog item 能力段同形）。"""
+    mid = (model or "").strip()
+    return {
+        "ok": True,
+        "model": mid,
+        "image": caps.image,
+        "thinking": caps.thinking,
+        "effort": caps.effort,
+        "effort_options": list(caps.effort_options),
+        "image_wire": caps.image_wire,
+        "thinking_protocol": caps.thinking_protocol,
+        "source": caps.source,
+    }
+
+
 def search_supplement(
     query: str,
     *,

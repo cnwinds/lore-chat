@@ -1,5 +1,5 @@
 import { newId } from "../../utils/id";
-import { inferCapsFromModel } from "./ModelSettingsTab";
+import { resolveModelCaps } from "./modelCapabilities";
 import { draftChainNeedsSetup, isDraftApiKeyConfigured } from "./settingsAttention";
 import {
   candidateFromProvider,
@@ -50,12 +50,13 @@ export function hasTavily(search: SearchProviderDraft[]): boolean {
   return search.some((p) => p.provider === "tavily");
 }
 
-function agnesFlashCandidate(): ModelCandidateDraft {
+async function agnesFlashCandidate(): Promise<ModelCandidateDraft> {
   const base = candidateFromProvider("agnes");
+  const caps = await resolveModelCaps(STARTER_AGNES_MODEL, base.base_url);
   return {
     ...base,
     model: STARTER_AGNES_MODEL,
-    ...inferCapsFromModel(STARTER_AGNES_MODEL, base.base_url),
+    ...caps,
   };
 }
 
@@ -91,10 +92,16 @@ export function starterChainVacant(
 }
 
 /** 套用免费起步套餐：对话/辅助 Agnes Flash，嵌入 bge-m3，搜索 Tavily。 */
-export function applyFreeStarterPack(current: StarterPackDrafts): StarterPackDrafts {
+export async function applyFreeStarterPack(
+  current: StarterPackDrafts,
+): Promise<StarterPackDrafts> {
+  const [chat, utility] = await Promise.all([
+    agnesFlashCandidate(),
+    agnesFlashCandidate(),
+  ]);
   return {
-    chat: [agnesFlashCandidate()],
-    utility: [agnesFlashCandidate()],
+    chat: [chat],
+    utility: [utility],
     embed: [siliconflowEmbedCandidate()],
     search: ensureTavily(current.search),
   };
