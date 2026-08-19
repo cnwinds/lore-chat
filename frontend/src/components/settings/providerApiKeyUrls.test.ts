@@ -5,6 +5,9 @@ describe("providerApiKeyUrl", () => {
   it("returns console URLs for known presets", () => {
     expect(providerApiKeyUrl("openai")).toContain("openai.com");
     expect(providerApiKeyUrl("zhipu")).toContain("bigmodel.cn");
+    expect(providerApiKeyUrl("zhipu_plan")).toContain("coding-plan");
+    expect(providerApiKeyUrl("minimax")).toContain("interface-key");
+    expect(providerApiKeyUrl("minimax_plan")).toContain("token-plan");
     expect(providerApiKeyUrl("bailian")).toContain("aliyun.com");
     expect(providerApiKeyUrl("deepseek")).toContain("deepseek.com");
     expect(providerApiKeyUrl("agnes")).toContain("agnes-ai.com");

@@ -5,8 +5,11 @@
 export const PROVIDER_API_KEY_URLS: Record<string, string> = {
   openai: "https://platform.openai.com/api-keys",
   zhipu: "https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys",
+  zhipu_plan: "https://bigmodel.cn/coding-plan/personal/overview",
   bailian: "https://bailian.console.aliyun.com/?tab=model#/api-key",
   deepseek: "https://platform.deepseek.com/api_keys",
+  minimax: "https://platform.minimaxi.com/user-center/basic-information/interface-key",
+  minimax_plan: "https://platform.minimaxi.com/user-center/payment/token-plan",
   agnes: "https://platform.agnes-ai.com/",
   openrouter: "https://openrouter.ai/settings/keys",
   siliconflow: "https://cloud.siliconflow.cn/account/ak",

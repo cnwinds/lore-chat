@@ -4,8 +4,11 @@ import { newId } from "../../utils/id";
 export type LlmProviderPresetId =
   | "openai"
   | "zhipu"
+  | "zhipu_plan"
   | "bailian"
   | "deepseek"
+  | "minimax"
+  | "minimax_plan"
   | "agnes"
   | "openrouter"
   | "custom";
@@ -24,8 +27,12 @@ export const LLM_PROVIDER_DEFAULT_BASE_URL: Record<
 > = {
   openai: "https://api.openai.com/v1",
   zhipu: "https://open.bigmodel.cn/api/paas/v4",
+  zhipu_plan: "https://open.bigmodel.cn/api/coding/paas/v4",
   bailian: "https://dashscope.aliyuncs.com/compatible-mode/v1",
   deepseek: "https://api.deepseek.com",
+  minimax: "https://api.minimaxi.com/v1",
+  /** 与按量 MiniMax 同地址；靠 provider id 与订阅 Key 区分 */
+  minimax_plan: "https://api.minimaxi.com/v1",
   agnes: "https://apihub.agnes-ai.com/v1",
   openrouter: "https://openrouter.ai/api/v1",
 };
@@ -45,8 +52,11 @@ export const LLM_PROVIDER_OPTIONS: {
 }[] = [
   { id: "openai", label: "OpenAI" },
   { id: "zhipu", label: "智谱" },
+  { id: "zhipu_plan", label: "智谱 Plan" },
   { id: "bailian", label: "百炼 / 通义" },
   { id: "deepseek", label: "DeepSeek" },
+  { id: "minimax", label: "MiniMax" },
+  { id: "minimax_plan", label: "MiniMax Plan" },
   { id: "agnes", label: "Agnes" },
   { id: "openrouter", label: "OpenRouter" },
   { id: "custom", label: "自定义" },
@@ -80,13 +90,20 @@ function inferPresetFromBaseUrl<T extends string>(
 ): T {
   const n = baseUrl.trim().replace(/\/+$/, "").toLowerCase();
   if (!n) return custom;
+  /** 同地址的 *_plan 与按量套餐：优先按量，仅当只有套餐地址对得上时才归套餐。 */
+  let planHit: T | null = null;
   for (const [id, url] of Object.entries(defaults) as [
     Exclude<T, "custom">,
     string,
   ][]) {
-    if (n === url.replace(/\/+$/, "").toLowerCase()) return id;
+    if (n !== url.replace(/\/+$/, "").toLowerCase()) continue;
+    if (id.endsWith("_plan")) {
+      planHit ??= id;
+      continue;
+    }
+    return id;
   }
-  return custom;
+  return planHit ?? custom;
 }
 
 /** 按已存 Base URL 反推厂家；对不上则为 custom。 */

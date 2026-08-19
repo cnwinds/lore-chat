@@ -62,6 +62,15 @@ describe("inferProviderFromBaseUrl", () => {
     expect(inferProviderFromBaseUrl("https://openrouter.ai/api/v1")).toBe(
       "openrouter",
     );
+    expect(inferProviderFromBaseUrl("https://open.bigmodel.cn/api/paas/v4")).toBe(
+      "zhipu",
+    );
+    expect(
+      inferProviderFromBaseUrl("https://open.bigmodel.cn/api/coding/paas/v4"),
+    ).toBe("zhipu_plan");
+    expect(inferProviderFromBaseUrl("https://api.minimaxi.com/v1")).toBe(
+      "minimax",
+    );
   });
 
   it("falls back to custom", () => {
@@ -73,6 +82,9 @@ describe("inferProviderFromBaseUrl", () => {
 describe("llmProviderLabel", () => {
   it("returns vendor label for title", () => {
     expect(llmProviderLabel("bailian")).toBe("百炼 / 通义");
+    expect(llmProviderLabel("zhipu_plan")).toBe("智谱 Plan");
+    expect(llmProviderLabel("minimax")).toBe("MiniMax");
+    expect(llmProviderLabel("minimax_plan")).toBe("MiniMax Plan");
     expect(llmProviderLabel("openrouter")).toBe("OpenRouter");
     expect(llmProviderLabel("custom")).toBe("自定义");
   });
