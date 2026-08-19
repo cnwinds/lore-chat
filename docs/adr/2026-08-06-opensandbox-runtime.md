@@ -70,6 +70,14 @@ Lore Chat 的 Agent 工具面是服务器内白名单语义工具（KB / 网页 
 
 ## Spike
 
-见 `docs/spikes/2026-08-06-opensandbox/`：验证旁挂服务、短命令、流式/后台长命令、named volume 持久、以及与「backend 无 sock」边界是否成立。
+2026-08-06 在旁挂 `opensandbox-server` 上验证：短同步命令、前台流式节点、后台 job 轮询、named volume 跨 destroy/create 持久、backend **不**持 `docker.sock`。结果 **PASS**（SDK `opensandbox==0.1.15`）。
 
-**Spike 结果（2026-08-06）：PASS。** 详见同目录 `NOTES.md`（含 `host_ip=127.0.0.1`、端口 `18090`、execd 预拉等运维要点）。
+正式编排见 `docker/docker-compose.sandbox.yml`，不要再维护独立 spike compose。
+
+当时踩坑（正式环境仍适用）：
+
+1. 本机 `8090` 已被 web 占用时，控制面应映射其它宿主端口（spike 用过 `18090:8090`）。
+2. 客户端在**宿主机**时 `[docker] host_ip` 必须是 `127.0.0.1`；写成 `host.docker.internal` 会健康检查失败。
+3. 首次需预拉 `opensandbox/server`、`execd`、`egress` 与业务镜像；缺 execd 则无法创建沙箱。
+4. Spike 曾用 `OPENSANDBOX_INSECURE_SERVER=YES`；生产必须配 API key，且仅本机/内网可达。
+5. named volume 须先于 `Sandbox.create`。

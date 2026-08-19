@@ -149,5 +149,6 @@ cp .env.docker.example .env
 | 版本与变更 | [`VERSION`](VERSION) · [CHANGELOG.md](CHANGELOG.md) |
 | 模块地图 | [CONTEXT.md](CONTEXT.md) |
 | 架构决策 | [docs/adr/](docs/adr/) |
+| 文档地图 | [docs/README.md](docs/README.md) |
 | 安全披露 | [SECURITY.md](SECURITY.md) |
 | 许可证 | [MIT](LICENSE) |

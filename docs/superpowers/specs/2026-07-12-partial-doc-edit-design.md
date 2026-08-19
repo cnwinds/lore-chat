@@ -2,7 +2,7 @@
 
 日期：2026-07-12  
 状态：Phase 1 已实现（2026-07-12）  
-前置文档：[2026-07-10-agent-tools-design.md](./2026-07-10-agent-tools-design.md)、[2026-07-11-system-layer-and-conversation-summary-design.md](./2026-07-11-system-layer-and-conversation-summary-design.md)、[2026-07-12-architecture-fixes.md](../plans/2026-07-12-architecture-fixes.md)（已实施）
+前置文档：[2026-07-10-agent-tools-design.md](./2026-07-10-agent-tools-design.md)、[2026-07-11-system-layer-and-conversation-summary-design.md](./2026-07-11-system-layer-and-conversation-summary-design.md)
 
 ## 0. 复审修订摘要（2026-07-12）
 

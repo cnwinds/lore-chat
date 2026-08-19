@@ -76,7 +76,7 @@
 
 - [ADR：引擎模块 seam（2026-08-04）](docs/adr/2026-08-04-engine-module-seams.md)
 - [ADR：多文档合并仅 UI（2026-08-05）](docs/adr/2026-08-05-merge-ui-only.md)
-- 产品规格：`docs/superpowers/specs/`
+- 产品规格与文档地图：[docs/README.md](docs/README.md)
 
 ## Language（对话与知识库）
 

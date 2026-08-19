@@ -1,8 +1,7 @@
 # Lorechat Agent 工具能力设计文档
 
 - 日期：2026-07-10
-- 状态：设计已确认，待用户审阅 spec 后编写实现计划
-- 前置文档：[2026-07-09-chat-knowledge-base-design.md](./2026-07-09-chat-knowledge-base-design.md)
+- 状态：已落地（0.1.0）。工具清单以代码 `tool_catalog.py` 为准，冲突时以代码为准。
 
 ## 1. 背景与目标
 

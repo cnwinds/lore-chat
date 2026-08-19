@@ -1,7 +1,6 @@
 """`/api/chat` 会话持久化：begin_turn/finalize_turn 顺序、409 重复、断流 interrupted。
 
-见 docs/superpowers/plans/2026-07-14-second-brain-phase-1a.md Task 8
-与 docs/superpowers/specs/2026-07-13-memory-layer-design.md §6.1。
+见 docs/superpowers/specs/2026-07-13-memory-layer-design.md §6.1。
 """
 from __future__ import annotations
 

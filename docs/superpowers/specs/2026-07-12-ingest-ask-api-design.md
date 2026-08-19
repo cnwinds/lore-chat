@@ -107,9 +107,8 @@
 
 ## 6. 与历史文档的关系
 
-- MVP 初版 ingest **直连** `organizer.ingest_text`（无 Agent）；见 `2026-07-09-chat-knowledge-base-design.md`。
-- Agent 化后改为经 Agent + mode；见 `2026-07-10-agent-tools-design.md` §9。
-- 端点**不废弃**；产品迁移到 `/chat` 后定位为机器 API。architecture-fixes / web-search-toggle 计划中的「端点重构」指可选优化（纯文本快路径等），**非删除**。
+- Agent 化后 ingest/ask 经 Agent + mode；见 [agent-tools-design](./2026-07-10-agent-tools-design.md)。
+- 端点**不废弃**；产品主入口是 `/api/chat`，本文档定位为机器 API。
 
 ## 7. 后续可选优化（未实现）
 
