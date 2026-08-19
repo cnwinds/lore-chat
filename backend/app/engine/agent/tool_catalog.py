@@ -930,8 +930,7 @@ def select_tools(
     - sandbox_enabled=False：移除全部沙箱工具。
     - disclosure_windows：注入 read_doc / fetch_url 的实际窗口字数（与 Settings 一致）。
 
-    /api/chat 使用 mode=default。ingest/ask 为测试与脚本同步 API，见
-    docs/superpowers/specs/2026-07-12-ingest-ask-api-design.md
+    /api/chat 使用 mode=default。ingest/ask 为测试与脚本同步 API。
     """
     excluded: set[str] = set()
     if not web_enabled or not search_configured:

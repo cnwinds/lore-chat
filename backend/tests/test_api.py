@@ -1,8 +1,7 @@
 """HTTP API 集成测试。
 
 灌库与只读问答优先使用同步机器 API（/api/ingest、/api/ask），
-结果确定、无需解析 SSE。产品行为测 /api/chat。见
-docs/superpowers/specs/2026-07-12-ingest-ask-api-design.md
+结果确定、无需解析 SSE。产品行为测 /api/chat。
 """
 import json
 
