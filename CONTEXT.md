@@ -80,6 +80,9 @@
 
 ## Language（对话与知识库）
 
+**模型设置页签**：`ModelSettingsTab` 只装配；有序链 UI 在 `CandidateChainEditor` / `EmbedChainEditor`；draft 解析在 `modelChainDrafts`；能力 lookup 在 `modelCapabilities`。
+_Avoid_: 经 ModelSettingsTab barrel re-export Search/Image 类型或 providerPresets；在页签壳里再堆 ChainEditor
+
 **模型能力（caps）**：thinking / image / image_wire / thinking_protocol / effort_options 的权威解析在 `catalog.lookup_capabilities`；设置页经 `GET /api/admin/model-capabilities`（`resolveModelCaps`）。lookup 失败用保守默认。
 _Avoid_: 在前端再写一份前缀启发表；用本地 `supportedEfforts` 臆造档位
 

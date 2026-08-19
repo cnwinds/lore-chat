@@ -13,21 +13,25 @@ import {
 import { AccountSettingsTab } from "./AccountSettingsTab";
 import { AgentSettingsTab } from "./AgentSettingsTab";
 import { KbBackupSettingsTab } from "./KbBackupSettingsTab";
+import { ModelSettingsTab } from "./ModelSettingsTab";
+import { parseCandidates } from "./modelChainDrafts";
 import {
-  ModelSettingsTab,
   maskApiKeyPlaceholder,
-  parseCandidates,
   parseEmbedCandidates,
-  SEARCH_PROVIDER_OPTIONS,
-  IMAGE_PROVIDER_OPTIONS,
-  type CooldownStatus,
   type EmbedCandidateDraft,
   type ModelCandidateDraft,
+} from "./providerPresets";
+import {
+  SEARCH_PROVIDER_OPTIONS,
   type SearchProviderDraft,
   type SearchProviderId,
+} from "./SearchProviderEditor";
+import {
+  IMAGE_PROVIDER_OPTIONS,
   type ImageProviderDraft,
   type ImageProviderId,
-} from "./ModelSettingsTab";
+} from "./ImageProviderEditor";
+import type { CooldownStatus } from "./settingsTypes";
 import { SearchSettingsTab } from "./SearchSettingsTab";
 import { UsageSettingsTab } from "./UsageSettingsTab";
 import { SettingsAttentionDot } from "./SettingsAttentionDot";

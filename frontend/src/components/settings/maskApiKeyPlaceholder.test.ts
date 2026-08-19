@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { maskApiKeyPlaceholder } from "./ModelSettingsTab";
+import { maskApiKeyPlaceholder } from "./providerPresets";
 
 describe("maskApiKeyPlaceholder", () => {
   it("keeps backend-masked values", () => {
