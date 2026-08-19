@@ -136,18 +136,18 @@
 | `ghcr.io/cnwinds/lore-chat-web` | 前端 Nginx |
 | `ghcr.io/cnwinds/lore-chat-sandbox-agent` | Work 模式沙箱 Agent |
 
-每个发行版打出：
+每个发行版打出（与 Git 标签同一套 **`v*`** 版本号）：
 
-- **`X.Y.Z`**（如 `0.1.0`）— 用户应锁定的版本
-- **`X.Y`**（如 `0.1`）— 同 minor 最新 patch
+- **`vX.Y.Z`**（如 `v0.1.0`）— 用户应锁定的版本，与 git tag 同名
+- **`vX.Y`**（如 `v0.1`）— 同 minor 最新 patch
 - **`latest`** — 最新发行版；推送到 `master`/`main` 也会更新 `latest`（滚动预览）
 
-Git 标签带 `v`（`v0.1.0`）；**镜像标签不带 `v`**（`0.1.0`）。不要让用户去拉 `v0.1.0`。
+另会打出不带 `v` 的 `X.Y.Z` / `X.Y` 作为别名。文档与 `.env` 一律写 **`vX.Y.Z`**。
 
 用户侧锁定方式（预构建启动器 `.env`）：
 
 ```bash
-LORECHAT_IMAGE_TAG=0.1.0
+LORECHAT_IMAGE_TAG=v0.1.0
 ```
 
 留空或 `latest` 则跟随最新发行 / master 滚动。完整镜像名仍可用 `LORECHAT_BACKEND_IMAGE` / `LORECHAT_WEB_IMAGE` / `SANDBOX_IMAGE` 覆盖。
@@ -200,11 +200,11 @@ LORECHAT_IMAGE_TAG=0.1.0
 9. **等待 CI**：GitHub Actions 工作流 `Publish images`。检查失败则**不要**删 tag 凑合；修代码后发 **patch**。
 10. **验收**
     - GitHub Release `vX.Y.Z` 已创建，说明来自 CHANGELOG 该节（工作流自动 `gh release create`；已存在则更新 notes）
-    - 三张镜像均可拉：`:<X.Y.Z>` 与 `:latest`
+    - 三张镜像均可拉：`:vX.Y.Z` 与 `:latest`
       ```bash
-      docker pull ghcr.io/cnwinds/lore-chat-backend:X.Y.Z
-      docker pull ghcr.io/cnwinds/lore-chat-web:X.Y.Z
-      docker pull ghcr.io/cnwinds/lore-chat-sandbox-agent:X.Y.Z
+      docker pull ghcr.io/cnwinds/lore-chat-backend:vX.Y.Z
+      docker pull ghcr.io/cnwinds/lore-chat-web:vX.Y.Z
+      docker pull ghcr.io/cnwinds/lore-chat-sandbox-agent:vX.Y.Z
       ```
 11. **首次把 GHCR 包设为 Public**（否则未登录用户拉不下来）。每个包一次：
     ```bash
@@ -215,7 +215,7 @@ LORECHAT_IMAGE_TAG=0.1.0
     ```
     若 API 不可用，让用户在 GitHub → Packages 里把三个容器包 Visibility 改为 Public。
 
-**禁止**：agent 本地 `docker build` 冒充发版；禁止只推 `master` 不打 tag（那样没有 `0.1.0` 镜像）；禁止用 `vX.Y.Z` 当镜像 tag 写进 README。
+**禁止**：agent 本地 `docker build` 冒充发版；禁止只推 `master` 不打 tag（那样没有 `vX.Y.Z` 镜像）。
 
 ## 2.4 发版后用户怎么用
 
@@ -223,7 +223,7 @@ LORECHAT_IMAGE_TAG=0.1.0
 
 ```bash
 # 安装目录下的 .env
-LORECHAT_IMAGE_TAG=0.1.0
+LORECHAT_IMAGE_TAG=v0.1.0
 ```
 
 然后 `./lorechat.sh update`（或 `start`）。详见 README「使用发布镜像」。
@@ -243,4 +243,4 @@ LORECHAT_IMAGE_TAG=0.1.0
 - [ ] `[Unreleased]` 已腾空，新节有日期与用户可读条目
 - [ ] 未把运行时数据、密钥写入提交
 - [ ] 将推送 `master` **和** `vX.Y.Z`
-- [ ] 已提醒：镜像 tag 是 `X.Y.Z` 不是 `vX.Y.Z`
+- [ ] 已提醒：镜像 tag 与 git tag 同为 `vX.Y.Z`

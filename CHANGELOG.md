@@ -14,7 +14,7 @@
 - 首次配置「免费起步套餐」引导（Agnes Flash / 硅基流动嵌入 / 可选 Tavily）
 - 厂家预设：OpenAI、智谱 / 智谱 Plan、百炼、DeepSeek、MiniMax / MiniMax Plan、Agnes、OpenRouter、硅基流动（嵌入）
 - 预构建一键启动：`deploy/lorechat.sh` / `deploy/lorechat.ps1`，以及 `get-lorechat.sh` / `get-lorechat.ps1`
-- GHCR 镜像：`latest`（master 与发行 tag）以及 `X.Y.Z` / `X.Y`（仅发行 tag）；可用 `LORECHAT_IMAGE_TAG` 锁定版本
+- GHCR 镜像：`latest`（master 与发行 tag）以及 `vX.Y.Z` / `vX.Y`（与 git tag 同名；另有不带 `v` 的别名）；可用 `LORECHAT_IMAGE_TAG=v0.1.0` 锁定版本
 - 源码 Docker：`./lorechat.sh start --chat|--work`，可选开发热重载
 - Work 模式 OpenSandbox 沙箱执行
 - MIT 许可证与开源社区文件（SECURITY、CONTRIBUTING、CODE_OF_CONDUCT）
