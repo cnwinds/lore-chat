@@ -69,22 +69,65 @@ FONTS = "Outfit, Inter, Segoe UI, system-ui, sans-serif"
 SLOGAN = "让每次对话，长成你的知识与能力。"
 
 
-def letter(d: str, x: float, baseline: float, s: float, fill: str) -> str:
+def letter(
+    d: str,
+    x: float,
+    baseline: float,
+    s: float,
+    fill: str,
+    *,
+    outline: str | None = None,
+    outline_w: float = 40,
+) -> str:
+    stroke = ""
+    if outline:
+        stroke = (
+            f' stroke="{outline}" stroke-width="{outline_w:.0f}" '
+            f'stroke-linecap="round" stroke-linejoin="round" paint-order="stroke fill"'
+        )
     return (
         f'<g transform="translate({x:.2f} {baseline:.2f}) scale({s:.5f} {-s:.5f})">'
-        f'<path d="{d}" fill="{fill}"/></g>'
+        f'<path d="{d}" fill="{fill}"{stroke}/></g>'
     )
 
 
-def spiral_at(tx: float, ty: float, sc: float, stroke: str, node: str, gold: str) -> str:
+def spiral_at(
+    tx: float,
+    ty: float,
+    sc: float,
+    stroke: str,
+    node: str,
+    gold: str,
+    *,
+    outline: str | None = None,
+) -> str:
+    halo_path = ""
+    halo_node = ""
+    if outline:
+        halo_w = stroke_w + 4.0
+        halo_r = node_r + 1.6
+        halo_path = (
+            f'      <path d="{spiral_d}" fill="none" stroke="{outline}" '
+            f'stroke-width="{halo_w}" stroke-linecap="round" stroke-linejoin="round"/>\n'
+        )
+        halo_node = f'      <circle cx="{ex:.2f}" cy="{ey:.2f}" r="{halo_r}" fill="{outline}"/>\n'
     return f'''<g transform="translate({tx:.2f} {ty:.2f}) scale({sc:.5f})">
-      <path d="{spiral_d}" fill="none" stroke="{stroke}" stroke-width="{stroke_w}" stroke-linecap="round" stroke-linejoin="round"/>
-      <circle cx="{ex:.2f}" cy="{ey:.2f}" r="{node_r}" fill="{node}"/>
+{halo_path}      <path d="{spiral_d}" fill="none" stroke="{stroke}" stroke-width="{stroke_w}" stroke-linecap="round" stroke-linejoin="round"/>
+{halo_node}      <circle cx="{ex:.2f}" cy="{ey:.2f}" r="{node_r}" fill="{node}"/>
       <circle cx="{ex:.2f}" cy="{ey:.2f}" r="{gold_r}" fill="{gold}"/>
     </g>'''
 
 
-def wordmark_parts(font_size: float, origin_x: float, baseline: float, ink: str, spiral: str, gold: str) -> tuple[str, float]:
+def wordmark_parts(
+    font_size: float,
+    origin_x: float,
+    baseline: float,
+    ink: str,
+    spiral: str,
+    gold: str,
+    *,
+    outline: str | None = None,
+) -> tuple[str, float]:
     """Return SVG internals and the x after the last letter."""
     s = font_size / upem
     tracking = -0.03 * font_size
@@ -93,7 +136,7 @@ def wordmark_parts(font_size: float, origin_x: float, baseline: float, ink: str,
     or_kern = 0.05 * font_size
 
     x = origin_x
-    parts = [letter(L_d, x, baseline, s, ink)]
+    parts = [letter(L_d, x, baseline, s, ink, outline=outline)]
     x += L_w * s + tracking + lo_kern
 
     o_slot = x
@@ -104,12 +147,22 @@ def wordmark_parts(font_size: float, origin_x: float, baseline: float, ink: str,
     target_h = o_h * 1.14
     sc = target_h / (smaxy - sminy)
     sp_cx, sp_cy = (sminx + smaxx) / 2, (sminy + smaxy) / 2
-    parts.append(spiral_at(o_cx - sp_cx * sc, o_cy - sp_cy * sc, sc, spiral, spiral, gold))
+    parts.append(
+        spiral_at(
+            o_cx - sp_cx * sc,
+            o_cy - sp_cy * sc,
+            sc,
+            spiral,
+            spiral,
+            gold,
+            outline=outline,
+        )
+    )
     x += o_w * s + tracking + or_kern
 
-    parts.append(letter(r_d, x, baseline, s, ink))
+    parts.append(letter(r_d, x, baseline, s, ink, outline=outline))
     x += r_w * s + tracking
-    parts.append(letter(e_d, x, baseline, s, ink))
+    parts.append(letter(e_d, x, baseline, s, ink, outline=outline))
     x += e_w * s
     return "\n    ".join(parts), x
 
@@ -164,7 +217,12 @@ lock, lock_r = wordmark_parts(FS2, PAD2, base2, "#14161c", "#5B5BD6", "#E8B84A")
 lock_w, lock_h = lock_r + PAD2, base2 + 12
 lockup = svg(lock_w, lock_h, lock)
 
+# GitHub README: white fill + black outline so the mark stays readable on dark pages.
+wm_gh, _ = wordmark_parts(FS, PAD_X, baseline, "#FFFFFF", "#5B5BD6", "#E8B84A", outline="#0B0D12")
+wordmark_gh = svg(wm_w, wm_h, wm_gh)
+
 root.joinpath("lore-wordmark.svg").write_text(wordmark, encoding="utf-8")
+root.joinpath("lore-wordmark-gh.svg").write_text(wordmark_gh, encoding="utf-8")
 root.joinpath("lore-logo.svg").write_text(logo, encoding="utf-8")
 root.joinpath("lore-logo-dark.svg").write_text(logo_dark, encoding="utf-8")
 root.joinpath("lore-logo-stacked.svg").write_text(stacked, encoding="utf-8")

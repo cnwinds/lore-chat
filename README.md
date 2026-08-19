@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/brand/lore-wordmark.svg" alt="Lore" width="240" />
+  <img src="docs/brand/lore-wordmark-gh.svg" alt="Lore" width="240" />
 </p>
 
 # Lore Chat
