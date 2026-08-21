@@ -98,25 +98,6 @@ def _delta_reasoning(delta: Any) -> str | None:
     return None
 
 
-def _message_reasoning(message: Any) -> str | None:
-    rc = getattr(message, "reasoning_content", None)
-    if isinstance(rc, str) and rc:
-        return rc
-    return None
-
-
-def _api_messages_have_images(messages: list[dict]) -> bool:
-    """物化后的 OpenAI messages 是否已含 image_url（决定可否走真流式）。"""
-    for m in messages:
-        content = m.get("content")
-        if not isinstance(content, list):
-            continue
-        for part in content:
-            if isinstance(part, dict) and part.get("type") == "image_url":
-                return True
-    return False
-
-
 def _tool_calls_from_message(message: Any) -> list[ToolCall]:
     out: list[ToolCall] = []
     for tc in message.tool_calls or []:
@@ -440,31 +421,26 @@ class OpenAILLMClient:
             client = self._client_for(cand)
             model = cand.model
             api_messages = self._materialize(messages, cand)
-            # 部分网关（如 Agnes）对流式+图片会挂死，非流式识图正常；有图时整轮改同步再合成增量。
-            sync_for_images = _api_messages_have_images(api_messages)
             stream_id = uuid.uuid4().hex[:8]
             kwargs: dict[str, Any] = {
                 "model": model,
                 "messages": api_messages,
                 "temperature": temperature,
+                "stream": True,
+                "stream_options": {"include_usage": True},
             }
-            if not sync_for_images:
-                kwargs["stream"] = True
-                kwargs["stream_options"] = {"include_usage": True}
             if tools:
                 kwargs["tools"] = tools
             kwargs.update(thinking_request_kwargs(cand, enable=cand.thinking))
 
             _log.info(
-                "llm stream start id=%s model=%s chain=%s messages=%d tools=%d "
-                "failover=%s sync_images=%s",
+                "llm stream start id=%s model=%s chain=%s messages=%d tools=%d failover=%s",
                 stream_id,
                 model,
                 chain,
                 len(messages),
                 len(tools),
                 sel.failover,
-                sync_for_images,
             )
             t0 = time.monotonic()
             chunk_count = 0
@@ -483,140 +459,114 @@ class OpenAILLMClient:
             produced_output = False
 
             try:
-                if sync_for_images:
-                    resp = client.chat.completions.create(**kwargs)
-                    pt, ct, tt, cache, known = self._usage_from_resp(resp)
-                    usage_prompt, usage_completion, usage_total = pt, ct, tt
-                    usage_cache = cache
-                    usage_known = known
-                    chunk_count = 1
-                    msg = resp.choices[0].message
-                    if resp.choices[0].finish_reason:
-                        finish_reason = resp.choices[0].finish_reason
-                    reasoning = _message_reasoning(msg)
+                try:
+                    stream = client.chat.completions.create(**kwargs)
+                except TypeError as e:
+                    # 仅当确为 stream_options 不被接受时剥掉重试；其它 TypeError 原样抛出
+                    err = str(e)
+                    if "stream_options" in kwargs and "stream_options" in err:
+                        _log.warning(
+                            "llm stream include_usage unsupported id=%s model=%s err=%s; retry without",
+                            stream_id,
+                            model,
+                            e,
+                        )
+                        kwargs.pop("stream_options", None)
+                        stream = client.chat.completions.create(**kwargs)
+                    else:
+                        raise
+                except Exception as e:
+                    err = str(e)
+                    if "stream_options" in kwargs and (
+                        "stream_options" in err or "include_usage" in err
+                    ):
+                        _log.warning(
+                            "llm stream include_usage unsupported id=%s model=%s err=%s; retry without",
+                            stream_id,
+                            model,
+                            e,
+                        )
+                        kwargs.pop("stream_options", None)
+                        stream = client.chat.completions.create(**kwargs)
+                    else:
+                        raise
+                for chunk in stream:
+                    chunk_count += 1
+                    u = getattr(chunk, "usage", None)
+                    if u is not None:
+                        usage_prompt = getattr(u, "prompt_tokens", usage_prompt)
+                        usage_completion = getattr(
+                            u, "completion_tokens", usage_completion
+                        )
+                        usage_total = getattr(u, "total_tokens", usage_total)
+                        cached = self._cached_tokens_from_usage(u)
+                        if cached is not None:
+                            usage_cache = cached
+                        usage_known = (
+                            usage_prompt is not None
+                            or usage_completion is not None
+                            or usage_total is not None
+                        )
+                    if not chunk.choices:
+                        continue
+                    choice = chunk.choices[0]
+                    if choice.finish_reason:
+                        finish_reason = choice.finish_reason
+                    delta = choice.delta
+                    reasoning = _delta_reasoning(delta)
                     if reasoning:
                         produced_output = True
                         think_parts.append(reasoning)
                         think_chars += len(reasoning)
                         yield ChatStreamChunk(think_delta=reasoning)
-                    if msg.content:
+                    if delta.content:
                         produced_output = True
-                        content_parts.append(msg.content)
-                        content_chars += len(msg.content)
-                        yield ChatStreamChunk(text_delta=msg.content)
-                    tool_calls = _tool_calls_from_message(msg)
-                    if tool_calls:
+                        content_parts.append(delta.content)
+                        content_chars += len(delta.content)
+                        yield ChatStreamChunk(text_delta=delta.content)
+                    for tcd in delta.tool_calls or []:
                         produced_output = True
-                        tool_delta_count = len(tool_calls)
-                else:
+                        tool_delta_count += 1
+                        slot = tc_acc.setdefault(
+                            tcd.index, {"id": None, "name": None, "arguments": ""}
+                        )
+                        if tcd.id:
+                            slot["id"] = tcd.id
+                        if tcd.function:
+                            if tcd.function.name:
+                                slot["name"] = tcd.function.name
+                            if tcd.function.arguments:
+                                slot["arguments"] += tcd.function.arguments
+                tool_calls = []
+                for idx in sorted(tc_acc):
+                    slot = tc_acc[idx]
+                    if not slot["name"]:
+                        continue
                     try:
-                        stream = client.chat.completions.create(**kwargs)
-                    except TypeError as e:
-                        # 仅当确为 stream_options 不被接受时剥掉重试；其它 TypeError 原样抛出
-                        err = str(e)
-                        if "stream_options" in kwargs and "stream_options" in err:
-                            _log.warning(
-                                "llm stream include_usage unsupported id=%s model=%s err=%s; retry without",
-                                stream_id,
-                                model,
-                                e,
-                            )
-                            kwargs.pop("stream_options", None)
-                            stream = client.chat.completions.create(**kwargs)
-                        else:
-                            raise
-                    except Exception as e:
-                        err = str(e)
-                        if "stream_options" in kwargs and (
-                            "stream_options" in err or "include_usage" in err
-                        ):
-                            _log.warning(
-                                "llm stream include_usage unsupported id=%s model=%s err=%s; retry without",
-                                stream_id,
-                                model,
-                                e,
-                            )
-                            kwargs.pop("stream_options", None)
-                            stream = client.chat.completions.create(**kwargs)
-                        else:
-                            raise
-                    for chunk in stream:
-                        chunk_count += 1
-                        u = getattr(chunk, "usage", None)
-                        if u is not None:
-                            usage_prompt = getattr(u, "prompt_tokens", usage_prompt)
-                            usage_completion = getattr(
-                                u, "completion_tokens", usage_completion
-                            )
-                            usage_total = getattr(u, "total_tokens", usage_total)
-                            cached = self._cached_tokens_from_usage(u)
-                            if cached is not None:
-                                usage_cache = cached
-                            usage_known = (
-                                usage_prompt is not None
-                                or usage_completion is not None
-                                or usage_total is not None
-                            )
-                        if not chunk.choices:
-                            continue
-                        choice = chunk.choices[0]
-                        if choice.finish_reason:
-                            finish_reason = choice.finish_reason
-                        delta = choice.delta
-                        reasoning = _delta_reasoning(delta)
-                        if reasoning:
-                            produced_output = True
-                            think_parts.append(reasoning)
-                            think_chars += len(reasoning)
-                            yield ChatStreamChunk(think_delta=reasoning)
-                        if delta.content:
-                            produced_output = True
-                            content_parts.append(delta.content)
-                            content_chars += len(delta.content)
-                            yield ChatStreamChunk(text_delta=delta.content)
-                        for tcd in delta.tool_calls or []:
-                            produced_output = True
-                            tool_delta_count += 1
-                            slot = tc_acc.setdefault(
-                                tcd.index, {"id": None, "name": None, "arguments": ""}
-                            )
-                            if tcd.id:
-                                slot["id"] = tcd.id
-                            if tcd.function:
-                                if tcd.function.name:
-                                    slot["name"] = tcd.function.name
-                                if tcd.function.arguments:
-                                    slot["arguments"] += tcd.function.arguments
-                    tool_calls = []
-                    for idx in sorted(tc_acc):
-                        slot = tc_acc[idx]
-                        if not slot["name"]:
-                            continue
-                        try:
-                            args = json.loads(slot["arguments"] or "{}")
-                        except json.JSONDecodeError:
-                            args = {}
-                        tool_calls.append(
-                            ToolCall(
-                                id=slot["id"] or f"call_{idx}",
-                                name=slot["name"],
-                                arguments=args,
-                            )
+                        args = json.loads(slot["arguments"] or "{}")
+                    except json.JSONDecodeError:
+                        args = {}
+                    tool_calls.append(
+                        ToolCall(
+                            id=slot["id"] or f"call_{idx}",
+                            name=slot["name"],
+                            arguments=args,
                         )
-                    if tc_acc and not tool_calls:
-                        _log.warning(
-                            "llm stream id=%s model=%s truncated tool_calls slots=%s",
-                            stream_id,
-                            model,
-                            {
-                                k: {
-                                    "id": v["id"],
-                                    "name": v["name"],
-                                    "args_len": len(v["arguments"] or ""),
-                                }
-                                for k, v in tc_acc.items()
-                            },
-                        )
+                    )
+                if tc_acc and not tool_calls:
+                    _log.warning(
+                        "llm stream id=%s model=%s truncated tool_calls slots=%s",
+                        stream_id,
+                        model,
+                        {
+                            k: {
+                                "id": v["id"],
+                                "name": v["name"],
+                                "args_len": len(v["arguments"] or ""),
+                            }
+                            for k, v in tc_acc.items()
+                        },
+                    )
             except BaseException as e:
                 elapsed_ms = int((time.monotonic() - t0) * 1000)
                 _log.error(
@@ -648,7 +598,7 @@ class OpenAILLMClient:
             content = "".join(content_parts) or None
             _log.info(
                 "llm stream end id=%s model=%s ms=%d chunks=%d content_chars=%d "
-                "think_chars=%d tool_calls=%d finish_reason=%s sync_images=%s",
+                "think_chars=%d tool_calls=%d finish_reason=%s",
                 stream_id,
                 model,
                 elapsed_ms,
@@ -657,7 +607,6 @@ class OpenAILLMClient:
                 think_chars,
                 len(tool_calls),
                 finish_reason,
-                sync_for_images,
             )
             self._record(
                 model=model,

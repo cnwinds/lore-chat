@@ -76,6 +76,12 @@ export function useChatConversation({
     }
     let cancelled = false;
     const loadedFor = conversationId;
+    // Drop foreign messages immediately so a fast send/resume cannot append onto
+    // another conversation's bubbles while history is in flight.
+    if (streamOwnership.msgsConversationIdRef.current !== loadedFor) {
+      setMsgs([]);
+      streamOwnership.msgsConversationIdRef.current = null;
+    }
     setLoadingHistory(true);
 
     const applyIfSafe = (apply: () => void) => {

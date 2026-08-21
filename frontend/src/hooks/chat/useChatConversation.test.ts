@@ -169,4 +169,73 @@ describe("useChatConversation", () => {
       ]);
     });
   });
+
+  it("clears foreign messages immediately when switching conversations", async () => {
+    let resolveB: ((value: Awaited<ReturnType<typeof api.getConversation>>) => void) | undefined;
+    vi.mocked(api.getConversation).mockImplementation(async (cid: string) => {
+      if (cid === "cid-a") {
+        return {
+          id: cid,
+          title: cid,
+          created_at: "",
+          updated_at: "",
+          message_count: 1,
+          summarized: false,
+          summary_path: null,
+          messages: [
+            {
+              role: "user",
+              text: "msg-a",
+              ts: "2026-01-01T00:00:00.000Z",
+            },
+          ],
+        };
+      }
+      return new Promise((resolve) => {
+        resolveB = resolve;
+      });
+    });
+
+    const skipLoadRef = { current: null as string | null };
+    const streamOwnership = createStreamOwnership();
+    const { result, rerender } = renderHook(
+      ({ conversationId }) =>
+        useChatConversation({
+          conversationId,
+          skipLoadRef,
+          streamOwnership,
+        }),
+      { initialProps: { conversationId: "cid-a" } },
+    );
+
+    await waitFor(() => {
+      expect(result.current.msgs[0]).toMatchObject({ text: "msg-a" });
+    });
+
+    rerender({ conversationId: "cid-b" });
+    await waitFor(() => {
+      expect(result.current.msgs).toEqual([]);
+    });
+    expect(streamOwnership.msgsConversationIdRef.current).toBeNull();
+
+    resolveB?.({
+      id: "cid-b",
+      title: "cid-b",
+      created_at: "",
+      updated_at: "",
+      message_count: 1,
+      summarized: false,
+      summary_path: null,
+      messages: [
+        {
+          role: "user",
+          text: "msg-b",
+          ts: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+    });
+    await waitFor(() => {
+      expect(result.current.msgs[0]).toMatchObject({ text: "msg-b" });
+    });
+  });
 });

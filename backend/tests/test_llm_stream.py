@@ -6,10 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from app.config import Settings
-from app.models.llm import (
-    OpenAILLMClient,
-    _api_messages_have_images,
-)
+from app.models.llm import OpenAILLMClient
 
 
 def _chunk(*, content=None, reasoning=None, tool_calls=None, finish_reason=None):
@@ -35,43 +32,15 @@ def _mock_select():
     )
 
 
-def test_api_messages_have_images():
-    assert not _api_messages_have_images([{"role": "user", "content": "hi"}])
-    assert _api_messages_have_images(
-        [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": "看图"},
-                    {"type": "image_url", "image_url": {"url": "data:image/png;base64,xx"}},
-                ],
-            }
-        ]
-    )
-
-
-def test_stream_with_images_uses_non_stream_completion():
-    """有图时走同步 completions，再合成 think/text/result（避免流式+图挂死）。"""
+def test_stream_with_images_still_uses_true_streaming():
+    """有图与无图同一套流式路径：stream=True，增量 think/text。"""
     llm = OpenAILLMClient(Settings())
-    msg = SimpleNamespace(
-        content="图里是猫",
-        reasoning_content="先看图",
-        tool_calls=None,
-    )
-    resp = SimpleNamespace(
-        choices=[SimpleNamespace(message=msg, finish_reason="stop")],
-        usage=SimpleNamespace(prompt_tokens=10, completion_tokens=5, total_tokens=15),
-    )
-    mock_client = MagicMock()
-    mock_client.chat.completions.create.return_value = resp
-
-    vision_messages = [
-        {
-            "role": "user",
-            "content": "描述图片",
-            "attachments": ["shot.png"],
-        }
+    stream = [
+        _chunk(reasoning="先看图"),
+        _chunk(content="图里是猫", finish_reason="stop"),
     ]
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.return_value = iter(stream)
 
     with (
         patch.object(llm, "_client_for", return_value=mock_client),
@@ -97,22 +66,28 @@ def test_stream_with_images_uses_non_stream_completion():
             return_value=SimpleNamespace(
                 candidate=SimpleNamespace(
                     id="vision",
-                    model="agnes-2.5-flash",
-                    thinking=False,
-                    effort="",
-                    effort_options=(),
-                    thinking_protocol="none",
+                    model="deepseek-v4-flash-vision-exp",
+                    thinking=True,
+                    effort="max",
+                    effort_options=("max",),
+                    thinking_protocol="deepseek",
                 ),
                 failover=False,
                 skipped=[],
             ),
         ),
     ):
-        chunks = list(llm.stream_chat_with_tools(vision_messages, [], big=True))
+        chunks = list(
+            llm.stream_chat_with_tools(
+                [{"role": "user", "content": "描述图片", "attachments": ["shot.png"]}],
+                [],
+                big=True,
+            )
+        )
 
     create_kwargs = mock_client.chat.completions.create.call_args.kwargs
-    assert create_kwargs.get("stream") is not True
-    assert "stream_options" not in create_kwargs
+    assert create_kwargs.get("stream") is True
+    assert create_kwargs.get("stream_options") == {"include_usage": True}
 
     think = [c.think_delta for c in chunks if c.think_delta]
     text = [c.text_delta for c in chunks if c.text_delta]

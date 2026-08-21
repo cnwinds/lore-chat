@@ -249,20 +249,33 @@ export function useAgentStream({
       awaitingUser: boolean;
     },
   ) {
-    abortRef.current = null;
-    stopRequestedRef.current = false;
-    clearStreamOwnership();
-    skipLoadRef.current = null;
+    // Switch cleanup may have released ownership so another chat can resume/send.
+    // A detached observation's finally must not wipe that newer claim (or its AbortController).
+    const stillOwns = streamConversationIdRef.current === streamCid;
+    if (stillOwns) {
+      abortRef.current = null;
+      stopRequestedRef.current = false;
+      clearStreamOwnership();
+    }
+    if (skipLoadRef.current === streamCid) {
+      skipLoadRef.current = null;
+    }
     onSidebarRefresh?.();
-    // Always attribute the end event to the stream owner, not the viewed chat.
-    onStreamEndRef.current?.({
-      failed: info.streamFailed,
-      aborted: info.aborted,
-      detached: info.detached,
-      awaitingUser:
-        !info.streamFailed && !info.aborted && !info.detached && info.awaitingUser,
-      conversationId: streamCid,
-    });
+    // Outbound queue is per viewed conversation — do not apply end-of-stream
+    // side effects (flush/pause) when this observation is no longer the viewed chat.
+    if (conversationIdRef.current === streamCid) {
+      onStreamEndRef.current?.({
+        failed: info.streamFailed,
+        aborted: info.aborted,
+        detached: info.detached,
+        awaitingUser:
+          !info.streamFailed &&
+          !info.aborted &&
+          !info.detached &&
+          info.awaitingUser,
+        conversationId: streamCid,
+      });
+    }
     const reload = shouldReloadConversation(info);
     if (!streamCid || reload === "none") return;
     getConversation(streamCid)
@@ -311,6 +324,7 @@ export function useAgentStream({
     stopRequestedRef.current = false;
     streamingRef.current = true;
     // Claim ownership before setStreaming so the first paint scopes UI correctly.
+    const priorMsgsCid = msgsConversationIdRef.current;
     streamConversationIdRef.current = conversationId;
     setStreamViewId(conversationId);
     if (conversationId) {
@@ -330,22 +344,28 @@ export function useAgentStream({
       sources: [],
     };
     setMsgs((m) => {
+      // Never append onto another conversation's leftover bubbles after a switch.
+      const sameChat =
+        conversationId == null ||
+        priorMsgsCid == null ||
+        priorMsgsCid === conversationId;
+      const base = sameChat ? m : [];
       if (isRetry && reuseUserMessageId) {
-        const userIdx = m.findIndex((x) => x.id === reuseUserMessageId);
+        const userIdx = base.findIndex((x) => x.id === reuseUserMessageId);
         const cut =
           userIdx >= 0
             ? userIdx + 1
             : typeof replaceAssistantIndexOpt === "number"
               ? replaceAssistantIndexOpt
-              : m.length;
-        const truncated = m.slice(0, Math.max(0, cut));
+              : base.length;
+        const truncated = base.slice(0, Math.max(0, cut));
         streamingAssistantIdxRef.current = truncated.length;
         return [...truncated, assistantMsg];
       }
-      const assistantIdx = m.length + 1;
+      const assistantIdx = base.length + 1;
       streamingAssistantIdxRef.current = assistantIdx;
       return [
-        ...m,
+        ...base,
         {
           role: "user",
           text: display,
@@ -430,6 +450,7 @@ export function useAgentStream({
     stickToBottomRef.current = true;
     stopRequestedRef.current = false;
     streamingRef.current = true;
+    const priorMsgsCid = msgsConversationIdRef.current;
     streamConversationIdRef.current = cid;
     msgsConversationIdRef.current = cid;
     setStreamViewId(cid);
@@ -444,14 +465,15 @@ export function useAgentStream({
     abortRef.current = controller;
 
     setMsgs((m) => {
-      const last = m[m.length - 1];
+      const base = priorMsgsCid === cid ? m : [];
+      const last = base[base.length - 1];
       if (last?.role === "assistant") {
-        streamingAssistantIdxRef.current = m.length - 1;
-        return m;
+        streamingAssistantIdxRef.current = base.length - 1;
+        return base;
       }
-      streamingAssistantIdxRef.current = m.length;
+      streamingAssistantIdxRef.current = base.length;
       return [
-        ...m,
+        ...base,
         {
           role: "assistant",
           ts: nowIsoDisplay(),

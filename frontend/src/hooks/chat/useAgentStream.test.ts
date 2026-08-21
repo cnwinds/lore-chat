@@ -402,11 +402,8 @@ describe("useAgentStream", () => {
       await run;
     });
 
-    expect(onStreamEnd).toHaveBeenCalledWith(
-      expect.objectContaining({
-        conversationId: "cid-a",
-      }),
-    );
+    // Switched away before end — do not drive the other chat's outbound queue.
+    expect(onStreamEnd).not.toHaveBeenCalled();
   });
 
   it("scopes streamingForView to the conversation that owns the stream", async () => {
@@ -438,6 +435,185 @@ describe("useAgentStream", () => {
     // Switch detaches and clears ownership immediately.
     expect(result.current.streamingForView).toBe(false);
     expect(result.current.streaming).toBe(false);
+
+    resolveStream?.();
+    await act(async () => {
+      await run;
+    });
+  });
+
+  it("detached finishObservation must not clear a newer stream's ownership", async () => {
+    // Repro: A streaming → switch to B (abort A, clear ownership) → start B →
+    // A's finally/finishObservation must not wipe B's claim (cross-talk root).
+    let releaseA: (() => void) | undefined;
+    const gateA = new Promise<void>((resolve) => {
+      releaseA = resolve;
+    });
+    let releaseB: (() => void) | undefined;
+    const gateB = new Promise<void>((resolve) => {
+      releaseB = resolve;
+    });
+    let call = 0;
+    vi.mocked(api.chatStream).mockImplementation(async function* (_text, opts) {
+      const n = ++call;
+      const signal = opts?.signal;
+      const gate = n === 1 ? gateA : gateB;
+      await gate;
+      if (signal?.aborted) {
+        const err = new Error("Aborted");
+        err.name = "AbortError";
+        throw err;
+      }
+      yield { event: "done", data: { sources: [] } };
+    });
+
+    const conversationIdRef = { current: "cid-a" as string | null };
+    const ownership = createStreamOwnership();
+    const optionsA = baseOptions({
+      conversationId: "cid-a",
+      conversationIdRef,
+      streamOwnership: ownership,
+    });
+    const { result, rerender } = renderHook(
+      (props) => useAgentStream(props),
+      { initialProps: optionsA },
+    );
+
+    let runA!: Promise<boolean>;
+    await act(async () => {
+      runA = result.current.runAgentStream("from-a");
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(ownership.streamingRef.current).toBe(true);
+    expect(ownership.streamConversationIdRef.current).toBe("cid-a");
+
+    conversationIdRef.current = "cid-b";
+    const optionsB = {
+      ...optionsA,
+      conversationId: "cid-b",
+      conversationIdRef,
+      streamOwnership: ownership,
+    };
+    rerender(optionsB);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(ownership.streamingRef.current).toBe(false);
+
+    let runB!: Promise<boolean>;
+    await act(async () => {
+      runB = result.current.runAgentStream("from-b");
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(ownership.streamConversationIdRef.current).toBe("cid-b");
+    expect(ownership.streamingRef.current).toBe(true);
+
+    releaseA?.();
+    await act(async () => {
+      await runA;
+    });
+    expect(ownership.streamConversationIdRef.current).toBe("cid-b");
+    expect(ownership.streamingRef.current).toBe(true);
+
+    releaseB?.();
+    await act(async () => {
+      await runB;
+    });
+    expect(ownership.streamingRef.current).toBe(false);
+  });
+
+  it("detached finishObservation must not fire onStreamEnd for another conversation", async () => {
+    let releaseA: (() => void) | undefined;
+    const gateA = new Promise<void>((resolve) => {
+      releaseA = resolve;
+    });
+    vi.mocked(api.chatStream).mockImplementation(async function* (_text, opts) {
+      const signal = opts?.signal;
+      await gateA;
+      if (signal?.aborted) {
+        const err = new Error("Aborted");
+        err.name = "AbortError";
+        throw err;
+      }
+      yield { event: "done", data: { sources: [] } };
+    });
+
+    const conversationIdRef = { current: "cid-a" as string | null };
+    const onStreamEnd = vi.fn();
+    const options = baseOptions({
+      conversationId: "cid-a",
+      conversationIdRef,
+      onStreamEnd,
+    });
+    const { result, rerender } = renderHook(
+      (props) => useAgentStream(props),
+      { initialProps: options },
+    );
+
+    let runA!: Promise<boolean>;
+    await act(async () => {
+      runA = result.current.runAgentStream("from-a");
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    conversationIdRef.current = "cid-b";
+    rerender({
+      ...options,
+      conversationId: "cid-b",
+      conversationIdRef,
+      onStreamEnd,
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    releaseA?.();
+    await act(async () => {
+      await runA;
+    });
+
+    expect(onStreamEnd).not.toHaveBeenCalled();
+  });
+
+  it("does not append a new send onto another conversation's leftover messages", async () => {
+    let resolveStream: (() => void) | undefined;
+    vi.mocked(api.chatStream).mockImplementation(async function* () {
+      await new Promise<void>((resolve) => {
+        resolveStream = resolve;
+      });
+      yield { event: "done", data: { sources: [] } };
+    });
+
+    const { setMsgs, getCurrent } = makeSetMsgs([
+      { role: "user", text: "from-a", ts: "2026-01-01T00:00:00.000Z" },
+      { role: "assistant", text: "reply-a", ts: "2026-01-01T00:00:01.000Z" },
+    ]);
+    const ownership = createStreamOwnership();
+    ownership.msgsConversationIdRef.current = "cid-a";
+    const conversationIdRef = { current: "cid-b" as string | null };
+    const options = baseOptions({
+      conversationId: "cid-b",
+      conversationIdRef,
+      setMsgs,
+      streamOwnership: ownership,
+    });
+    const { result } = renderHook(() => useAgentStream(options));
+
+    let run!: Promise<boolean>;
+    await act(async () => {
+      run = result.current.runAgentStream("from-b");
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const texts = getCurrent().map((m) => m.text);
+    expect(texts).not.toContain("from-a");
+    expect(texts).not.toContain("reply-a");
+    expect(texts[0]).toBe("from-b");
+    expect(ownership.msgsConversationIdRef.current).toBe("cid-b");
 
     resolveStream?.();
     await act(async () => {
