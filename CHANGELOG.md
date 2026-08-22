@@ -4,6 +4,18 @@
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-08-22
+
+### Added
+
+- 聊天框支持粘贴本机复制的文件（图片、视频及其他文件进入 Composer 托盘）
+
+### Fixed
+
+- 媒体图库视频瓦片预览与全屏播放（不再仅落在「其他文件」下载列表）
+- Composer 多模态提示补全：视频条数上限、50MB、大文件 signed URL、识图 max_images 校验
+- 统一视频缩略/播放组件（附件列表、托盘与图库共用 VideoLightbox）
+
 ## [0.2.0] - 2026-08-22
 
 ### Added
@@ -35,6 +47,7 @@
 - MIT 许可证与开源社区文件（SECURITY、CONTRIBUTING、CODE_OF_CONDUCT）
 - GitHub Issue / PR 模板与 CI（backend pytest、frontend lint/test/build）
 
-[Unreleased]: https://github.com/cnwinds/lore-chat/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/cnwinds/lore-chat/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/cnwinds/lore-chat/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/cnwinds/lore-chat/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/cnwinds/lore-chat/releases/tag/v0.1.0
