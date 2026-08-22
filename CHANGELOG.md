@@ -4,6 +4,14 @@
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-22
+
+### Added
+
+- 聊天视频附件：按模型链 catalog 能力路由与物化 wire；Composer 校验上传并提示（单视频 50MB；大文件在配置 `public_base_url` 时优先 signed URL）
+- 设置页候选链编辑器展示 video / max_videos / max_images 等多模态能力
+- models.dev 与 catalog 补充视频模型能力元数据
+
 ### Fixed
 
 - 带图对话不再改走同步补全，与无图共用真流式，思考与正文可实时输出
@@ -27,5 +35,6 @@
 - MIT 许可证与开源社区文件（SECURITY、CONTRIBUTING、CODE_OF_CONDUCT）
 - GitHub Issue / PR 模板与 CI（backend pytest、frontend lint/test/build）
 
-[Unreleased]: https://github.com/cnwinds/lore-chat/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/cnwinds/lore-chat/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/cnwinds/lore-chat/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/cnwinds/lore-chat/releases/tag/v0.1.0
