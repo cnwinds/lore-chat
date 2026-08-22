@@ -1,5 +1,6 @@
-import { lookupModelCapabilities, type ModelCapabilitiesResponse } from "../../api";
+import { lookupModelCapabilities, type ModelCapabilitiesResponse, type ModelCatalogItem } from "../../api";
 import type { ModelCandidateDraft } from "./providerPresets";
+import { pickEffortInOptions } from "./modelChainDrafts";
 
 export type ModelCapsFields = Pick<
   ModelCandidateDraft,
@@ -54,6 +55,34 @@ export function capsFromLookupResponse(
         ? data.max_images
         : null,
     thinking_protocol: String(data.thinking_protocol || "none"),
+  };
+}
+
+/** catalog 列表项 → 候选 draft caps（与 lookup 字段映射一致）。 */
+export function capsFromCatalogItem(
+  item: ModelCatalogItem,
+): ModelCapsFields & { model: string } {
+  const opts = Array.isArray(item.effort_options)
+    ? item.effort_options.map(String)
+    : [];
+  return {
+    model: item.id,
+    image: item.image,
+    video: Boolean(item.video),
+    thinking: item.thinking,
+    effort: pickEffortInOptions(String(item.effort || ""), opts),
+    effort_options: opts,
+    image_wire: item.image_wire === "url" ? "url" : "data",
+    video_wire: item.video_wire === "url" ? "url" : "data",
+    max_videos:
+      typeof item.max_videos === "number" && item.max_videos > 0
+        ? item.max_videos
+        : 1,
+    max_images:
+      typeof item.max_images === "number" && item.max_images > 0
+        ? item.max_images
+        : null,
+    thinking_protocol: item.thinking_protocol,
   };
 }
 

@@ -327,10 +327,48 @@ def build_user_content_with_media(
 
     from app.models.media_adapters import get_media_adapter
 
-    adapter = get_media_adapter(candidate)
+    adapter = get_media_adapter()
     wire = adapter.to_wire_parts(
         [MediaPart(kind="text", text=body), *media_parts]
     )
     if len(wire) == 1 and wire[0].get("type") == "text":
         return str(wire[0].get("text") or body)
     return wire
+
+
+def messages_need_multimodal(
+    messages: list[dict],
+    *,
+    kb_path: Path | None,
+    kind: Literal["image", "video"],
+) -> bool:
+    """路由用：消息是否含需识图/视频的附件或已物化 wire part。"""
+    root = kb_path
+    wire_type = "video_url" if kind == "video" else "image_url"
+    for m in messages:
+        atts = m.get("attachments")
+        if isinstance(atts, list):
+            for p in atts:
+                if not isinstance(p, str):
+                    continue
+                if kind == "video":
+                    if root is not None:
+                        if attachment_is_video(p, kb_path=root):
+                            return True
+                    elif attachment_is_video(p):
+                        return True
+                else:
+                    if Path(p).suffix.lower() == ".svg":
+                        continue
+                    if root is not None:
+                        abs_p = (root / p).resolve()
+                        if abs_p.is_file() and is_image_file(abs_p):
+                            return True
+                    if is_image_path(p):
+                        return True
+        content = m.get("content")
+        if isinstance(content, list):
+            for part in content:
+                if isinstance(part, dict) and part.get("type") == wire_type:
+                    return True
+    return False

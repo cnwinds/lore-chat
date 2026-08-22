@@ -6,17 +6,25 @@ import { SETTINGS_CHANGED_EVENT } from "../../utils/settingsChangedEvent";
 export function useChatChainMediaCaps() {
   const [videoSupported, setVideoSupported] = useState(false);
   const [maxVideos, setMaxVideos] = useState(1);
+  const [imageSupported, setImageSupported] = useState(false);
+  const [maxImages, setMaxImages] = useState<number | null>(null);
+  const [videoWireData, setVideoWireData] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
       const data = await getSettings();
-      const models = data.chat_models;
-      const caps = await resolveChainMediaCapsFromSettings(models);
+      const caps = await resolveChainMediaCapsFromSettings(data.chat_models);
       setVideoSupported(caps.videoSupported);
       setMaxVideos(caps.maxVideos);
+      setImageSupported(caps.imageSupported);
+      setMaxImages(caps.maxImages);
+      setVideoWireData(caps.videoWireData);
     } catch {
       setVideoSupported(false);
       setMaxVideos(1);
+      setImageSupported(false);
+      setMaxImages(null);
+      setVideoWireData(false);
     }
   }, []);
 
@@ -31,5 +39,12 @@ export function useChatChainMediaCaps() {
     };
   }, [refresh]);
 
-  return { videoSupported, maxVideos, refresh };
+  return {
+    videoSupported,
+    maxVideos,
+    imageSupported,
+    maxImages,
+    videoWireData,
+    refresh,
+  };
 }

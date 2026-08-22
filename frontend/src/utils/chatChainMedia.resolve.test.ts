@@ -24,7 +24,7 @@ describe("resolveChainMediaCapsFromSettings", () => {
       image_wire: "data",
       video_wire: "data",
       max_videos: 3,
-      max_images: null,
+      max_images: 4,
       thinking_protocol: "none",
     });
     const caps = await resolveChainMediaCapsFromSettings([
@@ -34,12 +34,24 @@ describe("resolveChainMediaCapsFromSettings", () => {
       "stealth/ox-alpha",
       undefined,
     );
-    expect(caps).toEqual({ videoSupported: true, maxVideos: 2 });
+    expect(caps).toEqual({
+      videoSupported: true,
+      maxVideos: 2,
+      imageSupported: true,
+      maxImages: 4,
+      videoWireData: true,
+    });
   });
 
   it("returns conservative defaults for empty chain", async () => {
     const caps = await resolveChainMediaCapsFromSettings([]);
-    expect(caps).toEqual({ videoSupported: false, maxVideos: 1 });
+    expect(caps).toEqual({
+      videoSupported: false,
+      maxVideos: 1,
+      imageSupported: false,
+      maxImages: null,
+      videoWireData: false,
+    });
     expect(resolveMock).not.toHaveBeenCalled();
   });
 });

@@ -7,7 +7,7 @@ import {
   useSettingsItemFold,
 } from "./SettingsFold";
 import { ProviderApiKeyLabel } from "./ProviderApiKeyLabel";
-import { resolveModelCaps } from "./modelCapabilities";
+import { resolveModelCaps, capsFromCatalogItem } from "./modelCapabilities";
 import { pickEffortInOptions } from "./modelChainDrafts";
 import {
   LLM_PROVIDER_DEFAULT_BASE_URL,
@@ -17,46 +17,6 @@ import {
   type LlmProviderPresetId,
   type ModelCandidateDraft,
 } from "./providerPresets";
-
-function capsFromCatalogItem(
-  item: ModelCatalogItem,
-): Pick<
-  ModelCandidateDraft,
-  | "model"
-  | "image"
-  | "video"
-  | "thinking"
-  | "effort"
-  | "effort_options"
-  | "image_wire"
-  | "video_wire"
-  | "max_videos"
-  | "max_images"
-  | "thinking_protocol"
-> {
-  const opts = Array.isArray(item.effort_options)
-    ? item.effort_options.map(String)
-    : [];
-  return {
-    model: item.id,
-    image: item.image,
-    video: Boolean(item.video),
-    thinking: item.thinking,
-    effort: pickEffortInOptions(String(item.effort || ""), opts),
-    effort_options: opts,
-    image_wire: item.image_wire,
-    video_wire: item.video_wire === "url" ? "url" : "data",
-    max_videos:
-      typeof item.max_videos === "number" && item.max_videos > 0
-        ? item.max_videos
-        : 1,
-    max_images:
-      typeof item.max_images === "number" && item.max_images > 0
-        ? item.max_images
-        : null,
-    thinking_protocol: item.thinking_protocol,
-  };
-}
 
 function videoCapLabel(maxVideos?: number): string {
   if (typeof maxVideos === "number" && maxVideos > 1) {

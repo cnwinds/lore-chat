@@ -2,7 +2,9 @@ import { downloadUrl } from "../api";
 import { isLikelyImagePath } from "../utils/kbImageUrls";
 import { isLikelyVideoPath } from "../utils/kbVideoUrls";
 import { ImageThumbButton } from "./ImageThumbButton";
+import { VideoThumbButton } from "./VideoThumbButton";
 import { useImageLightbox } from "../hooks/useImageLightbox";
+import { useVideoLightbox } from "../hooks/useVideoLightbox";
 
 function basename(path: string): string {
   return path.split("/").pop() || path;
@@ -16,7 +18,7 @@ type Props = {
   thumbClassName?: string;
 };
 
-/** 知识库相对路径附件：图片缩略预览（点开大图，可下载），其它为下载链。 */
+/** 知识库相对路径附件：图片缩略预览（点开大图），视频点击播放，其它为下载链。 */
 export function KbAttachmentList({
   paths,
   className = "kb-attachment-list",
@@ -24,6 +26,8 @@ export function KbAttachmentList({
   thumbClassName = "kb-attachment-image-link",
 }: Props) {
   const { openPreview, lightbox } = useImageLightbox();
+  const { openPreview: openVideoPreview, lightbox: videoLightbox } =
+    useVideoLightbox();
 
   if (!paths.length) return null;
 
@@ -43,12 +47,13 @@ export function KbAttachmentList({
           />
         ) : isLikelyVideoPath(path) ? (
           <div key={path} className="kb-attachment-video-wrap">
-            <video
-              className="kb-attachment-video"
+            <VideoThumbButton
               src={downloadUrl(path)}
-              controls
-              preload="metadata"
               title={path}
+              className="kb-attachment-video-btn"
+              videoClassName="kb-attachment-video"
+              downloadHref={downloadUrl(path, { download: true })}
+              onOpen={openVideoPreview}
             />
             <a
               className="kb-attachment-video-download"
@@ -66,6 +71,7 @@ export function KbAttachmentList({
         ),
       )}
       {lightbox}
+      {videoLightbox}
     </div>
   );
 }

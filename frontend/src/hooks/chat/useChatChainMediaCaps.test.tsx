@@ -22,7 +22,13 @@ describe("useChatChainMediaCaps", () => {
     getSettingsMock.mockReset();
     resolveMock.mockReset();
     getSettingsMock.mockResolvedValue({ chat_models: [] } as never);
-    resolveMock.mockResolvedValue({ videoSupported: true, maxVideos: 2 });
+    resolveMock.mockResolvedValue({
+      videoSupported: true,
+      maxVideos: 2,
+      imageSupported: true,
+      maxImages: 3,
+      videoWireData: true,
+    });
   });
 
   it("loads caps on mount", async () => {
@@ -30,6 +36,9 @@ describe("useChatChainMediaCaps", () => {
     await waitFor(() => {
       expect(result.current.videoSupported).toBe(true);
       expect(result.current.maxVideos).toBe(2);
+      expect(result.current.imageSupported).toBe(true);
+      expect(result.current.maxImages).toBe(3);
+      expect(result.current.videoWireData).toBe(true);
     });
     expect(resolveMock).toHaveBeenCalled();
   });
@@ -39,9 +48,21 @@ describe("useChatChainMediaCaps", () => {
     resolveMock.mockImplementation(async () => {
       calls += 1;
       if (calls === 1) {
-        return { videoSupported: false, maxVideos: 1 };
+        return {
+          videoSupported: false,
+          maxVideos: 1,
+          imageSupported: false,
+          maxImages: null,
+          videoWireData: false,
+        };
       }
-      return { videoSupported: true, maxVideos: 3 };
+      return {
+        videoSupported: true,
+        maxVideos: 3,
+        imageSupported: true,
+        maxImages: 5,
+        videoWireData: true,
+      };
     });
 
     const { result } = renderHook(() => useChatChainMediaCaps());
@@ -53,6 +74,7 @@ describe("useChatChainMediaCaps", () => {
 
     await waitFor(() => expect(result.current.maxVideos).toBe(3));
     expect(result.current.videoSupported).toBe(true);
+    expect(result.current.maxImages).toBe(5);
     expect(resolveMock.mock.calls.length).toBeGreaterThanOrEqual(2);
   });
 });

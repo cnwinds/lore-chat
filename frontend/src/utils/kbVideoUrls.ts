@@ -28,3 +28,6 @@ export const MAX_VIDEOS_PER_MESSAGE = 1;
 
 /** 上传大小软限制（字节；与 backend/app/models/media.py MAX_VIDEO_UPLOAD_BYTES 对齐）。 */
 export const MAX_VIDEO_UPLOAD_BYTES = 50 * 1024 * 1024;
+
+/** data wire 优先 signed URL 阈值（与 backend MAX_VIDEO_DATA_WIRE_BYTES 对齐）。 */
+export const MAX_VIDEO_DATA_WIRE_BYTES = 20 * 1024 * 1024;

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
-from app.models.candidate import ModelCandidate
 from app.models.media import MediaPart, VideoOptions
 
 
@@ -44,5 +43,5 @@ class OpenAICompatibleMediaAdapter:
         return out
 
 
-def get_media_adapter(_candidate: ModelCandidate) -> MediaAdapter:
+def get_media_adapter() -> MediaAdapter:
     return OpenAICompatibleMediaAdapter()

@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { downloadUrl, getTree } from "../../api";
 import { useImageLightbox } from "../../hooks/useImageLightbox";
+import { useVideoLightbox } from "../../hooks/useVideoLightbox";
 import { listDirectChildren } from "../../utils/kbMediaPaths";
 import { isLikelyImagePath } from "../../utils/kbImageUrls";
+import { isLikelyVideoPath } from "../../utils/kbVideoUrls";
 import { pathBasename } from "../../utils/kbPath";
 import type { DocWidth } from "../../types/doc";
 import { ImageThumbButton } from "../ImageThumbButton";
+import { VideoThumbButton } from "../VideoThumbButton";
 
 type Props = {
   directory: string;
@@ -22,7 +25,7 @@ function pathSegments(dir: string): string[] {
 }
 
 /**
- * 媒体末级目录图库内容：由浮窗层承载，瓦片浏览，点击看大图。
+ * 媒体末级目录图库内容：由浮窗层承载，瓦片浏览；图片点击查看大图，视频点击播放。
  */
 export function MediaGalleryPanel({
   directory,
@@ -36,6 +39,10 @@ export function MediaGalleryPanel({
   const [loading, setLoading] = useState(pathsProp == null);
   const [error, setError] = useState<string | null>(null);
   const { openPreview, lightbox } = useImageLightbox();
+  const {
+    openPreview: openVideoPreview,
+    lightbox: videoLightbox,
+  } = useVideoLightbox();
 
   const useSharedPaths = pathsProp != null;
 
@@ -76,10 +83,18 @@ export function MediaGalleryPanel({
     () => children.filter((p) => isLikelyImagePath(p)),
     [children],
   );
-  const others = useMemo(
-    () => children.filter((p) => !isLikelyImagePath(p)),
+  const videos = useMemo(
+    () => children.filter((p) => isLikelyVideoPath(p)),
     [children],
   );
+  const others = useMemo(
+    () =>
+      children.filter(
+        (p) => !isLikelyImagePath(p) && !isLikelyVideoPath(p),
+      ),
+    [children],
+  );
+  const mediaCount = images.length + videos.length;
 
   const segments = pathSegments(directory);
   const title = segments[segments.length - 1] || directory;
@@ -138,23 +153,27 @@ export function MediaGalleryPanel({
           ? "加载中…"
           : error
             ? null
-            : `${images.length} 张图片${
-                others.length > 0 ? ` · ${others.length} 个其他文件` : ""
-              }`}
+            : [
+                images.length > 0 ? `${images.length} 张图片` : null,
+                videos.length > 0 ? `${videos.length} 个视频` : null,
+                others.length > 0 ? `${others.length} 个其他文件` : null,
+              ]
+                .filter(Boolean)
+                .join(" · ") || "0 个文件"}
       </div>
 
       <div className="kb-float-body">
         {error && <div className="kb-float-error">错误：{error}</div>}
-        {!loading && !error && images.length === 0 && others.length === 0 && (
+        {!loading && !error && mediaCount === 0 && others.length === 0 && (
           <div className="kb-float-empty">
             <div className="kb-float-empty-mark" aria-hidden />
             <p>此目录暂无文件</p>
             <p className="kb-float-empty-hint">
-              生成或上传的图片会出现在这里
+              生成或上传的图片、视频会出现在这里
             </p>
           </div>
         )}
-        {images.length > 0 && (
+        {mediaCount > 0 && (
           <div className="media-gallery-grid">
             {images.map((path) => {
               const name = pathBasename(path);
@@ -168,6 +187,22 @@ export function MediaGalleryPanel({
                     imageClassName="media-gallery-tile-img"
                     downloadHref={downloadUrl(path, { download: true })}
                     onOpen={openPreview}
+                  />
+                  <figcaption className="media-gallery-tile-caption" title={name}>
+                    {name}
+                  </figcaption>
+                </figure>
+              );
+            })}
+            {videos.map((path) => {
+              const name = pathBasename(path);
+              return (
+                <figure key={path} className="media-gallery-tile">
+                  <VideoThumbButton
+                    src={downloadUrl(path)}
+                    title={path}
+                    downloadHref={downloadUrl(path, { download: true })}
+                    onOpen={openVideoPreview}
                   />
                   <figcaption className="media-gallery-tile-caption" title={name}>
                     {name}
@@ -197,6 +232,7 @@ export function MediaGalleryPanel({
         )}
       </div>
       {lightbox}
+      {videoLightbox}
     </div>
   );
 }

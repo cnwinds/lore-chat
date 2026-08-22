@@ -4,13 +4,16 @@ import { isMarkdownPath } from "../utils/kbPath";
 import { isImageFile } from "../utils/kbImageUrls";
 import { isVideoFile } from "../utils/kbVideoUrls";
 import { ImageThumbButton } from "./ImageThumbButton";
+import { VideoThumbButton } from "./VideoThumbButton";
 import { useImageLightbox } from "../hooks/useImageLightbox";
+import { useVideoLightbox } from "../hooks/useVideoLightbox";
+import type { VideoPreviewTarget } from "../hooks/useVideoLightbox";
 
 type Props = {
   items: DocTrayItem[];
   primaryPath: string | null;
   pendingFiles: PendingFile[];
-  videoCapabilityHint?: string | null;
+  mediaCapabilityHints?: string[];
   onSetPrimary: (path: string) => void;
   onRemoveDoc: (path: string) => void;
   onRemoveFile: (id: string) => void;
@@ -93,9 +96,10 @@ export function FileChip({ name, tooltip, size, onRemove }: FileChipProps) {
 type PendingFileChipProps = {
   pending: PendingFile;
   onRemove: () => void;
+  onOpenVideo: (target: VideoPreviewTarget) => void;
 };
 
-function PendingFileChip({ pending, onRemove }: PendingFileChipProps) {
+function PendingFileChip({ pending, onRemove, onOpenVideo }: PendingFileChipProps) {
   const image = isImageFile(pending.file, pending.name);
   const video = !image && isVideoFile(pending.file, pending.name);
   const [thumbUrl, setThumbUrl] = useState<string | null>(null);
@@ -130,23 +134,16 @@ function PendingFileChip({ pending, onRemove }: PendingFileChipProps) {
   if (video && thumbUrl) {
     return (
       <div className="composer-video-chip" title={pending.name}>
-        <video
-          className="composer-video-chip-preview"
+        <VideoThumbButton
           src={thumbUrl}
-          muted
-          playsInline
-          preload="metadata"
+          title={pending.name}
+          className="composer-video-chip-preview-btn"
+          videoClassName="composer-video-chip-preview"
+          onOpen={onOpenVideo}
+          onRemove={onRemove}
         />
         <span className="composer-file-name">{pending.name}</span>
         <span className="composer-file-size">{formatSize(pending.size)}</span>
-        <button
-          type="button"
-          className="composer-chip-close"
-          onClick={onRemove}
-          aria-label="移除"
-        >
-          ×
-        </button>
       </div>
     );
   }
@@ -164,22 +161,29 @@ export function ComposerTray({
   items,
   primaryPath,
   pendingFiles,
-  videoCapabilityHint,
+  mediaCapabilityHints = [],
   onSetPrimary,
   onRemoveDoc,
   onRemoveFile,
 }: Props) {
-  if (items.length === 0 && pendingFiles.length === 0 && !videoCapabilityHint) {
+  const { openPreview: openVideoPreview, lightbox: videoLightbox } =
+    useVideoLightbox();
+
+  if (
+    items.length === 0 &&
+    pendingFiles.length === 0 &&
+    mediaCapabilityHints.length === 0
+  ) {
     return null;
   }
 
   return (
     <div className="composer-tray">
-      {videoCapabilityHint ? (
-        <div className="composer-tray-hint" role="status">
-          {videoCapabilityHint}
+      {mediaCapabilityHints.map((hint) => (
+        <div key={hint} className="composer-tray-hint" role="status">
+          {hint}
         </div>
-      ) : null}
+      ))}
       {items.map((item) => {
         const canPrimary = isMarkdownPath(item.path);
         return (
@@ -198,8 +202,10 @@ export function ComposerTray({
           key={f.id}
           pending={f}
           onRemove={() => onRemoveFile(f.id)}
+          onOpenVideo={openVideoPreview}
         />
       ))}
+      {videoLightbox}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useChatConversation } from "../hooks/chat/useChatConversation";
 import { useChatScroll } from "../hooks/chat/useChatScroll";
 import { useAgentStream } from "../hooks/chat/useAgentStream";
@@ -46,7 +46,7 @@ import { extractClipboardImageFiles } from "../utils/clipboard";
 import { importChatAttachment } from "../utils/chatAttachmentImport";
 import { useChatChainMediaCaps } from "../hooks/chat/useChatChainMediaCaps";
 import {
-  pendingHasVideo,
+  buildComposerMediaHints,
   validatePendingAttachments,
 } from "../utils/chatAttachmentValidation";
 import { suggestArchivePath } from "../utils/suggestArchivePath";
@@ -93,8 +93,13 @@ export function Chat({
   const [archiving, setArchiving] = useState(false);
   const [archiveModalOpen, setArchiveModalOpen] = useState(false);
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
-  const { videoSupported: chatVideoSupported, maxVideos: chatMaxVideos } =
-    useChatChainMediaCaps();
+  const {
+    videoSupported: chatVideoSupported,
+    maxVideos: chatMaxVideos,
+    imageSupported: chatImageSupported,
+    maxImages: chatMaxImages,
+    videoWireData: chatVideoWireData,
+  } = useChatChainMediaCaps();
   const [webEnabled, setWebEnabled] = useState(() => readWebSearchEnabled());
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -257,10 +262,10 @@ export function Chat({
     if (!text && pendingFiles.length === 0) return;
 
     const filesToUpload = [...pendingFiles];
-    const attachmentErr = validatePendingAttachments(
-      filesToUpload,
-      chatMaxVideos,
-    );
+    const attachmentErr = validatePendingAttachments(filesToUpload, {
+      maxVideos: chatMaxVideos,
+      maxImages: chatMaxImages,
+    });
     if (attachmentErr) {
       window.alert(attachmentErr);
       return;
@@ -564,15 +569,22 @@ export function Chat({
 
   function addPendingFiles(files: File[]) {
     if (!files.length) return;
-    setPendingFiles((prev) => [
-      ...prev,
-      ...files.map((f) => ({
-        id: `${Date.now()}-${f.name}-${newId()}`,
-        file: f,
-        name: f.name,
-        size: f.size,
-      })),
-    ]);
+    const next = files.map((f) => ({
+      id: `${Date.now()}-${f.name}-${newId()}`,
+      file: f,
+      name: f.name,
+      size: f.size,
+    }));
+    const combined = [...pendingFiles, ...next];
+    const attachmentErr = validatePendingAttachments(combined, {
+      maxVideos: chatMaxVideos,
+      maxImages: chatMaxImages,
+    });
+    if (attachmentErr) {
+      window.alert(attachmentErr);
+      return;
+    }
+    setPendingFiles(combined);
   }
 
   function onFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -643,6 +655,25 @@ export function Chat({
     });
   }
 
+  const composerMediaHints = useMemo(
+    () =>
+      buildComposerMediaHints(pendingFiles, {
+        videoSupported: chatVideoSupported,
+        maxVideos: chatMaxVideos,
+        imageSupported: chatImageSupported,
+        maxImages: chatMaxImages,
+        videoWireData: chatVideoWireData,
+      }),
+    [
+      pendingFiles,
+      chatVideoSupported,
+      chatMaxVideos,
+      chatImageSupported,
+      chatMaxImages,
+      chatVideoWireData,
+    ],
+  );
+
   return (
     <div className="chat-panel">
       {memoryNotice && (
@@ -705,11 +736,7 @@ export function Chat({
             items={docTrayItems}
             primaryPath={primaryDocPath}
             pendingFiles={pendingFiles}
-            videoCapabilityHint={
-              pendingHasVideo(pendingFiles) && !chatVideoSupported
-                ? "当前对话模型链未配置视频能力，视频将仅作附件保存，不会送入模型。"
-                : null
-            }
+            mediaCapabilityHints={composerMediaHints}
             onSetPrimary={onTraySetPrimary ?? (() => {})}
             onRemoveDoc={onTrayRemove ?? (() => {})}
             onRemoveFile={removePendingFile}
