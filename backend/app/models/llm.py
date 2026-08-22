@@ -92,9 +92,11 @@ class LLMClient(Protocol):
 
 
 def _delta_reasoning(delta: Any) -> str | None:
-    rc = getattr(delta, "reasoning_content", None)
-    if isinstance(rc, str) and rc:
-        return rc
+    """流式思考增量：DeepSeek 等用 reasoning_content；OpenRouter（ox 等）用 reasoning。"""
+    for attr in ("reasoning_content", "reasoning"):
+        val = getattr(delta, attr, None)
+        if isinstance(val, str) and val:
+            return val
     return None
 
 

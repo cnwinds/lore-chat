@@ -5,14 +5,23 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from app.config import Settings
 from app.models.llm import OpenAILLMClient
 
 
-def _chunk(*, content=None, reasoning=None, tool_calls=None, finish_reason=None):
+def _chunk(
+    *,
+    content=None,
+    reasoning=None,
+    reasoning_field: str = "reasoning_content",
+    tool_calls=None,
+    finish_reason=None,
+):
     delta = SimpleNamespace(content=content, tool_calls=tool_calls or [])
     if reasoning is not None:
-        delta.reasoning_content = reasoning
+        setattr(delta, reasoning_field, reasoning)
     choice = SimpleNamespace(delta=delta, finish_reason=finish_reason)
     return SimpleNamespace(choices=[choice])
 
@@ -130,6 +139,48 @@ def test_stream_yields_think_delta_from_reasoning_content():
     assert final is not None
     assert final.content == "结论"
     assert final.tool_calls == []
+
+
+def test_stream_yields_think_delta_from_openrouter_reasoning_field():
+    """OpenRouter / ox 等把思考增量放在 delta.reasoning，而非 reasoning_content。"""
+    llm = OpenAILLMClient(Settings())
+    stream = [
+        _chunk(reasoning="The user", reasoning_field="reasoning"),
+        _chunk(reasoning=" wants SVG", reasoning_field="reasoning"),
+        _chunk(content="画好了", finish_reason="stop"),
+    ]
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.return_value = iter(stream)
+
+    with (
+        patch.object(llm, "_client_for", return_value=mock_client),
+        patch.object(llm, "_select", return_value=_mock_select()),
+    ):
+        chunks = list(
+            llm.stream_chat_with_tools(
+                [{"role": "user", "content": "hi"}],
+                [],
+                big=True,
+            )
+        )
+
+    think = [c.think_delta for c in chunks if c.think_delta]
+    text = [c.text_delta for c in chunks if c.text_delta]
+    assert think == ["The user", " wants SVG"]
+    assert text == ["画好了"]
+
+
+@pytest.mark.parametrize(
+    "field",
+    ["reasoning_content", "reasoning"],
+)
+def test_delta_reasoning_accepts_known_vendor_fields(field):
+    """链上实测：DeepSeek/Agnes/GLM→reasoning_content；OpenRouter ox→reasoning。"""
+    from app.models.llm import _delta_reasoning
+
+    delta = SimpleNamespace()
+    setattr(delta, field, "一步")
+    assert _delta_reasoning(delta) == "一步"
 
 
 def test_stream_logs_truncated_tool_calls(caplog):
