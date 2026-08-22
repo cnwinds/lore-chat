@@ -79,7 +79,14 @@ export function ChatInputBar({
       />
       <label className="chat-attach-btn" title="上传附件">
         📎
-        <input type="file" hidden onChange={onFile} disabled={streaming} />
+        <input
+          type="file"
+          hidden
+          multiple
+          accept="image/*,video/mp4,video/webm,video/quicktime,video/mpeg"
+          onChange={onFile}
+          disabled={streaming}
+        />
       </label>
       <div className="chat-input-actions">
         <button

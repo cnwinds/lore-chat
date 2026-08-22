@@ -145,6 +145,8 @@ export function ComposerToolbar({
           ref={fileInputRef}
           type="file"
           hidden
+          multiple
+          accept="image/*,video/mp4,video/webm,video/quicktime,video/mpeg"
           onChange={onFileChange}
         />
         <button

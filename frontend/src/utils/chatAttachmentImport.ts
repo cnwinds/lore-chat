@@ -4,6 +4,7 @@ import type { ApiError } from "../api";
 import { kbImport } from "../api";
 import { mediaUploadDir } from "./kbMediaPaths";
 import { imageExtFromFile, isImageFile } from "./kbImageUrls";
+import { isVideoFile, videoExtFromFile } from "./kbVideoUrls";
 
 const MAX_CONFLICT_RETRIES = 8;
 
@@ -13,15 +14,22 @@ function bytesToHex(buf: ArrayBuffer): string {
     .join("");
 }
 
-/** 图片：sha256 前 32 hex + 扩展名；其它文件保留原名。 */
-export async function chatAttachmentFilename(file: File): Promise<string> {
-  if (!isImageFile(file)) {
-    return file.name || "upload.bin";
-  }
+async function hashNamedFilename(file: File, ext: string): Promise<string> {
   const bytes = new Uint8Array(await file.arrayBuffer());
   const digest = await crypto.subtle.digest("SHA-256", bytes);
   const hex = bytesToHex(digest).slice(0, 32);
-  return `${hex}${imageExtFromFile(file)}`;
+  return `${hex}${ext}`;
+}
+
+/** 图片/视频：sha256 前 32 hex + 扩展名；其它文件保留原名。 */
+export async function chatAttachmentFilename(file: File): Promise<string> {
+  if (isImageFile(file)) {
+    return hashNamedFilename(file, imageExtFromFile(file));
+  }
+  if (isVideoFile(file)) {
+    return hashNamedFilename(file, videoExtFromFile(file));
+  }
+  return file.name || "upload.bin";
 }
 
 /**

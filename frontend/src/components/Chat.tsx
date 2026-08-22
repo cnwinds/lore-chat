@@ -44,6 +44,11 @@ import { ArchiveConversationModal } from "./ArchiveConversationModal";
 import type { DocTrayItem, PendingFile } from "../types/composer";
 import { extractClipboardImageFiles } from "../utils/clipboard";
 import { importChatAttachment } from "../utils/chatAttachmentImport";
+import { useChatChainMediaCaps } from "../hooks/chat/useChatChainMediaCaps";
+import {
+  pendingHasVideo,
+  validatePendingAttachments,
+} from "../utils/chatAttachmentValidation";
 import { suggestArchivePath } from "../utils/suggestArchivePath";
 
 type ComposerDocItem = DocTrayItem;
@@ -88,6 +93,8 @@ export function Chat({
   const [archiving, setArchiving] = useState(false);
   const [archiveModalOpen, setArchiveModalOpen] = useState(false);
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
+  const { videoSupported: chatVideoSupported, maxVideos: chatMaxVideos } =
+    useChatChainMediaCaps();
   const [webEnabled, setWebEnabled] = useState(() => readWebSearchEnabled());
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -250,6 +257,14 @@ export function Chat({
     if (!text && pendingFiles.length === 0) return;
 
     const filesToUpload = [...pendingFiles];
+    const attachmentErr = validatePendingAttachments(
+      filesToUpload,
+      chatMaxVideos,
+    );
+    if (attachmentErr) {
+      window.alert(attachmentErr);
+      return;
+    }
     const uploadedPaths: string[] = [];
 
     setInput("");
@@ -561,9 +576,9 @@ export function Chat({
   }
 
   function onFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    addPendingFiles([f]);
+    const list = e.target.files;
+    if (!list?.length) return;
+    addPendingFiles(Array.from(list));
     e.target.value = "";
   }
 
@@ -690,6 +705,11 @@ export function Chat({
             items={docTrayItems}
             primaryPath={primaryDocPath}
             pendingFiles={pendingFiles}
+            videoCapabilityHint={
+              pendingHasVideo(pendingFiles) && !chatVideoSupported
+                ? "当前对话模型链未配置视频能力，视频将仅作附件保存，不会送入模型。"
+                : null
+            }
             onSetPrimary={onTraySetPrimary ?? (() => {})}
             onRemoveDoc={onTrayRemove ?? (() => {})}
             onRemoveFile={removePendingFile}

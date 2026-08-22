@@ -4,10 +4,14 @@ import type { ModelCandidateDraft } from "./providerPresets";
 export type ModelCapsFields = Pick<
   ModelCandidateDraft,
   | "image"
+  | "video"
   | "thinking"
   | "effort"
   | "effort_options"
   | "image_wire"
+  | "video_wire"
+  | "max_videos"
+  | "max_images"
   | "thinking_protocol"
 >;
 
@@ -15,10 +19,14 @@ export type ModelCapsFields = Pick<
 export function conservativeModelCaps(): ModelCapsFields {
   return {
     image: false,
+    video: false,
     thinking: false,
     effort: "medium",
     effort_options: [],
     image_wire: "data",
+    video_wire: "data",
+    max_videos: 1,
+    max_images: null,
     thinking_protocol: "none",
   };
 }
@@ -31,10 +39,20 @@ export function capsFromLookupResponse(
     : [];
   return {
     image: Boolean(data.image),
+    video: Boolean(data.video),
     thinking: Boolean(data.thinking),
     effort: String(data.effort || "medium"),
     effort_options: opts,
     image_wire: data.image_wire === "url" ? "url" : "data",
+    video_wire: data.video_wire === "url" ? "url" : "data",
+    max_videos:
+      typeof data.max_videos === "number" && data.max_videos > 0
+        ? data.max_videos
+        : 1,
+    max_images:
+      typeof data.max_images === "number" && data.max_images > 0
+        ? data.max_images
+        : null,
     thinking_protocol: String(data.thinking_protocol || "none"),
   };
 }

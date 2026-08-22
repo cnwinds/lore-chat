@@ -8,7 +8,7 @@
 |----|------|------|
 | HTTP | `backend/app/api/routes.py` | 鉴权、DTO、StreamingResponse；**不**解析 Agent SSE |
 | 聊天 | `backend/app/engine/chat/` | `TurnExecutionHub`（begin/ensure/观测/stop 生命周期）、`ChatSessionRunner`（HTTP 薄 facade + ephemeral）、时间线、SSE；持久回合：结构事件发 `timeline_state` 投影，token/进度只发增量（见 [ADR 2026-08-08](docs/adr/2026-08-08-deepen-memory-turn-tools.md) §5） |
-| 模型链 | `backend/app/models/`（`candidate` / `router` / `cooldown` / `vision` / `thinking` / `catalog` / `models_dev` / `provider_models` / `effort`）+ `llm.py` | chat/utility/embed 优先级链、冷却单例、models.dev 缓存目录（包内 `data/models_dev_api.json.gz` 回退；网络拉取旁路短超时）、OpenAI 兼容 `/models` 拉取（`provider_models`；kind=`llm`/`embedding`/`image`；能力 enrich 经 `catalog`）、识图双通道；**能力唯一真相**为 `catalog.lookup_capabilities`（HTTP：`GET /api/admin/model-capabilities`；设置页 `modelCapabilities.resolveModelCaps`）；HTTP 不自建 CooldownStore / ModelsDevStore |
+| 模型链 | `backend/app/models/`（`candidate` / `router` / `cooldown` / `vision` / `media` / `media_adapters` / `thinking` / `catalog` / `models_dev` / `provider_models` / `effort`）+ `llm.py` | chat/utility/embed 优先级链、冷却单例、models.dev 缓存目录（包内 `data/models_dev_api.json.gz` 回退；网络拉取旁路短超时）、OpenAI 兼容 `/models` 拉取（`provider_models`；kind=`llm`/`embedding`/`image`；能力 enrich 经 `catalog`）、识图/视频多模态（`vision` 签名 URL + `media` 物化 + `media_adapters` wire）；**能力唯一真相**为 `catalog.lookup_capabilities`（HTTP：`GET /api/admin/model-capabilities`；设置页 `modelCapabilities.resolveModelCaps`）；HTTP 不自建 CooldownStore / ModelsDevStore |
 | 联网搜索 | `backend/app/engine/web/`（`search_providers` / `search_router` / `search_backends` / `search.py`） | 搜索提供商有序链、与模型同算法的冷却 failover；HTTP 不自建 search CooldownStore |
 | 生图 | `backend/app/engine/imagegen/`（`providers` / `router` / `backends` / `service`）+ Agent `generate_image` | 多厂商薄 adapter、有序链 + 隔离冷却；权威身份为 KB 相对路径；见 [ADR 2026-08-12](docs/adr/2026-08-12-image-generation-providers.md) |
 | Agent | `backend/app/engine/agent/` | `AgentOrchestrator`（adapter）、`AgentToolLoop`（LLM+工具循环）、`tool_catalog`、`tool_impl/*`（执行）、`tools.py`（`ToolRegistry.execute` / `rebind` / `interrupt_runtime`） |
@@ -83,8 +83,11 @@
 **模型设置页签**：`ModelSettingsTab` 只装配；有序链 UI 在 `CandidateChainEditor` / `EmbedChainEditor`；draft 解析在 `modelChainDrafts`；能力 lookup 在 `modelCapabilities`；设置 hydrate/serialize 在 `settingsDrafts`（Panel 只接线与副作用）。
 _Avoid_: 经 ModelSettingsTab barrel re-export Search/Image 类型或 providerPresets；在页签壳里再堆 ChainEditor；在 SettingsPanel 再堆 parse/put patch 拼装
 
-**模型能力（caps）**：thinking / image / image_wire / thinking_protocol / effort_options 的权威解析在 `catalog.lookup_capabilities`；设置页经 `GET /api/admin/model-capabilities`（`resolveModelCaps`）。lookup 失败用保守默认。
+**模型能力（caps）**：thinking / image / image_wire / video / video_wire / max_videos / max_images / thinking_protocol / effort_options 的权威解析在 `catalog.lookup_capabilities`；设置页经 `GET /api/admin/model-capabilities`（`resolveModelCaps`）。lookup 失败用保守默认。
 _Avoid_: 在前端再写一份前缀启发表；用本地 `supportedEfforts` 臆造档位
+
+**聊天附件（图片/视频）**：用户消息仍用 `attachments: string[]`（KB 相对路径）。后端 `media.build_user_content_with_media` 物化为 OpenAI-compatible `image_url` / `video_url`；能力由 `catalog` 声明 `video` / `max_videos` / `max_images`。默认每消息最多 1 个视频；单视频上传上限 50MB（前后端一致）；`video_wire=data` 时文件超过 20MB 且配置了 `public_base_url` 则优先 signed URL。Composer 经 `useChatChainMediaCaps` + `resolveModelCaps` 读取链能力并提示。
+_Avoid_: 在 Chat 直接读未 enrich 的 `chat_models` 字段臆断能力；绕过 `kb/import` 大小校验传超大视频
 
 **发送队列**：流式输出时输入框仍可编辑；发送进入按会话隔离的队列（`localStorage`，上限 20）。默认时机 **defer**（当前 turn `done` 后 FIFO/`begin_turn`）；可改为 **inject**（不中断 turn，在 tool 结果回写后、下次 LLM 前插入；无窗口则降级 defer）。「与下一条合并」将同策略相邻项合成一条用户消息。空闲且队列空则直发；停止只中断当前 turn；失败暂停刷队；若回合以未回答的 `ask_user` 征询结束则暂停刷队，待用户作答后再续。前端编排在 `useOutboundOrchestrator`；策略纯函数在 `outboundQueue`。
 _Avoid_: 流式中锁死输入；同会话并行多个 running turn；inject 打断当前生成；征询未答时自动刷队；在 `Chat.tsx` 再堆 flush/inject 状态机

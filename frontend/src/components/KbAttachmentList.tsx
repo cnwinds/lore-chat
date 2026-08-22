@@ -1,5 +1,6 @@
 import { downloadUrl } from "../api";
 import { isLikelyImagePath } from "../utils/kbImageUrls";
+import { isLikelyVideoPath } from "../utils/kbVideoUrls";
 import { ImageThumbButton } from "./ImageThumbButton";
 import { useImageLightbox } from "../hooks/useImageLightbox";
 
@@ -40,6 +41,22 @@ export function KbAttachmentList({
             downloadHref={downloadUrl(path, { download: true })}
             onOpen={openPreview}
           />
+        ) : isLikelyVideoPath(path) ? (
+          <div key={path} className="kb-attachment-video-wrap">
+            <video
+              className="kb-attachment-video"
+              src={downloadUrl(path)}
+              controls
+              preload="metadata"
+              title={path}
+            />
+            <a
+              className="kb-attachment-video-download"
+              href={downloadUrl(path, { download: true })}
+            >
+              下载：{basename(path)}
+            </a>
+          </div>
         ) : (
           <div key={path}>
             <a href={downloadUrl(path, { download: true })}>

@@ -149,10 +149,14 @@ export type ModelCandidateDraft = {
   /** 厂家预设；非 custom 时 Base URL 只读 */
   provider: LlmProviderPresetId;
   image: boolean;
+  video: boolean;
   thinking: boolean;
   effort: string;
   effort_options: string[];
   image_wire: "data" | "url";
+  video_wire: "data" | "url";
+  max_videos: number;
+  max_images: number | null;
   thinking_protocol: string;
   /** 用户手动改过能力后，onBlur 不再覆盖 */
   caps_user_edited?: boolean;
@@ -182,10 +186,14 @@ export function emptyCandidate(): ModelCandidateDraft {
     api_key: "",
     provider: "custom",
     image: false,
+    video: false,
     thinking: false,
     effort: "medium",
     effort_options: [],
     image_wire: "data",
+    video_wire: "data",
+    max_videos: 1,
+    max_images: null,
     thinking_protocol: "none",
   };
 }

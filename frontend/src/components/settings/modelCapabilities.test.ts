@@ -17,10 +17,14 @@ describe("conservativeModelCaps", () => {
   it("uses non-thinking defaults", () => {
     expect(conservativeModelCaps()).toEqual({
       image: false,
+      video: false,
       thinking: false,
       effort: "medium",
       effort_options: [],
       image_wire: "data",
+      video_wire: "data",
+      max_videos: 1,
+      max_images: null,
       thinking_protocol: "none",
     });
   });
@@ -42,10 +46,14 @@ describe("capsFromLookupResponse", () => {
       }),
     ).toEqual({
       image: true,
+      video: false,
       thinking: true,
       effort: "medium",
       effort_options: [],
       image_wire: "url",
+      video_wire: "data",
+      max_videos: 1,
+      max_images: null,
       thinking_protocol: "agnes",
     });
   });

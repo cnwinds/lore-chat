@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field, field_validator
 from app.models.effort import Effort, coerce_effort, coerce_to_options, default_effort
 
 ImageWire = Literal["data", "url"]
+VideoWire = Literal["data", "url"]
 ThinkingProtocol = Literal["none", "openai_kwargs", "deepseek", "qwen", "agnes"]
 ModelChain = Literal["chat", "utility", "embed"]
 
@@ -17,6 +18,7 @@ ModelChain = Literal["chat", "utility", "embed"]
 __all__ = [
     "Effort",
     "ImageWire",
+    "VideoWire",
     "ThinkingProtocol",
     "ModelChain",
     "ModelCandidate",
@@ -31,8 +33,12 @@ class ModelCandidate(BaseModel):
     # 厂家预设 id（openai/zhipu/.../custom）；仅设置 UI，运行时路由不依赖
     provider: str | None = None
     image: bool = False
+    video: bool = False
     thinking: bool = False
     image_wire: ImageWire = "data"
+    video_wire: VideoWire = "data"
+    max_videos: int = 1
+    max_images: int | None = None
     thinking_protocol: ThinkingProtocol = "none"
     # 空列表 = 无对外强度档（如 Agnes）；展示/校验以此为准，勿仅靠 live 目录
     effort_options: list[str] = Field(default_factory=list)
@@ -91,10 +97,14 @@ def _legacy_candidate(
         base_url=base_url,
         api_key=api_key,
         image=caps.image,
+        video=caps.video,
         thinking=caps.thinking,
         effort=default_effort(model, caps.thinking_protocol),
         effort_options=list(caps.effort_options),
         image_wire=caps.image_wire,
+        video_wire=caps.video_wire,
+        max_videos=caps.max_videos,
+        max_images=caps.max_images,
         thinking_protocol=caps.thinking_protocol,
     ).ensure_id()
 

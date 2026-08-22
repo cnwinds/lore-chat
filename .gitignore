@@ -7,6 +7,8 @@ backend/.venv/
 
 # Local runtime data (private knowledge base — do not commit)
 backend/knowledge/
+# Repo-root runtime KB (some dev setups use ./knowledge/)
+knowledge/
 # Entire tree: runtime KB is often its own git repo (nested .git)
 docker/data/knowledge/
 docker/data/backups/*

@@ -311,6 +311,46 @@
         "reasoning": false,
         "reasoning_options": [],
         "modalities": { "input": ["text"], "output": ["embedding"] }
+      },
+      "stealth/ox-alpha": {
+        "id": "stealth/ox-alpha",
+        "name": "Ox Alpha",
+        "attachment": true,
+        "reasoning": true,
+        "reasoning_options": [
+          { "type": "effort", "values": ["low", "medium", "high"] }
+        ],
+        "modalities": { "input": ["text", "image", "video"], "output": ["text"] },
+        "image_wire": "data",
+        "video_wire": "data",
+        "max_videos": 1,
+        "thinking_protocol": "openai_kwargs"
+      },
+      "qwen/qwen3-vl-plus": {
+        "id": "qwen/qwen3-vl-plus",
+        "name": "Qwen3 VL Plus",
+        "attachment": true,
+        "reasoning": false,
+        "reasoning_options": [],
+        "modalities": { "input": ["text", "image", "video"], "output": ["text"] },
+        "image_wire": "data",
+        "video_wire": "data",
+        "max_videos": 1,
+        "thinking_protocol": "none"
+      },
+      "google/gemini-2.5-flash": {
+        "id": "google/gemini-2.5-flash",
+        "name": "Gemini 2.5 Flash",
+        "attachment": true,
+        "reasoning": true,
+        "reasoning_options": [
+          { "type": "effort", "values": ["low", "medium", "high"] }
+        ],
+        "modalities": { "input": ["text", "image", "video"], "output": ["text"] },
+        "image_wire": "data",
+        "video_wire": "data",
+        "max_videos": 1,
+        "thinking_protocol": "openai_kwargs"
       }
     }
   },

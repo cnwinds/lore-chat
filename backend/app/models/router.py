@@ -27,12 +27,17 @@ class NoCandidateAvailable(Exception):
         super().__init__(f"no available model on {chain} chain ({reasons})")
 
 
+def _missing_public_base_url(settings) -> bool:
+    return not (getattr(settings, "public_base_url", None) or "").strip()
+
+
 def select_candidate(
     settings,
     chain: ModelChain,
     cooldown: CooldownStore,
     *,
     require_image: bool = False,
+    require_video: bool = False,
     exclude_ids: set[str] | frozenset[str] | None = None,
 ) -> Selection:
     candidates = resolve_chain_candidates(settings, chain)
@@ -47,11 +52,15 @@ def select_candidate(
         if require_image and not c.image:
             skipped.append((c.id, "no_image"))
             continue
-        if c.image_wire == "url" and require_image:
-            public = (getattr(settings, "public_base_url", None) or "").strip()
-            if not public:
-                skipped.append((c.id, "public_base_url_required"))
-                continue
+        if require_video and not c.video:
+            skipped.append((c.id, "no_video"))
+            continue
+        if c.image_wire == "url" and require_image and _missing_public_base_url(settings):
+            skipped.append((c.id, "public_base_url_required"))
+            continue
+        if c.video_wire == "url" and require_video and _missing_public_base_url(settings):
+            skipped.append((c.id, "public_base_url_required"))
+            continue
         if not cooldown.is_available(c.id):
             h = cooldown.get(c.id)
             reason = "disabled" if h.disabled else "cooling"

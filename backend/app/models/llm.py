@@ -7,7 +7,7 @@ import uuid
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Literal, Protocol, runtime_checkable
 
 from openai import OpenAI
 
@@ -18,12 +18,8 @@ from app.models.cooldown import CooldownStore, classify_error, shared_cooldown_s
 from app.models.effort import format_model_label
 from app.models.router import NoCandidateAvailable, Selection, select_candidate
 from app.models.thinking import thinking_request_kwargs
-from app.models.vision import (
-    attachment_signing_secret,
-    build_user_content_with_images,
-    is_image_file,
-    is_image_path,
-)
+from app.models.media import attachment_is_video, build_user_content_with_media
+from app.models.vision import attachment_signing_secret
 
 _log = get_logger("llm")
 
@@ -122,7 +118,14 @@ def _chain_from_big(big: bool) -> ModelChain:
     return "chat" if big else "utility"
 
 
-def _messages_need_image(messages: list[dict], *, kb_path: Path | None = None) -> bool:
+def _messages_need_multimodal(
+    messages: list[dict],
+    *,
+    kb_path: Path | None,
+    kind: Literal["image", "video"],
+) -> bool:
+    from app.models.vision import is_image_file, is_image_path
+
     root = Path(kb_path) if kb_path is not None else None
     for m in messages:
         atts = m.get("attachments")
@@ -130,21 +133,36 @@ def _messages_need_image(messages: list[dict], *, kb_path: Path | None = None) -
             for p in atts:
                 if not isinstance(p, str):
                     continue
-                # SVG 可预览但不走识图路由（与 build_user_content_with_images 一致）
-                if Path(p).suffix.lower() == ".svg":
-                    continue
-                if root is not None:
-                    abs_p = (root / p).resolve()
-                    if abs_p.is_file() and is_image_file(abs_p):
+                if kind == "video":
+                    if root is not None:
+                        if attachment_is_video(p, kb_path=root):
+                            return True
+                    elif attachment_is_video(p):
                         return True
-                if is_image_path(p):
-                    return True
+                else:
+                    if Path(p).suffix.lower() == ".svg":
+                        continue
+                    if root is not None:
+                        abs_p = (root / p).resolve()
+                        if abs_p.is_file() and is_image_file(abs_p):
+                            return True
+                    if is_image_path(p):
+                        return True
         content = m.get("content")
         if isinstance(content, list):
+            wire_type = "video_url" if kind == "video" else "image_url"
             for part in content:
-                if isinstance(part, dict) and part.get("type") == "image_url":
+                if isinstance(part, dict) and part.get("type") == wire_type:
                     return True
     return False
+
+
+def _messages_need_video(messages: list[dict], *, kb_path: Path | None = None) -> bool:
+    return _messages_need_multimodal(messages, kb_path=kb_path, kind="video")
+
+
+def _messages_need_image(messages: list[dict], *, kb_path: Path | None = None) -> bool:
+    return _messages_need_multimodal(messages, kb_path=kb_path, kind="image")
 
 
 class OpenAILLMClient:
@@ -228,7 +246,7 @@ class OpenAILLMClient:
                 text = msg.get("content")
                 if not isinstance(text, str):
                     text = str(text or "")
-                msg["content"] = build_user_content_with_images(
+                msg["content"] = build_user_content_with_media(
                     text,
                     list(attachments),
                     candidate=candidate,
@@ -250,11 +268,15 @@ class OpenAILLMClient:
         require_image = _messages_need_image(
             messages, kb_path=Path(self.settings.kb_path)
         )
+        require_video = _messages_need_video(
+            messages, kb_path=Path(self.settings.kb_path)
+        )
         sel = select_candidate(
             self.settings,
             chain,
             self.cooldown,
             require_image=require_image,
+            require_video=require_video,
             exclude_ids=exclude_ids,
         )
         self.last_selection = sel

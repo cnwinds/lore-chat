@@ -24,10 +24,14 @@ function capsFromCatalogItem(
   ModelCandidateDraft,
   | "model"
   | "image"
+  | "video"
   | "thinking"
   | "effort"
   | "effort_options"
   | "image_wire"
+  | "video_wire"
+  | "max_videos"
+  | "max_images"
   | "thinking_protocol"
 > {
   const opts = Array.isArray(item.effort_options)
@@ -36,12 +40,29 @@ function capsFromCatalogItem(
   return {
     model: item.id,
     image: item.image,
+    video: Boolean(item.video),
     thinking: item.thinking,
     effort: pickEffortInOptions(String(item.effort || ""), opts),
     effort_options: opts,
     image_wire: item.image_wire,
+    video_wire: item.video_wire === "url" ? "url" : "data",
+    max_videos:
+      typeof item.max_videos === "number" && item.max_videos > 0
+        ? item.max_videos
+        : 1,
+    max_images:
+      typeof item.max_images === "number" && item.max_images > 0
+        ? item.max_images
+        : null,
     thinking_protocol: item.thinking_protocol,
   };
+}
+
+function videoCapLabel(maxVideos?: number): string {
+  if (typeof maxVideos === "number" && maxVideos > 1) {
+    return `视频×${maxVideos}`;
+  }
+  return "视频";
 }
 
 type ModelNameFieldProps = {
@@ -236,6 +257,7 @@ export function ModelNameField({
                 <span className="settings-model-picker-tags">
                   {it.embedding ? <em>嵌入</em> : null}
                   {it.image ? <em>识图</em> : null}
+                  {it.video ? <em>{videoCapLabel(it.max_videos)}</em> : null}
                   {it.thinking ? <em>思考</em> : null}
                   {it.image_wire === "url" ? <em>url</em> : null}
                 </span>
@@ -264,6 +286,25 @@ function ImageCapIcon({ size = 15 }: { size?: number }) {
       <rect x="3" y="5" width="18" height="14" rx="2" />
       <circle cx="9" cy="11" r="2" />
       <path d="m21 15-4.5-4.5L9 18" />
+    </svg>
+  );
+}
+
+function VideoCapIcon({ size = 15 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5" />
+      <rect x="2" y="6" width="14" height="12" rx="2" />
     </svg>
   );
 }
@@ -313,6 +354,35 @@ function ImageWireSwitch({
       onClick={() => onChange(isData ? "url" : "data")}
       title={isData ? "识图传输：data（点击改为 url）" : "识图传输：url（点击改为 data）"}
       aria-label={isData ? "识图传输：data" : "识图传输：url"}
+      aria-pressed={!isData}
+    >
+      <span className="settings-wire-switch-track" aria-hidden>
+        <span className="settings-wire-switch-label settings-wire-switch-label--data">data</span>
+        <span className="settings-wire-switch-label settings-wire-switch-label--url">url</span>
+        <span className="settings-wire-switch-knob" />
+      </span>
+    </button>
+  );
+}
+
+function VideoWireSwitch({
+  value,
+  disabled,
+  onChange,
+}: {
+  value: "data" | "url";
+  disabled?: boolean;
+  onChange: (v: "data" | "url") => void;
+}) {
+  const isData = value === "data";
+  return (
+    <button
+      type="button"
+      className={`settings-wire-switch${isData ? " is-data" : " is-url"}`}
+      disabled={disabled}
+      onClick={() => onChange(isData ? "url" : "data")}
+      title={isData ? "视频传输：data（点击改为 url）" : "视频传输：url（点击改为 data）"}
+      aria-label={isData ? "视频传输：data" : "视频传输：url"}
       aria-pressed={!isData}
     >
       <span className="settings-wire-switch-track" aria-hidden>
@@ -500,6 +570,34 @@ export function CandidateChainEditor({
                         disabled={saving || !c.image}
                         onChange={(image_wire) =>
                           updateAt(i, { image_wire, caps_user_edited: true })
+                        }
+                      />
+                      <button
+                        type="button"
+                        className={`settings-cap-icon-btn${c.video ? " settings-cap-icon-btn--on" : ""}`}
+                        disabled={saving}
+                        aria-pressed={c.video}
+                        aria-label={
+                          c.video
+                            ? `${videoCapLabel(c.max_videos)}：开`
+                            : `${videoCapLabel(c.max_videos)}：关`
+                        }
+                        title={
+                          c.video
+                            ? `${videoCapLabel(c.max_videos)}：开`
+                            : `${videoCapLabel(c.max_videos)}：关`
+                        }
+                        onClick={() =>
+                          updateAt(i, { video: !c.video, caps_user_edited: true })
+                        }
+                      >
+                        <VideoCapIcon />
+                      </button>
+                      <VideoWireSwitch
+                        value={c.video_wire}
+                        disabled={saving || !c.video}
+                        onChange={(video_wire) =>
+                          updateAt(i, { video_wire, caps_user_edited: true })
                         }
                       />
                       <button

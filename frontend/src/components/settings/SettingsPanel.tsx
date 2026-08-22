@@ -39,6 +39,7 @@ import {
 } from "./settingsAttention";
 import { hydrateSettingsDrafts, toSettingsPatch } from "./settingsDrafts";
 import { maybeEnableComposerWebSearch } from "../../utils/webSearchPreference";
+import { notifySettingsChanged } from "../../utils/settingsChangedEvent";
 import type { SettingsAttention } from "../../api";
 
 type Props = {
@@ -321,6 +322,7 @@ export function SettingsPanel({
       const wasSearchConfigured = searchConfiguredRef.current;
       const saved = await putSettings(patch);
       setSaveMsg("已保存并生效");
+      notifySettingsChanged();
       maybeEnableComposerWebSearch(
         wasSearchConfigured,
         searchProvidersConfigured(searchProviders),

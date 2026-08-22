@@ -12,7 +12,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal
 
-from app.models.candidate import ImageWire, ThinkingProtocol
+from app.models.candidate import ImageWire, ThinkingProtocol, VideoWire
 from app.models.effort import Effort, coerce_to_options, pick_default_effort, supported_efforts
 from app.models.model_id import model_id_has_prefix, normalize_model_id
 from app.models.models_dev import (
@@ -33,8 +33,12 @@ _SUPPLEMENT_PATH = Path(__file__).with_name("catalog_supplement.json")
 @dataclass(frozen=True)
 class ModelCapabilities:
     image: bool = False
+    video: bool = False
     thinking: bool = False
     image_wire: ImageWire = "data"
+    video_wire: VideoWire = "data"
+    max_videos: int = 1
+    max_images: int | None = None
     thinking_protocol: ThinkingProtocol = "none"
     effort: Effort = "medium"
     effort_options: tuple[Effort, ...] = ()
@@ -45,8 +49,11 @@ def _with_efforts(
     *,
     model: str,
     image: bool,
+    video: bool = False,
     thinking: bool,
     image_wire: ImageWire,
+    video_wire: VideoWire = "data",
+    max_videos: int = 1,
     thinking_protocol: ThinkingProtocol,
     source: str,
     effort_options: tuple[Effort, ...] | None = None,
@@ -57,8 +64,11 @@ def _with_efforts(
         opts = effort_options
     return ModelCapabilities(
         image=image,
+        video=video,
         thinking=thinking,
         image_wire=image_wire,
+        video_wire=video_wire,
+        max_videos=max_videos,
         thinking_protocol=thinking_protocol,
         effort=pick_default_effort(opts, model=model),
         effort_options=opts,
@@ -97,8 +107,12 @@ def _from_hit(hit: CatalogHit, *, source: str) -> ModelCapabilities:
     effort = hit.effort if (not opts or hit.effort in opts) else pick_default_effort(opts, model=hit.id)
     return ModelCapabilities(
         image=hit.image,
+        video=hit.video,
         thinking=hit.thinking,
         image_wire=hit.image_wire,
+        video_wire=hit.video_wire,
+        max_videos=hit.max_videos,
+        max_images=hit.max_images,
         thinking_protocol=hit.thinking_protocol,
         effort=effort,
         effort_options=opts,
@@ -207,10 +221,14 @@ def capabilities_public_dict(caps: ModelCapabilities, *, model: str) -> dict[str
         "ok": True,
         "model": mid,
         "image": caps.image,
+        "video": caps.video,
         "thinking": caps.thinking,
         "effort": caps.effort,
         "effort_options": list(caps.effort_options),
         "image_wire": caps.image_wire,
+        "video_wire": caps.video_wire,
+        "max_videos": caps.max_videos,
+        "max_images": caps.max_images,
         "thinking_protocol": caps.thinking_protocol,
         "source": caps.source,
     }
@@ -338,10 +356,14 @@ def catalog_hit_for_model_id(
         id=mid,
         name=mid,
         image=False if embedding else caps.image,
+        video=False if embedding else caps.video,
         thinking=False if embedding else caps.thinking,
         effort=caps.effort if not embedding else "medium",
         effort_options=() if embedding else caps.effort_options,
         image_wire=caps.image_wire,
+        video_wire=caps.video_wire,
+        max_videos=caps.max_videos,
+        max_images=caps.max_images,
         thinking_protocol="none" if embedding else caps.thinking_protocol,
         embedding=embedding,
     )
@@ -376,10 +398,18 @@ def enrich_candidate_dict(item: dict[str, Any]) -> dict[str, Any]:
     )
     if "image" not in out:
         out["image"] = caps.image
+    if "video" not in out:
+        out["video"] = caps.video
     if "thinking" not in out:
         out["thinking"] = caps.thinking
     if "image_wire" not in out:
         out["image_wire"] = caps.image_wire
+    if "video_wire" not in out:
+        out["video_wire"] = caps.video_wire
+    if "max_videos" not in out:
+        out["max_videos"] = caps.max_videos
+    if "max_images" not in out:
+        out["max_images"] = caps.max_images
     out["thinking_protocol"] = caps.thinking_protocol
 
     saved_opts = out.get("effort_options")

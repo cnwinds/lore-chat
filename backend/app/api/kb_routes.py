@@ -62,11 +62,11 @@ async def download(
 
 @router.get("/attachments/signed/{path:path}")
 async def signed_attachment(path: str, token: str, request: Request):
-    """短时签名附件 URL，供 url_wire 识图模型拉取（仅图片）。"""
+    """短时签名附件 URL，供 url_wire 多模态模型拉取（图片或视频）。"""
+    from app.models.media import guess_video_mime, is_signed_media_file
     from app.models.vision import (
         attachment_signing_secret,
         guess_mime,
-        is_signed_image_file,
         verify_attachment_token,
     )
 
@@ -80,9 +80,10 @@ async def signed_attachment(path: str, token: str, request: Request):
     abs_p = c.repo.abs_path(norm)
     if not abs_p.is_file():
         raise HTTPException(404, "文件不存在")
-    if not is_signed_image_file(abs_p):
-        raise HTTPException(403, "signed attachments are image-only")
-    media = guess_mime(str(abs_p))
+    media_kind = is_signed_media_file(abs_p)
+    if media_kind is None:
+        raise HTTPException(403, "signed attachments are image/video only")
+    media = guess_video_mime(str(abs_p)) if media_kind == "video" else guess_mime(str(abs_p))
     return FileResponse(
         path=abs_p,
         media_type=media,
@@ -168,6 +169,11 @@ async def kb_import(
     _, svc = kb_tree_service(request)
     name = (filename or file.filename or "upload.bin").strip()
     data = await file.read()
+    from app.models.media import MAX_VIDEO_UPLOAD_BYTES, bytes_look_like_video
+
+    if len(data) > MAX_VIDEO_UPLOAD_BYTES and bytes_look_like_video(data, name=name):
+        limit_mb = MAX_VIDEO_UPLOAD_BYTES // (1024 * 1024)
+        raise HTTPException(400, f"视频超过 {limit_mb}MB 上限")
     try:
         return svc.import_upload(directory=directory, filename=name, data=data)
     except KbPathExistsError as e:

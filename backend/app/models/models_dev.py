@@ -13,7 +13,7 @@ from typing import Any
 
 import httpx
 
-from app.models.candidate import ImageWire, ThinkingProtocol
+from app.models.candidate import ImageWire, ThinkingProtocol, VideoWire
 from app.models.effort import Effort, parse_reasoning_options, pick_default_effort
 from app.models.model_id import model_id_has_prefix
 
@@ -24,11 +24,15 @@ class CatalogHit:
     id: str
     name: str
     image: bool
+    video: bool
     thinking: bool
     effort: Effort
     effort_options: tuple[Effort, ...]
     image_wire: ImageWire
+    video_wire: VideoWire
+    max_videos: int
     thinking_protocol: ThinkingProtocol
+    max_images: int | None = None
     embedding: bool = False
 
     def to_dict(self) -> dict[str, Any]:
@@ -37,10 +41,14 @@ class CatalogHit:
             "id": self.id,
             "name": self.name,
             "image": self.image,
+            "video": self.video,
             "thinking": self.thinking,
             "effort": self.effort,
             "effort_options": list(self.effort_options),
             "image_wire": self.image_wire,
+            "video_wire": self.video_wire,
+            "max_videos": self.max_videos,
+            "max_images": self.max_images,
             "thinking_protocol": self.thinking_protocol,
             "embedding": self.embedding,
         }
@@ -93,19 +101,32 @@ def infer_image_wire(model_id: str, protocol: ThinkingProtocol) -> ImageWire:
     return "data"
 
 
-def _modalities_has_image(modalities: Any) -> bool:
+def infer_video_wire(model_id: str, protocol: ThinkingProtocol) -> VideoWire:
+    return infer_image_wire(model_id, protocol)  # type: ignore[return-value]
+
+
+def _modalities_has(modalities: Any, token: str) -> bool:
     if modalities is None:
         return False
+    token_l = token.lower()
     if isinstance(modalities, dict):
         inp = modalities.get("input") or modalities.get("inputs") or []
         if isinstance(inp, str):
-            return "image" in inp.lower()
+            return token_l in inp.lower()
         if isinstance(inp, (list, tuple, set)):
-            return any("image" in str(x).lower() for x in inp)
-        return "image" in json.dumps(modalities).lower()
+            return any(token_l in str(x).lower() for x in inp)
+        return token_l in json.dumps(modalities).lower()
     if isinstance(modalities, (list, tuple, set)):
-        return any("image" in str(x).lower() for x in modalities)
-    return "image" in str(modalities).lower()
+        return any(token_l in str(x).lower() for x in modalities)
+    return token_l in str(modalities).lower()
+
+
+def _modalities_has_image(modalities: Any) -> bool:
+    return _modalities_has(modalities, "image")
+
+
+def _modalities_has_video(modalities: Any) -> bool:
+    return _modalities_has(modalities, "video")
 
 
 def _as_bool(v: Any) -> bool:
@@ -211,9 +232,12 @@ def parse_remote_model(provider: str, model_id: str, raw: dict[str, Any]) -> Cat
     name = str(raw.get("name") or model_id)
     embedding = _is_embedding_model(model_id, raw)
     image = False if embedding else _modalities_has_image(raw.get("modalities"))
+    video = False if embedding else _modalities_has_video(raw.get("modalities"))
     if not embedding and not image and _as_bool(raw.get("attachment")):
-        # 部分条目用 attachment 表示可挂多媒体
+        # 部分条目用 attachment 表示可挂多媒体（默认仅识图；视频需 modalities 或显式 video）
         image = True
+    if not embedding and not video and _as_bool(raw.get("video")):
+        video = True
     thinking = False if embedding else _as_bool(raw.get("reasoning"))
 
     proto_raw = str(raw.get("thinking_protocol") or "").strip().lower()
@@ -227,6 +251,27 @@ def parse_remote_model(provider: str, model_id: str, raw: dict[str, Any]) -> Cat
         wire: ImageWire = wire_raw  # type: ignore[assignment]
     else:
         wire = infer_image_wire(model_id, protocol)
+
+    vwire_raw = str(raw.get("video_wire") or "").strip().lower()
+    if vwire_raw in {"data", "url"}:
+        vwire: VideoWire = vwire_raw  # type: ignore[assignment]
+    else:
+        vwire = infer_video_wire(model_id, protocol)
+
+    max_videos_raw = raw.get("max_videos")
+    try:
+        max_videos = max(1, int(max_videos_raw)) if max_videos_raw is not None else 1
+    except (TypeError, ValueError):
+        max_videos = 1
+
+    max_images_raw = raw.get("max_images")
+    max_images: int | None = None
+    if max_images_raw is not None:
+        try:
+            n = int(max_images_raw)
+            max_images = n if n > 0 else None
+        except (TypeError, ValueError):
+            max_images = None
 
     if embedding:
         opts: tuple[Effort, ...] = ("medium",)
@@ -242,10 +287,14 @@ def parse_remote_model(provider: str, model_id: str, raw: dict[str, Any]) -> Cat
         id=model_id,
         name=name,
         image=image,
+        video=video,
         thinking=thinking,
         effort=effort,
         effort_options=opts,
         image_wire=wire,
+        video_wire=vwire,
+        max_videos=max_videos,
+        max_images=max_images,
         thinking_protocol=protocol,
         embedding=embedding,
     )

@@ -414,14 +414,18 @@ class AgentToolLoop:
             if item.attachments:
                 from pathlib import Path
 
+                from app.models.media import attachment_is_video
                 from app.models.vision import attachment_is_image
 
                 kb = Path(self.settings.kb_path)
-                imgs = [
-                    p for p in item.attachments if attachment_is_image(p, kb_path=kb)
+                media_atts = [
+                    p
+                    for p in item.attachments
+                    if attachment_is_image(p, kb_path=kb)
+                    or attachment_is_video(p, kb_path=kb)
                 ]
-                if imgs:
-                    msg["attachments"] = imgs
+                if media_atts:
+                    msg["attachments"] = media_atts
             messages.append(msg)
             message_id = None
             if on_inject_applied is not None:
@@ -450,6 +454,7 @@ class AgentToolLoop:
     def _format_inject_content(self, item: PendingInject) -> str:
         from pathlib import Path
 
+        from app.models.media import attachment_is_video
         from app.models.vision import attachment_is_image
 
         parts: list[str] = []
@@ -464,11 +469,14 @@ class AgentToolLoop:
             parts.append("（补充文档上下文：" + "、".join(labels) + "）")
         if item.attachments:
             kb = Path(self.settings.kb_path)
-            non_img = [
-                p for p in item.attachments if not attachment_is_image(p, kb_path=kb)
+            non_media = [
+                p
+                for p in item.attachments
+                if not attachment_is_image(p, kb_path=kb)
+                and not attachment_is_video(p, kb_path=kb)
             ]
-            if non_img:
-                parts.append("（附件：" + "、".join(non_img) + "）")
+            if non_media:
+                parts.append("（附件：" + "、".join(non_media) + "）")
         parts.append(item.text)
         return "\n\n".join(parts)
 

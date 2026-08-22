@@ -321,6 +321,56 @@ def test_kb_import_conflict(client):
     assert "suggested_filename" in detail
 
 
+def test_kb_import_rejects_oversized_video(client):
+    from app.models.media import MAX_VIDEO_UPLOAD_BYTES
+
+    head = b"\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom"
+    big = head + b"\x00" * MAX_VIDEO_UPLOAD_BYTES
+    files = {"file": ("big.mp4", big, "video/mp4")}
+    r = client.post(
+        "/api/kb/import",
+        files=files,
+        data={"directory": "媒体/上传"},
+    )
+    assert r.status_code == 400
+    assert "50" in r.json()["detail"]
+
+
+def test_signed_attachment_serves_video_mp4(client):
+    from app.models.vision import attachment_signing_secret, sign_attachment_token
+
+    mp4 = b"\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom" + b"\x00" * 8
+    imp = client.post(
+        "/api/kb/import",
+        files={"file": ("clip.mp4", mp4, "video/mp4")},
+        data={"directory": "媒体"},
+    )
+    assert imp.status_code == 200
+    rel = imp.json()["rel_path"]
+    secret = attachment_signing_secret(client.app.state.settings_store.get())
+    token = sign_attachment_token(rel_path=rel, secret=secret)
+    r = client.get(f"/api/attachments/signed/{rel}", params={"token": token})
+    assert r.status_code == 200
+    assert "video" in r.headers.get("content-type", "")
+    assert r.content[:8] == b"\x00\x00\x00\x18ftyp"
+
+
+def test_signed_attachment_rejects_non_media(client):
+    from app.models.vision import attachment_signing_secret, sign_attachment_token
+
+    imp = client.post(
+        "/api/kb/import",
+        files={"file": ("note.txt", b"plain text", "text/plain")},
+        data={"directory": "媒体"},
+    )
+    assert imp.status_code == 200
+    rel = imp.json()["rel_path"]
+    secret = attachment_signing_secret(client.app.state.settings_store.get())
+    token = sign_attachment_token(rel_path=rel, secret=secret)
+    r = client.get(f"/api/attachments/signed/{rel}", params={"token": token})
+    assert r.status_code == 403
+
+
 def test_doc_endpoint(client):
     client.post("/api/ingest", json={"text": "内容 X"})
     tree = client.get("/api/tree").json()["docs"]

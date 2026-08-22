@@ -38,10 +38,20 @@ export function parseCandidates(raw: unknown): ModelCandidateDraft[] {
         ...(hadKey ? { api_key_masked: maskApiKeyPlaceholder(rawKey) } : {}),
         provider,
         image: Boolean(x.image),
+        video: Boolean(x.video),
         thinking: Boolean(x.thinking),
         effort,
         effort_options: opts,
         image_wire: x.image_wire === "url" ? "url" : "data",
+        video_wire: x.video_wire === "url" ? "url" : "data",
+        max_videos:
+          typeof x.max_videos === "number" && x.max_videos > 0
+            ? x.max_videos
+            : 1,
+        max_images:
+          typeof x.max_images === "number" && x.max_images > 0
+            ? x.max_images
+            : null,
         thinking_protocol: protocol,
       };
     });

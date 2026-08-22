@@ -132,10 +132,13 @@ def test_from_hit_keeps_catalog_effort(tmp_path):
         id="text-embedding-3-small",
         name="text-embedding-3-small",
         image=False,
+        video=False,
         thinking=False,
         effort="medium",
         effort_options=("medium",),
         image_wire="data",
+        video_wire="data",
+        max_videos=1,
         thinking_protocol="none",
         embedding=True,
     )
@@ -237,10 +240,13 @@ def test_merge_catalog_hits_prefers_primary():
             id=mid,
             name=mid,
             image=False,
+            video=False,
             thinking=thinking,
             effort="medium",
             effort_options=("medium",) if thinking else (),
             image_wire="data",
+            video_wire="data",
+            max_videos=1,
             thinking_protocol="none",
         )
 
@@ -260,10 +266,13 @@ def test_merge_prefer_extra_puts_supplement_first():
             id=mid,
             name=mid,
             image=False,
+            video=False,
             thinking=False,
             effort="medium",
             effort_options=(),
             image_wire="data",
+            video_wire="data",
+            max_videos=1,
             thinking_protocol="none",
         )
 
@@ -293,3 +302,66 @@ def test_search_slash_model_ids():
     store._fetched_at = 1e12
     hits = store.search("agnes", kind="llm")
     assert any(h.id == "sapiens-ai/agnes-1.5-pro" for h in hits)
+
+
+def test_parse_remote_model_explicit_video_flag():
+    hit = parse_remote_model(
+        "custom",
+        "demo-v",
+        {
+            "name": "Demo V",
+            "attachment": False,
+            "video": True,
+            "modalities": {"input": ["text"], "output": ["text"]},
+        },
+    )
+    assert hit.video is True
+
+
+def test_parse_remote_model_video_from_modalities():
+    hit = parse_remote_model(
+        "openrouter",
+        "demo-vl",
+        {
+            "name": "Demo VL",
+            "modalities": {"input": ["text", "video"], "output": ["text"]},
+        },
+    )
+    assert hit.video is True
+    assert hit.image is False
+
+
+def test_parse_remote_model_max_images():
+    hit = parse_remote_model(
+        "openai",
+        "gpt-vision",
+        {
+            "name": "GPT Vision",
+            "modalities": {"input": ["text", "image"], "output": ["text"]},
+            "max_images": 5,
+        },
+    )
+    assert hit.max_images == 5
+
+
+def test_from_hit_max_images(tmp_path):
+    from app.models.catalog import _from_hit
+    from app.models.models_dev import CatalogHit
+
+    hit = CatalogHit(
+        provider="openai",
+        id="gpt-4o",
+        name="GPT-4o",
+        image=True,
+        video=False,
+        thinking=False,
+        effort="medium",
+        effort_options=(),
+        image_wire="data",
+        video_wire="data",
+        max_videos=1,
+        thinking_protocol="none",
+        max_images=3,
+    )
+    caps = _from_hit(hit, source="supplement")
+    assert caps.max_images == 3

@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
-from app.models.candidate import ImageWire, ModelCandidate
+from app.models.candidate import ModelCandidate
 
 _IMAGE_SUFFIXES = {
     ".png",
@@ -27,7 +27,9 @@ _IMAGE_SUFFIXES = {
 }
 
 # 可展示但多数识图 API 不吃的矢量图：聊天缩略图走 download，不送 multimodal
-_VISION_SKIP_SUFFIXES = {".svg"}
+VISION_SKIP_SUFFIXES = {".svg"}
+# 兼容旧私有名
+_VISION_SKIP_SUFFIXES = VISION_SKIP_SUFFIXES
 
 
 def is_image_path(path: str) -> bool:
@@ -40,7 +42,7 @@ def is_image_path(path: str) -> bool:
 
 def is_vision_image_path(path: str) -> bool:
     """是否适合作为识图 API 的图片输入（排除 SVG）。"""
-    if Path(path).suffix.lower() in _VISION_SKIP_SUFFIXES:
+    if Path(path).suffix.lower() in VISION_SKIP_SUFFIXES:
         return False
     return is_image_path(path)
 
@@ -146,6 +148,18 @@ def build_image_url(
     return f"{base}/api/attachments/signed/{quote(rel_path, safe='/')}?token={token}"
 
 
+def build_signed_attachment_url(
+    *,
+    public_base_url: str,
+    rel_path: str,
+    token: str,
+) -> str:
+    """Signed URL for multimodal attachments (image or video)."""
+    return build_image_url(
+        public_base_url=public_base_url, rel_path=rel_path, token=token
+    )
+
+
 def file_to_data_url(path: Path) -> str:
     raw = path.read_bytes()
     b64 = base64.standard_b64encode(raw).decode("ascii")
@@ -162,49 +176,14 @@ def build_user_content_with_images(
     public_base_url: str | None,
     signing_secret: str,
 ) -> str | list[dict[str, Any]]:
-    """返回 OpenAI-style content：无图则纯字符串；有图则 parts 列表。"""
-    image_rels: list[str] = []
-    other: list[str] = []
-    for p in attachment_paths:
-        abs_try = (kb_path / p).resolve()
-        # SVG：聊天可预览，但不送识图 API
-        if Path(p).suffix.lower() in _VISION_SKIP_SUFFIXES:
-            other.append(p)
-            continue
-        if abs_try.is_file() and is_image_file(abs_try):
-            image_rels.append(p)
-        elif is_image_path(p):
-            image_rels.append(p)
-        else:
-            other.append(p)
-    text_parts = []
-    if other:
-        text_parts.append("（附件：" + "、".join(other) + "）")
-    text_parts.append(text)
-    body = "\n\n".join(text_parts)
+    """兼容入口：委托 media.build_user_content_with_media。"""
+    from app.models.media import build_user_content_with_media
 
-    if not image_rels or not candidate.image:
-        if image_rels:
-            # 模型无识图：路径写进文本
-            prefix = "（图片附件未能送入模型：" + "、".join(image_rels) + "）\n\n"
-            return prefix + body
-        return body
-
-    wire: ImageWire = candidate.image_wire
-    parts: list[dict[str, Any]] = [{"type": "text", "text": body}]
-    for rel in image_rels:
-        abs_path = (kb_path / rel).resolve()
-        if not abs_path.is_file():
-            continue
-        if wire == "url":
-            base = (public_base_url or "").strip()
-            if not base:
-                continue
-            token = sign_attachment_token(rel_path=rel, secret=signing_secret)
-            url = build_image_url(public_base_url=base, rel_path=rel, token=token)
-        else:
-            url = file_to_data_url(abs_path)
-        parts.append({"type": "image_url", "image_url": {"url": url}})
-    if len(parts) == 1:
-        return body
-    return parts
+    return build_user_content_with_media(
+        text,
+        attachment_paths,
+        candidate=candidate,
+        kb_path=kb_path,
+        public_base_url=public_base_url,
+        signing_secret=signing_secret,
+    )
