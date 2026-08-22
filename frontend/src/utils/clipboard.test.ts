@@ -1,10 +1,55 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { copyTextToClipboard, extractClipboardImageFiles } from "./clipboard";
+import {
+  copyTextToClipboard,
+  extractClipboardFiles,
+  extractClipboardImageFiles,
+} from "./clipboard";
 
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
   document.body.innerHTML = "";
+});
+
+describe("extractClipboardFiles", () => {
+  it("returns empty when clipboard is null or has no files", () => {
+    expect(extractClipboardFiles(null)).toEqual([]);
+    expect(
+      extractClipboardFiles({
+        items: [{ kind: "string", type: "text/plain", getAsFile: () => null }],
+      }),
+    ).toEqual([]);
+  });
+
+  it("extracts all file items from clipboard (local file copy)", () => {
+    const png = new File([new Uint8Array([1, 2, 3])], "image.png", {
+      type: "image/png",
+    });
+    const pdf = new File([new Uint8Array([9])], "report.pdf", {
+      type: "application/pdf",
+    });
+    const got = extractClipboardFiles({
+      items: [
+        { kind: "string", type: "text/plain", getAsFile: () => null },
+        { kind: "file", type: "image/png", getAsFile: () => png },
+        { kind: "file", type: "application/pdf", getAsFile: () => pdf },
+      ],
+    });
+    expect(got).toEqual([png, pdf]);
+  });
+
+  it("falls back to files list when items are empty", () => {
+    const mp4 = new File([new Uint8Array([7])], "clip.mp4", {
+      type: "video/mp4",
+    });
+    const txt = new File([new Uint8Array([5])], "a.txt", {
+      type: "text/plain",
+    });
+    expect(extractClipboardFiles({ items: [], files: [mp4, txt] })).toEqual([
+      mp4,
+      txt,
+    ]);
+  });
 });
 
 describe("extractClipboardImageFiles", () => {

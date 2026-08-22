@@ -42,7 +42,7 @@ import { ComposerToolbar } from "./ComposerToolbar";
 import { ComposerSendQueue } from "./ComposerSendQueue";
 import { ArchiveConversationModal } from "./ArchiveConversationModal";
 import type { DocTrayItem, PendingFile } from "../types/composer";
-import { extractClipboardImageFiles } from "../utils/clipboard";
+import { extractClipboardFiles } from "../utils/clipboard";
 import { importChatAttachment } from "../utils/chatAttachmentImport";
 import { useChatChainMediaCaps } from "../hooks/chat/useChatChainMediaCaps";
 import {
@@ -599,16 +599,10 @@ export function Chat({
   }
 
   function onInputPaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
-    const images = extractClipboardImageFiles(e.clipboardData);
-    if (!images.length) return;
+    const files = extractClipboardFiles(e.clipboardData);
+    if (!files.length) return;
     e.preventDefault();
-    addPendingFiles(images);
-    const pasteText = e.clipboardData.getData("text/plain");
-    if (!pasteText) return;
-    const el = e.currentTarget;
-    const start = el.selectionStart ?? input.length;
-    const end = el.selectionEnd ?? input.length;
-    setInput(input.slice(0, start) + pasteText + input.slice(end));
+    addPendingFiles(files);
   }
 
   function onInputKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -751,7 +745,7 @@ export function Chat({
                 onPaste={onInputPaste}
                 rows={1}
                 placeholder={streamingForView ? "输入消息加入队列…" : "输入消息…"}
-                title="Ctrl+Enter 发送；可粘贴图片到托盘"
+                title="Ctrl+Enter 发送；可粘贴本地文件或图片到托盘"
                 style={{
                   minHeight: INPUT_MIN_HEIGHT,
                   maxHeight: INPUT_MAX_HEIGHT,

@@ -1,5 +1,7 @@
+import { isImageFile } from "./kbImageUrls";
+
 /** 粘贴事件里可读的剪贴板片段（便于单测 mock，无需完整 DataTransfer）。 */
-export type ClipboardImageSource = {
+export type ClipboardPasteSource = {
   items?: ArrayLike<{
     kind: string;
     type: string;
@@ -9,11 +11,11 @@ export type ClipboardImageSource = {
 };
 
 /**
- * 从剪贴板提取图片文件（截图 / 复制图片）。
- * 有 items 时只取 kind=file 且 type 为 image/*；否则回退 files。
+ * 从剪贴板提取全部文件项（资源管理器复制文件 / 截图等）。
+ * 优先 items 中 kind=file；否则回退 files 列表。
  */
-export function extractClipboardImageFiles(
-  data: ClipboardImageSource | null | undefined,
+export function extractClipboardFiles(
+  data: ClipboardPasteSource | null | undefined,
 ): File[] {
   if (!data) return [];
   const out: File[] = [];
@@ -22,7 +24,6 @@ export function extractClipboardImageFiles(
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
       if (!item || item.kind !== "file") continue;
-      if (!item.type.startsWith("image/")) continue;
       const file = item.getAsFile();
       if (file) out.push(file);
     }
@@ -32,10 +33,19 @@ export function extractClipboardImageFiles(
   if (files && files.length > 0) {
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
-      if (file && file.type.startsWith("image/")) out.push(file);
+      if (file) out.push(file);
     }
   }
   return out;
+}
+
+/**
+ * 从剪贴板提取图片文件（截图 / 复制图片）。
+ */
+export function extractClipboardImageFiles(
+  data: ClipboardPasteSource | null | undefined,
+): File[] {
+  return extractClipboardFiles(data).filter((f) => isImageFile(f));
 }
 
 /** 复制到剪贴板：优先 Clipboard API，HTTP 非安全上下文回退 execCommand。 */
