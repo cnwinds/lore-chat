@@ -1,9 +1,18 @@
 import { useCallback, useEffect, useState } from "react";
-import { getPublicShare, type PublicSharePayload } from "../api/share";
+import {
+  getPublicShare,
+  SharePublicError,
+  type PublicSharePayload,
+} from "../api/share";
+
+export type PublicShareError = {
+  status: number;
+  message: string;
+};
 
 export function usePublicShare(shareId: string) {
   const [payload, setPayload] = useState<PublicSharePayload | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<PublicShareError | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -16,7 +25,14 @@ export function usePublicShare(shareId: string) {
       })
       .catch((e: unknown) => {
         if (!cancelled) {
-          setError(e instanceof Error ? e.message : "加载失败");
+          if (e instanceof SharePublicError) {
+            setError({ status: e.status, message: e.message });
+          } else {
+            setError({
+              status: 0,
+              message: e instanceof Error ? e.message : "加载失败",
+            });
+          }
           setPayload(null);
         }
       })

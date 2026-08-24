@@ -23,6 +23,25 @@ function formatExpHint(exp: string | null): string | null {
   return "即将过期";
 }
 
+function errorCopy(status: number, message: string): { title: string; body: string } {
+  if (status === 410) {
+    return {
+      title: "分享已过期",
+      body: "此链接的有效期已结束，内容不再对外可见。如需继续分享，请联系原作者重新创建。",
+    };
+  }
+  if (status === 404) {
+    return {
+      title: "分享不可用",
+      body: "链接不存在，或已被作者撤销。",
+    };
+  }
+  return {
+    title: "无法打开分享",
+    body: message || "请稍后重试，或向原作者确认链接是否有效。",
+  };
+}
+
 export function SharePage({ shareId }: Props) {
   const { payload, error, loading } = usePublicShare(shareId);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -49,6 +68,7 @@ export function SharePage({ shareId }: Props) {
     return parseDocOutline(payload.body);
   }, [payload]);
 
+  const errView = error ? errorCopy(error.status, error.message) : null;
   const noop = () => {};
 
   return (
@@ -63,8 +83,14 @@ export function SharePage({ shareId }: Props) {
 
       <main className="share-page-main">
         {loading && <div className="share-page-status">加载中…</div>}
-        {!loading && error && (
-          <div className="share-page-status share-page-error">{error}</div>
+        {!loading && errView && (
+          <div className="share-page-error-card" role="alert">
+            <p className="share-page-error-title">{errView.title}</p>
+            <p className="share-page-error-body">{errView.body}</p>
+            {error?.status === 410 ? (
+              <p className="share-page-error-code">HTTP 410</p>
+            ) : null}
+          </div>
         )}
         {!loading && payload?.type === "conversation" && (
           <div className="share-page-chat">

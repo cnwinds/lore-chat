@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
-import { ttlSecFromPreset } from "../api/share";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import { ttlSecFromPreset, parseSharePathname, SharePublicError } from "./share";
+import { showToast } from "../utils/toast";
 
 describe("ttlSecFromPreset", () => {
   it("returns null for permanent", () => {
@@ -16,5 +17,52 @@ describe("ttlSecFromPreset", () => {
     const sec = ttlSecFromPreset("custom", future);
     expect(sec).not.toBeNull();
     expect(sec!).toBeGreaterThanOrEqual(60);
+  });
+
+  it("rejects past custom datetime", () => {
+    const past = new Date(Date.now() - 3600 * 1000).toISOString();
+    expect(ttlSecFromPreset("custom", past)).toBeNull();
+  });
+});
+
+describe("parseSharePathname", () => {
+  it("parses valid share path", () => {
+    expect(parseSharePathname("/share/abcdefghijklmnopqr")).toBe(
+      "abcdefghijklmnopqr",
+    );
+  });
+
+  it("rejects short or invalid ids", () => {
+    expect(parseSharePathname("/share/short")).toBeNull();
+    expect(parseSharePathname("/share/bad id!!!!!!!!!!!!")).toBeNull();
+    expect(parseSharePathname("/other/abcdefghijklmnopqr")).toBeNull();
+  });
+});
+
+describe("SharePublicError", () => {
+  it("carries status", () => {
+    const err = new SharePublicError(410, "分享链接已过期");
+    expect(err.status).toBe(410);
+    expect(err.message).toContain("过期");
+  });
+});
+
+describe("showToast", () => {
+  beforeEach(() => {
+    document.body.innerHTML = "";
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    document.body.innerHTML = "";
+  });
+
+  it("mounts and removes toast", () => {
+    showToast("链接已复制", 1000);
+    const host = document.getElementById("lorechat-toast-host");
+    expect(host).toBeTruthy();
+    expect(host?.textContent).toContain("链接已复制");
+    vi.advanceTimersByTime(1500);
+    expect(document.getElementById("lorechat-toast-host")).toBeNull();
   });
 });

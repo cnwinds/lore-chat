@@ -109,40 +109,45 @@ export function MarkdownContent({
     linkifyConversationCitations(sourced),
   );
 
-  const components: Components | undefined = onOpenConversation
-    ? {
-        a({ href, children: linkChildren }) {
-          const target = parseConversationHref(href);
-          if (target) {
-            return (
-              <button
-                type="button"
-                className="source-link source-link--inline conversation-md-link"
-                title="打开该会话"
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  onOpenConversation(target);
-                }}
-              >
-                <span className="source-link-icon" aria-hidden>
-                  💬
-                </span>
-                <span className="source-link-text">{linkChildren}</span>
-              </button>
-            );
-          }
-          if (!href) {
-            return <span>{linkChildren}</span>;
-          }
+  const components: Components = {
+    a({ href, children: linkChildren }) {
+      const target = parseConversationHref(href);
+      if (target) {
+        if (!onOpenConversation) {
           return (
-            <a href={href} target="_blank" rel="noopener noreferrer">
-              {linkChildren}
-            </a>
+            <span className="conversation-md-link conversation-md-link--static">
+              <span className="source-link-text">{linkChildren}</span>
+            </span>
           );
-        },
+        }
+        return (
+          <button
+            type="button"
+            className="source-link source-link--inline conversation-md-link"
+            title="打开该会话"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onOpenConversation(target);
+            }}
+          >
+            <span className="source-link-icon" aria-hidden>
+              💬
+            </span>
+            <span className="source-link-text">{linkChildren}</span>
+          </button>
+        );
       }
-    : undefined;
+      if (!href) {
+        return <span>{linkChildren}</span>;
+      }
+      return (
+        <a href={href} target="_blank" rel="noopener noreferrer">
+          {linkChildren}
+        </a>
+      );
+    },
+  };
 
   const highlightActive = !!(
     highlightRange &&

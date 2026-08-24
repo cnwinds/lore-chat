@@ -43,9 +43,21 @@ import { maybeEnableComposerWebSearch } from "../../utils/webSearchPreference";
 import { notifySettingsChanged } from "../../utils/settingsChangedEvent";
 import type { SettingsAttention } from "../../api";
 
+export type SettingsTab =
+  | "model"
+  | "search"
+  | "agent"
+  | "kb"
+  | "usage"
+  | "account"
+  | "share";
+
 type Props = {
   open: boolean;
   onClose: () => void;
+  /** 外部请求切换到指定 Tab（例如从分享弹窗跳转） */
+  navigateToTab?: SettingsTab | null;
+  onNavigateToTabHandled?: () => void;
   /** 首次进入且未配置主 API Key 时：打开设置并切到「模型」Tab，展示引导文案 */
   showLlmSetupGuide?: boolean;
   onLlmConfigured?: () => void;
@@ -56,8 +68,6 @@ type Props = {
   /** 面板打开期间的合并红点（关闭时传 null） */
   onLiveAttentionChange?: (live: SettingsAttention | null) => void;
 };
-
-type SettingsTab = "model" | "search" | "agent" | "kb" | "usage" | "account" | "share";
 
 const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
   { id: "model", label: "模型" },
@@ -108,6 +118,8 @@ function clientAccessOrigin(): string {
 export function SettingsPanel({
   open,
   onClose,
+  navigateToTab = null,
+  onNavigateToTabHandled,
   showLlmSetupGuide = false,
   onLlmConfigured,
   attention = null,
@@ -159,6 +171,7 @@ export function SettingsPanel({
   const [importMode, setImportMode] = useState<"empty_only" | "overwrite">("empty_only");
   const [importFile, setImportFile] = useState<File | null>(null);
   const importFileRef = useRef<HTMLInputElement>(null);
+  const settingsWasOpenRef = useRef(false);
   /** 上次从服务端载入的搜索是否已配置（用于 0→1 时打开聊天框联网搜索） */
   const searchConfiguredRef = useRef(false);
   /** 面板内本地态：覆盖服务端 usage 分区，避免未保存时不同步 */
@@ -233,10 +246,27 @@ export function SettingsPanel({
   }, [open, load, onLiveAttentionChange]);
 
   useEffect(() => {
-    if (open && showLlmSetupGuide) {
-      setActiveTab("model");
+    if (!open) {
+      settingsWasOpenRef.current = false;
+      return;
     }
-  }, [open, showLlmSetupGuide]);
+    const justOpened = !settingsWasOpenRef.current;
+    settingsWasOpenRef.current = true;
+
+    if (navigateToTab) {
+      setActiveTab(navigateToTab);
+      writeStoredSettingsTab(navigateToTab);
+      onNavigateToTabHandled?.();
+      return;
+    }
+    if (!justOpened) return;
+
+    if (showLlmSetupGuide) {
+      setActiveTab("model");
+    } else {
+      setActiveTab(readStoredSettingsTab());
+    }
+  }, [open, showLlmSetupGuide, navigateToTab, onNavigateToTabHandled]);
 
   const starterDrafts = useMemo(
     () => ({

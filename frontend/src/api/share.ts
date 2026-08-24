@@ -83,15 +83,27 @@ export function revokeShare(shareId: string) {
 }
 
 /** 公开分享页：不带 cookie 也可访问 */
+export class SharePublicError extends Error {
+  status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "SharePublicError";
+    this.status = status;
+  }
+}
+
 export function getPublicShare(shareId: string) {
   return fetch(`${apiBase()}/api/share/${encodeURIComponent(shareId)}`).then(async (res) => {
     if (res.status === 410) {
-      throw new Error("分享链接已过期");
+      throw new SharePublicError(410, "分享链接已过期");
     }
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       const detail = (err as { detail?: string }).detail;
-      throw new Error(typeof detail === "string" ? detail : "分享链接不存在或已失效");
+      throw new SharePublicError(
+        res.status,
+        typeof detail === "string" ? detail : "分享链接不存在或已失效",
+      );
     }
     return res.json() as Promise<PublicSharePayload>;
   });

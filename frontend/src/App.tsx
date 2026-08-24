@@ -1,10 +1,10 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { getAuthStatus, type SourceRef, type SettingsAttention } from "./api";
 import { LoginPage } from "./components/auth/LoginPage";
 import { SetupPage } from "./components/auth/SetupPage";
 import { Chat } from "./components/Chat";
 import { SearchSnippetModal } from "./components/SearchSnippetModal";
-import { SettingsPanel } from "./components/settings/SettingsPanel";
+import { SettingsPanel, type SettingsTab } from "./components/settings/SettingsPanel";
 import { ShareLinkModal, type ShareLinkModalTarget } from "./components/share/ShareLinkModal";
 import { SharePage } from "./pages/SharePage";
 import { parseSharePathname } from "./api/share";
@@ -62,6 +62,7 @@ function AppMain() {
   const [sidebarRefreshKey, setSidebarRefreshKey] = useState(0);
   const [kbPaths, setKbPaths] = useState<string[]>([]);
   const [shareTarget, setShareTarget] = useState<ShareLinkModalTarget | null>(null);
+  const [settingsNavigateTab, setSettingsNavigateTab] = useState<SettingsTab | null>(null);
   const {
     settingsOpen,
     setSettingsOpen,
@@ -144,14 +145,29 @@ function AppMain() {
       setShareTarget({ type: "doc", path, defaultTitle: title }),
   );
 
-  const openShareSettings = () => {
+  const closeShareModal = useCallback(() => setShareTarget(null), []);
+
+  const navigateSettingsTab = useCallback((tab: SettingsTab) => {
     try {
-      localStorage.setItem("lorechat.settingsTab", "share");
+      localStorage.setItem("lorechat.settingsTab", tab);
     } catch {
       /* ignore */
     }
+    setSettingsNavigateTab(tab);
     setSettingsOpen(true);
-  };
+  }, [setSettingsOpen]);
+
+  const closeShareAndOpenSettings = useCallback(
+    (tab: SettingsTab) => {
+      setShareTarget(null);
+      navigateSettingsTab(tab);
+    },
+    [navigateSettingsTab],
+  );
+
+  const handleSettingsNavigateHandled = useCallback(() => {
+    setSettingsNavigateTab(null);
+  }, []);
 
   return (
     <DocPreviewProvider value={doc.contextValue}>
@@ -271,6 +287,8 @@ function AppMain() {
                 setLiveAttention(null);
                 refreshAttention();
               }}
+              navigateToTab={settingsNavigateTab}
+              onNavigateToTabHandled={handleSettingsNavigateHandled}
               showLlmSetupGuide={llmSetupGuide}
               onLlmConfigured={clearLlmSetupGuide}
               attention={attention}
@@ -288,11 +306,9 @@ function AppMain() {
             <ShareLinkModal
               open={shareTarget !== null}
               target={shareTarget}
-              onClose={() => setShareTarget(null)}
-              onOpenSettings={() => {
-                setShareTarget(null);
-                openShareSettings();
-              }}
+              onClose={closeShareModal}
+              onOpenShareSettings={() => closeShareAndOpenSettings("share")}
+              onOpenModelSettings={() => closeShareAndOpenSettings("model")}
             />
             {bridge.imageLightbox}
           </>
