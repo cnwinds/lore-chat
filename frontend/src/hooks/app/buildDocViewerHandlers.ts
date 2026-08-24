@@ -7,11 +7,13 @@ export function buildDocViewerHandlers(
   doc: DocPreview,
   pane: DocPane,
   onOpenConversation: (id: string) => void,
+  onLocateInTree?: (path: string) => void,
 ) {
   const shared = {
     // 本栏刚写完，勿 bump 本栏 refreshKey（否则会 loadDoc remount，丢滚动/光标）
     onSaved: (path: string) => doc.refreshKb(path, { except: pane }),
     onOpenConversation,
+    onLocateInTree,
     mergeReview: null,
     onMergeReviewChange: () => {},
     onMergeAccept: async () => {},

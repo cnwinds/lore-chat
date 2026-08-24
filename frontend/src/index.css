@@ -3947,6 +3947,23 @@ button.memory-fact-statement--jump:focus-visible {
   white-space: nowrap;
 }
 
+.doc-path-btn {
+  width: 100%;
+  padding: 0;
+  margin: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.doc-path-btn:hover {
+  color: var(--text-primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 .doc-viewer-body {
   flex: 1;
   overflow-y: auto;

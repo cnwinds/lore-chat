@@ -23,6 +23,7 @@ type Props = {
   onMergeAccept: () => void | Promise<void>;
   onMergeRegenerate: () => void | Promise<void>;
   onMergeReject: () => void | Promise<void>;
+  onLocateInTree?: (path: string) => void;
 };
 
 export function DocFloatLayer({
@@ -46,6 +47,7 @@ export function DocFloatLayer({
   onMergeAccept,
   onMergeRegenerate,
   onMergeReject,
+  onLocateInTree,
 }: Props) {
   return (
     <>
@@ -81,6 +83,7 @@ export function DocFloatLayer({
           onMergeAccept={onMergeAccept}
           onMergeRegenerate={onMergeRegenerate}
           onMergeReject={onMergeReject}
+          onLocateInTree={onLocateInTree}
         />
       </div>
     </>

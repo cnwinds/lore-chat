@@ -112,14 +112,24 @@ function AppMain() {
     doc.closeAllPreviews();
   }
 
-  const floatDocHandlers = buildDocViewerHandlers(doc, "float", (id) => {
-    conversation.setActiveConversationId(id);
-    doc.closeAllPreviews();
-  });
-  const pinnedDocHandlers = buildDocViewerHandlers(doc, "pinned", (id) => {
-    conversation.setActiveConversationId(id);
-    doc.closeAllPreviews();
-  });
+  const floatDocHandlers = buildDocViewerHandlers(
+    doc,
+    "float",
+    (id) => {
+      conversation.setActiveConversationId(id);
+      doc.closeAllPreviews();
+    },
+    conversation.locateKbPathInTree,
+  );
+  const pinnedDocHandlers = buildDocViewerHandlers(
+    doc,
+    "pinned",
+    (id) => {
+      conversation.setActiveConversationId(id);
+      doc.closeAllPreviews();
+    },
+    conversation.locateKbPathInTree,
+  );
 
   return (
     <DocPreviewProvider value={doc.contextValue}>

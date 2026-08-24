@@ -235,6 +235,7 @@ function TreeItem({
         <div
           className={`file-tree-row folder${specialKb ? " kb-special" : ""}${dropActive ? " drop-target" : ""}${selected ? " selected" : ""}${opensFloat ? " float-leaf" : ""}`}
           style={{ paddingLeft: pad }}
+          data-kb-path={node.path}
           draggable={!disabled && !protectedKb && !isRenaming}
           onDragStart={(e) => setDragPayload(e, node.path)}
           onDragEnd={() => setDragSource(null)}
@@ -369,6 +370,7 @@ function TreeItem({
     <div
       className={`file-tree-row file${specialKb ? " kb-special" : ""}${selected ? " selected" : ""}`}
       style={{ paddingLeft: pad + 18 }}
+      data-kb-path={node.path}
       draggable={!disabled && !protectedKb && !isRenaming}
       onDragOver={handleFileDragOver}
       onDrop={handleFileDrop}

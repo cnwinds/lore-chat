@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from "react";
 import { createPortal } from "react-dom";
 import {
   getTree,
@@ -9,6 +9,7 @@ import {
 import { groupConversationsByTime } from "../utils/conversationGroups";
 import { formatSidebarConversationTime } from "../utils/displayTime";
 import { scrollConversationItemIntoView } from "../utils/sidebarConversationScroll";
+import { scrollKbTreeNodeIntoView } from "../utils/kbTreeScroll";
 import { FileTree } from "./FileTree";
 import { KbFloatingRootDrop } from "./KbFloatingRootDrop";
 import { KbTreeProgressBar } from "./KbTreeProgressBar";
@@ -49,6 +50,8 @@ type Props = {
   onKbPathsDeleted?: (paths: string[]) => void;
   /** 知识库路径列表变更（供媒体图库等复用，避免重复 getTree） */
   onDocsChange?: (docs: string[]) => void;
+  /** 注册「在树中定位路径」回调（供文档预览标题点击定位） */
+  onBindLocateKbPath?: (locate: ((path: string) => void) | null) => void;
 };
 
 export function Sidebar({
@@ -70,6 +73,7 @@ export function Sidebar({
   onKbPathChanged,
   onKbPathsDeleted,
   onDocsChange,
+  onBindLocateKbPath,
 }: Props) {
   const [docs, setDocs] = useState<string[]>([]);
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
@@ -102,11 +106,36 @@ export function Sidebar({
   }
 
   const kb = useKbTreeActions(refresh, docs);
-  const tree = useFileTreeInteraction({
+  const treeInteraction = useFileTreeInteraction({
     kb,
     onKbPathChanged,
     onKbPathsDeleted,
   });
+
+  const { tree: kbTree, expanded, toggleFolder, revealPath } = viewport;
+
+  const locateKbPath = useCallback(
+    (path: string) => {
+      revealPath(path);
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          const scrollRoot = treeScrollRef.current;
+          if (!scrollRoot) return;
+          const escaped = CSS.escape(path);
+          const el = scrollRoot.querySelector(`[data-kb-path="${escaped}"]`);
+          if (el instanceof HTMLElement) {
+            scrollKbTreeNodeIntoView(el);
+          }
+        });
+      });
+    },
+    [revealPath],
+  );
+
+  useEffect(() => {
+    onBindLocateKbPath?.(locateKbPath);
+    return () => onBindLocateKbPath?.(null);
+  }, [locateKbPath, onBindLocateKbPath]);
 
   useEffect(() => {
     refresh();
@@ -160,7 +189,7 @@ export function Sidebar({
     };
   }, [kbHintOpen]);
 
-  useDismissOnOutsideClick(tree.menuRef, !!tree.menu, tree.closeMenu);
+  useDismissOnOutsideClick(treeInteraction.menuRef, !!treeInteraction.menu, treeInteraction.closeMenu);
   useDismissOnOutsideClick(
     [kbHintRef, kbHintPopoverRef],
     kbHintOpen,
@@ -178,41 +207,41 @@ export function Sidebar({
   return (
     <aside className={`sidebar${collapsed ? " sidebar--collapsed" : ""}`}>
       {kb.conflictDialog}
-      {tree.menu && (
+      {treeInteraction.menu && (
         <div
-          ref={tree.menuRef}
+          ref={treeInteraction.menuRef}
           className="kb-tree-context-menu"
-          style={{ left: tree.menu.x, top: tree.menu.y }}
+          style={{ left: treeInteraction.menu.x, top: treeInteraction.menu.y }}
           role="menu"
         >
-          {(tree.menu.ctx.kind === "file" ||
-            (tree.menu.ctx.kind === "folder" &&
-              !isProtectedKbPath(tree.menu.ctx.path))) && (
-            <button type="button" role="menuitem" onClick={() => void tree.handleMenuAction("download")}>
+          {(treeInteraction.menu.ctx.kind === "file" ||
+            (treeInteraction.menu.ctx.kind === "folder" &&
+              !isProtectedKbPath(treeInteraction.menu.ctx.path))) && (
+            <button type="button" role="menuitem" onClick={() => void treeInteraction.handleMenuAction("download")}>
               下载
             </button>
           )}
-          {tree.menu.ctx.kind === "folder" &&
-            tree.menu.ctx.path === SKILLS_DIR &&
+          {treeInteraction.menu.ctx.kind === "folder" &&
+            treeInteraction.menu.ctx.path === SKILLS_DIR &&
             onOpenEnabledSkills && (
               <button
                 type="button"
                 role="menuitem"
                 onClick={() => {
                   onOpenEnabledSkills();
-                  tree.closeMenu();
+                  treeInteraction.closeMenu();
                 }}
               >
                 启用 Skill…
               </button>
             )}
-          {!isProtectedKbPath(tree.menu.ctx.path) && (
-            <button type="button" role="menuitem" onClick={() => void tree.handleMenuAction("rename")}>
+          {!isProtectedKbPath(treeInteraction.menu.ctx.path) && (
+            <button type="button" role="menuitem" onClick={() => void treeInteraction.handleMenuAction("rename")}>
               重命名
             </button>
           )}
-          {!isProtectedKbPath(tree.menu.ctx.path) && (
-            <button type="button" role="menuitem" onClick={() => void tree.handleMenuAction("delete")}>
+          {!isProtectedKbPath(treeInteraction.menu.ctx.path) && (
+            <button type="button" role="menuitem" onClick={() => void treeInteraction.handleMenuAction("delete")}>
               删除
             </button>
           )}
@@ -289,10 +318,10 @@ export function Sidebar({
 
           <section
             className="sidebar-section sidebar-tree-section"
-            onDragEnter={tree.onKbSectionDragEnter}
-            onDragLeave={tree.onKbSectionDragLeave}
-            onDragOver={tree.onRootDragOver}
-            onDrop={tree.onRootDrop}
+            onDragEnter={treeInteraction.onKbSectionDragEnter}
+            onDragLeave={treeInteraction.onKbSectionDragLeave}
+            onDragOver={treeInteraction.onRootDragOver}
+            onDrop={treeInteraction.onRootDrop}
           >
             <div className="sidebar-section-head">
               <div className="sidebar-section-title" ref={kbHintRef}>
@@ -382,22 +411,22 @@ export function Sidebar({
             >
               <div ref={treeScrollRef} className="sidebar-tree-scroll">
                 <FileTree
-                  tree={viewport.tree}
+                  tree={kbTree}
                   activePaths={activePaths}
                   onSelectFile={onSelectFile}
                   onSelectFolder={onSelectFolder}
-                  expanded={viewport.expanded}
-                  onToggleFolder={viewport.toggleFolder}
+                  expanded={expanded}
+                  onToggleFolder={toggleFolder}
                   memoryAttention={memoryAttention}
-                  {...tree.fileTreeProps}
+                  {...treeInteraction.fileTreeProps}
                 />
               </div>
               <KbFloatingRootDrop
-                visible={tree.showFloatingRoot}
-                active={tree.floatingRootActive}
-                uploadMode={tree.floatingRootUploadMode}
-                onDragOver={tree.onFloatingRootDragOver}
-                onDrop={tree.onFloatingRootDrop}
+                visible={treeInteraction.showFloatingRoot}
+                active={treeInteraction.floatingRootActive}
+                uploadMode={treeInteraction.floatingRootUploadMode}
+                onDragOver={treeInteraction.onFloatingRootDragOver}
+                onDrop={treeInteraction.onFloatingRootDrop}
               />
             </div>
           </section>

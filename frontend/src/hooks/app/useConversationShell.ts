@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   createConversation,
   listConversations,
@@ -64,6 +64,23 @@ export function useConversationShell({
     {},
   );
   const [pendingJump, setPendingJump] = useState<JumpTarget | null>(null);
+  const sidebarLocateKbPathRef = useRef<((path: string) => void) | null>(null);
+
+  function locateKbPathInTree(path: string) {
+    const shouldExpandSidebar =
+      (doc.floatFocus || doc.pinnedFocus) &&
+      (doc.floatPath || doc.pinnedPath) &&
+      doc.sidebarCollapsed;
+    const runLocate = () => sidebarLocateKbPathRef.current?.(path);
+    if (shouldExpandSidebar) {
+      doc.setSidebarCollapsed(false);
+      requestAnimationFrame(() => {
+        requestAnimationFrame(runLocate);
+      });
+    } else {
+      runLocate();
+    }
+  }
 
   function requestJump(target: JumpTarget) {
     setPendingJump(target);
@@ -126,6 +143,9 @@ export function useConversationShell({
     onOpenEnabledSkills,
     onKbPathChanged,
     onKbPathsDeleted,
+    onBindLocateKbPath: (locate) => {
+      sidebarLocateKbPathRef.current = locate;
+    },
     onNewChat: () => {
       void newChat();
     },
@@ -154,5 +174,6 @@ export function useConversationShell({
     pendingJump,
     requestJump,
     clearPendingJump,
+    locateKbPathInTree,
   };
 }

@@ -50,6 +50,7 @@ type Props = {
   onUnpin?: () => void;
   onOpenConversation?: (conversationId: string) => void;
   onMergeEditingToggle: () => void;
+  onLocateInTree?: (path: string) => void;
 };
 
 export function DocViewerHeader({
@@ -83,6 +84,7 @@ export function DocViewerHeader({
   onUnpin,
   onOpenConversation,
   onMergeEditingToggle,
+  onLocateInTree,
 }: Props) {
   const conversationId =
     typeof doc?.meta?.conversation_id === "string"
@@ -145,16 +147,34 @@ export function DocViewerHeader({
         </button>
       )}
       <div className="doc-viewer-title">
-        <span className="doc-path" title={path}>
-          {path}
-          {dirty && (
-            <span
-              className="doc-dirty-dot"
-              title="有未保存的修改"
-              aria-label="有未保存的修改"
-            />
-          )}
-        </span>
+        {onLocateInTree ? (
+          <button
+            type="button"
+            className="doc-path doc-path-btn"
+            title={`在知识库中定位：${path}`}
+            onClick={() => onLocateInTree(path)}
+          >
+            {path}
+            {dirty && (
+              <span
+                className="doc-dirty-dot"
+                title="有未保存的修改"
+                aria-label="有未保存的修改"
+              />
+            )}
+          </button>
+        ) : (
+          <span className="doc-path" title={path}>
+            {path}
+            {dirty && (
+              <span
+                className="doc-dirty-dot"
+                title="有未保存的修改"
+                aria-label="有未保存的修改"
+              />
+            )}
+          </span>
+        )}
       </div>
       <div className="doc-viewer-toolbar">
         {doc?.meta && <DocMetaPopover meta={doc.meta} />}

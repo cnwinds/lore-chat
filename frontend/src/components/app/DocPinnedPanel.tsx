@@ -21,6 +21,7 @@ type Props = {
   onMergeAccept: () => void | Promise<void>;
   onMergeRegenerate: () => void | Promise<void>;
   onMergeReject: () => void | Promise<void>;
+  onLocateInTree?: (path: string) => void;
 };
 
 export function DocPinnedPanel({
@@ -42,6 +43,7 @@ export function DocPinnedPanel({
   onMergeAccept,
   onMergeRegenerate,
   onMergeReject,
+  onLocateInTree,
 }: Props) {
   return (
     <aside
@@ -69,6 +71,7 @@ export function DocPinnedPanel({
         onMergeAccept={onMergeAccept}
         onMergeRegenerate={onMergeRegenerate}
         onMergeReject={onMergeReject}
+        onLocateInTree={onLocateInTree}
       />
     </aside>
   );

@@ -258,4 +258,20 @@ describe("useKbTreeViewportUi", () => {
     expect(second.result.current.expanded.has("a")).toBe(true);
     expect(second.result.current.expanded.has("a/b/c")).toBe(false);
   });
+
+  it("revealPath forces ancestor expansion even when expanded is persisted", () => {
+    saveKbTreeExpanded(["a"]);
+    const el = makeScrollEl({ clientHeight: 200, scrollHeight: 800 });
+    const { result } = renderViewportHook(el, {
+      paths: ["a/b/c/z.md"],
+      activePaths: ["a/b/c/z.md"],
+    });
+    expect(result.current.expanded.has("a/b/c")).toBe(false);
+
+    act(() => {
+      result.current.revealPath("a/b/c/z.md");
+    });
+    expect(result.current.expanded.has("a/b")).toBe(true);
+    expect(result.current.expanded.has("a/b/c")).toBe(true);
+  });
 });

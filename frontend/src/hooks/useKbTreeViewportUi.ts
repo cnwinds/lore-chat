@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -125,6 +126,22 @@ export function useKbTreeViewportUi({
     }
   }
 
+  const revealPath = useCallback((path: string) => {
+    const ancestors = collectAncestorFolderPaths([path]);
+    if (ancestors.length === 0) return;
+    setUserExpanded((prev) => {
+      const next = new Set(prev);
+      for (const p of ancestors) next.add(p);
+      saveKbTreeExpanded([...next]);
+      return next;
+    });
+    setSessionReveal((prev) => {
+      const next = new Set(prev);
+      for (const p of ancestors) next.add(p);
+      return next;
+    });
+  }, []);
+
   // —— 滚动：侧栏折叠时重置；展开就绪后恢复；用户滚动后落盘 ——
   useEffect(() => {
     if (collapsed) {
@@ -228,5 +245,5 @@ export function useKbTreeViewportUi({
     };
   }, [collapsed, hydrated, scrollEnabled, scrollRef]);
 
-  return { tree, expanded, toggleFolder };
+  return { tree, expanded, toggleFolder, revealPath };
 }

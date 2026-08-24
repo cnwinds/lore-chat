@@ -45,6 +45,7 @@ type Props = {
   onMergeAccept?: () => void | Promise<void>;
   onMergeRegenerate?: () => void | Promise<void>;
   onMergeReject?: () => void | Promise<void>;
+  onLocateInTree?: (path: string) => void;
 };
 
 export function DocViewer({
@@ -69,6 +70,7 @@ export function DocViewer({
   onMergeAccept,
   onMergeRegenerate,
   onMergeReject,
+  onLocateInTree,
 }: Props) {
   const [editMode, setEditMode] = useState<EditMode>(getStoredEditMode);
   const [selection, setSelection] = useState<DocSelection>({ start: 0, end: 0 });
@@ -270,6 +272,7 @@ export function DocViewer({
         onUnpin={onUnpin}
         onOpenConversation={onOpenConversation}
         onMergeEditingToggle={() => setMergeEditing((v) => !v)}
+        onLocateInTree={onLocateInTree}
       />
       <DocViewerBody
         bodyRef={bodyRef}
