@@ -1,6 +1,9 @@
 import { useState } from "react";
-import { dedupeSources, downloadUrl, type SourceRef } from "../api";
-import { isLikelyImagePath } from "../utils/kbImageUrls";
+import { dedupeSources, type SourceRef } from "../api";
+import {
+  isDisplayableImageRef,
+  mediaDisplayUrl,
+} from "../utils/kbImageUrls";
 import { ImageThumbButton } from "./ImageThumbButton";
 import { SourceChip } from "./SourceChip";
 import { useImageLightbox } from "../hooks/useImageLightbox";
@@ -14,13 +17,18 @@ type Props = {
 };
 
 function basename(path: string): string {
-  return path.split("/").pop() || path;
+  const raw = path.split("/").pop() || path;
+  try {
+    return decodeURIComponent(raw.split("?")[0] || raw);
+  } catch {
+    return raw;
+  }
 }
 
 function isKbImageSource(
   src: SourceRef,
 ): src is Extract<SourceRef, { type: "kb" }> {
-  return src.type === "kb" && isLikelyImagePath(src.path);
+  return src.type === "kb" && isDisplayableImageRef(src.path);
 }
 
 export function ChatSources({
@@ -38,13 +46,11 @@ export function ChatSources({
   const hasConversation = items.some((s) => s.type === "conversation");
   // 会话引用 / 图片瓦片需要可点查看：有会话或图片时默认展开
   const [open, setOpen] = useState(hasConversation || imageSources.length > 0);
+  const sectionTitle = hasConversation ? "参考与会话" : "参考";
   const { openPreview, lightbox } = useImageLightbox();
 
-  if (items.length === 0) return null;
+  if (!items.length) return null;
 
-  const hasKb = items.some((s) => s.type === "kb");
-  const sectionTitle =
-    hasConversation && !hasKb ? "参考会话" : hasConversation ? "参考来源" : "参考文档";
   return (
     <div className="chat-sources">
       <button
@@ -66,12 +72,12 @@ export function ChatSources({
               {imageSources.map((src) => (
                 <ImageThumbButton
                   key={src.path}
-                  src={downloadUrl(src.path)}
+                  src={mediaDisplayUrl(src.path)}
                   alt={basename(src.path)}
-                  title={`${src.path}（点击查看大图）`}
+                  title={`${basename(src.path)}（点击查看大图）`}
                   className="chat-sources-tile"
                   imageClassName="chat-sources-tile-img"
-                  downloadHref={downloadUrl(src.path, { download: true })}
+                  downloadHref={mediaDisplayUrl(src.path)}
                   onOpen={openPreview}
                 />
               ))}

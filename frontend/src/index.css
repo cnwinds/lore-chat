@@ -4534,6 +4534,13 @@ button.memory-fact-statement--jump:focus-visible {
   margin-bottom: 0;
 }
 
+.chat-user-attachment-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
 .chat-memory-notice {
   display: flex;
   align-items: center;

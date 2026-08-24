@@ -193,13 +193,32 @@ def _resolve_source(
 ) -> dict:
     out = dict(src)
     if out.get("type") == "kb" and isinstance(out.get("path"), str):
-        out["path"] = _grant_kb_path(
-            out["path"],
-            kb_path=kb_path,
-            public_base_url=public_base_url,
-            grant_ttl_sec=grant_ttl_sec,
-        )
+        path = out["path"]
+        # 参考图/视频物化为 grant；普通文档引用保留相对路径作展示标签
+        if _looks_like_image(path) or _looks_like_video(path):
+            out["path"] = _grant_kb_path(
+                path,
+                kb_path=kb_path,
+                public_base_url=public_base_url,
+                grant_ttl_sec=grant_ttl_sec,
+            )
     return out
+
+
+def _looks_like_image(path: str) -> bool:
+    return bool(
+        re.search(
+            r"\.(png|jpe?g|gif|webp|bmp|svg|tif|tiff|ico)$",
+            path.split("?")[0] or path,
+            re.I,
+        )
+    )
+
+
+def _looks_like_video(path: str) -> bool:
+    return bool(
+        re.search(r"\.(mp4|webm|mov|m4v)$", path.split("?")[0] or path, re.I)
+    )
 
 
 def _grant_kb_path(

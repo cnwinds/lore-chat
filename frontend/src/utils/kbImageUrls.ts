@@ -15,6 +15,26 @@ export function isLikelyImagePath(path: string): boolean {
   return IMAGE_EXT.test(path.split("?")[0] || path);
 }
 
+/** 绝对 URL / 已是 API 能力链时原样返回，否则走需登录的 download。 */
+export function mediaDisplayUrl(path: string): string {
+  const s = path.trim();
+  if (!s) return s;
+  if (/^(https?:|data:|blob:)/i.test(s) || s.startsWith("/api/")) return s;
+  return downloadUrl(s);
+}
+
+export function isMediaGrantUrl(path: string): boolean {
+  return path.includes("/api/media/grant/");
+}
+
+/** 聊天/分享里可作图片预览的引用（相对路径或 media grant）。 */
+export function isDisplayableImageRef(path: string): boolean {
+  const s = path.trim();
+  if (!s) return false;
+  if (/^https?:\/\//i.test(s)) return isMediaGrantUrl(s) || isLikelyImagePath(s);
+  return isLikelyImagePath(s);
+}
+
 /** File / 剪贴板图：优先 MIME，否则文件名后缀（与 isLikelyImagePath 同源）。 */
 export function isImageFile(file: File, name?: string): boolean {
   if (file.type.startsWith("image/")) return true;

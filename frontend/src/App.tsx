@@ -33,7 +33,10 @@ export default function App() {
   if (shareId) {
     return <SharePage shareId={shareId} />;
   }
+  return <AppGate />;
+}
 
+function AppGate() {
   const [gate, setGate] = useState<Gate>("loading");
 
   useEffect(() => {

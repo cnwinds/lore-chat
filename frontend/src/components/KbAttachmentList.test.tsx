@@ -31,4 +31,11 @@ describe("KbAttachmentList", () => {
     const { getByText } = render(<KbAttachmentList paths={["docs/readme.txt"]} />);
     expect(getByText(/下载附件/)).toBeTruthy();
   });
+
+  it("uses media grant URLs as-is for image thumbs", () => {
+    const grant = "https://share.example.com/api/media/grant/abcdefghijklmnopqr";
+    const { container } = render(<KbAttachmentList paths={[grant]} />);
+    const img = container.querySelector("img");
+    expect(img?.getAttribute("src")).toBe(grant);
+  });
 });

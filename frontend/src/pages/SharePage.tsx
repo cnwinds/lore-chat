@@ -65,7 +65,10 @@ export function SharePage({ shareId }: Props) {
 
   const outlineItems = useMemo(() => {
     if (!payload || payload.type !== "doc") return [];
-    return parseDocOutline(payload.body);
+    return parseDocOutline(payload.body).map((item, index) => ({
+      ...item,
+      id: `outline-${index}`,
+    }));
   }, [payload]);
 
   const errView = error ? errorCopy(error.status, error.message) : null;
@@ -124,7 +127,7 @@ export function SharePage({ shareId }: Props) {
               </aside>
             )}
             <article className="share-page-doc-body markdown-body">
-              <MarkdownContent>{payload.body}</MarkdownContent>
+              <MarkdownContent outlineHeadingIds>{payload.body}</MarkdownContent>
             </article>
           </div>
         )}

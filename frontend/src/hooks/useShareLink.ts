@@ -4,6 +4,7 @@ import {
   SharePublicError,
   type PublicSharePayload,
 } from "../api/share";
+import { copyTextToClipboard } from "../utils/clipboard";
 
 export type PublicShareError = {
   status: number;
@@ -48,24 +49,5 @@ export function usePublicShare(shareId: string) {
 }
 
 export function useCopyShareUrl() {
-  return useCallback(async (url: string) => {
-    try {
-      await navigator.clipboard.writeText(url);
-      return true;
-    } catch {
-      try {
-        const ta = document.createElement("textarea");
-        ta.value = url;
-        ta.style.position = "fixed";
-        ta.style.left = "-9999px";
-        document.body.appendChild(ta);
-        ta.select();
-        document.execCommand("copy");
-        document.body.removeChild(ta);
-        return true;
-      } catch {
-        return false;
-      }
-    }
-  }, []);
+  return useCallback(async (url: string) => copyTextToClipboard(url), []);
 }

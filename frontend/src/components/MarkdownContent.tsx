@@ -23,6 +23,8 @@ type Props = {
   onOpenConversation?: (target: ConversationLinkTarget) => void;
   /** 源文字符区间高亮（跳转）；仍走 Markdown，以免丢深链/相对图 */
   highlightRange?: { start: number; end: number } | null;
+  /** 为标题注入 outline-0… id，供分享页大纲锚点 */
+  outlineHeadingIds?: boolean;
 };
 
 /** 允许 conversation://（默认 urlTransform 会剥掉非 http(s) 协议）。 */
@@ -90,6 +92,19 @@ function rehypeHighlightMarkers() {
   };
 }
 
+/** 按文档顺序为 h1–h6 注入 outline-N，与 SharePage 大纲 id 对齐。 */
+function rehypeOutlineHeadingIds() {
+  return (tree: Root) => {
+    let i = 0;
+    visit(tree, "element", (node) => {
+      if (!/^h[1-6]$/.test(node.tagName)) return;
+      node.properties = node.properties ?? {};
+      node.properties.id = `outline-${i}`;
+      i += 1;
+    });
+  };
+}
+
 /**
  * 通用 Markdown 渲染（聊天时间线等）。
  * - 相对路径插图 → /api/download
@@ -100,6 +115,7 @@ export function MarkdownContent({
   className,
   onOpenConversation,
   highlightRange,
+  outlineHeadingIds = false,
 }: Props) {
   const sourced =
     highlightRange && highlightRange.start < highlightRange.end
@@ -153,6 +169,10 @@ export function MarkdownContent({
     highlightRange &&
     highlightRange.start < highlightRange.end
   );
+  const rehypePlugins = [
+    ...(highlightActive ? [rehypeHighlightMarkers] : []),
+    ...(outlineHeadingIds ? [rehypeOutlineHeadingIds] : []),
+  ];
   const cls = [className, highlightActive ? "chat-markdown--jump-target" : ""]
     .filter(Boolean)
     .join(" ");
@@ -161,7 +181,7 @@ export function MarkdownContent({
     <div className={cls}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkTrimAutolinkUrls]}
-        rehypePlugins={highlightActive ? [rehypeHighlightMarkers] : undefined}
+        rehypePlugins={rehypePlugins.length ? rehypePlugins : undefined}
         urlTransform={markdownUrlTransform}
         components={components}
       >

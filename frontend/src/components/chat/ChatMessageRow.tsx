@@ -1,6 +1,5 @@
 import {
   computeCumulative,
-  downloadUrl,
   formatDuration,
   getMessageCopyText,
   isMarkdownPath,
@@ -9,12 +8,10 @@ import {
   type IngestResult,
   type SourceRef,
 } from "../../api";
-import { DocChip, FileChip } from "../ComposerTray";
+import { DocChip } from "../ComposerTray";
 import { formatMessageTs, isInjectedUserMessage, canRetryAssistantReply } from "../../utils/chatMessage";
 import { MarkdownContent } from "../MarkdownContent";
 import { KbAttachmentList } from "../KbAttachmentList";
-import { ImageThumbButton } from "../ImageThumbButton";
-import { useImageLightbox } from "../../hooks/useImageLightbox";
 import { ChatSources } from "../ChatSources";
 import { CopyButton } from "../CopyButton";
 import { TimelineBlockView } from "../TimelineBlockView";
@@ -27,7 +24,6 @@ import {
 } from "../../utils/unicodeHighlight";
 import type { HighlightRangeDetail } from "../../hooks/chat/useConversationJump";
 import type { ConversationLinkTarget } from "../../utils/conversationLinks";
-import { isLikelyImagePath } from "../../utils/kbImageUrls";
 
 export type ChatMessageRowProps = {
   message: ChatMessage;
@@ -87,7 +83,6 @@ function UserMessageChips({ m }: { m: ChatMessage }) {
   const attachments = m.attachments ?? [];
   const hasDocs = docItems.length > 0;
   const hasFiles = attachments.length > 0;
-  const { openPreview, lightbox } = useImageLightbox();
   if (!hasDocs && !hasFiles) return null;
 
   return (
@@ -104,22 +99,13 @@ function UserMessageChips({ m }: { m: ChatMessage }) {
           }
         />
       ))}
-      {attachments.map((a) =>
-        isLikelyImagePath(a) ? (
-          <ImageThumbButton
-            key={a}
-            src={downloadUrl(a)}
-            alt={basename(a)}
-            title={`${a}（点击查看大图）`}
-            className="composer-image-chip chat-user-image-chip"
-            downloadHref={downloadUrl(a, { download: true })}
-            onOpen={openPreview}
-          />
-        ) : (
-          <FileChip key={a} name={basename(a)} tooltip={a} />
-        ),
-      )}
-      {lightbox}
+      {hasFiles ? (
+        <KbAttachmentList
+          paths={attachments}
+          className="chat-user-attachment-list"
+          thumbClassName="composer-image-chip chat-user-image-chip"
+        />
+      ) : null}
     </div>
   );
 }
