@@ -4,20 +4,33 @@ import base64
 import json
 from dataclasses import dataclass, field
 
-from app.engine.provenance import conversation_ids_from_meta, group_provenance, merge_adjacent_conversation_hits
+from app.engine.provenance import (
+    conversation_ids_from_meta,
+    group_provenance,
+    merge_adjacent_conversation_hits,
+)
 from app.engine.rrf import reciprocal_rank_fusion
+from app.engine.search_quality import (
+    HitMeta,
+    assess_lane_strength,
+    gate_page_hits,
+    should_drop_vector_lane,
+)
 from app.index.conversation_fts import ConversationFTS
 from app.index.conversation_vector import ConversationVector
-from app.index.revision import IndexRevision
-from app.index.vector import VectorIndex
 from app.index.fulltext import FullTextIndex
+from app.index.revision import IndexRevision
+from app.index.search_query import compile_search_query
 from app.index.types import Hit
+from app.index.vector import VectorIndex
 from app.logging_config import get_logger
 from app.models.llm import LLMClient
 from app.engine.knowledge_writer import is_markdown_path
 
 # 向量余弦相似度下限；低于此视为无关（小库中否则会把全部文档都当最近邻返回）
-MIN_VECTOR_SCORE = 0.45
+MIN_VECTOR_SCORE = 0.50
+
+DEFAULT_LANE_WEIGHTS = (0.9, 1.0, 0.5, 0.7)  # kb_fts, kb_vec, conv_fts, conv_vec
 
 
 @dataclass
@@ -28,6 +41,7 @@ class SearchPage:
     index_revision: int
     cursor_expired: bool = False
     provenance_groups: list[dict] = field(default_factory=list)
+    match_strength: str = "none"
 
 
 @dataclass
@@ -61,6 +75,8 @@ class Retriever:
         index_revision: IndexRevision | None = None,
         rrf_k: int = 60,
         lane_candidate_k: int = 20,
+        lane_weights: tuple[float, float, float, float] = DEFAULT_LANE_WEIGHTS,
+        kb_first_throttle: bool = True,
         repo=None,
     ):
         self.vector = vector
@@ -73,6 +89,8 @@ class Retriever:
         self.index_revision = index_revision
         self.rrf_k = rrf_k
         self.lane_candidate_k = lane_candidate_k
+        self.lane_weights = lane_weights
+        self.kb_first_throttle = kb_first_throttle
         self.repo = repo
 
     def _excluded(self, source: str) -> bool:
@@ -104,27 +122,40 @@ class Retriever:
             best[h.doc_id] = h
         return list(best.values())
 
-    def _kb_fts_lane(self, query: str, lane_k: int) -> tuple[list[str], dict[str, Hit]]:
-        hits = [h for h in self.fulltext.query(query, k=lane_k) if not self._excluded(h.source)]
+    def _kb_fts_lane(
+        self, query: str, lane_k: int
+    ) -> tuple[list[str], dict[str, Hit], dict[str, HitMeta]]:
+        outcome = self.fulltext.query_with_tier(query, k=lane_k)
+        hits = [h for h in outcome.hits if not self._excluded(h.source)]
         hits = self._dedup_hits(hits)
         hits.sort(key=lambda h: h.score, reverse=True)
         hit_map = {h.doc_id: h for h in hits}
-        return [h.doc_id for h in hits], hit_map
+        meta_map = {
+            h.doc_id: HitMeta(lane="kb_fts", fts_tier=outcome.tier) for h in hits
+        }
+        return [h.doc_id for h in hits], hit_map, meta_map
 
-    def _kb_vector_lane(self, query: str, lane_k: int) -> tuple[list[str], dict[str, Hit]]:
+    def _kb_vector_lane(
+        self, query: str, lane_k: int, *, vector_text: str
+    ) -> tuple[list[str], dict[str, Hit], dict[str, HitMeta]]:
         try:
-            q_emb = self.llm.embed([query])[0]
+            q_emb = self.llm.embed([vector_text])[0]
             hits = [
                 h for h in self.vector.query(q_emb, k=lane_k) if h.score >= self.min_score
             ]
             hits = [h for h in hits if not self._excluded(h.source)]
             hits = self._dedup_hits(hits)
             hits.sort(key=lambda h: h.score, reverse=True)
+            if should_drop_vector_lane(hits):
+                return [], {}, {}
         except Exception:
             get_logger("retriever").warning("知识库向量检索失败", exc_info=True)
-            return [], {}
+            return [], {}, {}
         hit_map = {h.doc_id: h for h in hits}
-        return [h.doc_id for h in hits], hit_map
+        meta_map = {
+            h.doc_id: HitMeta(lane="kb_vector", vector_score=h.score) for h in hits
+        }
+        return [h.doc_id for h in hits], hit_map, meta_map
 
     def _conv_fts_lane(
         self,
@@ -133,35 +164,39 @@ class Retriever:
         *,
         conversation_id: str | None,
         exclude_conversation_id: str | None,
-    ) -> tuple[list[str], dict[str, Hit]]:
+    ) -> tuple[list[str], dict[str, Hit], dict[str, HitMeta]]:
         if self.conversation_fts is None:
-            return [], {}
+            return [], {}, {}
         try:
-            raw = self.conversation_fts.query(
+            outcome = self.conversation_fts.query_with_tier(
                 query,
                 k=lane_k,
                 conversation_id=conversation_id,
                 exclude_conversation_id=exclude_conversation_id,
             )
-            hits = [self._conversation_hit(ch) for ch in raw]
+            hits = [self._conversation_hit(ch) for ch in outcome.hits]
         except Exception:
             get_logger("retriever").warning("会话 FTS 检索失败", exc_info=True)
-            return [], {}
+            return [], {}, {}
         hit_map = {h.doc_id: h for h in hits}
-        return [h.doc_id for h in hits], hit_map
+        meta_map = {
+            h.doc_id: HitMeta(lane="conv_fts", fts_tier=outcome.tier) for h in hits
+        }
+        return [h.doc_id for h in hits], hit_map, meta_map
 
     def _conv_vector_lane(
         self,
         query: str,
         lane_k: int,
         *,
+        vector_text: str,
         conversation_id: str | None,
         exclude_conversation_id: str | None,
-    ) -> tuple[list[str], dict[str, Hit]]:
+    ) -> tuple[list[str], dict[str, Hit], dict[str, HitMeta]]:
         if self.conversation_vector is None:
-            return [], {}
+            return [], {}, {}
         try:
-            q_emb = self.llm.embed([query])[0]
+            q_emb = self.llm.embed([vector_text])[0]
             raw = self.conversation_vector.query(
                 q_emb,
                 k=lane_k,
@@ -170,11 +205,16 @@ class Retriever:
             )
             hits = [self._conversation_hit(ch) for ch in raw]
             hits = [h for h in hits if h.score >= self.min_score]
+            if should_drop_vector_lane(hits):
+                return [], {}, {}
         except Exception:
             get_logger("retriever").warning("会话向量检索失败", exc_info=True)
-            return [], {}
+            return [], {}, {}
         hit_map = {h.doc_id: h for h in hits}
-        return [h.doc_id for h in hits], hit_map
+        meta_map = {
+            h.doc_id: HitMeta(lane="conv_vector", vector_score=h.score) for h in hits
+        }
+        return [h.doc_id for h in hits], hit_map, meta_map
 
     def search(
         self,
@@ -204,6 +244,7 @@ class Retriever:
                         next_cursor=None,
                         index_revision=rev,
                         cursor_expired=True,
+                        match_strength="none",
                     )
                 query = parsed.get("q", query)
                 filters = parsed.get("f", filters)
@@ -220,49 +261,92 @@ class Retriever:
                     next_cursor=None,
                     index_revision=rev,
                     cursor_expired=True,
+                    match_strength="none",
                 )
 
+        compiled = compile_search_query(query)
         lane_k = max(self.lane_candidate_k, k * 4)
         lanes: list[list[str]] = []
+        weights: list[float] = []
         hit_map: dict[str, Hit] = {}
+        meta_map: dict[str, HitMeta] = {}
 
         use_kb = scope in ("all", "knowledge")
         use_conv = scope in ("all", "conversations")
 
+        kb_fts_ids: list[str] = []
+        kb_vec_ids: list[str] = []
+
         if use_kb:
-            ids, m = self._kb_fts_lane(query, lane_k)
+            ids, m, mm = self._kb_fts_lane(query, lane_k)
+            kb_fts_ids = ids
             if ids:
                 lanes.append(ids)
+                weights.append(self.lane_weights[0])
                 hit_map.update(m)
-            ids, m = self._kb_vector_lane(query, lane_k)
+                meta_map.update(mm)
+            ids, m, mm = self._kb_vector_lane(
+                query, lane_k, vector_text=compiled.vector_text
+            )
+            kb_vec_ids = ids
             if ids:
                 lanes.append(ids)
+                weights.append(self.lane_weights[1])
                 hit_map.update(m)
+                meta_map.update(mm)
+
+        conv_lane_k = lane_k
+        if (
+            use_conv
+            and use_kb
+            and self.kb_first_throttle
+            and scope == "all"
+        ):
+            kb_strength = assess_lane_strength(
+                kb_fts_ids + kb_vec_ids,
+                meta_map,
+                hit_map,
+                compiled=compiled,
+                min_vector_score=self.min_score,
+            )
+            if kb_strength == "strong":
+                conv_lane_k = max(1, lane_k // 3)
 
         if use_conv:
-            ids, m = self._conv_fts_lane(
+            ids, m, mm = self._conv_fts_lane(
                 query,
-                lane_k,
+                conv_lane_k,
                 conversation_id=conversation_id,
                 exclude_conversation_id=exclude_conversation_id,
             )
             if ids:
                 lanes.append(ids)
+                weights.append(self.lane_weights[2])
                 hit_map.update(m)
-            ids, m = self._conv_vector_lane(
+                meta_map.update(mm)
+            ids, m, mm = self._conv_vector_lane(
                 query,
-                lane_k,
+                conv_lane_k,
+                vector_text=compiled.vector_text,
                 conversation_id=conversation_id,
                 exclude_conversation_id=exclude_conversation_id,
             )
             if ids:
                 lanes.append(ids)
+                weights.append(self.lane_weights[3])
                 hit_map.update(m)
+                meta_map.update(mm)
 
-        fused = reciprocal_rank_fusion(lanes, k=self.rrf_k)
+        fused = reciprocal_rank_fusion(lanes, k=self.rrf_k, weights=weights)
         page_ids = [doc_id for doc_id, _ in fused[offset : offset + k]]
         page_hits = [hit_map[doc_id] for doc_id in page_ids if doc_id in hit_map]
         page_hits = merge_adjacent_conversation_hits(page_hits)
+        page_hits, match_strength = gate_page_hits(
+            page_hits,
+            meta_map,
+            compiled=compiled,
+            min_vector_score=self.min_score,
+        )
 
         doc_conversation_ids: dict[str, list[str]] = {}
         if self.repo:
@@ -278,10 +362,12 @@ class Retriever:
                         doc_conversation_ids[h.source] = ids
                 except FileNotFoundError:
                     pass
-        provenance_groups = group_provenance(page_hits, doc_conversation_ids=doc_conversation_ids)
+        provenance_groups = group_provenance(
+            page_hits, doc_conversation_ids=doc_conversation_ids
+        )
 
         next_offset = offset + k
-        has_more = next_offset < len(fused)
+        has_more = next_offset < len(fused) and match_strength == "strong"
         next_cursor = (
             _make_cursor(query, filters, rev, next_offset) if has_more else None
         )
@@ -292,6 +378,7 @@ class Retriever:
             next_cursor=next_cursor,
             index_revision=rev,
             provenance_groups=provenance_groups,
+            match_strength=match_strength,
         )
 
     def answer(self, query: str, k: int = 5) -> Answer:

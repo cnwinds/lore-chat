@@ -45,6 +45,10 @@ class KbReadTools:
         sources = [self._hit_source(h) for h in hits]
         if page.cursor_expired:
             summary = "检索游标已过期（索引已更新），请重新发起检索"
+        elif page.match_strength == "none":
+            summary = "未找到足够相关的资料"
+        elif page.match_strength == "weak":
+            summary = "未找到足够相关的资料（仅有弱相关命中）"
         else:
             summary = f"找到 {len(hits)} 条相关内容"
         out = {
@@ -53,6 +57,7 @@ class KbReadTools:
             "hits": hits,
             "has_more": page.has_more,
             "index_revision": page.index_revision,
+            "match_strength": page.match_strength,
         }
         if page.next_cursor:
             out["next_cursor"] = page.next_cursor

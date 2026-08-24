@@ -3,34 +3,19 @@ from __future__ import annotations
 import app.sqlite_compat  # noqa: F401
 import sqlite3
 import threading
+from dataclasses import dataclass
 from pathlib import Path
 
+from app.index.search_query import compile_search_query, prepare_fts_query
 from app.index.types import Hit
 
+__all__ = ["FullTextIndex", "prepare_fts_query", "FtsQueryOutcome"]
 
-def prepare_fts_query(text: str, *, max_len: int = 300) -> str:
-    """将自由文本转为 FTS5 MATCH 表达式。
 
-    - 单个词：整段短语匹配
-    - 空白分隔多词：按 OR 拼接（Agent 常把中文关键词用空格堆在一起；
-      整段带空格的短语在正文里几乎不存在，会导致 0 命中）
-    - trigram 对不足 3 个码点的词几乎无效，多词时优先用 ≥3 字的词
-    """
-    text = " ".join(text.split())
-    if not text:
-        return ""
-    if len(text) > max_len:
-        text = text[:max_len]
-
-    def phrase(part: str) -> str:
-        return '"' + part.replace('"', '""') + '"'
-
-    parts = text.split(" ")
-    if len(parts) == 1:
-        return phrase(parts[0])
-
-    usable = [p for p in parts if len(list(p)) >= 3] or parts
-    return " OR ".join(phrase(p) for p in usable)
+@dataclass(frozen=True)
+class FtsQueryOutcome:
+    hits: list[Hit]
+    tier: str  # strict | relaxed | like | none
 
 
 class FullTextIndex:
@@ -61,32 +46,49 @@ class FullTextIndex:
             self.conn.commit()
 
     def query(self, text: str, k: int = 5) -> list[Hit]:
+        return self.query_with_tier(text, k=k).hits
+
+    def query_with_tier(self, text: str, *, k: int = 5) -> FtsQueryOutcome:
         text = text.strip()
         if not text:
-            return []
-        match = prepare_fts_query(text)
+            return FtsQueryOutcome([], "none")
+        compiled = compile_search_query(text)
         with self._lock:
-            try:
-                rows = self.conn.execute(
-                    "SELECT doc_id, source, body, bm25(chunks) AS rank "
-                    "FROM chunks WHERE chunks MATCH ? ORDER BY rank LIMIT ?",
-                    (match, k),
-                ).fetchall()
-            except sqlite3.OperationalError:
-                rows = []
-            # Trigram MATCH 对不足 3 码点的查询无效；多词全 miss 时也用 LIKE 兜底
-            if not rows:
-                rows = self._like_fallback(text, k)
-        hits: list[Hit] = []
-        for doc_id, source, body, rank in rows:
-            hits.append(Hit(doc_id=doc_id, chunk=body, score=-float(rank), source=source))
-        return hits
+            if compiled.strict_fts:
+                rows = self._match(compiled.strict_fts, k)
+                if rows:
+                    return FtsQueryOutcome(self._rows_to_hits(rows), "strict")
+            if compiled.relaxed_fts:
+                rows = self._match(compiled.relaxed_fts, k)
+                if rows:
+                    return FtsQueryOutcome(self._rows_to_hits(rows), "relaxed")
+            rows = self._like_fallback(compiled.like_terms, k)
+            if rows:
+                return FtsQueryOutcome(self._rows_to_hits(rows), "like")
+        return FtsQueryOutcome([], "none")
 
-    def _like_fallback(self, text: str, k: int) -> list[tuple]:
-        tokens = [t for t in text.split() if t] or [text]
-        # 长词优先，更可能命中有意义片段
-        tokens = sorted(tokens, key=lambda t: len(list(t)), reverse=True)
-        for tok in tokens:
+    def _match(self, match: str, k: int) -> list[tuple]:
+        if not match:
+            return []
+        try:
+            return self.conn.execute(
+                "SELECT doc_id, source, body, bm25(chunks) AS rank "
+                "FROM chunks WHERE chunks MATCH ? ORDER BY rank LIMIT ?",
+                (match, k),
+            ).fetchall()
+        except sqlite3.OperationalError:
+            return []
+
+    @staticmethod
+    def _rows_to_hits(rows: list[tuple]) -> list[Hit]:
+        return [
+            Hit(doc_id=doc_id, chunk=body, score=-float(rank), source=source)
+            for doc_id, source, body, rank in rows
+        ]
+
+    def _like_fallback(self, tokens: tuple[str, ...], k: int) -> list[tuple]:
+        ordered = sorted(tokens, key=lambda t: len(list(t)), reverse=True)
+        for tok in ordered:
             escaped = (
                 tok.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
             )

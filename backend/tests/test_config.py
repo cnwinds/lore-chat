@@ -28,7 +28,7 @@ def test_settings_defaults(tmp_path, monkeypatch):
     assert s.embed_model == "text-embedding-3-small"
     assert str(s.kb_path).endswith("knowledge")
     assert s.agent_max_tool_calls == 25
-    assert s.min_vector_score == 0.45
+    assert s.min_vector_score == 0.50
     assert s.edit_doc_max_edits == 10
     assert s.edit_doc_max_patch_chars == 8192
     assert s.edit_doc_require_read is True

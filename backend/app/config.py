@@ -84,7 +84,7 @@ class Settings(BaseSettings):
     fetch_url_pdf_max_bytes: int = FETCH_URL_PDF_MAX_BYTES
 
     # 向量检索余弦相似度下限
-    min_vector_score: float = 0.45
+    min_vector_score: float = 0.50
 
     # Web search：有序链（列表顺序即优先级）；None=未配置链（可从旧三密钥迁移）
     search_providers: list[dict[str, Any]] | None = None
@@ -131,6 +131,7 @@ class Settings(BaseSettings):
 
     rrf_k: int = 60
     lane_candidate_k: int = 20
+    search_kb_first_throttle: bool = True
 
     memory_decay_stale_days: int = 90
     memory_decay_inferred_days: int = 180

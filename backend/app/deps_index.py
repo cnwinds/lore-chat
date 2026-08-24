@@ -38,6 +38,7 @@ class IndexSubgraph:
         self.retriever.min_score = settings.min_vector_score
         self.retriever.rrf_k = settings.rrf_k
         self.retriever.lane_candidate_k = settings.lane_candidate_k
+        self.retriever.kb_first_throttle = settings.search_kb_first_throttle
         if hasattr(self.indexer, "reindex_full_threshold"):
             self.indexer.reindex_full_threshold = settings.reindex_full_threshold
 
@@ -69,6 +70,7 @@ def build_index_subgraph(
         index_revision=index_revision,
         rrf_k=settings.rrf_k,
         lane_candidate_k=settings.lane_candidate_k,
+        kb_first_throttle=settings.search_kb_first_throttle,
         repo=repo,
     )
     return IndexSubgraph(

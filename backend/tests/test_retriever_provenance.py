@@ -84,8 +84,12 @@ def test_conv_vector_lane_respects_min_score(tmp_path, monkeypatch):
         ]
 
     monkeypatch.setattr(cv, "query", fake_query)
-    ids, hit_map = retr._conv_vector_lane(
-        "q", 5, conversation_id="c1", exclude_conversation_id=None
+    ids, hit_map, _meta = retr._conv_vector_lane(
+        "q",
+        5,
+        vector_text="q",
+        conversation_id="c1",
+        exclude_conversation_id=None,
     )
     assert ids == ["b"]
     assert "a" not in hit_map

@@ -6,8 +6,14 @@ import threading
 from dataclasses import dataclass
 from pathlib import Path
 
-from app.index.fulltext import prepare_fts_query
+from app.index.search_query import compile_search_query
 from app.index.message_chunk import MessageChunk
+
+
+@dataclass(frozen=True)
+class ConversationFtsOutcome:
+    hits: list[ConversationHit]
+    tier: str  # strict | relaxed | like | none
 
 
 @dataclass
@@ -140,43 +146,75 @@ class ConversationFTS:
         conversation_id: str | None = None,
         exclude_conversation_id: str | None = None,
     ) -> list[ConversationHit]:
+        return self.query_with_tier(
+            text,
+            k=k,
+            conversation_id=conversation_id,
+            exclude_conversation_id=exclude_conversation_id,
+        ).hits
+
+    def query_with_tier(
+        self,
+        text: str,
+        k: int = 5,
+        *,
+        conversation_id: str | None = None,
+        exclude_conversation_id: str | None = None,
+    ) -> ConversationFtsOutcome:
         text = text.strip()
         if not text:
-            return []
-        match = prepare_fts_query(text)
+            return ConversationFtsOutcome([], "none")
+        compiled = compile_search_query(text)
         cid_filter, params_suffix = self._conversation_filter(
             conversation_id=conversation_id,
             exclude_conversation_id=exclude_conversation_id,
         )
         with self._lock:
-            try:
-                rows = self.conn.execute(
-                    f"""
-                    SELECT chunk_id, conversation_id, message_id, role,
-                           start_char, end_char, ts, conversation_title, body,
-                           bm25(conversation_chunks_v2) AS rank
-                    FROM conversation_chunks_v2
-                    WHERE conversation_chunks_v2 MATCH ?{cid_filter}
-                    ORDER BY rank LIMIT ?
-                    """,
-                    (match, *params_suffix, k),
-                ).fetchall()
-            except sqlite3.OperationalError:
-                rows = []
-            # Trigram MATCH ignores queries shorter than 3 codepoints (SQLite FTS5).
-            if not rows and len(list(text)) < 3:
-                escaped = text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-                rows = self.conn.execute(
-                    f"""
-                    SELECT chunk_id, conversation_id, message_id, role,
-                           start_char, end_char, ts, conversation_title, body,
-                           0.0 AS rank
-                    FROM conversation_chunks_v2
-                    WHERE body LIKE ? ESCAPE '\\'{cid_filter}
-                    LIMIT ?
-                    """,
-                    (f"%{escaped}%", *params_suffix, k),
-                ).fetchall()
+            if compiled.strict_fts:
+                rows = self._match(
+                    compiled.strict_fts, k, cid_filter, params_suffix
+                )
+                if rows:
+                    return ConversationFtsOutcome(self._rows_to_hits(rows), "strict")
+            if compiled.relaxed_fts:
+                rows = self._match(
+                    compiled.relaxed_fts, k, cid_filter, params_suffix
+                )
+                if rows:
+                    return ConversationFtsOutcome(self._rows_to_hits(rows), "relaxed")
+            rows = self._like_fallback(
+                compiled.like_terms, k, cid_filter, params_suffix
+            )
+            if rows:
+                return ConversationFtsOutcome(self._rows_to_hits(rows), "like")
+        return ConversationFtsOutcome([], "none")
+
+    def _match(
+        self,
+        match: str,
+        k: int,
+        cid_filter: str,
+        params_suffix: tuple,
+    ) -> list[tuple]:
+        if not match:
+            return []
+        try:
+            return self.conn.execute(
+                f"""
+                SELECT chunk_id, conversation_id, message_id, role,
+                       start_char, end_char, ts, conversation_title, body,
+                       bm25(conversation_chunks_v2) AS rank
+                FROM conversation_chunks_v2
+                WHERE conversation_chunks_v2 MATCH ?{cid_filter}
+                ORDER BY rank LIMIT ?
+                """,
+                (match, *params_suffix, k),
+            ).fetchall()
+        except sqlite3.OperationalError:
+            return []
+
+    @staticmethod
+    def _rows_to_hits(rows: list[tuple]) -> list[ConversationHit]:
         return [
             ConversationHit(
                 chunk_id=r[0],
@@ -192,3 +230,30 @@ class ConversationFTS:
             )
             for r in rows
         ]
+
+    def _like_fallback(
+        self,
+        tokens: tuple[str, ...],
+        k: int,
+        cid_filter: str,
+        params_suffix: tuple,
+    ) -> list[tuple]:
+        ordered = sorted(tokens, key=lambda t: len(list(t)), reverse=True)
+        for tok in ordered:
+            escaped = (
+                tok.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            )
+            rows = self.conn.execute(
+                f"""
+                SELECT chunk_id, conversation_id, message_id, role,
+                       start_char, end_char, ts, conversation_title, body,
+                       0.0 AS rank
+                FROM conversation_chunks_v2
+                WHERE body LIKE ? ESCAPE '\\'{cid_filter}
+                LIMIT ?
+                """,
+                (f"%{escaped}%", *params_suffix, k),
+            ).fetchall()
+            if rows:
+                return rows
+        return []

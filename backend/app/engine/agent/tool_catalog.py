@@ -176,7 +176,10 @@ TOOL_DEFINITIONS: list[dict] = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "query": {"type": "string", "description": "检索关键词或问题"},
+                    "query": {
+                        "type": "string",
+                        "description": "检索问题或关键词；英文多词会合并短语，避免单独搜 url/http 等格式词",
+                    },
                     "k": {"type": "integer", "description": "返回条数，默认 5", "default": 5},
                     "scope": {
                         "type": "string",
