@@ -70,6 +70,7 @@ type Props = {
   docContextItems?: DocContextItem[];
   onTraySetPrimary?: (path: string) => void;
   onTrayRemove?: (path: string) => void;
+  onShareConversation?: () => void;
 };
 
 export function Chat({
@@ -86,6 +87,7 @@ export function Chat({
   docContextItems = [],
   onTraySetPrimary,
   onTrayRemove,
+  onShareConversation,
 }: Props) {
   const { previewPath, openDoc, refreshKb } = useDocPreview();
 
@@ -769,6 +771,7 @@ export function Chat({
               onStop={handleStop}
               fileInputRef={fileInputRef}
               onFileChange={onFile}
+              onShare={onShareConversation}
             />
           </div>
         </div>

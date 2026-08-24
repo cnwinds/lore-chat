@@ -6,8 +6,30 @@ import { VideoThumbButton } from "./VideoThumbButton";
 import { useImageLightbox } from "../hooks/useImageLightbox";
 import { useVideoLightbox } from "../hooks/useVideoLightbox";
 
+function attachmentDisplayUrl(path: string): string {
+  if (/^https?:\/\//i.test(path.trim())) return path.trim();
+  return downloadUrl(path);
+}
+
+function isDisplayableImage(path: string): boolean {
+  const s = path.trim();
+  if (/^https?:\/\//i.test(s)) return s.includes("/api/media/grant/");
+  return isLikelyImagePath(s);
+}
+
+function isDisplayableVideo(path: string): boolean {
+  const s = path.trim();
+  if (/^https?:\/\//i.test(s)) return s.includes("/api/media/grant/");
+  return isLikelyVideoPath(s);
+}
+
 function basename(path: string): string {
-  return path.split("/").pop() || path;
+  const raw = path.split("/").pop() || path;
+  try {
+    return decodeURIComponent(raw.split("?")[0] || raw);
+  } catch {
+    return raw;
+  }
 }
 
 type Props = {
@@ -34,37 +56,37 @@ export function KbAttachmentList({
   return (
     <div className={className}>
       {paths.map((path) =>
-        isLikelyImagePath(path) ? (
+        isDisplayableImage(path) ? (
           <ImageThumbButton
             key={path}
-            src={downloadUrl(path)}
+            src={attachmentDisplayUrl(path)}
             alt={basename(path)}
             title={`${path}（点击查看大图）`}
             className={`${thumbClassName} kb-attachment-image-btn`}
             imageClassName={imageClassName}
-            downloadHref={downloadUrl(path, { download: true })}
+            downloadHref={attachmentDisplayUrl(path)}
             onOpen={openPreview}
           />
-        ) : isLikelyVideoPath(path) ? (
+        ) : isDisplayableVideo(path) ? (
           <div key={path} className="kb-attachment-video-wrap">
             <VideoThumbButton
-              src={downloadUrl(path)}
-              title={path}
+              src={attachmentDisplayUrl(path)}
+              title={basename(path)}
               className="kb-attachment-video-btn"
               videoClassName="kb-attachment-video"
-              downloadHref={downloadUrl(path, { download: true })}
+              downloadHref={attachmentDisplayUrl(path)}
               onOpen={openVideoPreview}
             />
             <a
               className="kb-attachment-video-download"
-              href={downloadUrl(path, { download: true })}
+              href={attachmentDisplayUrl(path)}
             >
               下载：{basename(path)}
             </a>
           </div>
         ) : (
           <div key={path}>
-            <a href={downloadUrl(path, { download: true })}>
+            <a href={attachmentDisplayUrl(path)}>
               下载附件：{basename(path)}
             </a>
           </div>

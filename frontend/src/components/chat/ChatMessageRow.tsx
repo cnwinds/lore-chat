@@ -47,6 +47,7 @@ export type ChatMessageRowProps = {
   /** 失败/中断时重新发起本轮用户提问 */
   onRetryReply?: () => void;
   retryDisabled?: boolean;
+  readOnly?: boolean;
 };
 
 function basename(path: string): string {
@@ -309,6 +310,7 @@ export function ChatMessageRow({
   onQuestionResolved,
   onRetryReply,
   retryDisabled,
+  readOnly = false,
 }: ChatMessageRowProps) {
   const rowRef = useRef<HTMLDivElement>(null);
   const [highlightRange, setHighlightRange] = useState<{
@@ -333,7 +335,7 @@ export function ChatMessageRow({
   const footPaths = footAttachmentPaths(m);
   const timelineImagePaths = [...timelineToolAttachmentPaths(m)];
   const showRetry =
-    !isLiveStreaming && !!onRetryReply && canRetryAssistantReply(m);
+    !readOnly && !isLiveStreaming && !!onRetryReply && canRetryAssistantReply(m);
 
   return (
     <div

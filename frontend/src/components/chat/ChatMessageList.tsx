@@ -25,6 +25,7 @@ export type ChatMessageListProps = {
     choiceLabel: string,
   ) => void;
   onRetryReply?: (assistantSourceIndex: number) => void;
+  readOnly?: boolean;
 };
 
 export function ChatMessageList({
@@ -42,6 +43,7 @@ export function ChatMessageList({
   onOpenConversation,
   onQuestionResolved,
   onRetryReply,
+  readOnly = false,
 }: ChatMessageListProps) {
   const rows = expandMessagesForDisplay(msgs);
   const showWelcome = !loadingHistory && msgs.length === 0;
@@ -71,6 +73,7 @@ export function ChatMessageList({
                 (!!(preceding.text || "").trim() ||
                   !!(preceding.attachments && preceding.attachments.length));
               const canRetry =
+                !readOnly &&
                 row.isTailSlice &&
                 !isLiveStreaming &&
                 canRetryAssistantReply(row.message) &&
@@ -86,8 +89,9 @@ export function ChatMessageList({
                   previewPath={previewPath}
                   conversationId={conversationId}
                   onOpenSource={onOpenSource}
-                  onOpenConversation={onOpenConversation}
+                  onOpenConversation={readOnly ? undefined : onOpenConversation}
                   onQuestionResolved={onQuestionResolved}
+                  readOnly={readOnly}
                   onRetryReply={
                     canRetry
                       ? () => onRetryReply(row.sourceIndex)
@@ -104,11 +108,13 @@ export function ChatMessageList({
             />
           </div>
         </div>
-        <ConversationOutline
-          msgs={msgs}
-          conversationId={conversationId}
-          scrollRootRef={messagesContainerRef}
-        />
+        {!readOnly && (
+          <ConversationOutline
+            msgs={msgs}
+            conversationId={conversationId}
+            scrollRootRef={messagesContainerRef}
+          />
+        )}
       </div>
       {streaming && (
         <div className="chat-streaming-wrap">

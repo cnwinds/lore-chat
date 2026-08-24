@@ -22,6 +22,7 @@ import {
   type ImageProviderDraft,
 } from "./ImageProviderEditor";
 import type { CooldownStatus } from "./settingsTypes";
+import { ShareSettingsTab } from "./ShareSettingsTab";
 import { SearchSettingsTab } from "./SearchSettingsTab";
 import { UsageSettingsTab } from "./UsageSettingsTab";
 import { SettingsAttentionDot } from "./SettingsAttentionDot";
@@ -56,13 +57,14 @@ type Props = {
   onLiveAttentionChange?: (live: SettingsAttention | null) => void;
 };
 
-type SettingsTab = "model" | "search" | "agent" | "kb" | "usage" | "account";
+type SettingsTab = "model" | "search" | "agent" | "kb" | "usage" | "account" | "share";
 
 const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
   { id: "model", label: "模型" },
   { id: "search", label: "检索" },
   { id: "agent", label: "Agent" },
   { id: "kb", label: "知识库" },
+  { id: "share", label: "分享" },
   { id: "usage", label: "用量" },
   { id: "account", label: "账户" },
 ];
@@ -662,6 +664,17 @@ export function SettingsPanel({
                   onAttentionChange={onAttentionChange}
                   onIncompletePriceCountChange={setUsageIncomplete}
                 />
+              ) : null}
+
+              {activeTab === "share" ? (
+                <div
+                  className="settings-tab-panel"
+                  role="tabpanel"
+                  id="settings-panel-share"
+                  aria-labelledby="settings-tab-share"
+                >
+                  <ShareSettingsTab />
+                </div>
               ) : null}
 
               {activeTab === "account" ? (

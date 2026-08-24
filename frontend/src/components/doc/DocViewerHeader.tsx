@@ -51,6 +51,7 @@ type Props = {
   onOpenConversation?: (conversationId: string) => void;
   onMergeEditingToggle: () => void;
   onLocateInTree?: (path: string) => void;
+  onShareDoc?: (path: string, title: string) => void;
 };
 
 export function DocViewerHeader({
@@ -85,6 +86,7 @@ export function DocViewerHeader({
   onOpenConversation,
   onMergeEditingToggle,
   onLocateInTree,
+  onShareDoc,
 }: Props) {
   const conversationId =
     typeof doc?.meta?.conversation_id === "string"
@@ -110,6 +112,16 @@ export function DocViewerHeader({
             icon: "edit" as const,
             active: mergeEditing,
             onClick: onMergeEditingToggle,
+          },
+        ]
+      : []),
+    ...(onShareDoc
+      ? [
+          {
+            id: "share",
+            label: "分享",
+            icon: "chat" as const,
+            onClick: () => onShareDoc(path, path.split("/").pop() || path),
           },
         ]
       : []),

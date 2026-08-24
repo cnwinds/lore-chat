@@ -7523,3 +7523,222 @@ button.source-link--inline.conversation-md-link {
   opacity: 0.6;
   cursor: wait;
 }
+
+/* --- Share page (public) --- */
+.share-page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.share-page-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--border);
+}
+
+.share-page-logo {
+  height: 28px;
+  flex-shrink: 0;
+}
+
+.share-page-title {
+  margin: 0;
+  font-size: var(--font-h3);
+  font-weight: 600;
+}
+
+.share-page-exp {
+  margin: 4px 0 0;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.share-page-main {
+  flex: 1;
+  overflow: auto;
+  padding: 16px 24px 32px;
+}
+
+.share-page-status {
+  text-align: center;
+  color: var(--text-secondary);
+  padding: 48px 16px;
+}
+
+.share-page-error {
+  color: var(--danger-text);
+}
+
+.share-page-chat {
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.share-page-chat .chat-messages-shell {
+  min-height: auto;
+}
+
+.share-page-doc {
+  display: flex;
+  gap: 24px;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+.share-page-outline {
+  width: 220px;
+  flex-shrink: 0;
+  font-size: var(--text-sm);
+}
+
+.share-page-outline-title {
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.share-page-doc-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.share-page-footer {
+  padding: 12px 24px;
+  border-top: 1px solid var(--border);
+  text-align: center;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.share-link-modal {
+  max-width: 520px;
+}
+
+.share-link-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.share-link-field input[type="text"] {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.share-link-expiry-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.share-link-expiry-opt {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--text-sm);
+}
+
+.share-link-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  font-size: var(--text-sm);
+}
+
+.share-link-hint,
+.share-link-warning {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  margin: 0 0 12px;
+  line-height: var(--leading-ui);
+}
+
+.share-link-error {
+  color: var(--danger-text);
+  font-size: var(--text-sm);
+}
+
+.share-link-result {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.share-link-url {
+  flex: 1;
+  font-size: var(--text-sm);
+}
+
+.share-link-copied {
+  font-size: var(--text-sm);
+  color: var(--accent);
+}
+
+.composer-share-btn {
+  margin-right: 8px;
+  padding: 4px 10px;
+  font-size: var(--text-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  color: var(--text);
+}
+
+.share-settings-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.share-settings-table th,
+.share-settings-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+}
+
+.share-settings-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.btn-link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: inherit;
+}
+
+.btn-link-danger {
+  color: var(--danger-text);
+}
+
+.link-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  margin-left: 6px;
+  color: var(--accent);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.share-link-manage {
+  margin: 12px 0 0;
+  text-align: center;
+  font-size: var(--text-sm);
+}
+
+.share-link-manage .link-btn {
+  margin-left: 0;
+}
+

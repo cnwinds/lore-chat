@@ -17,6 +17,7 @@ type Props = {
   onStop?: () => void;
   fileInputRef: RefObject<HTMLInputElement | null>;
   onFileChange: (e: ChangeEvent<HTMLInputElement>) => void;
+  onShare?: () => void;
 };
 
 function GlobeIcon() {
@@ -102,6 +103,7 @@ export function ComposerToolbar({
   onStop,
   fileInputRef,
   onFileChange,
+  onShare,
 }: Props) {
   const archiveLinked = summarized && summaryPath;
   const archiveDisabled =
@@ -174,6 +176,17 @@ export function ComposerToolbar({
         >
           {archiveLabel}
         </button>
+        {onShare && conversationId ? (
+          <button
+            type="button"
+            className="composer-share-btn"
+            onClick={onShare}
+            disabled={streaming}
+            title="生成只读分享链接"
+          >
+            分享
+          </button>
+        ) : null}
         {streaming && onStop ? (
           <button
             type="button"

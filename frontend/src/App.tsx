@@ -5,6 +5,9 @@ import { SetupPage } from "./components/auth/SetupPage";
 import { Chat } from "./components/Chat";
 import { SearchSnippetModal } from "./components/SearchSnippetModal";
 import { SettingsPanel } from "./components/settings/SettingsPanel";
+import { ShareLinkModal, type ShareLinkModalTarget } from "./components/share/ShareLinkModal";
+import { SharePage } from "./pages/SharePage";
+import { parseSharePathname } from "./api/share";
 import { AppShell } from "./components/app/AppShell";
 import { DocFloatLayer } from "./components/app/DocFloatLayer";
 import { DocPinnedPanel } from "./components/app/DocPinnedPanel";
@@ -26,6 +29,11 @@ import { SkillPickModal } from "./components/SkillPickModal";
 type Gate = "loading" | "setup" | "login" | "app";
 
 export default function App() {
+  const shareId = parseSharePathname(window.location.pathname);
+  if (shareId) {
+    return <SharePage shareId={shareId} />;
+  }
+
   const [gate, setGate] = useState<Gate>("loading");
 
   useEffect(() => {
@@ -53,6 +61,7 @@ export default function App() {
 function AppMain() {
   const [sidebarRefreshKey, setSidebarRefreshKey] = useState(0);
   const [kbPaths, setKbPaths] = useState<string[]>([]);
+  const [shareTarget, setShareTarget] = useState<ShareLinkModalTarget | null>(null);
   const {
     settingsOpen,
     setSettingsOpen,
@@ -120,6 +129,8 @@ function AppMain() {
       doc.closeAllPreviews();
     },
     conversation.locateKbPathInTree,
+    (path, title) =>
+      setShareTarget({ type: "doc", path, defaultTitle: title }),
   );
   const pinnedDocHandlers = buildDocViewerHandlers(
     doc,
@@ -129,7 +140,18 @@ function AppMain() {
       doc.closeAllPreviews();
     },
     conversation.locateKbPathInTree,
+    (path, title) =>
+      setShareTarget({ type: "doc", path, defaultTitle: title }),
   );
+
+  const openShareSettings = () => {
+    try {
+      localStorage.setItem("lorechat.settingsTab", "share");
+    } catch {
+      /* ignore */
+    }
+    setSettingsOpen(true);
+  };
 
   return (
     <DocPreviewProvider value={doc.contextValue}>
@@ -166,6 +188,19 @@ function AppMain() {
             docContextItems={composer.docContextItems}
             onTraySetPrimary={bridge.handleTraySetPrimary}
             onTrayRemove={bridge.handleTrayRemove}
+            onShareConversation={
+              conversation.activeConversationId
+                ? () =>
+                    setShareTarget({
+                      type: "conversation",
+                      conversationId: conversation.activeConversationId!,
+                      defaultTitle:
+                        conversation.titleOverrides[
+                          conversation.activeConversationId!
+                        ] || "对话分享",
+                    })
+                : undefined
+            }
           />
         }
         docFloat={
@@ -243,6 +278,15 @@ function AppMain() {
               saving={skillPickSaving}
               onConfirm={handleSkillPickConfirm}
               onCancel={cancelSkillPick}
+            />
+            <ShareLinkModal
+              open={shareTarget !== null}
+              target={shareTarget}
+              onClose={() => setShareTarget(null)}
+              onOpenSettings={() => {
+                setShareTarget(null);
+                openShareSettings();
+              }}
             />
             {bridge.imageLightbox}
           </>
