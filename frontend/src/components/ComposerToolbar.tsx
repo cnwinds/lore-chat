@@ -179,7 +179,7 @@ export function ComposerToolbar({
         {onShare && conversationId ? (
           <button
             type="button"
-            className="composer-share-btn"
+            className="composer-archive-btn"
             onClick={onShare}
             disabled={streaming}
             title="生成只读分享链接"

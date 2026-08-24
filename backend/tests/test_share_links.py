@@ -36,6 +36,8 @@ def test_create_with_ttl_expires(tmp_path):
         share_id="docshareid12345678",
     )
     assert store.resolve(link.share_id, now=t0 + 100) is not None
+    _, status = store.resolve_public(link.share_id, now=t0 + 3601)
+    assert status == "expired"
     assert store.resolve(link.share_id, now=t0 + 3601) is None
 
 

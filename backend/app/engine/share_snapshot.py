@@ -10,7 +10,6 @@ from app.engine.disclosure import build_outline
 from app.models.media_grants import build_media_grant_url
 from app.storage.repo import KnowledgeRepo
 
-_IMAGE_EXT = re.compile(r"\.(png|jpe?g|gif|webp|bmp|svg|tif|tiff|ico)$", re.I)
 _MSG_KEEP = frozenset(
     {
         "id",
@@ -171,7 +170,7 @@ def _resolve_message_media(
     out = dict(msg)
     if out.get("attachments"):
         out["attachments"] = [
-            _grant_path_if_media(p, kb_path=kb_path, public_base_url=public_base_url, grant_ttl_sec=grant_ttl_sec)
+            _grant_kb_path(p, kb_path=kb_path, public_base_url=public_base_url, grant_ttl_sec=grant_ttl_sec)
             for p in out["attachments"]
             if isinstance(p, str)
         ]
@@ -194,15 +193,16 @@ def _resolve_source(
 ) -> dict:
     out = dict(src)
     if out.get("type") == "kb" and isinstance(out.get("path"), str):
-        path = out["path"]
-        if _is_image_path(path):
-            out["path"] = _grant_path_if_media(
-                path, kb_path=kb_path, public_base_url=public_base_url, grant_ttl_sec=grant_ttl_sec
-            )
+        out["path"] = _grant_kb_path(
+            out["path"],
+            kb_path=kb_path,
+            public_base_url=public_base_url,
+            grant_ttl_sec=grant_ttl_sec,
+        )
     return out
 
 
-def _grant_path_if_media(
+def _grant_kb_path(
     rel_path: str,
     *,
     kb_path: Path,
@@ -210,9 +210,12 @@ def _grant_path_if_media(
     grant_ttl_sec: int,
 ) -> str:
     norm = rel_path.replace("\\", "/").lstrip("/")
-    if norm.startswith(".kb/") or norm.startswith(".git/"):
+    if not norm or norm.startswith(".kb/") or norm.startswith(".git/"):
         return rel_path
-    if not _is_image_path(norm) and not _is_video_path(norm):
+    if norm.startswith(("http://", "https://", "data:", "/api/")):
+        return rel_path
+    abs_p = (kb_path / norm).resolve()
+    if not abs_p.is_file():
         return rel_path
     try:
         return build_media_grant_url(
@@ -223,14 +226,6 @@ def _grant_path_if_media(
         )
     except ValueError:
         return rel_path
-
-
-def _is_image_path(path: str) -> bool:
-    return bool(_IMAGE_EXT.search(path.split("?")[0] or path))
-
-
-def _is_video_path(path: str) -> bool:
-    return bool(re.search(r"\.(mp4|webm|mov|m4v)$", path.split("?")[0] or path, re.I))
 
 
 def _rewrite_markdown_images(
@@ -244,7 +239,7 @@ def _rewrite_markdown_images(
         alt, raw_src = match.group(1), match.group(2).strip()
         if raw_src.startswith(("http://", "https://", "data:", "/api/")):
             return match.group(0)
-        url = _grant_path_if_media(
+        url = _grant_kb_path(
             raw_src,
             kb_path=kb_path,
             public_base_url=public_base_url,

@@ -1049,6 +1049,26 @@ a:hover {
   color: var(--text-muted);
 }
 
+.conversation-share {
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  padding: 0 4px 0 8px;
+  font-size: 13px;
+  color: var(--text-muted);
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.conversation-item:hover .conversation-share,
+.conversation-item.active .conversation-share {
+  opacity: 1;
+}
+
+.conversation-share:hover {
+  color: var(--accent);
+}
+
 .conversation-delete:hover {
   color: var(--danger);
 }
@@ -7643,6 +7663,23 @@ button.source-link--inline.conversation-md-link {
   font-size: var(--text-sm);
 }
 
+.share-link-custom-exp {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+  font-size: var(--text-sm);
+}
+
+.share-link-custom-exp input[type="datetime-local"] {
+  font: inherit;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  color: var(--text);
+}
+
 .share-link-checkbox {
   display: flex;
   align-items: center;
@@ -7679,16 +7716,6 @@ button.source-link--inline.conversation-md-link {
 .share-link-copied {
   font-size: var(--text-sm);
   color: var(--accent);
-}
-
-.composer-share-btn {
-  margin-right: 8px;
-  padding: 4px 10px;
-  font-size: var(--text-sm);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--bg-elevated);
-  color: var(--text);
 }
 
 .share-settings-table {

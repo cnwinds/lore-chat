@@ -163,6 +163,12 @@ function AppMain() {
         sidebarProps={{
           ...conversation.sidebarProps,
           onOpenSettings: () => setSettingsOpen(true),
+          onShareConversation: (id, title) =>
+            setShareTarget({
+              type: "conversation",
+              conversationId: id,
+              defaultTitle: title,
+            }),
           settingsAttention:
             displayAttention.model.any || displayAttention.usage.any,
           memoryAttention: displayAttention.memory.any,

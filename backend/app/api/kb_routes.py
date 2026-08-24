@@ -78,14 +78,21 @@ async def media_grant(grant_id: str, request: Request):
     if not abs_p.is_file():
         raise HTTPException(404, "文件不存在")
     media_kind = is_signed_media_file(abs_p)
-    if media_kind is None:
-        raise HTTPException(403, "media grants are image/video only")
-    media = guess_video_mime(str(abs_p)) if media_kind == "video" else guess_mime(str(abs_p))
+    if media_kind is not None:
+        media = (
+            guess_video_mime(str(abs_p))
+            if media_kind == "video"
+            else guess_mime(str(abs_p))
+        )
+        disposition = "inline"
+    else:
+        media = media_type_for_filename(abs_p.name)
+        disposition = content_disposition_type(media, filename=abs_p.name)
     return FileResponse(
         path=abs_p,
         media_type=media,
         filename=abs_p.name,
-        content_disposition_type="inline",
+        content_disposition_type=disposition,
     )
 
 

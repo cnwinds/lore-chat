@@ -46,6 +46,7 @@ type Props = {
   onNewChat: () => void;
   onSelectConversation: (id: string) => void;
   onDeleteConversation: (id: string) => void;
+  onShareConversation?: (id: string, title: string) => void;
   onKbPathChanged?: (fromPath: string, toPath: string) => void;
   onKbPathsDeleted?: (paths: string[]) => void;
   /** 知识库路径列表变更（供媒体图库等复用，避免重复 getTree） */
@@ -70,6 +71,7 @@ export function Sidebar({
   onNewChat,
   onSelectConversation,
   onDeleteConversation,
+  onShareConversation,
   onKbPathChanged,
   onKbPathsDeleted,
   onDocsChange,
@@ -299,6 +301,17 @@ export function Sidebar({
                             {formatSidebarConversationTime(c.updated_at)}
                             {c.message_count > 0 ? ` · ${c.message_count} 条` : ""}
                           </span>
+                        </button>
+                        <button
+                          type="button"
+                          className="conversation-share"
+                          title="分享对话"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onShareConversation?.(c.id, title);
+                          }}
+                        >
+                          ↗
                         </button>
                         <button
                           type="button"

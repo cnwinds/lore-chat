@@ -24,12 +24,31 @@ const EXPIRY_OPTIONS: { id: ShareExpiryPreset; label: string }[] = [
   { id: "1d", label: "24 小时" },
   { id: "7d", label: "7 天" },
   { id: "30d", label: "30 天" },
+  { id: "custom", label: "自定义" },
 ];
+
+function minDatetimeLocal(): string {
+  const d = new Date(Date.now() + 60_000);
+  d.setSeconds(0, 0);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function defaultCustomExpLocal(): string {
+  const d = new Date(Date.now() + 7 * 86400 * 1000);
+  d.setSeconds(0, 0);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+const CONVERSATION_CONFIRM =
+  "将公开当前全部消息（含引用与附件预览）。分享后原对话可继续，但分享内容为快照。\n\n确定创建分享链接？";
 
 export function ShareLinkModal({ open, target, onClose, onOpenSettings }: Props) {
   const copyUrl = useCopyShareUrl();
   const [title, setTitle] = useState("");
   const [expiry, setExpiry] = useState<ShareExpiryPreset>("7d");
+  const [customExp, setCustomExp] = useState(defaultCustomExpLocal);
   const [pinVersion, setPinVersion] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -41,6 +60,7 @@ export function ShareLinkModal({ open, target, onClose, onOpenSettings }: Props)
     if (!open || !target) return;
     setTitle(target.defaultTitle);
     setExpiry("7d");
+    setCustomExp(defaultCustomExpLocal());
     setPinVersion(true);
     setError(null);
     setCreatedUrl(null);
@@ -65,7 +85,7 @@ export function ShareLinkModal({ open, target, onClose, onOpenSettings }: Props)
 
   const buildRequest = useCallback((): CreateShareRequest | null => {
     if (!target) return null;
-    const ttl_sec = ttlSecFromPreset(expiry);
+    const ttl_sec = ttlSecFromPreset(expiry, expiry === "custom" ? customExp : undefined);
     if (target.type === "conversation") {
       return {
         type: "conversation",
@@ -81,20 +101,26 @@ export function ShareLinkModal({ open, target, onClose, onOpenSettings }: Props)
       ttl_sec,
       options: { pin_version: pinVersion },
     };
-  }, [target, title, expiry, pinVersion]);
+  }, [target, title, expiry, customExp, pinVersion]);
 
   const handleCreate = useCallback(
-    async (andCopy: boolean) => {
+    async (mode: "create" | "copy" | "preview") => {
       const body = buildRequest();
       if (!body) return;
+      if (target?.type === "conversation" && !createdUrl) {
+        if (!window.confirm(CONVERSATION_CONFIRM)) return;
+      }
       setSubmitting(true);
       setError(null);
       try {
         const res = await createShare(body);
         setCreatedUrl(res.url);
-        if (andCopy) {
+        if (mode === "copy") {
           const ok = await copyUrl(res.url);
           setCopied(ok);
+        }
+        if (mode === "preview") {
+          window.open(res.url, "_blank", "noopener,noreferrer");
         }
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : "创建失败";
@@ -108,12 +134,14 @@ export function ShareLinkModal({ open, target, onClose, onOpenSettings }: Props)
         setSubmitting(false);
       }
     },
-    [buildRequest, copyUrl],
+    [buildRequest, copyUrl, target, createdUrl],
   );
 
   if (!open || !target) return null;
 
   const isConversation = target.type === "conversation";
+  const customInvalid =
+    expiry === "custom" && ttlSecFromPreset("custom", customExp) === null;
 
   return (
     <div className="modal-overlay" role="presentation" onClick={onClose}>
@@ -163,6 +191,17 @@ export function ShareLinkModal({ open, target, onClose, onOpenSettings }: Props)
               </label>
             ))}
           </div>
+          {expiry === "custom" && (
+            <label className="share-link-custom-exp">
+              <span>到期时间</span>
+              <input
+                type="datetime-local"
+                value={customExp}
+                min={minDatetimeLocal()}
+                onChange={(e) => setCustomExp(e.target.value)}
+              />
+            </label>
+          )}
         </fieldset>
 
         {!isConversation && (
@@ -182,6 +221,10 @@ export function ShareLinkModal({ open, target, onClose, onOpenSettings }: Props)
           </p>
         )}
 
+        {customInvalid && (
+          <p className="share-link-error">请选择未来的到期时间</p>
+        )}
+
         {error && <p className="share-link-error">{error}</p>}
 
         {createdUrl && (
@@ -196,28 +239,47 @@ export function ShareLinkModal({ open, target, onClose, onOpenSettings }: Props)
             关闭
           </button>
           {createdUrl ? (
-            <button
-              type="button"
-              className="btn-primary"
-              onClick={() => void copyUrl(createdUrl).then(setCopied)}
-            >
-              复制链接
-            </button>
+            <>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() =>
+                  window.open(createdUrl, "_blank", "noopener,noreferrer")
+                }
+              >
+                查看分享页
+              </button>
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={() => void copyUrl(createdUrl).then(setCopied)}
+              >
+                复制链接
+              </button>
+            </>
           ) : (
             <>
               <button
                 type="button"
                 className="btn-secondary"
-                disabled={submitting || publicBaseMissing}
-                onClick={() => void handleCreate(false)}
+                disabled={submitting || publicBaseMissing || customInvalid}
+                onClick={() => void handleCreate("create")}
               >
                 创建链接
               </button>
               <button
                 type="button"
+                className="btn-secondary"
+                disabled={submitting || publicBaseMissing || customInvalid}
+                onClick={() => void handleCreate("preview")}
+              >
+                创建并查看
+              </button>
+              <button
+                type="button"
                 className="btn-primary"
-                disabled={submitting || publicBaseMissing}
-                onClick={() => void handleCreate(true)}
+                disabled={submitting || publicBaseMissing || customInvalid}
+                onClick={() => void handleCreate("copy")}
               >
                 复制链接
               </button>

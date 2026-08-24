@@ -161,7 +161,9 @@ async def get_public_share(share_id: str, request: Request):
     c = container(request)
     store = ShareLinkStore(c.settings.kb_path)
     now = time.time()
-    link = store.resolve(share_id, now=now, increment_view=True)
+    link, status = store.resolve_public(share_id, now=now, increment_view=True)
+    if status == "expired":
+        raise HTTPException(410, "分享链接已过期")
     if link is None:
         raise HTTPException(404, "分享链接不存在或已失效")
     public_base = (c.settings.public_base_url or "").strip()

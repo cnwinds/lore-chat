@@ -97,6 +97,39 @@ class ShareLinkStore:
         self._save(data)
         return True
 
+    def resolve_public(
+        self,
+        share_id: str,
+        *,
+        now: float | None = None,
+        increment_view: bool = False,
+    ) -> tuple[ShareLink | None, str]:
+        """返回 (link, status)；status 为 ok | expired | revoked | not_found。"""
+        if not _share_id_ok(share_id):
+            return None, "not_found"
+        now = time.time() if now is None else now
+        data = self._load()
+        items: dict[str, dict] = data.get("items") or {}
+        row = items.get(share_id)
+        if not isinstance(row, dict):
+            return None, "not_found"
+        if row.get("revoked"):
+            return None, "revoked"
+        exp = row.get("exp")
+        if exp is not None:
+            try:
+                if float(exp) < now:
+                    return None, "expired"
+            except (TypeError, ValueError):
+                return None, "not_found"
+        if increment_view:
+            try:
+                row["view_count"] = int(row.get("view_count") or 0) + 1
+            except (TypeError, ValueError):
+                row["view_count"] = 1
+            self._save(data)
+        return self._to_link(share_id, row), "ok"
+
     def resolve(
         self,
         share_id: str,
@@ -104,32 +137,10 @@ class ShareLinkStore:
         now: float | None = None,
         increment_view: bool = False,
     ) -> ShareLink | None:
-        if not _share_id_ok(share_id):
-            return None
-        now = time.time() if now is None else now
-        data = self._load()
-        items: dict[str, dict] = data.get("items") or {}
-        row = items.get(share_id)
-        if not isinstance(row, dict):
-            return None
-        if row.get("revoked"):
-            return None
-        exp = row.get("exp")
-        if exp is not None:
-            try:
-                if float(exp) < now:
-                    items.pop(share_id, None)
-                    self._save(data)
-                    return None
-            except (TypeError, ValueError):
-                return None
-        if increment_view:
-            try:
-                row["view_count"] = int(row.get("view_count") or 0) + 1
-            except (TypeError, ValueError):
-                row["view_count"] = 1
-            self._save(data)
-        return self._to_link(share_id, row)
+        link, status = self.resolve_public(
+            share_id, now=now, increment_view=increment_view
+        )
+        return link if status == "ok" else None
 
     def get(self, share_id: str) -> ShareLink | None:
         if not _share_id_ok(share_id):

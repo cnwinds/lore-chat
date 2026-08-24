@@ -58,7 +58,8 @@ export function ttlSecFromPreset(preset: ShareExpiryPreset, customExp?: string):
     const ms = Date.parse(customExp);
     if (!Number.isFinite(ms)) return null;
     const sec = Math.floor((ms - Date.now()) / 1000);
-    return sec > 60 ? sec : 60;
+    if (sec < 60) return null;
+    return sec;
   }
   return null;
 }
@@ -84,6 +85,9 @@ export function revokeShare(shareId: string) {
 /** 公开分享页：不带 cookie 也可访问 */
 export function getPublicShare(shareId: string) {
   return fetch(`${apiBase()}/api/share/${encodeURIComponent(shareId)}`).then(async (res) => {
+    if (res.status === 410) {
+      throw new Error("分享链接已过期");
+    }
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       const detail = (err as { detail?: string }).detail;

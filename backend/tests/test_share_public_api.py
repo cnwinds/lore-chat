@@ -114,6 +114,22 @@ def test_revoked_share_not_accessible(client):
     assert client.get(f"/api/share/{share_id}").status_code == 404
 
 
+def test_expired_share_returns_410(client, monkeypatch):
+    _set_public_base(client, "https://share.example.com")
+    cid = client.post("/api/conversations").json()["id"]
+    r = client.post(
+        "/api/shares",
+        json={"type": "conversation", "conversation_id": cid, "ttl_sec": 120},
+    )
+    share_id = r.json()["share_id"]
+    t0 = time.time()
+    monkeypatch.setattr(time, "time", lambda: t0 + 200)
+    client.cookies.clear()
+    resp = client.get(f"/api/share/{share_id}")
+    assert resp.status_code == 410, resp.text
+    assert "过期" in resp.json()["detail"]
+
+
 def test_protected_doc_rejected(client):
     _set_public_base(client, "https://share.example.com")
     client.put(
