@@ -17,6 +17,7 @@ PUBLIC_ROUTES = frozenset(
 
 PUBLIC_PREFIXES = (
     ("GET", "/api/attachments/signed/"),
+    ("GET", "/api/media/grant/"),
 )
 
 

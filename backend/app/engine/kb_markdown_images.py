@@ -40,9 +40,9 @@ def sanitize_markdown_image_srcs_for_storage(md: str) -> str:
         path = _path_from_download_url(src)
         if path is not None:
             return f"![{alt}]({path})"
-        if "/api/download" in src or "/api/attachments/signed/" in src:
+        if "/api/download" in src or "/api/attachments/signed/" in src or "/api/media/grant/" in src:
             raise ValueError(
-                "知识库正文禁止写入 /api/download 或签名附件绝对 URL，请使用相对路径"
+                "知识库正文禁止写入 /api/download 或媒体授权绝对 URL，请使用相对路径"
             )
         return m.group(0)
 

@@ -60,6 +60,35 @@ async def download(
     )
 
 
+@router.get("/media/grant/{grant_id}")
+async def media_grant(grant_id: str, request: Request):
+    """短时媒体授权 URL：供 url_wire 多模态上游拉取，无需会话 cookie。"""
+    from app.models.media import guess_video_mime, is_signed_media_file
+    from app.models.media_grants import MediaGrantStore
+    from app.models.vision import guess_mime
+
+    c = container(request)
+    grant = MediaGrantStore(c.settings.kb_path).resolve(grant_id)
+    if grant is None:
+        raise HTTPException(404, "授权不存在或已过期")
+    norm = grant.rel_path
+    if norm.startswith(".kb/") or norm.startswith(".git/"):
+        raise HTTPException(404, "文件不存在")
+    abs_p = c.repo.abs_path(norm)
+    if not abs_p.is_file():
+        raise HTTPException(404, "文件不存在")
+    media_kind = is_signed_media_file(abs_p)
+    if media_kind is None:
+        raise HTTPException(403, "media grants are image/video only")
+    media = guess_video_mime(str(abs_p)) if media_kind == "video" else guess_mime(str(abs_p))
+    return FileResponse(
+        path=abs_p,
+        media_type=media,
+        filename=abs_p.name,
+        content_disposition_type="inline",
+    )
+
+
 @router.get("/attachments/signed/{path:path}")
 async def signed_attachment(path: str, token: str, request: Request):
     """短时签名附件 URL，供 url_wire 多模态模型拉取（图片或视频）。"""

@@ -336,6 +336,34 @@ def test_kb_import_rejects_oversized_video(client):
     assert "50" in r.json()["detail"]
 
 
+def test_media_grant_serves_video_without_session(client):
+    mp4 = b"\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom" + b"\x00" * 8
+    imp = client.post(
+        "/api/kb/import",
+        files={"file": ("clip.mp4", mp4, "video/mp4")},
+        data={"directory": "媒体"},
+    )
+    assert imp.status_code == 200
+    rel = imp.json()["rel_path"]
+
+    from app.models.media_grants import MediaGrantStore
+
+    store = MediaGrantStore(client.app.state.settings_store.get().kb_path)
+    grant_id = store.issue(rel, ttl_sec=600)
+    # 不带 cookie，模拟上游模型拉取
+    client.cookies.clear()
+    r = client.get(f"/api/media/grant/{grant_id}")
+    assert r.status_code == 200
+    assert "video" in r.headers.get("content-type", "")
+    assert r.content[:8] == b"\x00\x00\x00\x18ftyp"
+
+
+def test_media_grant_rejects_unknown_id(client):
+    client.cookies.clear()
+    r = client.get("/api/media/grant/not-a-real-grant-id-xyz")
+    assert r.status_code == 404
+
+
 def test_signed_attachment_serves_video_mp4(client):
     from app.models.vision import attachment_signing_secret, sign_attachment_token
 

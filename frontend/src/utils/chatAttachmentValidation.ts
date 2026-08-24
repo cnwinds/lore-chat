@@ -73,9 +73,20 @@ export function buildComposerMediaHints(
         "当前对话模型链未配置视频能力，视频将仅作附件保存，不会送入模型。",
       );
     }
-    hints.push(
-      `视频：每条消息最多 ${caps.maxVideos} 个，单文件不超过 ${Math.round(MAX_VIDEO_UPLOAD_BYTES / MB)}MB。`,
-    );
+    const maxVideos = Math.max(1, caps.maxVideos ?? MAX_VIDEOS_PER_MESSAGE);
+    if (videoCount > maxVideos) {
+      hints.push(`每条消息最多发送 ${maxVideos} 个视频`);
+    }
+    for (const f of files) {
+      if (
+        isVideoFile(f.file, f.name) &&
+        f.size > MAX_VIDEO_UPLOAD_BYTES
+      ) {
+        hints.push(
+          `视频「${f.name}」超过 ${Math.round(MAX_VIDEO_UPLOAD_BYTES / MB)}MB 上限`,
+        );
+      }
+    }
     if (caps.videoWireData) {
       const large = files.some(
         (f) =>

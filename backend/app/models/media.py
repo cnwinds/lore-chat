@@ -11,12 +11,10 @@ from typing import Any, Literal
 from app.models.candidate import ModelCandidate
 from app.models.vision import (
     VISION_SKIP_SUFFIXES,
-    build_signed_attachment_url,
     guess_mime,
     is_image_file,
     is_image_path,
     is_vision_image_path,
-    sign_attachment_token,
 )
 
 MediaKind = Literal["text", "image", "video", "file"]
@@ -160,6 +158,7 @@ def _resolve_wire_url(
     rel: str,
     abs_path: Path,
     wire: Literal["data", "url"],
+    kb_path: Path,
     public_base_url: str | None,
     signing_secret: str,
     mime: str,
@@ -175,9 +174,12 @@ def _resolve_wire_url(
         base = (public_base_url or "").strip()
         if not base:
             return None
-        token = sign_attachment_token(rel_path=rel, secret=signing_secret)
-        return build_signed_attachment_url(
-            public_base_url=base, rel_path=rel, token=token
+        from app.models.media_grants import build_media_grant_url
+
+        return build_media_grant_url(
+            public_base_url=base,
+            rel_path=rel,
+            kb_path=kb_path,
         )
     raw = abs_path.read_bytes()
     b64 = base64.standard_b64encode(raw).decode("ascii")
@@ -208,6 +210,7 @@ def _build_media_parts(
             rel=rel,
             abs_path=abs_path,
             wire=candidate.image_wire,
+            kb_path=kb_path,
             public_base_url=public_base_url,
             signing_secret=signing_secret,
             mime=mime,
@@ -231,6 +234,7 @@ def _build_media_parts(
             rel=rel,
             abs_path=abs_path,
             wire=candidate.video_wire,
+            kb_path=kb_path,
             public_base_url=public_base_url,
             signing_secret=signing_secret,
             mime=mime,

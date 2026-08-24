@@ -71,7 +71,42 @@ describe("validatePendingAttachments", () => {
 });
 
 describe("buildComposerMediaHints", () => {
-  it("includes video limits and signed-url hint for large data-wire videos", () => {
+  const caps = {
+    videoSupported: true,
+    maxVideos: 1,
+    imageSupported: false,
+    maxImages: null,
+    videoWireData: true,
+  } as const;
+
+  it("shows no limit hint for a single video within size cap", () => {
+    const hints = buildComposerMediaHints(
+      [pending("a.mp4", "video/mp4", 1024)],
+      caps,
+    );
+    expect(hints).toEqual([]);
+  });
+
+  it("tips when video count exceeds chain max", () => {
+    const hints = buildComposerMediaHints(
+      [
+        pending("a.mp4", "video/mp4", 1024),
+        pending("b.mp4", "video/mp4", 1024),
+      ],
+      caps,
+    );
+    expect(hints).toContain("每条消息最多发送 1 个视频");
+  });
+
+  it("tips when a video exceeds upload size", () => {
+    const hints = buildComposerMediaHints(
+      [pending("big.mp4", "video/mp4", MAX_VIDEO_UPLOAD_BYTES + 1)],
+      caps,
+    );
+    expect(hints.some((h) => h.includes("50MB"))).toBe(true);
+  });
+
+  it("includes signed-url hint for large data-wire videos", () => {
     const hints = buildComposerMediaHints(
       [pending("big.mp4", "video/mp4", MAX_VIDEO_DATA_WIRE_BYTES + 1)],
       {
@@ -82,7 +117,7 @@ describe("buildComposerMediaHints", () => {
         videoWireData: true,
       },
     );
-    expect(hints.some((h) => h.includes("2 个"))).toBe(true);
+    expect(hints.some((h) => h.includes("2 个"))).toBe(false);
     expect(hints.some((h) => h.includes("public_base_url"))).toBe(true);
   });
 

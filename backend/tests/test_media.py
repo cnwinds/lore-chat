@@ -172,8 +172,8 @@ def test_build_content_large_video_prefers_signed_url(tmp_path: Path):
     assert isinstance(content, list)
     video_part = next(p for p in content if p.get("type") == "video_url")
     url = str(video_part["video_url"]["url"])
-    assert url.startswith("https://app.example.com/api/attachments/signed/")
-    assert "token=" in url
+    assert url.startswith("https://app.example.com/api/media/grant/")
+    assert "token=" not in url
 
 
 def test_build_content_small_video_uses_data_wire(tmp_path: Path):
@@ -290,8 +290,8 @@ def test_build_content_video_signed_url_wire(tmp_path: Path):
     assert isinstance(content, list)
     video_part = next(p for p in content if p.get("type") == "video_url")
     url = str(video_part["video_url"]["url"])
-    assert url.startswith("https://app.example.com/api/attachments/signed/")
-    assert "token=" in url
+    assert url.startswith("https://app.example.com/api/media/grant/")
+    assert "token=" not in url
 
 
 def test_messages_need_video(tmp_path: Path):

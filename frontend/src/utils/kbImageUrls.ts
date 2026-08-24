@@ -97,10 +97,11 @@ export function restoreMarkdownImageSrcsForStorage(md: string): string {
       if (path != null) return `![${alt}](${path})`;
       if (
         src.includes("/api/download") ||
-        src.includes("/api/attachments/signed/")
+        src.includes("/api/attachments/signed/") ||
+        src.includes("/api/media/grant/")
       ) {
         throw new Error(
-          "知识库正文禁止写入 /api/download 或签名附件绝对 URL，请使用相对路径",
+          "知识库正文禁止写入 /api/download 或媒体授权绝对 URL，请使用相对路径",
         );
       }
       return full;
