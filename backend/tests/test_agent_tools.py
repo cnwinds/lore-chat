@@ -57,6 +57,7 @@ def _make_registry(tmp_path, chat_responses=None, conversation_fts=None, convers
         edit_doc_max_edits=settings.edit_doc_max_edits,
         edit_doc_max_patch_chars=settings.edit_doc_max_patch_chars,
         edit_doc_require_read=settings.edit_doc_require_read,
+        web_search_default_k=settings.web_search_default_k,
     )
     return registry, repo, idx
 
@@ -574,6 +575,17 @@ async def test_web_search_tool_invokes_searcher(tmp_path):
     assert "搜索到 1 条" in result["summary"]
     assert result["sources"][0]["url"] == "https://a.example"
     mock.search.assert_awaited_once_with("DeepSeek API 涨价", k=3)
+
+
+@pytest.mark.asyncio
+async def test_web_search_uses_settings_default_k(tmp_path):
+    registry, _, _ = _make_registry(tmp_path, web_search_default_k=8)
+    mock = MagicMock()
+    mock.provider_name = "tavily"
+    mock.search = AsyncMock(return_value=([], None))
+    registry.web_search = mock
+    await registry.execute("web_search", {"query": "test"})
+    mock.search.assert_awaited_once_with("test", k=8)
 
 
 def test_select_tools_injects_disclosure_window_numbers():

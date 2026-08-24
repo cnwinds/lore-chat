@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  clampWebSearchDefaultK,
   draftCandidateHasContent,
   hydrateSettingsDrafts,
   parseImageProviders,
@@ -99,6 +100,7 @@ describe("toSettingsPatch", () => {
       minVectorScore: 0.5,
       rrfK: 60,
       laneCandidateK: 20,
+      webSearchDefaultK: 7,
       agentMaxToolCalls: 10,
       agentParallelTools: false,
       agentMaxParallel: 2,
@@ -114,6 +116,7 @@ describe("toSettingsPatch", () => {
       image_wire: "url",
     });
     expect(patch.sandbox_mirror_region).toBe("global");
+    expect(patch.web_search_default_k).toBe(7);
     expect(patch.agent_parallel_tools).toBe(false);
   });
 });
@@ -122,5 +125,14 @@ describe("draftCandidateHasContent", () => {
   it("treats blank leftover as empty", () => {
     expect(draftCandidateHasContent(emptyCandidate())).toBe(false);
     expect(draftCandidateHasContent({ model: "x" })).toBe(true);
+  });
+});
+
+describe("clampWebSearchDefaultK", () => {
+  it("clamps to 1–20 and rounds", () => {
+    expect(clampWebSearchDefaultK(0)).toBe(1);
+    expect(clampWebSearchDefaultK(21)).toBe(20);
+    expect(clampWebSearchDefaultK(7.6)).toBe(8);
+    expect(clampWebSearchDefaultK(Number.NaN)).toBe(5);
   });
 });

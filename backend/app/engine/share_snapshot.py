@@ -40,20 +40,10 @@ def snapshot_conversation(
     *,
     shares_dir: Path,
     share_id: str,
+    message_ids: list[str] | None = None,
 ) -> str:
     shares_dir.mkdir(parents=True, exist_ok=True)
-    messages = []
-    for msg in conversation.get("messages") or []:
-        if not isinstance(msg, dict):
-            continue
-        slim = {k: msg[k] for k in _MSG_KEEP if k in msg}
-        messages.append(slim)
-    payload = {
-        "version": 1,
-        "title": conversation.get("title") or "未命名对话",
-        "created_at": conversation.get("created_at"),
-        "messages": messages,
-    }
+    payload = materialize_conversation_snapshot(conversation, message_ids=message_ids)
     rel = f".kb/shares/{share_id}.json"
     abs_path = shares_dir / f"{share_id}.json"
     abs_path.write_text(
@@ -61,6 +51,94 @@ def snapshot_conversation(
         encoding="utf-8",
     )
     return rel
+
+
+def materialize_conversation_snapshot(
+    conversation: dict,
+    *,
+    message_ids: list[str] | None = None,
+) -> dict:
+    raw_msgs = [m for m in (conversation.get("messages") or []) if isinstance(m, dict)]
+    if message_ids is not None:
+        wanted = [str(x) for x in message_ids if str(x).strip()]
+        if not wanted:
+            raise ValueError("message_ids must not be empty")
+        by_id = {str(m.get("id") or ""): m for m in raw_msgs if m.get("id")}
+        missing = [mid for mid in wanted if mid not in by_id]
+        if missing:
+            raise ValueError(f"unknown message_ids: {', '.join(missing[:5])}")
+        wanted_set = set(wanted)
+        raw_msgs = [m for m in raw_msgs if str(m.get("id") or "") in wanted_set]
+        if not raw_msgs:
+            raise ValueError("message_ids must not be empty")
+    messages = []
+    for msg in raw_msgs:
+        slim = {k: msg[k] for k in _MSG_KEEP if k in msg}
+        messages.append(slim)
+    return {
+        "version": 1,
+        "title": conversation.get("title") or "未命名对话",
+        "created_at": conversation.get("created_at"),
+        "messages": messages,
+    }
+
+
+def conversation_live_payload_ref(conversation_id: str) -> str:
+    return f"conv:{conversation_id}"
+
+
+def conversation_id_from_payload_ref(payload_ref: str) -> str | None:
+    ref = payload_ref.replace("\\", "/")
+    if ref.startswith("conv:"):
+        cid = ref[5:].strip()
+        return cid or None
+    return None
+
+
+def is_live_conversation_share(link) -> bool:
+    opts = link.options if isinstance(link.options, dict) else {}
+    if opts.get("pin_version") is False:
+        return True
+    if opts.get("pin_version") is True:
+        return False
+    return conversation_id_from_payload_ref(link.payload_ref) is not None
+
+
+def load_conversation_for_share(
+    link,
+    *,
+    kb_path: Path,
+    conversations,
+) -> dict:
+    """快照或跟随 live 会话，返回与 snapshot JSON 同形的 dict。"""
+    if not is_live_conversation_share(link):
+        return load_conversation_snapshot(kb_path, link.payload_ref)
+    opts = link.options if isinstance(link.options, dict) else {}
+    cid = str(
+        opts.get("conversation_id")
+        or conversation_id_from_payload_ref(link.payload_ref)
+        or ""
+    ).strip()
+    if not cid:
+        raise ValueError("missing conversation_id")
+    try:
+        conv = conversations.get(cid)
+    except KeyError as e:
+        raise FileNotFoundError(cid) from e
+    message_ids_raw = opts.get("message_ids")
+    message_ids: list[str] | None = None
+    if isinstance(message_ids_raw, list) and message_ids_raw:
+        message_ids = [str(x) for x in message_ids_raw if str(x).strip()]
+    return materialize_conversation_snapshot(conv, message_ids=message_ids)
+
+
+def conversation_share_public_title(link, snapshot: dict) -> str:
+    """快照用 link.title；跟随会话时用当前会话标题。"""
+    base = (link.title or "").strip() or "对话分享"
+    if not is_live_conversation_share(link):
+        return base
+    live = (snapshot.get("title") or "").strip()
+    return live or base
 
 
 def snapshot_doc_pinned(

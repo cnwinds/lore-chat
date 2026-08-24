@@ -41,6 +41,7 @@ export type SettingsFormDrafts = {
   minVectorScore: number;
   rrfK: number;
   laneCandidateK: number;
+  webSearchDefaultK: number;
   agentMaxToolCalls: number;
   agentParallelTools: boolean;
   agentMaxParallel: number;
@@ -52,6 +53,11 @@ export type SettingsFormDrafts = {
 function str(v: unknown): string {
   if (v === null || v === undefined) return "";
   return String(v);
+}
+
+export function clampWebSearchDefaultK(n: number): number {
+  if (!Number.isFinite(n)) return 5;
+  return Math.min(20, Math.max(1, Math.round(n)));
 }
 
 function num(v: unknown, fallback: number): number {
@@ -175,6 +181,7 @@ export function hydrateSettingsDrafts(
     minVectorScore: num(data.min_vector_score, 0.45),
     rrfK: num(data.rrf_k, 60),
     laneCandidateK: num(data.lane_candidate_k, 20),
+    webSearchDefaultK: clampWebSearchDefaultK(num(data.web_search_default_k, 5)),
     agentMaxToolCalls: num(data.agent_max_tool_calls, 25),
     agentParallelTools: bool(data.agent_parallel_tools, true),
     agentMaxParallel: num(data.agent_max_parallel, 4),
@@ -195,6 +202,7 @@ export function toSettingsPatch(drafts: {
   minVectorScore: number;
   rrfK: number;
   laneCandidateK: number;
+  webSearchDefaultK: number;
   agentMaxToolCalls: number;
   agentParallelTools: boolean;
   agentMaxParallel: number;
@@ -265,6 +273,7 @@ export function toSettingsPatch(drafts: {
     min_vector_score: drafts.minVectorScore,
     rrf_k: drafts.rrfK,
     lane_candidate_k: drafts.laneCandidateK,
+    web_search_default_k: clampWebSearchDefaultK(drafts.webSearchDefaultK),
     agent_max_tool_calls: drafts.agentMaxToolCalls,
     agent_parallel_tools: drafts.agentParallelTools,
     agent_max_parallel: drafts.agentMaxParallel,

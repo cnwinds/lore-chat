@@ -92,6 +92,17 @@ class Settings(BaseSettings):
     serper_api_key: str | None = None
     brave_search_api_key: str | None = None
     search_provider_order: str = "tavily,serper,brave"
+    # web_search 工具未显式传 k 时的默认返回条数
+    web_search_default_k: int = 5
+
+    @field_validator("web_search_default_k")
+    @classmethod
+    def _clamp_web_search_default_k(cls, v: int) -> int:
+        try:
+            n = int(v)
+        except (TypeError, ValueError):
+            n = 5
+        return max(1, min(20, n))
 
     @field_validator("search_providers", mode="before")
     @classmethod

@@ -59,6 +59,7 @@ class ToolRegistry:
         edit_doc_max_patch_chars: int = 8192,
         edit_doc_require_read: bool = True,
         conversation_context_max_chars: int = 12000,
+        web_search_default_k: int = 5,
         memory_service=None,
         sandbox_runtime: SandboxRuntime | None = None,
         image_gen: ImageGen | None = None,
@@ -98,6 +99,7 @@ class ToolRegistry:
             fetcher=fetcher,
             web_search=web_search,
             disclosure_windows=self.disclosure_windows,
+            web_search_default_k=web_search_default_k,
         )
         self.memory = MemoryTools(memory_service)
         self.interaction = InteractionTools(pending)
@@ -147,6 +149,7 @@ class ToolRegistry:
         *,
         fetcher=None,
         web_search=None,
+        web_search_default_k: int | None = None,
         memory_service=None,
         sandbox_runtime: SandboxRuntime | None = None,
         sandbox_trust_mode: bool | None = None,
@@ -157,6 +160,10 @@ class ToolRegistry:
             self.fetcher = fetcher
         if web_search is not None:
             self.web_search = web_search
+        if web_search_default_k is not None:
+            from app.engine.agent.tool_impl.web_read import clamp_web_search_k
+
+            self.web.web_search_default_k = clamp_web_search_k(web_search_default_k)
         if memory_service is not None:
             self.memory_service = memory_service
         if image_gen is not None:

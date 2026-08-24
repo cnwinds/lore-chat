@@ -11,6 +11,8 @@ from pathlib import Path
 
 _STORE_VERSION = 1
 _SHARE_ID_BYTES = 18
+_MAX_RECENT_VIEWS = 20
+_REFERER_MAX_LEN = 200
 
 
 @dataclass(frozen=True)
@@ -24,6 +26,8 @@ class ShareLink:
     view_count: int
     payload_ref: str
     options: dict
+    last_viewed_at: str | None = None
+    recent_views: tuple[dict, ...] = ()
 
 
 class ShareLinkStore:
@@ -64,6 +68,8 @@ class ShareLinkStore:
             "exp": exp,
             "revoked": False,
             "view_count": 0,
+            "last_viewed_at": None,
+            "recent_views": [],
             "payload_ref": payload_ref.replace("\\", "/").lstrip("/")
             if not payload_ref.startswith(".kb/")
             else payload_ref.replace("\\", "/"),
@@ -103,6 +109,7 @@ class ShareLinkStore:
         *,
         now: float | None = None,
         increment_view: bool = False,
+        referer: str | None = None,
     ) -> tuple[ShareLink | None, str]:
         """返回 (link, status)；status 为 ok | expired | revoked | not_found。"""
         if not _share_id_ok(share_id):
@@ -123,10 +130,7 @@ class ShareLinkStore:
             except (TypeError, ValueError):
                 return None, "not_found"
         if increment_view:
-            try:
-                row["view_count"] = int(row.get("view_count") or 0) + 1
-            except (TypeError, ValueError):
-                row["view_count"] = 1
+            self._record_view(row, now=now, referer=referer)
             self._save(data)
         return self._to_link(share_id, row), "ok"
 
@@ -136,9 +140,10 @@ class ShareLinkStore:
         *,
         now: float | None = None,
         increment_view: bool = False,
+        referer: str | None = None,
     ) -> ShareLink | None:
         link, status = self.resolve_public(
-            share_id, now=now, increment_view=increment_view
+            share_id, now=now, increment_view=increment_view, referer=referer
         )
         return link if status == "ok" else None
 
@@ -152,6 +157,27 @@ class ShareLinkStore:
         return self._to_link(share_id, row)
 
     @staticmethod
+    def _record_view(row: dict, *, now: float, referer: str | None) -> None:
+        try:
+            row["view_count"] = int(row.get("view_count") or 0) + 1
+        except (TypeError, ValueError):
+            row["view_count"] = 1
+        ts = datetime.fromtimestamp(now, tz=timezone.utc).isoformat(timespec="seconds")
+        row["last_viewed_at"] = ts
+        entry: dict = {"ts": ts}
+        ref = (referer or "").strip()
+        if ref:
+            entry["referer"] = ref[:_REFERER_MAX_LEN]
+        recent = row.get("recent_views")
+        if not isinstance(recent, list):
+            recent = []
+        recent = [x for x in recent if isinstance(x, dict)]
+        recent.append(entry)
+        if len(recent) > _MAX_RECENT_VIEWS:
+            recent = recent[-_MAX_RECENT_VIEWS:]
+        row["recent_views"] = recent
+
+    @staticmethod
     def _to_link(share_id: str, row: dict) -> ShareLink:
         exp = row.get("exp")
         try:
@@ -159,6 +185,22 @@ class ShareLinkStore:
         except (TypeError, ValueError):
             exp_val = None
         opts = row.get("options")
+        recent_raw = row.get("recent_views")
+        recent: list[dict] = []
+        if isinstance(recent_raw, list):
+            for item in recent_raw:
+                if isinstance(item, dict) and item.get("ts"):
+                    recent.append(
+                        {
+                            "ts": str(item["ts"]),
+                            **(
+                                {"referer": str(item["referer"])}
+                                if item.get("referer")
+                                else {}
+                            ),
+                        }
+                    )
+        last = row.get("last_viewed_at")
         return ShareLink(
             share_id=share_id,
             type=str(row.get("type") or ""),
@@ -169,6 +211,8 @@ class ShareLinkStore:
             view_count=int(row.get("view_count") or 0),
             payload_ref=str(row.get("payload_ref") or ""),
             options=opts if isinstance(opts, dict) else {},
+            last_viewed_at=str(last) if last else None,
+            recent_views=tuple(recent),
         )
 
     def _load(self) -> dict:
@@ -222,3 +266,13 @@ def _share_id_ok(share_id: str) -> bool:
 def build_share_url(*, public_base_url: str, share_id: str) -> str:
     base = public_base_url.rstrip("/")
     return f"{base}/share/{share_id}"
+
+
+def public_options(options: dict) -> dict:
+    """列表/创建响应用：剥离 password_hash，保留 has_password / message_ids 等。"""
+    out = {k: v for k, v in options.items() if k != "password_hash"}
+    if options.get("password_hash"):
+        out["has_password"] = True
+    elif "has_password" not in out:
+        out["has_password"] = False
+    return out

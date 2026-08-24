@@ -45,6 +45,12 @@ describe("SharePublicError", () => {
     expect(err.status).toBe(410);
     expect(err.message).toContain("过期");
   });
+
+  it("carries password-required code", () => {
+    const err = new SharePublicError(401, "需要访问密码", "SHARE_PASSWORD_REQUIRED");
+    expect(err.status).toBe(401);
+    expect(err.code).toBe("SHARE_PASSWORD_REQUIRED");
+  });
 });
 
 describe("showToast", () => {

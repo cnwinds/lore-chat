@@ -19,6 +19,7 @@ PUBLIC_PREFIXES = (
     ("GET", "/api/attachments/signed/"),
     ("GET", "/api/media/grant/"),
     ("GET", "/api/share/"),
+    ("POST", "/api/share/"),
 )
 
 

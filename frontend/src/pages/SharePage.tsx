@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ChatMessage } from "../api";
 import { ChatMessageList } from "../components/chat/ChatMessageList";
 import { MarkdownContent } from "../components/MarkdownContent";
@@ -43,13 +43,24 @@ function errorCopy(status: number, message: string): { title: string; body: stri
 }
 
 export function SharePage({ shareId }: Props) {
-  const { payload, error, loading } = usePublicShare(shareId);
+  const {
+    payload,
+    error,
+    loading,
+    needsPassword,
+    unlocking,
+    unlockError,
+    submitPassword,
+  } = usePublicShare(shareId);
+  const [password, setPassword] = useState("");
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     document.title = payload?.title
       ? `${payload.title} · Lore Chat 分享`
-      : "Lore Chat 分享";
+      : needsPassword
+        ? "需要密码 · Lore Chat 分享"
+        : "Lore Chat 分享";
     const meta = document.querySelector('meta[name="robots"]');
     if (meta) {
       meta.setAttribute("content", "noindex,nofollow");
@@ -59,7 +70,7 @@ export function SharePage({ shareId }: Props) {
       el.content = "noindex,nofollow";
       document.head.appendChild(el);
     }
-  }, [payload?.title]);
+  }, [payload?.title, needsPassword]);
 
   const expHint = payload ? formatExpHint(payload.exp) : null;
 
@@ -86,7 +97,45 @@ export function SharePage({ shareId }: Props) {
 
       <main className="share-page-main">
         {loading && <div className="share-page-status">加载中…</div>}
-        {!loading && errView && (
+        {!loading && needsPassword && (
+          <form
+            className="share-page-unlock"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!password.trim() || unlocking) return;
+              void submitPassword(password.trim());
+            }}
+          >
+            <p className="share-page-unlock-title">需要访问密码</p>
+            <p className="share-page-unlock-hint">此分享受密码保护，请输入密码后继续查看。</p>
+            <label className="share-page-unlock-field">
+              <span className="visually-hidden">访问密码</span>
+              <input
+                type="password"
+                className="share-page-unlock-input"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="current-password"
+                autoFocus
+                placeholder="访问密码"
+                disabled={unlocking}
+              />
+            </label>
+            {unlockError ? (
+              <p className="share-page-unlock-error" role="alert">
+                {unlockError}
+              </p>
+            ) : null}
+            <button
+              type="submit"
+              className="btn-primary share-page-unlock-submit"
+              disabled={unlocking || password.trim().length < 4}
+            >
+              {unlocking ? "验证中…" : "解锁"}
+            </button>
+          </form>
+        )}
+        {!loading && !needsPassword && errView && (
           <div className="share-page-error-card" role="alert">
             <p className="share-page-error-title">{errView.title}</p>
             <p className="share-page-error-body">{errView.body}</p>

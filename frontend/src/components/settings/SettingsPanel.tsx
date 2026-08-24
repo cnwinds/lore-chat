@@ -148,6 +148,7 @@ export function SettingsPanel({
   const [minVectorScore, setMinVectorScore] = useState(0.45);
   const [rrfK, setRrfK] = useState(60);
   const [laneCandidateK, setLaneCandidateK] = useState(20);
+  const [webSearchDefaultK, setWebSearchDefaultK] = useState(5);
 
   const [agentMaxToolCalls, setAgentMaxToolCalls] = useState(25);
   const [agentParallelTools, setAgentParallelTools] = useState(true);
@@ -211,6 +212,7 @@ export function SettingsPanel({
       setMinVectorScore(drafts.minVectorScore);
       setRrfK(drafts.rrfK);
       setLaneCandidateK(drafts.laneCandidateK);
+      setWebSearchDefaultK(drafts.webSearchDefaultK);
       setAgentMaxToolCalls(drafts.agentMaxToolCalls);
       setAgentParallelTools(drafts.agentParallelTools);
       setAgentMaxParallel(drafts.agentMaxParallel);
@@ -344,6 +346,7 @@ export function SettingsPanel({
         minVectorScore,
         rrfK,
         laneCandidateK,
+        webSearchDefaultK,
         agentMaxToolCalls,
         agentParallelTools,
         agentMaxParallel,
@@ -624,6 +627,8 @@ export function SettingsPanel({
                       onRrfKChange={setRrfK}
                       laneCandidateK={laneCandidateK}
                       onLaneCandidateKChange={setLaneCandidateK}
+                      webSearchDefaultK={webSearchDefaultK}
+                      onWebSearchDefaultKChange={setWebSearchDefaultK}
                       saving={saving}
                     />
                   </div>

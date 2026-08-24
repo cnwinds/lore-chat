@@ -275,7 +275,12 @@ TOOL_DEFINITIONS: list[dict] = [
                 "type": "object",
                 "properties": {
                     "query": {"type": "string", "description": "搜索关键词"},
-                    "k": {"type": "integer", "description": "返回条数，默认 5", "default": 5},
+                    "k": {
+                        "type": "integer",
+                        "description": "返回条数；未指定时使用设置中的默认值",
+                        "minimum": 1,
+                        "maximum": 20,
+                    },
                 },
                 "required": ["query"],
             },

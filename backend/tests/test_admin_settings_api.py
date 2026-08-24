@@ -8,6 +8,7 @@ def test_get_and_put_settings(client):
     assert isinstance(body["search_cooldown"], dict)
     assert "image_cooldown" in body
     assert isinstance(body["image_cooldown"], dict)
+    assert body.get("web_search_default_k") == 5
 
     r2 = client.put("/api/admin/settings", json={"small_model": "hot-model-1"})
     assert r2.status_code == 200
@@ -18,6 +19,18 @@ def test_get_and_put_settings(client):
 
     r3 = client.get("/api/admin/settings")
     assert r3.json()["small_model"] == "hot-model-1"
+
+
+def test_put_web_search_default_k_clamped(client):
+    r = client.put("/api/admin/settings", json={"web_search_default_k": 99})
+    assert r.status_code == 200
+    assert r.json()["web_search_default_k"] == 20
+    assert client.app.state.container.settings.web_search_default_k == 20
+
+    r2 = client.put("/api/admin/settings", json={"web_search_default_k": 8})
+    assert r2.status_code == 200
+    assert r2.json()["web_search_default_k"] == 8
+    assert client.get("/api/admin/settings").json()["web_search_default_k"] == 8
 
 
 def test_put_rejects_kb_path(client):

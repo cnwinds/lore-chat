@@ -2,6 +2,17 @@ from __future__ import annotations
 
 from app.engine.disclosure import DisclosureWindows, disclose, disclosure_summary
 
+WEB_SEARCH_K_MIN = 1
+WEB_SEARCH_K_MAX = 20
+
+
+def clamp_web_search_k(k: int, *, fallback: int = 5) -> int:
+    try:
+        n = int(k)
+    except (TypeError, ValueError):
+        n = fallback
+    return max(WEB_SEARCH_K_MIN, min(WEB_SEARCH_K_MAX, n))
+
 
 class WebReadTools:
     def __init__(
@@ -10,10 +21,12 @@ class WebReadTools:
         fetcher,
         web_search,
         disclosure_windows: DisclosureWindows | None = None,
+        web_search_default_k: int = 5,
     ) -> None:
         self.fetcher = fetcher
         self.searcher = web_search
         self.disclosure = disclosure_windows or DisclosureWindows()
+        self.web_search_default_k = clamp_web_search_k(web_search_default_k)
         self._fetch_cache: dict[str, object] = {}
 
     async def fetch_url(self, args: dict) -> dict:
@@ -70,9 +83,14 @@ class WebReadTools:
             out["outline"] = info["outline"]
         return out
 
+    def _resolve_web_search_k(self, args: dict) -> int:
+        if "k" not in args or args.get("k") is None:
+            return self.web_search_default_k
+        return clamp_web_search_k(args["k"], fallback=self.web_search_default_k)
+
     async def web_search(self, args: dict) -> dict:
         query = args["query"]
-        k = args.get("k", 5)
+        k = self._resolve_web_search_k(args)
         results, err = await self.searcher.search(query, k=k)
         if err:
             return {"summary": err, "sources": [], "error": err}

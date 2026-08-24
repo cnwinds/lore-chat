@@ -29,6 +29,24 @@ function formatCreated(iso: string): string {
   });
 }
 
+function formatViewTime(iso: string): string {
+  const ms = Date.parse(iso);
+  if (!Number.isFinite(ms)) return iso;
+  return new Date(ms).toLocaleString("zh-CN", {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function rangeLabel(item: ShareLinkItem): string | null {
+  if (item.type !== "conversation") return null;
+  const count = item.options.message_count ?? item.options.message_ids?.length;
+  if (count != null && count > 0) return `区间 · ${count} 条`;
+  return null;
+}
+
 export function ShareSettingsTab() {
   const copyUrl = useCopyShareUrl();
   const [items, setItems] = useState<ShareLinkItem[]>([]);
@@ -36,6 +54,7 @@ export function ShareSettingsTab() {
   const [error, setError] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const copiedTimerRef = useRef<number | null>(null);
   const mountedRef = useRef(true);
 
@@ -184,6 +203,11 @@ export function ShareSettingsTab() {
               {filtered.map((item) => {
                 const exp = formatExp(item.exp);
                 const isDoc = item.type === "doc";
+                const range = rangeLabel(item);
+                const live = !isDoc && item.options.pin_version === false;
+                const locked = !!item.options.has_password;
+                const expanded = expandedId === item.share_id;
+                const recent = item.recent_views ?? [];
                 return (
                   <li key={item.share_id} className="share-mgmt-card">
                     <div className="share-mgmt-card-top">
@@ -192,6 +216,16 @@ export function ShareSettingsTab() {
                       >
                         {isDoc ? "文档" : "对话"}
                       </span>
+                      {locked ? (
+                        <span className="share-mgmt-lock" title="需密码访问">
+                          锁
+                        </span>
+                      ) : null}
+                      {live ? (
+                        <span className="share-mgmt-range">跟随更新</span>
+                      ) : range ? (
+                        <span className="share-mgmt-range">{range}</span>
+                      ) : null}
                       <span className={`share-mgmt-exp share-mgmt-exp--${exp.tone}`}>
                         {exp.text}
                       </span>
@@ -205,14 +239,60 @@ export function ShareSettingsTab() {
                       <dd>{formatCreated(item.created_at)}</dd>
                       <dt>访问</dt>
                       <dd>{item.view_count} 次</dd>
+                      <dt>最近</dt>
+                      <dd>
+                        {item.last_viewed_at
+                          ? formatViewTime(item.last_viewed_at)
+                          : "—"}
+                      </dd>
                       {isDoc && item.options.pin_version !== undefined ? (
                         <>
                           <dt>版本</dt>
                           <dd>{item.options.pin_version ? "已固定" : "跟随文档"}</dd>
                         </>
                       ) : null}
+                      {!isDoc ? (
+                        <>
+                          <dt>内容</dt>
+                          <dd>
+                            {item.options.pin_version === false
+                              ? "跟随会话"
+                              : item.options.message_count
+                                ? `快照 · ${item.options.message_count} 条`
+                                : "快照 · 全部"}
+                          </dd>
+                        </>
+                      ) : null}
                     </dl>
+                    {expanded && (
+                      <div className="share-mgmt-recent">
+                        <p className="share-mgmt-recent-title">最近访问</p>
+                        {!recent.length ? (
+                          <p className="share-mgmt-recent-empty">暂无记录</p>
+                        ) : (
+                          <ul className="share-mgmt-recent-list">
+                            {[...recent].reverse().map((v, i) => (
+                              <li key={`${v.ts}-${i}`}>
+                                <span>{formatViewTime(v.ts)}</span>
+                                <span className="share-mgmt-recent-ref">
+                                  {v.referer || "—"}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    )}
                     <div className="share-mgmt-card-actions">
+                      <button
+                        type="button"
+                        className="share-mgmt-btn"
+                        onClick={() =>
+                          setExpandedId(expanded ? null : item.share_id)
+                        }
+                      >
+                        {expanded ? "收起" : "详情"}
+                      </button>
                       <button
                         type="button"
                         className="share-mgmt-btn"

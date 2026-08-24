@@ -73,6 +73,7 @@ class AgentSubgraph:
                 settings.fetch_url_max_bytes,
                 settings.fetch_url_pdf_max_bytes,
             ),
+            web_search_default_k=settings.web_search_default_k,
             image_gen=image_gen,
         )
         from app.engine.sandbox.factory import apply_sandbox_settings
@@ -157,6 +158,7 @@ def build_agent_subgraph(
         edit_doc_max_patch_chars=settings.edit_doc_max_patch_chars,
         edit_doc_require_read=settings.edit_doc_require_read,
         conversation_context_max_chars=settings.conversation_context_max_chars,
+        web_search_default_k=settings.web_search_default_k,
         memory_service=memory_service,
         sandbox_runtime=sandbox_runtime,
         image_gen=image_gen,

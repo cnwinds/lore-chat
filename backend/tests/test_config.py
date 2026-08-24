@@ -29,6 +29,7 @@ def test_settings_defaults(tmp_path, monkeypatch):
     assert str(s.kb_path).endswith("knowledge")
     assert s.agent_max_tool_calls == 25
     assert s.min_vector_score == 0.50
+    assert s.web_search_default_k == 5
     assert s.edit_doc_max_edits == 10
     assert s.edit_doc_max_patch_chars == 8192
     assert s.edit_doc_require_read is True
