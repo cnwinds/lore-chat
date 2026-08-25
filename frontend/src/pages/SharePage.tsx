@@ -1,10 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ChatMessage } from "../api";
 import { ChatMessageList } from "../components/chat/ChatMessageList";
-import { MarkdownContent } from "../components/MarkdownContent";
+import { ShareDocViewer } from "../components/share/ShareDocViewer";
 import { LoreLogo } from "../components/LoreLogo";
 import { usePublicShare } from "../hooks/useShareLink";
-import { parseDocOutline } from "../utils/docOutline";
 
 type Props = {
   shareId: string;
@@ -75,20 +74,15 @@ export function SharePage({ shareId }: Props) {
 
   const expHint = payload ? formatExpHint(payload.exp) : null;
 
-  const outlineItems = useMemo(() => {
-    if (!payload || payload.type !== "doc") return [];
-    return parseDocOutline(payload.body).map((item, index) => ({
-      ...item,
-      id: `outline-${index}`,
-    }));
-  }, [payload]);
-
   const errView = error ? errorCopy(error.status, error.message) : null;
   const noop = () => {};
   const isConversationShare = payload?.type === "conversation";
+  const isDocShare = payload?.type === "doc";
 
   return (
-    <div className={`share-page${isConversationShare ? " share-page--conversation" : ""}`}>
+    <div
+      className={`share-page${isConversationShare ? " share-page--conversation" : ""}${isDocShare ? " share-page--doc" : ""}`}
+    >
       <header className="share-page-header">
         <div className="share-page-header-inner">
           <LoreLogo variant="wordmark" className="share-page-logo" />
@@ -100,7 +94,7 @@ export function SharePage({ shareId }: Props) {
       </header>
 
       <main
-        className={`share-page-main${isConversationShare ? " share-page-main--conversation" : ""}`}
+        className={`share-page-main${isConversationShare ? " share-page-main--conversation" : ""}${isDocShare ? " share-page-main--doc" : ""}`}
       >
         <div className="share-page-main-inner">
         {loading && <div className="share-page-status">加载中…</div>}
@@ -170,23 +164,7 @@ export function SharePage({ shareId }: Props) {
           </div>
         )}
         {!loading && payload?.type === "doc" && (
-          <div className="share-page-doc">
-            {outlineItems.length > 0 && (
-              <aside className="share-page-outline">
-                <div className="share-page-outline-title">大纲</div>
-                <ul>
-                  {outlineItems.map((item, i) => (
-                    <li key={`${item.text}-${i}`} style={{ paddingLeft: (item.level - 1) * 12 }}>
-                      <a href={`#${item.id}`}>{item.text}</a>
-                    </li>
-                  ))}
-                </ul>
-              </aside>
-            )}
-            <article className="share-page-doc-body markdown-body">
-              <MarkdownContent outlineHeadingIds>{payload.body}</MarkdownContent>
-            </article>
-          </div>
+          <ShareDocViewer body={payload.body} />
         )}
         </div>
       </main>

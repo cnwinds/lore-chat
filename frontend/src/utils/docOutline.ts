@@ -64,6 +64,67 @@ export function getPreviewOutlineActiveIndex(
   return active;
 }
 
+function escapeHeadingId(value: string): string {
+  if (typeof CSS !== "undefined" && typeof CSS.escape === "function") {
+    return CSS.escape(value);
+  }
+  return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+}
+
+/** 分享页等 Markdown 预览：标题 id 为 outline-N，与 mapOutlineHeadingIds 对齐。 */
+export function mapOutlineHeadingIds(items: OutlineItem[]): OutlineItem[] {
+  return items.map((item, index) => ({
+    ...item,
+    id: `outline-${index}`,
+  }));
+}
+
+/** 分享页正文滚动：根据标题锚点返回当前应高亮的目录项 index。 */
+export function getShareDocOutlineActiveIndex(
+  scrollRoot: HTMLElement | null,
+  items: OutlineItem[],
+  offsetPx = 64,
+): number {
+  if (!scrollRoot || items.length === 0) return -1;
+
+  const threshold = scrollRoot.getBoundingClientRect().top + offsetPx;
+  let active = -1;
+  for (let i = 0; i < items.length; i++) {
+    const el = scrollRoot.querySelector<HTMLElement>(
+      `#${escapeHeadingId(items[i].id)}`,
+    );
+    if (!el) continue;
+    if (el.getBoundingClientRect().top <= threshold + 2) {
+      active = i;
+    } else {
+      break;
+    }
+  }
+  if (active === -1 && scrollRoot.scrollTop < 48) return 0;
+  return active;
+}
+
+export function jumpToShareDocOutline(
+  scrollRoot: HTMLElement | null,
+  item: OutlineItem,
+  offsetPx = 20,
+): void {
+  if (!scrollRoot) return;
+  const el = scrollRoot.querySelector<HTMLElement>(
+    `#${escapeHeadingId(item.id)}`,
+  );
+  if (!el) return;
+
+  const cRect = scrollRoot.getBoundingClientRect();
+  const eRect = el.getBoundingClientRect();
+  const nextTop = scrollRoot.scrollTop + (eRect.top - cRect.top) - offsetPx;
+  scrollRoot.scrollTo({ top: Math.max(0, nextTop), behavior: "smooth" });
+
+  el.classList.remove("share-doc-outline-flash");
+  void el.offsetWidth;
+  el.classList.add("share-doc-outline-flash");
+}
+
 function getSourceLineAtScroll(textarea: HTMLTextAreaElement): number {
   const style = getComputedStyle(textarea);
   const lineHeight =
