@@ -4,6 +4,12 @@
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-08-25
+
+### Fixed
+
+- 文档公开分享页：左侧目录与正文独立滚动，滚动时章节高亮同步；整体阅读布局与 Logo 尺寸优化
+
 ## [0.2.2] - 2026-08-25
 
 ### Added
@@ -62,7 +68,8 @@
 - MIT 许可证与开源社区文件（SECURITY、CONTRIBUTING、CODE_OF_CONDUCT）
 - GitHub Issue / PR 模板与 CI（backend pytest、frontend lint/test/build）
 
-[Unreleased]: https://github.com/cnwinds/lore-chat/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/cnwinds/lore-chat/compare/v0.2.3...HEAD
+[0.2.3]: https://github.com/cnwinds/lore-chat/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/cnwinds/lore-chat/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/cnwinds/lore-chat/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/cnwinds/lore-chat/compare/v0.1.0...v0.2.0
