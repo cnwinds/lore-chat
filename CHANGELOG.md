@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-08-25
+
 ### Added
 
 - 会话与文档公开只读分享：不透明分享链接、快照/定版、有效期（含自定义）、设置页管理、公开 `/share/{id}` 页
@@ -15,6 +17,7 @@
 ### Fixed
 
 - 文档预览 overflow「分享」入口实际可用；分享弹窗与管理页交互与样式完善
+- 公开分享页窄栏布局、右侧提问导航与 Logo 尺寸
 
 ## [0.2.1] - 2026-08-22
 
@@ -59,7 +62,8 @@
 - MIT 许可证与开源社区文件（SECURITY、CONTRIBUTING、CODE_OF_CONDUCT）
 - GitHub Issue / PR 模板与 CI（backend pytest、frontend lint/test/build）
 
-[Unreleased]: https://github.com/cnwinds/lore-chat/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/cnwinds/lore-chat/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/cnwinds/lore-chat/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/cnwinds/lore-chat/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/cnwinds/lore-chat/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/cnwinds/lore-chat/releases/tag/v0.1.0
