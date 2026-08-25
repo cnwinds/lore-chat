@@ -26,6 +26,8 @@ export type ChatMessageListProps = {
   ) => void;
   onRetryReply?: (assistantSourceIndex: number) => void;
   readOnly?: boolean;
+  /** 只读场景（如公开分享页）仍展示提问导航 */
+  showOutline?: boolean;
 };
 
 export function ChatMessageList({
@@ -44,6 +46,7 @@ export function ChatMessageList({
   onQuestionResolved,
   onRetryReply,
   readOnly = false,
+  showOutline = false,
 }: ChatMessageListProps) {
   const rows = expandMessagesForDisplay(msgs);
   const showWelcome = !loadingHistory && msgs.length === 0;
@@ -108,7 +111,7 @@ export function ChatMessageList({
             />
           </div>
         </div>
-        {!readOnly && (
+        {(!readOnly || showOutline) && (
           <ConversationOutline
             msgs={msgs}
             conversationId={conversationId}

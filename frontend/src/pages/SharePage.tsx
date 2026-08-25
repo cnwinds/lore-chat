@@ -53,6 +53,7 @@ export function SharePage({ shareId }: Props) {
     submitPassword,
   } = usePublicShare(shareId);
   const [password, setPassword] = useState("");
+  const messagesContainerRef = useRef<HTMLDivElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -84,18 +85,24 @@ export function SharePage({ shareId }: Props) {
 
   const errView = error ? errorCopy(error.status, error.message) : null;
   const noop = () => {};
+  const isConversationShare = payload?.type === "conversation";
 
   return (
-    <div className="share-page">
+    <div className={`share-page${isConversationShare ? " share-page--conversation" : ""}`}>
       <header className="share-page-header">
-        <LoreLogo variant="wordmark" className="share-page-logo" />
-        <div className="share-page-meta">
-          {payload && <h1 className="share-page-title">{payload.title}</h1>}
-          {expHint && <p className="share-page-exp">{expHint}</p>}
+        <div className="share-page-header-inner">
+          <LoreLogo variant="wordmark" className="share-page-logo" />
+          <div className="share-page-meta">
+            {payload && <h1 className="share-page-title">{payload.title}</h1>}
+            {expHint && <p className="share-page-exp">{expHint}</p>}
+          </div>
         </div>
       </header>
 
-      <main className="share-page-main">
+      <main
+        className={`share-page-main${isConversationShare ? " share-page-main--conversation" : ""}`}
+      >
+        <div className="share-page-main-inner">
         {loading && <div className="share-page-status">加载中…</div>}
         {!loading && needsPassword && (
           <form
@@ -152,12 +159,13 @@ export function SharePage({ shareId }: Props) {
               streaming={false}
               liveElapsedMs={0}
               streamingAssistantIdxRef={{ current: null }}
-              messagesContainerRef={{ current: null }}
+              messagesContainerRef={messagesContainerRef}
               messagesEndRef={messagesEndRef}
               conversationId={null}
               onOpenSource={noop}
               onQuestionResolved={noop}
               readOnly
+              showOutline
             />
           </div>
         )}
@@ -180,6 +188,7 @@ export function SharePage({ shareId }: Props) {
             </article>
           </div>
         )}
+        </div>
       </main>
 
       <footer className="share-page-footer">

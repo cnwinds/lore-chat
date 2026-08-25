@@ -7607,16 +7607,31 @@ button.source-link--inline.conversation-md-link {
   color: var(--text);
 }
 
+.share-page--conversation {
+  height: 100vh;
+  min-height: 100vh;
+  overflow: hidden;
+}
+
 .share-page-header {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 16px 24px;
+  flex-shrink: 0;
   border-bottom: 1px solid var(--border);
 }
 
+.share-page-header-inner {
+  max-width: var(--chat-content-max-width);
+  margin: 0 auto;
+  padding: 16px 24px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
 .share-page-logo {
-  height: 28px;
+  display: block;
+  height: 36px;
+  width: auto;
   flex-shrink: 0;
 }
 
@@ -7636,6 +7651,28 @@ button.source-link--inline.conversation-md-link {
   flex: 1;
   overflow: auto;
   padding: 16px 24px 32px;
+}
+
+.share-page-main--conversation {
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding: 0 24px 16px;
+}
+
+.share-page-main-inner {
+  max-width: var(--chat-content-max-width);
+  margin: 0 auto;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.share-page-main--conversation .share-page-main-inner {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .share-page-status {
@@ -7734,19 +7771,26 @@ button.source-link--inline.conversation-md-link {
 }
 
 .share-page-chat {
-  max-width: 900px;
-  margin: 0 auto;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .share-page-chat .chat-messages-shell {
-  min-height: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+.share-page-chat .chat-messages {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .share-page-doc {
   display: flex;
   gap: 24px;
-  max-width: 1100px;
-  margin: 0 auto;
 }
 
 .share-page-outline {
