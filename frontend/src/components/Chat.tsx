@@ -50,6 +50,7 @@ import {
   validatePendingAttachments,
 } from "../utils/chatAttachmentValidation";
 import { suggestArchivePath } from "../utils/suggestArchivePath";
+import { MobileChatHeader } from "./app/MobileChatHeader";
 
 type ComposerDocItem = DocTrayItem;
 
@@ -71,6 +72,10 @@ type Props = {
   onTraySetPrimary?: (path: string) => void;
   onTrayRemove?: (path: string) => void;
   onShareConversation?: () => void;
+  mobileLayout?: boolean;
+  mobileHeaderTitle?: string;
+  onOpenMobileNav?: () => void;
+  onMobileNewChat?: () => void;
 };
 
 export function Chat({
@@ -88,6 +93,10 @@ export function Chat({
   onTraySetPrimary,
   onTrayRemove,
   onShareConversation,
+  mobileLayout = false,
+  mobileHeaderTitle = "新对话",
+  onOpenMobileNav,
+  onMobileNewChat,
 }: Props) {
   const { previewPath, openDoc, refreshKb } = useDocPreview();
 
@@ -671,7 +680,15 @@ export function Chat({
   );
 
   return (
-    <div className="chat-panel">
+    <div className={`chat-panel${mobileLayout ? " chat-panel--mobile" : ""}`}>
+      {mobileLayout && onOpenMobileNav && onMobileNewChat && (
+        <MobileChatHeader
+          title={mobileHeaderTitle}
+          onOpenNav={onOpenMobileNav}
+          onNewChat={onMobileNewChat}
+          onShare={onShareConversation}
+        />
+      )}
       {memoryNotice && (
         <div className="chat-memory-notice" role="status">
           <span>{memoryNotice.label}</span>
@@ -700,6 +717,7 @@ export function Chat({
         onOpenConversation={handleOpenConversation}
         onQuestionResolved={handleQuestionResolved}
         onRetryReply={handleRetryAssistantReply}
+        outlineLayout={mobileLayout ? "sheet" : "rail"}
       />
       <div className="chat-composer-wrap">
         <ComposerSendQueue

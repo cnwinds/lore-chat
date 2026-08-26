@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { getAuthStatus, type SourceRef, type SettingsAttention } from "./api";
 import { LoginPage } from "./components/auth/LoginPage";
 import { SetupPage } from "./components/auth/SetupPage";
@@ -25,6 +25,7 @@ import type { JumpTarget } from "./hooks/chat/useConversationJump";
 import { MediaGalleryFloatLayer } from "./components/app/MediaGalleryFloatLayer";
 import { MemoryFloatLayer } from "./components/app/MemoryFloatLayer";
 import { SkillPickModal } from "./components/SkillPickModal";
+import { useMobileLayout } from "./hooks/useMobileLayout";
 
 type Gate = "loading" | "setup" | "login" | "app";
 
@@ -172,6 +173,101 @@ function AppMain() {
     setSettingsNavigateTab(null);
   }, []);
 
+  const mobileLayout = useMobileLayout();
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const closeMobileNav = useCallback(() => setMobileNavOpen(false), []);
+
+  useEffect(() => {
+    if (!mobileLayout || !mobileNavOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [mobileLayout, mobileNavOpen]);
+
+  useEffect(() => {
+    if (!mobileLayout) setMobileNavOpen(false);
+  }, [mobileLayout]);
+
+  useEffect(() => {
+    if (!mobileLayout) return;
+    if (
+      doc.showFloat ||
+      doc.showPinned ||
+      doc.showMemoryPanel ||
+      doc.showMediaGallery
+    ) {
+      setMobileNavOpen(false);
+    }
+  }, [
+    mobileLayout,
+    doc.showFloat,
+    doc.showPinned,
+    doc.showMemoryPanel,
+    doc.showMediaGallery,
+  ]);
+
+  useEffect(() => {
+    if (!mobileNavOpen) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      closeMobileNav();
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [mobileNavOpen, closeMobileNav]);
+
+  const sidebarProps = useMemo(() => {
+    const base = conversation.sidebarProps;
+    const wrapClose = <A extends unknown[]>(fn: (...args: A) => void) =>
+      (...args: A) => {
+        fn(...args);
+        if (mobileLayout) closeMobileNav();
+      };
+    return {
+      ...base,
+      collapsed: mobileLayout ? false : base.collapsed,
+      onToggleCollapsed: mobileLayout ? undefined : base.onToggleCollapsed,
+      onSelectConversation: wrapClose(base.onSelectConversation),
+      onSelectFile: wrapClose(base.onSelectFile),
+      onSelectFolder: base.onSelectFolder
+        ? wrapClose(base.onSelectFolder)
+        : undefined,
+      onNewChat: wrapClose(base.onNewChat),
+      onOpenSettings: () => {
+        setSettingsOpen(true);
+        closeMobileNav();
+      },
+      onShareConversation: (id: string, title: string) => {
+        setShareTarget({
+          type: "conversation",
+          conversationId: id,
+          defaultTitle: title,
+        });
+        closeMobileNav();
+      },
+      settingsAttention:
+        displayAttention.model.any || displayAttention.usage.any,
+      memoryAttention: displayAttention.memory.any,
+      onDocsChange: setKbPaths,
+    };
+  }, [
+    conversation.sidebarProps,
+    mobileLayout,
+    closeMobileNav,
+    displayAttention.model.any,
+    displayAttention.usage.any,
+    displayAttention.memory.any,
+  ]);
+
+  const mobileHeaderTitle = useMemo(() => {
+    const id = conversation.activeConversationId;
+    if (!id) return "新对话";
+    return conversation.titleOverrides[id] || "对话";
+  }, [conversation.activeConversationId, conversation.titleOverrides]);
+
   return (
     <DocPreviewProvider value={doc.contextValue}>
       <AppShell
@@ -179,23 +275,17 @@ function AppMain() {
         floatFocus={Boolean(doc.floatFocus)}
         hasMergeReview={false}
         mainFloatWide={doc.mainFloatWide}
-        sidebarProps={{
-          ...conversation.sidebarProps,
-          onOpenSettings: () => setSettingsOpen(true),
-          onShareConversation: (id, title) =>
-            setShareTarget({
-              type: "conversation",
-              conversationId: id,
-              defaultTitle: title,
-            }),
-          settingsAttention:
-            displayAttention.model.any || displayAttention.usage.any,
-          memoryAttention: displayAttention.memory.any,
-          onDocsChange: setKbPaths,
-        }}
+        mobileLayout={mobileLayout}
+        mobileNavOpen={mobileNavOpen}
+        onMobileNavClose={closeMobileNav}
+        sidebarProps={sidebarProps}
         chat={
           <Chat
             conversationId={conversation.activeConversationId}
+            mobileLayout={mobileLayout}
+            mobileHeaderTitle={mobileHeaderTitle}
+            onOpenMobileNav={() => setMobileNavOpen(true)}
+            onMobileNewChat={() => sidebarProps.onNewChat()}
             onConversationCreated={(id) => {
               conversation.setActiveConversationId(id);
               refreshSidebar();
@@ -205,7 +295,10 @@ function AppMain() {
             }
             onSidebarRefresh={refreshSidebar}
             onOpenSource={bridge.handleOpenSource}
-            onJumpToConversation={handleJumpToConversation}
+            onJumpToConversation={(target) => {
+              handleJumpToConversation(target);
+              closeMobileNav();
+            }}
             pendingJump={conversation.pendingJump}
             onJumpHandled={conversation.clearPendingJump}
             docTrayItems={composer.items}
