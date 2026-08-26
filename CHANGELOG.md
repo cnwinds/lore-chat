@@ -4,6 +4,18 @@
 
 ## [Unreleased]
 
+## [0.2.4] - 2026-08-26
+
+### Added
+
+- 主应用手机端体验：侧栏抽屉导航、聊天顶栏、提问 FAB 抽屉、文档全屏预览与安全区适配
+
+### Fixed
+
+- 会话与文档公开分享页移动端阅读（FAB + 底部抽屉提问/目录导航）
+- 知识库文档重命名或移动后，跟随会话更新的 live 分享链接自动更新路径
+- 文档分享页目录抽屉无法滚动
+
 ## [0.2.3] - 2026-08-25
 
 ### Fixed
@@ -68,7 +80,8 @@
 - MIT 许可证与开源社区文件（SECURITY、CONTRIBUTING、CODE_OF_CONDUCT）
 - GitHub Issue / PR 模板与 CI（backend pytest、frontend lint/test/build）
 
-[Unreleased]: https://github.com/cnwinds/lore-chat/compare/v0.2.3...HEAD
+[Unreleased]: https://github.com/cnwinds/lore-chat/compare/v0.2.4...HEAD
+[0.2.4]: https://github.com/cnwinds/lore-chat/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/cnwinds/lore-chat/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/cnwinds/lore-chat/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/cnwinds/lore-chat/compare/v0.2.0...v0.2.1
