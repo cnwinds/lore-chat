@@ -28,6 +28,8 @@ export type ChatMessageListProps = {
   readOnly?: boolean;
   /** 只读场景（如公开分享页）仍展示提问导航 */
   showOutline?: boolean;
+  /** 提问导航布局：rail 桌面浮条；sheet 手机底部抽屉 */
+  outlineLayout?: "rail" | "sheet";
 };
 
 export function ChatMessageList({
@@ -47,6 +49,7 @@ export function ChatMessageList({
   onRetryReply,
   readOnly = false,
   showOutline = false,
+  outlineLayout = "rail",
 }: ChatMessageListProps) {
   const rows = expandMessagesForDisplay(msgs);
   const showWelcome = !loadingHistory && msgs.length === 0;
@@ -116,6 +119,7 @@ export function ChatMessageList({
             msgs={msgs}
             conversationId={conversationId}
             scrollRootRef={messagesContainerRef}
+            layout={outlineLayout}
           />
         )}
       </div>

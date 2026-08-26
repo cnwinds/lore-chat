@@ -7,7 +7,7 @@ import secrets
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 _STORE_VERSION = 1
 _SHARE_ID_BYTES = 18
@@ -156,6 +156,59 @@ class ShareLinkStore:
             return None
         return self._to_link(share_id, row)
 
+    def remap_doc_paths(self, path_map: dict[str, str]) -> int:
+        """文档移动/重命名后跟随更新分享引用。
+
+        - live 文档分享：更新 ``payload_ref``（公开页按此读正文）
+        - 所有文档分享：更新 ``options.source_path``（来源路径）
+        - 若 ``title`` 等于旧文件名，一并改为新文件名
+
+        ``path_map``：``旧相对路径 → 新相对路径``（posix，无前导 /）。
+        返回被改动的分享条数。
+        """
+        normalized = {
+            _norm_doc_path(old): _norm_doc_path(new)
+            for old, new in path_map.items()
+            if old and new and _norm_doc_path(old) != _norm_doc_path(new)
+        }
+        if not normalized:
+            return 0
+        data = self._load()
+        items: dict[str, dict] = data.get("items") or {}
+        touched = 0
+        for row in items.values():
+            if not isinstance(row, dict) or row.get("type") != "doc":
+                continue
+            changed = False
+            opts = row.get("options")
+            if not isinstance(opts, dict):
+                opts = {}
+                row["options"] = opts
+
+            ref = str(row.get("payload_ref") or "")
+            is_live = not ref.startswith(".kb/shares/")
+            if is_live:
+                mapped = normalized.get(_norm_doc_path(ref))
+                if mapped is not None:
+                    old_name = PurePosixPath(_norm_doc_path(ref)).name
+                    row["payload_ref"] = mapped
+                    if str(row.get("title") or "") == old_name:
+                        row["title"] = PurePosixPath(mapped).name
+                    changed = True
+
+            src = opts.get("source_path")
+            if isinstance(src, str) and src.strip():
+                mapped_src = normalized.get(_norm_doc_path(src))
+                if mapped_src is not None:
+                    opts["source_path"] = mapped_src
+                    changed = True
+
+            if changed:
+                touched += 1
+        if touched:
+            self._save(data)
+        return touched
+
     @staticmethod
     def _record_view(row: dict, *, now: float, referer: str | None) -> None:
         try:
@@ -261,6 +314,10 @@ def _share_id_ok(share_id: str) -> bool:
     if len(share_id) < 16 or len(share_id) > 64:
         return False
     return all(ch.isalnum() or ch in "-_" for ch in share_id)
+
+
+def _norm_doc_path(path: str) -> str:
+    return path.replace("\\", "/").lstrip("/")
 
 
 def build_share_url(*, public_base_url: str, share_id: str) -> str:

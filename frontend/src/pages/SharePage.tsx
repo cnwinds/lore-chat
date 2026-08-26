@@ -3,6 +3,7 @@ import type { ChatMessage } from "../api";
 import { ChatMessageList } from "../components/chat/ChatMessageList";
 import { ShareDocViewer } from "../components/share/ShareDocViewer";
 import { LoreLogo } from "../components/LoreLogo";
+import { useNarrowViewport } from "../hooks/useNarrowViewport";
 import { usePublicShare } from "../hooks/useShareLink";
 
 type Props = {
@@ -54,6 +55,7 @@ export function SharePage({ shareId }: Props) {
   const [password, setPassword] = useState("");
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const narrow = useNarrowViewport();
 
   useEffect(() => {
     document.title = payload?.title
@@ -160,6 +162,7 @@ export function SharePage({ shareId }: Props) {
               onQuestionResolved={noop}
               readOnly
               showOutline
+              outlineLayout={narrow ? "sheet" : "rail"}
             />
           </div>
         )}

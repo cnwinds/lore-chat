@@ -92,6 +92,37 @@ def test_rename_file(tmp_path):
     assert not repo.abs_path("scripts/run.sh").exists()
 
 
+def test_move_document_follows_live_share(tmp_path):
+    from app.models.share_links import ShareLinkStore
+
+    repo = KnowledgeRepo(tmp_path / "knowledge")
+    w = _writer(repo, tmp_path)
+    w.persist_document(
+        "备忘/旧名.md",
+        {"title": "旧名"},
+        "hello\n",
+        commit_msg="add: 备忘/旧名.md",
+        changelog_line="add 旧名",
+    )
+    store = ShareLinkStore(repo.root)
+    store.create(
+        type="doc",
+        title="旧名.md",
+        payload_ref="备忘/旧名.md",
+        ttl_sec=None,
+        options={"pin_version": False, "source_path": "备忘/旧名.md"},
+        share_id="followshare12345678",
+    )
+    new = w.move_entry(
+        from_path="备忘/旧名.md", to_directory="备忘", to_filename="新名.md"
+    )
+    assert new == "备忘/新名.md"
+    link = store.get("followshare12345678")
+    assert link is not None
+    assert link.payload_ref == "备忘/新名.md"
+    assert link.options["source_path"] == "备忘/新名.md"
+
+
 def test_delete_file(tmp_path):
     repo = KnowledgeRepo(tmp_path / "knowledge")
     w = _writer(repo, tmp_path)

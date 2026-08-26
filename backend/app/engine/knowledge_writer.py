@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from collections.abc import Callable
 from pathlib import PurePosixPath
@@ -228,7 +229,21 @@ class KnowledgeWriter:
             f"移动文档 {from_norm} → {new_path}",
             commit_msg=f"chore: changelog move {new_path}",
         )
+        self._follow_share_paths({from_norm: new_path})
         return new_path
+
+    def _follow_share_paths(self, path_map: dict[str, str]) -> None:
+        """文档路径变更后，同步更新 live 分享引用（失败不阻断移动）。"""
+        if not path_map:
+            return
+        try:
+            from app.models.share_links import ShareLinkStore
+
+            ShareLinkStore(self.repo.root).remap_doc_paths(path_map)
+        except Exception:
+            logging.getLogger("lorechat.share").exception(
+                "分享路径跟随失败: %s", path_map
+            )
 
     def drop_from_index(self, rel_paths: list[str]) -> None:
         if self.indexer is None:
@@ -452,6 +467,7 @@ class KnowledgeWriter:
             f"移动文件夹 {from_norm} → {new_root}（{len(new_paths)} 个文件）",
             commit_msg=f"chore: changelog move dir {new_root}",
         )
+        self._follow_share_paths(dict(zip(old_paths, new_paths)))
         return new_root
 
     def move_entry(
