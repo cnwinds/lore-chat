@@ -4498,12 +4498,15 @@ button.memory-fact-statement--jump:focus-visible {
   overflow-y: auto;
   padding: 8px 10px 16px;
   overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 .share-sheet-list .chat-outline-list,
-.share-sheet-list.share-page-doc-outline-list {
+.share-sheet-list .share-page-doc-outline-list {
   padding: 0;
   overflow: visible;
+  flex: none;
+  min-height: auto;
 }
 
 .share-sheet-list .chat-outline-item,

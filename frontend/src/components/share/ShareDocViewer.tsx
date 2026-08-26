@@ -192,13 +192,15 @@ export function ShareDocViewer({ body }: Props) {
                     ×
                   </button>
                 </div>
-                <ShareDocOutlineList
-                  items={outlineItems}
-                  activeIndex={activeIndex}
-                  activeItemRef={activeItemRef}
-                  onJump={handleJump}
-                  className="share-page-doc-outline-list share-sheet-list"
-                />
+                <div className="share-sheet-list">
+                  <ShareDocOutlineList
+                    items={outlineItems}
+                    activeIndex={activeIndex}
+                    activeItemRef={activeItemRef}
+                    onJump={handleJump}
+                    className="share-page-doc-outline-list"
+                  />
+                </div>
               </div>
             </>
           )}
