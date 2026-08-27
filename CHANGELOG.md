@@ -4,6 +4,19 @@
 
 ## [Unreleased]
 
+## [0.2.5] - 2026-08-27
+
+### Added
+
+- 轻量回合状态 API（`GET /conversations/{id}/turns/active`），断线重连时更快探测服务端是否在跑
+
+### Fixed
+
+- 切换会话时流式 UI 与模型显示不再串台
+- 观测断线后以服务端状态 reconcile，减少误报失败并支持续接
+- 聊天输入：Enter 发送、Shift+Enter 换行
+- 已启用 Skill 时模型可正确收到 Skill 目录（兼容 GLM 等仅识别单条 system 的 API）
+
 ## [0.2.4] - 2026-08-26
 
 ### Added
@@ -80,7 +93,8 @@
 - MIT 许可证与开源社区文件（SECURITY、CONTRIBUTING、CODE_OF_CONDUCT）
 - GitHub Issue / PR 模板与 CI（backend pytest、frontend lint/test/build）
 
-[Unreleased]: https://github.com/cnwinds/lore-chat/compare/v0.2.4...HEAD
+[Unreleased]: https://github.com/cnwinds/lore-chat/compare/v0.2.5...HEAD
+[0.2.5]: https://github.com/cnwinds/lore-chat/compare/v0.2.4...v0.2.5
 [0.2.4]: https://github.com/cnwinds/lore-chat/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/cnwinds/lore-chat/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/cnwinds/lore-chat/compare/v0.2.1...v0.2.2
