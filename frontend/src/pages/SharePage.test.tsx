@@ -138,6 +138,8 @@ describe("SharePage", () => {
     await waitFor(() => {
       expect(screen.getByText("分享不可用")).toBeInTheDocument();
     });
-    expect(screen.queryByPlaceholderText("访问密码")).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByPlaceholderText("访问密码")).not.toBeInTheDocument();
+    });
   });
 });

@@ -168,6 +168,7 @@ export class TurnObservationEngine {
       !isRetry && !ctx.msgs.some((m) => m.role === "user");
 
     this.refs.stickToBottomRef.current = true;
+    const priorMsgsCid = this.ownership.msgsConversationIdRef.current;
     this.beginObservation(ctx.conversationId);
 
     const assistantMsg: ChatMessage = {
@@ -177,7 +178,6 @@ export class TurnObservationEngine {
       sources: [],
     };
 
-    const priorMsgsCid = this.ownership.msgsConversationIdRef.current;
     this.callbacks.patchMsgs((m) => {
       const sameChat =
         ctx.conversationId == null ||
@@ -301,9 +301,11 @@ export class TurnObservationEngine {
     let awaitingUser = false;
     let completed = false;
 
+    this.abortController = new AbortController();
+
     try {
       const result = await this.consumeEvents(
-        observeActiveTurnStream(cid, { signal: this.abortController!.signal }),
+        observeActiveTurnStream(cid, { signal: this.abortController.signal }),
         cid,
       );
       serverStreamError = result.serverStreamError;
