@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
+import type { ActiveTurnStatus } from "../../api";
 import {
   buildObservationEnd,
-  fetchConversationWithRetry,
+  fetchActiveTurnStatusWithRetry,
+  isActiveTurnOrphaned,
+  isActiveTurnRunning,
   needsServerReconcile,
   shouldReloadConversation,
   toStreamEndPayload,
@@ -30,23 +33,39 @@ describe("turnReconcile", () => {
     expect(shouldReloadConversation(info)).toBe("full");
   });
 
-  it("retries fetch until success", async () => {
-    const fetchConv = vi
+  it("retries active turn status until success", async () => {
+    const running: ActiveTurnStatus = {
+      conversation_id: "cid-1",
+      turn_id: "t1",
+      status: "running",
+      started_at: null,
+      last_seq: 3,
+      observable: true,
+    };
+    const fetchStatus = vi
       .fn()
       .mockRejectedValueOnce(new Error("network"))
-      .mockResolvedValueOnce({
-        id: "cid-1",
-        title: "t",
-        created_at: "",
-        updated_at: "",
-        message_count: 0,
-        summarized: false,
-        summary_path: null,
-        messages: [],
-        active_turn: { turn_id: "t1", status: "running", started_at: null },
-      });
-    const conv = await fetchConversationWithRetry("cid-1", fetchConv, [0, 0]);
-    expect(conv?.active_turn?.status).toBe("running");
-    expect(fetchConv).toHaveBeenCalledTimes(2);
+      .mockResolvedValueOnce(running);
+    const status = await fetchActiveTurnStatusWithRetry(
+      "cid-1",
+      fetchStatus,
+      [0, 0],
+    );
+    expect(status?.status).toBe("running");
+    expect(isActiveTurnRunning(status!)).toBe(true);
+    expect(fetchStatus).toHaveBeenCalledTimes(2);
+  });
+
+  it("detects orphaned turn without observable memory task", () => {
+    const orphaned: ActiveTurnStatus = {
+      conversation_id: "cid-1",
+      turn_id: "t1",
+      status: "orphaned",
+      started_at: null,
+      last_seq: null,
+      observable: false,
+    };
+    expect(isActiveTurnOrphaned(orphaned)).toBe(true);
+    expect(isActiveTurnRunning(orphaned)).toBe(false);
   });
 });

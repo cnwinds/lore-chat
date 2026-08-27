@@ -529,6 +529,36 @@ class ConversationStore:
             row = self._conversation_row(cid)
             return self._conv_to_dict(row)
 
+    def get_active_turn_meta(self, cid: str) -> dict:
+        """Lightweight active turn snapshot (no messages)."""
+        with self._lock:
+            row = self._conversation_row(cid)
+            active_turn_id = row["active_turn_id"]
+            if not active_turn_id:
+                return {
+                    "conversation_id": cid,
+                    "turn_id": None,
+                    "status": None,
+                    "started_at": None,
+                }
+            trow = self.conn.execute(
+                "SELECT id, status, started_at FROM turns WHERE id = ?",
+                (active_turn_id,),
+            ).fetchone()
+            if trow is None:
+                return {
+                    "conversation_id": cid,
+                    "turn_id": active_turn_id,
+                    "status": None,
+                    "started_at": None,
+                }
+            return {
+                "conversation_id": cid,
+                "turn_id": trow["id"],
+                "status": trow["status"],
+                "started_at": trow["started_at"],
+            }
+
     def list_all(self) -> list[dict]:
         with self._lock:
             rows = self.conn.execute("SELECT * FROM conversations").fetchall()

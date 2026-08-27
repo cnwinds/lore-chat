@@ -6,6 +6,7 @@
 import {
   chatStream,
   createConversation,
+  getActiveTurnStatus,
   getConversation,
   observeActiveTurnStream,
   stopChat,
@@ -25,8 +26,10 @@ import { nowIsoDisplay } from "../../utils/displayTime";
 import { newId } from "../../utils/id";
 import {
   buildObservationEnd,
-  fetchConversationWithRetry,
+  fetchActiveTurnStatusWithRetry,
+  isActiveTurnOrphaned,
   isActiveTurnRunning,
+  isActiveTurnRunningConv,
   shouldReloadConversation,
   toStreamEndPayload,
   type ObservationEndInfo,
@@ -411,7 +414,7 @@ export class TurnObservationEngine {
   }
 
   private applyServerConversation(conv: Conversation): void {
-    const activeTurnRunning = isActiveTurnRunning(conv);
+    const activeTurnRunning = isActiveTurnRunningConv(conv);
     this.callbacks.patchMsgs(() =>
       conv.messages.map((m) =>
         normalizeLoadedMessage(
@@ -433,8 +436,11 @@ export class TurnObservationEngine {
   private async reconcileWithServer(
     streamCid: string,
   ): Promise<{ outcome: ReconcileOutcome; conv?: Conversation }> {
-    const conv = await fetchConversationWithRetry(streamCid, getConversation);
-    if (!conv) return { outcome: "failed" };
+    const turnStatus = await fetchActiveTurnStatusWithRetry(
+      streamCid,
+      getActiveTurnStatus,
+    );
+    if (!turnStatus) return { outcome: "failed" };
     if (
       !shouldPaintStreamPatch(
         this.ownership,
@@ -442,18 +448,34 @@ export class TurnObservationEngine {
         this.callbacks.getViewConversationId(),
       )
     ) {
-      return { outcome: "settled", conv };
+      return { outcome: "settled" };
     }
-    if (isActiveTurnRunning(conv)) {
+    if (isActiveTurnOrphaned(turnStatus)) {
+      try {
+        const conv = await getConversation(streamCid);
+        if (!this.ownership.streamingRef.current) {
+          this.applyServerConversation(conv);
+        }
+        return { outcome: "failed", conv };
+      } catch {
+        return { outcome: "failed" };
+      }
+    }
+    if (isActiveTurnRunning(turnStatus)) {
       const resumed = await this.resumeActiveTurn(
         streamCid,
-        conv.active_turn?.started_at,
+        turnStatus.started_at,
       );
       return { outcome: resumed ? "resumed" : "failed" };
     }
-    if (this.ownership.streamingRef.current) return { outcome: "settled", conv };
-    this.applyServerConversation(conv);
-    return { outcome: "settled", conv };
+    if (this.ownership.streamingRef.current) return { outcome: "settled" };
+    try {
+      const conv = await getConversation(streamCid);
+      this.applyServerConversation(conv);
+      return { outcome: "settled", conv };
+    } catch {
+      return { outcome: "failed" };
+    }
   }
 
   private clearStreamOwnership(): void {

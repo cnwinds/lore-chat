@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { SettingsAttention } from "../api";
-import type { SettingsTab } from "../components/settings/SettingsPanel";
+import type { SettingsTab } from "../../hooks/settings/settingsTabStorage";
 import type { ShareLinkModalTarget } from "../components/share/ShareLinkModal";
 import type { useConversationShell } from "./useConversationShell";
 import type { useDocPreviewLayout } from "./useDocPreviewLayout";

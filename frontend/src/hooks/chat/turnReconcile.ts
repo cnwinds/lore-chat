@@ -1,6 +1,6 @@
 /** 观测断开后以服务端 active_turn / messages 为准的 reconcile 策略。 */
 
-import type { Conversation } from "../../api";
+import type { ActiveTurnStatus, Conversation } from "../../api";
 
 export const RECONCILE_DELAYS_MS = [0, 400, 1200];
 
@@ -72,18 +72,18 @@ export function toStreamEndPayload(
   };
 }
 
-export async function fetchConversationWithRetry(
+export async function fetchWithRetry<T>(
   cid: string,
-  fetchConv: (id: string) => Promise<Conversation>,
+  fetchFn: (id: string) => Promise<T>,
   delays: number[] = RECONCILE_DELAYS_MS,
-): Promise<Conversation | null> {
+): Promise<T | null> {
   for (let i = 0; i < delays.length; i++) {
     const delay = delays[i];
     if (delay > 0) {
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
     try {
-      return await fetchConv(cid);
+      return await fetchFn(cid);
     } catch {
       /* retry */
     }
@@ -91,6 +91,32 @@ export async function fetchConversationWithRetry(
   return null;
 }
 
-export function isActiveTurnRunning(conv: Conversation): boolean {
+/** @deprecated Prefer fetchActiveTurnStatusWithRetry for reconcile probes. */
+export async function fetchConversationWithRetry(
+  cid: string,
+  fetchConv: (id: string) => Promise<Conversation>,
+  delays: number[] = RECONCILE_DELAYS_MS,
+): Promise<Conversation | null> {
+  return fetchWithRetry(cid, fetchConv, delays);
+}
+
+export async function fetchActiveTurnStatusWithRetry(
+  cid: string,
+  fetchStatus: (id: string) => Promise<ActiveTurnStatus>,
+  delays: number[] = RECONCILE_DELAYS_MS,
+): Promise<ActiveTurnStatus | null> {
+  return fetchWithRetry(cid, fetchStatus, delays);
+}
+
+export function isActiveTurnRunning(status: ActiveTurnStatus): boolean {
+  return status.status === "running" && status.observable;
+}
+
+export function isActiveTurnOrphaned(status: ActiveTurnStatus): boolean {
+  return status.status === "orphaned";
+}
+
+/** 兼容 getConversation.active_turn 语义（加载历史、normalize）。 */
+export function isActiveTurnRunningConv(conv: Conversation): boolean {
   return conv.active_turn?.status === "running";
 }

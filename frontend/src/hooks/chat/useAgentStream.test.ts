@@ -12,6 +12,14 @@ vi.mock("../../api", async (importOriginal) => {
     chatStream: vi.fn(),
     observeActiveTurnStream: vi.fn(),
     createConversation: vi.fn().mockResolvedValue({ id: "new-cid" }),
+    getActiveTurnStatus: vi.fn().mockResolvedValue({
+      conversation_id: "cid-1",
+      turn_id: null,
+      status: null,
+      started_at: null,
+      last_seq: null,
+      observable: false,
+    }),
     getConversation: vi.fn().mockResolvedValue({
       id: "cid-1",
       title: "t",
@@ -67,6 +75,14 @@ describe("useAgentStream", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(api.createConversation).mockResolvedValue({ id: "new-cid" });
+    vi.mocked(api.getActiveTurnStatus).mockResolvedValue({
+      conversation_id: "cid-1",
+      turn_id: null,
+      status: null,
+      started_at: null,
+      last_seq: null,
+      observable: false,
+    });
     vi.mocked(api.getConversation).mockResolvedValue({
       id: "cid-1",
       title: "t",
@@ -207,6 +223,7 @@ describe("useAgentStream", () => {
     vi.mocked(api.chatStream).mockImplementation(async function* () {
       throw new Error("boom");
     });
+    vi.mocked(api.getActiveTurnStatus).mockRejectedValue(new Error("offline"));
     vi.mocked(api.getConversation).mockRejectedValue(new Error("offline"));
     const { setMsgs, getCurrent } = makeSetMsgs([]);
     const options = baseOptions({ setMsgs });
@@ -227,26 +244,13 @@ describe("useAgentStream", () => {
     vi.mocked(api.chatStream).mockImplementation(async function* () {
       throw new Error("boom");
     });
-    vi.mocked(api.getConversation).mockResolvedValue({
-      id: "cid-1",
-      title: "t",
-      created_at: "",
-      updated_at: "",
-      message_count: 1,
-      summarized: false,
-      summary_path: null,
-      messages: [
-        {
-          role: "user",
-          text: "hello",
-          ts: "2026-01-01T00:00:00.000Z",
-        },
-      ],
-      active_turn: {
-        turn_id: "t1",
-        status: "running",
-        started_at: "2026-01-01T00:00:00.000Z",
-      },
+    vi.mocked(api.getActiveTurnStatus).mockResolvedValue({
+      conversation_id: "cid-1",
+      turn_id: "t1",
+      status: "running",
+      started_at: "2026-01-01T00:00:00.000Z",
+      last_seq: 0,
+      observable: true,
     });
     const { setMsgs, getCurrent } = makeSetMsgs([]);
     const options = baseOptions({ setMsgs });

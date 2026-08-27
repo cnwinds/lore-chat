@@ -49,6 +49,42 @@ class ChatSessionRunner:
     def request_stop(self, conversation_id: str) -> bool:
         return self.turn_hub.request_stop(conversation_id)
 
+    def resolve_active_turn_status(self, conversation_id: str) -> dict:
+        """Lightweight reconcile probe: DB turn row + in-memory observability."""
+        meta = self.conversations.get_active_turn_meta(conversation_id)
+        turn_id = meta.get("turn_id")
+        db_status = meta.get("status")
+        if not turn_id:
+            return {
+                "conversation_id": conversation_id,
+                "turn_id": None,
+                "status": None,
+                "started_at": None,
+                "last_seq": None,
+                "observable": False,
+            }
+        active = self.turn_hub.get_active(conversation_id)
+        observable = (
+            active is not None
+            and active.get("turn_id") == turn_id
+            and not active.get("finished")
+        )
+        if db_status == "running":
+            status = "running" if observable else "orphaned"
+        else:
+            status = db_status
+        last_seq = None
+        if active is not None and active.get("turn_id") == turn_id:
+            last_seq = active.get("seq")
+        return {
+            "conversation_id": conversation_id,
+            "turn_id": turn_id,
+            "status": status,
+            "started_at": meta.get("started_at"),
+            "last_seq": last_seq,
+            "observable": observable,
+        }
+
     def begin_persisted_turn(
         self,
         *,

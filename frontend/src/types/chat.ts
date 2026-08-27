@@ -165,6 +165,15 @@ export type ConversationSummary = {
   summary_path?: string | null;
 };
 
+export type ActiveTurnStatus = {
+  conversation_id: string;
+  turn_id: string | null;
+  status: "running" | "orphaned" | "complete" | "interrupted" | null;
+  started_at: string | null;
+  last_seq: number | null;
+  observable: boolean;
+};
+
 export type Conversation = ConversationSummary & {
   messages: ChatMessage[];
   summarized_at?: string | null;

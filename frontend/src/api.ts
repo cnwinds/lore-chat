@@ -1,6 +1,7 @@
 // 生产环境经 nginx 同源代理时 VITE_API_BASE 留空；本地开发在 .env 中设为 http://localhost:8000
 
 import type {
+  ActiveTurnStatus,
   ChatMessage,
   ChatResult,
   ChatStreamEvent,
@@ -20,7 +21,7 @@ import {
 } from "./lib/httpTransport";
 import { messageFromImportErrorBody } from "./utils/importKbError";
 
-export type { ApiError, PathExistsDetail };
+export type { ApiError, PathExistsDetail, ActiveTurnStatus };
 
 export type AuthStatus = {
   setup_required: boolean;
@@ -765,6 +766,12 @@ export async function createConversation() {
 
 export async function getConversation(id: string) {
   return apiFetch<Conversation>(`/api/conversations/${encodeURIComponent(id)}`);
+}
+
+export async function getActiveTurnStatus(conversationId: string) {
+  return apiFetch<ActiveTurnStatus>(
+    `/api/conversations/${encodeURIComponent(conversationId)}/turns/active`,
+  );
 }
 
 export type ConversationSystemEvent = {

@@ -125,6 +125,16 @@ async def chat(body: ChatBody, request: Request):
     )
 
 
+@router.get("/conversations/{cid}/turns/active")
+async def get_active_turn_status(cid: str, request: Request):
+    """轻量回合状态：reconcile 探测用，不返回 messages。"""
+    c = container(request)
+    try:
+        return c.chat_runner.resolve_active_turn_status(cid)
+    except KeyError as e:
+        raise HTTPException(404, "对话不存在") from e
+
+
 @router.get("/conversations/{cid}/turns/active/stream")
 async def observe_active_turn(
     cid: str,
