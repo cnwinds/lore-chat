@@ -4,6 +4,13 @@
 
 ## [Unreleased]
 
+## [0.2.8] - 2026-08-27
+
+### Fixed
+
+- 断线 reconcile 续观测时补全 AbortController，避免 reconcile 死循环导致发行 CI 内存溢出
+- 跨会话发送时不再把上一会话的历史气泡拼进新消息
+
 ## [0.2.6] - 2026-08-27
 
 ### Fixed
@@ -99,7 +106,8 @@
 - MIT 许可证与开源社区文件（SECURITY、CONTRIBUTING、CODE_OF_CONDUCT）
 - GitHub Issue / PR 模板与 CI（backend pytest、frontend lint/test/build）
 
-[Unreleased]: https://github.com/cnwinds/lore-chat/compare/v0.2.6...HEAD
+[Unreleased]: https://github.com/cnwinds/lore-chat/compare/v0.2.8...HEAD
+[0.2.8]: https://github.com/cnwinds/lore-chat/compare/v0.2.6...v0.2.8
 [0.2.6]: https://github.com/cnwinds/lore-chat/compare/v0.2.5...v0.2.6
 [0.2.5]: https://github.com/cnwinds/lore-chat/compare/v0.2.4...v0.2.5
 [0.2.4]: https://github.com/cnwinds/lore-chat/compare/v0.2.3...v0.2.4
