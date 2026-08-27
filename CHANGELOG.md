@@ -4,6 +4,12 @@
 
 ## [Unreleased]
 
+## [0.2.6] - 2026-08-27
+
+### Fixed
+
+- 修复前端测试 lint 导致 `v0.2.5` 发行 CI 未通过（无镜像发布）
+
 ## [0.2.5] - 2026-08-27
 
 ### Added
@@ -93,7 +99,8 @@
 - MIT 许可证与开源社区文件（SECURITY、CONTRIBUTING、CODE_OF_CONDUCT）
 - GitHub Issue / PR 模板与 CI（backend pytest、frontend lint/test/build）
 
-[Unreleased]: https://github.com/cnwinds/lore-chat/compare/v0.2.5...HEAD
+[Unreleased]: https://github.com/cnwinds/lore-chat/compare/v0.2.6...HEAD
+[0.2.6]: https://github.com/cnwinds/lore-chat/compare/v0.2.5...v0.2.6
 [0.2.5]: https://github.com/cnwinds/lore-chat/compare/v0.2.4...v0.2.5
 [0.2.4]: https://github.com/cnwinds/lore-chat/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/cnwinds/lore-chat/compare/v0.2.2...v0.2.3
