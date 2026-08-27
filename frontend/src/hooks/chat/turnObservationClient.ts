@@ -168,6 +168,7 @@ export class TurnObservationEngine {
       !isRetry && !ctx.msgs.some((m) => m.role === "user");
 
     this.refs.stickToBottomRef.current = true;
+    const priorMsgsCid = this.ownership.msgsConversationIdRef.current;
     this.beginObservation(ctx.conversationId);
 
     const assistantMsg: ChatMessage = {
@@ -176,8 +177,6 @@ export class TurnObservationEngine {
       timeline: [],
       sources: [],
     };
-
-    const priorMsgsCid = this.ownership.msgsConversationIdRef.current;
     this.callbacks.patchMsgs((m) => {
       const sameChat =
         ctx.conversationId == null ||
@@ -267,11 +266,11 @@ export class TurnObservationEngine {
 
     this.refs.stickToBottomRef.current = true;
     this.stopRequested = false;
-    this.reconcilePasses = 0;
     this.ownership.streamingRef.current = true;
     const priorMsgsCid = this.ownership.msgsConversationIdRef.current;
     this.claimStream(cid);
     this.callbacks.onStreamingChange(true);
+    this.abortController = new AbortController();
 
     const startedMs = startedAt ? Date.parse(startedAt) : NaN;
     const startMs = Number.isFinite(startedMs) ? startedMs : Date.now();
@@ -311,6 +310,7 @@ export class TurnObservationEngine {
       completed = result.completed;
     } catch (err) {
       if (this.isAbortError(err) && this.stopRequested) aborted = true;
+      else serverStreamError = true;
     } finally {
       await this.finishObservation(
         cid,
@@ -322,7 +322,7 @@ export class TurnObservationEngine {
         }),
       );
     }
-    return true;
+    return completed && !serverStreamError;
   }
 
   private beginObservation(conversationId: string | null): void {
