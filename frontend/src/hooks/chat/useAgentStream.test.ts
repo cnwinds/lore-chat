@@ -221,7 +221,7 @@ describe("useAgentStream", () => {
 
   it("shows error when reconcile cannot reach server after stream throws", async () => {
     vi.mocked(api.chatStream).mockImplementation(async function* () {
-      throw new Error("boom");
+      yield await Promise.reject(new Error("boom"));
     });
     vi.mocked(api.getActiveTurnStatus).mockRejectedValue(new Error("offline"));
     vi.mocked(api.getConversation).mockRejectedValue(new Error("offline"));
@@ -242,7 +242,7 @@ describe("useAgentStream", () => {
 
   it("resumes observation when server turn is still running after stream throws", async () => {
     vi.mocked(api.chatStream).mockImplementation(async function* () {
-      throw new Error("boom");
+      yield await Promise.reject(new Error("boom"));
     });
     vi.mocked(api.getActiveTurnStatus).mockResolvedValue({
       conversation_id: "cid-1",
