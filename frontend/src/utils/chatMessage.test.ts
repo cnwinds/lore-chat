@@ -162,6 +162,27 @@ describe("normalizeLoadedMessage", () => {
       summary: "连接中断，未完成",
     });
   });
+
+  it("keeps running tools when server turn is still active", () => {
+    const msg = normalizeLoadedMessage(
+      {
+        role: "assistant",
+        timeline: [
+          {
+            type: "tool",
+            id: "t1",
+            tool: "sandbox_run",
+            label: "run",
+            ts: "t",
+            status: "running",
+          },
+        ],
+      },
+      { activeTurnRunning: true },
+    );
+    expect(msg.status).toBeUndefined();
+    expect(msg.timeline?.[0]).toMatchObject({ status: "running" });
+  });
 });
 
 describe("canRetryAssistantReply", () => {

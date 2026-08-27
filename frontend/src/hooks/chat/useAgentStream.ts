@@ -25,8 +25,17 @@ import { nowIsoDisplay } from "../../utils/displayTime";
 import { newId } from "../../utils/id";
 import {
   reduceStreamEvent,
-  shouldReloadConversation,
 } from "../../utils/agentStreamProjection";
+import {
+  buildObservationEnd,
+  fetchConversationWithRetry,
+  isActiveTurnRunning,
+  shouldReloadConversation,
+  toStreamEndPayload,
+  type ObservationEndInfo,
+  type ReconcileOutcome,
+} from "./turnReconcile";
+import { timelineAwaitsUserAnswer } from "../../utils/chatMessage";
 import {
   isStreamingForView,
   shouldPaintStreamPatch,
@@ -96,6 +105,7 @@ export function useAgentStream({
   const { streamingRef, streamConversationIdRef, msgsConversationIdRef } =
     streamOwnership;
   const [streaming, setStreaming] = useState(false);
+  const [reconciling, setReconciling] = useState(false);
   const [streamViewId, setStreamViewId] = useState<string | null>(null);
   const [liveElapsedMs, setLiveElapsedMs] = useState(0);
   const [streamNowMs, setStreamNowMs] = useState(() => Date.now());
@@ -103,6 +113,8 @@ export function useAgentStream({
   const streamingAssistantIdxRef = useRef<number | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const stopRequestedRef = useRef(false);
+  const reconcilePassRef = useRef(0);
+  const MAX_RECONCILE_PASSES = 3;
   const onStreamEndRef = useRef(onStreamEnd);
   const onInjectDeferredRef = useRef(onInjectDeferred);
   const onUserInjectedRef = useRef(onUserInjected);
@@ -206,9 +218,14 @@ export function useAgentStream({
   async function consumeEvents(
     events: AsyncGenerator<ChatStreamEvent>,
     streamCid: string | null,
-  ): Promise<{ streamFailed: boolean; awaitingUser: boolean }> {
-    let streamFailed = false;
+  ): Promise<{
+    serverStreamError: boolean;
+    awaitingUser: boolean;
+    completed: boolean;
+  }> {
+    let serverStreamError = false;
     let awaitingUser = false;
+    let completed = false;
     let serverTimeline = false;
     for await (const { event, data } of events) {
       let userInjectId: string | undefined;
@@ -218,7 +235,7 @@ export function useAgentStream({
       patchAssistant(streamCid, (prevMsg) => {
         const result = reduceStreamEvent(
           {
-            streamFailed,
+            streamFailed: serverStreamError,
             awaitingUser,
             serverTimeline,
             assistant: prevMsg,
@@ -226,7 +243,7 @@ export function useAgentStream({
           event,
           data,
         );
-        streamFailed = result.state.streamFailed;
+        serverStreamError = result.state.streamFailed;
         awaitingUser = result.state.awaitingUser;
         serverTimeline = result.state.serverTimeline;
         userInjectId = result.state.userInjectId;
@@ -238,9 +255,63 @@ export function useAgentStream({
       if (userInjectId) onUserInjectedRef.current?.(userInjectId);
       if (injectDeferredId) onInjectDeferredRef.current?.(injectDeferredId);
       if (kbNotify !== undefined) onKbChanged?.(kbNotify ?? undefined);
-      if (streamFailed || stop) break;
+      if (event === "done") completed = true;
+      if (serverStreamError || stop) break;
     }
-    return { streamFailed, awaitingUser };
+    return { serverStreamError, awaitingUser, completed };
+  }
+
+  function applyServerConversation(
+    conv: Awaited<ReturnType<typeof getConversation>>,
+  ) {
+    const activeTurnRunning = isActiveTurnRunning(conv);
+    setMsgs(
+      conv.messages.map((m) =>
+        normalizeLoadedMessage(
+          {
+            ...m,
+            injected: isInjectedUserMessage(m),
+          },
+          { activeTurnRunning },
+        ),
+      ),
+    );
+    msgsConversationIdRef.current = conv.id;
+    setSummarized(!!conv.summarized);
+    setSummaryPath(conv.summary_path ?? null);
+  }
+
+  function awaitingUserFromConversation(
+    conv: Awaited<ReturnType<typeof getConversation>>,
+  ): boolean {
+    const last = [...conv.messages].reverse().find((m) => m.role === "assistant");
+    return last ? timelineAwaitsUserAnswer(last.timeline) : false;
+  }
+
+  async function reconcileWithServer(
+    streamCid: string,
+  ): Promise<{ outcome: ReconcileOutcome; conv?: Awaited<ReturnType<typeof getConversation>> }> {
+    const conv = await fetchConversationWithRetry(streamCid, getConversation);
+    if (!conv) return { outcome: "failed" };
+    if (
+      !shouldPaintStreamPatch(
+        streamOwnership,
+        streamCid,
+        conversationIdRef.current,
+      )
+    ) {
+      return { outcome: "settled", conv };
+    }
+    if (isActiveTurnRunning(conv)) {
+      const resumed = await resumeActiveTurn(
+        streamCid,
+        conv.active_turn?.started_at,
+      );
+      return { outcome: resumed ? "resumed" : "failed" };
+    }
+    if (streamingRef.current) return { outcome: "settled", conv };
+    applyServerConversation(conv);
+    return { outcome: "settled", conv };
   }
 
   function clearStreamOwnership() {
@@ -252,12 +323,7 @@ export function useAgentStream({
 
   async function finishObservation(
     streamCid: string | null,
-    info: {
-      streamFailed: boolean;
-      aborted: boolean;
-      detached: boolean;
-      awaitingUser: boolean;
-    },
+    endInfo: ObservationEndInfo,
   ) {
     // Switch cleanup may have released ownership so another chat can resume/send.
     // A detached observation's finally must not wipe that newer claim (or its AbortController).
@@ -271,29 +337,86 @@ export function useAgentStream({
       skipLoadRef.current = null;
     }
     onSidebarRefresh?.();
-    // Outbound queue is per viewed conversation — do not apply end-of-stream
-    // side effects (flush/pause) when this observation is no longer the viewed chat.
-    if (
+
+    const canPaint =
+      !!streamCid &&
       shouldPaintStreamPatch(
         streamOwnership,
         streamCid,
         conversationIdRef.current,
-      )
-    ) {
+      );
+
+    const reload = shouldReloadConversation(endInfo);
+
+    if (reload === "reconcile" && canPaint) {
+      if (reconcilePassRef.current >= MAX_RECONCILE_PASSES) {
+        patchAssistant(streamCid, (prevMsg) => ({
+          ...prevMsg,
+          text:
+            (prevMsg.text || "").trim() ||
+            "错误：连接中断，无法同步服务器状态",
+          status: "error",
+        }));
+        onStreamEndRef.current?.({
+          ...toStreamEndPayload(endInfo, { reconcileFailed: true }),
+          conversationId: streamCid,
+        });
+        return;
+      }
+      reconcilePassRef.current += 1;
+      setReconciling(true);
+      try {
+        const { outcome, conv } = await reconcileWithServer(streamCid!);
+        if (outcome === "resumed") {
+          reconcilePassRef.current = 0;
+          return;
+        }
+        if (outcome === "settled" && conv) {
+          if (
+            shouldPaintStreamPatch(
+              streamOwnership,
+              streamCid,
+              conversationIdRef.current,
+            )
+          ) {
+            onStreamEndRef.current?.({
+              failed: false,
+              aborted: false,
+              detached: false,
+              awaitingUser: awaitingUserFromConversation(conv),
+              conversationId: streamCid,
+            });
+          }
+          return;
+        }
+        patchAssistant(streamCid, (prevMsg) => ({
+          ...prevMsg,
+          text:
+            (prevMsg.text || "").trim() ||
+            "错误：连接中断，无法同步服务器状态",
+          status: "error",
+        }));
+        if (canPaint) {
+          onStreamEndRef.current?.({
+            ...toStreamEndPayload(endInfo, { reconcileFailed: true }),
+            conversationId: streamCid,
+          });
+        }
+        return;
+      } finally {
+        setReconciling(false);
+      }
+    }
+
+    if (canPaint) {
       onStreamEndRef.current?.({
-        failed: info.streamFailed,
-        aborted: info.aborted,
-        detached: info.detached,
-        awaitingUser:
-          !info.streamFailed &&
-          !info.aborted &&
-          !info.detached &&
-          info.awaitingUser,
+        ...toStreamEndPayload(endInfo),
         conversationId: streamCid,
       });
     }
-    const reload = shouldReloadConversation(info);
-    if (!streamCid || reload === "none") return;
+
+    if (!streamCid || reload === "none" || reload === "reconcile") return;
+
     getConversation(streamCid)
       .then((conv) => {
         if (
@@ -306,19 +429,7 @@ export function useAgentStream({
           return;
         }
         if (streamingRef.current) return;
-        setMsgs(
-          conv.messages.map((m) =>
-            normalizeLoadedMessage({
-              ...m,
-              injected: isInjectedUserMessage(m),
-            }),
-          ),
-        );
-        msgsConversationIdRef.current = streamCid;
-        if (reload === "full") {
-          setSummarized(!!conv.summarized);
-          setSummaryPath(conv.summary_path ?? null);
-        }
+        applyServerConversation(conv);
       })
       .catch(() => {});
   }
@@ -346,6 +457,7 @@ export function useAgentStream({
       !isRetry && !msgs.some((m) => m.role === "user");
     stickToBottomRef.current = true;
     stopRequestedRef.current = false;
+    reconcilePassRef.current = 0;
     streamingRef.current = true;
     // Claim ownership before setStreaming so the first paint scopes UI correctly.
     const priorMsgsCid = msgsConversationIdRef.current;
@@ -407,10 +519,10 @@ export function useAgentStream({
       ];
     });
 
-    let streamFailed = false;
+    let serverStreamError = false;
     let aborted = false;
-    let detached = false;
     let awaitingUser = false;
+    let completed = false;
     let cid: string | null = null;
     try {
       cid = await ensureConversationId();
@@ -436,31 +548,27 @@ export function useAgentStream({
         }),
         cid,
       );
-      streamFailed = result.streamFailed;
+      serverStreamError = result.serverStreamError;
       awaitingUser = result.awaitingUser;
+      completed = result.completed;
     } catch (err) {
       if (
         (err instanceof DOMException && err.name === "AbortError") ||
         (err instanceof Error && err.name === "AbortError")
       ) {
         if (stopRequestedRef.current) aborted = true;
-        else detached = true;
-      } else {
-        streamFailed = true;
-        const msg = err instanceof Error ? err.message : "请求失败";
-        patchAssistant(cid, (prevMsg) => ({
-          ...prevMsg,
-          text: `错误：${msg}`,
-          status: "error",
-        }));
       }
+      // 网络断线等：defer 到 reconcile，不在此处写 error 气泡
     } finally {
-      await finishObservation(cid, {
-        streamFailed,
-        aborted,
-        detached,
-        awaitingUser,
-      });
+      await finishObservation(
+        cid,
+        buildObservationEnd({
+          completed,
+          serverStreamError,
+          aborted,
+          awaitingUser,
+        }),
+      );
     }
     return true;
   }
@@ -473,6 +581,7 @@ export function useAgentStream({
     if (streamingRef.current) return false;
     stickToBottomRef.current = true;
     stopRequestedRef.current = false;
+    reconcilePassRef.current = 0;
     streamingRef.current = true;
     const priorMsgsCid = msgsConversationIdRef.current;
     streamConversationIdRef.current = cid;
@@ -507,40 +616,35 @@ export function useAgentStream({
       ];
     });
 
-    let streamFailed = false;
+    let serverStreamError = false;
     let aborted = false;
-    let detached = false;
     let awaitingUser = false;
+    let completed = false;
     try {
       const result = await consumeEvents(
         observeActiveTurnStream(cid, { signal: controller.signal }),
         cid,
       );
-      streamFailed = result.streamFailed;
+      serverStreamError = result.serverStreamError;
       awaitingUser = result.awaitingUser;
+      completed = result.completed;
     } catch (err) {
       if (
         (err instanceof DOMException && err.name === "AbortError") ||
         (err instanceof Error && err.name === "AbortError")
       ) {
         if (stopRequestedRef.current) aborted = true;
-        else detached = true;
-      } else {
-        streamFailed = true;
-        const msg = err instanceof Error ? err.message : "请求失败";
-        patchAssistant(cid, (prevMsg) => ({
-          ...prevMsg,
-          text: `错误：${msg}`,
-          status: "error",
-        }));
       }
     } finally {
-      await finishObservation(cid, {
-        streamFailed,
-        aborted,
-        detached,
-        awaitingUser,
-      });
+      await finishObservation(
+        cid,
+        buildObservationEnd({
+          completed,
+          serverStreamError,
+          aborted,
+          awaitingUser,
+        }),
+      );
     }
     return true;
   }
@@ -554,6 +658,7 @@ export function useAgentStream({
   return {
     streaming,
     streamingForView,
+    reconciling,
     liveElapsedMs,
     streamNowMs,
     streamingAssistantIdxRef,

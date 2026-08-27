@@ -162,6 +162,7 @@ export function Chat({
 
   const {
     streamingForView,
+    reconciling,
     liveElapsedMs,
     streamNowMs,
     streamingAssistantIdxRef,
@@ -625,10 +626,11 @@ export function Chat({
   }
 
   function onInputKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-      e.preventDefault();
-      void send();
-    }
+    if (e.key !== "Enter") return;
+    if (e.ctrlKey || e.metaKey) return;
+    if (e.nativeEvent.isComposing) return;
+    e.preventDefault();
+    void send();
   }
 
   function handleOpenSource(src: SourceRef) {
@@ -714,6 +716,7 @@ export function Chat({
         msgs={msgs}
         loadingHistory={loadingHistory}
         streaming={streamingForView}
+        reconciling={reconciling}
         liveElapsedMs={liveElapsedMs}
         streamNowMs={streamNowMs}
         streamingAssistantIdxRef={streamingAssistantIdxRef}
@@ -773,7 +776,7 @@ export function Chat({
                 onPaste={onInputPaste}
                 rows={1}
                 placeholder={streamingForView ? "输入消息加入队列…" : "输入消息…"}
-                title="Ctrl+Enter 发送；可粘贴本地文件或图片到托盘"
+                title="Enter 发送，Ctrl+Enter 换行；可粘贴本地文件或图片到托盘"
                 style={{
                   minHeight: INPUT_MIN_HEIGHT,
                   maxHeight: INPUT_MAX_HEIGHT,

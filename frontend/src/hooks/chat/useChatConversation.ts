@@ -97,12 +97,16 @@ export function useChatConversation({
     getConversation(conversationId)
       .then((conv) => {
         applyIfSafe(() => {
+          const activeTurnRunning = conv.active_turn?.status === "running";
           setMsgs(
             conv.messages.map((m) =>
-              normalizeLoadedMessage({
-                ...m,
-                injected: isInjectedUserMessage(m),
-              }),
+              normalizeLoadedMessage(
+                {
+                  ...m,
+                  injected: isInjectedUserMessage(m),
+                },
+                { activeTurnRunning },
+              ),
             ),
           );
           streamOwnership.msgsConversationIdRef.current = loadedFor;

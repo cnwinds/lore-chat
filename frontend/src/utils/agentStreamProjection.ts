@@ -165,17 +165,10 @@ export function reduceStreamEvent(
   };
 }
 
-export type ObservationEndInfo = {
-  streamFailed: boolean;
-  aborted: boolean;
-  detached: boolean;
-  awaitingUser: boolean;
-};
-
-/** 是否在观测结束后从服务端重载消息列表。 */
-export function shouldReloadConversation(info: ObservationEndInfo): "full" | "aborted" | "none" {
-  // 流失败保留本地错误气泡（可能尚未落库）；刷新后靠服务端 interrupted/error 正文
-  if (info.streamFailed || info.detached) return "none";
-  if (info.aborted) return "aborted";
-  return "full";
-}
+export type { ObservationEndInfo } from "../hooks/chat/turnReconcile";
+export {
+  buildObservationEnd,
+  needsServerReconcile,
+  shouldReloadConversation,
+  toStreamEndPayload,
+} from "../hooks/chat/turnReconcile";

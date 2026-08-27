@@ -78,8 +78,9 @@ export function findPrecedingUserForRetry(
 /** 刷新/重载后：把仍标 running 的工具收成 interrupted，避免永远转圈。 */
 export function normalizeLoadedTimeline(
   timeline: TimelineBlock[] | undefined,
+  opts?: { activeTurnRunning?: boolean },
 ): TimelineBlock[] | undefined {
-  if (!timeline?.length) return timeline;
+  if (!timeline?.length || opts?.activeTurnRunning) return timeline;
 
   function patch(block: TimelineBlock): TimelineBlock {
     if (block.type === "tool" && block.status === "running") {
@@ -97,9 +98,12 @@ export function normalizeLoadedTimeline(
   return timeline.map(patch);
 }
 
-export function normalizeLoadedMessage(m: ChatMessage): ChatMessage {
+export function normalizeLoadedMessage(
+  m: ChatMessage,
+  opts?: { activeTurnRunning?: boolean },
+): ChatMessage {
   if (!m.timeline?.length) return m;
-  const timeline = normalizeLoadedTimeline(m.timeline);
+  const timeline = normalizeLoadedTimeline(m.timeline, opts);
   if (!timeline || timeline === m.timeline) return m;
   const hasInterrupted = timeline.some(
     (b) =>

@@ -203,7 +203,7 @@ export function ComposerToolbar({
           className={`composer-send-btn${canSend ? " composer-send-btn--ready" : ""}`}
           onClick={onSend}
           disabled={!canSend}
-          title={streaming ? "加入发送队列 (Ctrl+Enter)" : "发送 (Ctrl+Enter)"}
+          title={streaming ? "加入发送队列 (Enter)" : "发送 (Enter)"}
           aria-label={streaming ? "加入队列" : "发送"}
         >
           <SendIcon />

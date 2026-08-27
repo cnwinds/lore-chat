@@ -10,6 +10,7 @@ export type ChatMessageListProps = {
   msgs: ChatMessage[];
   loadingHistory: boolean;
   streaming: boolean;
+  reconciling?: boolean;
   liveElapsedMs: number;
   streamNowMs?: number;
   streamingAssistantIdxRef: MutableRefObject<number | null>;
@@ -36,6 +37,7 @@ export function ChatMessageList({
   msgs,
   loadingHistory,
   streaming,
+  reconciling = false,
   liveElapsedMs,
   streamNowMs,
   streamingAssistantIdxRef,
@@ -123,6 +125,13 @@ export function ChatMessageList({
           />
         )}
       </div>
+      {reconciling && !streaming && (
+        <div className="chat-streaming-wrap">
+          <div className="chat-streaming-bar chat-streaming-bar--reconcile">
+            <span className="chat-streaming-label">连接中断，正在同步服务器…</span>
+          </div>
+        </div>
+      )}
       {streaming && (
         <div className="chat-streaming-wrap">
           <div className="chat-streaming-bar">

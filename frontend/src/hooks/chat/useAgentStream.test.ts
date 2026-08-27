@@ -10,6 +10,7 @@ vi.mock("../../api", async (importOriginal) => {
   return {
     ...mod,
     chatStream: vi.fn(),
+    observeActiveTurnStream: vi.fn(),
     createConversation: vi.fn().mockResolvedValue({ id: "new-cid" }),
     getConversation: vi.fn().mockResolvedValue({
       id: "cid-1",
@@ -66,7 +67,20 @@ describe("useAgentStream", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(api.createConversation).mockResolvedValue({ id: "new-cid" });
+    vi.mocked(api.getConversation).mockResolvedValue({
+      id: "cid-1",
+      title: "t",
+      created_at: "",
+      updated_at: "",
+      message_count: 0,
+      summarized: false,
+      summary_path: null,
+      messages: [],
+    });
     vi.mocked(api.chatStream).mockImplementation(async function* () {
+      yield { event: "done", data: { sources: [] } };
+    });
+    vi.mocked(api.observeActiveTurnStream).mockImplementation(async function* () {
       yield { event: "done", data: { sources: [] } };
     });
   });
@@ -189,11 +203,11 @@ describe("useAgentStream", () => {
     expect(msgs[2]).toMatchObject({ role: "user", text: "选项 A" });
   });
 
-  it("patches assistant text with an error message when the stream throws", async () => {
+  it("shows error when reconcile cannot reach server after stream throws", async () => {
     vi.mocked(api.chatStream).mockImplementation(async function* () {
       throw new Error("boom");
-      yield { event: "done", data: {} };
     });
+    vi.mocked(api.getConversation).mockRejectedValue(new Error("offline"));
     const { setMsgs, getCurrent } = makeSetMsgs([]);
     const options = baseOptions({ setMsgs });
     const { result } = renderHook(() => useAgentStream(options));
@@ -204,7 +218,51 @@ describe("useAgentStream", () => {
 
     const msgs = getCurrent();
     const assistant = msgs[msgs.length - 1];
-    expect(assistant.text).toBe("错误：boom");
+    expect(assistant.text).toContain("无法同步服务器状态");
+    expect(assistant.status).toBe("error");
+    expect(result.current.streaming).toBe(false);
+  });
+
+  it("resumes observation when server turn is still running after stream throws", async () => {
+    vi.mocked(api.chatStream).mockImplementation(async function* () {
+      throw new Error("boom");
+    });
+    vi.mocked(api.getConversation).mockResolvedValue({
+      id: "cid-1",
+      title: "t",
+      created_at: "",
+      updated_at: "",
+      message_count: 1,
+      summarized: false,
+      summary_path: null,
+      messages: [
+        {
+          role: "user",
+          text: "hello",
+          ts: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+      active_turn: {
+        turn_id: "t1",
+        status: "running",
+        started_at: "2026-01-01T00:00:00.000Z",
+      },
+    });
+    const { setMsgs, getCurrent } = makeSetMsgs([]);
+    const options = baseOptions({ setMsgs });
+    const { result } = renderHook(() => useAgentStream(options));
+
+    await act(async () => {
+      await result.current.runAgentStream("hello");
+    });
+
+    expect(vi.mocked(api.observeActiveTurnStream)).toHaveBeenCalledWith(
+      "cid-1",
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+    expect(getCurrent().some((m) => (m.text || "").startsWith("错误"))).toBe(
+      false,
+    );
     expect(result.current.streaming).toBe(false);
   });
 
