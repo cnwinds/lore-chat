@@ -1,62 +1,21 @@
 import {
   useEffect,
+  useMemo,
   useRef,
   useState,
   type Dispatch,
   type MutableRefObject,
   type SetStateAction,
 } from "react";
+import type { ChatMessage, DocContextItem } from "../../api";
+import { isStreamingForView, type StreamOwnership } from "./streamOwnership";
 import {
-  chatStream,
-  createConversation,
-  getConversation,
-  observeActiveTurnStream,
-  stopChat,
-  titleFromText,
-  type ChatMessage,
-  type ChatStreamEvent,
-  type DocContextItem,
-} from "../../api";
-import {
-  isInjectedUserMessage,
-  normalizeLoadedMessage,
-} from "../../utils/chatMessage";
-import { nowIsoDisplay } from "../../utils/displayTime";
-import { newId } from "../../utils/id";
-import {
-  reduceStreamEvent,
-} from "../../utils/agentStreamProjection";
-import {
-  buildObservationEnd,
-  fetchConversationWithRetry,
-  isActiveTurnRunning,
-  shouldReloadConversation,
-  toStreamEndPayload,
-  type ObservationEndInfo,
-  type ReconcileOutcome,
-} from "./turnReconcile";
-import { timelineAwaitsUserAnswer } from "../../utils/chatMessage";
-import {
-  isStreamingForView,
-  shouldPaintStreamPatch,
-  type StreamOwnership,
-} from "./streamOwnership";
+  TurnObservationEngine,
+  type DocContext,
+  type StreamEndInfo,
+} from "./turnObservationClient";
 
-export type DocContext = {
-  trayPaths: string[];
-  docContext: DocContextItem[];
-  primary: string | null;
-};
-
-export type StreamEndInfo = {
-  failed: boolean;
-  /** Explicit stop — turn cancelled on server. */
-  aborted: boolean;
-  /** Observation SSE closed; turn may still be running server-side. */
-  detached?: boolean;
-  conversationId: string | null;
-  awaitingUser?: boolean;
-};
+export type { DocContext, StreamEndInfo } from "./turnObservationClient";
 
 type UseAgentStreamOptions = {
   conversationId: string | null;
@@ -102,8 +61,7 @@ export function useAgentStream({
   onInjectDeferred,
   onUserInjected,
 }: UseAgentStreamOptions) {
-  const { streamingRef, streamConversationIdRef, msgsConversationIdRef } =
-    streamOwnership;
+  const { streamingRef } = streamOwnership;
   const [streaming, setStreaming] = useState(false);
   const [reconciling, setReconciling] = useState(false);
   const [streamViewId, setStreamViewId] = useState<string | null>(null);
@@ -111,16 +69,52 @@ export function useAgentStream({
   const [streamNowMs, setStreamNowMs] = useState(() => Date.now());
   const streamingStartRef = useRef<number | null>(null);
   const streamingAssistantIdxRef = useRef<number | null>(null);
-  const abortRef = useRef<AbortController | null>(null);
-  const stopRequestedRef = useRef(false);
-  const reconcilePassRef = useRef(0);
-  const MAX_RECONCILE_PASSES = 3;
+  const conversationIdPropRef = useRef(conversationId);
+  conversationIdPropRef.current = conversationId;
+
   const onStreamEndRef = useRef(onStreamEnd);
   const onInjectDeferredRef = useRef(onInjectDeferred);
   const onUserInjectedRef = useRef(onUserInjected);
   onStreamEndRef.current = onStreamEnd;
   onInjectDeferredRef.current = onInjectDeferred;
   onUserInjectedRef.current = onUserInjected;
+
+  const engineRef = useRef<TurnObservationEngine | null>(null);
+  if (!engineRef.current) {
+    engineRef.current = new TurnObservationEngine(
+      streamOwnership,
+      {
+        getViewConversationId: () => conversationIdRef.current,
+        patchMsgs: (updater) => setMsgs(updater),
+        setSummarized,
+        setSummaryPath,
+        onStreamingChange: setStreaming,
+        onStreamViewIdChange: setStreamViewId,
+        onReconcilingChange: setReconciling,
+        onStreamStartMs: (ms) => {
+          streamingStartRef.current = ms;
+          if (ms !== null) {
+            setLiveElapsedMs(Math.max(0, Date.now() - ms));
+          }
+        },
+        onConversationCreated,
+        onFirstQuestionTitle,
+        onSidebarRefresh,
+        onKbChanged,
+        onStreamEnd: (info) => onStreamEndRef.current?.(info),
+        onInjectDeferred: (id) => onInjectDeferredRef.current?.(id),
+        onUserInjected: (id) => onUserInjectedRef.current?.(id),
+      },
+      {
+        getConversationIdProp: () => conversationIdPropRef.current,
+        conversationIdRef,
+        skipLoadRef,
+        stickToBottomRef,
+        streamingAssistantIdxRef,
+      },
+    );
+  }
+  const engine = engineRef.current;
 
   useEffect(() => {
     streamingRef.current = streaming;
@@ -142,24 +136,10 @@ export function useAgentStream({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [streaming]);
 
-  // Conversation switch / unmount: detach observation only (do not stop the turn).
-  // Important: first send creates a conversation (null → id). That must NOT abort the
-  // in-flight POST /api/chat observe stream — otherwise UI freezes on an empty bubble
-  // while the server turn keeps running.
   useEffect(() => {
     if (!conversationId) return;
-    return () => {
-      abortRef.current?.abort();
-      // Release ownership immediately so the newly selected conversation can load /
-      // resume without waiting for the aborted observation's finally.
-      if (streamConversationIdRef.current !== null || streamingRef.current) {
-        streamingRef.current = false;
-        streamConversationIdRef.current = null;
-        setStreaming(false);
-        setStreamViewId(null);
-      }
-    };
-  }, [conversationId, streamConversationIdRef, streamingRef]);
+    return () => engine.detachObservation();
+  }, [conversationId, engine]);
 
   function resolveDocContext(): DocContext {
     return {
@@ -169,485 +149,53 @@ export function useAgentStream({
     };
   }
 
-  async function ensureConversationId(): Promise<string> {
-    if (conversationId) return conversationId;
-    const { id } = await createConversation();
-    skipLoadRef.current = id;
-    conversationIdRef.current = id;
-    onConversationCreated?.(id);
-    return id;
-  }
-
-  async function stopStreaming() {
-    stopRequestedRef.current = true;
-    const cid = conversationIdRef.current;
-    if (cid) {
-      try {
-        await stopChat(cid);
-      } catch {
-        /* 409 / network — still abort local observe */
-      }
-    }
-    abortRef.current?.abort();
-  }
-
-  function patchAssistant(
-    streamCid: string | null,
-    updater: (msg: ChatMessage) => ChatMessage,
-  ) {
-    // Switched away: keep consuming until abort lands, but do not paint onto the wrong chat.
-    if (
-      streamCid &&
-      !shouldPaintStreamPatch(
-        streamOwnership,
-        streamCid,
-        conversationIdRef.current,
-      )
-    ) {
-      return;
-    }
-    setMsgs((prev) => {
-      if (prev.length === 0) return prev;
-      const idx = prev.length - 1;
-      const copy = [...prev];
-      copy[idx] = updater(copy[idx]);
-      return copy;
-    });
-  }
-
-  async function consumeEvents(
-    events: AsyncGenerator<ChatStreamEvent>,
-    streamCid: string | null,
-  ): Promise<{
-    serverStreamError: boolean;
-    awaitingUser: boolean;
-    completed: boolean;
-  }> {
-    let serverStreamError = false;
-    let awaitingUser = false;
-    let completed = false;
-    let serverTimeline = false;
-    for await (const { event, data } of events) {
-      let userInjectId: string | undefined;
-      let injectDeferredId: string | undefined;
-      let kbNotify: string | null | undefined;
-      let stop = false;
-      patchAssistant(streamCid, (prevMsg) => {
-        const result = reduceStreamEvent(
+  const runAgentStream = useMemo(
+    () =>
+      async (
+        apiText: string,
+        userDisplayText?: string,
+        userMeta?: Pick<
+          ChatMessage,
+          "attachments" | "doc_context" | "primary_doc"
+        >,
+        docCtx?: DocContext,
+        opts?: {
+          webEnabled?: boolean;
+          reuseUserMessageId?: string;
+          replaceAssistantIndex?: number;
+        },
+      ): Promise<boolean> =>
+        engine.runAgentStream(
+          apiText,
           {
-            streamFailed: serverStreamError,
-            awaitingUser,
-            serverTimeline,
-            assistant: prevMsg,
+            webEnabled,
+            msgs,
+            conversationId: conversationIdPropRef.current,
+            docCtx: docCtx ?? resolveDocContext(),
           },
-          event,
-          data,
-        );
-        serverStreamError = result.state.streamFailed;
-        awaitingUser = result.state.awaitingUser;
-        serverTimeline = result.state.serverTimeline;
-        userInjectId = result.state.userInjectId;
-        injectDeferredId = result.state.injectDeferredId;
-        kbNotify = result.state.kbNotify;
-        stop = result.stop;
-        return result.state.assistant;
-      });
-      if (userInjectId) onUserInjectedRef.current?.(userInjectId);
-      if (injectDeferredId) onInjectDeferredRef.current?.(injectDeferredId);
-      if (kbNotify !== undefined) onKbChanged?.(kbNotify ?? undefined);
-      if (event === "done") completed = true;
-      if (serverStreamError || stop) break;
-    }
-    return { serverStreamError, awaitingUser, completed };
-  }
-
-  function applyServerConversation(
-    conv: Awaited<ReturnType<typeof getConversation>>,
-  ) {
-    const activeTurnRunning = isActiveTurnRunning(conv);
-    setMsgs(
-      conv.messages.map((m) =>
-        normalizeLoadedMessage(
-          {
-            ...m,
-            injected: isInjectedUserMessage(m),
-          },
-          { activeTurnRunning },
+          userDisplayText,
+          userMeta,
+          opts,
         ),
-      ),
-    );
-    msgsConversationIdRef.current = conv.id;
-    setSummarized(!!conv.summarized);
-    setSummaryPath(conv.summary_path ?? null);
-  }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [engine, webEnabled, msgs, conversationId, docContextItems, primaryDocPath],
+  );
 
-  function awaitingUserFromConversation(
-    conv: Awaited<ReturnType<typeof getConversation>>,
-  ): boolean {
-    const last = [...conv.messages].reverse().find((m) => m.role === "assistant");
-    return last ? timelineAwaitsUserAnswer(last.timeline) : false;
-  }
+  const resumeActiveTurn = useMemo(
+    () => (cid: string, startedAt?: string | null) =>
+      engine.resumeActiveTurn(cid, startedAt),
+    [engine],
+  );
 
-  async function reconcileWithServer(
-    streamCid: string,
-  ): Promise<{ outcome: ReconcileOutcome; conv?: Awaited<ReturnType<typeof getConversation>> }> {
-    const conv = await fetchConversationWithRetry(streamCid, getConversation);
-    if (!conv) return { outcome: "failed" };
-    if (
-      !shouldPaintStreamPatch(
-        streamOwnership,
-        streamCid,
-        conversationIdRef.current,
-      )
-    ) {
-      return { outcome: "settled", conv };
-    }
-    if (isActiveTurnRunning(conv)) {
-      const resumed = await resumeActiveTurn(
-        streamCid,
-        conv.active_turn?.started_at,
-      );
-      return { outcome: resumed ? "resumed" : "failed" };
-    }
-    if (streamingRef.current) return { outcome: "settled", conv };
-    applyServerConversation(conv);
-    return { outcome: "settled", conv };
-  }
+  const stopStreaming = useMemo(
+    () => () => engine.stopStreaming(),
+    [engine],
+  );
 
-  function clearStreamOwnership() {
-    streamingRef.current = false;
-    streamConversationIdRef.current = null;
-    setStreaming(false);
-    setStreamViewId(null);
-  }
-
-  async function finishObservation(
-    streamCid: string | null,
-    endInfo: ObservationEndInfo,
-  ) {
-    // Switch cleanup may have released ownership so another chat can resume/send.
-    // A detached observation's finally must not wipe that newer claim (or its AbortController).
-    const stillOwns = streamConversationIdRef.current === streamCid;
-    if (stillOwns) {
-      abortRef.current = null;
-      stopRequestedRef.current = false;
-      clearStreamOwnership();
-    }
-    if (skipLoadRef.current === streamCid) {
-      skipLoadRef.current = null;
-    }
-    onSidebarRefresh?.();
-
-    const canPaint =
-      !!streamCid &&
-      shouldPaintStreamPatch(
-        streamOwnership,
-        streamCid,
-        conversationIdRef.current,
-      );
-
-    const reload = shouldReloadConversation(endInfo);
-
-    if (reload === "reconcile" && canPaint) {
-      if (reconcilePassRef.current >= MAX_RECONCILE_PASSES) {
-        patchAssistant(streamCid, (prevMsg) => ({
-          ...prevMsg,
-          text:
-            (prevMsg.text || "").trim() ||
-            "错误：连接中断，无法同步服务器状态",
-          status: "error",
-        }));
-        onStreamEndRef.current?.({
-          ...toStreamEndPayload(endInfo, { reconcileFailed: true }),
-          conversationId: streamCid,
-        });
-        return;
-      }
-      reconcilePassRef.current += 1;
-      setReconciling(true);
-      try {
-        const { outcome, conv } = await reconcileWithServer(streamCid!);
-        if (outcome === "resumed") {
-          reconcilePassRef.current = 0;
-          return;
-        }
-        if (outcome === "settled" && conv) {
-          if (
-            shouldPaintStreamPatch(
-              streamOwnership,
-              streamCid,
-              conversationIdRef.current,
-            )
-          ) {
-            onStreamEndRef.current?.({
-              failed: false,
-              aborted: false,
-              detached: false,
-              awaitingUser: awaitingUserFromConversation(conv),
-              conversationId: streamCid,
-            });
-          }
-          return;
-        }
-        patchAssistant(streamCid, (prevMsg) => ({
-          ...prevMsg,
-          text:
-            (prevMsg.text || "").trim() ||
-            "错误：连接中断，无法同步服务器状态",
-          status: "error",
-        }));
-        if (canPaint) {
-          onStreamEndRef.current?.({
-            ...toStreamEndPayload(endInfo, { reconcileFailed: true }),
-            conversationId: streamCid,
-          });
-        }
-        return;
-      } finally {
-        setReconciling(false);
-      }
-    }
-
-    if (canPaint) {
-      onStreamEndRef.current?.({
-        ...toStreamEndPayload(endInfo),
-        conversationId: streamCid,
-      });
-    }
-
-    if (!streamCid || reload === "none" || reload === "reconcile") return;
-
-    getConversation(streamCid)
-      .then((conv) => {
-        if (
-          !shouldPaintStreamPatch(
-            streamOwnership,
-            streamCid,
-            conversationIdRef.current,
-          )
-        ) {
-          return;
-        }
-        if (streamingRef.current) return;
-        applyServerConversation(conv);
-      })
-      .catch(() => {});
-  }
-
-  async function runAgentStream(
-    apiText: string,
-    userDisplayText?: string,
-    userMeta?: Pick<ChatMessage, "attachments" | "doc_context" | "primary_doc">,
-    docCtx?: DocContext,
-    opts?: {
-      webEnabled?: boolean;
-      /** 原地重新回复：复用服务端用户消息 id */
-      reuseUserMessageId?: string;
-      /** 替换该下标的助手气泡（不追加用户消息） */
-      replaceAssistantIndex?: number;
-    },
-  ): Promise<boolean> {
-    if (streamingRef.current) return false;
-    const display = userDisplayText ?? apiText;
-    const useWeb = opts?.webEnabled ?? webEnabled;
-    const reuseUserMessageId = opts?.reuseUserMessageId;
-    const replaceAssistantIndexOpt = opts?.replaceAssistantIndex;
-    const isRetry = !!reuseUserMessageId;
-    const isFirstUserQuestion =
-      !isRetry && !msgs.some((m) => m.role === "user");
-    stickToBottomRef.current = true;
-    stopRequestedRef.current = false;
-    reconcilePassRef.current = 0;
-    streamingRef.current = true;
-    // Claim ownership before setStreaming so the first paint scopes UI correctly.
-    const priorMsgsCid = msgsConversationIdRef.current;
-    streamConversationIdRef.current = conversationId;
-    setStreamViewId(conversationId);
-    if (conversationId) {
-      msgsConversationIdRef.current = conversationId;
-    }
-    setStreaming(true);
-    streamingStartRef.current = Date.now();
-    setLiveElapsedMs(0);
-
-    const controller = new AbortController();
-    abortRef.current = controller;
-
-    const assistantMsg: ChatMessage = {
-      role: "assistant",
-      ts: nowIsoDisplay(),
-      timeline: [],
-      sources: [],
-    };
-    setMsgs((m) => {
-      // Never append onto another conversation's leftover bubbles after a switch.
-      const sameChat =
-        conversationId == null ||
-        priorMsgsCid == null ||
-        priorMsgsCid === conversationId;
-      const base = sameChat ? m : [];
-      if (isRetry && reuseUserMessageId) {
-        const userIdx = base.findIndex((x) => x.id === reuseUserMessageId);
-        const cut =
-          userIdx >= 0
-            ? userIdx + 1
-            : typeof replaceAssistantIndexOpt === "number"
-              ? replaceAssistantIndexOpt
-              : base.length;
-        const truncated = base.slice(0, Math.max(0, cut));
-        streamingAssistantIdxRef.current = truncated.length;
-        return [...truncated, assistantMsg];
-      }
-      const assistantIdx = base.length + 1;
-      streamingAssistantIdxRef.current = assistantIdx;
-      return [
-        ...base,
-        {
-          role: "user",
-          text: display,
-          ts: nowIsoDisplay(),
-          web_enabled: useWeb,
-          ...(userMeta?.attachments?.length
-            ? { attachments: userMeta.attachments }
-            : {}),
-          ...(userMeta?.doc_context?.length
-            ? { doc_context: userMeta.doc_context }
-            : {}),
-          ...(userMeta?.primary_doc ? { primary_doc: userMeta.primary_doc } : {}),
-        },
-        assistantMsg,
-      ];
-    });
-
-    let serverStreamError = false;
-    let aborted = false;
-    let awaitingUser = false;
-    let completed = false;
-    let cid: string | null = null;
-    try {
-      cid = await ensureConversationId();
-      streamConversationIdRef.current = cid;
-      msgsConversationIdRef.current = cid;
-      setStreamViewId(cid);
-      if (isFirstUserQuestion) {
-        onFirstQuestionTitle?.(cid, titleFromText(display));
-      }
-      const ctx = docCtx ?? resolveDocContext();
-      const clientMessageId = newId();
-      const result = await consumeEvents(
-        chatStream(apiText, {
-          conversationId: cid,
-          activeDocPaths: ctx.trayPaths,
-          docContext: ctx.docContext.length ? ctx.docContext : undefined,
-          primaryDocPath: ctx.primary,
-          webEnabled: useWeb,
-          attachments: userMeta?.attachments ?? [],
-          clientMessageId,
-          reuseUserMessageId,
-          signal: controller.signal,
-        }),
-        cid,
-      );
-      serverStreamError = result.serverStreamError;
-      awaitingUser = result.awaitingUser;
-      completed = result.completed;
-    } catch (err) {
-      if (
-        (err instanceof DOMException && err.name === "AbortError") ||
-        (err instanceof Error && err.name === "AbortError")
-      ) {
-        if (stopRequestedRef.current) aborted = true;
-      }
-      // 网络断线等：defer 到 reconcile，不在此处写 error 气泡
-    } finally {
-      await finishObservation(
-        cid,
-        buildObservationEnd({
-          completed,
-          serverStreamError,
-          aborted,
-          awaitingUser,
-        }),
-      );
-    }
-    return true;
-  }
-
-  /** Reattach observation to a server-side running turn (e.g. after page reload). */
-  async function resumeActiveTurn(
-    cid: string,
-    startedAt?: string | null,
-  ): Promise<boolean> {
-    if (streamingRef.current) return false;
-    stickToBottomRef.current = true;
-    stopRequestedRef.current = false;
-    reconcilePassRef.current = 0;
-    streamingRef.current = true;
-    const priorMsgsCid = msgsConversationIdRef.current;
-    streamConversationIdRef.current = cid;
-    msgsConversationIdRef.current = cid;
-    setStreamViewId(cid);
-    setStreaming(true);
-    const startedMs = startedAt ? Date.parse(startedAt) : NaN;
-    streamingStartRef.current = Number.isFinite(startedMs)
-      ? startedMs
-      : Date.now();
-    setLiveElapsedMs(Math.max(0, Date.now() - streamingStartRef.current));
-
-    const controller = new AbortController();
-    abortRef.current = controller;
-
-    setMsgs((m) => {
-      const base = priorMsgsCid === cid ? m : [];
-      const last = base[base.length - 1];
-      if (last?.role === "assistant") {
-        streamingAssistantIdxRef.current = base.length - 1;
-        return base;
-      }
-      streamingAssistantIdxRef.current = base.length;
-      return [
-        ...base,
-        {
-          role: "assistant",
-          ts: nowIsoDisplay(),
-          timeline: [],
-          sources: [],
-        },
-      ];
-    });
-
-    let serverStreamError = false;
-    let aborted = false;
-    let awaitingUser = false;
-    let completed = false;
-    try {
-      const result = await consumeEvents(
-        observeActiveTurnStream(cid, { signal: controller.signal }),
-        cid,
-      );
-      serverStreamError = result.serverStreamError;
-      awaitingUser = result.awaitingUser;
-      completed = result.completed;
-    } catch (err) {
-      if (
-        (err instanceof DOMException && err.name === "AbortError") ||
-        (err instanceof Error && err.name === "AbortError")
-      ) {
-        if (stopRequestedRef.current) aborted = true;
-      }
-    } finally {
-      await finishObservation(
-        cid,
-        buildObservationEnd({
-          completed,
-          serverStreamError,
-          aborted,
-          awaitingUser,
-        }),
-      );
-    }
-    return true;
-  }
+  const ensureConversationId = useMemo(
+    () => () => engine.ensureConversationId(),
+    [engine],
+  );
 
   const streamingForView = isStreamingForView(
     streaming,

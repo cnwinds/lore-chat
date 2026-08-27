@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { ChatMessage } from "../api";
-import { ChatMessageList } from "../components/chat/ChatMessageList";
+import { ReadOnlyTranscript } from "../components/chat/ReadOnlyTranscript";
 import { ShareDocViewer } from "../components/share/ShareDocViewer";
 import { LoreLogo } from "../components/LoreLogo";
 import { useNarrowViewport } from "../hooks/useNarrowViewport";
@@ -77,7 +77,6 @@ export function SharePage({ shareId }: Props) {
   const expHint = payload ? formatExpHint(payload.exp) : null;
 
   const errView = error ? errorCopy(error.status, error.message) : null;
-  const noop = () => {};
   const isConversationShare = payload?.type === "conversation";
   const isDocShare = payload?.type === "doc";
 
@@ -148,23 +147,13 @@ export function SharePage({ shareId }: Props) {
           </div>
         )}
         {!loading && payload?.type === "conversation" && (
-          <div className="share-page-chat">
-            <ChatMessageList
-              msgs={payload.messages as ChatMessage[]}
-              loadingHistory={false}
-              streaming={false}
-              liveElapsedMs={0}
-              streamingAssistantIdxRef={{ current: null }}
-              messagesContainerRef={messagesContainerRef}
-              messagesEndRef={messagesEndRef}
-              conversationId={null}
-              onOpenSource={noop}
-              onQuestionResolved={noop}
-              readOnly
-              showOutline
-              outlineLayout={narrow ? "sheet" : "rail"}
-            />
-          </div>
+          <ReadOnlyTranscript
+            className="share-page-chat"
+            msgs={payload.messages as ChatMessage[]}
+            messagesContainerRef={messagesContainerRef}
+            messagesEndRef={messagesEndRef}
+            outlineLayout={narrow ? "sheet" : "rail"}
+          />
         )}
         {!loading && payload?.type === "doc" && (
           <ShareDocViewer body={payload.body} />

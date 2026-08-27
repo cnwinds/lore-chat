@@ -43,10 +43,8 @@ import {
   SEND_QUEUE_MAX,
   type SendQueueItem,
 } from "../utils/sendQueue";
-import { ChatMessageList } from "./chat/ChatMessageList";
-import { ComposerTray } from "./ComposerTray";
-import { ComposerToolbar } from "./ComposerToolbar";
-import { ComposerSendQueue } from "./ComposerSendQueue";
+import { ConversationTranscriptPanel } from "./chat/ConversationTranscriptPanel";
+import { ConversationComposerPanel } from "./chat/ConversationComposerPanel";
 import { ArchiveConversationModal } from "./ArchiveConversationModal";
 import type { DocTrayItem, PendingFile } from "../types/composer";
 import { extractClipboardFiles } from "../utils/clipboard";
@@ -60,9 +58,6 @@ import { suggestArchivePath } from "../utils/suggestArchivePath";
 import { MobileChatHeader } from "./app/MobileChatHeader";
 
 type ComposerDocItem = DocTrayItem;
-
-const INPUT_MIN_HEIGHT = 34;
-const INPUT_MAX_HEIGHT = 160;
 
 type Props = {
   conversationId: string | null;
@@ -699,20 +694,7 @@ export function Chat({
           onShare={onShareConversation}
         />
       )}
-      {memoryNotice && (
-        <div className="chat-memory-notice" role="status">
-          <span>{memoryNotice.label}</span>
-          <button
-            type="button"
-            className="chat-memory-notice-dismiss"
-            onClick={dismissMemoryNotice}
-            aria-label="关闭"
-          >
-            ×
-          </button>
-        </div>
-      )}
-      <ChatMessageList
+      <ConversationTranscriptPanel
         msgs={msgs}
         loadingHistory={loadingHistory}
         streaming={streamingForView}
@@ -729,82 +711,63 @@ export function Chat({
         onQuestionResolved={handleQuestionResolved}
         onRetryReply={handleRetryAssistantReply}
         outlineLayout={mobileLayout ? "sheet" : "rail"}
+        memoryNotice={memoryNotice}
+        onDismissMemoryNotice={dismissMemoryNotice}
       />
-      <div className="chat-composer-wrap">
-        <ComposerSendQueue
-          items={sendQueue.items}
-          paused={sendQueue.paused}
-          onContinue={handleContinue}
-          onRetry={handleRetry}
-          onSkipFailed={handleSkipFailed}
-          onUpdateText={(id, text) => sendQueue.updateItem(id, { text })}
-          onSetTiming={sendQueue.setItemTiming}
-          onToggleMerge={(id) => {
-            const item = sendQueue.items.find((x) => x.id === id);
-            if (!item) return;
-            const idx = sendQueue.items.findIndex((x) => x.id === id);
-            const nextItem = sendQueue.items[idx + 1];
-            const merge = !item.mergeWithNext;
-            if (merge && nextItem && nextItem.timing !== item.timing) {
-              sendQueue.setItemTiming(nextItem.id, item.timing);
-            }
-            sendQueue.updateItem(id, { mergeWithNext: merge });
-          }}
-          onRemove={sendQueue.removeItem}
-          onMove={sendQueue.moveItem}
-          onSetAllTiming={sendQueue.setAllTiming}
-          onSetAllMerge={sendQueue.setAllMerge}
-          onClear={sendQueue.clear}
-        />
-        <div className="composer-card">
-          <ComposerTray
-            items={docTrayItems}
-            primaryPath={primaryDocPath}
-            pendingFiles={pendingFiles}
-            mediaCapabilityHints={composerMediaHints}
-            onSetPrimary={onTraySetPrimary ?? (() => {})}
-            onRemoveDoc={onTrayRemove ?? (() => {})}
-            onRemoveFile={removePendingFile}
-          />
-          <div className="composer-body">
-            <div className="composer-input">
-              <textarea
-                ref={textareaRef}
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={onInputKeyDown}
-                onPaste={onInputPaste}
-                rows={1}
-                placeholder={streamingForView ? "输入消息加入队列…" : "输入消息…"}
-                title="Enter 发送，Ctrl+Enter 换行；可粘贴本地文件或图片到托盘"
-                style={{
-                  minHeight: INPUT_MIN_HEIGHT,
-                  maxHeight: INPUT_MAX_HEIGHT,
-                }}
-              />
-            </div>
-            <ComposerToolbar
-              webEnabled={webEnabled}
-              onToggleWeb={toggleWebSearch}
-              streaming={streamingForView}
-              canSend={!!input.trim() || pendingFiles.length > 0}
-              archiving={archiving}
-              conversationId={conversationId}
-              summarized={summarized}
-              summaryPath={summaryPath}
-              canArchive={msgs.some((m) => m.role === "user")}
-              onArchive={openArchiveModal}
-              onOpenSummary={(path) => openDoc(path, undefined, { pin: true })}
-              onAttachClick={() => fileInputRef.current?.click()}
-              onSend={send}
-              onStop={handleStop}
-              fileInputRef={fileInputRef}
-              onFileChange={onFile}
-              onShare={onShareConversation}
-            />
-          </div>
-        </div>
-      </div>
+      <ConversationComposerPanel
+        sendQueueItems={sendQueue.items}
+        sendQueuePaused={sendQueue.paused}
+        onContinue={handleContinue}
+        onRetry={handleRetry}
+        onSkipFailed={handleSkipFailed}
+        onUpdateQueueText={(id, text) => sendQueue.updateItem(id, { text })}
+        onSetQueueTiming={sendQueue.setItemTiming}
+        onToggleQueueMerge={(id) => {
+          const item = sendQueue.items.find((x) => x.id === id);
+          if (!item) return;
+          const idx = sendQueue.items.findIndex((x) => x.id === id);
+          const nextItem = sendQueue.items[idx + 1];
+          const merge = !item.mergeWithNext;
+          if (merge && nextItem && nextItem.timing !== item.timing) {
+            sendQueue.setItemTiming(nextItem.id, item.timing);
+          }
+          sendQueue.updateItem(id, { mergeWithNext: merge });
+        }}
+        onRemoveQueueItem={sendQueue.removeItem}
+        onMoveQueueItem={sendQueue.moveItem}
+        onSetAllQueueTiming={sendQueue.setAllTiming}
+        onSetAllQueueMerge={sendQueue.setAllMerge}
+        onClearQueue={sendQueue.clear}
+        docTrayItems={docTrayItems}
+        primaryDocPath={primaryDocPath}
+        pendingFiles={pendingFiles}
+        composerMediaHints={composerMediaHints}
+        onTraySetPrimary={onTraySetPrimary ?? (() => {})}
+        onTrayRemove={onTrayRemove ?? (() => {})}
+        onRemovePendingFile={removePendingFile}
+        input={input}
+        onInputChange={setInput}
+        onInputKeyDown={onInputKeyDown}
+        onInputPaste={onInputPaste}
+        textareaRef={textareaRef}
+        webEnabled={webEnabled}
+        onToggleWeb={toggleWebSearch}
+        streaming={streamingForView}
+        canSend={!!input.trim() || pendingFiles.length > 0}
+        archiving={archiving}
+        conversationId={conversationId}
+        summarized={summarized}
+        summaryPath={summaryPath}
+        canArchive={msgs.some((m) => m.role === "user")}
+        onArchive={openArchiveModal}
+        onOpenSummary={(path) => openDoc(path, undefined, { pin: true })}
+        onAttachClick={() => fileInputRef.current?.click()}
+        onSend={send}
+        onStop={handleStop}
+        fileInputRef={fileInputRef}
+        onFileChange={onFile}
+        onShare={onShareConversation}
+      />
       <ArchiveConversationModal
         open={archiveModalOpen}
         initialDirectory={archiveDefaults.directory}
