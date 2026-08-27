@@ -220,9 +220,13 @@ describe("useAgentStream", () => {
   });
 
   it("shows error when reconcile cannot reach server after stream throws", async () => {
-    vi.mocked(api.chatStream).mockImplementation(async function* () {
-      throw new Error("boom");
-    });
+    vi.mocked(api.chatStream).mockImplementation(
+      // Generator must throw before first yield to simulate a broken SSE stream.
+      // eslint-disable-next-line require-yield -- intentional empty async generator
+      async function* () {
+        throw new Error("boom");
+      },
+    );
     vi.mocked(api.getActiveTurnStatus).mockRejectedValue(new Error("offline"));
     vi.mocked(api.getConversation).mockRejectedValue(new Error("offline"));
     const { setMsgs, getCurrent } = makeSetMsgs([]);
@@ -241,9 +245,12 @@ describe("useAgentStream", () => {
   });
 
   it("resumes observation when server turn is still running after stream throws", async () => {
-    vi.mocked(api.chatStream).mockImplementation(async function* () {
-      throw new Error("boom");
-    });
+    vi.mocked(api.chatStream).mockImplementation(
+      // eslint-disable-next-line require-yield -- intentional empty async generator
+      async function* () {
+        throw new Error("boom");
+      },
+    );
     vi.mocked(api.getActiveTurnStatus).mockResolvedValue({
       conversation_id: "cid-1",
       turn_id: "t1",
