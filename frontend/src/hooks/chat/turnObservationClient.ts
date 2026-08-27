@@ -168,6 +168,7 @@ export class TurnObservationEngine {
       !isRetry && !ctx.msgs.some((m) => m.role === "user");
 
     this.refs.stickToBottomRef.current = true;
+    const priorMsgsCid = this.ownership.msgsConversationIdRef.current;
     this.beginObservation(ctx.conversationId);
 
     const assistantMsg: ChatMessage = {
@@ -177,7 +178,6 @@ export class TurnObservationEngine {
       sources: [],
     };
 
-    const priorMsgsCid = this.ownership.msgsConversationIdRef.current;
     this.callbacks.patchMsgs((m) => {
       const sameChat =
         ctx.conversationId == null ||
@@ -295,6 +295,8 @@ export class TurnObservationEngine {
         },
       ];
     });
+
+    this.abortController = new AbortController();
 
     let serverStreamError = false;
     let aborted = false;
