@@ -57,7 +57,7 @@ export function ChatInputBar({
 
   function onInputKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key !== "Enter") return;
-    if (e.ctrlKey || e.metaKey) return;
+    if (e.shiftKey) return;
     if (e.nativeEvent.isComposing) return;
     e.preventDefault();
     onSend();
@@ -71,7 +71,7 @@ export function ChatInputBar({
         onChange={(e) => onInputChange(e.target.value)}
         onKeyDown={onInputKeyDown}
         rows={1}
-        placeholder="输入问题或记录内容…（Enter 发送，Ctrl+Enter 换行）"
+        placeholder="输入问题或记录内容…（Enter 发送，Shift+Enter 换行）"
         disabled={streaming}
         style={{
           minHeight: INPUT_MIN_HEIGHT,

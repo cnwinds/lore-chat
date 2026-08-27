@@ -622,7 +622,7 @@ export function Chat({
 
   function onInputKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key !== "Enter") return;
-    if (e.ctrlKey || e.metaKey) return;
+    if (e.shiftKey) return;
     if (e.nativeEvent.isComposing) return;
     e.preventDefault();
     void send();

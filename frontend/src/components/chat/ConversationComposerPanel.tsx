@@ -135,7 +135,7 @@ export function ConversationComposerPanel({
               onPaste={onInputPaste}
               rows={1}
               placeholder={streaming ? "输入消息加入队列…" : "输入消息…"}
-              title="Enter 发送，Ctrl+Enter 换行；可粘贴本地文件或图片到托盘"
+              title="Enter 发送，Shift+Enter 换行；可粘贴本地文件或图片到托盘"
               style={{
                 minHeight: INPUT_MIN_HEIGHT,
                 maxHeight: INPUT_MAX_HEIGHT,
