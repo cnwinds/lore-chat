@@ -33,7 +33,6 @@ import {
   type ReconcileOutcome,
 } from "./turnReconcile";
 import {
-  createStreamOwnership,
   shouldPaintStreamPatch,
   type StreamOwnership,
 } from "./streamOwnership";
