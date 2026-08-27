@@ -59,6 +59,9 @@ import { MobileChatHeader } from "./app/MobileChatHeader";
 
 type ComposerDocItem = DocTrayItem;
 
+const INPUT_MIN_HEIGHT = 34;
+const INPUT_MAX_HEIGHT = 160;
+
 type Props = {
   conversationId: string | null;
   onConversationCreated?: (id: string) => void;

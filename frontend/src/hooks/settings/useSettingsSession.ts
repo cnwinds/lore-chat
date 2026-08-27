@@ -23,9 +23,7 @@ import type { EmbedCandidateDraft, ModelCandidateDraft } from "../../components/
 import type { ImageProviderDraft } from "../../components/settings/ImageProviderEditor";
 import type { SearchProviderDraft } from "../../components/settings/SearchProviderEditor";
 import {
-  applyFreeStarterPack,
   starterPackPhase,
-  withStarterPackKeys,
   type StarterPackDrafts,
 } from "../../components/settings/starterPack";
 import { searchProvidersConfigured } from "../../components/settings/settingsAttention";

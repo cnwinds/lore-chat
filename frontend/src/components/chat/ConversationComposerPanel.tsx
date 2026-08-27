@@ -12,8 +12,8 @@ type Props = {
   sendQueueItems: SendQueueItem[];
   sendQueuePaused: boolean;
   onContinue: () => void;
-  onRetry: (id: string) => void;
-  onSkipFailed: (id: string) => void;
+  onRetry: () => void;
+  onSkipFailed: () => void;
   onUpdateQueueText: (id: string, text: string) => void;
   onSetQueueTiming: (id: string, timing: SendQueueItem["timing"]) => void;
   onToggleQueueMerge: (id: string) => void;

@@ -1,7 +1,7 @@
 import { type MutableRefObject, type RefObject } from "react";
 import type { ChatMessage, IngestResult, SourceRef } from "../../api";
 import type { MemoryEventNotice } from "../../hooks/chat/useConversationMemoryEvents";
-import { ChatMessageList } from "./chat/ChatMessageList";
+import { ChatMessageList } from "./ChatMessageList";
 
 export type TranscriptOutlineLayout = "rail" | "sheet";
 
@@ -27,7 +27,7 @@ type Props = {
     result: IngestResult,
     choiceLabel: string,
   ) => void;
-  onRetryReply?: (userMessageId: string) => void;
+  onRetryReply?: (assistantSourceIndex: number) => void;
   outlineLayout?: TranscriptOutlineLayout;
   memoryNotice?: MemoryEventNotice | null;
   onDismissMemoryNotice?: () => void;

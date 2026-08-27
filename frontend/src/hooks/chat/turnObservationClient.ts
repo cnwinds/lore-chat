@@ -36,7 +36,6 @@ import {
   type ReconcileOutcome,
 } from "./turnReconcile";
 import {
-  createStreamOwnership,
   shouldPaintStreamPatch,
   type StreamOwnership,
 } from "./streamOwnership";
@@ -90,12 +89,19 @@ export class TurnObservationEngine {
   private abortController: AbortController | null = null;
   private stopRequested = false;
   private reconcilePasses = 0;
+  private ownership: StreamOwnership;
+  private callbacks: TurnObservationCallbacks;
+  readonly refs: TurnObservationRefs;
 
   constructor(
-    private ownership: StreamOwnership,
-    private callbacks: TurnObservationCallbacks,
-    private refs: TurnObservationRefs,
-  ) {}
+    ownership: StreamOwnership,
+    callbacks: TurnObservationCallbacks,
+    refs: TurnObservationRefs,
+  ) {
+    this.ownership = ownership;
+    this.callbacks = callbacks;
+    this.refs = refs;
+  }
 
   get streamingRef() {
     return this.ownership.streamingRef;

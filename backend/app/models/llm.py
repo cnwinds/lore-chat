@@ -29,6 +29,29 @@ if TYPE_CHECKING:
     from app.engine.usage.recorder import UsageRecorder
 
 
+def consolidate_system_messages(messages: list[dict]) -> list[dict]:
+    """合并开头的多条 system 消息为一条（部分 OpenAI 兼容 API 只认首条 system）。"""
+    if not messages:
+        return messages
+    i = 0
+    parts: list[str] = []
+    while i < len(messages) and messages[i].get("role") == "system":
+        content = messages[i].get("content")
+        if isinstance(content, str):
+            text = content.strip()
+        elif content is not None:
+            text = str(content).strip()
+        else:
+            text = ""
+        if text:
+            parts.append(text)
+        i += 1
+    if i <= 1:
+        return messages
+    merged = [{"role": "system", "content": "\n\n".join(parts)}]
+    return merged + messages[i:]
+
+
 def _display_model_label(cand: ModelCandidate) -> str:
     """用候选已保存/enrich 的 effort_options（空 = 无强度档），不覆盖为 live 目录。"""
     return format_model_label(
@@ -199,6 +222,7 @@ class OpenAILLMClient:
         return attachment_signing_secret(self.settings)
 
     def _materialize(self, messages: list[dict], candidate: ModelCandidate) -> list[dict]:
+        messages = consolidate_system_messages(messages)
         out: list[dict] = []
         for m in messages:
             msg = dict(m)
