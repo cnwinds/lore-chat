@@ -406,6 +406,174 @@ describe("useAgentStream", () => {
     expect(onStreamEnd).not.toHaveBeenCalled();
   });
 
+  it("does not apply model_selected from another conversation onto loaded history", async () => {
+    let pushEvent: ((ev: { event: string; data: Record<string, unknown> }) => void) | undefined;
+    let finishGate: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => {
+      finishGate = resolve;
+    });
+    vi.mocked(api.chatStream).mockImplementation(async function* (_text, opts) {
+      const queue: Array<{ event: string; data: Record<string, unknown> }> = [];
+      let waiting: (() => void) | undefined;
+      pushEvent = (ev) => {
+        queue.push(ev);
+        waiting?.();
+      };
+      const signal = opts?.signal;
+      while (true) {
+        if (signal?.aborted) {
+          const err = new Error("Aborted");
+          err.name = "AbortError";
+          throw err;
+        }
+        if (queue.length === 0) {
+          await new Promise<void>((resolve) => {
+            waiting = resolve;
+          });
+          continue;
+        }
+        const next = queue.shift()!;
+        if (next.event === "__end__") break;
+        yield next as never;
+      }
+      await gate;
+    });
+
+    const conversationIdRef = { current: "cid-b" as string | null };
+    const ownership = createStreamOwnership();
+    const { setMsgs, getCurrent } = makeSetMsgs([]);
+    const options = baseOptions({
+      conversationId: "cid-b",
+      conversationIdRef,
+      setMsgs,
+      streamOwnership: ownership,
+    });
+    const { result } = renderHook(() => useAgentStream(options));
+
+    let run!: Promise<boolean>;
+    await act(async () => {
+      run = result.current.runAgentStream("from-b");
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(ownership.msgsConversationIdRef.current).toBe("cid-b");
+
+    // View switched to A and history loaded; conversationIdRef still stale as B.
+    setMsgs([
+      { role: "user", text: "from-a", ts: "2026-01-01T00:00:00.000Z" },
+      {
+        role: "assistant",
+        text: "reply-a",
+        model_name: "model-a",
+        ts: "2026-01-01T00:00:01.000Z",
+      },
+    ]);
+    ownership.msgsConversationIdRef.current = "cid-a";
+
+    await act(async () => {
+      pushEvent?.({
+        event: "model_selected",
+        data: { model: "model-b", failover: false },
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(getCurrent()[1]).toMatchObject({
+      role: "assistant",
+      model_name: "model-a",
+    });
+
+    await act(async () => {
+      pushEvent?.({ event: "__end__", data: {} });
+      finishGate?.();
+      await run;
+    });
+  });
+
+  it("does not reload finished stream history onto another conversation's msgs", async () => {
+    let resolveReload:
+      | ((value: Awaited<ReturnType<typeof api.getConversation>>) => void)
+      | undefined;
+    vi.mocked(api.chatStream).mockImplementation(async function* () {
+      yield { event: "done", data: { sources: [] } };
+    });
+    vi.mocked(api.getConversation).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveReload = resolve;
+        }),
+    );
+
+    const conversationIdRef = { current: "cid-b" as string | null };
+    const ownership = createStreamOwnership();
+    const { setMsgs, getCurrent } = makeSetMsgs([]);
+    const options = baseOptions({
+      conversationId: "cid-b",
+      conversationIdRef,
+      setMsgs,
+      streamOwnership: ownership,
+    });
+    const { result } = renderHook(() => useAgentStream(options));
+
+    let run!: Promise<boolean>;
+    await act(async () => {
+      run = result.current.runAgentStream("from-b");
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    setMsgs([
+      { role: "user", text: "from-a", ts: "2026-01-01T00:00:00.000Z" },
+      {
+        role: "assistant",
+        text: "reply-a",
+        model_name: "model-a",
+        ts: "2026-01-01T00:00:01.000Z",
+      },
+    ]);
+    ownership.msgsConversationIdRef.current = "cid-a";
+    conversationIdRef.current = "cid-a";
+
+    await act(async () => {
+      await run;
+    });
+
+    resolveReload?.({
+      id: "cid-b",
+      title: "b",
+      created_at: "",
+      updated_at: "",
+      message_count: 1,
+      summarized: false,
+      summary_path: null,
+      messages: [
+        {
+          role: "user",
+          text: "from-b",
+          ts: "2026-01-01T00:00:00.000Z",
+        },
+        {
+          role: "assistant",
+          text: "reply-b",
+          model_name: "model-b",
+          ts: "2026-01-01T00:00:01.000Z",
+        },
+      ],
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(getCurrent()[1]).toMatchObject({
+      role: "assistant",
+      model_name: "model-a",
+      text: "reply-a",
+    });
+  });
+
   it("scopes streamingForView to the conversation that owns the stream", async () => {
     let resolveStream: (() => void) | undefined;
     vi.mocked(api.chatStream).mockImplementation(async function* () {

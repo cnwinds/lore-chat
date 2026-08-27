@@ -40,3 +40,15 @@ export function isStreamingForView(
   if (streamConversationId == null && viewConversationId == null) return true;
   return streamConversationId === viewConversationId;
 }
+
+/** Whether an in-flight stream may mutate msgs or run post-stream UI for the viewed chat. */
+export function shouldPaintStreamPatch(
+  ownership: StreamOwnership,
+  streamCid: string | null,
+  viewConversationId: string | null,
+): boolean {
+  if (!streamCid) return true;
+  if (viewConversationId !== streamCid) return false;
+  const msgsCid = ownership.msgsConversationIdRef.current;
+  return msgsCid == null || msgsCid === streamCid;
+}

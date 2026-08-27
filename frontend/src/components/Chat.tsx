@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useChatConversation } from "../hooks/chat/useChatConversation";
 import { useChatScroll } from "../hooks/chat/useChatScroll";
 import { useAgentStream } from "../hooks/chat/useAgentStream";
@@ -234,7 +241,8 @@ export function Chat({
   const { notice: memoryNotice, dismissNotice: dismissMemoryNotice } =
     useConversationMemoryEvents(conversationId);
 
-  useEffect(() => {
+  // Sync before child effects load history so stream patches don't cross conversations.
+  useLayoutEffect(() => {
     conversationIdRef.current = conversationId;
   }, [conversationId]);
 

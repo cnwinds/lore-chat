@@ -29,6 +29,7 @@ import {
 } from "../../utils/agentStreamProjection";
 import {
   isStreamingForView,
+  shouldPaintStreamPatch,
   type StreamOwnership,
 } from "./streamOwnership";
 
@@ -183,7 +184,16 @@ export function useAgentStream({
     updater: (msg: ChatMessage) => ChatMessage,
   ) {
     // Switched away: keep consuming until abort lands, but do not paint onto the wrong chat.
-    if (streamCid && conversationIdRef.current !== streamCid) return;
+    if (
+      streamCid &&
+      !shouldPaintStreamPatch(
+        streamOwnership,
+        streamCid,
+        conversationIdRef.current,
+      )
+    ) {
+      return;
+    }
     setMsgs((prev) => {
       if (prev.length === 0) return prev;
       const idx = prev.length - 1;
@@ -263,7 +273,13 @@ export function useAgentStream({
     onSidebarRefresh?.();
     // Outbound queue is per viewed conversation — do not apply end-of-stream
     // side effects (flush/pause) when this observation is no longer the viewed chat.
-    if (conversationIdRef.current === streamCid) {
+    if (
+      shouldPaintStreamPatch(
+        streamOwnership,
+        streamCid,
+        conversationIdRef.current,
+      )
+    ) {
       onStreamEndRef.current?.({
         failed: info.streamFailed,
         aborted: info.aborted,
@@ -280,7 +296,15 @@ export function useAgentStream({
     if (!streamCid || reload === "none") return;
     getConversation(streamCid)
       .then((conv) => {
-        if (conversationIdRef.current !== streamCid) return;
+        if (
+          !shouldPaintStreamPatch(
+            streamOwnership,
+            streamCid,
+            conversationIdRef.current,
+          )
+        ) {
+          return;
+        }
         if (streamingRef.current) return;
         setMsgs(
           conv.messages.map((m) =>
