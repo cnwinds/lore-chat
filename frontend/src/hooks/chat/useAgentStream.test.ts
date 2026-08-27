@@ -47,6 +47,11 @@ function makeSetMsgs(initial: ChatMessage[]) {
   return { setMsgs, getCurrent: () => current };
 }
 
+async function* failingChatStream(error: Error) {
+  throw error;
+  yield undefined as never;
+}
+
 function baseOptions(overrides: Partial<Parameters<typeof useAgentStream>[0]> = {}) {
   const { setMsgs } = makeSetMsgs([]);
   return {
@@ -220,9 +225,9 @@ describe("useAgentStream", () => {
   });
 
   it("shows error when reconcile cannot reach server after stream throws", async () => {
-    vi.mocked(api.chatStream).mockImplementation(async function* () {
-      throw new Error("boom");
-    });
+    vi.mocked(api.chatStream).mockImplementation(() =>
+      failingChatStream(new Error("boom")),
+    );
     vi.mocked(api.getActiveTurnStatus).mockRejectedValue(new Error("offline"));
     vi.mocked(api.getConversation).mockRejectedValue(new Error("offline"));
     const { setMsgs, getCurrent } = makeSetMsgs([]);
@@ -241,9 +246,9 @@ describe("useAgentStream", () => {
   });
 
   it("resumes observation when server turn is still running after stream throws", async () => {
-    vi.mocked(api.chatStream).mockImplementation(async function* () {
-      throw new Error("boom");
-    });
+    vi.mocked(api.chatStream).mockImplementation(() =>
+      failingChatStream(new Error("boom")),
+    );
     vi.mocked(api.getActiveTurnStatus).mockResolvedValue({
       conversation_id: "cid-1",
       turn_id: "t1",
