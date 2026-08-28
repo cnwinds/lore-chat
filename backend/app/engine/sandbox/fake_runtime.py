@@ -124,6 +124,28 @@ class FakeSandboxRuntime:
         self._jobs[eid] = JobStatus(execution_id=eid, running=True, logs="")
 
         async def _finish() -> None:
+            if command.strip() == "__stream_echo__":
+                for i in range(5):
+                    await asyncio.sleep(0.08)
+                    st = self._jobs.get(eid)
+                    if st is None or not st.running:
+                        return
+                    self._jobs[eid] = JobStatus(
+                        execution_id=eid,
+                        running=True,
+                        exit_code=0,
+                        logs=(st.logs or "") + f"line{i}\n",
+                    )
+                st = self._jobs.get(eid)
+                if st is None or not st.running:
+                    return
+                self._jobs[eid] = JobStatus(
+                    execution_id=eid,
+                    running=False,
+                    exit_code=0,
+                    logs=st.logs or "",
+                )
+                return
             await asyncio.sleep(0.05)
             if eid not in self._jobs:
                 return

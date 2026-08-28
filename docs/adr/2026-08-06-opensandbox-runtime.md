@@ -35,7 +35,7 @@ Lore Chat 的 Agent 工具面是服务器内白名单语义工具（KB / 网页 
 ### 3. 与 Agent 循环的耦合
 
 - **短任务**：同步 `commands.run`（或等价），stdout/stderr/退出码回写 tool result。
-- **长任务**：后台 command / job；回合可挂起等待，但必须把 OpenSandbox 的 SSE / 日志轮询 **映射为 lore-chat Agent SSE 关键节点**（阶段、日志片段、退出码、产物路径）。
+- **长任务**：后台 command + poll 流式；`sandbox_run` 默认 `wait_sec=60` 检查点交还 Agent（见 [ADR 2026-08-28](docs/adr/2026-08-28-sandbox-execution-wait-budget.md)）；`sandbox_stop` 强制停止；`sandbox_job_status` 非阻塞 peek。
 - 确认策略：v1 **默认信任模式开启**（全局 `sandbox_trust_mode=true`）；关闭后对装包/删改等高风险 `sandbox_run` 征询，批准后由后端直接执行。会话级信任延后。
 
 ### 4. 工具面厚度

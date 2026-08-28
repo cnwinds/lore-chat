@@ -77,6 +77,7 @@ def build_tool_dispatch(registry: ToolRegistry) -> dict[str, ToolHandler]:
             memory.recall_memory, args
         ),
         "sandbox_run": lambda args, **kw: sandbox.sandbox_run(args),
+        "sandbox_stop": lambda args, **kw: sandbox.sandbox_stop(args),
         "sandbox_job_status": lambda args, **kw: sandbox.sandbox_job_status(args),
         "sandbox_list_dir": lambda args, **kw: sandbox.sandbox_list_dir(args),
         "sandbox_read_file": lambda args, **kw: sandbox.sandbox_read_file(args),

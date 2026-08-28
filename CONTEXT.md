@@ -14,7 +14,7 @@
 | Agent | `backend/app/engine/agent/` | `AgentOrchestrator`（adapter）、`AgentToolLoop`（LLM+工具循环）、`tool_catalog`、`tool_impl/*`（执行）、`tools.py`（`ToolRegistry.execute` / `rebind` / `interrupt_runtime`） |
 | 会话 | `conversations.py` + `conversation/*` | SQLite 消息/turn；outbox；`MemoryExtractSchedule`；`ConversationTranscript`；`ConversationDeletionWorkflow`；`ConversationMessageGraph`；`ConversationSummaryLedger`（`store.summaries`）；`ConversationSystemEvents`（`store.system_events`）；其余 store 兼容委托逐步收口 |
 | 知识写入 | `backend/app/engine/knowledge_writer.py` | 路径 + git + 索引 + changelog **唯一写入 seam**；意图级 `persist_document` / `import_entry`（`allow_binary`）/ `read_entry_bytes` / `move_entry` / `delete_entry`；非 MD 准入经 `assert_non_md_asset_allowed`；Merge/Agent 勿自组 drop_index |
-| 沙箱 | `backend/app/engine/sandbox/` | `SandboxRuntime` 端口；`SandboxCommandGate`（高风险确认）；`KbSandboxExchange`（stage/publish）；`SandboxTools` 为薄 tool adapter |
+| 沙箱 | `backend/app/engine/sandbox/` | `SandboxRuntime` 端口；`SandboxExecutionEngine`（统一 job+poll 流式、wait 预算检查点）；`SandboxCommandGate`（高风险确认）；`KbSandboxExchange`（stage/publish）；`SandboxTools` 为薄 tool adapter |
 | 文档成文 | `backend/app/engine/document_synthesis.py` | 归档/合并/入库合并的 LLM 成文；Organizer 与 MergeWorkflow 共用 |
 | 会话定稿观察 | `backend/app/engine/memory/session_observe.py` | dirty / idle / extract / SlotResolver / CAS **deep module**（`SessionMemoryObserve`；`MemoryWorker` 为兼容别名） |
 | 记忆写入 | `backend/app/engine/memory/resolver.py` + `service.py` | 全部突变经 `MemoryService` → 唯一 `SlotResolver`（remember/confirm/edit/correct/forget） |

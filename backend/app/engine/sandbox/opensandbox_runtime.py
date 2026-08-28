@@ -113,6 +113,74 @@ class OpenSandboxRuntime:
         self._applying_mirrors = False
         self._active_executions: set[str] = set()
 
+    @staticmethod
+    def _is_recoverable_sandbox_error(exc: BaseException) -> bool:
+        if isinstance(exc, asyncio.CancelledError):
+            return False
+        name = type(exc).__name__
+        if name in ("ConnectError", "ConnectTimeout", "ReadError", "WriteError"):
+            return True
+        mod = type(exc).__module__ or ""
+        if ("httpx" in mod or "httpcore" in mod) and (
+            "Connect" in name or "Timeout" in name
+        ):
+            return True
+        text = str(exc).lower()
+        if "sandbox_not_found" in text or "connection attempts failed" in text:
+            return True
+        if "sandboxapiexception" in name.lower() or "not found" in text:
+            return True
+        return False
+
+    def _invalidate_sandbox(self, *, clear_persisted: bool) -> None:
+        self._sandbox = None
+        self._sandbox_id = None
+        if clear_persisted:
+            sandbox_state.clear_sandbox_id(self.kb_path)
+
+    async def _probe_sandbox(self) -> bool:
+        if self._sandbox is None or not self._sandbox_id:
+            return False
+        commands = getattr(self._sandbox, "commands", None)
+        if commands is None or not callable(getattr(commands, "run", None)):
+            return True
+        from opensandbox.models.execd import RunCommandOpts
+
+        try:
+            opts = RunCommandOpts(
+                working_directory="/",
+                background=False,
+                timeout=timedelta(seconds=15),
+            )
+            await self._sandbox.commands.run("true", opts=opts)
+            return True
+        except Exception as exc:
+            if self._is_recoverable_sandbox_error(exc):
+                return False
+            raise
+
+    async def _call_sandbox(self, fn):
+        """执行一次沙箱 API 调用；连接类失败时清缓存并重建后重试一次。"""
+        last_exc: BaseException | None = None
+        for attempt in (1, 2):
+            await self.ensure_ready()
+            assert self._sandbox is not None
+            try:
+                return await fn(self._sandbox)
+            except Exception as exc:
+                last_exc = exc
+                if attempt == 1 and self._is_recoverable_sandbox_error(exc):
+                    _log.warning(
+                        "sandbox session stale (attempt %s), recreating",
+                        attempt,
+                        exc_info=True,
+                    )
+                    self._invalidate_sandbox(clear_persisted=True)
+                    continue
+                raise
+        assert last_exc is not None
+        raise last_exc
+
     def _connection_config(self):
         from opensandbox.config import ConnectionConfig
 
@@ -126,9 +194,15 @@ class OpenSandboxRuntime:
 
     async def ensure_ready(self) -> str:
         if self._sandbox is not None and self._sandbox_id:
-            if not self._applying_mirrors:
-                await self._ensure_mirrors()
-            return self._sandbox_id
+            if await self._probe_sandbox():
+                if not self._applying_mirrors:
+                    await self._ensure_mirrors()
+                return self._sandbox_id
+            _log.warning(
+                "sandbox %s no longer reachable; recreating",
+                self._sandbox_id,
+            )
+            self._invalidate_sandbox(clear_persisted=True)
 
         from opensandbox import Sandbox
         from opensandbox.models.sandboxes import PVC, Volume
@@ -147,8 +221,12 @@ class OpenSandboxRuntime:
                 await self._ensure_mirrors()
                 return existing
             except Exception:
-                _log.warning("reconnect sandbox %s failed; creating new", existing, exc_info=True)
-                sandbox_state.clear_sandbox_id(self.kb_path)
+                _log.warning(
+                    "reconnect sandbox %s failed; creating new",
+                    existing,
+                    exc_info=True,
+                )
+                self._invalidate_sandbox(clear_persisted=True)
 
         create_env = {**self.sandbox_env, **mirror_env(self.mirror_region)}
         sandbox = await Sandbox.create(
@@ -218,11 +296,6 @@ class OpenSandboxRuntime:
         )
         _log.info("sandbox mirrors applied region=%s", self.mirror_region)
 
-    async def _sb(self):
-        await self.ensure_ready()
-        assert self._sandbox is not None
-        return self._sandbox
-
     @staticmethod
     def _stdout_text(execution) -> str:
         logs = getattr(execution, "logs", None)
@@ -250,118 +323,130 @@ class OpenSandboxRuntime:
         from app.engine.chat.progress_log import ensure_line_chunk
         from app.engine.sandbox.progress import emit_progress
 
-        if _ready:
-            sb = await self._sb()
-        else:
+        async def _execute(sb) -> CommandResult:
+            out_chunks: list[str] = []
+            err_chunks: list[str] = []
+            current_eid: dict[str, str | None] = {"id": None}
+
+            def _track(eid: str | None) -> None:
+                if not eid:
+                    return
+                current_eid["id"] = str(eid)
+                self._active_executions.add(str(eid))
+
+            async def on_stdout(msg: OutputMessage) -> None:
+                text = msg.text or ""
+                if not text:
+                    return
+                out_chunks.append(text)
+                emit_progress(ensure_line_chunk(text))
+
+            async def on_stderr(msg: OutputMessage) -> None:
+                text = msg.text or ""
+                if not text:
+                    return
+                err_chunks.append(text)
+                emit_progress(ensure_line_chunk(text))
+
+            async def on_init(execution) -> None:
+                _track(
+                    getattr(execution, "id", None)
+                    or getattr(execution, "execution_id", None)
+                )
+
+            opts_kwargs: dict = {
+                "working_directory": cwd or "/workspace",
+                "background": False,
+            }
+            if timeout_sec is not None:
+                opts_kwargs["timeout"] = timedelta(seconds=timeout_sec)
+            opts = RunCommandOpts(**opts_kwargs)
+
+            handlers = ExecutionHandlers(
+                on_stdout=on_stdout,
+                on_stderr=on_stderr,
+                on_init=on_init,
+            )
+            execution = None
+            try:
+                execution = await sb.commands.run(command, opts=opts, handlers=handlers)
+                _track(getattr(execution, "id", None))
+            except asyncio.CancelledError:
+                eid = current_eid["id"]
+                if eid:
+                    await self.interrupt(eid)
+                raise
+            finally:
+                done_id = current_eid["id"]
+                if done_id:
+                    self._active_executions.discard(done_id)
+
+            assert execution is not None
+            stdout = "".join(out_chunks) or self._stdout_text(execution)
+            stderr = "".join(err_chunks) or self._stderr_text(execution)
+            exit_code = getattr(execution, "exit_code", None)
+            if exit_code is None:
+                exit_code = 0 if not stderr else 1
+            eid = current_eid["id"] or getattr(execution, "id", None)
+            return CommandResult(
+                stdout=stdout,
+                stderr=stderr,
+                exit_code=int(exit_code),
+                execution_id=str(eid) if eid else None,
+            )
+
+        if not _ready:
             sb = self._sandbox
             if sb is None:
                 raise RuntimeError("sandbox not ready")
-        out_chunks: list[str] = []
-        err_chunks: list[str] = []
-        current_eid: dict[str, str | None] = {"id": None}
+            return await _execute(sb)
 
-        def _track(eid: str | None) -> None:
-            if not eid:
-                return
-            current_eid["id"] = str(eid)
-            self._active_executions.add(str(eid))
-
-        async def on_stdout(msg: OutputMessage) -> None:
-            text = msg.text or ""
-            if not text:
-                return
-            out_chunks.append(text)
-            emit_progress(ensure_line_chunk(text))
-
-        async def on_stderr(msg: OutputMessage) -> None:
-            text = msg.text or ""
-            if not text:
-                return
-            err_chunks.append(text)
-            emit_progress(ensure_line_chunk(text))
-
-        async def on_init(execution) -> None:
-            _track(getattr(execution, "id", None) or getattr(execution, "execution_id", None))
-
-        opts_kwargs: dict = {
-            "working_directory": cwd or "/workspace",
-            "background": False,
-        }
-        if timeout_sec is not None:
-            opts_kwargs["timeout"] = timedelta(seconds=timeout_sec)
-        opts = RunCommandOpts(**opts_kwargs)
-
-        handlers = ExecutionHandlers(
-            on_stdout=on_stdout,
-            on_stderr=on_stderr,
-            on_init=on_init,
-        )
-        execution = None
-        try:
-            execution = await sb.commands.run(command, opts=opts, handlers=handlers)
-            _track(getattr(execution, "id", None))
-        except asyncio.CancelledError:
-            eid = current_eid["id"]
-            if eid:
-                await self.interrupt(eid)
-            raise
-        finally:
-            done_id = current_eid["id"]
-            if done_id:
-                self._active_executions.discard(done_id)
-
-        assert execution is not None
-        stdout = "".join(out_chunks) or self._stdout_text(execution)
-        stderr = "".join(err_chunks) or self._stderr_text(execution)
-        exit_code = getattr(execution, "exit_code", None)
-        if exit_code is None:
-            exit_code = 0 if not stderr else 1
-        eid = current_eid["id"] or getattr(execution, "id", None)
-        return CommandResult(
-            stdout=stdout,
-            stderr=stderr,
-            exit_code=int(exit_code),
-            execution_id=str(eid) if eid else None,
-        )
+        return await self._call_sandbox(_execute)
 
     async def start_job(self, command: str, *, cwd: str = "/workspace") -> str:
         from opensandbox.models.execd import RunCommandOpts
 
-        sb = await self._sb()
-        opts = RunCommandOpts(working_directory=cwd or "/workspace", background=True)
-        execution = await sb.commands.run(command, opts=opts)
-        eid = getattr(execution, "id", None)
-        if not eid:
-            raise RuntimeError("background command returned no execution id")
-        eid_s = str(eid)
-        self._active_executions.add(eid_s)
-        return eid_s
+        async def _start(sb) -> str:
+            opts = RunCommandOpts(
+                working_directory=cwd or "/workspace", background=True
+            )
+            execution = await sb.commands.run(command, opts=opts)
+            eid = getattr(execution, "id", None)
+            if not eid:
+                raise RuntimeError("background command returned no execution id")
+            eid_s = str(eid)
+            self._active_executions.add(eid_s)
+            return eid_s
+
+        return await self._call_sandbox(_start)
 
     async def poll_job(
         self, execution_id: str, *, log_cursor: int | None = None
     ) -> JobStatus:
-        sb = await self._sb()
-        status = await sb.commands.get_command_status(execution_id)
-        logs_obj = await sb.commands.get_background_command_logs(
-            execution_id, cursor=log_cursor
-        )
-        raw = getattr(logs_obj, "content", None)
-        if raw is None:
-            raw = getattr(logs_obj, "output", None) or str(logs_obj)
-        if not isinstance(raw, str):
-            raw = str(raw)
-        running = bool(getattr(status, "running", False))
-        exit_code = getattr(status, "exit_code", None)
-        next_cursor = getattr(logs_obj, "cursor", None)
-        if not running:
-            self._active_executions.discard(execution_id)
-        return JobStatus(
-            execution_id=execution_id,
-            running=running,
-            exit_code=exit_code if exit_code is None else int(exit_code),
-            logs=raw,
-            next_cursor=int(next_cursor) if next_cursor is not None else None,
-        )
+        async def _poll(sb) -> JobStatus:
+            status = await sb.commands.get_command_status(execution_id)
+            logs_obj = await sb.commands.get_background_command_logs(
+                execution_id, cursor=log_cursor
+            )
+            raw = getattr(logs_obj, "content", None)
+            if raw is None:
+                raw = getattr(logs_obj, "output", None) or str(logs_obj)
+            if not isinstance(raw, str):
+                raw = str(raw)
+            running = bool(getattr(status, "running", False))
+            exit_code = getattr(status, "exit_code", None)
+            next_cursor = getattr(logs_obj, "cursor", None)
+            if not running:
+                self._active_executions.discard(execution_id)
+            return JobStatus(
+                execution_id=execution_id,
+                running=running,
+                exit_code=exit_code if exit_code is None else int(exit_code),
+                logs=raw,
+                next_cursor=int(next_cursor) if next_cursor is not None else None,
+            )
+
+        return await self._call_sandbox(_poll)
 
     async def interrupt(self, execution_id: str) -> None:
         if not execution_id:
@@ -406,26 +491,28 @@ class OpenSandboxRuntime:
 
     async def read_file(self, path: str, *, max_bytes: int = 200_000) -> bytes:
         """按字节读取沙箱文件（二进制安全）。优先 files.read_bytes。"""
-        sb = await self._sb()
         limit = max(0, int(max_bytes))
-        files = getattr(sb, "files", None)
-        read_bytes = getattr(files, "read_bytes", None) if files is not None else None
-        if read_bytes is not None:
-            kwargs: dict = {}
-            if limit > 0:
-                kwargs["range_header"] = f"bytes=0-{limit - 1}"
-            try:
-                data = await read_bytes(path, **kwargs)
-            except Exception:
-                # 部分实现可能不支持 Range；整文件读取后再截断
-                data = await read_bytes(path)
-            if not isinstance(data, (bytes, bytearray)):
-                raise TypeError(
-                    f"read_bytes returned {type(data).__name__}, expected bytes"
-                )
-            return bytes(data)[:limit] if limit else bytes(data)
 
-        return await self._read_file_via_base64(path, limit=limit)
+        async def _read(sb) -> bytes:
+            files = getattr(sb, "files", None)
+            read_bytes = getattr(files, "read_bytes", None) if files is not None else None
+            if read_bytes is not None:
+                kwargs: dict = {}
+                if limit > 0:
+                    kwargs["range_header"] = f"bytes=0-{limit - 1}"
+                try:
+                    data = await read_bytes(path, **kwargs)
+                except Exception:
+                    # 部分实现可能不支持 Range；整文件读取后再截断
+                    data = await read_bytes(path)
+                if not isinstance(data, (bytes, bytearray)):
+                    raise TypeError(
+                        f"read_bytes returned {type(data).__name__}, expected bytes"
+                    )
+                return bytes(data)[:limit] if limit else bytes(data)
+            return await self._read_file_via_base64(path, limit=limit)
+
+        return await self._call_sandbox(_read)
 
     async def _read_file_via_base64(self, path: str, *, limit: int) -> bytes:
         """无 files API 时经 base64 文本通道读取，避免 stdout 破坏二进制。"""
@@ -453,12 +540,15 @@ class OpenSandboxRuntime:
         """批量写入；一次 API 调用（WriteEntry 支持 str|bytes）。"""
         if not entries:
             return
-        sb = await self._sb()
-        write_files = getattr(getattr(sb, "files", None), "write_files", None)
-        if write_files is None:
-            raise RuntimeError("sandbox files.write_files unavailable")
-        from opensandbox.models.filesystem import WriteEntry
 
-        await write_files(
-            [WriteEntry(path=path, data=data, mode=644) for path, data in entries]
-        )
+        async def _write(sb) -> None:
+            write_files = getattr(getattr(sb, "files", None), "write_files", None)
+            if write_files is None:
+                raise RuntimeError("sandbox files.write_files unavailable")
+            from opensandbox.models.filesystem import WriteEntry
+
+            await write_files(
+                [WriteEntry(path=path, data=data, mode=644) for path, data in entries]
+            )
+
+        await self._call_sandbox(_write)

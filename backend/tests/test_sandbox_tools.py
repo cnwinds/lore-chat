@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from unittest.mock import AsyncMock
+
 import pytest
 
 from app.config import Settings
@@ -72,6 +74,7 @@ def test_select_tools_includes_sandbox_when_enabled():
     )
     assert SANDBOX_TOOLS <= names
     assert "sandbox_job_status" in names
+    assert "sandbox_stop" in names
 
 
 def test_select_tools_no_write_drops_publish():
@@ -299,3 +302,112 @@ async def test_sandbox_disabled_errors(tmp_path):
     registry, _ = _make_registry(tmp_path, sandbox=False)
     r = await registry.execute("sandbox_run", {"command": "echo x"})
     assert r.get("error")
+
+
+@pytest.mark.asyncio
+async def test_sandbox_run_uses_execution_engine(tmp_path):
+    registry, _ = _make_registry(tmp_path)
+    exec_spy = AsyncMock(wraps=registry.sandbox.execution_engine.execute)
+    registry.sandbox.execution_engine.execute = exec_spy  # type: ignore[method-assign]
+
+    await registry.execute(
+        "sandbox_run",
+        {"command": "echo hi", "wait_sec": 30, "confirmed": True},
+    )
+
+    exec_spy.assert_awaited_once()
+    kwargs = exec_spy.await_args.kwargs
+    assert kwargs["wait_sec"] == 30
+    assert kwargs["if_exceeded"] == "return"
+    assert kwargs["command"] == "echo hi"
+
+
+@pytest.mark.asyncio
+async def test_python_command_gets_unbuffer_env(tmp_path):
+    registry, _ = _make_registry(tmp_path)
+    exec_spy = AsyncMock(wraps=registry.sandbox.execution_engine.execute)
+    registry.sandbox.execution_engine.execute = exec_spy  # type: ignore[method-assign]
+
+    await registry.execute(
+        "sandbox_run",
+        {"command": "/venv/bin/python script.py", "confirmed": True},
+    )
+
+    cmd = exec_spy.await_args.kwargs["command"]
+    assert cmd.startswith("PYTHONUNBUFFERED=1 ")
+    assert "/venv/bin/python script.py" in cmd
+
+
+@pytest.mark.asyncio
+async def test_sandbox_run_checkpoint_on_wait_exceeded(tmp_path):
+    registry, _ = _make_registry(tmp_path)
+    registry.sandbox.execution_engine.poll_interval_sec = 0.05
+
+    r = await registry.execute(
+        "sandbox_run",
+        {"command": "__stream_echo__", "wait_sec": 0.15, "confirmed": True},
+    )
+    assert r.get("checkpoint") is True
+    assert r.get("running") is True
+    assert r.get("wait_exceeded") is True
+    eid = r.get("execution_id")
+    assert eid
+    assert "line" in (r.get("stdout") or "")
+
+
+@pytest.mark.asyncio
+async def test_sandbox_run_attach_and_complete(tmp_path):
+    registry, _ = _make_registry(tmp_path)
+    registry.sandbox.execution_engine.poll_interval_sec = 0.05
+
+    first = await registry.execute(
+        "sandbox_run",
+        {"command": "__stream_echo__", "wait_sec": 0.12, "confirmed": True},
+    )
+    eid = first["execution_id"]
+    assert first.get("running") is True
+
+    done = await registry.execute(
+        "sandbox_run",
+        {
+            "execution_id": eid,
+            "if_exceeded": "wait_until_done",
+            "confirmed": True,
+        },
+    )
+    assert done.get("running") is False
+    assert done.get("exit_code") == 0
+    assert "line4" in (done.get("stdout") or "")
+
+
+@pytest.mark.asyncio
+async def test_sandbox_stop(tmp_path):
+    registry, _ = _make_registry(tmp_path)
+    registry.sandbox.execution_engine.poll_interval_sec = 0.05
+
+    running = await registry.execute(
+        "sandbox_run",
+        {"command": "__stream_echo__", "wait_sec": 0.12, "confirmed": True},
+    )
+    eid = running["execution_id"]
+    stopped = await registry.execute("sandbox_stop", {"execution_id": eid})
+    assert stopped.get("stopped") is True
+    assert stopped.get("running") is False
+
+
+@pytest.mark.asyncio
+async def test_sandbox_run_if_exceeded_stop(tmp_path):
+    registry, _ = _make_registry(tmp_path)
+    registry.sandbox.execution_engine.poll_interval_sec = 0.05
+
+    r = await registry.execute(
+        "sandbox_run",
+        {
+            "command": "__stream_echo__",
+            "wait_sec": 0.12,
+            "if_exceeded": "stop",
+            "confirmed": True,
+        },
+    )
+    assert r.get("stopped") is True
+    assert r.get("running") is False

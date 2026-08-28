@@ -38,9 +38,9 @@ class SandboxCommandGate:
                 "error": "pending unavailable",
             }
         cwd = (args.get("cwd") or "/workspace").strip() or "/workspace"
-        background = bool(args.get("background", False))
-        timeout = args.get("timeout_sec")
-        timeout_sec = float(timeout) if timeout is not None else None
+        wait = args.get("wait_sec")
+        wait_sec = float(wait) if wait is not None else None
+        if_exceeded = (args.get("if_exceeded") or "return").strip().lower()
         qid = self.pending.create(
             f"是否在沙箱执行此命令？\n\n```\n{command}\n```\ncwd={cwd}",
             list(CONFIRM_OPTIONS),
@@ -48,8 +48,8 @@ class SandboxCommandGate:
                 "kind": "sandbox_confirm",
                 "command": command,
                 "cwd": cwd,
-                "background": background,
-                "timeout_sec": timeout_sec,
+                "wait_sec": wait_sec,
+                "if_exceeded": if_exceeded,
             },
         )
         return {
@@ -106,16 +106,16 @@ class SandboxCommandGate:
             )
         command = payload.get("command") or ""
         cwd = payload.get("cwd") or "/workspace"
-        background = bool(payload.get("background", False))
-        timeout_sec = payload.get("timeout_sec")
+        wait_sec = payload.get("wait_sec")
+        if_exceeded = payload.get("if_exceeded") or "return"
         run_args: dict = {
             "command": command,
             "cwd": cwd,
-            "background": background,
+            "if_exceeded": if_exceeded,
             "confirmed": True,
         }
-        if timeout_sec is not None:
-            run_args["timeout_sec"] = timeout_sec
+        if wait_sec is not None:
+            run_args["wait_sec"] = wait_sec
         return IngestResult(
             status="sandbox_execute",
             rel_path=None,

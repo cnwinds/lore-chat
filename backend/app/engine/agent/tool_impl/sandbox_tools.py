@@ -1,15 +1,13 @@
-"""沙箱工具：run / list / read / publish / stage / job_status（薄 adapter）。"""
+"""沙箱工具：run / stop / list / read / publish / stage / job_status（薄 adapter）。"""
 
 from __future__ import annotations
-
-import asyncio
 
 from app.engine.knowledge_writer import KnowledgeWriter
 from app.engine.pending import PendingStore
 from app.engine.sandbox.command_gate import SandboxCommandGate
-from app.engine.sandbox.job_runner import SandboxJobRunner
+from app.engine.sandbox.command_prep import prepare_streaming_command
+from app.engine.sandbox.execution_engine import SandboxExecutionEngine
 from app.engine.sandbox.kb_exchange import KbSandboxExchange
-from app.engine.sandbox.progress import emit_progress
 from app.engine.sandbox.protocol import SandboxRuntime
 
 
@@ -21,9 +19,8 @@ class SandboxTools:
         pending: PendingStore | None = None,
         *,
         trust_mode: bool = True,
-        short_timeout_sec: float = 120,
-        job_poll_interval_sec: float = 0.5,
-        job_max_wait_sec: float = 600,
+        default_wait_sec: float = SandboxExecutionEngine.DEFAULT_WAIT_SEC,
+        poll_interval_sec: float = SandboxExecutionEngine.DEFAULT_POLL_INTERVAL,
         read_max_chars: int = 50_000,
     ) -> None:
         self.runtime = runtime
@@ -31,11 +28,10 @@ class SandboxTools:
         self.pending = pending
         self.command_gate = SandboxCommandGate(pending, trust_mode=trust_mode)
         self.exchange = KbSandboxExchange(knowledge_writer)
-        self.job_runner = SandboxJobRunner(
-            poll_interval_sec=job_poll_interval_sec,
-            max_wait_sec=job_max_wait_sec,
+        self.execution_engine = SandboxExecutionEngine(
+            poll_interval_sec=poll_interval_sec,
         )
-        self.short_timeout_sec = short_timeout_sec
+        self.default_wait_sec = default_wait_sec
         self.read_max_chars = read_max_chars
 
     @property
@@ -56,57 +52,61 @@ class SandboxTools:
         return self.runtime
 
     @staticmethod
-    def _parse_run_args(args: dict) -> tuple[str, str, bool, float | None]:
+    def _parse_run_args(args: dict) -> tuple[str | None, str, str | None, float, str]:
         cwd = (args.get("cwd") or "/workspace").strip() or "/workspace"
-        background = bool(args.get("background", False))
-        timeout = args.get("timeout_sec")
-        timeout_sec = float(timeout) if timeout is not None else None
-        command = (args.get("command") or "").strip()
-        return command, cwd, background, timeout_sec
+        command = (args.get("command") or "").strip() or None
+        execution_id = (args.get("execution_id") or "").strip() or None
+        wait = args.get("wait_sec")
+        wait_sec = float(wait) if wait is not None else SandboxExecutionEngine.DEFAULT_WAIT_SEC
+        if_exceeded = (args.get("if_exceeded") or "return").strip().lower()
+        return command, cwd, execution_id, wait_sec, if_exceeded
 
     async def sandbox_run(self, args: dict) -> dict:
         rt = self._require()
         if isinstance(rt, dict):
             return rt
-        command, cwd, background, timeout = self._parse_run_args(args)
-        if not command:
+        command, cwd, execution_id, wait_sec, if_exceeded = self._parse_run_args(args)
+
+        if not execution_id and not command:
             return {"summary": "缺少 command", "sources": [], "error": "missing command"}
 
-        gate = self.command_gate.maybe_confirm(args, command)
-        if gate is not None:
-            return gate
-
-        timeout_sec = (
-            float(timeout) if timeout is not None else self.short_timeout_sec
-        )
+        if not execution_id:
+            gate = self.command_gate.maybe_confirm(args, command or "")
+            if gate is not None:
+                return gate
+            command = prepare_streaming_command(command or "")
 
         await rt.ensure_ready()
 
-        if background or timeout_sec > self.short_timeout_sec:
-            return await self.job_runner.wait(rt, command, cwd=cwd)
+        if execution_id:
+            return await self.execution_engine.execute(
+                rt,
+                execution_id=execution_id,
+                cwd=cwd,
+                wait_sec=wait_sec,
+                if_exceeded=if_exceeded,
+            )
+        return await self.execution_engine.execute(
+            rt,
+            command=command,
+            cwd=cwd,
+            wait_sec=wait_sec,
+            if_exceeded=if_exceeded,
+        )
 
-        try:
-            result = await rt.run(command, cwd=cwd, timeout_sec=timeout_sec)
-        except asyncio.CancelledError:
-            raise
-        body = (result.stdout or "").strip()
-        err = (result.stderr or "").strip()
-        emit_progress(f"\n[exit {result.exit_code}]", phase="end")
-        summary_parts = [f"exit={result.exit_code}"]
-        if body:
-            summary_parts.append(body[:3500])
-        if err:
-            summary_parts.append(f"stderr:\n{err[:1000]}")
-        out = {
-            "summary": "\n".join(summary_parts),
-            "sources": [],
-            "exit_code": result.exit_code,
-            "stdout": result.stdout,
-            "stderr": result.stderr,
-        }
-        if result.exit_code != 0:
-            out["error"] = f"exit_code={result.exit_code}"
-        return out
+    async def sandbox_stop(self, args: dict) -> dict:
+        rt = self._require()
+        if isinstance(rt, dict):
+            return rt
+        eid = (args.get("execution_id") or "").strip()
+        if not eid:
+            return {
+                "summary": "缺少 execution_id",
+                "sources": [],
+                "error": "missing execution_id",
+            }
+        await rt.ensure_ready()
+        return await self.execution_engine.stop(rt, eid)
 
     async def sandbox_job_status(self, args: dict) -> dict:
         rt = self._require()

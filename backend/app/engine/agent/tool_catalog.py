@@ -133,6 +133,7 @@ def resolve_tool_label(name: str, arguments: dict | None = None) -> str:
 
 SANDBOX_TOOLS = frozenset({
     "sandbox_run",
+    "sandbox_stop",
     "sandbox_list_dir",
     "sandbox_read_file",
     "publish_from_sandbox",
@@ -696,29 +697,40 @@ TOOL_DEFINITIONS: list[dict] = [
             "name": "sandbox_run",
             "description": (
                 "在服务器持久沙箱中执行 shell 命令（工作目录默认 /workspace）。"
-                "短命令同步返回；background=true 或长耗时会轮询直至结束，并流式上报进度。"
-                "仅在实例启用执行能力时可用。"
+                "统一后台 job + 流式 poll；默认每 wait_sec 秒（60）检查点交还控制权。"
+                "if_exceeded=return 时到期返回 checkpoint；wait_until_done 等到完成；"
+                "stop 到期则 sandbox_stop 等价中断。"
+                "续接已有任务传 execution_id（勿重复 command）。仅在实例启用执行能力时可用。"
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "command": {
                         "type": "string",
-                        "description": "要执行的 shell 命令",
+                        "description": "要执行的 shell 命令（新任务必填；续接时省略）",
+                    },
+                    "execution_id": {
+                        "type": "string",
+                        "description": "续接此前 sandbox_run 返回的后台任务 id",
                     },
                     "cwd": {
                         "type": "string",
                         "description": "工作目录，默认 /workspace",
                         "default": "/workspace",
                     },
-                    "background": {
-                        "type": "boolean",
-                        "description": "是否按后台 job 轮询（适合长任务）",
-                        "default": False,
-                    },
-                    "timeout_sec": {
+                    "wait_sec": {
                         "type": "number",
-                        "description": "同步执行超时秒数，默认 120",
+                        "description": "本段等待预算秒数，默认 60；到期按 if_exceeded 处理",
+                        "default": 60,
+                    },
+                    "if_exceeded": {
+                        "type": "string",
+                        "enum": ["return", "wait_until_done", "stop"],
+                        "description": (
+                            "wait 预算用尽时：return=检查点交还 Agent；"
+                            "wait_until_done=一直等到完成；stop=中断命令"
+                        ),
+                        "default": "return",
                     },
                     "confirmed": {
                         "type": "boolean",
@@ -729,7 +741,26 @@ TOOL_DEFINITIONS: list[dict] = [
                         "default": False,
                     },
                 },
-                "required": ["command"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "sandbox_stop",
+            "description": (
+                "强制停止 sandbox_run 返回 execution_id 对应的后台命令，"
+                "并流式刷出剩余日志。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "execution_id": {
+                        "type": "string",
+                        "description": "sandbox_run 返回的 execution_id",
+                    },
+                },
+                "required": ["execution_id"],
             },
         },
     },

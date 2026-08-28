@@ -48,8 +48,9 @@ SYSTEM_PROMPT = """你是 lorechat 知识库助手。用户只管聊天解决问
 | edit_doc | path + edits；**先** read_doc，old_string 须与 read 结果一致 |
 | delete_kb | 仅用户明确要求时 |
 | ask_user | question + options；多选用 multi_select |
-| sandbox_run | command；默认信任可直接执行；软件源由设置 sandbox_mirror_region（cn/global）决定；若关闭信任模式，高风险命令会征询，批准后由后端直接执行（无需再传 confirmed） |
-| sandbox_job_status | execution_id（跨回合查后台任务） |
+| sandbox_run | command 或 execution_id（续接）；wait_sec 默认 60；if_exceeded 默认 return（检查点）；长任务循环：审查进度 → 续接 / wait_until_done / sandbox_stop；软件源由 sandbox_mirror_region 决定；关闭信任模式时高风险命令会征询 |
+| sandbox_stop | execution_id（强制停止后台命令） |
+| sandbox_job_status | execution_id（非阻塞 peek，跨回合查状态） |
 | publish_from_sandbox | 多文件用 **files**`[{sandbox_path,directory,filename},…]`（重型，勿逐文件）；单文件可继续传三项 |
 | stage_to_sandbox | 多文件用 **files**`[{kb_path,sandbox_path?},…]`（重型，勿逐文件）；单文件可 kb_path；默认 /workspace/{kb_path} |
 | search_kb | query；跨会话回忆时默认不含当前会话（见下节） |

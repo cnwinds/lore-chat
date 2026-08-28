@@ -68,6 +68,8 @@ def test_resolve_sandbox_confirm_approve(tmp_path):
             "command": "pip install edge-tts",
             "cwd": "/workspace",
             "background": False,
+            "wait_sec": 60,
+            "if_exceeded": "return",
         },
     )
     result = gate.resolve(qid, ["approve"])
@@ -162,7 +164,7 @@ async def test_sandbox_job_status(tmp_path):
     reg, _ = _registry(tmp_path, trust=True)
     start = await reg.execute(
         "sandbox_run",
-        {"command": "echo done", "background": True, "confirmed": True},
+        {"command": "echo done", "if_exceeded": "wait_until_done", "confirmed": True},
     )
     eid = start.get("execution_id")
     assert eid
