@@ -4,6 +4,18 @@
 
 ## [Unreleased]
 
+## [0.2.9] - 2026-08-28
+
+### Added
+
+- 沙箱命令统一后台流式执行；默认约每 60 秒检查点交还 Agent，可续等、等到完成或 `sandbox_stop`
+- 新增 `sandbox_stop`，可强制停止后台沙箱命令
+
+### Fixed
+
+- 沙箱会话过期后自动探测并重建，减少 `ConnectError`
+- Python 长任务日志不再因缓冲整段到达（自动 `PYTHONUNBUFFERED`）
+
 ## [0.2.8] - 2026-08-27
 
 ### Fixed
@@ -106,7 +118,8 @@
 - MIT 许可证与开源社区文件（SECURITY、CONTRIBUTING、CODE_OF_CONDUCT）
 - GitHub Issue / PR 模板与 CI（backend pytest、frontend lint/test/build）
 
-[Unreleased]: https://github.com/cnwinds/lore-chat/compare/v0.2.8...HEAD
+[Unreleased]: https://github.com/cnwinds/lore-chat/compare/v0.2.9...HEAD
+[0.2.9]: https://github.com/cnwinds/lore-chat/compare/v0.2.8...v0.2.9
 [0.2.8]: https://github.com/cnwinds/lore-chat/compare/v0.2.6...v0.2.8
 [0.2.6]: https://github.com/cnwinds/lore-chat/compare/v0.2.5...v0.2.6
 [0.2.5]: https://github.com/cnwinds/lore-chat/compare/v0.2.4...v0.2.5
