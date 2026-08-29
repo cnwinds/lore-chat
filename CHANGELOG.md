@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [0.2.10] - 2026-08-29
+
 ### Fixed
 
 - 沙箱投放/读写不再每次远程探活：过期会话改为调用失败时再建，避免固定多秒延迟
@@ -122,7 +124,8 @@
 - MIT 许可证与开源社区文件（SECURITY、CONTRIBUTING、CODE_OF_CONDUCT）
 - GitHub Issue / PR 模板与 CI（backend pytest、frontend lint/test/build）
 
-[Unreleased]: https://github.com/cnwinds/lore-chat/compare/v0.2.9...HEAD
+[Unreleased]: https://github.com/cnwinds/lore-chat/compare/v0.2.10...HEAD
+[0.2.10]: https://github.com/cnwinds/lore-chat/compare/v0.2.9...v0.2.10
 [0.2.9]: https://github.com/cnwinds/lore-chat/compare/v0.2.8...v0.2.9
 [0.2.8]: https://github.com/cnwinds/lore-chat/compare/v0.2.6...v0.2.8
 [0.2.6]: https://github.com/cnwinds/lore-chat/compare/v0.2.5...v0.2.6
