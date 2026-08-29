@@ -6,6 +6,7 @@
 import { appendProgressChunk } from "./progressLog";
 import { clipToolQuery } from "./toolQuery";
 import { resolveToolLabel } from "./toolLabels";
+import { resolveToolStartedAtMs } from "./toolDuration";
 import type {
   ChatMessage,
   DocContextItem,
@@ -74,7 +75,7 @@ export function updateTimeline(
         ),
       ts: data.ts as string,
       status: "running",
-      started_at_ms: Date.now(),
+      started_at_ms: resolveToolStartedAtMs(data.ts as string) ?? Date.now(),
       ...(query ? { query } : {}),
     };
     const parallelIdx = findActiveParallelIndex(timeline);
@@ -262,8 +263,12 @@ export function mergeServerTimeline(
   const merge = (blocks: TimelineBlock[]): TimelineBlock[] =>
     blocks.map((b) => {
       if (b.type === "tool") {
-        const started = prevById.get(b.id) ?? b.started_at_ms ?? Date.now();
-        return { ...b, started_at_ms: started };
+        // 切会话后 prev 无本地锚点；用服务端 ts 回填。非法 ts 不打 Date.now()，避免秒表归零。
+        const started = resolveToolStartedAtMs(
+          b.ts,
+          prevById.get(b.id) ?? b.started_at_ms,
+        );
+        return started != null ? { ...b, started_at_ms: started } : b;
       }
       if (b.type === "parallel") {
         return { ...b, children: merge(b.children) };

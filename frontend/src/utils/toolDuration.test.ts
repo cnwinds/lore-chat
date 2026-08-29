@@ -1,6 +1,23 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi, afterEach } from "vitest";
 import { updateTimeline } from "../api";
-import { toolDisplayDurationMs } from "./toolDuration";
+import { resolveToolStartedAtMs, toolDisplayDurationMs } from "./toolDuration";
+
+describe("resolveToolStartedAtMs", () => {
+  it("prefers existing finite started_at_ms", () => {
+    expect(resolveToolStartedAtMs("2026-08-29T22:25:00+08:00", 111)).toBe(111);
+  });
+
+  it("parses server ISO ts", () => {
+    const iso = "2026-08-29T22:25:00+08:00";
+    expect(resolveToolStartedAtMs(iso)).toBe(Date.parse(iso));
+  });
+
+  it("returns undefined for unparsable ts (no Date.now fallback)", () => {
+    expect(resolveToolStartedAtMs("t")).toBeUndefined();
+    expect(resolveToolStartedAtMs("")).toBeUndefined();
+    expect(resolveToolStartedAtMs(undefined)).toBeUndefined();
+  });
+});
 
 describe("toolDisplayDurationMs", () => {
   it("uses per-tool started_at while running, not stream elapsed", () => {
@@ -21,8 +38,29 @@ describe("toolDisplayDurationMs", () => {
 });
 
 describe("tool_start stamps started_at_ms", () => {
-  it("sets client started_at_ms on tool_start", () => {
-    const before = Date.now();
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("uses server ts when parsable", () => {
+    const iso = "2026-08-29T22:25:00+08:00";
+    const timeline = updateTimeline([], "tool_start", {
+      id: "1",
+      tool: "sandbox_run",
+      label: "run",
+      ts: iso,
+      input: { command: "sleep 1" },
+    });
+    const block = timeline[0];
+    expect(block.type).toBe("tool");
+    if (block.type === "tool") {
+      expect(block.started_at_ms).toBe(Date.parse(iso));
+    }
+  });
+
+  it("falls back to Date.now when ts is unparsable", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-29T22:30:00+08:00"));
     const timeline = updateTimeline([], "tool_start", {
       id: "1",
       tool: "sandbox_run",
@@ -30,12 +68,10 @@ describe("tool_start stamps started_at_ms", () => {
       ts: "t0",
       input: { command: "sleep 1" },
     });
-    const after = Date.now();
     const block = timeline[0];
     expect(block.type).toBe("tool");
     if (block.type === "tool") {
-      expect(block.started_at_ms).toBeGreaterThanOrEqual(before);
-      expect(block.started_at_ms).toBeLessThanOrEqual(after);
+      expect(block.started_at_ms).toBe(Date.now());
     }
   });
 });

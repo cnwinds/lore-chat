@@ -1,5 +1,6 @@
 import type { ChatMessage, SourceRef, TimelineBlock } from "../api";
 import { formatMessageTime } from "./displayTime";
+import { resolveToolStartedAtMs } from "./toolDuration";
 
 export function kbPathFromToolResult(
   data: Record<string, unknown>,
@@ -75,27 +76,46 @@ export function findPrecedingUserForRetry(
   return null;
 }
 
-/** 刷新/重载后：把仍标 running 的工具收成 interrupted，避免永远转圈。 */
+/** 刷新/重载后：非 active turn 把仍标 running 的工具收成 interrupted；
+ *  active turn 则为缺锚点的 running 工具用服务端 ts 回填秒表（切会话再切回）。 */
 export function normalizeLoadedTimeline(
   timeline: TimelineBlock[] | undefined,
   opts?: { activeTurnRunning?: boolean },
 ): TimelineBlock[] | undefined {
-  if (!timeline?.length || opts?.activeTurnRunning) return timeline;
+  if (!timeline?.length) return timeline;
 
-  function patch(block: TimelineBlock): TimelineBlock {
-    if (block.type === "tool" && block.status === "running") {
-      return {
-        ...block,
-        status: "interrupted",
-        summary: block.summary || "连接中断，未完成",
-      };
-    }
-    if (block.type === "parallel") {
-      return { ...block, children: block.children.map(patch) };
-    }
-    return block;
+  const mapTools = (
+    blocks: TimelineBlock[],
+    mapTool: (b: Extract<TimelineBlock, { type: "tool" }>) => TimelineBlock,
+  ): TimelineBlock[] =>
+    blocks.map((block) => {
+      if (block.type === "tool") return mapTool(block);
+      if (block.type === "parallel") {
+        return { ...block, children: mapTools(block.children, mapTool) };
+      }
+      return block;
+    });
+
+  if (opts?.activeTurnRunning) {
+    let changed = false;
+    const stamped = mapTools(timeline, (block) => {
+      if (block.status !== "running" || block.started_at_ms != null) return block;
+      const started = resolveToolStartedAtMs(block.ts);
+      if (started == null) return block;
+      changed = true;
+      return { ...block, started_at_ms: started };
+    });
+    return changed ? stamped : timeline;
   }
-  return timeline.map(patch);
+
+  return mapTools(timeline, (block) => {
+    if (block.status !== "running") return block;
+    return {
+      ...block,
+      status: "interrupted",
+      summary: block.summary || "连接中断，未完成",
+    };
+  });
 }
 
 export function normalizeLoadedMessage(

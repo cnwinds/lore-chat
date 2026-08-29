@@ -68,7 +68,7 @@ export type TimelineBlock =
       sources?: SourceRef[];
       content?: string;
       duration_ms?: number;
-      /** 前端本地：tool_start 时 Date.now()，供运行中秒表 */
+      /** 秒表锚点：优先服务端 tool ts；本地 tool_start 在 ts 不可解析时回退 Date.now() */
       started_at_ms?: number;
       question_id?: string;
       question?: string;

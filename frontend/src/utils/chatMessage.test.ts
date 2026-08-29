@@ -173,7 +173,7 @@ describe("normalizeLoadedMessage", () => {
             id: "t1",
             tool: "sandbox_run",
             label: "run",
-            ts: "t",
+            ts: "2026-08-29T22:25:00+08:00",
             status: "running",
           },
         ],
@@ -181,7 +181,70 @@ describe("normalizeLoadedMessage", () => {
       { activeTurnRunning: true },
     );
     expect(msg.status).toBeUndefined();
-    expect(msg.timeline?.[0]).toMatchObject({ status: "running" });
+    expect(msg.timeline?.[0]).toMatchObject({
+      status: "running",
+      started_at_ms: Date.parse("2026-08-29T22:25:00+08:00"),
+    });
+  });
+
+  it("stamps nested parallel children when turn is active", () => {
+    const iso = "2026-08-29T22:25:00+08:00";
+    const msg = normalizeLoadedMessage(
+      {
+        role: "assistant",
+        timeline: [
+          {
+            type: "parallel",
+            batch_id: "b1",
+            ts: iso,
+            children: [
+              {
+                type: "tool",
+                id: "t1",
+                tool: "sandbox_run",
+                label: "run",
+                ts: iso,
+                status: "running",
+              },
+            ],
+          },
+        ],
+      },
+      { activeTurnRunning: true },
+    );
+    const batch = msg.timeline?.[0];
+    expect(batch?.type).toBe("parallel");
+    if (batch?.type === "parallel") {
+      expect(batch.children[0]).toMatchObject({
+        status: "running",
+        started_at_ms: Date.parse(iso),
+      });
+    }
+  });
+
+  it("leaves started_at_ms unset when active-turn ts is unparsable", () => {
+    const msg = normalizeLoadedMessage(
+      {
+        role: "assistant",
+        timeline: [
+          {
+            type: "tool",
+            id: "t1",
+            tool: "sandbox_run",
+            label: "run",
+            ts: "not-a-date",
+            status: "running",
+          },
+        ],
+      },
+      { activeTurnRunning: true },
+    );
+    const tool = msg.timeline?.[0];
+    expect(tool?.type).toBe("tool");
+    if (tool?.type === "tool") {
+      expect(tool.started_at_ms).toBeUndefined();
+      expect(tool.status).toBe("running");
+    }
   });
 });
 
