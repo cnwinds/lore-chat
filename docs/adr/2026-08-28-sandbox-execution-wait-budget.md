@@ -40,7 +40,7 @@ Agent 在沙箱中执行长命令（如 `douyin2text.py`、Docker 构建）时�
 
 - Agent SYSTEM_PROMPT / tool_catalog 须描述 60s 检查点工作流
 - 单测覆盖 checkpoint、attach、stop、wait_until_done
-- 与 stale sandbox 自动重建（`opensandbox_runtime._probe_sandbox`）正交，可同时生效
+- 与 stale sandbox 自动重建正交：热路径不探活，由 `_call_sandbox` 在可恢复错误时清缓存并重建后重试一次
 
 ## 参考
 

@@ -1,4 +1,4 @@
-"""OpenSandboxRuntime：过期 sandbox 会话自动重建。"""
+"""OpenSandboxRuntime：过期 sandbox 会话自动重建（失败时，而非热路径探活）。"""
 
 from __future__ import annotations
 
@@ -27,25 +27,21 @@ def _sandbox_with_run(run: AsyncMock) -> SimpleNamespace:
 
 
 @pytest.mark.asyncio
-async def test_probe_failure_invalidates_cached_session(tmp_path):
+async def test_ensure_ready_reuses_cached_session_without_probe(tmp_path):
+    """热路径不跑 commands.run('true')；已缓存句柄直接返回。"""
     rt = _runtime(tmp_path)
+    probe_run = AsyncMock(return_value=SimpleNamespace(exit_code=0))
     rt._sandbox = SimpleNamespace(
-        commands=SimpleNamespace(run=AsyncMock(side_effect=httpx.ConnectError("down")))
+        id="cached-id",
+        sandbox_id="cached-id",
+        commands=SimpleNamespace(run=probe_run),
     )
-    rt._sandbox_id = "dead-id"
-    sandbox_state.save_sandbox_id(tmp_path, "dead-id")
+    rt._sandbox_id = "cached-id"
 
-    assert await rt._probe_sandbox() is False
+    sid = await rt.ensure_ready()
 
-    created = _sandbox_with_run(AsyncMock(return_value=SimpleNamespace(exit_code=0)))
-    with patch(
-        "opensandbox.Sandbox.create",
-        AsyncMock(return_value=created),
-    ):
-        sid = await rt.ensure_ready()
-
-    assert sid == "live-id"
-    assert sandbox_state.load_sandbox_id(tmp_path) == "live-id"
+    assert sid == "cached-id"
+    probe_run.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -69,6 +65,37 @@ async def test_run_recovers_after_connect_error(tmp_path):
     assert result.exit_code == 0
     assert create_mock.await_count == 1
     assert good_run.await_count >= 1
+
+
+@pytest.mark.asyncio
+async def test_write_files_recovers_after_sandbox_not_found(tmp_path):
+    rt = _runtime(tmp_path)
+    write_ok = AsyncMock(return_value=None)
+    good = SimpleNamespace(
+        id="live-id",
+        sandbox_id="live-id",
+        files=SimpleNamespace(write_files=write_ok),
+        commands=SimpleNamespace(run=AsyncMock()),
+    )
+    rt._sandbox = SimpleNamespace(
+        files=SimpleNamespace(
+            write_files=AsyncMock(
+                side_effect=Exception(
+                    "Sandbox x not found. | [DOCKER::SANDBOX_NOT_FOUND]"
+                )
+            )
+        ),
+        commands=SimpleNamespace(run=AsyncMock()),
+    )
+    rt._sandbox_id = "stale-id"
+    sandbox_state.save_sandbox_id(tmp_path, "stale-id")
+
+    with patch("opensandbox.Sandbox.create", AsyncMock(return_value=good)):
+        await rt.write_files([("/workspace/a.txt", b"hi")])
+
+    write_ok.assert_awaited_once()
+    assert rt._sandbox_id == "live-id"
+    assert sandbox_state.load_sandbox_id(tmp_path) == "live-id"
 
 
 @pytest.mark.asyncio

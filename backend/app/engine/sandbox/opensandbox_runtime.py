@@ -138,29 +138,12 @@ class OpenSandboxRuntime:
         if clear_persisted:
             sandbox_state.clear_sandbox_id(self.kb_path)
 
-    async def _probe_sandbox(self) -> bool:
-        if self._sandbox is None or not self._sandbox_id:
-            return False
-        commands = getattr(self._sandbox, "commands", None)
-        if commands is None or not callable(getattr(commands, "run", None)):
-            return True
-        from opensandbox.models.execd import RunCommandOpts
-
-        try:
-            opts = RunCommandOpts(
-                working_directory="/",
-                background=False,
-                timeout=timedelta(seconds=15),
-            )
-            await self._sandbox.commands.run("true", opts=opts)
-            return True
-        except Exception as exc:
-            if self._is_recoverable_sandbox_error(exc):
-                return False
-            raise
-
     async def _call_sandbox(self, fn):
-        """执行一次沙箱 API 调用；连接类失败时清缓存并重建后重试一次。"""
+        """执行一次沙箱 API 调用；连接类失败时清缓存并重建后重试一次。
+
+        不做热路径探活：OpenSandbox 跑一条 ``true`` 约 1s，每次 API 前探测
+        会把 stage/read 等固定拖到数秒。会话过期交给本方法的失败重试即可。
+        """
         last_exc: BaseException | None = None
         for attempt in (1, 2):
             await self.ensure_ready()
@@ -193,16 +176,11 @@ class OpenSandboxRuntime:
         )
 
     async def ensure_ready(self) -> str:
+        # 进程内已有句柄则直接复用；是否仍可达由 _call_sandbox 失败重建发现。
         if self._sandbox is not None and self._sandbox_id:
-            if await self._probe_sandbox():
-                if not self._applying_mirrors:
-                    await self._ensure_mirrors()
-                return self._sandbox_id
-            _log.warning(
-                "sandbox %s no longer reachable; recreating",
-                self._sandbox_id,
-            )
-            self._invalidate_sandbox(clear_persisted=True)
+            if not self._applying_mirrors:
+                await self._ensure_mirrors()
+            return self._sandbox_id
 
         from opensandbox import Sandbox
         from opensandbox.models.sandboxes import PVC, Volume
