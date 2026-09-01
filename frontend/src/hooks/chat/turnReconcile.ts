@@ -2,7 +2,8 @@
 
 import type { ActiveTurnStatus, Conversation } from "../../api";
 
-export const RECONCILE_DELAYS_MS = [0, 400, 1200];
+/** 含移动端网卡唤醒余量：约十几秒内多次探测。 */
+export const RECONCILE_DELAYS_MS = [0, 500, 1500, 3500, 8000];
 
 export type ObservationEndInfo = {
   completed: boolean;
@@ -14,7 +15,11 @@ export type ObservationEndInfo = {
   awaitingUser: boolean;
 };
 
-export type ReconcileOutcome = "resumed" | "settled" | "failed";
+export type ReconcileOutcome =
+  | "resumed"
+  | "settled"
+  | "failed"
+  | "network_unreachable";
 
 export function buildObservationEnd(params: {
   completed: boolean;
@@ -45,16 +50,24 @@ export function shouldReloadConversation(
   return "none";
 }
 
-/** 映射到出站队列 / 旧 StreamEnd 契约。reconcile 进行中或 detach 不切队列。 */
+/** 映射到出站队列 / 旧 StreamEnd 契约。reconcile 进行中、detach、网络不可达不切队列。 */
 export function toStreamEndPayload(
   info: ObservationEndInfo,
-  opts?: { reconcileFailed?: boolean },
+  opts?: { reconcileFailed?: boolean; networkUnreachable?: boolean },
 ): {
   failed: boolean;
   aborted: boolean;
   detached: boolean;
   awaitingUser: boolean;
 } {
+  if (opts?.networkUnreachable) {
+    return {
+      failed: false,
+      aborted: false,
+      detached: true,
+      awaitingUser: false,
+    };
+  }
   if (needsServerReconcile(info) && !opts?.reconcileFailed) {
     return {
       failed: false,

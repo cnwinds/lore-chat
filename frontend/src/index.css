@@ -4597,6 +4597,18 @@ button.memory-fact-statement--jump:focus-visible {
   flex-shrink: 0;
 }
 
+.chat-streaming-bar--reconcile {
+  border-color: var(--border-strong, var(--border));
+  background: var(--bg-muted);
+}
+
+.chat-streaming-bar--reconcile .chat-streaming-label {
+  color: var(--text-secondary);
+  font-weight: 500;
+  max-width: min(70vw, 480px);
+  white-space: normal;
+}
+
 .chat-streaming-label {
   color: var(--accent);
   font-weight: 600;

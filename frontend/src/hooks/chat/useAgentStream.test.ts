@@ -4,6 +4,7 @@ import { useAgentStream } from "./useAgentStream";
 import { createStreamOwnership } from "./streamOwnership";
 import * as api from "../../api";
 import type { ChatMessage, DocContextItem } from "../../api";
+import { canRetryAssistantReply } from "../../utils/chatMessage";
 
 vi.mock("../../api", async (importOriginal) => {
   const mod = await importOriginal<typeof import("../../api")>();
@@ -69,6 +70,22 @@ function baseOptions(overrides: Partial<Parameters<typeof useAgentStream>[0]> = 
     onConversationCreated: vi.fn(),
     ...overrides,
   };
+}
+
+/** Drive runAgentStream under fake timers through reconcile probe delays. */
+async function runStreamThroughReconcileProbes(
+  result: { current: ReturnType<typeof useAgentStream> },
+  text = "hello",
+) {
+  let run!: Promise<boolean>;
+  await act(async () => {
+    run = result.current.runAgentStream(text);
+  });
+  await act(async () => {
+    await vi.runAllTimersAsync();
+    await run;
+  });
+  return run;
 }
 
 describe("useAgentStream", () => {
@@ -219,26 +236,125 @@ describe("useAgentStream", () => {
     expect(msgs[2]).toMatchObject({ role: "user", text: "选项 A" });
   });
 
-  it("shows error when reconcile cannot reach server after stream throws", async () => {
-    vi.mocked(api.chatStream).mockImplementation(async function* () {
-      throw new Error("boom");
-      yield { event: "done", data: {} };
-    });
-    vi.mocked(api.getActiveTurnStatus).mockRejectedValue(new Error("offline"));
-    vi.mocked(api.getConversation).mockRejectedValue(new Error("offline"));
-    const { setMsgs, getCurrent } = makeSetMsgs([]);
-    const options = baseOptions({ setMsgs });
-    const { result } = renderHook(() => useAgentStream(options));
+  it("offers network reconnect instead of content error when server is unreachable", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.mocked(api.chatStream).mockImplementation(async function* () {
+        throw new Error("boom");
+        yield { event: "done", data: {} };
+      });
+      vi.mocked(api.getActiveTurnStatus).mockRejectedValue(new Error("offline"));
+      vi.mocked(api.getConversation).mockRejectedValue(new Error("offline"));
+      const { setMsgs, getCurrent } = makeSetMsgs([]);
+      const options = baseOptions({ setMsgs });
+      const { result } = renderHook(() => useAgentStream(options));
 
-    await act(async () => {
-      await result.current.runAgentStream("hello");
-    });
+      await runStreamThroughReconcileProbes(result);
 
-    const msgs = getCurrent();
-    const assistant = msgs[msgs.length - 1];
-    expect(assistant.text).toContain("无法同步服务器状态");
-    expect(assistant.status).toBe("error");
-    expect(result.current.streaming).toBe(false);
+      const assistant = getCurrent()[getCurrent().length - 1];
+      expect(assistant.status).not.toBe("error");
+      expect(assistant.text || "").not.toContain("无法同步服务器状态");
+      expect(canRetryAssistantReply(assistant)).toBe(false);
+      expect(result.current.networkReconnectNeeded).toBe(true);
+      expect(result.current.streaming).toBe(false);
+      expect(vi.mocked(api.observeActiveTurnStream)).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("retryNetworkReconcile resumes after network returns", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.mocked(api.chatStream).mockImplementation(async function* () {
+        throw new Error("boom");
+        yield { event: "done", data: {} };
+      });
+      vi.mocked(api.getActiveTurnStatus).mockRejectedValue(new Error("offline"));
+      const { setMsgs, getCurrent } = makeSetMsgs([]);
+      const options = baseOptions({ setMsgs });
+      const { result } = renderHook(() => useAgentStream(options));
+
+      await runStreamThroughReconcileProbes(result);
+      expect(result.current.networkReconnectNeeded).toBe(true);
+      expect(canRetryAssistantReply(getCurrent()[getCurrent().length - 1])).toBe(
+        false,
+      );
+
+      vi.mocked(api.getActiveTurnStatus).mockResolvedValue({
+        conversation_id: "cid-1",
+        turn_id: "t1",
+        status: "running",
+        started_at: "2026-01-01T00:00:00.000Z",
+        last_seq: 0,
+        observable: true,
+      });
+      vi.mocked(api.observeActiveTurnStream).mockImplementation(async function* () {
+        yield { event: "done", data: { sources: [] } };
+      });
+
+      await act(async () => {
+        const retry = result.current.retryNetworkReconcile();
+        await vi.runAllTimersAsync();
+        await retry;
+      });
+
+      expect(vi.mocked(api.observeActiveTurnStream)).toHaveBeenCalled();
+      expect(result.current.networkReconnectNeeded).toBe(false);
+      expect(getCurrent().some((m) => (m.text || "").includes("无法同步"))).toBe(
+        false,
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /**
+   * Mobile lock/unlock: radio often stays unreachable longer than the old
+   * 3-slot window; the extended probe must still resume when the turn is running.
+   */
+  it("resumes after brief post-disconnect offline longer than old probe window", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.mocked(api.chatStream).mockImplementation(async function* () {
+        throw new Error("network dropped");
+        yield { event: "done", data: {} };
+      });
+      let statusCalls = 0;
+      vi.mocked(api.getActiveTurnStatus).mockImplementation(async () => {
+        statusCalls += 1;
+        // Fail beyond the old 3-slot window; succeed within the extended window.
+        if (statusCalls <= 3) {
+          throw new Error("offline while radio wakes");
+        }
+        return {
+          conversation_id: "cid-1",
+          turn_id: "t1",
+          status: "running",
+          started_at: "2026-01-01T00:00:00.000Z",
+          last_seq: 0,
+          observable: true,
+        };
+      });
+      vi.mocked(api.observeActiveTurnStream).mockImplementation(async function* () {
+        yield { event: "done", data: { sources: [] } };
+      });
+
+      const { setMsgs, getCurrent } = makeSetMsgs([]);
+      const options = baseOptions({ setMsgs });
+      const { result } = renderHook(() => useAgentStream(options));
+
+      await runStreamThroughReconcileProbes(result);
+
+      expect(vi.mocked(api.observeActiveTurnStream)).toHaveBeenCalled();
+      expect(getCurrent().some((m) => (m.text || "").includes("无法同步"))).toBe(
+        false,
+      );
+      expect(result.current.networkReconnectNeeded).toBe(false);
+      expect(result.current.streaming).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("resumes observation when server turn is still running after stream throws", async () => {

@@ -65,6 +65,7 @@ export type TurnObservationCallbacks = {
   onStreamingChange: (streaming: boolean) => void;
   onStreamViewIdChange: (id: string | null) => void;
   onReconcilingChange: (reconciling: boolean) => void;
+  onNetworkReconnectNeededChange: (needed: boolean) => void;
   onStreamStartMs: (ms: number | null) => void;
   onConversationCreated?: (id: string) => void;
   onFirstQuestionTitle?: (id: string, title: string) => void;
@@ -89,6 +90,10 @@ export class TurnObservationEngine {
   private abortController: AbortController | null = null;
   private stopRequested = false;
   private reconcilePasses = 0;
+  /** 网络不可达耗尽探测后等待用户点「重新连接」的会话。 */
+  private networkReconnectCid: string | null = null;
+  /** 防止 resume 嵌套 finishObservation 与外层 apply 重复 emit。 */
+  private observationEndEmitted = false;
   private ownership: StreamOwnership;
   private callbacks: TurnObservationCallbacks;
   readonly refs: TurnObservationRefs;
@@ -109,6 +114,7 @@ export class TurnObservationEngine {
 
   detachObservation(): void {
     this.abortController?.abort();
+    this.clearNetworkReconnectNeeded();
     const { streamingRef, streamConversationIdRef } = this.ownership;
     if (streamConversationIdRef.current !== null || streamingRef.current) {
       streamingRef.current = false;
@@ -266,6 +272,7 @@ export class TurnObservationEngine {
 
     this.refs.stickToBottomRef.current = true;
     this.stopRequested = false;
+    this.clearNetworkReconnectNeeded();
     this.ownership.streamingRef.current = true;
     const priorMsgsCid = this.ownership.msgsConversationIdRef.current;
     this.claimStream(cid);
@@ -328,6 +335,8 @@ export class TurnObservationEngine {
   private beginObservation(conversationId: string | null): void {
     this.stopRequested = false;
     this.reconcilePasses = 0;
+    this.observationEndEmitted = false;
+    this.clearNetworkReconnectNeeded();
     this.ownership.streamingRef.current = true;
     this.ownership.streamConversationIdRef.current = conversationId;
     this.callbacks.onStreamViewIdChange(conversationId);
@@ -446,7 +455,7 @@ export class TurnObservationEngine {
       streamCid,
       getActiveTurnStatus,
     );
-    if (!turnStatus) return { outcome: "failed" };
+    if (!turnStatus) return { outcome: "network_unreachable" };
     if (
       !shouldPaintStreamPatch(
         this.ownership,
@@ -462,9 +471,11 @@ export class TurnObservationEngine {
         if (!this.ownership.streamingRef.current) {
           this.applyServerConversation(conv);
         }
+        // 已拿到 status + 会话：业务/孤儿失败，走内容失败。
         return { outcome: "failed", conv };
       } catch {
-        return { outcome: "failed" };
+        // 已有 status 但拉会话时传输失败：仍属网络不可达。
+        return { outcome: "network_unreachable" };
       }
     }
     if (isActiveTurnRunning(turnStatus)) {
@@ -472,7 +483,12 @@ export class TurnObservationEngine {
         streamCid,
         turnStatus.started_at,
       );
-      return { outcome: resumed ? "resumed" : "failed" };
+      if (resumed) return { outcome: "resumed" };
+      // resume 的 finally 已跑过 finishObservation（可能已 emit）。
+      if (this.networkReconnectCid === streamCid) {
+        return { outcome: "network_unreachable" };
+      }
+      return { outcome: "failed" };
     }
     if (this.ownership.streamingRef.current) return { outcome: "settled" };
     try {
@@ -480,7 +496,7 @@ export class TurnObservationEngine {
       this.applyServerConversation(conv);
       return { outcome: "settled", conv };
     } catch {
-      return { outcome: "failed" };
+      return { outcome: "network_unreachable" };
     }
   }
 
@@ -489,6 +505,140 @@ export class TurnObservationEngine {
     this.ownership.streamConversationIdRef.current = null;
     this.callbacks.onStreamingChange(false);
     this.callbacks.onStreamViewIdChange(null);
+  }
+
+  private clearNetworkReconnectNeeded(): void {
+    if (this.networkReconnectCid === null) return;
+    this.networkReconnectCid = null;
+    this.callbacks.onNetworkReconnectNeededChange(false);
+  }
+
+  private markNetworkReconnectNeeded(cid: string): void {
+    this.networkReconnectCid = cid;
+    this.callbacks.onNetworkReconnectNeededChange(true);
+  }
+
+  private markObservationEndEmitted(): void {
+    this.observationEndEmitted = true;
+  }
+
+  private emitNetworkUnreachable(
+    streamCid: string,
+    endInfo: ObservationEndInfo,
+  ): void {
+    this.markNetworkReconnectNeeded(streamCid);
+    this.markObservationEndEmitted();
+    this.callbacks.onStreamEnd?.({
+      ...toStreamEndPayload(endInfo, { networkUnreachable: true }),
+      conversationId: streamCid,
+    });
+  }
+
+  private emitContentReconcileFailed(
+    streamCid: string,
+    endInfo: ObservationEndInfo,
+    canPaint: boolean,
+  ): void {
+    if (this.observationEndEmitted) return;
+    this.clearNetworkReconnectNeeded();
+    this.markObservationEndEmitted();
+    this.patchAssistant(streamCid, (prevMsg) => ({
+      ...prevMsg,
+      text:
+        (prevMsg.text || "").trim() ||
+        "错误：连接中断，无法同步服务器状态",
+      status: "error",
+    }));
+    if (canPaint) {
+      this.callbacks.onStreamEnd?.({
+        ...toStreamEndPayload(endInfo, { reconcileFailed: true }),
+        conversationId: streamCid,
+      });
+    }
+  }
+
+  private async applyReconcileResult(
+    streamCid: string,
+    endInfo: ObservationEndInfo,
+    canPaint: boolean,
+    result: { outcome: ReconcileOutcome; conv?: Conversation },
+  ): Promise<void> {
+    const { outcome, conv } = result;
+    if (outcome === "resumed") {
+      this.reconcilePasses = 0;
+      this.clearNetworkReconnectNeeded();
+      return;
+    }
+    if (outcome === "settled" && conv) {
+      this.clearNetworkReconnectNeeded();
+      if (this.observationEndEmitted) return;
+      if (
+        shouldPaintStreamPatch(
+          this.ownership,
+          streamCid,
+          this.callbacks.getViewConversationId(),
+        )
+      ) {
+        this.markObservationEndEmitted();
+        this.callbacks.onStreamEnd?.({
+          failed: false,
+          aborted: false,
+          detached: false,
+          awaitingUser: this.awaitingUserFromConversation(conv),
+          conversationId: streamCid,
+        });
+      }
+      return;
+    }
+    if (outcome === "settled") {
+      this.clearNetworkReconnectNeeded();
+      return;
+    }
+    if (outcome === "network_unreachable") {
+      if (this.networkReconnectCid !== streamCid) {
+        this.emitNetworkUnreachable(streamCid, endInfo);
+      }
+      return;
+    }
+    this.emitContentReconcileFailed(streamCid, endInfo, canPaint);
+  }
+
+  /** 用户点击「重新连接」：再探服务端并以服务端为准续观测或对齐。 */
+  async retryNetworkReconcile(cid?: string | null): Promise<void> {
+    const streamCid = cid ?? this.networkReconnectCid;
+    if (!streamCid) return;
+    if (this.ownership.streamingRef.current) return;
+    if (
+      !shouldPaintStreamPatch(
+        this.ownership,
+        streamCid,
+        this.callbacks.getViewConversationId(),
+      )
+    ) {
+      this.clearNetworkReconnectNeeded();
+      return;
+    }
+
+    this.clearNetworkReconnectNeeded();
+    this.reconcilePasses = 0;
+    this.observationEndEmitted = false;
+    this.callbacks.onReconcilingChange(true);
+    try {
+      const result = await this.reconcileWithServer(streamCid);
+      await this.applyReconcileResult(
+        streamCid,
+        buildObservationEnd({
+          completed: false,
+          serverStreamError: false,
+          aborted: false,
+          awaitingUser: false,
+        }),
+        true,
+        result,
+      );
+    } finally {
+      this.callbacks.onReconcilingChange(false);
+    }
   }
 
   private async finishObservation(
@@ -518,59 +668,35 @@ export class TurnObservationEngine {
     const reload = shouldReloadConversation(endInfo);
 
     if (reload === "reconcile" && canPaint) {
+      this.observationEndEmitted = false;
       if (this.reconcilePasses >= MAX_RECONCILE_PASSES) {
-        this.patchAssistant(streamCid, (prevMsg) => ({
-          ...prevMsg,
-          text:
-            (prevMsg.text || "").trim() ||
-            "错误：连接中断，无法同步服务器状态",
-          status: "error",
-        }));
-        this.callbacks.onStreamEnd?.({
-          ...toStreamEndPayload(endInfo, { reconcileFailed: true }),
-          conversationId: streamCid,
-        });
+        // 耗尽续接轮次后仍做一次最终探测：网络 → 重连按钮；否则内容失败。
+        this.callbacks.onReconcilingChange(true);
+        try {
+          const turnStatus = await fetchActiveTurnStatusWithRetry(
+            streamCid!,
+            getActiveTurnStatus,
+          );
+          if (!turnStatus) {
+            this.emitNetworkUnreachable(streamCid!, endInfo);
+            return;
+          }
+          this.emitContentReconcileFailed(streamCid!, endInfo, canPaint);
+        } finally {
+          this.callbacks.onReconcilingChange(false);
+        }
         return;
       }
       this.reconcilePasses += 1;
       this.callbacks.onReconcilingChange(true);
       try {
-        const { outcome, conv } = await this.reconcileWithServer(streamCid!);
-        if (outcome === "resumed") {
-          this.reconcilePasses = 0;
-          return;
-        }
-        if (outcome === "settled" && conv) {
-          if (
-            shouldPaintStreamPatch(
-              this.ownership,
-              streamCid,
-              this.callbacks.getViewConversationId(),
-            )
-          ) {
-            this.callbacks.onStreamEnd?.({
-              failed: false,
-              aborted: false,
-              detached: false,
-              awaitingUser: this.awaitingUserFromConversation(conv),
-              conversationId: streamCid,
-            });
-          }
-          return;
-        }
-        this.patchAssistant(streamCid, (prevMsg) => ({
-          ...prevMsg,
-          text:
-            (prevMsg.text || "").trim() ||
-            "错误：连接中断，无法同步服务器状态",
-          status: "error",
-        }));
-        if (canPaint) {
-          this.callbacks.onStreamEnd?.({
-            ...toStreamEndPayload(endInfo, { reconcileFailed: true }),
-            conversationId: streamCid,
-          });
-        }
+        const result = await this.reconcileWithServer(streamCid!);
+        await this.applyReconcileResult(
+          streamCid!,
+          endInfo,
+          canPaint,
+          result,
+        );
       } finally {
         this.callbacks.onReconcilingChange(false);
       }

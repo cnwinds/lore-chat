@@ -10,6 +10,8 @@ type Props = {
   loadingHistory: boolean;
   streaming: boolean;
   reconciling?: boolean;
+  networkReconnectNeeded?: boolean;
+  onNetworkReconnect?: () => void;
   liveElapsedMs: number;
   streamNowMs?: number;
   streamingAssistantIdxRef: MutableRefObject<number | null>;
@@ -39,6 +41,8 @@ export function ConversationTranscriptPanel({
   loadingHistory,
   streaming,
   reconciling,
+  networkReconnectNeeded,
+  onNetworkReconnect,
   liveElapsedMs,
   streamNowMs,
   streamingAssistantIdxRef,
@@ -74,6 +78,8 @@ export function ConversationTranscriptPanel({
         loadingHistory={loadingHistory}
         streaming={streaming}
         reconciling={reconciling}
+        networkReconnectNeeded={networkReconnectNeeded}
+        onNetworkReconnect={onNetworkReconnect}
         liveElapsedMs={liveElapsedMs}
         streamNowMs={streamNowMs}
         streamingAssistantIdxRef={streamingAssistantIdxRef}

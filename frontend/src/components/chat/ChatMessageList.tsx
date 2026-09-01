@@ -11,6 +11,8 @@ export type ChatMessageListProps = {
   loadingHistory: boolean;
   streaming: boolean;
   reconciling?: boolean;
+  networkReconnectNeeded?: boolean;
+  onNetworkReconnect?: () => void;
   liveElapsedMs: number;
   streamNowMs?: number;
   streamingAssistantIdxRef: MutableRefObject<number | null>;
@@ -38,6 +40,8 @@ export function ChatMessageList({
   loadingHistory,
   streaming,
   reconciling = false,
+  networkReconnectNeeded = false,
+  onNetworkReconnect,
   liveElapsedMs,
   streamNowMs,
   streamingAssistantIdxRef,
@@ -129,6 +133,24 @@ export function ChatMessageList({
         <div className="chat-streaming-wrap">
           <div className="chat-streaming-bar chat-streaming-bar--reconcile">
             <span className="chat-streaming-label">连接中断，正在同步服务器…</span>
+          </div>
+        </div>
+      )}
+      {networkReconnectNeeded && !streaming && !reconciling && (
+        <div className="chat-streaming-wrap">
+          <div className="chat-streaming-bar chat-streaming-bar--reconcile">
+            <span className="chat-streaming-label">
+              网络不可达，无法同步服务器
+            </span>
+            {onNetworkReconnect && (
+              <button
+                type="button"
+                className="chat-retry-btn"
+                onClick={onNetworkReconnect}
+              >
+                重新连接
+              </button>
+            )}
           </div>
         </div>
       )}

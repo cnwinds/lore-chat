@@ -161,11 +161,13 @@ export function Chat({
   const {
     streamingForView,
     reconciling,
+    networkReconnectNeeded,
     liveElapsedMs,
     streamNowMs,
     streamingAssistantIdxRef,
     runAgentStream,
     resumeActiveTurn,
+    retryNetworkReconcile,
     stopStreaming,
     ensureConversationId,
     resolveDocContext,
@@ -702,6 +704,10 @@ export function Chat({
         loadingHistory={loadingHistory}
         streaming={streamingForView}
         reconciling={reconciling}
+        networkReconnectNeeded={networkReconnectNeeded}
+        onNetworkReconnect={() => {
+          void retryNetworkReconcile();
+        }}
         liveElapsedMs={liveElapsedMs}
         streamNowMs={streamNowMs}
         streamingAssistantIdxRef={streamingAssistantIdxRef}

@@ -64,6 +64,7 @@ export function useAgentStream({
   const { streamingRef } = streamOwnership;
   const [streaming, setStreaming] = useState(false);
   const [reconciling, setReconciling] = useState(false);
+  const [networkReconnectNeeded, setNetworkReconnectNeeded] = useState(false);
   const [streamViewId, setStreamViewId] = useState<string | null>(null);
   const [liveElapsedMs, setLiveElapsedMs] = useState(0);
   const [streamNowMs, setStreamNowMs] = useState(() => Date.now());
@@ -91,6 +92,7 @@ export function useAgentStream({
         onStreamingChange: setStreaming,
         onStreamViewIdChange: setStreamViewId,
         onReconcilingChange: setReconciling,
+        onNetworkReconnectNeededChange: setNetworkReconnectNeeded,
         onStreamStartMs: (ms) => {
           streamingStartRef.current = ms;
           if (ms !== null) {
@@ -187,6 +189,12 @@ export function useAgentStream({
     [engine],
   );
 
+  const retryNetworkReconcile = useMemo(
+    () => () =>
+      engine.retryNetworkReconcile(conversationIdPropRef.current),
+    [engine],
+  );
+
   const stopStreaming = useMemo(
     () => () => engine.stopStreaming(),
     [engine],
@@ -207,12 +215,14 @@ export function useAgentStream({
     streaming,
     streamingForView,
     reconciling,
+    networkReconnectNeeded,
     liveElapsedMs,
     streamNowMs,
     streamingAssistantIdxRef,
     streamingRef,
     runAgentStream,
     resumeActiveTurn,
+    retryNetworkReconcile,
     stopStreaming,
     ensureConversationId,
     resolveDocContext,
