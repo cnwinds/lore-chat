@@ -8,8 +8,8 @@ import pytest
 
 from app.config import Settings
 from app.models.cooldown import CooldownStore
-from app.engine.agent.prompts import MODE_DEFAULT, MODE_NO_WRITE
 from app.engine.agent.tool_catalog import SANDBOX_TOOLS, select_tools
+from app.engine.agent.prompts import MODE_DEFAULT, MODE_NO_WRITE
 from app.engine.agent.tools import ToolRegistry
 from app.engine.organizer import Organizer
 from app.engine.pending import PendingStore
@@ -98,7 +98,17 @@ async def test_sandbox_run_and_list(tmp_path):
         {"command": "mkdir -p /workspace/out && echo hi > /workspace/out/a.txt"},
     )
     listed = await registry.execute("sandbox_list_dir", {"path": "/workspace/out"})
-    assert "a.txt" in listed["summary"]
+    assert listed["count"] == 1
+    assert listed["summary"] == "/workspace/out 共 1 项；路径见 entries"
+    assert "\n" not in listed["summary"]
+    assert listed["entries"] == [
+        {
+            "name": "a.txt",
+            "path": "/workspace/out/a.txt",
+            "is_dir": False,
+            "kind": "file",
+        }
+    ]
 
 
 @pytest.mark.asyncio

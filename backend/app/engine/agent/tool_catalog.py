@@ -787,7 +787,11 @@ TOOL_DEFINITIONS: list[dict] = [
         "type": "function",
         "function": {
             "name": "sandbox_list_dir",
-            "description": "列出沙箱内目录内容（默认 /workspace）",
+            "description": (
+                "列出沙箱内目录内容（默认 /workspace）。"
+                "路径以返回的 entries[].path 为准（每项一条）；"
+                "summary 仅含条数，不要从 summary 拼路径。"
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {

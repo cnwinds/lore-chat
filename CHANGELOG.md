@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- `sandbox_list_dir`：summary 仅单行条数，路径以 `entries[].path` 为准，避免模型把相邻文件名粘成一个路径
+
 ## [0.2.10] - 2026-08-29
 
 ### Fixed

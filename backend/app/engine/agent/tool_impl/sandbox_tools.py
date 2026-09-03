@@ -142,13 +142,24 @@ class SandboxTools:
         path = (args.get("path") or "/workspace").strip() or "/workspace"
         await rt.ensure_ready()
         entries = await rt.list_dir(path)
-        lines = [f"{'d' if e.is_dir else 'f'} {e.path}" for e in entries]
-        preview = "\n".join(lines[:200])
+        # 路径权威在 entries[]；summary 仅单行计数，避免 JSON 转义换行导致模型粘连文件名
+        if entries:
+            summary = f"{path} 共 {len(entries)} 项；路径见 entries"
+        else:
+            summary = f"{path} 为空"
         return {
-            "summary": f"{path} 共 {len(entries)} 项\n{preview}" if entries else f"{path} 为空",
+            "summary": summary,
             "sources": [],
+            "path": path,
+            "count": len(entries),
             "entries": [
-                {"name": e.name, "path": e.path, "is_dir": e.is_dir} for e in entries
+                {
+                    "name": e.name,
+                    "path": e.path,
+                    "is_dir": e.is_dir,
+                    "kind": "dir" if e.is_dir else "file",
+                }
+                for e in entries
             ],
         }
 
