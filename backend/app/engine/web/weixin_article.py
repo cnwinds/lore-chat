@@ -28,7 +28,7 @@ WEIXIN_CLIENT_UA = (
 )
 
 # 兜底读入上限：须盖过常见「脚本前缀 + #js_content」；正文仍优先按容器抽取
-WEIXIN_HTML_MAX_BYTES = 2 * 1024 * 1024
+WEIXIN_HTML_MAX_BYTES = 10 * 1024 * 1024
 
 # 拦截页特征：须配合「无正文容器」使用，避免正文 JS 里的「验证」误判
 _CHALLENGE_MARKERS = (
