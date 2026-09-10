@@ -90,22 +90,35 @@ class RoleTools:
         except (ValueError, KeyError) as e:
             return {"summary": str(e), "sources": [], "error": str(e)}
 
+    def _timing_from_args(self, args: dict) -> tuple[dict | None, float | None]:
+        timing = args.get("timing")
+        if isinstance(timing, dict):
+            return timing, args.get("interval_hours")
+        hours = args.get("interval_hours")
+        if hours is not None:
+            return None, float(hours)
+        return None, None
+
     def create_role_schedule(self, args: dict, conversation_id: str | None = None) -> dict:
         if self.roles is None:
             return {"summary": "角色系统不可用", "sources": [], "error": "roles unavailable"}
         try:
             role_id = self._get_role_id(args, conversation_id)
             prompt = str(args.get("prompt") or "").strip()
-            interval_hours = float(args.get("interval_hours", 24))
             enabled = bool(args.get("enabled", True))
+            timing, hours = self._timing_from_args(args)
+            if timing is None and hours is None:
+                raise ValueError("请提供 timing 或 interval_hours")
             schedule = self.roles.schedules.create(
                 role_id=role_id,
                 prompt=prompt,
-                interval_hours=interval_hours,
+                interval_hours=hours,
+                timing=timing,
                 enabled=enabled,
             )
+            summary = schedule.get("timing_summary") or "已创建定时任务"
             return {
-                "summary": f"已为角色 {role_id} 创建定时任务（间隔 {interval_hours} 小时）",
+                "summary": f"已为角色 {role_id} 创建例行任务：{summary}",
                 "sources": [],
                 "schedule": schedule,
             }
@@ -128,14 +141,19 @@ class RoleTools:
             enabled = args.get("enabled")
             if enabled is not None:
                 enabled = bool(enabled)
+            timing = args.get("timing")
+            if timing is not None and not isinstance(timing, dict):
+                raise ValueError("timing 须为对象")
             schedule = self.roles.schedules.update(
                 schedule_id=schedule_id,
                 prompt=prompt,
                 interval_hours=interval_hours,
+                timing=timing if isinstance(timing, dict) else None,
                 enabled=enabled,
             )
+            summary = schedule.get("timing_summary") or schedule_id
             return {
-                "summary": f"已更新定时任务 {schedule_id}",
+                "summary": f"已更新例行任务 {schedule_id}（{summary}）",
                 "sources": [],
                 "schedule": schedule,
             }
@@ -186,12 +204,16 @@ class RoleTools:
                     prompt = str(sched.get("prompt") or "").strip()
                     if not prompt:
                         continue
-                    interval_hours = float(sched.get("interval_hours", 24))
+                    timing = sched.get("timing") if isinstance(sched.get("timing"), dict) else None
+                    hours = sched.get("interval_hours")
+                    if hours is not None:
+                        hours = float(hours)
                     enabled = bool(sched.get("enabled", True))
                     created = self.roles.schedules.create(
                         role_id=role_id,
                         prompt=prompt,
-                        interval_hours=interval_hours,
+                        interval_hours=hours,
+                        timing=timing,
                         enabled=enabled,
                     )
                     created_schedules.append(created)

@@ -533,7 +533,8 @@
 }
 
 .role-config-input,
-.role-config-textarea {
+.role-config-textarea,
+select.role-config-input {
   width: 100%;
   padding: 8px 10px;
   font-size: var(--font-ui-sm);
@@ -651,6 +652,60 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+.schedule-timing {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.schedule-timing-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.schedule-timing-weekdays {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.schedule-timing-weekdays-label {
+  font-size: var(--font-ui-sm);
+  font-weight: 550;
+  color: var(--text-secondary);
+}
+
+.schedule-timing-weekdays-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.schedule-timing-day {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-surface);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.schedule-timing-day--on,
+.schedule-timing-day[aria-pressed="true"] {
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
+  color: var(--accent);
+  font-weight: 650;
+}
+
+.schedule-timing-day:hover:not(:disabled) {
+  border-color: var(--accent-border);
 }
 
 .role-config-create-routine {

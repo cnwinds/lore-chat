@@ -85,6 +85,22 @@ describe("RoleConfigPanel", () => {
     expect(screen.getByRole("button", { name: "收起角色设置" })).toBeInTheDocument();
   });
 
+  it("opens timing presets instead of a raw hour interval", async () => {
+    const user = userEvent.setup();
+    render(
+      <RoleConfigPanel
+        roleId="default"
+        collapsed={false}
+        onToggleCollapsed={vi.fn()}
+      />,
+    );
+    await screen.findByRole("button", { name: "创建例行任务" });
+    await user.click(screen.getByRole("button", { name: "创建例行任务" }));
+    expect(screen.getByLabelText("何时运行")).toBeInTheDocument();
+    expect(screen.getByLabelText("时间（北京时间）")).toBeInTheDocument();
+    expect(screen.queryByLabelText("间隔（小时）")).not.toBeInTheDocument();
+  });
+
   it("opens identity editor from the gear", async () => {
     const user = userEvent.setup();
     render(

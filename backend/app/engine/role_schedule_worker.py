@@ -66,7 +66,7 @@ async def fire_due_role_schedule(container: Any, schedule: dict) -> None:
         roles.schedules.defer(sid, minutes=15)
         return
 
-    roles.schedules.mark_ran(sid, interval_hours=float(schedule["interval_hours"]))
+    roles.schedules.mark_ran(sid)
 
 
 def drain_due_role_schedules(container: Any, loop: asyncio.AbstractEventLoop) -> None:

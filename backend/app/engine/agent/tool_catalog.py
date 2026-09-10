@@ -11,6 +11,7 @@ READ_ONLY_TOOLS = frozenset({
     "search_kb", "read_doc", "read_doc_meta", "list_kb_structure", "read_conversation_context",
     "fetch_url", "web_search",
     "recall_memory",
+    "list_role_schedules",
     "sandbox_list_dir", "sandbox_read_file", "sandbox_job_status",
 })
 WRITE_TOOLS = frozenset({
@@ -19,6 +20,11 @@ WRITE_TOOLS = frozenset({
     "manage_memory", "move_entry",
     "generate_image",
     "create_role",
+    "update_role",
+    "create_role_schedule",
+    "update_role_schedule",
+    "delete_role_schedule",
+    "finalize_role_onboarding",
     "sandbox_run", "publish_from_sandbox", "stage_to_sandbox",
 })
 # 可读工具 + 生图：落盘路径互不冲突（chat_attachment 自动唯一名），可同批并行。
@@ -108,6 +114,12 @@ TOOL_LABELS = {
     "delete_kb": "删除知识库内容",
     "ask_user": "征询用户",
     "create_role": "创建角色",
+    "update_role": "更新角色",
+    "list_role_schedules": "列出例行任务",
+    "create_role_schedule": "创建例行任务",
+    "update_role_schedule": "更新例行任务",
+    "delete_role_schedule": "删除例行任务",
+    "finalize_role_onboarding": "完成角色引导",
     "edit_doc": "局部编辑文档",
     "update_doc_meta": "更新文档元数据",
     "move_entry": "移动或重命名路径",
@@ -153,6 +165,47 @@ _KB_FILE_FILENAME_DESC = (
     "或矢量图 .svg（按图片资产落盘并预览）；禁止 .md（文档请用 write_doc）。"
     "示例：gen_audio.sh、fetch.py、logo.svg"
 )
+
+
+_SCHEDULE_TIMING_PROP = {
+    "type": "object",
+    "description": (
+        "定时规格（北京时间）。kind=interval 每隔 N 小时；"
+        "hourly 每小时第 minute 分；daily 每天 HH:MM；"
+        "weekdays 每个工作日；weekly 每周指定星期（0=周一…6=周日）；"
+        "monthly 每月 day_of_month；cron 五段表达式（分 时 日 月 周，周 0/7=周日）。"
+        "优先用 timing；仅间隔时可改传 interval_hours。"
+    ),
+    "properties": {
+        "kind": {
+            "type": "string",
+            "enum": [
+                "interval",
+                "hourly",
+                "daily",
+                "weekdays",
+                "weekly",
+                "monthly",
+                "cron",
+            ],
+        },
+        "interval_hours": {
+            "type": "number",
+            "minimum": 0.5,
+            "description": "kind=interval 时的间隔小时",
+        },
+        "hour": {"type": "integer", "minimum": 0, "maximum": 23},
+        "minute": {"type": "integer", "minimum": 0, "maximum": 59},
+        "weekdays": {
+            "type": "array",
+            "items": {"type": "integer", "minimum": 0, "maximum": 6},
+            "description": "weekly：0=周一 … 6=周日",
+        },
+        "day_of_month": {"type": "integer", "minimum": 1, "maximum": 31},
+        "cron": {"type": "string", "description": "五段 cron，按北京时间"},
+    },
+    "required": ["kind"],
+}
 
 
 def _path_fields(*, directory_required: bool = True, filename_required: bool = True) -> dict:
@@ -779,8 +832,9 @@ TOOL_DEFINITIONS: list[dict] = [
         "function": {
             "name": "create_role_schedule",
             "description": (
-                "为角色创建定时任务。任务将按指定间隔（小时）自动触发，"
-                "在该角色的活跃时间线插入系统提示。默认对当前会话角色操作。"
+                "为角色创建例行任务：按 timing 在该角色活跃时间线插入提示词。"
+                "支持每天/工作日/每周/每月指定时刻（北京时间），或间隔小时、cron。"
+                "默认对当前会话角色操作。"
             ),
             "parameters": {
                 "type": "object",
@@ -793,9 +847,10 @@ TOOL_DEFINITIONS: list[dict] = [
                         "type": "string",
                         "description": "定时触发的提示词内容",
                     },
+                    "timing": _SCHEDULE_TIMING_PROP,
                     "interval_hours": {
                         "type": "number",
-                        "description": "触发间隔（小时，最小 0.5）",
+                        "description": "兼容：仅间隔触发时可用（小时，最小 0.5）",
                         "minimum": 0.5,
                     },
                     "enabled": {
@@ -804,7 +859,7 @@ TOOL_DEFINITIONS: list[dict] = [
                         "default": True,
                     },
                 },
-                "required": ["prompt", "interval_hours"],
+                "required": ["prompt"],
             },
         },
     },
@@ -812,7 +867,7 @@ TOOL_DEFINITIONS: list[dict] = [
         "type": "function",
         "function": {
             "name": "update_role_schedule",
-            "description": "更新现有定时任务的提示词、间隔或启用状态。",
+            "description": "更新现有例行任务的提示词、定时规格或启用状态。",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -824,9 +879,10 @@ TOOL_DEFINITIONS: list[dict] = [
                         "type": "string",
                         "description": "新的提示词（可选）",
                     },
+                    "timing": _SCHEDULE_TIMING_PROP,
                     "interval_hours": {
                         "type": "number",
-                        "description": "新的间隔（小时，可选）",
+                        "description": "兼容：改为间隔小时（可选）",
                         "minimum": 0.5,
                     },
                     "enabled": {
@@ -842,7 +898,7 @@ TOOL_DEFINITIONS: list[dict] = [
         "type": "function",
         "function": {
             "name": "delete_role_schedule",
-            "description": "删除角色的定时任务。",
+            "description": "删除角色的例行任务。",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -860,7 +916,7 @@ TOOL_DEFINITIONS: list[dict] = [
         "function": {
             "name": "finalize_role_onboarding",
             "description": (
-                "完成角色引导流程：写入最终的人设提示词，可选地创建定时任务，"
+                "完成角色引导流程：写入最终的人设提示词，可选地创建例行任务，"
                 "并将 onboarding_status 标记为 completed。"
                 "仅在引导对话中、用户确认人设草稿后调用。默认对当前会话角色操作。"
             ),
@@ -877,15 +933,16 @@ TOOL_DEFINITIONS: list[dict] = [
                     },
                     "schedules": {
                         "type": "array",
-                        "description": "可选的定时任务列表",
+                        "description": "可选的例行任务列表",
                         "items": {
                             "type": "object",
                             "properties": {
                                 "prompt": {"type": "string"},
+                                "timing": _SCHEDULE_TIMING_PROP,
                                 "interval_hours": {"type": "number", "minimum": 0.5},
                                 "enabled": {"type": "boolean", "default": True},
                             },
-                            "required": ["prompt", "interval_hours"],
+                            "required": ["prompt"],
                         },
                     },
                 },
