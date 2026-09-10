@@ -78,7 +78,8 @@ Grok Bot 参考截图中的「连接中 / 屏幕」大块不在 lore-chat 的产
 ### 3.1 存储
 
 - `{kb}/.kb/roles/roles.db` → `roles` 表  
-  - `id, name, avatar, system_prompt, is_default, sort_order, created_at, updated_at`
+  - `id, name, avatar, system_prompt, is_default, sort_order, onboarding_status, created_at, updated_at`
+  - `onboarding_status`: `none` | `active` | `completed` | `skipped`
 - `conversations.role_id`（缺列 `ALTER` + 默认 `default`；旧会话回填）
 - 配置：`Settings.continuity_idle_hours: float = 6.0`
 
@@ -90,13 +91,43 @@ Grok Bot 参考截图中的「连接中 / 屏幕」大块不在 lore-chat 的产
 2. 否则取该角色最新会话：若 `last_user_message_at`（无则 `updated_at`）在连续窗口内 → 用之；
 3. 否则创建新会话；并对被顶替的上一 tip（有消息时）`request_immediate` 记忆抽取。
 
-### 3.3 HTTP（建议）
+### 3.3 Agent 工具（角色配置的主要接口）
+
+**产品设计修正（2026-09-10）**：角色配置（名称、头像、人设、定时任务）的**主要接口**是 **LLM Agent 工具**，而非外部 HTTP API。
+
+HTTP `/api/roles*` 保留用于 UI shell（列表、ensure-active、可选右栏快捷操作），但文档与目录中明确：**Agent 通过工具调用变更配置**。
+
+#### Agent 工具列表
+
+| 工具名 | 说明 |
+|------|------|
+| `create_role` | 创建新角色 `{name, system_prompt?, avatar?}` |
+| `update_role` | 更新角色属性 `{role_id?, name?, avatar?, system_prompt?}`；默认当前会话角色 |
+| `list_role_schedules` | 列出角色定时任务 `{role_id?}` |
+| `create_role_schedule` | 创建定时任务 `{role_id?, prompt, interval_hours, enabled?}` |
+| `update_role_schedule` | 更新定时任务 `{schedule_id, prompt?, interval_hours?, enabled?}` |
+| `delete_role_schedule` | 删除定时任务 `{schedule_id}` |
+| `finalize_role_onboarding` | 完成角色引导 `{role_id?, system_prompt, schedules?}` |
+
+#### 角色引导流程
+
+新角色创建时，`onboarding_status` 默认为 `active`（有 system_prompt 则为 `completed`）。
+
+当 `onboarding_status=active` 时，系统注入引导提示层，指导 Agent：
+- 每次只问一个问题
+- 了解职责、输出、边界、风格
+- 询问是否需要定时任务
+- 整理人设草案 → 展示 → 确认 → `finalize_role_onboarding`
+
+用户可选择跳过引导（设置 `onboarding_status=skipped`）。
+
+### 3.4 HTTP（UI Shell 用）
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | GET | `/api/roles` | 列表（启动确保默认角色） |
-| POST | `/api/roles` | 创建 `{name, system_prompt?, avatar?}` |
-| GET/PATCH/DELETE | `/api/roles/{id}` | 读/改；默认角色不可删 |
+| POST | `/api/roles` | 创建（UI 可调；Agent 优先用工具） |
+| GET/PATCH/DELETE | `/api/roles/{id}` | 读/改；默认角色不可删；右栏快捷入口 |
 | POST | `/api/roles/{id}/ensure-active` | 解析/创建 tip → `{conversation_id, created}` |
 | GET | `/api/roles/{id}/timeline` | 角色统一时间线（段列表 + 消息；含 tip） |
 | POST | `/api/roles/{id}/new-topic` | 强制新话题（关段抽取 + 新空段） |

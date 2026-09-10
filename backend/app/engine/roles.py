@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS roles (
     system_prompt TEXT NOT NULL DEFAULT '',
     is_default INTEGER NOT NULL DEFAULT 0,
     sort_order INTEGER NOT NULL DEFAULT 0,
+    onboarding_status TEXT NOT NULL DEFAULT 'none',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
@@ -50,6 +51,7 @@ class RoleStore:
         with self._lock:
             self.conn.execute("PRAGMA journal_mode=WAL")
             self.conn.executescript(_SCHEMA)
+            self._migrate_onboarding_status()
             self.conn.commit()
             self.ensure_default_role()
         self.schedules = RoleScheduleStore(self.conn, self._lock)
@@ -57,6 +59,25 @@ class RoleStore:
     def close(self) -> None:
         with self._lock:
             self.conn.close()
+
+    def _migrate_onboarding_status(self) -> None:
+        """确保 onboarding_status 列存在，并为旧记录设置合理默认值。"""
+        cursor = self.conn.execute("PRAGMA table_info(roles)")
+        columns = {row[1] for row in cursor.fetchall()}
+        if "onboarding_status" not in columns:
+            self.conn.execute(
+                "ALTER TABLE roles ADD COLUMN onboarding_status TEXT NOT NULL DEFAULT 'none'"
+            )
+            self.conn.execute(
+                """
+                UPDATE roles
+                SET onboarding_status = CASE
+                    WHEN system_prompt != '' THEN 'completed'
+                    ELSE 'none'
+                END
+                WHERE onboarding_status = 'none'
+                """
+            )
 
     def ensure_default_role(self) -> str:
         """保证存在唯一 is_default 角色；返回其 id。"""
@@ -88,6 +109,10 @@ class RoleStore:
         return DEFAULT_ROLE_ID
 
     def _row_to_dict(self, row: sqlite3.Row) -> dict:
+        try:
+            onboarding_status = row["onboarding_status"]
+        except (KeyError, IndexError):
+            onboarding_status = "none"
         return {
             "id": row["id"],
             "name": row["name"],
@@ -95,6 +120,7 @@ class RoleStore:
             "system_prompt": row["system_prompt"] or "",
             "is_default": bool(row["is_default"]),
             "sort_order": int(row["sort_order"]),
+            "onboarding_status": onboarding_status or "none",
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
         }
@@ -138,6 +164,7 @@ class RoleStore:
             raise ValueError("角色名称不能为空")
         rid = (role_id or _new_id()).strip()
         stamp = _now()
+        onboarding_status = "completed" if system_prompt else "active"
         with self._lock:
             self.ensure_default_role()
             max_order = self.conn.execute(
@@ -147,8 +174,8 @@ class RoleStore:
                 """
                 INSERT INTO roles(
                     id, name, avatar, system_prompt, is_default, sort_order,
-                    created_at, updated_at
-                ) VALUES (?, ?, ?, ?, 0, ?, ?, ?)
+                    onboarding_status, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?)
                 """,
                 (
                     rid,
@@ -156,6 +183,7 @@ class RoleStore:
                     avatar,
                     system_prompt or "",
                     int(max_order) + 1,
+                    onboarding_status,
                     stamp,
                     stamp,
                 ),
@@ -174,6 +202,7 @@ class RoleStore:
         name: str | None = None,
         system_prompt: str | None = None,
         avatar: str | None = None,
+        onboarding_status: str | None = None,
     ) -> dict:
         with self._lock:
             row = self.conn.execute(
@@ -188,14 +217,32 @@ class RoleStore:
                 row["system_prompt"] if system_prompt is None else system_prompt
             )
             new_avatar = row["avatar"] if avatar is None else avatar
+<<<<<<< Updated upstream
+            new_onboarding = (
+                row.get("onboarding_status", "none")
+                if onboarding_status is None
+                else onboarding_status
+=======
+            try:
+                current_onboarding = row["onboarding_status"]
+            except (KeyError, IndexError):
+                current_onboarding = "none"
+            new_onboarding = (
+                current_onboarding if onboarding_status is None else onboarding_status
+>>>>>>> Stashed changes
+            )
+            if new_onboarding not in ("none", "active", "completed", "skipped"):
+                raise ValueError(
+                    "onboarding_status 必须是 none/active/completed/skipped"
+                )
             stamp = _now()
             self.conn.execute(
                 """
                 UPDATE roles
-                SET name = ?, system_prompt = ?, avatar = ?, updated_at = ?
+                SET name = ?, system_prompt = ?, avatar = ?, onboarding_status = ?, updated_at = ?
                 WHERE id = ?
                 """,
-                (new_name, new_prompt or "", new_avatar, stamp, role_id),
+                (new_name, new_prompt or "", new_avatar, new_onboarding, stamp, role_id),
             )
             self.conn.commit()
             updated = self.conn.execute(

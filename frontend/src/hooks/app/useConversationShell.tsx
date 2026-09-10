@@ -12,6 +12,7 @@ import {
 } from "../../api";
 import { Sidebar } from "../../components/Sidebar";
 import { RoleSettingsModal } from "../../components/RoleSettingsModal";
+import { CreateRoleModal } from "../../components/role/CreateRoleModal";
 import type { ComponentProps, ReactNode } from "react";
 import type { useDocPreviewLayout } from "./useDocPreviewLayout";
 import type { JumpTarget } from "../chat/useConversationJump";
@@ -303,11 +304,19 @@ export function useConversationShell({
     }
   }
 
-  async function addRole() {
-    const name = window.prompt("新角色名称");
-    if (!name || !name.trim()) return;
+  const [showCreateRoleModal, setShowCreateRoleModal] = useState(false);
+
+  function openCreateRoleModal() {
+    setShowCreateRoleModal(true);
+  }
+
+  async function handleCreateRole(name: string, avatar: string) {
+    setShowCreateRoleModal(false);
     try {
-      const role = await createRole({ name: name.trim() });
+      const role = await createRole({
+        name: name.trim(),
+        avatar: avatar.trim() || null,
+      });
       await refreshRoles();
       await activateRole(role.id);
     } catch (e) {
@@ -380,7 +389,7 @@ export function useConversationShell({
       void selectRole(id);
     },
     onAddRole: () => {
-      void addRole();
+      openCreateRoleModal();
     },
     onEditRole: (id) => {
       setSettingsRoleId(id);
@@ -509,6 +518,11 @@ export function useConversationShell({
           }}
         />
       )}
+      <CreateRoleModal
+        open={showCreateRoleModal}
+        onClose={() => setShowCreateRoleModal(false)}
+        onConfirm={handleCreateRole}
+      />
     </>
   );
 
