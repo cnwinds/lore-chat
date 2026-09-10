@@ -105,7 +105,12 @@ class AgentOrchestrator:
             search_configured=search_configured,
             imagegen_configured=imagegen_configured,
             sandbox_enabled=bool(
-                self.settings.sandbox_enabled and self.tools.sandbox_runtime is not None
+                self.settings.sandbox_enabled
+                and (
+                    getattr(self.tools, "sandbox_pool", None) is not None
+                    or self.tools.sandbox_runtime is not None
+                    or getattr(self.tools.sandbox, "available", False)
+                )
             ),
             disclosure_windows=self.tools.disclosure_windows,
         )

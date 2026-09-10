@@ -12,6 +12,12 @@ type Props = {
   onSandboxTrustModeChange: (v: boolean) => void;
   sandboxMirrorRegion: "cn" | "global";
   onSandboxMirrorRegionChange: (v: "cn" | "global") => void;
+  sandboxMaxRoles: number;
+  onSandboxMaxRolesChange: (v: number) => void;
+  sandboxIdleTtlSec: number;
+  onSandboxIdleTtlSecChange: (v: number) => void;
+  sandboxDestroyVolumeOnRoleDelete: boolean;
+  onSandboxDestroyVolumeOnRoleDeleteChange: (v: boolean) => void;
   saving: boolean;
 };
 
@@ -29,6 +35,12 @@ export function AgentSettingsTab({
   onSandboxTrustModeChange,
   sandboxMirrorRegion,
   onSandboxMirrorRegionChange,
+  sandboxMaxRoles,
+  onSandboxMaxRolesChange,
+  sandboxIdleTtlSec,
+  onSandboxIdleTtlSecChange,
+  sandboxDestroyVolumeOnRoleDelete,
+  onSandboxDestroyVolumeOnRoleDeleteChange,
   saving,
 }: Props) {
   return (
@@ -90,7 +102,7 @@ export function AgentSettingsTab({
       <div className="settings-group">
         <h3 className="settings-group-title">沙箱执行</h3>
         <p className="settings-group-hint">
-          执行能力由部署决定（是否叠加 docker-compose.sandbox.yml）。默认信任模式：沙箱命令直接执行；关闭后高风险命令会先征询。软件源影响 apt / pip / npm 安装速度与可达性。
+          执行能力由部署决定（是否叠加 docker-compose.sandbox.yml）。默认信任模式：沙箱命令直接执行；关闭后高风险命令会先征询。软件源影响 apt / pip / npm 安装速度与可达性。每个角色固定自己的执行沙箱；池满时不会借用其他角色。
         </p>
         <label className="settings-field">
           <span>执行能力（只读）</span>
@@ -168,6 +180,43 @@ export function AgentSettingsTab({
             </label>
           </div>
         </div>
+        <label className="settings-field">
+          <span>最大并行角色数</span>
+          <input
+            type="number"
+            min="1"
+            max="32"
+            step="1"
+            value={sandboxMaxRoles}
+            onChange={(e) => onSandboxMaxRolesChange(Number(e.target.value))}
+            disabled={saving || !sandboxEnabled}
+          />
+        </label>
+        <label className="settings-field">
+          <span>空闲回收（秒）</span>
+          <input
+            type="number"
+            min="0"
+            step="60"
+            value={sandboxIdleTtlSec}
+            onChange={(e) => onSandboxIdleTtlSecChange(Number(e.target.value))}
+            disabled={saving || !sandboxEnabled}
+          />
+        </label>
+        <p className="settings-group-hint">
+          超过该秒数且没有正在执行的命令时，只关掉该角色的容器，工作区卷仍保留。填 0 表示不自动回收。
+        </p>
+        <label className="settings-field settings-field--checkbox">
+          <input
+            type="checkbox"
+            checked={sandboxDestroyVolumeOnRoleDelete}
+            onChange={(e) =>
+              onSandboxDestroyVolumeOnRoleDeleteChange(e.target.checked)
+            }
+            disabled={saving || !sandboxEnabled}
+          />
+          <span>删除角色时丢弃其工作区卷（默认关闭，只停容器）</span>
+        </label>
       </div>
     </>
   );

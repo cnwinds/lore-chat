@@ -26,6 +26,7 @@ from app.engine.disclosure import DisclosureWindows
 from app.engine.imagegen import ImageGen
 from app.engine.knowledge_writer import KnowledgeWriter
 from app.engine.sandbox.protocol import SandboxRuntime
+from app.engine.sandbox.role_pool import RoleSandboxPool
 
 __all__ = [
     "ToolRegistry",
@@ -63,6 +64,7 @@ class ToolRegistry:
         web_search_default_k: int = 5,
         memory_service=None,
         sandbox_runtime: SandboxRuntime | None = None,
+        sandbox_pool: RoleSandboxPool | None = None,
         image_gen: ImageGen | None = None,
         roles=None,
     ):
@@ -76,6 +78,7 @@ class ToolRegistry:
         self.disclosure_windows = disclosure_windows or DisclosureWindows()
         self.edit_doc_require_read = edit_doc_require_read
         self.sandbox_runtime = sandbox_runtime
+        self.sandbox_pool = sandbox_pool
 
         read_guard = DocReadGuard(require_read=edit_doc_require_read)
         self.kb_read = KbReadTools(
@@ -112,6 +115,9 @@ class ToolRegistry:
             knowledge_writer,
             pending=pending,
             trust_mode=True,
+            pool=sandbox_pool,
+            conversations=conversations,
+            roles=roles,
         )
         self._dispatch_handlers = None
 
@@ -155,6 +161,7 @@ class ToolRegistry:
         web_search_default_k: int | None = None,
         memory_service=None,
         sandbox_runtime: SandboxRuntime | None = None,
+        sandbox_pool: RoleSandboxPool | None = None,
         sandbox_trust_mode: bool | None = None,
         image_gen: ImageGen | None = None,
     ) -> None:
@@ -174,15 +181,51 @@ class ToolRegistry:
         if sandbox_runtime is not None:
             self.sandbox_runtime = sandbox_runtime
             self.sandbox.runtime = sandbox_runtime
+        if sandbox_pool is not None:
+            self.sandbox_pool = sandbox_pool
+            self.sandbox.pool = sandbox_pool
         if sandbox_trust_mode is not None:
             self.sandbox.trust_mode = sandbox_trust_mode
         self._dispatch_handlers = None
 
-    async def interrupt_runtime(self) -> None:
-        """停止沙箱运行时（回合显式 stop）；不暴露 .sandbox.runtime。"""
+    async def interrupt_runtime(
+        self,
+        *,
+        conversation_id: str | None = None,
+        role_id: str | None = None,
+    ) -> None:
+        """只中断该会话 / 角色的沙箱执行，禁止跨角色 interrupt_all。"""
+        rid = role_id
+        if not rid and conversation_id and self.conversations is not None:
+            try:
+                rid = self.conversations.get_role_id(conversation_id)
+            except KeyError:
+                rid = None
+        registry = self.sandbox.execution_engine.registry
+        recs = []
+        if conversation_id:
+            recs = registry.find(conversation_id=conversation_id)
+        elif rid:
+            recs = registry.find(role_id=rid)
+        pool = self.sandbox_pool or getattr(self.sandbox, "pool", None)
+        if pool is not None:
+            for rec in recs:
+                await pool.interrupt_execution(
+                    rec.execution_id, role_id=rec.role_id or rid
+                )
+            if rid:
+                await pool.interrupt_role(rid)
+            return
         rt = self.sandbox_runtime or getattr(self.sandbox, "runtime", None)
-        if rt is not None and hasattr(rt, "interrupt_all"):
-            await rt.interrupt_all()
+        if rt is None:
+            return
+        if recs:
+            for rec in recs:
+                await rt.interrupt(rec.execution_id)
+            return
+        if conversation_id or rid:
+            if hasattr(rt, "interrupt_all"):
+                await rt.interrupt_all()
 
     async def execute(
         self,

@@ -6,6 +6,12 @@ export type Question = {
   question: string;
   options: QuestionOption[];
   multi_select?: boolean;
+  payload?: {
+    kind?: string;
+    role_id?: string;
+    role_name?: string;
+    [key: string]: unknown;
+  };
 };
 
 export type IngestResult = {
@@ -75,6 +81,8 @@ export type TimelineBlock =
       options?: QuestionOption[];
       multi_select?: boolean;
       choice_resolved?: string;
+      role_id?: string;
+      role_name?: string;
       /** edit_doc 修改点上下文预览 */
       preview?: string;
       reindex_mode?: string;

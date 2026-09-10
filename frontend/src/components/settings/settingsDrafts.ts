@@ -48,6 +48,9 @@ export type SettingsFormDrafts = {
   sandboxEnabled: boolean;
   sandboxTrustMode: boolean;
   sandboxMirrorRegion: "cn" | "global";
+  sandboxMaxRoles: number;
+  sandboxIdleTtlSec: number;
+  sandboxDestroyVolumeOnRoleDelete: boolean;
   continuityIdleHours: number;
 };
 
@@ -59,6 +62,16 @@ function str(v: unknown): string {
 export function clampWebSearchDefaultK(n: number): number {
   if (!Number.isFinite(n)) return 5;
   return Math.min(20, Math.max(1, Math.round(n)));
+}
+
+export function clampSandboxMaxRoles(n: number): number {
+  if (!Number.isFinite(n)) return 4;
+  return Math.min(32, Math.max(1, Math.round(n)));
+}
+
+export function clampSandboxIdleTtlSec(n: number): number {
+  if (!Number.isFinite(n)) return 3600;
+  return Math.min(7 * 24 * 3600, Math.max(0, Math.round(n)));
 }
 
 function num(v: unknown, fallback: number): number {
@@ -190,6 +203,12 @@ export function hydrateSettingsDrafts(
     sandboxTrustMode: bool(data.sandbox_trust_mode, true),
     sandboxMirrorRegion:
       data.sandbox_mirror_region === "global" ? "global" : "cn",
+    sandboxMaxRoles: clampSandboxMaxRoles(num(data.sandbox_max_roles, 4)),
+    sandboxIdleTtlSec: clampSandboxIdleTtlSec(num(data.sandbox_idle_ttl_sec, 3600)),
+    sandboxDestroyVolumeOnRoleDelete: bool(
+      data.sandbox_destroy_volume_on_role_delete,
+      false,
+    ),
     continuityIdleHours: Math.min(
       168,
       Math.max(0.5, num(data.continuity_idle_hours, 6)),
@@ -213,6 +232,9 @@ export function toSettingsPatch(drafts: {
   agentMaxParallel: number;
   sandboxTrustMode: boolean;
   sandboxMirrorRegion: "cn" | "global";
+  sandboxMaxRoles: number;
+  sandboxIdleTtlSec: number;
+  sandboxDestroyVolumeOnRoleDelete: boolean;
   continuityIdleHours: number;
 }): Record<string, unknown> {
   return {
@@ -285,6 +307,9 @@ export function toSettingsPatch(drafts: {
     agent_max_parallel: drafts.agentMaxParallel,
     sandbox_trust_mode: drafts.sandboxTrustMode,
     sandbox_mirror_region: drafts.sandboxMirrorRegion,
+    sandbox_max_roles: clampSandboxMaxRoles(drafts.sandboxMaxRoles),
+    sandbox_idle_ttl_sec: clampSandboxIdleTtlSec(drafts.sandboxIdleTtlSec),
+    sandbox_destroy_volume_on_role_delete: drafts.sandboxDestroyVolumeOnRoleDelete,
     continuity_idle_hours: Math.min(
       168,
       Math.max(0.5, Number(drafts.continuityIdleHours) || 6),

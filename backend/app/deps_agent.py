@@ -20,7 +20,7 @@ from app.engine.memory.service import MemoryService
 from app.engine.web.fetcher import WebFetcher
 from app.engine.web.search import WebSearch
 from app.engine.imagegen import ImageGen
-from app.engine.sandbox.factory import build_sandbox_runtime
+from app.engine.sandbox.factory import build_sandbox_pool
 from app.models.cooldown import CooldownStore
 from app.models.llm import LLMClient
 from app.storage.repo import KnowledgeRepo
@@ -80,6 +80,8 @@ class AgentSubgraph:
 
         apply_sandbox_settings(
             settings,
+            pool=getattr(self.agent.tools, "sandbox_pool", None)
+            or getattr(self.agent.tools.sandbox, "pool", None),
             runtime=self.agent.tools.sandbox_runtime
             or getattr(self.agent.tools.sandbox, "runtime", None),
             sandbox_tools=self.agent.tools.sandbox,
@@ -139,7 +141,7 @@ def build_agent_subgraph(
     image_gen = ImageGen(
         settings, cooldown=image_cooldown, knowledge_writer=knowledge_writer
     )
-    sandbox_runtime = build_sandbox_runtime(settings)
+    sandbox_pool = build_sandbox_pool(settings)
     tool_registry = ToolRegistry(
         retriever,
         repo,
@@ -162,7 +164,7 @@ def build_agent_subgraph(
         conversation_context_max_chars=settings.conversation_context_max_chars,
         web_search_default_k=settings.web_search_default_k,
         memory_service=memory_service,
-        sandbox_runtime=sandbox_runtime,
+        sandbox_pool=sandbox_pool,
         image_gen=image_gen,
         roles=roles,
     )
@@ -170,7 +172,7 @@ def build_agent_subgraph(
 
     apply_sandbox_settings(
         settings,
-        runtime=sandbox_runtime,
+        pool=sandbox_pool,
         sandbox_tools=tool_registry.sandbox,
     )
     agent = AgentOrchestrator(

@@ -79,6 +79,27 @@ def test_resolve_sandbox_confirm_approve(tmp_path):
     assert result.sandbox_run_args["confirmed"] is True
 
 
+def test_confirm_question_includes_role_name(tmp_path):
+    from app.engine.sandbox.command_gate import SandboxCommandGate
+
+    _, pending = _make_org(tmp_path)
+    gate = SandboxCommandGate(pending, trust_mode=False)
+    out = gate.maybe_confirm(
+        {},
+        "pip install foo",
+        role_id="abc123",
+        role_name="分析",
+        cwd="/workspace",
+    )
+    assert out is not None
+    assert "分析" in out["question"]
+    assert "abc123" in out["question"]
+    q = pending.get(out["question_id"])
+    assert q["payload"]["role_id"] == "abc123"
+    assert q["payload"]["role_name"] == "分析"
+    assert "分析" in q["question"]
+
+
 def test_resolve_sandbox_confirm_deny(tmp_path):
     from app.engine.sandbox.command_gate import SandboxCommandGate
 
@@ -129,6 +150,7 @@ async def test_sandbox_run_gates_risky_command(tmp_path):
     assert r.get("awaiting_user") is True
     assert r.get("question_id")
     assert pending.get(r["question_id"])["payload"]["kind"] == "sandbox_confirm"
+    assert "角色" in (r.get("question") or "") or "沙箱" in (r.get("question") or "")
 
 
 @pytest.mark.asyncio

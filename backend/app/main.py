@@ -37,6 +37,22 @@ def _under_pytest() -> bool:
     return "pytest" in sys.modules
 
 
+def _sandbox_pool_capability(request: Request, settings: Settings) -> dict:
+    container = getattr(request.app.state, "container", None)
+    pool = None
+    if container is not None:
+        tools = getattr(getattr(container, "agent", None), "tools", None)
+        pool = getattr(tools, "sandbox_pool", None) if tools else None
+    if pool is not None and hasattr(pool, "pool_snapshot"):
+        return pool.pool_snapshot()
+    max_roles = getattr(settings, "sandbox_max_roles", 4)
+    try:
+        max_n = int(max_roles)
+    except (TypeError, ValueError):
+        max_n = 4
+    return {"max": max_n, "active": 0, "busy_roles": []}
+
+
 def _run_while_idle(app: FastAPI, stop_event: threading.Event, interval: float, name: str, fn) -> None:
     """Run ``fn`` once per interval, only when maintenance is idle."""
     while not stop_event.is_set():
@@ -203,6 +219,7 @@ def create_app(settings: Settings | None = None, llm: LLMClient | None = None) -
                     if settings.sandbox_enabled
                     else None
                 ),
+                "sandbox_pool": _sandbox_pool_capability(request, settings),
             },
         }
 

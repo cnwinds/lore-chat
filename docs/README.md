@@ -6,4 +6,5 @@
 |------|------|
 | [adr/](adr/README.md) | 架构决策（已采纳，不删不改写原文） |
 | [product-multi-role.md](product-multi-role.md) | 多角色产品/界面设计（ADR 2026-09-09 配套） |
+| [role-scoped-sandbox.md](role-scoped-sandbox.md) | 每角色执行沙箱池（方案 C）摘要 |
 | [brand/](brand/logo.html) | Logo / 字标资源与生成脚本 |

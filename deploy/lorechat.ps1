@@ -142,7 +142,8 @@ services:
     restart: unless-stopped
 
 volumes:
-  # OpenSandbox PVC claimName 对应的 Docker named volume（须预先存在）
+  # 默认角色 PVC（须预先存在）。其他角色的 lorechat-sandbox-ws-<slug>
+  # 由 OpenSandbox PVC(create_if_not_exists) 按需创建，不必在此枚举。
   lorechat-sandbox-workspace:
     name: lorechat-sandbox-workspace
 '@

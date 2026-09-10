@@ -519,7 +519,7 @@ class TurnExecutionHub:
 
             async def _interrupt_sandbox() -> None:
                 try:
-                    await self.agent.tools.interrupt_runtime()
+                    await self.agent.tools.interrupt_runtime(conversation_id=cid)
                 except Exception:
                     _log.warning("interrupt sandbox on stop failed", exc_info=True)
 

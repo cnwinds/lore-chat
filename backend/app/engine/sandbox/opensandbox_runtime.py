@@ -12,6 +12,7 @@ from datetime import timedelta
 from pathlib import Path
 from urllib.parse import urlparse, urlunparse
 
+from app.engine.roles import DEFAULT_ROLE_ID
 from app.engine.sandbox import state as sandbox_state
 from app.engine.sandbox.mirrors import (
     MirrorRegion,
@@ -19,6 +20,7 @@ from app.engine.sandbox.mirrors import (
     mirror_env,
     normalize_mirror_region,
 )
+from app.engine.sandbox.naming import DEFAULT_WORKSPACE_VOLUME
 from app.engine.sandbox.protocol import CommandResult, DirEntry, JobStatus
 
 _log = logging.getLogger(__name__)
@@ -94,10 +96,11 @@ class OpenSandboxRuntime:
         protocol: str = "http",
         api_key: str | None = None,
         use_server_proxy: bool = True,
-        workspace_volume: str = "lorechat-sandbox-workspace",
+        workspace_volume: str = DEFAULT_WORKSPACE_VOLUME,
         image: str = "lorechat-sandbox-agent:local",
         sandbox_env: dict[str, str] | None = None,
         mirror_region: MirrorRegion = "cn",
+        role_id: str = DEFAULT_ROLE_ID,
     ) -> None:
         self.kb_path = Path(kb_path)
         self.domain = domain
@@ -108,10 +111,36 @@ class OpenSandboxRuntime:
         self.image = image
         self.sandbox_env = dict(sandbox_env or {})
         self.mirror_region: MirrorRegion = normalize_mirror_region(mirror_region)
+        self.role_id = (role_id or "").strip() or DEFAULT_ROLE_ID
         self._sandbox = None
         self._sandbox_id: str | None = None
         self._applying_mirrors = False
         self._active_executions: set[str] = set()
+
+    @property
+    def _slot_default_volume(self) -> str:
+        return (
+            self.workspace_volume
+            if self.role_id == DEFAULT_ROLE_ID
+            else DEFAULT_WORKSPACE_VOLUME
+        )
+
+    def _persist_slot(
+        self,
+        *,
+        sandbox_id: str | None = None,
+        mirror_region: str | None = None,
+        clear_sandbox_id: bool = False,
+    ) -> None:
+        sandbox_state.upsert_slot(
+            self.kb_path,
+            self.role_id,
+            sandbox_id=sandbox_id,
+            volume_name=self.workspace_volume,
+            mirror_region=mirror_region,
+            default_volume=self._slot_default_volume,
+            clear_sandbox_id=clear_sandbox_id,
+        )
 
     @staticmethod
     def _is_recoverable_sandbox_error(exc: BaseException) -> bool:
@@ -136,7 +165,12 @@ class OpenSandboxRuntime:
         self._sandbox = None
         self._sandbox_id = None
         if clear_persisted:
-            sandbox_state.clear_sandbox_id(self.kb_path)
+            # 只清本角色 sandbox_id，保留 PVC 绑定
+            sandbox_state.clear_slot_sandbox_id(
+                self.kb_path,
+                self.role_id,
+                default_volume=self._slot_default_volume,
+            )
 
     async def _call_sandbox(self, fn):
         """执行一次沙箱 API 调用；连接类失败时清缓存并重建后重试一次。
@@ -188,7 +222,11 @@ class OpenSandboxRuntime:
         # Volume 由 OpenSandbox PVC(create_if_not_exists=True) 在控制面创建；
         # backend 无 docker CLI / docker.sock，禁止本机 docker volume create。
         config = self._connection_config()
-        existing = sandbox_state.load_sandbox_id(self.kb_path)
+        existing = sandbox_state.load_slot_sandbox_id(
+            self.kb_path,
+            self.role_id,
+            default_volume=self._slot_default_volume,
+        )
         if existing:
             try:
                 self._sandbox = await Sandbox.connect(
@@ -227,7 +265,7 @@ class OpenSandboxRuntime:
             raise RuntimeError("OpenSandbox create returned no sandbox id")
         self._sandbox = sandbox
         self._sandbox_id = str(sid)
-        sandbox_state.save_state(self.kb_path, sandbox_id=self._sandbox_id)
+        self._persist_slot(sandbox_id=self._sandbox_id, mirror_region=self.mirror_region)
         # 确保工作区存在（跳过 ensure_ready 递归）
         await self.run("mkdir -p /workspace", cwd="/", timeout_sec=30, _ready=False)
         await self._ensure_mirrors(force=True)
@@ -244,7 +282,11 @@ class OpenSandboxRuntime:
 
         if self._sandbox is None or not self._sandbox_id:
             return
-        applied = sandbox_state.load_mirror_region(self.kb_path)
+        applied = sandbox_state.load_slot_mirror_region(
+            self.kb_path,
+            self.role_id,
+            default_volume=self._slot_default_volume,
+        )
         if not force and applied == self.mirror_region:
             return
         script = apt_configure_script(self.mirror_region)
@@ -267,8 +309,7 @@ class OpenSandboxRuntime:
                 (result.stderr or "")[:300],
             )
             return
-        sandbox_state.save_state(
-            self.kb_path,
+        self._persist_slot(
             sandbox_id=self._sandbox_id,
             mirror_region=self.mirror_region,
         )
@@ -530,3 +571,33 @@ class OpenSandboxRuntime:
             )
 
         await self._call_sandbox(_write)
+
+    async def destroy_container(self, *, keep_volume: bool = True) -> None:
+        """kill 执行容器；PVC 由 OpenSandbox 默认保留（pre-existing 卷不会随 kill 删除）。"""
+        del keep_volume  # 控制面无独立删卷 API；是否忘记 slot 由 RoleSandboxPool 决定
+        await self.interrupt_all()
+        try:
+            if self._sandbox is not None:
+                await self._sandbox.kill()
+                close = getattr(self._sandbox, "close", None)
+                if close is not None:
+                    await close()
+            elif self._sandbox_id:
+                from opensandbox import Sandbox
+
+                sb = await Sandbox.connect(
+                    self._sandbox_id, connection_config=self._connection_config()
+                )
+                await sb.kill()
+                close = getattr(sb, "close", None)
+                if close is not None:
+                    await close()
+        except Exception:
+            _log.warning(
+                "destroy sandbox container role=%s id=%s failed",
+                self.role_id,
+                self._sandbox_id,
+                exc_info=True,
+            )
+        finally:
+            self._invalidate_sandbox(clear_persisted=True)

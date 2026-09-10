@@ -40,6 +40,9 @@ class SandboxExecutionEngine:
         cwd: str = "/workspace",
         wait_sec: float = DEFAULT_WAIT_SEC,
         if_exceeded: str = "return",
+        role_id: str | None = None,
+        conversation_id: str | None = None,
+        schedule_id: str | None = None,
     ) -> dict:
         mode = (if_exceeded or "return").strip().lower()
         if mode not in VALID_IF_EXCEEDED:
@@ -74,7 +77,14 @@ class SandboxExecutionEngine:
                 }
             eid = await runtime.start_job(command.strip(), cwd=cwd)
             self._emit(f"job started id={eid}\n", phase="job", execution_id=eid)
-            self.registry.register(eid, command.strip(), cwd=cwd)
+            self.registry.register(
+                eid,
+                command.strip(),
+                cwd=cwd,
+                role_id=role_id,
+                conversation_id=conversation_id,
+                schedule_id=schedule_id,
+            )
             cursor = None
             full_logs = ""
 

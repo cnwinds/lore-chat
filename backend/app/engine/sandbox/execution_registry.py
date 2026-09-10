@@ -14,6 +14,9 @@ class ExecutionRecord:
     started_at: float
     log_cursor: int | None = None
     accumulated_logs: str = ""
+    role_id: str | None = None
+    conversation_id: str | None = None
+    schedule_id: str | None = None
 
 
 class ExecutionRegistry:
@@ -22,18 +25,47 @@ class ExecutionRegistry:
     def __init__(self) -> None:
         self._records: dict[str, ExecutionRecord] = {}
 
-    def register(self, execution_id: str, command: str, *, cwd: str) -> ExecutionRecord:
+    def register(
+        self,
+        execution_id: str,
+        command: str,
+        *,
+        cwd: str,
+        role_id: str | None = None,
+        conversation_id: str | None = None,
+        schedule_id: str | None = None,
+    ) -> ExecutionRecord:
         rec = ExecutionRecord(
             execution_id=execution_id,
             command=command,
             cwd=cwd,
             started_at=time.monotonic(),
+            role_id=role_id,
+            conversation_id=conversation_id,
+            schedule_id=schedule_id,
         )
         self._records[execution_id] = rec
         return rec
 
     def get(self, execution_id: str) -> ExecutionRecord | None:
         return self._records.get(execution_id)
+
+    def find(
+        self,
+        *,
+        conversation_id: str | None = None,
+        role_id: str | None = None,
+    ) -> list[ExecutionRecord]:
+        out: list[ExecutionRecord] = []
+        for rec in self._records.values():
+            if conversation_id and rec.conversation_id != conversation_id:
+                continue
+            if role_id and rec.role_id != role_id:
+                continue
+            if conversation_id is None and role_id is None:
+                continue
+            out.append(rec)
+        return out
 
     def update_cursor(
         self,

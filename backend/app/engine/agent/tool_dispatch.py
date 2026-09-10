@@ -93,13 +93,27 @@ def build_tool_dispatch(registry: ToolRegistry) -> dict[str, ToolHandler]:
         "recall_memory": lambda args, **kw: asyncio.to_thread(
             memory.recall_memory, args
         ),
-        "sandbox_run": lambda args, **kw: sandbox.sandbox_run(args),
-        "sandbox_stop": lambda args, **kw: sandbox.sandbox_stop(args),
-        "sandbox_job_status": lambda args, **kw: sandbox.sandbox_job_status(args),
-        "sandbox_list_dir": lambda args, **kw: sandbox.sandbox_list_dir(args),
-        "sandbox_read_file": lambda args, **kw: sandbox.sandbox_read_file(args),
-        "publish_from_sandbox": lambda args, **kw: sandbox.publish_from_sandbox(args),
-        "stage_to_sandbox": lambda args, **kw: sandbox.stage_to_sandbox(args),
+        "sandbox_run": lambda args, **kw: sandbox.sandbox_run(
+            args, conversation_id=kw.get("conversation_id")
+        ),
+        "sandbox_stop": lambda args, **kw: sandbox.sandbox_stop(
+            args, conversation_id=kw.get("conversation_id")
+        ),
+        "sandbox_job_status": lambda args, **kw: sandbox.sandbox_job_status(
+            args, conversation_id=kw.get("conversation_id")
+        ),
+        "sandbox_list_dir": lambda args, **kw: sandbox.sandbox_list_dir(
+            args, conversation_id=kw.get("conversation_id")
+        ),
+        "sandbox_read_file": lambda args, **kw: sandbox.sandbox_read_file(
+            args, conversation_id=kw.get("conversation_id")
+        ),
+        "publish_from_sandbox": lambda args, **kw: sandbox.publish_from_sandbox(
+            args, conversation_id=kw.get("conversation_id")
+        ),
+        "stage_to_sandbox": lambda args, **kw: sandbox.stage_to_sandbox(
+            args, conversation_id=kw.get("conversation_id")
+        ),
     }
 
 
