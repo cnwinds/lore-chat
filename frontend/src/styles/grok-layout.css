@@ -43,9 +43,12 @@
 }
 
 .app-shell-left-resizer:hover,
-.app-shell--left-resizing .app-shell-left-resizer,
-.app-shell-left-v-resizer:hover,
-.app-shell--left-split-resizing .app-shell-left-v-resizer {
+.app-shell--left-resizing .app-shell-left-resizer {
+  background: color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+.app-shell-left-v-resizer:hover::after,
+.app-shell--left-split-resizing .app-shell-left-v-resizer::after {
   background: color-mix(in srgb, var(--accent) 40%, transparent);
 }
 
@@ -57,10 +60,22 @@
 }
 
 .app-shell-left-v-resizer {
-  flex: 0 0 6px;
+  flex: 0 0 0;
+  position: relative;
+  z-index: 3;
   width: 100%;
+  height: 0;
   cursor: row-resize;
   touch-action: none;
+}
+
+.app-shell-left-v-resizer::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -4px;
+  height: 8px;
 }
 
 .app-shell--three-pane .main-panel {
@@ -354,6 +369,7 @@
   justify-content: space-between;
   gap: 8px;
   padding: 10px 14px;
+  border: none;
 }
 
 .kb-sidebar-title {
@@ -458,7 +474,13 @@
 .kb-sidebar-scroll {
   height: 100%;
   overflow-y: auto;
-  padding: 8px 10px;
+  padding: 4px 10px 8px;
+}
+
+.app-shell-left .file-tree {
+  border: none;
+  border-radius: 0;
+  background: transparent;
 }
 
 /* ========================================
@@ -906,6 +928,11 @@ select.role-config-input {
 .app-shell-left--icons .file-tree-row {
   justify-content: center;
   padding-left: 4px !important;
+}
+
+.app-shell-left .sidebar-footer {
+  background: transparent;
+  border: none;
 }
 
 .app-shell-left--icons .sidebar-footer {
