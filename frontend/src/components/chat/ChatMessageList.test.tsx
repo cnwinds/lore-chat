@@ -29,6 +29,7 @@ describe("ChatMessageList loading chrome", () => {
 
     expect(screen.getByText("加载对话中…")).toBeInTheDocument();
     expect(document.querySelector(".chat-welcome")).not.toBeNull();
+    expect(document.querySelector(".chat-messages-inner--fill")).not.toBeNull();
     expect(document.querySelector(".chat-empty")).toBeNull();
     expect(screen.queryByText("向上滚动加载更早对话")).toBeNull();
   });
