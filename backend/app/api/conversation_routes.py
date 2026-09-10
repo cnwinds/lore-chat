@@ -52,9 +52,14 @@ async def list_conversations(request: Request):
     return {"conversations": container(request).conversations.list_all()}
 
 
+class CreateConversationBody(BaseModel):
+    role_id: str | None = None
+
+
 @router.post("/conversations")
-async def create_conversation(request: Request):
-    cid = container(request).conversations.create()
+async def create_conversation(request: Request, body: CreateConversationBody | None = None):
+    role_id = body.role_id if body else None
+    cid = container(request).conversations.create(role_id=role_id)
     return {"id": cid}
 
 

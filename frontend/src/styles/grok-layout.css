@@ -515,6 +515,90 @@
   letter-spacing: 0.05em;
 }
 
+.role-config-schedule-form {
+  padding: 12px;
+  background: var(--bg-muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  margin-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.role-config-schedule-form-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.role-config-schedule-form-btn {
+  flex: 1;
+  padding: 8px;
+  font-size: var(--font-ui-sm);
+  font-weight: 550;
+  border: 1px solid var(--accent-border);
+  background: var(--accent);
+  color: var(--text-on-accent);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.role-config-schedule-form-btn:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.role-config-schedule-form-btn--cancel {
+  background: var(--bg-surface);
+  border-color: var(--border);
+  color: var(--text-secondary);
+}
+
+.role-config-schedule-form-btn--cancel:hover {
+  background: var(--bg-hover);
+}
+
+.role-config-schedule-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.role-config-schedule-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.role-config-schedule-toggle,
+.role-config-schedule-delete {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  font-size: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.role-config-schedule-toggle:hover {
+  background: var(--bg-hover);
+  border-color: var(--accent-border);
+}
+
+.role-config-schedule-toggle.enabled {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.role-config-schedule-delete:hover {
+  background: var(--danger-bg);
+  border-color: var(--danger-border);
+  color: var(--danger);
+}
+
 .role-config-actions {
   margin-top: 20px;
   padding-top: 16px;

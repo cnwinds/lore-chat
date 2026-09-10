@@ -1,5 +1,14 @@
 import { useEffect, useState } from "react";
-import { getRole, updateRole, listRoleSchedules, type Role, type RoleSchedule } from "../../api";
+import {
+  getRole,
+  updateRole,
+  listRoleSchedules,
+  createRoleSchedule,
+  updateRoleSchedule,
+  deleteRoleSchedule,
+  type Role,
+  type RoleSchedule,
+} from "../../api";
 
 type Props = {
   roleId: string | null;
