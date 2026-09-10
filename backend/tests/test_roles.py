@@ -211,6 +211,21 @@ def test_role_schedules_crud(tmp_path):
     assert store.schedules.list_for_role(rid) == []
 
 
+def test_role_schedule_daily_timing(tmp_path):
+    store = _roles(tmp_path)
+    rid = store.create(name="日历定时")["id"]
+    s = store.schedules.create(
+        rid,
+        prompt="早报",
+        timing={"kind": "daily", "hour": 9, "minute": 0},
+        enabled=True,
+    )
+    assert s["kind"] == "daily"
+    assert s["timing"]["hour"] == 9
+    assert "每天 09:00" in s["timing_summary"]
+    assert s["next_run_at"]
+
+
 def test_role_schedules_and_busy_http(client):
     created = client.post("/api/roles", json={"name": "忙角色"})
     assert created.status_code == 200
@@ -239,6 +254,18 @@ def test_role_schedules_and_busy_http(client):
 
     deleted = client.delete(f"/api/roles/{rid}/schedules/{sid}")
     assert deleted.status_code == 200
+
+    daily = client.post(
+        f"/api/roles/{rid}/schedules",
+        json={
+            "prompt": "早报",
+            "timing": {"kind": "daily", "hour": 9, "minute": 0},
+        },
+    )
+    assert daily.status_code == 200
+    body = daily.json()
+    assert body["kind"] == "daily"
+    assert "每天 09:00" in body["timing_summary"]
 
 
 def test_create_role_tool(tmp_path):

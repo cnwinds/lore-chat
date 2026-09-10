@@ -10,7 +10,12 @@ import {
   type RoleSchedule,
   type RoleSummary,
 } from "../api";
+import { ScheduleTimingFields } from "./role/ScheduleTimingFields";
 import { avatarStorageRef } from "../utils/kbImageUrls";
+import {
+  defaultScheduleTiming,
+  type ScheduleTiming,
+} from "../utils/scheduleTiming";
 
 type Props = {
   role: RoleSummary;
@@ -34,7 +39,9 @@ export function RoleSettingsModal({
   const [error, setError] = useState<string | null>(null);
   const [schedules, setSchedules] = useState<RoleSchedule[]>([]);
   const [schedPrompt, setSchedPrompt] = useState("");
-  const [schedHours, setSchedHours] = useState(24);
+  const [schedTiming, setSchedTiming] = useState<ScheduleTiming>(
+    defaultScheduleTiming,
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -91,11 +98,12 @@ export function RoleSettingsModal({
     try {
       const s = await createRoleSchedule(role.id, {
         prompt,
-        interval_hours: schedHours,
+        timing: schedTiming,
         enabled: true,
       });
       setSchedules((prev) => [...prev, s]);
       setSchedPrompt("");
+      setSchedTiming(defaultScheduleTiming);
     } catch (e) {
       setError(e instanceof Error ? e.message : "添加定时失败");
     }
@@ -149,14 +157,14 @@ export function RoleSettingsModal({
           <div className="role-settings-schedules">
             <h4>定时任务</h4>
             <p className="settings-group-hint">
-              按间隔向该角色活跃线发送提示词（后台执行；有进行中回合则顺延）。
+              按时间表向该角色活跃线发送提示词（后台执行；有进行中回合则顺延）。
             </p>
             <ul className="role-schedule-list">
               {schedules.map((s) => (
                 <li key={s.id} className="role-schedule-item">
                   <div className="role-schedule-prompt">{s.prompt}</div>
                   <div className="role-schedule-meta">
-                    每 {s.interval_hours} 小时
+                    {s.timing_summary || `每 ${s.interval_hours} 小时`}
                     {s.enabled ? "" : " · 已停用"}
                   </div>
                   <div className="role-schedule-actions">
@@ -200,17 +208,12 @@ export function RoleSettingsModal({
                 placeholder="定时发送的提示词，例如：汇总今日新闻"
                 disabled={saving}
               />
-              <label className="settings-field">
-                <span>间隔（小时）</span>
-                <input
-                  type="number"
-                  min={0.5}
-                  step={0.5}
-                  value={schedHours}
-                  onChange={(e) => setSchedHours(Number(e.target.value) || 24)}
-                  disabled={saving}
-                />
-              </label>
+              <ScheduleTimingFields
+                value={schedTiming}
+                onChange={setSchedTiming}
+                disabled={saving}
+                idPrefix="role-settings-timing"
+              />
               <button
                 type="button"
                 className="sidebar-new-chat"
