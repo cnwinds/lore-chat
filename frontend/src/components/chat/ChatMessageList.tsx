@@ -162,11 +162,6 @@ export function ChatMessageList({
         {showWelcome && (
           <div className="chat-welcome">
             <LoreLogo variant="wordmark" className="chat-welcome-logo" />
-            <p className="chat-welcome-lead">直接说就行</p>
-            <p className="chat-welcome-hint">
-              超时会静默开新段（段间有分隔线，上文不自动带入）。找旧内容可向上滚动时间线或用侧栏搜索；也可说「接着上次」。
-              需要专项助手时可以说「帮我建一个…角色」。
-            </p>
           </div>
         )}
         <div className="chat-messages" ref={messagesContainerRef}>
