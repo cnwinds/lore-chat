@@ -20,6 +20,7 @@ from app.engine.agent.tool_impl import (
     WebReadTools,
 )
 from app.engine.agent.tool_impl.image_tools import ImageGenTools
+from app.engine.agent.tool_impl.role_tools import RoleTools
 from app.engine.agent.tool_impl.sandbox_tools import SandboxTools
 from app.engine.disclosure import DisclosureWindows
 from app.engine.imagegen import ImageGen
@@ -63,6 +64,7 @@ class ToolRegistry:
         memory_service=None,
         sandbox_runtime: SandboxRuntime | None = None,
         image_gen: ImageGen | None = None,
+        roles=None,
     ):
         del indexer  # 保留构造签名，索引经 knowledge_writer
         self.repo = repo
@@ -103,6 +105,7 @@ class ToolRegistry:
         )
         self.memory = MemoryTools(memory_service)
         self.interaction = InteractionTools(pending)
+        self.roles_tools = RoleTools(roles)
         self.image_tools = ImageGenTools(image_gen)
         self.sandbox = SandboxTools(
             sandbox_runtime,

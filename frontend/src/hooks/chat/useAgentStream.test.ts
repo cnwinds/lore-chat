@@ -52,6 +52,7 @@ function baseOptions(overrides: Partial<Parameters<typeof useAgentStream>[0]> = 
   const { setMsgs } = makeSetMsgs([]);
   return {
     conversationId: "cid-1",
+    roleId: "default",
     previewPath: null,
     webEnabled: false,
     docContextItems: [] as DocContextItem[],
@@ -402,9 +403,25 @@ describe("useAgentStream", () => {
     });
 
     expect(cid).toBe("new-cid");
+    expect(api.createConversation).toHaveBeenCalledWith({ roleId: "default" });
     expect(options.skipLoadRef.current).toBe("new-cid");
     expect(options.conversationIdRef.current).toBe("new-cid");
     expect(options.onConversationCreated).toHaveBeenCalledWith("new-cid");
+  });
+
+  it("ensureConversationId refuses to create when roleId is not ready", async () => {
+    const options = baseOptions({
+      conversationId: null,
+      roleId: null,
+      conversationIdRef: { current: null },
+    });
+    const { result } = renderHook(() => useAgentStream(options));
+
+    await expect(
+      act(async () => {
+        await result.current.ensureConversationId();
+      }),
+    ).rejects.toThrow(/角色尚未就绪/);
   });
 
   it("keeps observing when conversationId is assigned mid-stream (null → id)", async () => {

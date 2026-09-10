@@ -158,6 +158,7 @@ class ConversationStore:
             self.conn.execute("PRAGMA foreign_keys=ON")
             self.conn.executescript(_SCHEMA)
             self._ensure_memory_schedule_columns()
+            self._ensure_role_id_column()
             self._ensure_message_model_columns()
             self._ensure_message_web_enabled_column()
             self._ensure_conversation_role_id_column()
@@ -213,6 +214,25 @@ class ConversationStore:
             )
         for sql in alters:
             self.conn.execute(sql)
+
+    def _ensure_role_id_column(self) -> None:
+        from app.engine.roles import DEFAULT_ROLE_ID
+
+        cols = {
+            r[1]
+            for r in self.conn.execute("PRAGMA table_info(conversations)").fetchall()
+        }
+        if "role_id" not in cols:
+            self.conn.execute(
+                "ALTER TABLE conversations ADD COLUMN role_id TEXT NOT NULL DEFAULT "
+                f"'{DEFAULT_ROLE_ID}'"
+            )
+        self.conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_conversations_role_updated
+            ON conversations(role_id, updated_at)
+            """
+        )
 
     def _ensure_message_model_columns(self) -> None:
         cols = {
@@ -497,11 +517,13 @@ class ConversationStore:
                     "status": trow["status"],
                     "started_at": trow["started_at"],
                 }
-        result = {
+        role_id = row["role_id"] if "role_id" in row.keys() else None
+        return {
             "id": cid,
             "title": row["title"],
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
+            "role_id": role_id,
             "active_turn_id": active_turn_id,
             "active_turn": active_turn,
             "messages": self._load_messages(cid),
@@ -511,12 +533,6 @@ class ConversationStore:
             "summarized_at": summarized_at,
             "indexed_dirty": bool(row["indexed_dirty"]),
         }
-        # Add role_id if column exists
-        try:
-            result["role_id"] = row["role_id"] or "default"
-        except (KeyError, IndexError):
-            result["role_id"] = "default"
-        return result
 
     def _mark_dirty_and_stale(self, cid: str) -> None:
         self.conn.execute(
@@ -528,19 +544,38 @@ class ConversationStore:
     # CRUD
     # ------------------------------------------------------------------
 
-    def create(self, title: str | None = None, role_id: str | None = None) -> str:
+    def create(
+        self, title: str | None = None, *, role_id: str | None = None
+    ) -> str:
+        from app.engine.roles import DEFAULT_ROLE_ID
+
         cid = uuid.uuid4().hex[:12]
         stamp = _now()
+        rid = (role_id or DEFAULT_ROLE_ID).strip() or DEFAULT_ROLE_ID
         with self._lock:
             self.conn.execute(
                 """
-                INSERT INTO conversations(id, title, created_at, updated_at, active_turn_id, indexed_dirty, role_id)
+                INSERT INTO conversations(
+                    id, title, created_at, updated_at, active_turn_id,
+                    indexed_dirty, role_id
+                )
                 VALUES (?, ?, ?, ?, NULL, 0, ?)
                 """,
-                (cid, title or "新对话", stamp, stamp, role_id or "default"),
+                (cid, title or "新对话", stamp, stamp, rid),
             )
             self.conn.commit()
         return cid
+
+    def get_role_id(self, cid: str) -> str:
+        from app.engine.roles import DEFAULT_ROLE_ID
+
+        with self._lock:
+            row = self._conversation_row(cid)
+            try:
+                rid = row["role_id"]
+            except (KeyError, IndexError):
+                rid = None
+            return (rid or DEFAULT_ROLE_ID).strip() or DEFAULT_ROLE_ID
 
     def get(self, cid: str) -> dict:
         with self._lock:
@@ -577,9 +612,17 @@ class ConversationStore:
                 "started_at": trow["started_at"],
             }
 
-    def list_all(self) -> list[dict]:
+    def list_all(self, *, role_id: str | None = None) -> list[dict]:
+        from app.engine.roles import DEFAULT_ROLE_ID
+
         with self._lock:
-            rows = self.conn.execute("SELECT * FROM conversations").fetchall()
+            if role_id:
+                rows = self.conn.execute(
+                    "SELECT * FROM conversations WHERE role_id = ?",
+                    (role_id,),
+                ).fetchall()
+            else:
+                rows = self.conn.execute("SELECT * FROM conversations").fetchall()
             items = []
             for row in rows:
                 cid = row["id"]
@@ -588,22 +631,80 @@ class ConversationStore:
                     (cid,),
                 ).fetchone()["n"]
                 summarized, summary_path, _ = self._summary_state(cid)
-                item = {
-                    "id": cid,
-                    "title": row["title"],
-                    "created_at": row["created_at"],
-                    "updated_at": row["updated_at"],
-                    "message_count": int(count),
-                    "summarized": summarized,
-                    "summary_path": summary_path,
-                }
-                # Add role_id if column exists
                 try:
-                    item["role_id"] = row["role_id"] or "default"
+                    rid = row["role_id"]
                 except (KeyError, IndexError):
-                    item["role_id"] = "default"
-                items.append(item)
+                    rid = DEFAULT_ROLE_ID
+                items.append(
+                    {
+                        "id": cid,
+                        "title": row["title"],
+                        "created_at": row["created_at"],
+                        "updated_at": row["updated_at"],
+                        "role_id": rid or DEFAULT_ROLE_ID,
+                        "message_count": int(count),
+                        "summarized": summarized,
+                        "summary_path": summary_path,
+                        "last_user_message_at": row["last_user_message_at"]
+                        if "last_user_message_at" in row.keys()
+                        else None,
+                    }
+                )
         return sorted(items, key=lambda c: c["updated_at"], reverse=True)
+
+    def find_active_conversation_id(
+        self, role_id: str, *, idle_hours: float
+    ) -> str | None:
+        """解析角色活跃线：仅复用「最新」空会话，否则窗口内最近有消息会话。"""
+        from datetime import datetime, timedelta, timezone
+
+        items = self.list_all(role_id=role_id)
+        if not items:
+            return None
+        top = items[0]
+        # 仅当最新一条为空会话时复用，避免旧空会话劫持近期活跃线
+        if int(top.get("message_count") or 0) == 0:
+            return top["id"]
+        raw = top.get("last_user_message_at") or top.get("updated_at")
+        if not raw:
+            return top["id"]
+        try:
+            last = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+            if last.tzinfo is None:
+                last = last.replace(tzinfo=timezone.utc)
+        except ValueError:
+            return top["id"]
+        if datetime.now(timezone.utc) - last.astimezone(timezone.utc) <= timedelta(
+            hours=float(idle_hours)
+        ):
+            return top["id"]
+        return None
+
+    def ensure_active_conversation(
+        self, role_id: str, *, idle_hours: float
+    ) -> tuple[str, bool]:
+        """返回 (conversation_id, created)。created=True 表示因窗口外新建。"""
+        existing = self.find_active_conversation_id(
+            role_id, idle_hours=idle_hours
+        )
+        if existing:
+            return existing, False
+        return self.create(role_id=role_id), True
+
+    def reassign_role(self, from_role_id: str, to_role_id: str) -> int:
+        """将 from_role_id 下会话迁到 to_role_id；返回影响行数。"""
+        stamp = _now()
+        with self._lock:
+            cur = self.conn.execute(
+                """
+                UPDATE conversations
+                SET role_id = ?, updated_at = ?
+                WHERE role_id = ?
+                """,
+                (to_role_id, stamp, from_role_id),
+            )
+            self.conn.commit()
+            return int(cur.rowcount)
 
     def delete(
         self,
@@ -678,6 +779,31 @@ class ConversationStore:
                 }
                 for r in rows
             ]
+
+    def list_busy_role_ids(self) -> list[str]:
+        """有 running turn 的角色 id（去重排序）。"""
+        turns = self.list_running_turns()
+        role_ids: set[str] = set()
+        for t in turns:
+            try:
+                role_ids.add(self.get_role_id(t["conversation_id"]))
+            except KeyError:
+                continue
+        return sorted(role_ids)
+
+    def role_has_running_turn(self, role_id: str) -> bool:
+        with self._lock:
+            row = self.conn.execute(
+                """
+                SELECT 1
+                FROM turns t
+                JOIN conversations c ON c.id = t.conversation_id
+                WHERE t.status = 'running' AND c.role_id = ?
+                LIMIT 1
+                """,
+                (role_id,),
+            ).fetchone()
+            return row is not None
 
     def get_turn(self, turn_id: str) -> dict | None:
         with self._lock:

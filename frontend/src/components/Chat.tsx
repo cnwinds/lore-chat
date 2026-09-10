@@ -21,6 +21,7 @@ import {
   summarizeConversation,
   type DocContextItem,
   type IngestResult,
+  type RoleSummary,
   type SourceRef,
 } from "../api";
 import { useDocPreview } from "../contexts/DocPreviewContext";
@@ -64,6 +65,7 @@ const INPUT_MAX_HEIGHT = 160;
 
 type Props = {
   conversationId: string | null;
+  roleId?: string | null;
   onConversationCreated?: (id: string) => void;
   onFirstQuestionTitle?: (id: string, title: string) => void;
   onSidebarRefresh?: () => void;
@@ -81,10 +83,13 @@ type Props = {
   mobileHeaderTitle?: string;
   onOpenMobileNav?: () => void;
   onMobileNewChat?: () => void;
+  roles?: RoleSummary[];
+  onSelectRole?: (id: string) => void;
 };
 
 export function Chat({
   conversationId,
+  roleId = null,
   onConversationCreated,
   onFirstQuestionTitle,
   onSidebarRefresh,
@@ -102,6 +107,8 @@ export function Chat({
   mobileHeaderTitle = "新对话",
   onOpenMobileNav,
   onMobileNewChat,
+  roles = [],
+  onSelectRole,
 }: Props) {
   const { previewPath, openDoc, refreshKb } = useDocPreview();
 
@@ -173,6 +180,7 @@ export function Chat({
     resolveDocContext,
   } = useAgentStream({
     conversationId,
+    roleId,
     previewPath,
     webEnabled,
     docContextItems,
@@ -697,6 +705,9 @@ export function Chat({
           onOpenNav={onOpenMobileNav}
           onNewChat={onMobileNewChat}
           onShare={onShareConversation}
+          roles={roles}
+          activeRoleId={roleId}
+          onSelectRole={onSelectRole}
         />
       )}
       <ConversationTranscriptPanel

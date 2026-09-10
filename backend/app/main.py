@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import sys
 import threading
@@ -21,6 +22,10 @@ from app.api.admin_routes import router as admin_router
 from app.api.usage_routes import router as usage_router
 from app.api.routes import router
 from app.engine.sandbox.mirrors import normalize_mirror_region
+from app.engine.role_schedule_worker import (
+    _SCHEDULE_WORKER_INTERVAL_SECONDS,
+    drain_due_role_schedules,
+)
 from app.settings_store import SettingsStore, settings_have_llm_api_key
 
 _DERIVATION_WORKER_INTERVAL_SECONDS = 0.5
@@ -50,6 +55,7 @@ def create_app(settings: Settings | None = None, llm: LLMClient | None = None) -
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        app.state.loop = asyncio.get_running_loop()
         effective = app.state.settings_store.get()
         if not settings_have_llm_api_key(effective):
             logging.getLogger("uvicorn.error").warning(
@@ -91,6 +97,7 @@ def create_app(settings: Settings | None = None, llm: LLMClient | None = None) -
         worker_thread: threading.Thread | None = None
         maintenance_thread: threading.Thread | None = None
         catalog_thread: threading.Thread | None = None
+        schedule_thread: threading.Thread | None = None
         if not _under_pytest():
             def _run_models_dev_refresh() -> None:
                 while not stop_event.is_set():
@@ -141,6 +148,22 @@ def create_app(settings: Settings | None = None, llm: LLMClient | None = None) -
             )
             maintenance_thread.start()
 
+            schedule_thread = threading.Thread(
+                target=_run_while_idle,
+                args=(
+                    app,
+                    stop_event,
+                    _SCHEDULE_WORKER_INTERVAL_SECONDS,
+                    "role schedule worker",
+                    lambda: drain_due_role_schedules(
+                        app.state.container, app.state.loop
+                    ),
+                ),
+                name="role-schedule-worker",
+                daemon=True,
+            )
+            schedule_thread.start()
+
         try:
             yield
         finally:
@@ -151,6 +174,8 @@ def create_app(settings: Settings | None = None, llm: LLMClient | None = None) -
                 worker_thread.join(timeout=2)
             if maintenance_thread is not None:
                 maintenance_thread.join(timeout=2)
+            if schedule_thread is not None:
+                schedule_thread.join(timeout=2)
 
     app = FastAPI(title="Lore Chat", lifespan=lifespan)
     app.state.settings_store = SettingsStore(base_settings.kb_path, base_settings)

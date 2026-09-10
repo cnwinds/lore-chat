@@ -131,19 +131,20 @@ function AppMain() {
   useAppEscapeKey(doc, snippetSource, () => setSnippetSource(null));
 
   function handleJumpToConversation(target: JumpTarget) {
-    if (conversation.activeConversationId !== target.conversationId) {
-      conversation.setActiveConversationId(target.conversationId);
-    }
-    conversation.requestJump(target);
-    doc.closeAllPreviews();
+    void (async () => {
+      if (conversation.activeConversationId !== target.conversationId) {
+        await conversation.openConversation(target.conversationId);
+      }
+      conversation.requestJump(target);
+      doc.closeAllPreviews();
+    })();
   }
 
   const floatDocHandlers = buildDocViewerHandlers(
     doc,
     "float",
     (id) => {
-      conversation.setActiveConversationId(id);
-      doc.closeAllPreviews();
+      void conversation.openConversation(id);
     },
     conversation.locateKbPathInTree,
     (path, title) =>
@@ -153,8 +154,7 @@ function AppMain() {
     doc,
     "pinned",
     (id) => {
-      conversation.setActiveConversationId(id);
-      doc.closeAllPreviews();
+      void conversation.openConversation(id);
     },
     conversation.locateKbPathInTree,
     (path, title) =>
@@ -250,13 +250,17 @@ function AppMain() {
         chat={
           <Chat
             conversationId={conversation.activeConversationId}
+            roleId={conversation.activeRoleId}
+            roles={conversation.roles}
+            onSelectRole={(id) => {
+              void conversation.sidebarProps.onSelectRole?.(id);
+            }}
             mobileLayout={mobileLayout}
             mobileHeaderTitle={mobileHeaderTitle}
             onOpenMobileNav={openMobileNav}
             onMobileNewChat={() => sidebarProps.onNewChat()}
             onConversationCreated={(id) => {
-              conversation.setActiveConversationId(id);
-              refreshSidebar();
+              void conversation.acceptCreatedConversation(id);
             }}
             onFirstQuestionTitle={(id, title) =>
               conversation.setTitleOverrides((prev) => ({ ...prev, [id]: title }))
@@ -298,7 +302,9 @@ function AppMain() {
               onAttentionChange={refreshAttention}
               onOpenConversation={(id) => {
                 doc.closeMemoryPanel();
-                conversation.selectConversation(id, { keepPreviews: true });
+                void conversation.openConversation(id, {
+                  keepPreviews: true,
+                });
               }}
             />
           ) : doc.showMediaGallery ? (
@@ -374,6 +380,7 @@ function AppMain() {
               onOpenShareSettings={() => closeShareAndOpenSettings("share")}
               onOpenModelSettings={() => closeShareAndOpenSettings("model")}
             />
+            {conversation.roleOverlays}
             {bridge.imageLightbox}
           </>
         }

@@ -91,6 +91,7 @@ class AgentSubgraph:
             self.chat_runner.conversations,
             inject_broker=self.chat_runner.inject_broker,
             turn_hub=hub,
+            roles=getattr(self.chat_runner, "roles", None),
         )
 
 
@@ -109,6 +110,7 @@ def build_agent_subgraph(
     search_cooldown: CooldownStore,
     image_cooldown: CooldownStore,
     enabled_skills=None,
+    roles=None,
 ) -> AgentSubgraph:
     planner_host = PlacementPlanner(repo, retriever, llm)
     merge_workflow = MergeWorkflow(
@@ -162,6 +164,7 @@ def build_agent_subgraph(
         memory_service=memory_service,
         sandbox_runtime=sandbox_runtime,
         image_gen=image_gen,
+        roles=roles,
     )
     from app.engine.sandbox.factory import apply_sandbox_settings
 
@@ -177,7 +180,7 @@ def build_agent_subgraph(
         system_layer=system_layer,
     )
     chat_runner = ChatSessionRunner(
-        agent, conversations, enabled_skills=enabled_skills
+        agent, conversations, enabled_skills=enabled_skills, roles=roles
     )
     return AgentSubgraph(
         organizer=organizer,

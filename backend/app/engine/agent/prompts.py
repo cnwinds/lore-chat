@@ -70,7 +70,7 @@ SYSTEM_PROMPT = """你是 lorechat 知识库助手。用户只管聊天解决问
 3. **多轮与会话检索**：
    - 结合 history 理解指代；**事实结论仍须本轮工具**，不能用旧轮结论代替检索。
    - 「刚才/上面/本轮」→ 优先 history；不足时用 search_kb(scope=conversations, conversation_id=当前会话)。
-   - 「之前/上次/其他会话」→ search_kb 默认排除当前会话；命中看 ts、conversation_title、message_id，必要时 read_conversation_context。
+   - 「之前/上次/其他会话」「接着上次」「我们说过…」→ 必须先 search_kb(scope=conversations)（默认排除当前会话）再答；命中看 ts、conversation_title、message_id，必要时 read_conversation_context；用 conversation:// 链接给出可点回原文的入口，禁止凭记忆编造曾说过的内容。
 4. **引用其他会话**：
    - 原则：用可读标题作链接文案（conversation_title 或一句摘要）；会话 id 只作链接目标，禁止把裸 id 当作用户唯一导航入口。
    - 协议：`[标题](conversation://{cid})`；落到某条消息时用 `conversation://{cid}/{message_id}`。时间等元信息可写在链接旁。
@@ -95,15 +95,17 @@ def build_system_prompt(
     system_layer_text: str = "",
     web_enabled: bool = True,
     user_memory: str = "",
+    role_system_prompt: str = "",
 ) -> str:
     """构建 system prompt。
 
     注入顺序（前 → 后，冲突时《戒律》优先于内置层）：
       1. 系统控制层：知识库 系统/心法.md + 系统/戒律.md（用户可编辑）
-      2. SYSTEM_PROMPT：事实铁律 + 工具契约 + 产品机制（代码内置，不重复戒律）
-      3. user_memory（若有）
-      4. 当前时间
-      5. 本轮 mode / 联网开关后缀
+      2. 角色 system_prompt（若有；叠加身份与工作方式）
+      3. SYSTEM_PROMPT：事实铁律 + 工具契约 + 产品机制（代码内置，不重复戒律）
+      4. user_memory（若有）
+      5. 当前时间
+      6. 本轮 mode / 联网开关后缀
 
     mode:
       - default: /api/chat
@@ -131,6 +133,17 @@ def build_system_prompt(
             "以下为用户知识库中的「系统控制层」（《心法》《戒律》），"
             "规定落库、归档、检索、目录规划、编辑等行为；须优先遵守：\n\n"
             f"{system_layer_text.strip()}\n\n"
+        )
+    role_block = ""
+    if role_system_prompt and role_system_prompt.strip():
+        role_block = (
+            "【当前角色】以下为当前角色的身份与工作方式（叠加在心法/戒律之上；"
+            "与《戒律》冲突时以《戒律》为准）：\n"
+            f"{role_system_prompt.strip()}\n\n"
+        )
+    bridge = ""
+    if prefix or role_block:
+        bridge = (
             "————（以下为代码内置层：事实铁律、工具参数契约、产品 UI 机制；"
             "不重复上文条文）————\n\n"
         )
@@ -144,4 +157,12 @@ def build_system_prompt(
             f"{user_memory.strip()}\n"
             "</user_memory>"
         )
-    return prefix + SYSTEM_PROMPT + memory_block + _current_date_context() + suffix
+    return (
+        prefix
+        + role_block
+        + bridge
+        + SYSTEM_PROMPT
+        + memory_block
+        + _current_date_context()
+        + suffix
+    )

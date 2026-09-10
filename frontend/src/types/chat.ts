@@ -161,8 +161,20 @@ export type ConversationSummary = {
   created_at: string;
   updated_at: string;
   message_count: number;
+  role_id?: string;
   summarized?: boolean;
   summary_path?: string | null;
+};
+
+export type RoleSummary = {
+  id: string;
+  name: string;
+  avatar: string | null;
+  system_prompt: string;
+  is_default: boolean;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
 };
 
 export type ActiveTurnStatus = {

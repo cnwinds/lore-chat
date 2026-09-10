@@ -5,6 +5,8 @@ type Props = {
   onAgentParallelToolsChange: (v: boolean) => void;
   agentMaxParallel: number;
   onAgentMaxParallelChange: (v: number) => void;
+  continuityIdleHours: number;
+  onContinuityIdleHoursChange: (v: number) => void;
   sandboxEnabled: boolean;
   sandboxTrustMode: boolean;
   onSandboxTrustModeChange: (v: boolean) => void;
@@ -20,6 +22,8 @@ export function AgentSettingsTab({
   onAgentParallelToolsChange,
   agentMaxParallel,
   onAgentMaxParallelChange,
+  continuityIdleHours,
+  onContinuityIdleHoursChange,
   sandboxEnabled,
   sandboxTrustMode,
   onSandboxTrustModeChange,
@@ -29,6 +33,27 @@ export function AgentSettingsTab({
 }: Props) {
   return (
     <>
+      <div className="settings-group">
+        <h3 className="settings-group-title">连续窗口</h3>
+        <p className="settings-group-hint">
+          同一角色下，距上次用户消息未超过该时长则续聊活跃线；超时则静默开启新话题。与记忆抽取空闲时间（默认
+          24 小时）无关。
+        </p>
+        <label className="settings-field">
+          <span>连续窗口（小时）</span>
+          <input
+            type="number"
+            min="0.5"
+            max="168"
+            step="0.5"
+            value={continuityIdleHours}
+            onChange={(e) =>
+              onContinuityIdleHoursChange(Number(e.target.value))
+            }
+            disabled={saving}
+          />
+        </label>
+      </div>
       <div className="settings-group">
         <h3 className="settings-group-title">工具调用</h3>
         <p className="settings-group-hint">控制 Agent 执行工具时的并发与次数限制。</p>

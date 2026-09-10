@@ -4,13 +4,22 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from app.api import chat_routes, conversation_routes, kb_routes, memory_routes, merge_routes, role_routes, share_routes
+from app.api import (
+    chat_routes,
+    conversation_routes,
+    kb_routes,
+    memory_routes,
+    merge_routes,
+    role_routes,
+    share_routes,
+)
 
 router = APIRouter(prefix="/api")
 router.include_router(chat_routes.router)
 router.include_router(kb_routes.router)
 router.include_router(merge_routes.router)
 router.include_router(conversation_routes.router)
+router.include_router(role_routes.router)
 router.include_router(memory_routes.router)
 router.include_router(role_routes.router)
 router.include_router(share_routes.router)

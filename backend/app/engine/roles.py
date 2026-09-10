@@ -1,288 +1,224 @@
-"""
-Role management: store, active conversation resolver, schedule coordination.
-"""
+"""角色目录：默认通用角色 + 可扩展多角色（ADR 2026-09-09）。"""
+
+from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, UTC
+import threading
+import uuid
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+
+from app.engine.role_schedules import RoleScheduleStore
 
 DEFAULT_ROLE_ID = "default"
-DEFAULT_ROLE_NAME = "通用助手"
+DEFAULT_ROLE_NAME = "通用"
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _new_id() -> str:
+    return uuid.uuid4().hex[:12]
+
+
+_SCHEMA = """
+CREATE TABLE IF NOT EXISTS roles (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    avatar TEXT,
+    system_prompt TEXT NOT NULL DEFAULT '',
+    is_default INTEGER NOT NULL DEFAULT 0,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_roles_sort ON roles(sort_order, created_at);
+"""
 
 
 class RoleStore:
-    """Roles database in {kb}/.kb/roles/roles.db"""
+    """角色持久化（`{kb}/.kb/roles/roles.db`）。启动时确保存在唯一默认角色。"""
 
-    def __init__(self, kb_root: Path):
-        self.db_path = kb_root / ".kb" / "roles" / "roles.db"
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._init_schema()
+    def __init__(self, path: str | Path):
+        self.dir = Path(path)
+        self.dir.mkdir(parents=True, exist_ok=True)
+        self.db_path = self.dir / "roles.db"
+        self._lock = threading.Lock()
+        self.conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
+        self.conn.row_factory = sqlite3.Row
+        with self._lock:
+            self.conn.execute("PRAGMA journal_mode=WAL")
+            self.conn.executescript(_SCHEMA)
+            self.conn.commit()
+            self.ensure_default_role()
+        self.schedules = RoleScheduleStore(self.conn, self._lock)
 
-    def _init_schema(self):
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS roles (
-                    id TEXT PRIMARY KEY,
-                    name TEXT NOT NULL,
-                    avatar TEXT,
-                    system_prompt TEXT,
-                    is_default INTEGER DEFAULT 0,
-                    sort_order INTEGER DEFAULT 0,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL
-                )
-            """)
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS role_schedules (
-                    id TEXT PRIMARY KEY,
-                    role_id TEXT NOT NULL,
-                    cron TEXT NOT NULL,
-                    prompt TEXT NOT NULL,
-                    enabled INTEGER DEFAULT 1,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL,
-                    FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE
-                )
-            """)
-            conn.commit()
+    def close(self) -> None:
+        with self._lock:
+            self.conn.close()
 
-        # Ensure default role exists
-        self.ensure_default_role()
-
-    def ensure_default_role(self) -> dict[str, Any]:
-        """Ensure default role exists, return it."""
-        existing = self.get_role(DEFAULT_ROLE_ID)
-        if existing:
-            return existing
-
-        now = datetime.now(UTC).isoformat()
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute(
+    def ensure_default_role(self) -> str:
+        """保证存在唯一 is_default 角色；返回其 id。"""
+        row = self.conn.execute(
+            "SELECT id FROM roles WHERE is_default = 1 LIMIT 1"
+        ).fetchone()
+        if row is not None:
+            return row["id"]
+        existing = self.conn.execute(
+            "SELECT id FROM roles WHERE id = ?", (DEFAULT_ROLE_ID,)
+        ).fetchone()
+        stamp = _now()
+        if existing is not None:
+            self.conn.execute(
+                "UPDATE roles SET is_default = 1, updated_at = ? WHERE id = ?",
+                (stamp, DEFAULT_ROLE_ID),
+            )
+        else:
+            self.conn.execute(
                 """
-                INSERT INTO roles (id, name, avatar, system_prompt, is_default, sort_order, created_at, updated_at)
-                VALUES (?, ?, ?, ?, 1, 0, ?, ?)
+                INSERT INTO roles(
+                    id, name, avatar, system_prompt, is_default, sort_order,
+                    created_at, updated_at
+                ) VALUES (?, ?, NULL, '', 1, 0, ?, ?)
                 """,
-                (DEFAULT_ROLE_ID, DEFAULT_ROLE_NAME, None, None, now, now),
+                (DEFAULT_ROLE_ID, DEFAULT_ROLE_NAME, stamp, stamp),
             )
-            conn.commit()
-        return self.get_role(DEFAULT_ROLE_ID)  # type: ignore
+        self.conn.commit()
+        return DEFAULT_ROLE_ID
 
-    def list_roles(self) -> list[dict[str, Any]]:
-        """List all roles ordered by sort_order, created_at."""
-        with sqlite3.connect(self.db_path) as conn:
-            conn.row_factory = sqlite3.Row
-            rows = conn.execute(
-                "SELECT * FROM roles ORDER BY sort_order, created_at"
+    def _row_to_dict(self, row: sqlite3.Row) -> dict:
+        return {
+            "id": row["id"],
+            "name": row["name"],
+            "avatar": row["avatar"],
+            "system_prompt": row["system_prompt"] or "",
+            "is_default": bool(row["is_default"]),
+            "sort_order": int(row["sort_order"]),
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+        }
+
+    def list_all(self) -> list[dict]:
+        with self._lock:
+            self.ensure_default_role()
+            rows = self.conn.execute(
+                "SELECT * FROM roles ORDER BY sort_order ASC, created_at ASC"
             ).fetchall()
-            return [dict(r) for r in rows]
+            return [self._row_to_dict(r) for r in rows]
 
-    def get_role(self, role_id: str) -> dict[str, Any] | None:
-        """Get role by ID."""
-        with sqlite3.connect(self.db_path) as conn:
-            conn.row_factory = sqlite3.Row
-            row = conn.execute("SELECT * FROM roles WHERE id = ?", (role_id,)).fetchone()
-            return dict(row) if row else None
-
-    def create_role(
-        self,
-        role_id: str,
-        name: str,
-        avatar: str | None = None,
-        system_prompt: str | None = None,
-    ) -> dict[str, Any]:
-        """Create a new role."""
-        now = datetime.now(UTC).isoformat()
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute(
-                """
-                INSERT INTO roles (id, name, avatar, system_prompt, is_default, sort_order, created_at, updated_at)
-                VALUES (?, ?, ?, ?, 0, 999, ?, ?)
-                """,
-                (role_id, name, avatar, system_prompt, now, now),
-            )
-            conn.commit()
-        return self.get_role(role_id)  # type: ignore
-
-    def update_role(
-        self,
-        role_id: str,
-        name: str | None = None,
-        avatar: str | None = None,
-        system_prompt: str | None = None,
-    ) -> dict[str, Any] | None:
-        """Update role fields."""
-        role = self.get_role(role_id)
-        if not role:
-            return None
-
-        now = datetime.now(UTC).isoformat()
-        updates = []
-        params = []
-
-        if name is not None:
-            updates.append("name = ?")
-            params.append(name)
-        if avatar is not None:
-            updates.append("avatar = ?")
-            params.append(avatar)
-        if system_prompt is not None:
-            updates.append("system_prompt = ?")
-            params.append(system_prompt)
-
-        if not updates:
-            return role
-
-        updates.append("updated_at = ?")
-        params.append(now)
-        params.append(role_id)
-
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute(
-                f"UPDATE roles SET {', '.join(updates)} WHERE id = ?",
-                params,
-            )
-            conn.commit()
-
-        return self.get_role(role_id)
-
-    def delete_role(self, role_id: str) -> bool:
-        """Delete role (cannot delete default role)."""
-        role = self.get_role(role_id)
-        if not role or role.get("is_default"):
-            return False
-
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute("DELETE FROM roles WHERE id = ?", (role_id,))
-            conn.commit()
-        return True
-
-    # Schedules
-
-    def list_schedules(self, role_id: str) -> list[dict[str, Any]]:
-        """List schedules for a role."""
-        with sqlite3.connect(self.db_path) as conn:
-            conn.row_factory = sqlite3.Row
-            rows = conn.execute(
-                "SELECT * FROM role_schedules WHERE role_id = ? ORDER BY created_at",
-                (role_id,),
-            ).fetchall()
-            return [dict(r) for r in rows]
-
-    def get_schedule(self, schedule_id: str) -> dict[str, Any] | None:
-        """Get schedule by ID."""
-        with sqlite3.connect(self.db_path) as conn:
-            conn.row_factory = sqlite3.Row
-            row = conn.execute(
-                "SELECT * FROM role_schedules WHERE id = ?", (schedule_id,)
+    def get(self, role_id: str) -> dict:
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT * FROM roles WHERE id = ?", (role_id,)
             ).fetchone()
-            return dict(row) if row else None
+            if row is None:
+                raise KeyError(role_id)
+            return self._row_to_dict(row)
 
-    def create_schedule(
+    def get_default(self) -> dict:
+        with self._lock:
+            rid = self.ensure_default_role()
+            row = self.conn.execute(
+                "SELECT * FROM roles WHERE id = ?", (rid,)
+            ).fetchone()
+            assert row is not None
+            return self._row_to_dict(row)
+
+    def create(
         self,
-        schedule_id: str,
-        role_id: str,
-        cron: str,
-        prompt: str,
-        enabled: bool = True,
-    ) -> dict[str, Any]:
-        """Create schedule."""
-        now = datetime.now(UTC).isoformat()
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute(
+        *,
+        name: str,
+        system_prompt: str = "",
+        avatar: str | None = None,
+        role_id: str | None = None,
+    ) -> dict:
+        name = (name or "").strip()
+        if not name:
+            raise ValueError("角色名称不能为空")
+        rid = (role_id or _new_id()).strip()
+        stamp = _now()
+        with self._lock:
+            self.ensure_default_role()
+            max_order = self.conn.execute(
+                "SELECT COALESCE(MAX(sort_order), 0) AS m FROM roles"
+            ).fetchone()["m"]
+            self.conn.execute(
                 """
-                INSERT INTO role_schedules (id, role_id, cron, prompt, enabled, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO roles(
+                    id, name, avatar, system_prompt, is_default, sort_order,
+                    created_at, updated_at
+                ) VALUES (?, ?, ?, ?, 0, ?, ?, ?)
                 """,
-                (schedule_id, role_id, cron, prompt, int(enabled), now, now),
+                (
+                    rid,
+                    name,
+                    avatar,
+                    system_prompt or "",
+                    int(max_order) + 1,
+                    stamp,
+                    stamp,
+                ),
             )
-            conn.commit()
-        return self.get_schedule(schedule_id)  # type: ignore
+            self.conn.commit()
+            row = self.conn.execute(
+                "SELECT * FROM roles WHERE id = ?", (rid,)
+            ).fetchone()
+            assert row is not None
+            return self._row_to_dict(row)
 
-    def update_schedule(
+    def update(
         self,
-        schedule_id: str,
-        cron: str | None = None,
-        prompt: str | None = None,
-        enabled: bool | None = None,
-    ) -> dict[str, Any] | None:
-        """Update schedule."""
-        schedule = self.get_schedule(schedule_id)
-        if not schedule:
-            return None
-
-        now = datetime.now(UTC).isoformat()
-        updates = []
-        params = []
-
-        if cron is not None:
-            updates.append("cron = ?")
-            params.append(cron)
-        if prompt is not None:
-            updates.append("prompt = ?")
-            params.append(prompt)
-        if enabled is not None:
-            updates.append("enabled = ?")
-            params.append(int(enabled))
-
-        if not updates:
-            return schedule
-
-        updates.append("updated_at = ?")
-        params.append(now)
-        params.append(schedule_id)
-
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute(
-                f"UPDATE role_schedules SET {', '.join(updates)} WHERE id = ?",
-                params,
+        role_id: str,
+        *,
+        name: str | None = None,
+        system_prompt: str | None = None,
+        avatar: str | None = None,
+    ) -> dict:
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT * FROM roles WHERE id = ?", (role_id,)
+            ).fetchone()
+            if row is None:
+                raise KeyError(role_id)
+            new_name = row["name"] if name is None else name.strip()
+            if not new_name:
+                raise ValueError("角色名称不能为空")
+            new_prompt = (
+                row["system_prompt"] if system_prompt is None else system_prompt
             )
-            conn.commit()
+            new_avatar = row["avatar"] if avatar is None else avatar
+            stamp = _now()
+            self.conn.execute(
+                """
+                UPDATE roles
+                SET name = ?, system_prompt = ?, avatar = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (new_name, new_prompt or "", new_avatar, stamp, role_id),
+            )
+            self.conn.commit()
+            updated = self.conn.execute(
+                "SELECT * FROM roles WHERE id = ?", (role_id,)
+            ).fetchone()
+            assert updated is not None
+            return self._row_to_dict(updated)
 
-        return self.get_schedule(schedule_id)
+    def delete(self, role_id: str) -> None:
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT is_default FROM roles WHERE id = ?", (role_id,)
+            ).fetchone()
+            if row is None:
+                raise KeyError(role_id)
+            if row["is_default"]:
+                raise ValueError("不能删除默认角色")
+            self.conn.execute(
+                "DELETE FROM role_schedules WHERE role_id = ?", (role_id,)
+            )
+            self.conn.execute("DELETE FROM roles WHERE id = ?", (role_id,))
+            self.conn.commit()
 
-    def delete_schedule(self, schedule_id: str) -> bool:
-        """Delete schedule."""
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.execute("DELETE FROM role_schedules WHERE id = ?", (schedule_id,))
-            conn.commit()
-            return cursor.rowcount > 0
-
-
-def resolve_active_conversation(
-    role_id: str,
-    conversations_store: Any,  # ConversationsStore
-    continuity_idle_hours: float = 6.0,
-) -> str:
-    """
-    Resolve or create active conversation for a role.
-    
-    1. Prefer empty conversation (message_count == 0) for this role
-    2. Otherwise check most recent conversation: if within continuity window, reuse
-    3. Otherwise create new conversation
-    
-    Returns conversation_id
-    """
-    from datetime import timedelta
-
-    # 1. Check for empty conversation
-    convs = conversations_store.list_conversations()
-    empty = next(
-        (c for c in convs if c.get("role_id") == role_id and c.get("message_count", 0) == 0),
-        None,
-    )
-    if empty:
-        return empty["id"]
-
-    # 2. Check most recent conversation within continuity window
-    role_convs = [c for c in convs if c.get("role_id") == role_id]
-    if role_convs:
-        most_recent = max(role_convs, key=lambda c: c.get("updated_at", ""))
-        updated_at = datetime.fromisoformat(most_recent["updated_at"].replace("Z", "+00:00"))
-        idle_delta = datetime.now(UTC) - updated_at
-        if idle_delta < timedelta(hours=continuity_idle_hours):
-            return most_recent["id"]
-
-    # 3. Create new conversation
-    new_conv = conversations_store.create_conversation(role_id=role_id)
-    return new_conv["id"]
+    def default_id(self) -> str:
+        with self._lock:
+            return self.ensure_default_role()

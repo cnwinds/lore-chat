@@ -1,213 +1,187 @@
-"""Role management HTTP routes."""
+"""角色 CRUD、忙碌态、定时任务与活跃线（ADR 2026-09-09）。"""
 
-from typing import Annotated
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from __future__ import annotations
 
-from app.api.http_deps import get_kb_root, get_conversations, get_settings
-from app.engine.roles import RoleStore, resolve_active_conversation, DEFAULT_ROLE_ID
-from app.engine.conversations import ConversationsStore
-from app.config import Settings
+from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel, Field
 
-import uuid
+from app.api.http_deps import container
 
-router = APIRouter(prefix="/api/roles", tags=["roles"])
+router = APIRouter()
 
 
-def get_role_store(kb_root=Depends(get_kb_root)) -> RoleStore:
-    return RoleStore(kb_root)
-
-
-# Request/Response models
-
-class CreateRoleRequest(BaseModel):
+class CreateRoleBody(BaseModel):
     name: str
+    system_prompt: str = ""
     avatar: str | None = None
-    system_prompt: str | None = None
 
 
-class UpdateRoleRequest(BaseModel):
+class UpdateRoleBody(BaseModel):
     name: str | None = None
-    avatar: str | None = None
     system_prompt: str | None = None
+    avatar: str | None = None
 
 
-class CreateScheduleRequest(BaseModel):
-    cron: str
+class CreateScheduleBody(BaseModel):
     prompt: str
+    interval_hours: float = Field(..., ge=0.5)
     enabled: bool = True
 
 
-class UpdateScheduleRequest(BaseModel):
-    cron: str | None = None
+class UpdateScheduleBody(BaseModel):
     prompt: str | None = None
+    interval_hours: float | None = Field(default=None, ge=0.5)
     enabled: bool | None = None
 
 
-# Routes
-
-@router.get("")
-def list_roles(store: Annotated[RoleStore, Depends(get_role_store)]):
-    """List all roles."""
-    roles = store.list_roles()
-    return {"roles": roles}
+@router.get("/roles")
+async def list_roles(request: Request):
+    return {"roles": container(request).roles.list_all()}
 
 
-@router.post("")
-def create_role(
-    req: CreateRoleRequest,
-    store: Annotated[RoleStore, Depends(get_role_store)],
-):
-    """Create a new role."""
-    role_id = str(uuid.uuid4())
-    role = store.create_role(
-        role_id=role_id,
-        name=req.name,
-        avatar=req.avatar,
-        system_prompt=req.system_prompt,
-    )
+@router.post("/roles")
+async def create_role(body: CreateRoleBody, request: Request):
+    c = container(request)
+    try:
+        role = c.roles.create(
+            name=body.name,
+            system_prompt=body.system_prompt,
+            avatar=body.avatar,
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
     return role
 
 
-@router.get("/{role_id}")
-def get_role(
-    role_id: str,
-    store: Annotated[RoleStore, Depends(get_role_store)],
-):
-    """Get role by ID."""
-    role = store.get_role(role_id)
-    if not role:
-        raise HTTPException(status_code=404, detail="Role not found")
-    return role
+@router.get("/roles/busy")
+async def list_busy_roles(request: Request):
+    """有 running turn 的角色 id 列表。"""
+    return {"role_ids": container(request).conversations.list_busy_role_ids()}
 
 
-@router.patch("/{role_id}")
-def update_role(
-    role_id: str,
-    req: UpdateRoleRequest,
-    store: Annotated[RoleStore, Depends(get_role_store)],
-):
-    """Update role."""
-    role = store.update_role(
-        role_id=role_id,
-        name=req.name,
-        avatar=req.avatar,
-        system_prompt=req.system_prompt,
+@router.get("/roles/{role_id}")
+async def get_role(role_id: str, request: Request):
+    try:
+        return container(request).roles.get(role_id)
+    except KeyError as e:
+        raise HTTPException(404, "角色不存在") from e
+
+
+@router.patch("/roles/{role_id}")
+async def update_role(role_id: str, body: UpdateRoleBody, request: Request):
+    c = container(request)
+    try:
+        return c.roles.update(
+            role_id,
+            name=body.name,
+            system_prompt=body.system_prompt,
+            avatar=body.avatar,
+        )
+    except KeyError as e:
+        raise HTTPException(404, "角色不存在") from e
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@router.delete("/roles/{role_id}")
+async def delete_role(role_id: str, request: Request):
+    c = container(request)
+    try:
+        c.roles.get(role_id)
+    except KeyError as e:
+        raise HTTPException(404, "角色不存在") from e
+    try:
+        default_id = c.roles.default_id()
+        if role_id == default_id:
+            raise ValueError("不能删除默认角色")
+        moved = c.conversations.reassign_role(role_id, default_id)
+        c.roles.delete(role_id)
+    except KeyError as e:
+        raise HTTPException(404, "角色不存在") from e
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    return {"ok": True, "reassigned_conversations": moved}
+
+
+@router.post("/roles/{role_id}/ensure-active")
+async def ensure_active_conversation(role_id: str, request: Request):
+    c = container(request)
+    try:
+        c.roles.get(role_id)
+    except KeyError as e:
+        raise HTTPException(404, "角色不存在") from e
+    cid, created = c.conversations.ensure_active_conversation(
+        role_id,
+        idle_hours=float(c.settings.continuity_idle_hours),
     )
-    if not role:
-        raise HTTPException(status_code=404, detail="Role not found")
-    return role
+    return {
+        "conversation_id": cid,
+        "role_id": role_id,
+        "created": created,
+    }
 
 
-@router.delete("/{role_id}")
-def delete_role(
-    role_id: str,
-    store: Annotated[RoleStore, Depends(get_role_store)],
+@router.get("/roles/{role_id}/schedules")
+async def list_schedules(role_id: str, request: Request):
+    c = container(request)
+    try:
+        c.roles.get(role_id)
+    except KeyError as e:
+        raise HTTPException(404, "角色不存在") from e
+    return {"schedules": c.roles.schedules.list_for_role(role_id)}
+
+
+@router.post("/roles/{role_id}/schedules")
+async def create_schedule(role_id: str, body: CreateScheduleBody, request: Request):
+    c = container(request)
+    try:
+        c.roles.get(role_id)
+    except KeyError as e:
+        raise HTTPException(404, "角色不存在") from e
+    try:
+        return c.roles.schedules.create(
+            role_id,
+            prompt=body.prompt,
+            interval_hours=body.interval_hours,
+            enabled=body.enabled,
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@router.patch("/roles/{role_id}/schedules/{schedule_id}")
+async def update_schedule(
+    role_id: str, schedule_id: str, body: UpdateScheduleBody, request: Request
 ):
-    """Delete role (cannot delete default role)."""
-    success = store.delete_role(role_id)
-    if not success:
-        raise HTTPException(status_code=400, detail="Cannot delete default role or role not found")
-    return {"ok": True}
+    c = container(request)
+    try:
+        c.roles.get(role_id)
+        owned = {
+            s["id"]: s for s in c.roles.schedules.list_for_role(role_id)
+        }
+        if schedule_id not in owned:
+            raise KeyError(schedule_id)
+        return c.roles.schedules.update(
+            schedule_id,
+            prompt=body.prompt,
+            interval_hours=body.interval_hours,
+            enabled=body.enabled,
+        )
+    except KeyError as e:
+        raise HTTPException(404, "不存在") from e
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
 
 
-@router.post("/{role_id}/ensure-active")
-def ensure_active_conversation(
-    role_id: str,
-    store: Annotated[RoleStore, Depends(get_role_store)],
-    conversations: Annotated[ConversationsStore, Depends(get_conversations)],
-    settings: Annotated[Settings, Depends(get_settings)],
-):
-    """
-    Resolve or create active conversation for a role.
-    Returns conversation_id to switch to.
-    """
-    role = store.get_role(role_id)
-    if not role:
-        raise HTTPException(status_code=404, detail="Role not found")
-
-    continuity_hours = getattr(settings, "continuity_idle_hours", 6.0)
-    conversation_id = resolve_active_conversation(
-        role_id=role_id,
-        conversations_store=conversations,
-        continuity_idle_hours=continuity_hours,
-    )
-
-    return {"conversation_id": conversation_id, "role_id": role_id}
-
-
-# Schedules
-
-@router.get("/{role_id}/schedules")
-def list_role_schedules(
-    role_id: str,
-    store: Annotated[RoleStore, Depends(get_role_store)],
-):
-    """List schedules for a role."""
-    role = store.get_role(role_id)
-    if not role:
-        raise HTTPException(status_code=404, detail="Role not found")
-
-    schedules = store.list_schedules(role_id)
-    return {"schedules": schedules}
-
-
-@router.post("/{role_id}/schedules")
-def create_role_schedule(
-    role_id: str,
-    req: CreateScheduleRequest,
-    store: Annotated[RoleStore, Depends(get_role_store)],
-):
-    """Create schedule for a role."""
-    role = store.get_role(role_id)
-    if not role:
-        raise HTTPException(status_code=404, detail="Role not found")
-
-    schedule_id = str(uuid.uuid4())
-    schedule = store.create_schedule(
-        schedule_id=schedule_id,
-        role_id=role_id,
-        cron=req.cron,
-        prompt=req.prompt,
-        enabled=req.enabled,
-    )
-    return schedule
-
-
-@router.patch("/{role_id}/schedules/{schedule_id}")
-def update_role_schedule(
-    role_id: str,
-    schedule_id: str,
-    req: UpdateScheduleRequest,
-    store: Annotated[RoleStore, Depends(get_role_store)],
-):
-    """Update schedule."""
-    schedule = store.get_schedule(schedule_id)
-    if not schedule or schedule["role_id"] != role_id:
-        raise HTTPException(status_code=404, detail="Schedule not found")
-
-    updated = store.update_schedule(
-        schedule_id=schedule_id,
-        cron=req.cron,
-        prompt=req.prompt,
-        enabled=req.enabled,
-    )
-    return updated
-
-
-@router.delete("/{role_id}/schedules/{schedule_id}")
-def delete_role_schedule(
-    role_id: str,
-    schedule_id: str,
-    store: Annotated[RoleStore, Depends(get_role_store)],
-):
-    """Delete schedule."""
-    schedule = store.get_schedule(schedule_id)
-    if not schedule or schedule["role_id"] != role_id:
-        raise HTTPException(status_code=404, detail="Schedule not found")
-
-    success = store.delete_schedule(schedule_id)
-    if not success:
-        raise HTTPException(status_code=404, detail="Schedule not found")
-
+@router.delete("/roles/{role_id}/schedules/{schedule_id}")
+async def delete_schedule(role_id: str, schedule_id: str, request: Request):
+    c = container(request)
+    try:
+        c.roles.get(role_id)
+        items = c.roles.schedules.list_for_role(role_id)
+        if not any(s["id"] == schedule_id for s in items):
+            raise KeyError(schedule_id)
+        c.roles.schedules.delete(schedule_id)
+    except KeyError as e:
+        raise HTTPException(404, "不存在") from e
     return {"ok": True}

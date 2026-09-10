@@ -149,6 +149,8 @@ class Settings(BaseSettings):
     memory_decay_candidate_days: int = 180
     memory_maintenance_interval_hours: int = 24
     memory_session_idle_hours: float = 24.0
+    # 角色活跃线连续窗口（与记忆抽取 idle 分离；见 ADR 2026-09-09）
+    continuity_idle_hours: float = 6.0
 
     # OpenSandbox 执行 Runtime（可选；默认关闭，见 docker-compose.sandbox.yml）
     sandbox_enabled: bool = False

@@ -4,7 +4,10 @@ import {
   getTree,
   listConversations,
   deleteConversation,
+  searchConversations,
   type ConversationSummary,
+  type ConversationSearchHit,
+  type RoleSummary,
 } from "../api";
 import { groupConversationsByTime } from "../utils/conversationGroups";
 import { formatSidebarConversationTime } from "../utils/displayTime";
@@ -32,6 +35,8 @@ type Props = {
   refreshKey?: number;
   activePaths?: string[];
   activeConversationId: string | null;
+  activeRoleId?: string | null;
+  roles?: RoleSummary[];
   titleOverrides?: Record<string, string>;
   collapsed?: boolean;
   onToggleCollapsed?: () => void;
@@ -44,7 +49,13 @@ type Props = {
   onSelectFolder?: (path: string, mods?: SelectMods) => void;
   onOpenEnabledSkills?: () => void;
   onNewChat: () => void;
+  onSelectRole?: (id: string) => void;
+  onAddRole?: () => void;
+  onEditRole?: (id: string) => void;
+  onOpenRoleHistory?: () => void;
+  busyRoleIds?: string[];
   onSelectConversation: (id: string) => void;
+  onSearchHit?: (hit: ConversationSearchHit) => void;
   onDeleteConversation: (id: string) => void;
   onShareConversation?: (id: string, title: string) => void;
   onKbPathChanged?: (fromPath: string, toPath: string) => void;
@@ -59,6 +70,8 @@ export function Sidebar({
   refreshKey = 0,
   activePaths = [],
   activeConversationId,
+  activeRoleId = null,
+  roles = [],
   titleOverrides = {},
   collapsed = false,
   onToggleCollapsed,
@@ -69,7 +82,13 @@ export function Sidebar({
   onSelectFolder,
   onOpenEnabledSkills,
   onNewChat,
+  onSelectRole,
+  onAddRole,
+  onEditRole,
+  onOpenRoleHistory,
+  busyRoleIds = [],
   onSelectConversation,
+  onSearchHit,
   onDeleteConversation,
   onShareConversation,
   onKbPathChanged,
@@ -79,6 +98,9 @@ export function Sidebar({
 }: Props) {
   const [docs, setDocs] = useState<string[]>([]);
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchHits, setSearchHits] = useState<ConversationSearchHit[]>([]);
+  const [searchBusy, setSearchBusy] = useState(false);
   const [kbHintOpen, setKbHintOpen] = useState(false);
   const [kbHintPos, setKbHintPos] = useState<{ top: number; left: number } | null>(
     null,
@@ -87,6 +109,8 @@ export function Sidebar({
   const kbHintPopoverRef = useRef<HTMLDivElement>(null);
   const treeScrollRef = useRef<HTMLDivElement>(null);
   const activeConversationRef = useRef<HTMLDivElement>(null);
+  const searchSeqRef = useRef(0);
+  const listSeqRef = useRef(0);
   const { onDragOverAutoScroll } = useDragAutoScroll(treeScrollRef);
   const viewport = useKbTreeViewportUi({
     paths: docs,
@@ -101,10 +125,15 @@ export function Sidebar({
   );
 
   async function refresh() {
+    const seq = ++listSeqRef.current;
     const nextDocs = (await getTree()).docs as string[];
+    if (seq !== listSeqRef.current) return;
     setDocs(nextDocs);
     onDocsChange?.(nextDocs);
-    setConversations((await listConversations()).conversations);
+    const convOpts = activeRoleId ? { roleId: activeRoleId } : undefined;
+    const { conversations: nextConvs } = await listConversations(convOpts);
+    if (seq !== listSeqRef.current) return;
+    setConversations(nextConvs);
   }
 
   const kb = useKbTreeActions(refresh, docs);
@@ -141,7 +170,39 @@ export function Sidebar({
 
   useEffect(() => {
     refresh();
-  }, [refreshKey]);
+  }, [refreshKey, activeRoleId]);
+
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if (!q) {
+      searchSeqRef.current += 1;
+      setSearchHits([]);
+      setSearchBusy(false);
+      return;
+    }
+    const seq = ++searchSeqRef.current;
+    setSearchBusy(true);
+    const t = window.setTimeout(() => {
+      void searchConversations({
+        q,
+        k: 20,
+        roleId: roles.length > 1 ? activeRoleId || undefined : undefined,
+      })
+        .then((res) => {
+          if (seq !== searchSeqRef.current) return;
+          setSearchHits(res.hits);
+        })
+        .catch(() => {
+          if (seq !== searchSeqRef.current) return;
+          setSearchHits([]);
+        })
+        .finally(() => {
+          if (seq !== searchSeqRef.current) return;
+          setSearchBusy(false);
+        });
+    }, 280);
+    return () => window.clearTimeout(t);
+  }, [searchQuery, activeRoleId, roles.length]);
 
   // 切换/跳转会话后：仅当标题未完整可见时滚入列表可视区（列表刷新不误滚）
   useEffect(() => {
@@ -267,66 +328,192 @@ export function Sidebar({
           </div>
           <section className="sidebar-section sidebar-chat-section">
             <div className="sidebar-section-head">
-              <h4>对话</h4>
-              <button type="button" className="sidebar-new-chat" onClick={onNewChat}>
-                ＋ 新建
-              </button>
+              <h4>{roles.length > 1 ? "角色" : "对话"}</h4>
+              <div className="sidebar-section-actions">
+                {roles.length === 1 && onEditRole && roles[0] && (
+                  <button
+                    type="button"
+                    className="sidebar-new-chat"
+                    onClick={() => onEditRole(roles[0].id)}
+                    title="角色设置"
+                  >
+                    设置
+                  </button>
+                )}
+                {roles.length > 1 && onOpenRoleHistory && (
+                  <button
+                    type="button"
+                    className="sidebar-new-chat"
+                    onClick={onOpenRoleHistory}
+                    title="本角色历史"
+                  >
+                    历史
+                  </button>
+                )}
+                {onAddRole && (
+                  <button
+                    type="button"
+                    className="sidebar-new-chat"
+                    onClick={onAddRole}
+                    title="添加角色"
+                  >
+                    ＋ 角色
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="sidebar-new-chat"
+                  onClick={onNewChat}
+                  title="新话题"
+                >
+                  ＋ 新话题
+                </button>
+              </div>
             </div>
-            <div className="conversation-list">
-              {conversations.length === 0 && (
-                <div className="conversation-empty">暂无历史对话</div>
-              )}
-              {conversationGroups.map((group) => (
-                <div key={group.label} className="conversation-group">
-                  <div className="conversation-group-label">{group.label}</div>
-                  {group.items.map((c) => {
-                    const active = activeConversationId === c.id;
-                    const title =
-                      c.title === "新对话" && titleOverrides[c.id]
-                        ? titleOverrides[c.id]
-                        : c.title;
-                    return (
-                      <div
-                        key={c.id}
-                        ref={active ? activeConversationRef : undefined}
-                        className={`conversation-item${active ? " active" : ""}`}
+            <div className="sidebar-search">
+              <input
+                type="search"
+                className="sidebar-search-input"
+                placeholder="搜索对话…"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                aria-label="搜索对话"
+              />
+            </div>
+            {searchQuery.trim() ? (
+              <div className="conversation-search-results">
+                {searchBusy && (
+                  <div className="conversation-empty">搜索中…</div>
+                )}
+                {!searchBusy && searchHits.length === 0 && (
+                  <div className="conversation-empty">无匹配结果</div>
+                )}
+                {searchHits.map((h) => (
+                  <button
+                    key={`${h.conversation_id}:${h.message_id || ""}:${h.snippet.slice(0, 24)}`}
+                    type="button"
+                    className="conversation-search-hit"
+                    onClick={() => {
+                      if (onSearchHit) onSearchHit(h);
+                      else onSelectConversation(h.conversation_id);
+                      setSearchQuery("");
+                      setSearchHits([]);
+                    }}
+                  >
+                    <span className="conversation-title">{h.title}</span>
+                    <span className="conversation-meta">{h.snippet}</span>
+                  </button>
+                ))}
+              </div>
+            ) : roles.length > 1 ? (
+              <div className="role-list">
+                {roles.map((r) => {
+                  const active = activeRoleId === r.id;
+                  const initial = (r.name || "?").trim().charAt(0) || "?";
+                  const busy = busyRoleIds.includes(r.id);
+                  return (
+                    <div
+                      key={r.id}
+                      className={`role-item-row${active ? " active" : ""}`}
+                    >
+                      <button
+                        type="button"
+                        className="role-item"
+                        onClick={() => onSelectRole?.(r.id)}
                       >
+                        <span className="role-avatar" aria-hidden>
+                          {r.avatar ? (
+                            <img src={r.avatar} alt="" />
+                          ) : (
+                            initial
+                          )}
+                          {busy && (
+                            <span
+                              className="role-busy-dot"
+                              title="进行中"
+                              aria-label="进行中"
+                            />
+                          )}
+                        </span>
+                        <span className="role-name">{r.name}</span>
+                      </button>
+                      {onEditRole && (
                         <button
                           type="button"
-                          className="conversation-select"
-                          onClick={() => onSelectConversation(c.id)}
-                        >
-                          <span className="conversation-title">{title}</span>
-                          <span className="conversation-meta">
-                            {formatSidebarConversationTime(c.updated_at)}
-                            {c.message_count > 0 ? ` · ${c.message_count} 条` : ""}
-                          </span>
-                        </button>
-                        <button
-                          type="button"
-                          className="conversation-share"
-                          title="分享对话"
+                          className="role-item-gear"
+                          title="角色设置"
+                          aria-label={`设置 ${r.name}`}
                           onClick={(e) => {
                             e.stopPropagation();
-                            onShareConversation?.(c.id, title);
+                            onEditRole(r.id);
                           }}
                         >
-                          ↗
+                          ⚙
                         </button>
-                        <button
-                          type="button"
-                          className="conversation-delete"
-                          title="删除对话"
-                          onClick={(e) => handleDeleteConversation(e, c.id)}
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="conversation-list">
+                {conversations.length === 0 && (
+                  <div className="conversation-empty">暂无历史对话</div>
+                )}
+                {conversationGroups.map((group) => (
+                  <div key={group.label} className="conversation-group">
+                    <div className="conversation-group-label">{group.label}</div>
+                    {group.items.map((c) => {
+                      const active = activeConversationId === c.id;
+                      const title =
+                        c.title === "新对话" && titleOverrides[c.id]
+                          ? titleOverrides[c.id]
+                          : c.title;
+                      return (
+                        <div
+                          key={c.id}
+                          ref={active ? activeConversationRef : undefined}
+                          className={`conversation-item${active ? " active" : ""}`}
                         >
-                          ×
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              ))}
-            </div>
+                          <button
+                            type="button"
+                            className="conversation-select"
+                            onClick={() => onSelectConversation(c.id)}
+                          >
+                            <span className="conversation-title">{title}</span>
+                            <span className="conversation-meta">
+                              {formatSidebarConversationTime(c.updated_at)}
+                              {c.message_count > 0
+                                ? ` · ${c.message_count} 条`
+                                : ""}
+                            </span>
+                          </button>
+                          <button
+                            type="button"
+                            className="conversation-share"
+                            title="分享对话"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onShareConversation?.(c.id, title);
+                            }}
+                          >
+                            ↗
+                          </button>
+                          <button
+                            type="button"
+                            className="conversation-delete"
+                            title="删除对话"
+                            onClick={(e) => handleDeleteConversation(e, c.id)}
+                          >
+                            ×
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
+            )}
           </section>
 
           <section

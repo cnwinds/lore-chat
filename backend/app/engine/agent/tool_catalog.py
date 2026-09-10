@@ -18,6 +18,7 @@ WRITE_TOOLS = frozenset({
     "edit_doc", "update_doc_meta",
     "manage_memory", "move_entry",
     "generate_image",
+    "create_role",
     "sandbox_run", "publish_from_sandbox", "stage_to_sandbox",
 })
 # 可读工具 + 生图：落盘路径互不冲突（chat_attachment 自动唯一名），可同批并行。
@@ -106,6 +107,7 @@ TOOL_LABELS = {
     "summarize_conversation": "归档整段会话",
     "delete_kb": "删除知识库内容",
     "ask_user": "征询用户",
+    "create_role": "创建角色",
     "edit_doc": "局部编辑文档",
     "update_doc_meta": "更新文档元数据",
     "move_entry": "移动或重命名路径",
@@ -688,6 +690,36 @@ TOOL_DEFINITIONS: list[dict] = [
                     },
                 },
                 "required": ["question", "options"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_role",
+            "description": (
+                "创建一个新的对话角色（工作台）。用于用户明确要求「新建角色 / 开一个某某助手」时；"
+                "新角色共享知识库与主人记忆，拥有独立提示词与对话上下文。"
+                "创建后告知用户可在侧栏切换；不要替用户擅自大量建角色。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "角色显示名称，例如「股票研究员」",
+                    },
+                    "system_prompt": {
+                        "type": "string",
+                        "description": "该角色的叠加人设/职责提示词（可选）",
+                        "default": "",
+                    },
+                    "avatar": {
+                        "type": "string",
+                        "description": "头像 URL（可选）",
+                    },
+                },
+                "required": ["name"],
             },
         },
     },

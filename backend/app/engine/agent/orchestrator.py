@@ -62,6 +62,7 @@ class AgentOrchestrator:
         inject_broker=None,
         on_inject_applied=None,
         attachments: list[str] | None = None,
+        role_system_prompt: str = "",
     ) -> AsyncIterator[str]:
         system_layer_text = (
             self.system_layer.compose_rules() if self.system_layer else ""
@@ -92,6 +93,7 @@ class AgentOrchestrator:
             primary_doc_path=primary_doc_path,
             extra_system_messages=skill_msgs or None,
             attachments=attachments,
+            role_system_prompt=role_system_prompt,
         )
         tools_for_run = select_tools(
             mode,

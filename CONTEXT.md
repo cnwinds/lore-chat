@@ -12,7 +12,8 @@
 | 联网搜索 | `backend/app/engine/web/`（`search_providers` / `search_router` / `search_backends` / `search.py`） | 搜索提供商有序链、与模型同算法的冷却 failover；HTTP 不自建 search CooldownStore |
 | 生图 | `backend/app/engine/imagegen/`（`providers` / `router` / `backends` / `service`）+ Agent `generate_image` | 多厂商薄 adapter、有序链 + 隔离冷却；权威身份为 KB 相对路径；见 [ADR 2026-08-12](docs/adr/2026-08-12-image-generation-providers.md) |
 | Agent | `backend/app/engine/agent/` | `AgentOrchestrator`（adapter）、`AgentToolLoop`（LLM+工具循环）、`tool_catalog`、`tool_impl/*`（执行）、`tools.py`（`ToolRegistry.execute` / `rebind` / `interrupt_runtime`） |
-| 会话 | `conversations.py` + `conversation/*` | SQLite 消息/turn；outbox；`MemoryExtractSchedule`；`ConversationTranscript`；`ConversationDeletionWorkflow`；`ConversationMessageGraph`；`ConversationSummaryLedger`（`store.summaries`）；`ConversationSystemEvents`（`store.system_events`）；其余 store 兼容委托逐步收口 |
+| 会话 | `conversations.py` + `conversation/*` | SQLite 消息/turn；`role_id` 归属角色；outbox；`MemoryExtractSchedule`；`ConversationTranscript`；`ConversationDeletionWorkflow`；`ConversationMessageGraph`；`ConversationSummaryLedger`（`store.summaries`）；`ConversationSystemEvents`（`store.system_events`）；其余 store 兼容委托逐步收口 |
+| 角色 | `roles.py`（`RoleStore`） | 默认通用角色 + 可创建；人设/头像/system_prompt；侧栏角色列表 IA 见 [ADR 2026-09-09](docs/adr/2026-09-09-multi-role-shell.md) / [product-multi-role.md](docs/product-multi-role.md) |
 | 知识写入 | `backend/app/engine/knowledge_writer.py` | 路径 + git + 索引 + changelog **唯一写入 seam**；意图级 `persist_document` / `import_entry`（`allow_binary`）/ `read_entry_bytes` / `move_entry` / `delete_entry`；非 MD 准入经 `assert_non_md_asset_allowed`；Merge/Agent 勿自组 drop_index |
 | 沙箱 | `backend/app/engine/sandbox/` | `SandboxRuntime` 端口；`SandboxExecutionEngine`（统一 job+poll 流式、wait 预算检查点）；`SandboxCommandGate`（高风险确认）；`KbSandboxExchange`（stage/publish）；`SandboxTools` 为薄 tool adapter |
 | 文档成文 | `backend/app/engine/document_synthesis.py` | 归档/合并/入库合并的 LLM 成文；Organizer 与 MergeWorkflow 共用 |

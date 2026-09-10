@@ -6,6 +6,7 @@ from pydantic import BaseModel
 
 from app.api.http_deps import (
     AppendMessagesBody,
+    CreateConversationBody,
     ResolveBody,
     SummarizeBody,
     container,
@@ -48,8 +49,53 @@ async def resolve(qid: str, body: ResolveBody, request: Request):
 
 
 @router.get("/conversations")
-async def list_conversations(request: Request):
-    return {"conversations": container(request).conversations.list_all()}
+async def list_conversations(request: Request, role_id: str | None = None):
+    return {
+        "conversations": container(request).conversations.list_all(role_id=role_id)
+    }
+
+
+@router.get("/conversations/search")
+async def search_conversations(
+    request: Request,
+    q: str = "",
+    k: int = 20,
+    role_id: str | None = None,
+):
+    """用户侧会话全文搜索（FTS）；可选按角色过滤。"""
+    q = (q or "").strip()
+    if not q:
+        return {"hits": [], "tier": "none"}
+    c = container(request)
+    limit = max(1, min(int(k or 20), 50))
+    # 略放大再按角色过滤
+    fetch_k = limit if not role_id else min(50, limit * 3)
+    outcome = c.conversation_fts.query_with_tier(q, k=fetch_k)
+    hits = []
+    for h in outcome.hits:
+        try:
+            rid = c.conversations.get_role_id(h.conversation_id)
+        except KeyError:
+            continue
+        if role_id and rid != role_id:
+            continue
+        text = (h.text or "").strip().replace("\n", " ")
+        if len(text) > 160:
+            text = text[:157] + "…"
+        hits.append(
+            {
+                "conversation_id": h.conversation_id,
+                "message_id": h.message_id,
+                "role_id": rid,
+                "message_role": h.role,
+                "title": h.conversation_title or "对话",
+                "snippet": text,
+                "ts": h.ts,
+            }
+        )
+        if len(hits) >= limit:
+            break
+    return {"hits": hits, "tier": outcome.tier}
 
 
 class CreateConversationBody(BaseModel):
@@ -57,10 +103,21 @@ class CreateConversationBody(BaseModel):
 
 
 @router.post("/conversations")
-async def create_conversation(request: Request, body: CreateConversationBody | None = None):
-    role_id = body.role_id if body else None
-    cid = container(request).conversations.create(role_id=role_id)
-    return {"id": cid}
+async def create_conversation(
+    request: Request, body: CreateConversationBody = CreateConversationBody()
+):
+    c = container(request)
+    role_id = body.role_id
+    title = body.title
+    if role_id:
+        try:
+            c.roles.get(role_id)
+        except KeyError as e:
+            raise HTTPException(404, "角色不存在") from e
+    else:
+        role_id = c.roles.get_default()["id"]
+    cid = c.conversations.create(title=title, role_id=role_id)
+    return {"id": cid, "role_id": role_id}
 
 
 @router.get("/conversations/{cid}/events")
