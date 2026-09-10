@@ -10,8 +10,10 @@ import {
   type RoleSchedule,
 } from "../../api";
 import { ScheduleTimingFields } from "./ScheduleTimingFields";
+import { avatarStorageRef } from "../../utils/kbImageUrls";
 import { defaultScheduleTiming, type ScheduleTiming } from "../../utils/scheduleTiming";
 import { roleAccent } from "../../utils/roleAccent";
+import { useRoleAvatarSrc } from "../../hooks/useRoleAvatarSrc";
 
 type Props = {
   roleId: string | null;
@@ -38,6 +40,7 @@ export function RoleConfigPanel({
   const [systemPrompt, setSystemPrompt] = useState("");
   const [schedPrompt, setSchedPrompt] = useState("");
   const [schedTiming, setSchedTiming] = useState<ScheduleTiming>(defaultScheduleTiming);
+  const coverAvatar = useRoleAvatarSrc(role?.avatar);
 
   async function loadRole(id: string) {
     try {
@@ -80,7 +83,7 @@ export function RoleConfigPanel({
       setSaving(true);
       const updated = await updateRole(roleId, {
         name: name.trim() || role.name,
-        avatar: avatar.trim() || null,
+        avatar: avatarStorageRef(avatar),
         system_prompt: systemPrompt,
       });
       setRole(updated);
@@ -178,15 +181,19 @@ export function RoleConfigPanel({
               <div
                 className="role-config-cover-art"
                 style={
-                  role?.avatar
+                  coverAvatar.showImage
                     ? undefined
                     : {
                         background: `radial-gradient(120% 90% at 28% 8%, color-mix(in srgb, ${coverBg} 42%, white), ${coverBg})`,
                       }
                 }
               >
-                {role?.avatar ? (
-                  <img src={role.avatar} alt="" />
+                {coverAvatar.showImage && coverAvatar.src ? (
+                  <img
+                    src={coverAvatar.src}
+                    alt=""
+                    onError={coverAvatar.onError}
+                  />
                 ) : (
                   <span className="role-config-cover-letter">
                     {(role?.name.trim()[0] || "?").toUpperCase()}
@@ -209,13 +216,13 @@ export function RoleConfigPanel({
                   />
                 </label>
                 <label className="role-config-label">
-                  <span>头像 URL</span>
+                  <span>头像</span>
                   <input
                     type="text"
                     className="role-config-input"
                     value={avatar}
                     onChange={(e) => setAvatar(e.target.value)}
-                    placeholder="https://…"
+                    placeholder="媒体/…png 或 https://…"
                   />
                 </label>
                 <label className="role-config-label">

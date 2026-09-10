@@ -1,4 +1,5 @@
 import { roleAccent } from "../../utils/roleAccent";
+import { useRoleAvatarSrc } from "../../hooks/useRoleAvatarSrc";
 
 type Props = {
   name: string;
@@ -16,18 +17,19 @@ export function RoleAvatar({
   className = "",
 }: Props) {
   const letter = (name.trim()[0] || "?").toUpperCase();
+  const { showImage, src, onError } = useRoleAvatarSrc(avatar);
   return (
     <div
       className={`role-avatar${className ? ` ${className}` : ""}`}
       style={{
         width: size,
         height: size,
-        background: avatar ? undefined : roleAccent(seed),
+        background: showImage ? undefined : roleAccent(seed),
       }}
       aria-hidden
     >
-      {avatar ? (
-        <img src={avatar} alt="" />
+      {showImage && src ? (
+        <img src={src} alt="" onError={onError} />
       ) : (
         <span className="role-avatar-letter">{letter}</span>
       )}

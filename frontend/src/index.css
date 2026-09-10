@@ -1860,6 +1860,14 @@ a:hover {
   padding: 16px;
 }
 
+.modal-panel {
+  background: var(--bg-surface);
+  color: var(--text);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.22);
+}
+
 .modal-panel.kb-conflict-dialog {
   max-width: 420px;
   width: 100%;

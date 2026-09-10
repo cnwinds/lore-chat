@@ -11,6 +11,7 @@ import {
   type RoleSummary,
 } from "../api";
 import { ScheduleTimingFields } from "./role/ScheduleTimingFields";
+import { avatarStorageRef } from "../utils/kbImageUrls";
 import {
   defaultScheduleTiming,
   type ScheduleTiming,
@@ -62,7 +63,7 @@ export function RoleSettingsModal({
       const updated = await updateRole(role.id, {
         name: name.trim(),
         system_prompt: systemPrompt,
-        avatar: avatar.trim() || null,
+        avatar: avatarStorageRef(avatar),
       });
       onSaved(updated);
       onClose();
@@ -134,11 +135,11 @@ export function RoleSettingsModal({
             />
           </label>
           <label className="settings-field">
-            <span>头像 URL（可选）</span>
+            <span>头像（可选）</span>
             <input
               value={avatar}
               onChange={(e) => setAvatar(e.target.value)}
-              placeholder="https://… 或留空"
+              placeholder="媒体/…png 或 https://…，可留空"
               disabled={saving}
             />
           </label>

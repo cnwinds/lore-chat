@@ -773,7 +773,10 @@ TOOL_DEFINITIONS: list[dict] = [
                     },
                     "avatar": {
                         "type": "string",
-                        "description": "头像 URL（可选）",
+                        "description": (
+                            "头像（可选）：知识库相对路径（与 generate_image 返回的 rel_path 相同）"
+                            "或 http(s)/data URL。权威身份是路径或 URL 本身，不要改写成页面相对地址。"
+                        ),
                     },
                 },
                 "required": ["name"],
@@ -786,7 +789,7 @@ TOOL_DEFINITIONS: list[dict] = [
             "name": "update_role",
             "description": (
                 "更新角色的名称、头像或人设提示词。默认更新当前会话的角色；"
-                "也可通过 role_id 指定其它角色。不能修改默认角色的核心属性。"
+                "也可通过 role_id 指定其它角色。默认角色也可以改名称/头像/人设。"
             ),
             "parameters": {
                 "type": "object",
@@ -801,7 +804,10 @@ TOOL_DEFINITIONS: list[dict] = [
                     },
                     "avatar": {
                         "type": "string",
-                        "description": "新的头像 URL（可选）",
+                        "description": (
+                            "新的头像（可选）：知识库相对路径（generate_image 的 rel_path）"
+                            "或 http(s)/data URL。生图后应把 rel_path 传给本参数，不要只把图留在对话里。"
+                        ),
                     },
                     "system_prompt": {
                         "type": "string",

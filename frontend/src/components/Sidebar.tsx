@@ -25,6 +25,7 @@ import { useDismissOnOutsideClick } from "../hooks/useDismissOnOutsideClick";
 import { useKbTreeViewportUi } from "../hooks/useKbTreeViewportUi";
 import { isProtectedKbPath, SKILLS_DIR } from "../utils/fileTree";
 import { SettingsAttentionDot } from "./settings/SettingsAttentionDot";
+import { RoleAvatar } from "./role/RoleAvatar";
 
 /** 与 portal style / CSS 共用：知识库 tip 最大高度上限（px） */
 const KB_HINT_POPOVER_MAX_PX = 420;
@@ -388,7 +389,6 @@ export function Sidebar({
               <div className="role-list">
                 {roles.map((r) => {
                   const active = activeRoleId === r.id;
-                  const initial = (r.name || "?").trim().charAt(0) || "?";
                   const busy = busyRoleIds.includes(r.id);
                   return (
                     <div
@@ -400,12 +400,13 @@ export function Sidebar({
                         className="role-item"
                         onClick={() => onSelectRole?.(r.id)}
                       >
-                        <span className="role-avatar" aria-hidden>
-                          {r.avatar ? (
-                            <img src={r.avatar} alt="" />
-                          ) : (
-                            initial
-                          )}
+                        <span className="role-item-avatar-wrap" aria-hidden>
+                          <RoleAvatar
+                            name={r.name}
+                            seed={r.id}
+                            avatar={r.avatar}
+                            size={28}
+                          />
                           {busy && (
                             <span
                               className="role-busy-dot"
