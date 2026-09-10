@@ -894,7 +894,7 @@ export async function updateRole(
 }
 
 export async function deleteRole(roleId: string) {
-  return apiFetch<{ ok: boolean; reassigned_conversations?: number }>(
+  return apiFetch<{ ok: boolean; deleted_conversations?: number }>(
     `/api/roles/${encodeURIComponent(roleId)}`,
     { method: "DELETE" },
   );

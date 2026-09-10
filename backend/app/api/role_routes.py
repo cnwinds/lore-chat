@@ -158,13 +158,23 @@ async def delete_role(role_id: str, request: Request):
                 getattr(c.settings, "sandbox_destroy_volume_on_role_delete", False)
             )
             await pool.release_role(role_id, destroy_volume=destroy_vol)
-        moved = c.conversations.reassign_role(role_id, default_id)
+        runner = getattr(c, "chat_runner", None)
+        if runner is not None and hasattr(runner, "request_stop"):
+            for cid in c.conversations.list_conversation_ids(role_id=role_id):
+                runner.request_stop(cid)
+        deleted = c.conversations.delete_for_role(
+            role_id,
+            conversation_fts=c.conversation_fts,
+            conversation_vector=c.conversation_vector,
+            indexer=c.indexer,
+            index_revision=c.index_revision,
+        )
         c.roles.delete(role_id)
     except KeyError as e:
         raise HTTPException(404, "角色不存在") from e
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
-    return {"ok": True, "reassigned_conversations": moved}
+    return {"ok": True, "deleted_conversations": deleted}
 
 
 @router.post("/roles/{role_id}/ensure-active")

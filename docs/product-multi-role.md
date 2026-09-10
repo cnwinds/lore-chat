@@ -124,7 +124,7 @@ HTTP `/api/roles*` 保留用于 UI shell（列表、ensure-active、可选右栏
 |------|------|------|
 | GET | `/api/roles` | 列表（启动确保默认角色） |
 | POST | `/api/roles` | 创建（UI 可调；Agent 优先用工具） |
-| GET/PATCH/DELETE | `/api/roles/{id}` | 读/改；默认角色不可删；右栏快捷入口 |
+| GET/PATCH/DELETE | `/api/roles/{id}` | 读/改；默认角色不可删；删除时一并删除该角色会话 |
 | POST | `/api/roles/{id}/ensure-active` | 解析/创建 tip → `{conversation_id, created}` |
 | GET | `/api/roles/{id}/timeline` | 角色统一时间线（段列表 + 消息；含 tip） |
 | POST | `/api/roles/{id}/new-topic` | 强制新话题（关段抽取 + 新空段） |
@@ -203,7 +203,7 @@ HTTP `/api/roles*` 保留用于 UI shell（列表、ensure-active、可选右栏
 
 ### P2
 
-- 角色设置：可改名称、头像 URL、人设；非默认角色可删（会话迁回默认）。
+- 角色设置：可改名称、头像 URL、人设；非默认角色可删（其会话一并删除，不并入默认角色）。
 - 角色级定时：设置页可增删启停；到期写入该角色活跃线；有 running turn 时顺延。
 - Agent 工具 `create_role`：对话中可创建角色，侧栏随后可见。
 - 忙碌角标（该角色有 running turn）。

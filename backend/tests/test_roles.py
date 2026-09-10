@@ -112,6 +112,29 @@ def test_reassign_role_conversations(tmp_path):
     assert conv.get_role_id(cid) == DEFAULT_ROLE_ID
 
 
+def test_delete_for_role_removes_only_that_role(tmp_path):
+    roles = _roles(tmp_path)
+    conv = _conv(tmp_path)
+    created = roles.create(name="临时")
+    keep = conv.create(role_id=DEFAULT_ROLE_ID)
+    cid = conv.create(role_id=created["id"])
+    extra = conv.create(role_id=created["id"])
+    n = conv.delete_for_role(created["id"])
+    assert n == 2
+    try:
+        conv.get(cid)
+        assert False, "role conversation should be gone"
+    except KeyError:
+        pass
+    try:
+        conv.get(extra)
+        assert False, "role conversation should be gone"
+    except KeyError:
+        pass
+    assert conv.get_role_id(keep) == DEFAULT_ROLE_ID
+    assert conv.list_conversation_ids(role_id=created["id"]) == []
+
+
 def test_roles_list_uses_last_reply_and_last_active_at(client):
     created = client.post(
         "/api/roles",
@@ -188,14 +211,21 @@ def test_roles_http_api(client):
     made = client.post("/api/conversations", json={"role_id": rid})
     assert made.status_code == 200
     assert made.json()["role_id"] == rid
+    keep = client.post("/api/conversations", json={"role_id": "default"})
+    assert keep.status_code == 200
+    keep_id = keep.json()["id"]
 
     deleted = client.delete(f"/api/roles/{rid}")
     assert deleted.status_code == 200
     assert deleted.json()["ok"] is True
-    # 会话应迁回默认角色
+    assert deleted.json()["deleted_conversations"] == 2
     after = client.get(f"/api/conversations/{cid}")
-    assert after.status_code == 200
-    assert after.json()["role_id"] == "default"
+    assert after.status_code == 404
+    gone = client.get(f"/api/conversations/{made.json()['id']}")
+    assert gone.status_code == 404
+    still = client.get(f"/api/conversations/{keep_id}")
+    assert still.status_code == 200
+    assert still.json()["role_id"] == "default"
 
     bad = client.delete("/api/roles/default")
     assert bad.status_code == 400
@@ -502,7 +532,7 @@ def test_ensure_active_outside_window_closes_previous(tmp_path, monkeypatch):
 
 
 def test_reassign_role_preserves_updated_at(tmp_path):
-    """删角色迁会话不得把目标角色 tip 劫持为迁入会话。"""
+    """reassign_role 不改 updated_at，避免迁入会话劫持目标角色 tip。"""
     from datetime import datetime, timedelta, timezone
 
     roles = _roles(tmp_path)

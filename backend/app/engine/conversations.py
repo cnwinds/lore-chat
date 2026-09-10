@@ -349,9 +349,15 @@ class ConversationStore:
             idle_hours=idle_hours, limit=limit
         )
 
-    def list_conversation_ids(self) -> list[str]:
+    def list_conversation_ids(self, *, role_id: str | None = None) -> list[str]:
         with self._lock:
-            rows = self.conn.execute("SELECT id FROM conversations").fetchall()
+            if role_id:
+                rows = self.conn.execute(
+                    "SELECT id FROM conversations WHERE role_id = ?",
+                    (role_id,),
+                ).fetchall()
+            else:
+                rows = self.conn.execute("SELECT id FROM conversations").fetchall()
             return [r["id"] for r in rows]
 
     def list_user_messages_text(self, cid: str) -> list[str]:
@@ -942,6 +948,31 @@ class ConversationStore:
             ledger_path=ledger_path,
             delete_summary=delete_summary,
         )
+
+    def delete_for_role(
+        self,
+        role_id: str,
+        *,
+        conversation_fts=None,
+        conversation_vector=None,
+        indexer=None,
+        index_revision=None,
+        ledger_path: str | Path | None = None,
+        delete_summary: bool = True,
+    ) -> int:
+        """删除某角色下全部会话（含消息、turn、派生索引）；返回删除条数。"""
+        ids = self.list_conversation_ids(role_id=role_id)
+        for cid in ids:
+            self.delete(
+                cid,
+                conversation_fts=conversation_fts,
+                conversation_vector=conversation_vector,
+                indexer=indexer,
+                index_revision=index_revision,
+                ledger_path=ledger_path,
+                delete_summary=delete_summary,
+            )
+        return len(ids)
 
     # ------------------------------------------------------------------
     # Turn-based 持久化
