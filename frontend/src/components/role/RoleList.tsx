@@ -47,8 +47,8 @@ export function RoleList({
   const menuRef = useRef<HTMLDivElement>(null);
   const searchGenRef = useRef(0);
   const orderedRoles = useMemo(
-    () => sortRolesByRecentActivity(roles),
-    [roles],
+    () => sortRolesByRecentActivity(roles, busyRoleIds),
+    [roles, busyRoleIds],
   );
 
   async function loadRoles() {

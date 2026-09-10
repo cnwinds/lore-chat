@@ -396,8 +396,13 @@ export class TurnObservationEngine {
     let awaitingUser = false;
     let completed = false;
     let serverTimeline = false;
+    let refreshedList = false;
 
     for await (const { event, data } of events) {
+      if (!refreshedList) {
+        refreshedList = true;
+        this.callbacks.onSidebarRefresh?.();
+      }
       let userInjectId: string | undefined;
       let injectDeferredId: string | undefined;
       let kbNotify: string | null | undefined;

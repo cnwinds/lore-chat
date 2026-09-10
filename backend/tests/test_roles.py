@@ -121,16 +121,29 @@ def test_roles_list_uses_persona_and_last_active_at(client):
     rid = created.json()["id"]
     cid = client.post(f"/api/roles/{rid}/ensure-active").json()["conversation_id"]
     store = client.app.state.container.conversations
-    store.begin_turn(
+    turn = store.begin_turn(
         cid, "帮我看看今天行情", "cli-last-msg", observation_allowed=False
     )
     listed = client.get("/api/roles").json()["roles"]
     row = next(x for x in listed if x["id"] == rid)
     assert row["system_prompt"] == "专注基本面研究"
     assert "帮我看看今天行情" not in row["system_prompt"]
-    assert row["last_active_at"]
-    conv = store.get(cid)
-    assert row["last_active_at"] == conv["updated_at"]
+    meta = store.get_turn(turn["turn_id"])
+    assert meta is not None
+    assert row["last_active_at"] == meta["started_at"]
+
+
+def test_roles_last_active_at_ignores_empty_conversation(client):
+    created = client.post(
+        "/api/roles",
+        json={"name": "还没聊", "system_prompt": "空着"},
+    )
+    assert created.status_code == 200
+    rid = created.json()["id"]
+    client.post(f"/api/roles/{rid}/ensure-active")
+    listed = client.get("/api/roles").json()["roles"]
+    row = next(x for x in listed if x["id"] == rid)
+    assert row["last_active_at"] is None
 
 
 def test_roles_http_api(client):

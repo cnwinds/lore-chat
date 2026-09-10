@@ -5,27 +5,28 @@ export function rolePersonaPreview(role: {
   return (role.system_prompt || "").replace(/\s+/g, " ").trim();
 }
 
-function activityStamp(role: {
-  last_active_at?: string | null;
-  updated_at?: string;
-  created_at?: string;
-}): string {
-  return role.last_active_at || role.updated_at || role.created_at || "";
+function activityMs(stamp?: string | null): number {
+  if (!stamp) return 0;
+  const ms = Date.parse(stamp);
+  return Number.isFinite(ms) ? ms : 0;
 }
 
-/** 最近有会话活动的角色排在上面。 */
+/** 最近真正开聊的角色排在上面；没聊过的排在后面，不跟人设更新时间抢位。 */
 export function sortRolesByRecentActivity<
   T extends {
+    id?: string;
     last_active_at?: string | null;
-    updated_at?: string;
-    created_at?: string;
     sort_order?: number;
   },
->(roles: T[]): T[] {
+>(roles: T[], busyRoleIds: string[] = []): T[] {
+  const busy = new Set(busyRoleIds);
   return [...roles].sort((a, b) => {
-    const tb = activityStamp(b);
-    const ta = activityStamp(a);
-    if (ta !== tb) return tb.localeCompare(ta);
+    const aBusy = a.id ? busy.has(a.id) : false;
+    const bBusy = b.id ? busy.has(b.id) : false;
+    if (aBusy !== bBusy) return aBusy ? -1 : 1;
+    const da = activityMs(a.last_active_at);
+    const db = activityMs(b.last_active_at);
+    if (da !== db) return db - da;
     return (a.sort_order ?? 0) - (b.sort_order ?? 0);
   });
 }

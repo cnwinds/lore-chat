@@ -68,7 +68,7 @@ def _attach_last_active(
 ) -> dict[str, Any]:
     return {
         **role,
-        "last_active_at": activity.get(role["id"]) or role.get("updated_at"),
+        "last_active_at": activity.get(role["id"]),
     }
 
 
