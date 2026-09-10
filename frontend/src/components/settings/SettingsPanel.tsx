@@ -224,6 +224,16 @@ export function SettingsPanel({
                       onSandboxTrustModeChange={session.setSandboxTrustMode}
                       sandboxMirrorRegion={session.sandboxMirrorRegion}
                       onSandboxMirrorRegionChange={session.setSandboxMirrorRegion}
+                      sandboxMaxRoles={session.sandboxMaxRoles}
+                      onSandboxMaxRolesChange={session.setSandboxMaxRoles}
+                      sandboxIdleTtlSec={session.sandboxIdleTtlSec}
+                      onSandboxIdleTtlSecChange={session.setSandboxIdleTtlSec}
+                      sandboxDestroyVolumeOnRoleDelete={
+                        session.sandboxDestroyVolumeOnRoleDelete
+                      }
+                      onSandboxDestroyVolumeOnRoleDeleteChange={
+                        session.setSandboxDestroyVolumeOnRoleDelete
+                      }
                       saving={session.saving}
                     />
                   </div>

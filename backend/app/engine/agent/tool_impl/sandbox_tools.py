@@ -6,13 +6,17 @@ import shlex
 
 from app.engine.knowledge_writer import KnowledgeWriter
 from app.engine.pending import PendingStore
-from app.engine.roles import DEFAULT_ROLE_ID
+from app.engine.roles import DEFAULT_ROLE_ID, DEFAULT_ROLE_NAME
 from app.engine.sandbox.command_gate import SandboxCommandGate
 from app.engine.sandbox.command_prep import prepare_streaming_command
 from app.engine.sandbox.execution_engine import SandboxExecutionEngine
 from app.engine.sandbox.kb_exchange import KbSandboxExchange
 from app.engine.sandbox.protocol import SandboxRuntime
-from app.engine.sandbox.role_pool import RoleSandboxPool, parse_role_schedule_id
+from app.engine.sandbox.role_pool import (
+    RoleSandboxPool,
+    SandboxPoolFullError,
+    parse_role_schedule_id,
+)
 from app.engine.sandbox.workspace_cwd import resolve_sandbox_cwd
 
 
@@ -29,10 +33,12 @@ class SandboxTools:
         read_max_chars: int = 50_000,
         pool: RoleSandboxPool | None = None,
         conversations=None,
+        roles=None,
     ) -> None:
         self.runtime = runtime
         self.pool = pool
         self.conversations = conversations
+        self.roles = roles
         self.knowledge_writer = knowledge_writer
         self.pending = pending
         self.command_gate = SandboxCommandGate(pending, trust_mode=trust_mode)
@@ -78,6 +84,18 @@ class SandboxTools:
             return rid
         return DEFAULT_ROLE_ID
 
+    def _role_name(self, role_id: str) -> str | None:
+        if self.roles is not None:
+            try:
+                name = str(self.roles.get(role_id).get("name") or "").strip()
+                if name:
+                    return name
+            except KeyError:
+                pass
+        if role_id == DEFAULT_ROLE_ID:
+            return DEFAULT_ROLE_NAME
+        return None
+
     def _resolve_schedule_id(
         self,
         args: dict,
@@ -111,7 +129,14 @@ class SandboxTools:
         if self.pool is None:
             return self.runtime  # 单测单 runtime：不发明其他角色 slot
         rid = role_id or self._resolve_role_id(args, conversation_id)
-        return await self.pool.get(rid)
+        try:
+            return await self.pool.get(rid)
+        except SandboxPoolFullError as e:
+            return {
+                "summary": str(e),
+                "sources": [],
+                "error": e.error,
+            }
 
     async def _runtime_for_execution(
         self,
@@ -122,7 +147,14 @@ class SandboxTools:
     ) -> SandboxRuntime | dict:
         rec = self.execution_engine.registry.get(execution_id)
         if rec and rec.role_id and self.pool is not None:
-            return await self.pool.get(rec.role_id)
+            try:
+                return await self.pool.get(rec.role_id)
+            except SandboxPoolFullError as e:
+                return {
+                    "summary": str(e),
+                    "sources": [],
+                    "error": e.error,
+                }
         return await self._runtime_for(args, conversation_id=conversation_id)
 
     async def _ensure_cwd(self, runtime: SandboxRuntime, cwd: str) -> None:
@@ -172,6 +204,7 @@ class SandboxTools:
                 args,
                 command or "",
                 role_id=role_id,
+                role_name=self._role_name(role_id),
                 conversation_id=cid,
                 schedule_id=sid,
                 cwd=cwd,

@@ -235,3 +235,131 @@ async def test_schedule_cwd_and_confirm_payload(tmp_path):
     assert payload["conversation_id"] == cid
     assert payload["schedule_id"] == "sched-1"
     assert payload["cwd"] == "/workspace/schedules/sched-1"
+    assert "角色" in gated.get("question", "")
+    assert payload.get("role_id") == DEFAULT_ROLE_ID
+
+
+@pytest.mark.asyncio
+async def test_pool_rejects_when_full_and_no_idle(tmp_path):
+    pool = _pool(tmp_path, max_roles=2, idle_ttl_sec=3600)
+    rt_a = await pool.get("a")
+    rt_b = await pool.get("b")
+    with pytest.raises(Exception) as ei:
+        await pool.get("c")
+    from app.engine.sandbox.role_pool import SandboxPoolFullError
+
+    assert ei.type is SandboxPoolFullError
+    assert "沙箱池已满" in str(ei.value)
+    assert pool.peek("c") is None
+    assert pool.peek("a") is rt_a
+    assert pool.peek("b") is rt_b
+    assert rt_a is not rt_b
+
+
+@pytest.mark.asyncio
+async def test_tools_pool_full_returns_chinese_error(tmp_path):
+    conv = ConversationStore(tmp_path / "c.db")
+    roles = RoleStore(tmp_path / "r.db")
+    extra = roles.create(name="分析")
+    cid = conv.create(role_id=extra["id"])
+    pool = _pool(tmp_path, max_roles=1, idle_ttl_sec=3600)
+    await pool.get(DEFAULT_ROLE_ID)
+    registry = _registry_with_pool(tmp_path, pool, conversations=conv)
+    out = await registry.execute(
+        "sandbox_run",
+        {"command": "echo hi", "confirmed": True},
+        conversation_id=cid,
+    )
+    assert out.get("error") == "sandbox_pool_full"
+    assert "沙箱池已满" in out.get("summary", "")
+    assert pool.peek(extra["id"]) is None
+    assert pool.peek(DEFAULT_ROLE_ID) is not None
+
+
+@pytest.mark.asyncio
+async def test_idle_reclaim_destroys_container_keeps_volume(tmp_path):
+    pool = _pool(tmp_path, max_roles=1, idle_ttl_sec=0.05)
+    rt_a = await pool.get("alpha")
+    vol_a = pool.binding("alpha")["volume_name"]
+    sid_a = pool.binding("alpha")["sandbox_id"]
+    pool._last_used["alpha"] = pool._last_used["alpha"] - 10
+    rt_b = await pool.get("beta")
+    assert rt_b is not rt_a
+    assert rt_a.destroy_calls
+    assert rt_a.destroy_calls[-1]["keep_volume"] is True
+    assert rt_a.container_alive is False
+    assert pool.peek("alpha") is None
+    slot_a = pool.binding("alpha")
+    assert slot_a is not None
+    assert slot_a["volume_name"] == vol_a
+    assert slot_a.get("sandbox_id") in (None, "")
+    assert slot_a.get("reclaimable") is True
+    assert pool.binding("beta")["sandbox_id"] != sid_a
+
+
+@pytest.mark.asyncio
+async def test_busy_slot_not_reclaimed_at_cap(tmp_path):
+    pool = _pool(tmp_path, max_roles=1, idle_ttl_sec=0.01)
+    rt_a = await pool.get("busy")
+    await rt_a.start_job("__stream_echo__")
+    pool._last_used["busy"] = pool._last_used["busy"] - 10
+    from app.engine.sandbox.role_pool import SandboxPoolFullError
+
+    with pytest.raises(SandboxPoolFullError):
+        await pool.get("other")
+    assert pool.peek("busy") is rt_a
+    assert rt_a.container_alive is True
+
+
+@pytest.mark.asyncio
+async def test_release_role_keeps_volume_by_default(tmp_path):
+    pool = _pool(tmp_path, max_roles=4)
+    rt = await pool.get("doomed")
+    vol = pool.binding("doomed")["volume_name"]
+    await rt.start_job("__stream_echo__")
+    await pool.release_role("doomed")
+    assert pool.peek("doomed") is None
+    slot = pool.binding("doomed")
+    assert slot is not None
+    assert slot["volume_name"] == vol
+    assert slot.get("reclaimable") is True
+    assert not slot.get("sandbox_id")
+    assert rt.destroy_calls[-1]["keep_volume"] is True
+
+
+@pytest.mark.asyncio
+async def test_release_role_can_drop_volume_binding(tmp_path):
+    pool = _pool(tmp_path, destroy_volume_on_role_delete=True)
+    await pool.get("gone")
+    await pool.release_role("gone")
+    assert pool.binding("gone") is None
+
+
+@pytest.mark.asyncio
+async def test_reclaim_idle_without_new_get(tmp_path):
+    pool = _pool(tmp_path, idle_ttl_sec=0.05)
+    rt = await pool.get("idle-me")
+    vol = pool.binding("idle-me")["volume_name"]
+    pool._last_used["idle-me"] = pool._last_used["idle-me"] - 10
+    gone = await pool.reclaim_idle()
+    assert "idle-me" in gone
+    assert pool.peek("idle-me") is None
+    assert pool.binding("idle-me")["volume_name"] == vol
+    assert rt.container_alive is False
+
+
+def test_pool_snapshot_counts(tmp_path):
+    pool = _pool(tmp_path, max_roles=4)
+    snap = pool.pool_snapshot()
+    assert snap == {"max": 4, "active": 0, "busy_roles": []}
+
+
+@pytest.mark.asyncio
+async def test_existing_live_role_get_at_cap(tmp_path):
+    pool = _pool(tmp_path, max_roles=1)
+    first = await pool.get("only")
+    again = await pool.get("only")
+    assert first is again
+    snap = pool.pool_snapshot()
+    assert snap["active"] == 1
+    assert snap["max"] == 1

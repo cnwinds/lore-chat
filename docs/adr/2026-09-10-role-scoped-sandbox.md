@@ -2,7 +2,7 @@
 
 ## 状态
 
-已采纳（2026-09-10）
+已采纳（2026-09-10）；**P0 与 P1 均已落地**
 
 ## 背景
 
@@ -58,7 +58,7 @@
 - 不把 `sandbox_id` 暴露为模型必填工具参数
 - 聊天 stop：只中断该会话所属角色的执行
 - `ExecutionRegistry` 记录 `role_id` + `conversation_id`（可选 `schedule_id`）
-- 高风险确认 payload 带上 `role_id` + `conversation_id`，批准后仍打同一 slot
+- 高风险确认 payload / 文案带上 `role_id` + `role_name` + `conversation_id`，批准后仍打同一 slot；待确认 UI 显示角色名与 id
 
 ### 4. 同角色 cwd 默认
 
@@ -68,17 +68,30 @@
 - 定时任务：`/workspace/schedules/{schedule_id}`
 - 显式 `cwd` 仍允许，但必须在 `/workspace` 下
 
-### 5. 明确非目标（P0）
+### 5. P1：池上限、空闲回收、删角色、健康面
+
+| 设置 | 默认 | 热改 | 行为 |
+|------|------|------|------|
+| `sandbox_max_roles` | **4** | 是 | 进程内活容器数上限。已占用 slot 的角色可继续 `get`。新角色在满员且无法回收空闲时，工具返回中文错误 `sandbox_pool_full`，**绝不借用**他人沙箱 |
+| `sandbox_idle_ttl_sec` | **3600** | 是 | 无活跃 execution 且超过 TTL → `kill` 容器，**保留 PVC 与 slot**，清 `sandbox_id` 并标 `reclaimable`；下次 `get` 按原卷重连/重建。`0` = 不自动回收 |
+| `sandbox_destroy_volume_on_role_delete` | **false** | 是 | 删角色时先 interrupt + 毁容器。默认留卷与 slot；为 true 时忘记 slot（OpenSandbox 对已存在的 named volume 不会随 kill 删除，控制面无独立删卷 API） |
+
+- 空闲回收在 `get` 需要新活容器时、以及 `reclaim_idle()` 中执行
+- `GET /api/health` capabilities 增加 `sandbox_pool: { max, active, busy_roles }`
+- 设置 → Agent 可改上述三项（部署级 `sandbox_enabled` / 镜像 / 卷名仍只读）
+
+### 6. 明确非目标
 
 - 不复制 `opensandbox-server`
 - 不把 docker.sock 挂进 backend
-- **P1**：`sandbox_max_roles` 硬上限、空闲 TTL 销毁容器并保留 PVC（P0 只留设置挂钩与注释）
+- 不把 `sandbox_id` 暴露为模型必填参数
 
 ## 后果
 
 - 修订 ADR 2026-08-06「一个长驻沙箱」：控制面仍一个，**执行沙箱按角色一份**
 - 运维面上每多一个活跃角色多一个 agent 容器 + 一张卷；默认卷名不变，旧部署可迁移
 - 同角色多会话仍共享 `/workspace`（靠子目录约定）；跨角色并行不再互相 interrupt
+- 超过 `sandbox_max_roles` 的新角色会失败，直到有空闲容器被 TTL 回收或主人提高上限
 
 ## 修订关系
 

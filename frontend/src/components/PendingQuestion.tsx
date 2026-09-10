@@ -1,6 +1,15 @@
 import { useEffect, useState } from "react";
 import { getQuestions, resolveQuestion, type IngestResult, type Question } from "../api";
 
+export function sandboxRoleCaption(question: Question): string | null {
+  const payload = question.payload;
+  const name = typeof payload?.role_name === "string" ? payload.role_name.trim() : "";
+  const id = typeof payload?.role_id === "string" ? payload.role_id.trim() : "";
+  if (!name && !id) return null;
+  if (name && id) return `角色：${name}（${id}）`;
+  return `角色：${name || id}`;
+}
+
 type Props = {
   question: Question;
   conversationId?: string | null;
@@ -93,10 +102,15 @@ export function PendingQuestion({
     await submitChoice([id], [label]);
   }
 
+  const roleCaption = sandboxRoleCaption(question);
+
   if (localResolved) {
     const chosen = new Set(localResolved.split("、"));
     return (
       <div className="pending-item pending-item-resolved">
+        {roleCaption ? (
+          <div className="pending-role-caption">{roleCaption}</div>
+        ) : null}
         <div className="pending-question-text">{question.question}</div>
         <div className="pending-resolved-note">✓ 已选择：{localResolved}</div>
         <div className="pending-options">
@@ -119,6 +133,9 @@ export function PendingQuestion({
 
   return (
     <div className="pending-item">
+      {roleCaption ? (
+        <div className="pending-role-caption">{roleCaption}</div>
+      ) : null}
       <div className="pending-question-text">{question.question}</div>
       {multi && <div className="pending-hint">可多选，选完后点确认</div>}
       {error && <div className="pending-error">{error}</div>}

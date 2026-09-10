@@ -571,3 +571,33 @@ class OpenSandboxRuntime:
             )
 
         await self._call_sandbox(_write)
+
+    async def destroy_container(self, *, keep_volume: bool = True) -> None:
+        """kill 执行容器；PVC 由 OpenSandbox 默认保留（pre-existing 卷不会随 kill 删除）。"""
+        del keep_volume  # 控制面无独立删卷 API；是否忘记 slot 由 RoleSandboxPool 决定
+        await self.interrupt_all()
+        try:
+            if self._sandbox is not None:
+                await self._sandbox.kill()
+                close = getattr(self._sandbox, "close", None)
+                if close is not None:
+                    await close()
+            elif self._sandbox_id:
+                from opensandbox import Sandbox
+
+                sb = await Sandbox.connect(
+                    self._sandbox_id, connection_config=self._connection_config()
+                )
+                await sb.kill()
+                close = getattr(sb, "close", None)
+                if close is not None:
+                    await close()
+        except Exception:
+            _log.warning(
+                "destroy sandbox container role=%s id=%s failed",
+                self.role_id,
+                self._sandbox_id,
+                exc_info=True,
+            )
+        finally:
+            self._invalidate_sandbox(clear_persisted=True)

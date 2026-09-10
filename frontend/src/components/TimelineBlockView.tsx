@@ -317,6 +317,17 @@ function ToolBlockView({
                 question: block.question || block.summary || "请选择",
                 options: block.options as QuestionOption[],
                 multi_select: block.multi_select,
+                payload:
+                  block.role_id || block.role_name
+                    ? {
+                        kind:
+                          block.tool === "sandbox_run"
+                            ? "sandbox_confirm"
+                            : undefined,
+                        role_id: block.role_id,
+                        role_name: block.role_name,
+                      }
+                    : undefined,
               }}
               conversationId={conversationId}
               resolvedLabel={block.choice_resolved}

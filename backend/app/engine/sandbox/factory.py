@@ -31,8 +31,11 @@ def apply_sandbox_settings(
     if target_pool is not None and hasattr(target_pool, "apply_settings"):
         target_pool.apply_settings(
             mirror_region=settings.sandbox_mirror_region,
-            max_roles=getattr(settings, "sandbox_max_roles", None),
-            idle_ttl_sec=float(getattr(settings, "sandbox_idle_ttl_sec", 0) or 0),
+            max_roles=getattr(settings, "sandbox_max_roles", 4),
+            idle_ttl_sec=float(getattr(settings, "sandbox_idle_ttl_sec", 3600) or 0),
+            destroy_volume_on_role_delete=bool(
+                getattr(settings, "sandbox_destroy_volume_on_role_delete", False)
+            ),
         )
         return
     if runtime is None or not hasattr(runtime, "mirror_region"):
@@ -131,8 +134,11 @@ def build_sandbox_pool(settings: Settings):
         runtime_factory=factory,
         default_volume=default_volume,
         mirror_region=normalize_mirror_region(settings.sandbox_mirror_region),
-        max_roles=getattr(settings, "sandbox_max_roles", None),
-        idle_ttl_sec=float(getattr(settings, "sandbox_idle_ttl_sec", 0) or 0),
+        max_roles=getattr(settings, "sandbox_max_roles", 4),
+        idle_ttl_sec=float(getattr(settings, "sandbox_idle_ttl_sec", 3600) or 0),
+        destroy_volume_on_role_delete=bool(
+            getattr(settings, "sandbox_destroy_volume_on_role_delete", False)
+        ),
     )
 
 

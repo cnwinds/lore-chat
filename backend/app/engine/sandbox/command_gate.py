@@ -15,6 +15,18 @@ CONFIRM_OPTIONS = [
 ]
 
 
+def _role_bit(role_id: str | None, role_name: str | None) -> str:
+    name = (role_name or "").strip()
+    rid = (role_id or "").strip()
+    if name and rid:
+        return f"角色「{name}」（{rid}）的"
+    if name:
+        return f"角色「{name}」的"
+    if rid:
+        return f"角色 {rid} 的"
+    return ""
+
+
 class SandboxCommandGate:
     def __init__(
         self,
@@ -31,6 +43,7 @@ class SandboxCommandGate:
         command: str,
         *,
         role_id: str | None = None,
+        role_name: str | None = None,
         conversation_id: str | None = None,
         schedule_id: str | None = None,
         cwd: str | None = None,
@@ -59,12 +72,15 @@ class SandboxCommandGate:
         }
         if role_id:
             payload["role_id"] = role_id
+        if role_name:
+            payload["role_name"] = role_name
         if conversation_id:
             payload["conversation_id"] = conversation_id
         if schedule_id:
             payload["schedule_id"] = schedule_id
+        role_bit = _role_bit(role_id, role_name)
         qid = self.pending.create(
-            f"是否在沙箱执行此命令？\n\n```\n{command}\n```\ncwd={resolved_cwd}",
+            f"是否在{role_bit}沙箱执行此命令？\n\n```\n{command}\n```\ncwd={resolved_cwd}",
             list(CONFIRM_OPTIONS),
             payload,
         )
@@ -72,9 +88,11 @@ class SandboxCommandGate:
             "summary": "等待用户确认是否执行沙箱命令",
             "sources": [],
             "question_id": qid,
-            "question": f"是否在沙箱执行？\n{command}",
+            "question": f"是否在{role_bit}沙箱执行？\n{command}",
             "options": list(CONFIRM_OPTIONS),
             "awaiting_user": True,
+            "role_id": role_id,
+            "role_name": role_name,
         }
 
     def resolve(self, qid: str, choice_ids: list[str]) -> IngestResult:

@@ -165,10 +165,12 @@ class Settings(BaseSettings):
     sandbox_trust_mode: bool = True
     # 沙箱软件源：cn=国内镜像（阿里云/npmmirror），global=官方源
     sandbox_mirror_region: str = "cn"
-    # P1：角色沙箱池上限（P0 只记录绑定，不拒绝新角色）
-    sandbox_max_roles: int = 8
-    # P1：空闲 TTL（秒）到期可销毁容器、保留 PVC；0=不回收
-    sandbox_idle_ttl_sec: float = 0
+    # 角色沙箱池：同时占用执行容器的角色数上限（已绑定角色可继续 get）
+    sandbox_max_roles: int = 4
+    # 空闲 TTL（秒）：无活跃执行且超过该时长则 destroy 容器、保留 PVC；0=不回收
+    sandbox_idle_ttl_sec: float = 3600
+    # 删除角色时是否忘记并尝试丢弃该角色卷；默认只停容器、留 PVC
+    sandbox_destroy_volume_on_role_delete: bool = False
 
 
 EDITABLE_SETTING_KEYS: frozenset[str] = frozenset(
@@ -185,9 +187,6 @@ EDITABLE_SETTING_KEYS: frozenset[str] = frozenset(
         "opensandbox_use_server_proxy",
         "opensandbox_workspace_volume",
         "sandbox_image",
-        # P1 回收挂钩：P0 不经 UI 热改，避免误以为已生效
-        "sandbox_max_roles",
-        "sandbox_idle_ttl_sec",
     }
 )
 

@@ -79,3 +79,7 @@ class SandboxRuntime(Protocol):
     async def write_files(self, entries: list[tuple[str, bytes]]) -> None:
         """批量写入沙箱文件（path, data）；空列表为 no-op。"""
         ...
+
+    async def destroy_container(self, *, keep_volume: bool = True) -> None:
+        """销毁执行容器；keep_volume=True 时保留 PVC / 工作区数据。"""
+        ...

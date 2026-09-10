@@ -53,6 +53,7 @@ def _slot_dict(
     volume_name: str,
     mirror_region: str | None,
     updated_at: str | None = None,
+    reclaimable: bool = False,
 ) -> dict[str, Any]:
     out: dict[str, Any] = {
         "sandbox_id": sandbox_id,
@@ -61,6 +62,8 @@ def _slot_dict(
     }
     if mirror_region:
         out["mirror_region"] = mirror_region
+    if reclaimable:
+        out["reclaimable"] = True
     return out
 
 
@@ -213,6 +216,7 @@ def upsert_slot(
     mirror_region: str | None = None,
     default_volume: str = DEFAULT_WORKSPACE_VOLUME,
     clear_sandbox_id: bool = False,
+    reclaimable: bool | None = None,
 ) -> dict:
     """更新一个角色 slot；不碰其他角色。"""
     rid = (role_id or "").strip() or DEFAULT_ROLE_ID
@@ -232,10 +236,15 @@ def upsert_slot(
             prev = cur.get("sandbox_id")
             sid = prev if isinstance(prev, str) and prev.strip() else None
         region = mirror_region if mirror_region is not None else cur.get("mirror_region")
+        if reclaimable is None:
+            reclaimable_flag = bool(cur.get("reclaimable"))
+        else:
+            reclaimable_flag = bool(reclaimable)
         slot = _slot_dict(
             sandbox_id=sid,
             volume_name=vol,
             mirror_region=region if isinstance(region, str) else None,
+            reclaimable=reclaimable_flag,
         )
         slots[rid] = slot
         if raw and not _is_v2(raw) and data.get("migrated_from_v1"):
@@ -284,6 +293,39 @@ def clear_slot_sandbox_id(
         clear_sandbox_id=True,
         default_volume=default_volume,
     )
+
+
+def mark_slot_reclaimable(
+    kb_path: Path,
+    role_id: str,
+    *,
+    default_volume: str = DEFAULT_WORKSPACE_VOLUME,
+) -> dict:
+    """清 sandbox_id、标记可回收；保留 volume 绑定。"""
+    rid = (role_id or "").strip() or DEFAULT_ROLE_ID
+    return upsert_slot(
+        kb_path,
+        rid,
+        clear_sandbox_id=True,
+        reclaimable=True,
+        default_volume=default_volume,
+    )
+
+
+def delete_slot(
+    kb_path: Path,
+    role_id: str,
+    *,
+    default_volume: str = DEFAULT_WORKSPACE_VOLUME,
+) -> None:
+    """删除该角色 slot（lore-chat 不再记住 volume）。"""
+    rid = (role_id or "").strip() or DEFAULT_ROLE_ID
+    with _lock:
+        raw = _read_raw(kb_path)
+        data = migrate_v1_to_v2(raw, default_volume=default_volume)
+        slots = data.setdefault("slots", {})
+        slots.pop(rid, None)
+        _write_raw(kb_path, data)
 
 
 # --- 兼容旧调用：默认角色 slot ---

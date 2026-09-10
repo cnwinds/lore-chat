@@ -55,6 +55,9 @@ describe("hydrateSettingsDrafts", () => {
     expect(d.publicBaseUrlFromFallback).toBe(true);
     expect(d.minVectorScore).toBe(0.45);
     expect(d.sandboxMirrorRegion).toBe("cn");
+    expect(d.sandboxMaxRoles).toBe(4);
+    expect(d.sandboxIdleTtlSec).toBe(3600);
+    expect(d.sandboxDestroyVolumeOnRoleDelete).toBe(false);
   });
 
   it("prefers saved public_base_url", () => {
@@ -106,6 +109,9 @@ describe("toSettingsPatch", () => {
       agentMaxParallel: 2,
       sandboxTrustMode: true,
       sandboxMirrorRegion: "global",
+      sandboxMaxRoles: 6,
+      sandboxIdleTtlSec: 1800,
+      sandboxDestroyVolumeOnRoleDelete: true,
       continuityIdleHours: 6,
     });
     expect(patch.public_base_url).toBe("https://host");
@@ -117,6 +123,9 @@ describe("toSettingsPatch", () => {
       image_wire: "url",
     });
     expect(patch.sandbox_mirror_region).toBe("global");
+    expect(patch.sandbox_max_roles).toBe(6);
+    expect(patch.sandbox_idle_ttl_sec).toBe(1800);
+    expect(patch.sandbox_destroy_volume_on_role_delete).toBe(true);
     expect(patch.web_search_default_k).toBe(7);
     expect(patch.agent_parallel_tools).toBe(false);
   });

@@ -18,6 +18,10 @@ def test_health_public(tmp_path):
         body = r.json()
         assert body["status"] == "ok"
         assert body["capabilities"]["sandbox"] is False
+        pool = body["capabilities"]["sandbox_pool"]
+        assert pool["max"] == 4
+        assert pool["active"] == 0
+        assert pool["busy_roles"] == []
 
 
 def test_health_sandbox_capability_when_enabled(tmp_path):
@@ -26,6 +30,10 @@ def test_health_sandbox_capability_when_enabled(tmp_path):
     with TestClient(app) as c:
         body = c.get("/api/health").json()
         assert body["capabilities"]["sandbox"] is True
+        pool = body["capabilities"]["sandbox_pool"]
+        assert "max" in pool
+        assert "active" in pool
+        assert "busy_roles" in pool
 
 
 def test_tree_requires_auth(tmp_path):

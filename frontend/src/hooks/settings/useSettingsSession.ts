@@ -97,6 +97,10 @@ export function useSettingsSession({
   const [sandboxMirrorRegion, setSandboxMirrorRegion] = useState<"cn" | "global">(
     "cn",
   );
+  const [sandboxMaxRoles, setSandboxMaxRoles] = useState(4);
+  const [sandboxIdleTtlSec, setSandboxIdleTtlSec] = useState(3600);
+  const [sandboxDestroyVolumeOnRoleDelete, setSandboxDestroyVolumeOnRoleDelete] =
+    useState(false);
   const [continuityIdleHours, setContinuityIdleHours] = useState(6);
 
   const [oldPassword, setOldPassword] = useState("");
@@ -154,6 +158,9 @@ export function useSettingsSession({
       setSandboxEnabled(drafts.sandboxEnabled);
       setSandboxTrustMode(drafts.sandboxTrustMode);
       setSandboxMirrorRegion(drafts.sandboxMirrorRegion);
+      setSandboxMaxRoles(drafts.sandboxMaxRoles);
+      setSandboxIdleTtlSec(drafts.sandboxIdleTtlSec);
+      setSandboxDestroyVolumeOnRoleDelete(drafts.sandboxDestroyVolumeOnRoleDelete);
       setContinuityIdleHours(drafts.continuityIdleHours);
       setSettingsReady(true);
     } catch (err) {
@@ -268,6 +275,9 @@ export function useSettingsSession({
         agentMaxParallel,
         sandboxTrustMode,
         sandboxMirrorRegion,
+        sandboxMaxRoles,
+        sandboxIdleTtlSec,
+        sandboxDestroyVolumeOnRoleDelete,
         continuityIdleHours,
       });
 
@@ -455,6 +465,12 @@ export function useSettingsSession({
     setSandboxTrustMode,
     sandboxMirrorRegion,
     setSandboxMirrorRegion,
+    sandboxMaxRoles,
+    setSandboxMaxRoles,
+    sandboxIdleTtlSec,
+    setSandboxIdleTtlSec,
+    sandboxDestroyVolumeOnRoleDelete,
+    setSandboxDestroyVolumeOnRoleDelete,
     continuityIdleHours,
     setContinuityIdleHours,
     oldPassword,

@@ -138,6 +138,12 @@ export function updateTimeline(
         ...(data.multi_select !== undefined
           ? { multi_select: data.multi_select as boolean }
           : {}),
+        ...(typeof data.role_id === "string" && data.role_id
+          ? { role_id: data.role_id }
+          : {}),
+        ...(typeof data.role_name === "string" && data.role_name
+          ? { role_name: data.role_name }
+          : {}),
         ...(typeof data.preview === "string" && data.preview
           ? { preview: data.preview as string }
           : {}),

@@ -117,6 +117,7 @@ class ToolRegistry:
             trust_mode=True,
             pool=sandbox_pool,
             conversations=conversations,
+            roles=roles,
         )
         self._dispatch_handlers = None
 

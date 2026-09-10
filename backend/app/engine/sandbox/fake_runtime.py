@@ -18,8 +18,14 @@ class FakeSandboxRuntime:
         self._jobs: dict[str, JobStatus] = {}
         self.last_cwd: str | None = None
         self._active_executions: set[str] = set()
+        self.container_alive = True
+        self.destroy_calls: list[dict] = []
 
     async def ensure_ready(self) -> str:
+        if not self.container_alive:
+            self.container_alive = True
+            base = (self.sandbox_id or "fake").rsplit("-recreated", 1)[0]
+            self.sandbox_id = f"{base}-recreated"
         return self.sandbox_id
 
     def _norm(self, path: str) -> str:
@@ -244,3 +250,12 @@ class FakeSandboxRuntime:
     async def write_files(self, entries: list[tuple[str, bytes]]) -> None:
         for path, data in entries:
             await self.write_file(path, data)
+
+    async def destroy_container(self, *, keep_volume: bool = True) -> None:
+        await self.interrupt_all()
+        self.container_alive = False
+        self.destroy_calls.append({"keep_volume": keep_volume})
+        self._jobs.clear()
+        self._active_executions.clear()
+        if not keep_volume:
+            self._files = {"/workspace/.keep": b""}

@@ -9,6 +9,13 @@ def test_kb_path_not_editable():
     assert "kb_path" not in EDITABLE_SETTING_KEYS
 
 
+def test_sandbox_pool_settings_are_editable():
+    assert "sandbox_max_roles" in EDITABLE_SETTING_KEYS
+    assert "sandbox_idle_ttl_sec" in EDITABLE_SETTING_KEYS
+    assert "sandbox_destroy_volume_on_role_delete" in EDITABLE_SETTING_KEYS
+    assert "sandbox_enabled" not in EDITABLE_SETTING_KEYS
+
+
 def test_new_kb_does_not_seed_default_models(tmp_path: Path):
     store = SettingsStore(tmp_path, Settings(kb_path=tmp_path))
     s = store.get()

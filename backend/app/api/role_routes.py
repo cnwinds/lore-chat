@@ -151,6 +151,13 @@ async def delete_role(role_id: str, request: Request):
         default_id = c.roles.default_id()
         if role_id == default_id:
             raise ValueError("不能删除默认角色")
+        tools = getattr(getattr(c, "agent", None), "tools", None)
+        pool = getattr(tools, "sandbox_pool", None) if tools else None
+        if pool is not None and hasattr(pool, "release_role"):
+            destroy_vol = bool(
+                getattr(c.settings, "sandbox_destroy_volume_on_role_delete", False)
+            )
+            await pool.release_role(role_id, destroy_volume=destroy_vol)
         moved = c.conversations.reassign_role(role_id, default_id)
         c.roles.delete(role_id)
     except KeyError as e:

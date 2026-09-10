@@ -18,11 +18,13 @@ lorechat-backend ──HTTP──► opensandbox-server ×1
 
 ## P0 / P1
 
-| | P0（已做） | P1 |
+| | P0（已做） | P1（已做） |
 |--|-----------|-----|
-| 绑定 | 持久 role→sandbox+volume | 空闲 TTL 可 destroy 容器、留 PVC |
-| 池 | `RoleSandboxPool.get` + per-role lock | `sandbox_max_roles` 拒绝/驱逐 |
-| 中断 | 按会话/角色，禁止跨角色 interrupt_all | 同左 |
+| 绑定 | 持久 role→sandbox+volume | 空闲 TTL destroy 容器、留 PVC；slot 可标 `reclaimable` |
+| 池 | `RoleSandboxPool.get` + per-role lock | `sandbox_max_roles`（默认 4）满员且无空闲可回收则中文错误，永不借用 |
+| 中断 | 按会话/角色，禁止跨角色 interrupt_all | 同左；删角色 interrupt + 回收 slot |
+| 设置 / 健康 | 信任模式与镜像 | 上限 / TTL / 删角色是否丢卷；`GET /api/health` → `sandbox_pool` |
+| 确认 UI | payload 带 `role_id` | 文案与 UI 显示角色名 / id |
 
 ## 默认工作目录
 
