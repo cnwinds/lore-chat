@@ -13,6 +13,10 @@ from typing import Any
 from app.engine.agent.events import done, error_event, timeline_state
 from app.engine.agent.prompts import MODE_DEFAULT
 from app.engine.agent.run_report import AgentRunReport
+from app.engine.chat.role_context_prefetch import (
+    build_prefetch_system_message,
+    should_prefetch_role_context,
+)
 from app.engine.chat.sse import parse_agent_sse_event
 from app.engine.chat.timeline import TimelineAccumulator
 from app.engine.chat.turn_inject import PendingInject, TurnInjectBroker
@@ -98,6 +102,29 @@ class TurnExecutionHub:
         except Exception:
             _log.exception("role prompt lookup failed cid=%s", cid)
             return ""
+
+    def _prefetch_context_for(
+        self, cid: str, text: str, history: list[dict] | None
+    ) -> str | None:
+        if not should_prefetch_role_context(history):
+            return None
+        try:
+            retriever = getattr(self.agent.tools.kb_read, "retriever", None)
+        except Exception:
+            retriever = None
+        if retriever is None:
+            return None
+        try:
+            role_id = self.conversations.get_role_id(cid)
+        except KeyError:
+            return None
+        return build_prefetch_system_message(
+            retriever=retriever,
+            conversations=self.conversations,
+            query=text,
+            role_id=role_id,
+            exclude_conversation_id=cid,
+        )
 
     def _purge_expired(self) -> None:
         """Drop finished turns past retain window so SSE buffers cannot linger forever."""
@@ -414,6 +441,7 @@ class TurnExecutionHub:
 
         self.inject_broker.register_turn(cid, turn_id)
         try:
+            prefetch = self._prefetch_context_for(cid, spec.text, spec.history)
             async for ev in self.agent.run(
                 spec.text,
                 mode=MODE_DEFAULT,
@@ -430,6 +458,7 @@ class TurnExecutionHub:
                 on_inject_applied=_on_inject_applied,
                 attachments=spec.attachments,
                 role_system_prompt=self._role_system_prompt_for(cid),
+                prefetch_context=prefetch,
             ):
                 parsed = parse_agent_sse_event(ev)
                 if parsed:

@@ -78,6 +78,7 @@ class Retriever:
         lane_weights: tuple[float, float, float, float] = DEFAULT_LANE_WEIGHTS,
         kb_first_throttle: bool = True,
         repo=None,
+        conversations=None,
     ):
         self.vector = vector
         self.fulltext = fulltext
@@ -92,6 +93,7 @@ class Retriever:
         self.lane_weights = lane_weights
         self.kb_first_throttle = kb_first_throttle
         self.repo = repo
+        self.conversations = conversations
 
     def _excluded(self, source: str) -> bool:
         norm = (source or "").replace("\\", "/").lstrip("/")
@@ -216,6 +218,14 @@ class Retriever:
         }
         return [h.doc_id for h in hits], hit_map, meta_map
 
+    def _conversation_role_ok(self, cid: str, role_id: str | None) -> bool:
+        if not role_id or self.conversations is None:
+            return True
+        try:
+            return self.conversations.get_role_id(cid) == role_id
+        except KeyError:
+            return False
+
     def search(
         self,
         query: str,
@@ -224,6 +234,7 @@ class Retriever:
         scope: str = "all",
         conversation_id: str | None = None,
         exclude_conversation_id: str | None = None,
+        role_id: str | None = None,
         cursor: str | None = None,
     ) -> SearchPage:
         rev = self.index_revision.get() if self.index_revision else 0
@@ -232,6 +243,7 @@ class Retriever:
             "scope": scope,
             "conversation_id": conversation_id,
             "exclude_conversation_id": exclude_conversation_id,
+            "role_id": role_id,
         }
 
         if cursor:
@@ -253,6 +265,7 @@ class Retriever:
                 exclude_conversation_id = filters.get(
                     "exclude_conversation_id", exclude_conversation_id
                 )
+                role_id = filters.get("role_id", role_id)
                 offset = int(parsed.get("off", 0))
             except (json.JSONDecodeError, ValueError, TypeError):
                 return SearchPage(
@@ -338,8 +351,30 @@ class Retriever:
                 meta_map.update(mm)
 
         fused = reciprocal_rank_fusion(lanes, k=self.rrf_k, weights=weights)
-        page_ids = [doc_id for doc_id, _ in fused[offset : offset + k]]
-        page_hits = [hit_map[doc_id] for doc_id in page_ids if doc_id in hit_map]
+        page_hits: list[Hit] = []
+        next_offset = offset + k
+        if role_id:
+            # 按 fused 顺序过滤，游标推进到实际消费位置，避免下页重复/空页 has_more
+            consumed = offset
+            for i in range(offset, len(fused)):
+                consumed = i + 1
+                doc_id = fused[i][0]
+                h = hit_map.get(doc_id)
+                if h is None:
+                    continue
+                src = h.source or ""
+                if src.startswith("conv:") and not self._conversation_role_ok(
+                    src[5:], role_id
+                ):
+                    continue
+                page_hits.append(h)
+                if len(page_hits) >= k:
+                    break
+            next_offset = consumed
+        else:
+            page_ids = [doc_id for doc_id, _ in fused[offset : offset + k]]
+            page_hits = [hit_map[doc_id] for doc_id in page_ids if doc_id in hit_map]
+            next_offset = offset + k
         page_hits = merge_adjacent_conversation_hits(page_hits)
         page_hits, match_strength = gate_page_hits(
             page_hits,
@@ -366,7 +401,6 @@ class Retriever:
             page_hits, doc_conversation_ids=doc_conversation_ids
         )
 
-        next_offset = offset + k
         has_more = next_offset < len(fused) and match_strength == "strong"
         next_cursor = (
             _make_cursor(query, filters, rev, next_offset) if has_more else None

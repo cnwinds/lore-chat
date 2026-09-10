@@ -1,17 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  createConversation,
   createRole,
+  deleteRole,
   ensureRoleActive,
   getConversation,
+  getRoleTimeline,
   listBusyRoles,
-  listConversations,
   listRoles,
+  openRoleNewTopic,
   type RoleSummary,
 } from "../../api";
 import { Sidebar } from "../../components/Sidebar";
 import { RoleSettingsModal } from "../../components/RoleSettingsModal";
-import { RoleHistoryDrawer } from "../../components/RoleHistoryDrawer";
 import type { ComponentProps, ReactNode } from "react";
 import type { useDocPreviewLayout } from "./useDocPreviewLayout";
 import type { JumpTarget } from "../chat/useConversationJump";
@@ -77,8 +77,8 @@ export function useConversationShell({
   );
   const [pendingJump, setPendingJump] = useState<JumpTarget | null>(null);
   const [settingsRoleId, setSettingsRoleId] = useState<string | null>(null);
-  const [historyOpen, setHistoryOpen] = useState(false);
   const [busyRoleIds, setBusyRoleIds] = useState<string[]>([]);
+  const [timelineRefreshKey, setTimelineRefreshKey] = useState(0);
   const sidebarLocateKbPathRef = useRef<((path: string) => void) | null>(null);
   const bootstrappedRef = useRef(false);
   const roleSwitchGenRef = useRef(0);
@@ -121,7 +121,7 @@ export function useConversationShell({
     const gen = ++roleSwitchGenRef.current;
     const prevRoleId = activeRoleId;
     try {
-      const { conversation_id } = await ensureRoleActive(roleId);
+      const tl = await getRoleTimeline(roleId);
       if (gen !== roleSwitchGenRef.current) return;
       setActiveRoleId(roleId);
       try {
@@ -129,11 +129,29 @@ export function useConversationShell({
       } catch {
         /* ignore */
       }
-      setActiveConversationId(conversation_id);
-      setHistoryOpen(false);
+      setActiveConversationId(tl.tip_conversation_id);
+      setTimelineRefreshKey((k) => k + 1);
       if (!opts?.keepPreviews) doc.closeAllPreviews();
       refreshSidebar();
     } catch (e) {
+      // timeline 失败时回退 ensure-active
+      try {
+        const { conversation_id } = await ensureRoleActive(roleId);
+        if (gen !== roleSwitchGenRef.current) return;
+        setActiveRoleId(roleId);
+        try {
+          localStorage.setItem(ACTIVE_ROLE_KEY, roleId);
+        } catch {
+          /* ignore */
+        }
+        setActiveConversationId(conversation_id);
+        setTimelineRefreshKey((k) => k + 1);
+        if (!opts?.keepPreviews) doc.closeAllPreviews();
+        refreshSidebar();
+        return;
+      } catch {
+        /* fall through */
+      }
       if (gen !== roleSwitchGenRef.current) return;
       // 勿回滚到已删除角色（删角色与切角色竞态时 prev 可能已失效）
       if (
@@ -216,22 +234,10 @@ export function useConversationShell({
     }
     const gen = ++roleSwitchGenRef.current;
     try {
-      const { conversations } = await listConversations({ roleId });
+      const { conversation_id } = await openRoleNewTopic(roleId);
       if (gen !== roleSwitchGenRef.current) return;
-      const tip = conversations[0];
-      const empty =
-        conversations.find(
-          (c) => c.id === activeConversationId && c.message_count === 0,
-        ) ??
-        (tip && tip.message_count === 0 ? tip : undefined);
-      if (empty) {
-        if (gen !== roleSwitchGenRef.current) return;
-        setActiveConversationId(empty.id);
-        return;
-      }
-      const { id } = await createConversation({ roleId });
-      if (gen !== roleSwitchGenRef.current) return;
-      setActiveConversationId(id);
+      setActiveConversationId(conversation_id);
+      setTimelineRefreshKey((k) => k + 1);
       refreshSidebar();
     } catch {
       if (gen !== roleSwitchGenRef.current) return;
@@ -285,11 +291,11 @@ export function useConversationShell({
     }
     if (gen !== roleSwitchGenRef.current) return;
     setActiveConversationId(id);
+    setTimelineRefreshKey((k) => k + 1);
     if (!opts?.keepPreviews) doc.closeAllPreviews();
   }
 
   async function selectRole(roleId: string) {
-    if (roleId === activeRoleId) return;
     try {
       await activateRole(roleId);
     } catch {
@@ -379,12 +385,24 @@ export function useConversationShell({
     onEditRole: (id) => {
       setSettingsRoleId(id);
     },
-    onOpenRoleHistory: () => {
-      setHistoryOpen(true);
-    },
     onSelectConversation: selectConversation,
     onSearchHit: (hit) => {
       void (async () => {
+        // 同角色时间线内：保持 tip，仅跳转定位
+        if (hit.role_id && hit.role_id === activeRoleIdRef.current) {
+          if (hit.message_id) {
+            requestJump({
+              conversationId: hit.conversation_id,
+              messageId: hit.message_id,
+            });
+          } else {
+            const el = document.querySelector(
+              `[data-conversation-id="${hit.conversation_id}"]`,
+            );
+            el?.scrollIntoView({ behavior: "smooth", block: "start" });
+          }
+          return;
+        }
         await openConversation(hit.conversation_id);
         if (hit.message_id) {
           requestJump({
@@ -396,6 +414,72 @@ export function useConversationShell({
     },
     onDeleteConversation: handleDeleteConversation,
   };
+
+  async function handleDeleteRole(roleId: string) {
+    const deletedId = roleId;
+    try {
+      await deleteRole(deletedId);
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : "删除角色失败");
+      return;
+    }
+    try {
+      const next = await refreshRoles();
+      roleRefreshAfterDelete(deletedId, next);
+    } catch {
+      if (activeRoleIdRef.current === deletedId) {
+        setActiveRoleId(null);
+        setActiveConversationId(null);
+      }
+      refreshSidebar();
+    }
+  }
+
+  function roleRefreshAfterDelete(
+    deletedId: string,
+    next: RoleSummary[],
+  ) {
+    setSettingsRoleId((cur) => (cur === deletedId ? null : cur));
+    if (activeRoleIdRef.current !== deletedId) {
+      refreshSidebar();
+      return;
+    }
+    const fallback =
+      next.find((r) => r.is_default)?.id || next[0]?.id || null;
+    if (!fallback) {
+      setActiveRoleId(null);
+      setActiveConversationId(null);
+      refreshSidebar();
+      return;
+    }
+    const gen = ++roleSwitchGenRef.current;
+    void (async () => {
+      try {
+        const { conversation_id } = await ensureRoleActive(fallback);
+        if (gen !== roleSwitchGenRef.current) return;
+        setActiveRoleId(fallback);
+        try {
+          localStorage.setItem(ACTIVE_ROLE_KEY, fallback);
+        } catch {
+          /* ignore */
+        }
+        setActiveConversationId(conversation_id);
+        setTimelineRefreshKey((k) => k + 1);
+        doc.closeAllPreviews();
+        refreshSidebar();
+      } catch {
+        if (gen !== roleSwitchGenRef.current) return;
+        setActiveRoleId(fallback);
+        try {
+          localStorage.setItem(ACTIVE_ROLE_KEY, fallback);
+        } catch {
+          /* ignore */
+        }
+        setActiveConversationId(null);
+        refreshSidebar();
+      }
+    })();
+  }
 
   const roleOverlays: ReactNode = (
     <>
@@ -412,69 +496,19 @@ export function useConversationShell({
           }}
           onDeleted={() => {
             const deletedId = settingsRoleId;
-            void (async () => {
-              try {
-                const next = await refreshRoles();
-                if (activeRoleIdRef.current !== deletedId) {
-                  refreshSidebar();
-                  return;
-                }
-                const fallback =
-                  next.find((r) => r.is_default)?.id || next[0]?.id || null;
-                if (!fallback) {
-                  setActiveRoleId(null);
-                  setActiveConversationId(null);
-                  refreshSidebar();
-                  return;
-                }
-                // 勿走 activateRole：失败时会回滚到已删除的 prevRoleId
-                const gen = ++roleSwitchGenRef.current;
-                try {
-                  const { conversation_id } = await ensureRoleActive(fallback);
-                  if (gen !== roleSwitchGenRef.current) return;
-                  setActiveRoleId(fallback);
-                  try {
-                    localStorage.setItem(ACTIVE_ROLE_KEY, fallback);
-                  } catch {
-                    /* ignore */
-                  }
-                  setActiveConversationId(conversation_id);
-                  setHistoryOpen(false);
-                  doc.closeAllPreviews();
-                  refreshSidebar();
-                } catch {
-                  if (gen !== roleSwitchGenRef.current) return;
-                  setActiveRoleId(fallback);
-                  try {
-                    localStorage.setItem(ACTIVE_ROLE_KEY, fallback);
-                  } catch {
-                    /* ignore */
-                  }
-                  setActiveConversationId(null);
-                  setHistoryOpen(false);
-                  refreshSidebar();
-                }
-              } catch {
+            if (!deletedId) return;
+            void refreshRoles()
+              .then((next) => roleRefreshAfterDelete(deletedId, next))
+              .catch(() => {
                 if (activeRoleIdRef.current === deletedId) {
                   setActiveRoleId(null);
                   setActiveConversationId(null);
-                  setHistoryOpen(false);
                 }
                 refreshSidebar();
-              }
-            })();
+              });
           }}
         />
       )}
-      <RoleHistoryDrawer
-        open={historyOpen}
-        role={activeRole}
-        activeConversationId={activeConversationId}
-        titleOverrides={titleOverrides}
-        onClose={() => setHistoryOpen(false)}
-        onSelectConversation={selectConversation}
-        onDeleteConversation={handleDeleteConversation}
-      />
     </>
   );
 
@@ -495,5 +529,7 @@ export function useConversationShell({
     requestJump,
     clearPendingJump,
     locateKbPathInTree,
+    timelineRefreshKey,
+    handleDeleteRole,
   };
 }

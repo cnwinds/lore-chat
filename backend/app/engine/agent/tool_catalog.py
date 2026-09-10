@@ -193,6 +193,10 @@ TOOL_DEFINITIONS: list[dict] = [
                         "type": "string",
                         "description": "限定在某个会话内检索（scope=conversations 时有效）；显式传入时覆盖默认的「排除当前会话」",
                     },
+                    "role_id": {
+                        "type": "string",
+                        "description": "限定本角色的历史会话（默认取当前会话所属角色）；仅影响会话命中，不影响知识库",
+                    },
                     "cursor": {
                         "type": "string",
                         "description": "分页游标，用于续取上一页未返回的结果",

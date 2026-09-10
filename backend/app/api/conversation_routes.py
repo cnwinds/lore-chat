@@ -98,10 +98,6 @@ async def search_conversations(
     return {"hits": hits, "tier": outcome.tier}
 
 
-class CreateConversationBody(BaseModel):
-    role_id: str | None = None
-
-
 @router.post("/conversations")
 async def create_conversation(
     request: Request, body: CreateConversationBody = CreateConversationBody()

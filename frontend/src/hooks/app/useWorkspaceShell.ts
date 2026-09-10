@@ -92,14 +92,11 @@ export function useWorkspaceShell({
         : undefined,
       onAddRole: base.onAddRole ? wrapClose(base.onAddRole) : undefined,
       onEditRole: base.onEditRole ? wrapClose(base.onEditRole) : undefined,
-      onOpenRoleHistory: base.onOpenRoleHistory
-        ? wrapClose(base.onOpenRoleHistory)
-        : undefined,
       onSelectFile: wrapClose(base.onSelectFile),
       onSelectFolder: base.onSelectFolder
         ? wrapClose(base.onSelectFolder)
         : undefined,
-      onNewChat: wrapClose(base.onNewChat),
+      onNewChat: base.onNewChat ? wrapClose(base.onNewChat) : undefined,
       onOpenSettings: () => {
         setSettingsOpen(true);
         closeMobileNav();

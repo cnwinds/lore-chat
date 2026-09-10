@@ -680,6 +680,111 @@ class ConversationStore:
             return top["id"]
         return None
 
+    def list_timeline(
+        self,
+        role_id: str,
+        *,
+        include_messages: bool = True,
+        limit: int | None = None,
+        before_created_at: str | None = None,
+        before_id: str | None = None,
+        tip_id: str | None = None,
+        only_with_messages: bool = True,
+    ) -> tuple[list[dict], bool]:
+        """角色时间线分页：按创建时间升序（旧上新下）。
+
+        - ``limit``：约束有消息的历史段数（首屏 tip 空壳额外附带，不占 limit）。
+        - ``before_*``：只要比该游标更早的段（用于上滚加载更早历史）。
+        返回 (segments, has_more_older)。
+        """
+        items = self.list_all(role_id=role_id)
+        items = sorted(
+            items,
+            key=lambda c: (c.get("created_at") or "", c.get("id") or ""),
+        )
+
+        tip_item: dict | None = None
+        if tip_id and before_created_at is None:
+            for item in items:
+                if item["id"] == tip_id:
+                    tip_item = item
+                    break
+
+        if only_with_messages:
+            items = [
+                c
+                for c in items
+                if int(c.get("message_count") or 0) > 0
+                and (not tip_id or c["id"] != tip_id)
+            ]
+        elif tip_id and before_created_at is None:
+            items = [c for c in items if c["id"] != tip_id]
+
+        if before_created_at is not None:
+            bid = before_id or ""
+            items = [
+                c
+                for c in items
+                if (c.get("created_at") or "", c.get("id") or "")
+                < (before_created_at, bid)
+            ]
+
+        has_more = False
+        if limit is not None and limit > 0 and len(items) > limit:
+            has_more = True
+            items = items[-limit:]
+
+        # 首屏：tip（可为空）挂在末尾，不占用 limit 名额
+        if tip_item is not None and before_created_at is None:
+            items = items + [tip_item]
+
+        if not include_messages:
+            return items, has_more
+
+        out: list[dict] = []
+        for item in items:
+            cid = item["id"]
+            try:
+                full = self.get(cid)
+            except KeyError:
+                continue
+            out.append(
+                {
+                    **item,
+                    "messages": full.get("messages") or [],
+                    "active_turn": full.get("active_turn"),
+                }
+            )
+        return out, has_more
+
+    def _latest_conversation_id(self, role_id: str) -> str | None:
+        items = self.list_all(role_id=role_id)
+        return items[0]["id"] if items else None
+
+    def _maybe_close_segment_for_memory(self, cid: str | None) -> None:
+        """关段时触发记忆抽取；无消息或已 pending 则由 request_immediate 去重。"""
+        if not cid:
+            return
+        try:
+            count = 0
+            with self._lock:
+                row = self.conn.execute(
+                    "SELECT COUNT(*) AS n FROM messages WHERE conversation_id = ?",
+                    (cid,),
+                ).fetchone()
+                count = int(row["n"] or 0) if row else 0
+            if count <= 0:
+                return
+            self.request_immediate_memory_extract(cid)
+        except KeyError:
+            return
+        except Exception:
+            from app.logging_config import get_logger
+
+            get_logger("conversations").warning(
+                "close-segment memory extract failed cid=%s", cid, exc_info=True
+            )
+
     def ensure_active_conversation(
         self, role_id: str, *, idle_hours: float
     ) -> tuple[str, bool]:
@@ -689,19 +794,36 @@ class ConversationStore:
         )
         if existing:
             return existing, False
-        return self.create(role_id=role_id), True
+        prev_tip = self._latest_conversation_id(role_id)
+        cid = self.create(role_id=role_id)
+        self._maybe_close_segment_for_memory(prev_tip)
+        return cid, True
+
+    def open_new_topic(self, role_id: str) -> str:
+        """强制新开一段（即使仍在连续窗口内）；关上一 tip 并触发记忆抽取。"""
+        prev_tip = self._latest_conversation_id(role_id)
+        # 若 tip 已是空段，直接复用，避免堆叠空会话
+        if prev_tip:
+            items = self.list_all(role_id=role_id)
+            tip = items[0] if items else None
+            if tip and int(tip.get("message_count") or 0) == 0:
+                return tip["id"]
+            self._maybe_close_segment_for_memory(prev_tip)
+        return self.create(role_id=role_id)
 
     def reassign_role(self, from_role_id: str, to_role_id: str) -> int:
-        """将 from_role_id 下会话迁到 to_role_id；返回影响行数。"""
-        stamp = _now()
+        """将 from_role_id 下会话迁到 to_role_id；返回影响行数。
+
+        不改 updated_at，避免迁入会话按「最新更新」劫持目标角色 tip。
+        """
         with self._lock:
             cur = self.conn.execute(
                 """
                 UPDATE conversations
-                SET role_id = ?, updated_at = ?
+                SET role_id = ?
                 WHERE role_id = ?
                 """,
-                (to_role_id, stamp, from_role_id),
+                (to_role_id, from_role_id),
             )
             self.conn.commit()
             return int(cur.rowcount)

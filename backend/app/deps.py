@@ -161,6 +161,7 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
         overlap=settings.conversation_chunk_overlap_chars,
     )
     memory.wire_conversations(conversations)
+    index.retriever.conversations = conversations
 
     agent = build_agent_subgraph(
         settings,

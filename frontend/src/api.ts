@@ -785,6 +785,15 @@ export async function listRoles() {
   return apiFetch<{ roles: RoleSummary[] }>("/api/roles");
 }
 
+/** 与 RoleSummary 同义，供角色栏组件使用 */
+export type Role = RoleSummary;
+
+export async function getRole(roleId: string) {
+  return apiFetch<RoleSummary>(
+    `/api/roles/${encodeURIComponent(roleId)}`,
+  );
+}
+
 export async function createRole(body: {
   name: string;
   system_prompt?: string;
@@ -805,6 +814,59 @@ export async function ensureRoleActive(roleId: string) {
   }>(`/api/roles/${encodeURIComponent(roleId)}/ensure-active`, {
     method: "POST",
   });
+}
+
+/** 三栏布局分支命名别名 */
+export const ensureActiveConversation = ensureRoleActive;
+
+export type RoleTimelineSegment = ConversationSummary & {
+  messages?: ChatMessage[];
+  active_turn?: Conversation["active_turn"];
+};
+
+export type RoleTimeline = {
+  role_id: string;
+  tip_conversation_id: string;
+  tip_created?: boolean;
+  continuity_idle_hours: number;
+  segments: RoleTimelineSegment[];
+  has_more?: boolean;
+  limit?: number;
+};
+
+export async function getRoleTimeline(
+  roleId: string,
+  opts?: {
+    includeMessages?: boolean;
+    limit?: number;
+    beforeCreatedAt?: string;
+    beforeId?: string;
+  },
+) {
+  const params = new URLSearchParams();
+  if (opts?.includeMessages === false) {
+    params.set("include_messages", "false");
+  }
+  if (opts?.limit !== undefined) {
+    params.set("limit", String(opts.limit));
+  }
+  if (opts?.beforeCreatedAt) {
+    params.set("before_created_at", opts.beforeCreatedAt);
+  }
+  if (opts?.beforeId) {
+    params.set("before_id", opts.beforeId);
+  }
+  const q = params.toString();
+  return apiFetch<RoleTimeline>(
+    `/api/roles/${encodeURIComponent(roleId)}/timeline${q ? `?${q}` : ""}`,
+  );
+}
+
+export async function openRoleNewTopic(roleId: string) {
+  return apiFetch<{ conversation_id: string; role_id: string }>(
+    `/api/roles/${encodeURIComponent(roleId)}/new-topic`,
+    { method: "POST" },
+  );
 }
 
 export async function updateRole(

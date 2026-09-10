@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { getAuthStatus, type SourceRef, type SettingsAttention } from "./api";
+import { getAuthStatus, getConversation, type SourceRef, type SettingsAttention } from "./api";
 import { LoginPage } from "./components/auth/LoginPage";
 import { SetupPage } from "./components/auth/SetupPage";
 import { Chat } from "./components/Chat";
@@ -96,7 +96,7 @@ function AppMain() {
   
   // Register role switch handler to update conversation
   useEffect(() => {
-    role.registerRoleSwitchHandler((roleId, conversationId) => {
+    role.registerRoleSwitchHandler((_roleId, conversationId) => {
       conversation.setActiveConversationId(conversationId);
       refreshSidebar();
     });
@@ -132,6 +132,23 @@ function AppMain() {
 
   function handleJumpToConversation(target: JumpTarget) {
     void (async () => {
+      // 同角色时间线：不切 tip，仅滚动定位
+      if (
+        conversation.activeRoleId &&
+        conversation.activeConversationId &&
+        target.conversationId !== conversation.activeConversationId
+      ) {
+        try {
+          const conv = await getConversation(target.conversationId);
+          if (conv.role_id === conversation.activeRoleId) {
+            conversation.requestJump(target);
+            doc.closeAllPreviews();
+            return;
+          }
+        } catch {
+          /* fall through to open */
+        }
+      }
       if (conversation.activeConversationId !== target.conversationId) {
         await conversation.openConversation(target.conversationId);
       }
@@ -190,7 +207,6 @@ function AppMain() {
     mobileNavOpen,
     openMobileNav,
     closeMobileNav,
-    sidebarProps,
     mobileHeaderTitle,
   } = useWorkspaceShell({
     conversation,
@@ -201,6 +217,13 @@ function AppMain() {
     setShareTarget,
     setKbPaths,
   });
+
+  // 角色列表与会话壳同步：列表高亮跟 conversation；配置面板跟同一 id
+  useEffect(() => {
+    if (conversation.activeRoleId) {
+      role.setActiveRoleId(conversation.activeRoleId);
+    }
+  }, [conversation.activeRoleId, role.setActiveRoleId]);
 
   // Build KB sidebar active paths
   const kbActivePaths = [
@@ -224,10 +247,27 @@ function AppMain() {
         settingsAttention={displayAttention.any}
         onOpenSettings={() => setSettingsOpen(true)}
         roleListProps={{
-          activeRoleId: role.activeRoleId,
-          onSelectRole: role.handleSelectRole,
-          onNewRole: role.handleNewRole,
-          refreshKey: role.roleRefreshKey,
+          activeRoleId: conversation.activeRoleId || role.activeRoleId,
+          onSelectRole: (id) => {
+            role.setActiveRoleId(id);
+            void conversation.sidebarProps.onSelectRole?.(id);
+          },
+          onNewRole: () => {
+            void conversation.sidebarProps.onAddRole?.();
+            role.refreshRoles();
+            refreshSidebar();
+          },
+          onSearchHit: (hit) => {
+            conversation.sidebarProps.onSearchHit?.(hit);
+          },
+          onDeleteRole: (r) => {
+            void (async () => {
+              await conversation.handleDeleteRole(r.id);
+              role.refreshRoles();
+              refreshSidebar();
+            })();
+          },
+          refreshKey: role.roleRefreshKey + sidebarRefreshKey,
         }}
         kbSidebarProps={{
           refreshKey: sidebarRefreshKey,
@@ -244,7 +284,7 @@ function AppMain() {
           },
         }}
         roleConfigPanelProps={{
-          roleId: role.activeRoleId,
+          roleId: conversation.activeRoleId || role.activeRoleId,
           collapsed: role.configPanelCollapsed,
           onToggleCollapsed: role.toggleConfigPanel,
           onRoleUpdated: role.refreshRoles,
@@ -254,13 +294,13 @@ function AppMain() {
             conversationId={conversation.activeConversationId}
             roleId={conversation.activeRoleId}
             roles={conversation.roles}
+            timelineRefreshKey={conversation.timelineRefreshKey}
             onSelectRole={(id) => {
               void conversation.sidebarProps.onSelectRole?.(id);
             }}
             mobileLayout={mobileLayout}
             mobileHeaderTitle={mobileHeaderTitle}
             onOpenMobileNav={openMobileNav}
-            onMobileNewChat={() => sidebarProps.onNewChat()}
             onConversationCreated={(id) => {
               void conversation.acceptCreatedConversation(id);
             }}

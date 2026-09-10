@@ -121,6 +121,72 @@ async def ensure_active_conversation(role_id: str, request: Request):
     }
 
 
+@router.get("/roles/{role_id}/timeline")
+async def get_role_timeline(
+    role_id: str,
+    request: Request,
+    include_messages: bool = True,
+    limit: int = 5,
+    before_created_at: str | None = None,
+    before_id: str | None = None,
+):
+    """角色统一时间线（分页）：默认最近若干段；before_* 取更早。
+
+    首屏不传 before → 最近 ``limit`` 段（含 tip 空壳）；上滚传最旧段的
+    created_at/id 作为 before 游标。
+    """
+    c = container(request)
+    try:
+        c.roles.get(role_id)
+    except KeyError as e:
+        raise HTTPException(404, "角色不存在") from e
+    tip_id: str | None
+    created = False
+    if before_created_at:
+        # 续载只读：禁止 ensure（否则窗口外会新建 tip / 关段抽取）
+        tip_id = c.conversations.find_active_conversation_id(
+            role_id,
+            idle_hours=float(c.settings.continuity_idle_hours),
+        ) or c.conversations._latest_conversation_id(role_id)
+    else:
+        tip_id, created = c.conversations.ensure_active_conversation(
+            role_id,
+            idle_hours=float(c.settings.continuity_idle_hours),
+        )
+    # 续载更早历史时不要反复 ensure 干扰；仍返回当前 tip id
+    page_limit = max(1, min(int(limit or 5), 30))
+    segments, has_more = c.conversations.list_timeline(
+        role_id,
+        include_messages=include_messages,
+        limit=page_limit,
+        before_created_at=before_created_at,
+        before_id=before_id,
+        tip_id=None if before_created_at else tip_id,
+        only_with_messages=True,
+    )
+    return {
+        "role_id": role_id,
+        "tip_conversation_id": tip_id,
+        "tip_created": created,
+        "continuity_idle_hours": float(c.settings.continuity_idle_hours),
+        "segments": segments,
+        "has_more": has_more,
+        "limit": page_limit,
+    }
+
+
+@router.post("/roles/{role_id}/new-topic")
+async def open_role_new_topic(role_id: str, request: Request):
+    """强制新话题：关上一 tip（记忆抽取）并新建空段。"""
+    c = container(request)
+    try:
+        c.roles.get(role_id)
+    except KeyError as e:
+        raise HTTPException(404, "角色不存在") from e
+    cid = c.conversations.open_new_topic(role_id)
+    return {"conversation_id": cid, "role_id": role_id}
+
+
 @router.get("/roles/{role_id}/schedules")
 async def list_schedules(role_id: str, request: Request):
     c = container(request)

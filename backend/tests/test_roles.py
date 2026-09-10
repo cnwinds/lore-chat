@@ -267,3 +267,175 @@ def test_busy_role_ids_from_running_turn(tmp_path):
     assert turn["status"] == "running" or True
     assert created["id"] in conv.list_busy_role_ids()
     assert conv.role_has_running_turn(created["id"]) is True
+
+
+def test_list_timeline_ascending(tmp_path):
+    from datetime import datetime, timedelta, timezone
+
+    conv = _conv(tmp_path)
+    a = conv.create(role_id=DEFAULT_ROLE_ID, title="旧")
+    b = conv.create(role_id=DEFAULT_ROLE_ID, title="新")
+    conv.append_exchange(a, "old", {"role": "assistant", "text": "ok"})
+    now = datetime.now(timezone.utc)
+    with conv._lock:
+        conv.conn.execute(
+            "UPDATE conversations SET created_at = ? WHERE id = ?",
+            ((now - timedelta(hours=2)).isoformat(), a),
+        )
+        conv.conn.execute(
+            "UPDATE conversations SET created_at = ? WHERE id = ?",
+            (now.isoformat(), b),
+        )
+        conv.conn.commit()
+    segs, has_more = conv.list_timeline(
+        DEFAULT_ROLE_ID, include_messages=True, only_with_messages=False
+    )
+    ids = [s["id"] for s in segs]
+    assert ids.index(a) < ids.index(b)
+    assert any(s["id"] == a and s["messages"] for s in segs)
+    assert has_more is False
+
+
+def test_list_timeline_pagination(tmp_path):
+    from datetime import datetime, timedelta, timezone
+
+    conv = _conv(tmp_path)
+    now = datetime.now(timezone.utc)
+    ids = []
+    for i in range(6):
+        cid = conv.create(role_id=DEFAULT_ROLE_ID, title=f"s{i}")
+        conv.append_exchange(cid, f"u{i}", {"role": "assistant", "text": f"a{i}"})
+        ids.append(cid)
+        with conv._lock:
+            conv.conn.execute(
+                "UPDATE conversations SET created_at = ? WHERE id = ?",
+                ((now - timedelta(hours=6 - i)).isoformat(), cid),
+            )
+            conv.conn.commit()
+    page, has_more = conv.list_timeline(
+        DEFAULT_ROLE_ID, include_messages=True, limit=2
+    )
+    assert has_more is True
+    assert [s["id"] for s in page] == ids[-2:]
+    oldest = page[0]
+    older, has_more2 = conv.list_timeline(
+        DEFAULT_ROLE_ID,
+        include_messages=True,
+        limit=2,
+        before_created_at=oldest["created_at"],
+        before_id=oldest["id"],
+    )
+    assert [s["id"] for s in older] == ids[-4:-2]
+    assert has_more2 is True
+
+
+def test_open_new_topic_reuses_empty_tip(tmp_path):
+    conv = _conv(tmp_path)
+    empty = conv.create(role_id=DEFAULT_ROLE_ID)
+    assert conv.open_new_topic(DEFAULT_ROLE_ID) == empty
+
+
+def test_ensure_active_outside_window_closes_previous(tmp_path, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+
+    conv = _conv(tmp_path)
+    old = conv.create(role_id=DEFAULT_ROLE_ID)
+    conv.append_exchange(old, "hello", {"role": "assistant", "text": "hi"})
+    now = datetime.now(timezone.utc)
+    with conv._lock:
+        conv.conn.execute(
+            "UPDATE conversations SET updated_at = ?, last_user_message_at = ? WHERE id = ?",
+            (
+                (now - timedelta(hours=10)).isoformat(),
+                (now - timedelta(hours=10)).isoformat(),
+                old,
+            ),
+        )
+        conv.conn.commit()
+
+    called: list[str] = []
+
+    def _capture(cid: str) -> bool:
+        called.append(cid)
+        return True
+
+    monkeypatch.setattr(conv, "request_immediate_memory_extract", _capture)
+    tip, created = conv.ensure_active_conversation(DEFAULT_ROLE_ID, idle_hours=6)
+    assert created is True
+    assert tip != old
+    assert old in called
+
+
+def test_reassign_role_preserves_updated_at(tmp_path):
+    """删角色迁会话不得把目标角色 tip 劫持为迁入会话。"""
+    from datetime import datetime, timedelta, timezone
+
+    roles = _roles(tmp_path)
+    conv = _conv(tmp_path)
+    other = roles.create(name="其它")
+    default_tip = conv.create(role_id=DEFAULT_ROLE_ID)
+    conv.append_exchange(
+        default_tip, "keep", {"role": "assistant", "text": "ok"}
+    )
+    moved = conv.create(role_id=other["id"])
+    conv.append_exchange(moved, "x", {"role": "assistant", "text": "y"})
+    now = datetime.now(timezone.utc)
+    with conv._lock:
+        conv.conn.execute(
+            "UPDATE conversations SET updated_at = ?, last_user_message_at = ? WHERE id = ?",
+            (now.isoformat(), now.isoformat(), default_tip),
+        )
+        conv.conn.execute(
+            "UPDATE conversations SET updated_at = ?, last_user_message_at = ? WHERE id = ?",
+            (
+                (now - timedelta(days=1)).isoformat(),
+                (now - timedelta(days=1)).isoformat(),
+                moved,
+            ),
+        )
+        conv.conn.commit()
+    before = conv.get(moved)["updated_at"]
+    conv.reassign_role(other["id"], DEFAULT_ROLE_ID)
+    assert conv.get(moved)["updated_at"] == before
+    active, _ = conv.ensure_active_conversation(DEFAULT_ROLE_ID, idle_hours=6)
+    assert active == default_tip
+
+
+def test_list_timeline_limit_excludes_empty_tip_from_quota(tmp_path):
+    from datetime import datetime, timedelta, timezone
+
+    conv = _conv(tmp_path)
+    now = datetime.now(timezone.utc)
+    ids = []
+    for i in range(3):
+        cid = conv.create(role_id=DEFAULT_ROLE_ID, title=f"h{i}")
+        conv.append_exchange(cid, f"u{i}", {"role": "assistant", "text": f"a{i}"})
+        ids.append(cid)
+        with conv._lock:
+            conv.conn.execute(
+                "UPDATE conversations SET created_at = ? WHERE id = ?",
+                ((now - timedelta(hours=3 - i)).isoformat(), cid),
+            )
+            conv.conn.commit()
+    tip = conv.create(role_id=DEFAULT_ROLE_ID, title="tip")
+    page, has_more = conv.list_timeline(
+        DEFAULT_ROLE_ID,
+        include_messages=True,
+        limit=2,
+        tip_id=tip,
+        only_with_messages=True,
+    )
+    assert has_more is True
+    assert page[-1]["id"] == tip
+    assert [s["id"] for s in page[:-1]] == ids[-2:]
+
+
+def test_should_prefetch_role_context():
+    from app.engine.chat.role_context_prefetch import should_prefetch_role_context
+
+    assert should_prefetch_role_context([]) is True
+    assert should_prefetch_role_context(None) is True
+    assert should_prefetch_role_context([{"role": "assistant", "content": "x"}]) is True
+    assert (
+        should_prefetch_role_context([{"role": "user", "content": "hi"}]) is False
+    )
