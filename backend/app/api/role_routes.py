@@ -63,12 +63,15 @@ def _timing_payload(timing: ScheduleTimingBody | None) -> dict[str, Any] | None:
     return timing.model_dump(exclude_none=True)
 
 
-def _attach_last_active(
-    role: dict[str, Any], activity: dict[str, str]
+def _attach_role_list_fields(
+    role: dict[str, Any],
+    activity: dict[str, str],
+    replies: dict[str, str],
 ) -> dict[str, Any]:
     return {
         **role,
         "last_active_at": activity.get(role["id"]),
+        "last_reply_preview": replies.get(role["id"]),
     }
 
 
@@ -76,9 +79,11 @@ def _attach_last_active(
 async def list_roles(request: Request):
     c = container(request)
     activity = c.conversations.last_active_at_by_role()
+    replies = c.conversations.last_reply_preview_by_role()
     return {
         "roles": [
-            _attach_last_active(role, activity) for role in c.roles.list_all()
+            _attach_role_list_fields(role, activity, replies)
+            for role in c.roles.list_all()
         ]
     }
 
@@ -112,7 +117,11 @@ async def get_role(role_id: str, request: Request):
         role = c.roles.get(role_id)
     except KeyError as e:
         raise HTTPException(404, "角色不存在") from e
-    return _attach_last_active(role, c.conversations.last_active_at_by_role())
+    return _attach_role_list_fields(
+        role,
+        c.conversations.last_active_at_by_role(),
+        c.conversations.last_reply_preview_by_role(),
+    )
 
 
 @router.patch("/roles/{role_id}")

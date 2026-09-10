@@ -102,7 +102,7 @@ describe("RoleList", () => {
       />,
     );
     expect(await screen.findByText("通用")).toBeInTheDocument();
-    expect(screen.getByText("知识沉淀助手")).toBeInTheDocument();
+    expect(screen.getByText("暂无对话")).toBeInTheDocument();
     expect(screen.getByLabelText("搜索本角色会话")).toBeInTheDocument();
     expect(screen.getByLabelText("新建角色")).toBeInTheDocument();
   });
@@ -148,7 +148,7 @@ describe("RoleList", () => {
     expect(names[1]).toBe("旧角色");
   });
 
-  it("shows persona text instead of last chat line", async () => {
+  it("shows the last reply instead of persona", async () => {
     vi.mocked(listRoles).mockResolvedValueOnce({
       roles: [
         {
@@ -156,6 +156,7 @@ describe("RoleList", () => {
           name: "股票研究院",
           avatar: null,
           system_prompt: "专注基本面研究",
+          last_reply_preview: "今日沪深三百震荡，建议先看成交量。",
           is_default: false,
           sort_order: 1,
           created_at: "2026-08-07T15:00:00+08:00",
@@ -172,10 +173,10 @@ describe("RoleList", () => {
       />,
     );
     expect(await screen.findByText("股票研究院")).toBeInTheDocument();
-    expect(screen.getByText("专注基本面研究")).toBeInTheDocument();
     expect(
-      screen.queryByText("你是一位资深股票研究…"),
-    ).not.toBeInTheDocument();
+      screen.getByText("今日沪深三百震荡，建议先看成交量。"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("专注基本面研究")).not.toBeInTheDocument();
   });
 });
 

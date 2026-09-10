@@ -983,6 +983,36 @@ class ConversationStore:
                 if r["last_active_at"]
             }
 
+    def last_reply_preview_by_role(self, *, max_chars: int = 80) -> dict[str, str]:
+        """每个角色最近一条非空助手回复的单行预览。"""
+        from app.engine.roles import DEFAULT_ROLE_ID
+
+        with self._lock:
+            rows = self.conn.execute(
+                """
+                SELECT COALESCE(NULLIF(c.role_id, ''), ?) AS role_id,
+                       m.text AS assistant_text
+                FROM messages m
+                JOIN conversations c ON c.id = m.conversation_id
+                WHERE m.role = 'assistant' AND TRIM(m.text) != ''
+                ORDER BY m.ts DESC, m.seq DESC
+                """,
+                (DEFAULT_ROLE_ID,),
+            ).fetchall()
+        out: dict[str, str] = {}
+        limit = max(16, min(int(max_chars or 80), 200))
+        for row in rows:
+            rid = str(row["role_id"])
+            if rid in out:
+                continue
+            collapsed = " ".join((row["assistant_text"] or "").split())
+            if not collapsed:
+                continue
+            if len(collapsed) > limit:
+                collapsed = collapsed[:limit].rstrip() + "…"
+            out[rid] = collapsed
+        return out
+
     def get_turn(self, turn_id: str) -> dict | None:
         with self._lock:
             row = self.conn.execute(

@@ -1,8 +1,8 @@
-/** 左栏副标题只用人设，不用最后一条消息。 */
-export function rolePersonaPreview(role: {
-  system_prompt?: string | null;
+/** 左栏副标题用最近一次助手回复，不用人设。 */
+export function roleReplyPreview(role: {
+  last_reply_preview?: string | null;
 }): string {
-  return (role.system_prompt || "").replace(/\s+/g, " ").trim();
+  return (role.last_reply_preview || "").replace(/\s+/g, " ").trim();
 }
 
 function activityMs(stamp?: string | null): number {
