@@ -145,7 +145,7 @@ export function formatRoleListTime(
   if (days > 1 && days < 7) {
     return d.toLocaleDateString(LOCALE, {
       timeZone: DISPLAY_TIME_ZONE,
-      weekday: "long",
+      weekday: "short",
     });
   }
   if (then.y === today.y) return `${then.m}月${then.d}日`;

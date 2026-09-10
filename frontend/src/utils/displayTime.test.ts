@@ -65,7 +65,7 @@ describe("formatRoleListTime", () => {
   });
 
   it("uses weekday within the past week", () => {
-    expect(formatRoleListTime("2026-08-05T10:00:00+08:00", now)).toBe("星期三");
+    expect(formatRoleListTime("2026-08-05T10:00:00+08:00", now)).toBe("周三");
   });
 
   it("uses month/day later in the same year", () => {

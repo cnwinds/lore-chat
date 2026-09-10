@@ -7,6 +7,7 @@ import {
   type Role,
 } from "../../api";
 import { formatRoleListTime } from "../../utils/displayTime";
+import { rolePersonaPreview } from "../../utils/roleListPreview";
 import { RoleAvatar } from "./RoleAvatar";
 
 type RoleMenu = {
@@ -217,7 +218,8 @@ export function RoleList({
           roles.map((role) => {
             const isActive = activeRoleId === role.id;
             const busy = busyRoleIds.includes(role.id);
-            const preview = (role.system_prompt || "").replace(/\s+/g, " ").trim();
+            const preview = rolePersonaPreview(role);
+            const activityAt = role.last_active_at || role.updated_at;
             return (
               <button
                 key={role.id}
@@ -244,7 +246,7 @@ export function RoleList({
                   </div>
                 </div>
                 <div className="role-item-meta">
-                  {formatRoleListTime(role.updated_at)}
+                  {formatRoleListTime(activityAt)}
                 </div>
               </button>
             );

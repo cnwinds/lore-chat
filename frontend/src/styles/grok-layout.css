@@ -267,8 +267,8 @@
 
 .app-shell-left .role-item-meta {
   flex-shrink: 0;
-  min-width: 36px;
-  max-width: 52px;
+  min-width: 2.5em;
+  max-width: 4.75em;
   font-size: 11px;
   color: var(--text-muted);
   margin-top: 1px;

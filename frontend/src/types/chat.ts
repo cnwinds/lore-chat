@@ -175,6 +175,8 @@ export type RoleSummary = {
   sort_order: number;
   created_at: string;
   updated_at: string;
+  /** 该角色最近一次会话活动；列表右侧时间用这个，不是人设更新时间 */
+  last_active_at?: string | null;
 };
 
 export type ActiveTurnStatus = {

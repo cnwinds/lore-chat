@@ -85,6 +85,36 @@ describe("RoleList", () => {
     expect(screen.getByLabelText("搜索本角色会话")).toBeInTheDocument();
     expect(screen.getByLabelText("新建角色")).toBeInTheDocument();
   });
+
+  it("shows persona text instead of last chat line", async () => {
+    vi.mocked(listRoles).mockResolvedValueOnce({
+      roles: [
+        {
+          id: "stock",
+          name: "股票研究院",
+          avatar: null,
+          system_prompt: "专注基本面研究",
+          is_default: false,
+          sort_order: 1,
+          created_at: "2026-08-07T15:00:00+08:00",
+          updated_at: "2026-08-07T15:36:00+08:00",
+          last_active_at: "2026-08-06T09:05:00+08:00",
+        } satisfies Role,
+      ],
+    });
+    render(
+      <RoleList
+        activeRoleId="stock"
+        onSelectRole={vi.fn()}
+        onNewRole={vi.fn()}
+      />,
+    );
+    expect(await screen.findByText("股票研究院")).toBeInTheDocument();
+    expect(screen.getByText("专注基本面研究")).toBeInTheDocument();
+    expect(
+      screen.queryByText("你是一位资深股票研究…"),
+    ).not.toBeInTheDocument();
+  });
 });
 
 describe("RoleConfigPanel", () => {

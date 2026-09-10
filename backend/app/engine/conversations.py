@@ -927,6 +927,26 @@ class ConversationStore:
             ).fetchone()
             return row is not None
 
+    def last_active_at_by_role(self) -> dict[str, str]:
+        """每个角色最近一次会话活动时间（该角色会话 ``updated_at`` 最大者）。"""
+        from app.engine.roles import DEFAULT_ROLE_ID
+
+        with self._lock:
+            rows = self.conn.execute(
+                """
+                SELECT COALESCE(NULLIF(role_id, ''), ?) AS role_id,
+                       MAX(updated_at) AS last_active_at
+                FROM conversations
+                GROUP BY COALESCE(NULLIF(role_id, ''), ?)
+                """,
+                (DEFAULT_ROLE_ID, DEFAULT_ROLE_ID),
+            ).fetchall()
+            return {
+                str(r["role_id"]): r["last_active_at"]
+                for r in rows
+                if r["last_active_at"]
+            }
+
     def get_turn(self, turn_id: str) -> dict | None:
         with self._lock:
             row = self.conn.execute(
