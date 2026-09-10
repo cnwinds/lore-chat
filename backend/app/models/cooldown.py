@@ -57,6 +57,18 @@ class CandidateHealth:
         )
 
 
+def is_local_abort(exc: BaseException) -> bool:
+    """本进程取消/关闭，不是远端模型或提供商故障。
+
+    用户在会话中点停止会 cancel 回合 Task；流式生成器被 close 时注入
+    GeneratorExit。二者都不应冷却或禁用候选。
+    """
+    if isinstance(exc, (KeyboardInterrupt, SystemExit, GeneratorExit)):
+        return True
+    # asyncio.CancelledError（3.8+ 为 BaseException）与 concurrent.futures.CancelledError
+    return type(exc).__name__ == "CancelledError"
+
+
 def classify_error(exc: BaseException | str, *, message: str | None = None) -> ErrorClass:
     text = message if message is not None else str(exc)
     lower = text.lower()

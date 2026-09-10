@@ -234,3 +234,30 @@ async def test_empty_results_not_failure(tmp_path):
     assert ws.provider_name == "tavily"
     assert store.is_available("tavily")
     assert store.get("tavily").consecutive_failures == 0
+
+
+@pytest.mark.asyncio
+async def test_search_cancelled_does_not_cooldown(tmp_path):
+    import asyncio
+
+    settings = Settings(
+        kb_path=tmp_path,
+        search_providers=[
+            {"id": "tavily", "provider": "tavily", "api_key": "a"},
+            {"id": "serper", "provider": "serper", "api_key": "b"},
+        ],
+    )
+    store = CooldownStore(tmp_path / "cd.json")
+    ws = WebSearch(settings, cooldown=store)
+
+    async def boom(self, query: str, k: int = 5):
+        raise asyncio.CancelledError()
+
+    with patch("app.engine.web.search_backends.TavilyProvider.search", boom):
+        with pytest.raises(asyncio.CancelledError):
+            await ws.search("q")
+
+    assert store.is_available("tavily") is True
+    assert store.get("tavily").consecutive_failures == 0
+    assert store.is_available("serper") is True
+    assert ws.provider_name is None

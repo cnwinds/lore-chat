@@ -13,7 +13,7 @@ from app.engine.web.search_router import (
     resolve_search_candidates,
     select_search_provider,
 )
-from app.models.cooldown import CooldownStore, classify_error
+from app.models.cooldown import CooldownStore, classify_error, is_local_abort
 
 __all__ = [
     "BraveSearchProvider",
@@ -63,6 +63,8 @@ class WebSearch:
             try:
                 results = await sel.candidate.provider.search(query, k=k)
             except BaseException as e:
+                if is_local_abort(e):
+                    raise
                 last_exc = e
                 self.cooldown.record_failure(
                     entry.id, classify_error(e), error=str(e)
