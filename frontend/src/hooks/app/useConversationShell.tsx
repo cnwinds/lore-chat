@@ -131,6 +131,10 @@ export function useConversationShell({
       if (tl.role_id && tl.role_id !== roleId) {
         throw new Error("角色时间线与所选角色不一致");
       }
+      const tipSeg = tl.segments.find((s) => s.id === tl.tip_conversation_id);
+      if (tipSeg?.role_id && tipSeg.role_id !== roleId) {
+        throw new Error("角色时间线与所选角色不一致");
+      }
       setActiveRoleId(roleId);
       try {
         localStorage.setItem(ACTIVE_ROLE_KEY, roleId);
@@ -552,5 +556,6 @@ export function useConversationShell({
     locateKbPathInTree,
     timelineRefreshKey,
     handleDeleteRole,
+    selectRole,
   };
 }

@@ -256,14 +256,22 @@ class ConversationStore:
 
     def _ensure_conversation_role_id_column(self) -> None:
         """Add role_id column to conversations (multi-role support)."""
+        from app.engine.roles import DEFAULT_ROLE_ID
+
         cols = {
             r[1]
             for r in self.conn.execute("PRAGMA table_info(conversations)").fetchall()
         }
         if "role_id" not in cols:
-            self.conn.execute("ALTER TABLE conversations ADD COLUMN role_id TEXT DEFAULT 'default'")
-            # Backfill existing conversations to default role
-            self.conn.execute("UPDATE conversations SET role_id = 'default' WHERE role_id IS NULL")
+            self.conn.execute(
+                "ALTER TABLE conversations ADD COLUMN role_id TEXT DEFAULT "
+                f"'{DEFAULT_ROLE_ID}'"
+            )
+        self.conn.execute(
+            "UPDATE conversations SET role_id = ? "
+            "WHERE role_id IS NULL OR TRIM(role_id) = ''",
+            (DEFAULT_ROLE_ID,),
+        )
 
     def _json_shards_migrated(self) -> bool:
         row = self.conn.execute(
@@ -607,7 +615,10 @@ class ConversationStore:
                     "status": trow["status"],
                     "started_at": trow["started_at"],
                 }
-        role_id = row["role_id"] if "role_id" in row.keys() else None
+        from app.engine.roles import DEFAULT_ROLE_ID
+
+        raw_role = row["role_id"] if "role_id" in row.keys() else None
+        role_id = (raw_role or DEFAULT_ROLE_ID).strip() or DEFAULT_ROLE_ID
         messages, older_count = self._load_message_page(cid, tail=tail)
         return {
             "id": cid,
@@ -709,10 +720,17 @@ class ConversationStore:
 
         with self._lock:
             if role_id:
-                rows = self.conn.execute(
-                    "SELECT * FROM conversations WHERE role_id = ?",
-                    (role_id,),
-                ).fetchall()
+                if role_id == DEFAULT_ROLE_ID:
+                    rows = self.conn.execute(
+                        "SELECT * FROM conversations "
+                        "WHERE role_id = ? OR role_id IS NULL OR TRIM(role_id) = ''",
+                        (role_id,),
+                    ).fetchall()
+                else:
+                    rows = self.conn.execute(
+                        "SELECT * FROM conversations WHERE role_id = ?",
+                        (role_id,),
+                    ).fetchall()
             else:
                 rows = self.conn.execute("SELECT * FROM conversations").fetchall()
             items = []

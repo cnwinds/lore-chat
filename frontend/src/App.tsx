@@ -285,7 +285,7 @@ function AppMain() {
         chat={
           <Chat
             conversationId={conversation.activeConversationId}
-            roleId={conversation.activeRoleId || role.activeRoleId}
+            roleId={conversation.activeRoleId}
             roles={conversation.roles}
             timelineRefreshKey={conversation.timelineRefreshKey}
             roleConfigCollapsed={role.configPanelCollapsed}
@@ -296,10 +296,9 @@ function AppMain() {
             mobileLayout={mobileLayout}
             mobileHeaderTitle={mobileHeaderTitle}
             onOpenMobileNav={openMobileNav}
-            onConversationRoleMismatch={(cid) => {
-              if (conversation.activeConversationId === cid) {
-                conversation.setActiveConversationId(null);
-              }
+            onConversationRoleMismatch={(cid, roleId) => {
+              if (conversation.activeConversationId !== cid) return;
+              void conversation.selectRole(roleId);
             }}
             onConversationCreated={(id) => {
               void conversation.acceptCreatedConversation(id);

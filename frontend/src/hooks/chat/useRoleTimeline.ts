@@ -105,19 +105,31 @@ export function useRoleTimeline({
     tip_conversation_id: string;
     segments: RoleTimelineSegment[];
   }) => {
-    const tipId = tipRef.current || tl.tip_conversation_id;
-    const tipSeg = tl.segments.find((s) => s.id === tipId);
+    const serverTip = tl.tip_conversation_id;
+    const localTip = tipRef.current;
+    const tipId =
+      localTip &&
+      (localTip === serverTip || tl.segments.some((s) => s.id === localTip))
+        ? localTip
+        : serverTip;
+    const tipSeg =
+      tl.segments.find((s) => s.id === tipId) ||
+      tl.segments.find((s) => s.id === serverTip);
     if (tipSeg) {
       tipMetaRef.current = { createdAt: tipSeg.created_at, id: tipSeg.id };
+      return;
+    }
+    if (tipMetaRef.current?.id !== tipId) {
+      tipMetaRef.current = null;
     }
   };
 
   const resetAndLoadRecent = useCallback(async () => {
-    // 先丢掉上一角色的段，避免切到「通用」时仍看见别人的会话
+    // 先丢掉上一角色的段和 tip 游标，避免切到「通用」时用别人的会话当 before
+    tipMetaRef.current = null;
     setSegments([]);
     setHasMore(false);
     if (!roleId) {
-      tipMetaRef.current = null;
       return;
     }
     const gen = ++genRef.current;

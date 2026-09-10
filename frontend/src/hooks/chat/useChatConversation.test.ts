@@ -344,4 +344,41 @@ describe("useChatConversation", () => {
     expect(result.current.msgs).toEqual([]);
     expect(onRoleMismatch).toHaveBeenCalledWith("cid-other", "default");
   });
+
+  it("treats a missing role_id as the default role", async () => {
+    vi.mocked(api.getConversation).mockResolvedValue({
+      id: "cid-legacy",
+      title: "t",
+      created_at: "",
+      updated_at: "",
+      message_count: 1,
+      summarized: false,
+      summary_path: null,
+      messages: [
+        {
+          role: "user",
+          text: "legacy-default",
+          ts: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+    });
+
+    const skipLoadRef = { current: null as string | null };
+    const streamOwnership = createStreamOwnership();
+    const onRoleMismatch = vi.fn();
+    const { result } = renderHook(() =>
+      useChatConversation({
+        conversationId: "cid-legacy",
+        roleId: "default",
+        skipLoadRef,
+        streamOwnership,
+        onRoleMismatch,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(result.current.msgs[0]).toMatchObject({ text: "legacy-default" });
+    });
+    expect(onRoleMismatch).not.toHaveBeenCalled();
+  });
 });

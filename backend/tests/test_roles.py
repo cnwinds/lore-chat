@@ -48,6 +48,23 @@ def test_conversation_role_id_default(tmp_path):
     assert items[0]["role_id"] == DEFAULT_ROLE_ID
 
 
+def test_list_all_default_includes_blank_role_id(tmp_path):
+    conv = _conv(tmp_path)
+    tagged = conv.create(role_id=DEFAULT_ROLE_ID)
+    blank = conv.create(role_id=DEFAULT_ROLE_ID)
+    other = conv.create(role_id="other")
+    with conv._lock:
+        conv.conn.execute(
+            "UPDATE conversations SET role_id = '' WHERE id = ?", (blank,)
+        )
+        conv.conn.commit()
+    ids = {c["id"] for c in conv.list_all(role_id=DEFAULT_ROLE_ID)}
+    assert tagged in ids
+    assert blank in ids
+    assert other not in ids
+    assert conv.get(blank)["role_id"] == DEFAULT_ROLE_ID
+
+
 def test_ensure_active_ignores_stale_empty(tmp_path):
     """旧空会话不得劫持窗口内有消息的活跃线。"""
     from datetime import datetime, timedelta, timezone
