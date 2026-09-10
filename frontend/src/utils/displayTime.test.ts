@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   formatDisplayDateTime,
   formatMessageTime,
+  formatRoleListTime,
   formatSidebarConversationTime,
   parseStoredInstant,
   ymdInDisplayZone,
@@ -49,6 +50,32 @@ describe("formatSidebarConversationTime", () => {
     expect(
       formatSidebarConversationTime("2026-08-06T09:05:00+08:00", now),
     ).toBe("8月6日 09:05");
+  });
+});
+
+describe("formatRoleListTime", () => {
+  const now = new Date("2026-08-07T16:00:00+08:00");
+
+  it("uses clock time for today", () => {
+    expect(formatRoleListTime("2026-08-07T15:36:00+08:00", now)).toBe("15:36");
+  });
+
+  it("uses 昨天 for the previous calendar day", () => {
+    expect(formatRoleListTime("2026-08-06T09:05:00+08:00", now)).toBe("昨天");
+  });
+
+  it("uses weekday within the past week", () => {
+    expect(formatRoleListTime("2026-08-05T10:00:00+08:00", now)).toBe("星期三");
+  });
+
+  it("uses month/day later in the same year", () => {
+    expect(formatRoleListTime("2026-07-01T10:00:00+08:00", now)).toBe("7月1日");
+  });
+
+  it("uses year when crossing year boundary", () => {
+    expect(formatRoleListTime("2025-12-31T10:00:00+08:00", now)).toBe(
+      "2025/12/31",
+    );
   });
 });
 

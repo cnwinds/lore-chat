@@ -6,7 +6,8 @@ import {
   type ConversationSearchHit,
   type Role,
 } from "../../api";
-import { formatSidebarConversationTime } from "../../utils/displayTime";
+import { formatRoleListTime } from "../../utils/displayTime";
+import { RoleAvatar } from "./RoleAvatar";
 
 type RoleMenu = {
   role: Role;
@@ -20,6 +21,7 @@ type Props = {
   onNewRole: () => void;
   onDeleteRole?: (role: Role) => void | Promise<void>;
   onSearchHit?: (hit: ConversationSearchHit) => void;
+  busyRoleIds?: string[];
   refreshKey?: number;
 };
 
@@ -29,6 +31,7 @@ export function RoleList({
   onNewRole,
   onDeleteRole,
   onSearchHit,
+  busyRoleIds = [],
   refreshKey = 0,
 }: Props) {
   const [roles, setRoles] = useState<Role[]>([]);
@@ -133,26 +136,50 @@ export function RoleList({
 
   return (
     <aside className="role-list">
-      <div className="role-list-head">
-        <div className="role-list-search">
-          <input
-            type="search"
-            className="role-list-search-input"
-            placeholder="搜索本角色会话…"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            disabled={!activeRoleId}
-            aria-label="搜索本角色会话"
-          />
-        </div>
+      <div className="role-list-toolbar">
         <button
           type="button"
           className="role-list-new-btn"
           onClick={onNewRole}
           title="新建角色"
+          aria-label="新建角色"
         >
-          ＋
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+            <path
+              d="M12 5v14M5 12h14"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+            />
+          </svg>
         </button>
+      </div>
+      <div className="role-list-search">
+        <svg
+          className="role-list-search-icon"
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          aria-hidden
+        >
+          <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
+          <path
+            d="M20 20l-3.5-3.5"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+          />
+        </svg>
+        <input
+          type="search"
+          className="role-list-search-input"
+          placeholder="搜索"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          disabled={!activeRoleId}
+          aria-label="搜索本角色会话"
+        />
       </div>
 
       {query.trim() && (
@@ -189,6 +216,8 @@ export function RoleList({
         ) : (
           roles.map((role) => {
             const isActive = activeRoleId === role.id;
+            const busy = busyRoleIds.includes(role.id);
+            const preview = (role.system_prompt || "").replace(/\s+/g, " ").trim();
             return (
               <button
                 key={role.id}
@@ -197,26 +226,25 @@ export function RoleList({
                 onClick={() => onSelectRole(role.id)}
                 onContextMenu={(e) => openMenu(e, role)}
               >
-                <div className="role-item-avatar">
-                  {role.avatar ? (
-                    <img src={role.avatar} alt={role.name} />
-                  ) : (
-                    <span className="role-item-avatar-fallback">
-                      {role.name.charAt(0).toUpperCase()}
-                    </span>
-                  )}
+                <div className="role-item-avatar-wrap">
+                  <RoleAvatar
+                    name={role.name}
+                    seed={role.id}
+                    avatar={role.avatar}
+                    size={36}
+                  />
+                  {busy ? (
+                    <span className="role-item-busy" title="忙碌中" />
+                  ) : null}
                 </div>
                 <div className="role-item-content">
                   <div className="role-item-name">{role.name}</div>
                   <div className="role-item-preview">
-                    {role.system_prompt
-                      ? role.system_prompt.slice(0, 50) +
-                        (role.system_prompt.length > 50 ? "..." : "")
-                      : "暂无人设"}
+                    {preview || "暂无人设"}
                   </div>
-                  <div className="role-item-time">
-                    {formatSidebarConversationTime(role.updated_at)}
-                  </div>
+                </div>
+                <div className="role-item-meta">
+                  {formatRoleListTime(role.updated_at)}
                 </div>
               </button>
             );
