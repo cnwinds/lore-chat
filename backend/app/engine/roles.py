@@ -109,8 +109,9 @@ class RoleStore:
         return DEFAULT_ROLE_ID
 
     def _row_to_dict(self, row: sqlite3.Row) -> dict:
-        onboarding_status = row.get("onboarding_status")
-        if onboarding_status is None:
+        try:
+            onboarding_status = row["onboarding_status"]
+        except (KeyError, IndexError):
             onboarding_status = "none"
         return {
             "id": row["id"],
@@ -119,7 +120,7 @@ class RoleStore:
             "system_prompt": row["system_prompt"] or "",
             "is_default": bool(row["is_default"]),
             "sort_order": int(row["sort_order"]),
-            "onboarding_status": onboarding_status,
+            "onboarding_status": onboarding_status or "none",
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
         }
@@ -216,10 +217,19 @@ class RoleStore:
                 row["system_prompt"] if system_prompt is None else system_prompt
             )
             new_avatar = row["avatar"] if avatar is None else avatar
+<<<<<<< Updated upstream
             new_onboarding = (
                 row.get("onboarding_status", "none")
                 if onboarding_status is None
                 else onboarding_status
+=======
+            try:
+                current_onboarding = row["onboarding_status"]
+            except (KeyError, IndexError):
+                current_onboarding = "none"
+            new_onboarding = (
+                current_onboarding if onboarding_status is None else onboarding_status
+>>>>>>> Stashed changes
             )
             if new_onboarding not in ("none", "active", "completed", "skipped"):
                 raise ValueError(
