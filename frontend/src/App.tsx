@@ -221,6 +221,8 @@ function AppMain() {
         mobileLayout={mobileLayout}
         mobileNavOpen={mobileNavOpen}
         onMobileNavClose={closeMobileNav}
+        settingsAttention={displayAttention.any}
+        onOpenSettings={() => setSettingsOpen(true)}
         roleListProps={{
           activeRoleId: role.activeRoleId,
           onSelectRole: role.handleSelectRole,

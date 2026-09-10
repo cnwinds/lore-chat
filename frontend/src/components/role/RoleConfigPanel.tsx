@@ -89,7 +89,7 @@ export function RoleConfigPanel({
       <aside className="role-config-panel role-config-panel--collapsed">
         <button
           type="button"
-          className="role-config-toggle"
+          className="role-config-toggle role-config-toggle--collapsed"
           onClick={onToggleCollapsed}
           title="展开配置面板"
         >
