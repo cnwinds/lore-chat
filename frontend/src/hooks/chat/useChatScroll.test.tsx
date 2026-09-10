@@ -113,11 +113,122 @@ describe("useChatScroll", () => {
     const dims = { scrollHeight: 2000, clientHeight: 500, scrollTop: 1500 };
     mockScrollBox(el, dims);
 
+    act(() => {
+      el.dispatchEvent(new Event("scroll"));
+    });
+    expect(stick).toBe(true);
+
     // 30px from bottom — old 80px threshold would still stick.
     dims.scrollTop = 1470;
     act(() => {
       el.dispatchEvent(new Event("scroll"));
     });
     expect(stick).toBe(false);
+  });
+
+  it("stays stuck and scrolls to bottom when an image finishes loading", () => {
+    const dims = { scrollHeight: 400, clientHeight: 500, scrollTop: 0 };
+    let stick = true;
+    const stickRef = {
+      get current() {
+        return stick;
+      },
+      set current(v: boolean) {
+        stick = v;
+      },
+    };
+
+    function Harness() {
+      const { messagesContainerRef } = useChatScroll([], stickRef);
+      return (
+        <div ref={messagesContainerRef} data-testid="box">
+          <div>
+            <img alt="pic" data-testid="pic" />
+          </div>
+        </div>
+      );
+    }
+
+    const { getByTestId } = render(<Harness />);
+    const el = getByTestId("box");
+    mockScrollBox(el, dims);
+
+    dims.scrollHeight = 1400;
+    act(() => {
+      getByTestId("pic").dispatchEvent(new Event("load", { bubbles: true }));
+    });
+    act(() => {
+      const queued = [...rafQueue];
+      rafQueue.length = 0;
+      for (const cb of queued) cb(0);
+    });
+
+    expect(stick).toBe(true);
+    expect(dims.scrollTop).toBe(1400);
+  });
+
+  it("does not jump to bottom on image load after the user scrolled up", () => {
+    const dims = { scrollHeight: 1400, clientHeight: 500, scrollTop: 200 };
+    let stick = false;
+    const stickRef = {
+      get current() {
+        return stick;
+      },
+      set current(v: boolean) {
+        stick = v;
+      },
+    };
+
+    function Harness() {
+      const { messagesContainerRef } = useChatScroll([], stickRef);
+      return (
+        <div ref={messagesContainerRef} data-testid="box">
+          <img alt="pic" data-testid="pic" />
+        </div>
+      );
+    }
+
+    const { getByTestId } = render(<Harness />);
+    mockScrollBox(getByTestId("box"), dims);
+
+    act(() => {
+      getByTestId("pic").dispatchEvent(new Event("load", { bubbles: true }));
+    });
+    act(() => {
+      const queued = [...rafQueue];
+      rafQueue.length = 0;
+      for (const cb of queued) cb(0);
+    });
+
+    expect(dims.scrollTop).toBe(200);
+    expect(stick).toBe(false);
+  });
+
+  it("does not unstick when content grows without the user scrolling up", () => {
+    const dims = { scrollHeight: 400, clientHeight: 500, scrollTop: 0 };
+    let stick = true;
+    const stickRef = {
+      get current() {
+        return stick;
+      },
+      set current(v: boolean) {
+        stick = v;
+      },
+    };
+
+    function Harness() {
+      const { messagesContainerRef } = useChatScroll([], stickRef);
+      return <div ref={messagesContainerRef} data-testid="box" />;
+    }
+
+    const { getByTestId } = render(<Harness />);
+    const el = getByTestId("box");
+    mockScrollBox(el, dims);
+
+    dims.scrollHeight = 1400;
+    act(() => {
+      el.dispatchEvent(new Event("scroll"));
+    });
+    expect(stick).toBe(true);
   });
 });
