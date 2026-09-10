@@ -56,11 +56,13 @@ export function AppShell({
     mobileLayout ? "app-shell--mobile" : "",
     mobileLayout && mobileNavOpen ? "app-shell--mobile-nav-open" : "",
     leftSidebar.dragging ? "app-shell--left-resizing" : "",
+    leftSidebar.splitDragging ? "app-shell--left-split-resizing" : "",
   ]
     .filter(Boolean)
     .join(" ");
   const leftStyle = {
     "--app-left-width": `${leftSidebar.width}px`,
+    "--app-left-role-share": String(leftSidebar.roleShare),
   } as CSSProperties;
 
   return (
@@ -80,8 +82,22 @@ export function AppShell({
       <div
         className={`app-shell-left${leftSidebar.iconOnly ? " app-shell-left--icons" : ""}`}
       >
-        <RoleList {...roleListProps} />
-        <KbSidebar {...kbSidebarProps} />
+        <div className="app-shell-left-split" ref={leftSidebar.splitRef}>
+          <RoleList {...roleListProps} />
+          {!mobileLayout && (
+            <div
+              className="app-shell-left-v-resizer"
+              role="separator"
+              aria-orientation="horizontal"
+              aria-label="调整角色与知识库高度"
+              onPointerDown={leftSidebar.onSplitPointerDown}
+              onPointerMove={leftSidebar.onSplitPointerMove}
+              onPointerUp={leftSidebar.onSplitPointerUp}
+              onPointerCancel={leftSidebar.onSplitPointerUp}
+            />
+          )}
+          <KbSidebar {...kbSidebarProps} />
+        </div>
         <LeftSidebarFooter
           settingsAttention={settingsAttention}
           onOpenSettings={onOpenSettings}

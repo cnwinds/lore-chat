@@ -3,15 +3,21 @@ import {
   LEFT_SIDEBAR_DEFAULT,
   LEFT_SIDEBAR_MAX,
   LEFT_SIDEBAR_MIN,
+  LEFT_SIDEBAR_ROLE_SHARE_DEFAULT,
+  LEFT_SIDEBAR_ROLE_SHARE_KEY,
   LEFT_SIDEBAR_WIDTH_KEY,
+  clampLeftSidebarRoleShare,
   clampLeftSidebarWidth,
   isLeftSidebarIconOnly,
+  persistLeftSidebarRoleShare,
   persistLeftSidebarWidth,
+  readLeftSidebarRoleShare,
   readLeftSidebarWidth,
 } from "./leftSidebarWidth";
 
 afterEach(() => {
   localStorage.removeItem(LEFT_SIDEBAR_WIDTH_KEY);
+  localStorage.removeItem(LEFT_SIDEBAR_ROLE_SHARE_KEY);
 });
 
 describe("clampLeftSidebarWidth", () => {
@@ -35,5 +41,15 @@ describe("readLeftSidebarWidth", () => {
     expect(readLeftSidebarWidth()).toBe(LEFT_SIDEBAR_DEFAULT);
     persistLeftSidebarWidth(48);
     expect(readLeftSidebarWidth()).toBe(LEFT_SIDEBAR_MIN);
+  });
+});
+
+describe("left sidebar role/kb split", () => {
+  it("clamps the role share and remembers it", () => {
+    expect(readLeftSidebarRoleShare()).toBe(LEFT_SIDEBAR_ROLE_SHARE_DEFAULT);
+    expect(clampLeftSidebarRoleShare(0.05)).toBe(0.22);
+    expect(clampLeftSidebarRoleShare(0.95)).toBe(0.78);
+    persistLeftSidebarRoleShare(0.6);
+    expect(readLeftSidebarRoleShare()).toBe(0.6);
   });
 });
