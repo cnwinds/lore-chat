@@ -77,6 +77,41 @@ export function rewriteMarkdownImageSrcsForDisplay(md: string): string {
   );
 }
 
+/** 把头像/媒体引用收成裸路径或 URL（去 markdown / 引号 / download 包装）。 */
+export function unwrapMediaRef(value: string | null | undefined): string | null {
+  let s = (value || "").trim();
+  if (!s) return null;
+  const md = s.match(/^!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)$/);
+  if (md) s = md[2].trim();
+  if (
+    (s.startsWith('"') && s.endsWith('"')) ||
+    (s.startsWith("'") && s.endsWith("'"))
+  ) {
+    s = s.slice(1, -1).trim();
+  }
+  if (s.startsWith("<") && s.endsWith(">")) {
+    s = s.slice(1, -1).trim();
+  }
+  const fromDownload = pathFromDownloadUrl(s);
+  if (fromDownload) return fromDownload;
+  return s || null;
+}
+
+/** 写入角色头像字段：知识库相对路径或 http(s)/data URL，不存展示用 download 包装。 */
+export function avatarStorageRef(avatar: string | null | undefined): string | null {
+  return unwrapMediaRef(avatar);
+}
+
+/**
+ * 角色头像展示 src：http(s)/data/blob//api 原样（download 先还原再编码），
+ * 知识库相对路径走需登录的 /api/download。空值返回 null。
+ */
+export function avatarDisplaySrc(avatar: string | null | undefined): string | null {
+  const raw = unwrapMediaRef(avatar);
+  if (!raw) return null;
+  return mediaDisplayUrl(raw);
+}
+
 function pathFromDownloadUrl(src: string): string | null {
   const raw = src.trim();
   if (!raw || !raw.includes("/api/download")) return null;

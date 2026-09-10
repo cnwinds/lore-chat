@@ -669,6 +669,24 @@ def test_kb_planning_tool_descriptions_match_precepts():
     assert "**to_filename** 可省略" in SYSTEM_PROMPT
 
 
+def test_role_avatar_tool_accepts_kb_path_and_default_role_update():
+    from app.engine.agent.tool_catalog import TOOL_DEFINITIONS
+
+    defs = {d["function"]["name"]: d["function"] for d in TOOL_DEFINITIONS}
+    create_avatar = defs["create_role"]["parameters"]["properties"]["avatar"][
+        "description"
+    ]
+    update_avatar = defs["update_role"]["parameters"]["properties"]["avatar"][
+        "description"
+    ]
+    update_desc = defs["update_role"]["description"]
+    assert "相对路径" in create_avatar
+    assert "相对路径" in update_avatar
+    assert "rel_path" in update_avatar
+    assert "不能修改默认角色的核心属性" not in update_desc
+    assert "默认角色也可以改" in update_desc
+
+
 @pytest.mark.asyncio
 async def test_list_kb_structure_tool(tmp_path):
     registry, repo, idx = _make_registry(tmp_path)

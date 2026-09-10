@@ -78,13 +78,13 @@ export function CreateRoleModal({ open, onClose, onConfirm }: Props) {
                   fontWeight: 500,
                 }}
               >
-                头像 URL（可选）
+                头像（可选）
               </label>
               <input
                 type="text"
                 value={avatar}
                 onChange={(e) => setAvatar(e.target.value)}
-                placeholder="https://..."
+                placeholder="媒体/…png 或 https://..."
                 style={{
                   width: "100%",
                   padding: "8px 12px",

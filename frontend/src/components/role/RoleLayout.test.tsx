@@ -1,7 +1,7 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Role } from "../../api";
+import { getRole, listRoles, type Role } from "../../api";
 import { RoleConfigPanel } from "./RoleConfigPanel";
 import { RoleList } from "./RoleList";
 
@@ -43,6 +43,35 @@ vi.mock("../../api", async (importOriginal) => {
 });
 
 describe("RoleList", () => {
+  it("renders knowledge-base avatars in the list via download URL", async () => {
+    const path = "媒体/2026-09/a.png";
+    vi.mocked(listRoles).mockResolvedValueOnce({
+      roles: [
+        {
+          id: "default",
+          name: "通用",
+          avatar: path,
+          system_prompt: "知识沉淀助手",
+          is_default: true,
+          sort_order: 0,
+          created_at: "2026-08-07T15:00:00+08:00",
+          updated_at: "2026-08-07T15:36:00+08:00",
+        } satisfies Role,
+      ],
+    });
+    render(
+      <RoleList
+        activeRoleId="default"
+        onSelectRole={vi.fn()}
+        onNewRole={vi.fn()}
+      />,
+    );
+    expect(await screen.findByText("通用")).toBeInTheDocument();
+    const img = document.querySelector(".role-item img");
+    expect(img?.getAttribute("src")).toContain("/api/download");
+    expect(decodeURIComponent(img?.getAttribute("src") || "")).toContain(path);
+  });
+
   it("shows circular list rows with name, preview, and compact time", async () => {
     render(
       <RoleList
@@ -83,6 +112,42 @@ describe("RoleConfigPanel", () => {
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "创建例行任务" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "收起角色设置" })).toBeInTheDocument();
+  });
+
+  it("resolves a knowledge-base avatar path on the cover", async () => {
+    const path = "媒体/2026-09/20260910_084039_74b0c2929.png";
+    vi.mocked(getRole).mockImplementation(async (id: string) => ({
+      id,
+      name: "通用",
+      avatar: path,
+      system_prompt: "知识沉淀助手",
+      is_default: true,
+      sort_order: 0,
+      created_at: "2026-08-07T15:00:00+08:00",
+      updated_at: "2026-08-07T15:36:00+08:00",
+    }));
+    render(
+      <RoleConfigPanel
+        roleId="default"
+        collapsed={false}
+        onToggleCollapsed={vi.fn()}
+      />,
+    );
+    await waitFor(() => {
+      const img = document.querySelector(".role-config-cover-art img");
+      expect(img?.getAttribute("src")).toContain("/api/download");
+      expect(decodeURIComponent(img?.getAttribute("src") || "")).toContain(path);
+    });
+    vi.mocked(getRole).mockImplementation(async (id: string) => ({
+      id,
+      name: "通用",
+      avatar: null,
+      system_prompt: "知识沉淀助手",
+      is_default: true,
+      sort_order: 0,
+      created_at: "2026-08-07T15:00:00+08:00",
+      updated_at: "2026-08-07T15:36:00+08:00",
+    }));
   });
 
   it("opens identity editor from the gear", async () => {

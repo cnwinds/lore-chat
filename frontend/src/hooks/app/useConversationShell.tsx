@@ -17,6 +17,7 @@ import type { ComponentProps, ReactNode } from "react";
 import type { useDocPreviewLayout } from "./useDocPreviewLayout";
 import type { JumpTarget } from "../chat/useConversationJump";
 import { MEMORY_DIR } from "../../utils/fileTree";
+import { avatarStorageRef } from "../../utils/kbImageUrls";
 
 const ACTIVE_ROLE_KEY = "lorechat.activeRoleId";
 
@@ -315,7 +316,7 @@ export function useConversationShell({
     try {
       const role = await createRole({
         name: name.trim(),
-        avatar: avatar.trim() || null,
+        avatar: avatarStorageRef(avatar),
       });
       await refreshRoles();
       await activateRole(role.id);

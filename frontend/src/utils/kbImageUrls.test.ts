@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  avatarDisplaySrc,
+  avatarStorageRef,
   isImageFile,
   isKbRelativeImagePath,
   isLikelyImagePath,
@@ -36,6 +38,22 @@ describe("kbImageUrls", () => {
   it("leaves remote images alone", () => {
     const src = "![x](https://example.com/a.png)";
     expect(rewriteMarkdownImageSrcsForDisplay(src)).toBe(src);
+  });
+
+  it("resolves role avatar refs for display and storage", () => {
+    const kb = "媒体/2026-09/20260910_084039_74b0c2929.png";
+    const display = avatarDisplaySrc(kb);
+    expect(display).toContain("/api/download");
+    expect(display).toContain("path=");
+    expect(decodeURIComponent(display || "")).toContain(kb);
+    expect(avatarDisplaySrc("https://cdn.example/a.png")).toBe(
+      "https://cdn.example/a.png",
+    );
+    expect(avatarDisplaySrc("")).toBeNull();
+    expect(avatarDisplaySrc("![头像](媒体/a.png)")).toContain("/api/download");
+    expect(avatarStorageRef(`/api/download?path=${encodeURIComponent(kb)}`)).toBe(
+      kb,
+    );
   });
 
   it("isLikelyImagePath", () => {
