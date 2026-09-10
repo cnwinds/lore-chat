@@ -96,6 +96,8 @@ type Props = {
   timelineRefreshKey?: number;
   roleConfigCollapsed?: boolean;
   onToggleRoleConfig?: () => void;
+  /** 已加载会话不属于当前角色：父级应丢掉该会话 id，下次发送再新建 */
+  onConversationRoleMismatch?: (conversationId: string, roleId: string) => void;
 };
 
 export function Chat({
@@ -122,6 +124,7 @@ export function Chat({
   timelineRefreshKey = 0,
   roleConfigCollapsed = false,
   onToggleRoleConfig,
+  onConversationRoleMismatch,
 }: Props) {
   const { previewPath, openDoc, refreshKb } = useDocPreview();
 
@@ -174,6 +177,7 @@ export function Chat({
     onActiveTurn: (cid, startedAt) => {
       void resumeActiveTurnRef.current(cid, startedAt);
     },
+    onRoleMismatch: onConversationRoleMismatch,
   });
 
   const {

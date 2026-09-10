@@ -1,3 +1,5 @@
+import pytest
+
 from app.engine.roles import DEFAULT_ROLE_ID, DEFAULT_ROLE_NAME, RoleStore
 from app.engine.conversations import ConversationStore
 
@@ -121,18 +123,15 @@ def test_delete_for_role_removes_only_that_role(tmp_path):
     extra = conv.create(role_id=created["id"])
     n = conv.delete_for_role(created["id"])
     assert n == 2
-    try:
+    with pytest.raises(KeyError):
         conv.get(cid)
-        assert False, "role conversation should be gone"
-    except KeyError:
-        pass
-    try:
+    with pytest.raises(KeyError):
         conv.get(extra)
-        assert False, "role conversation should be gone"
-    except KeyError:
-        pass
     assert conv.get_role_id(keep) == DEFAULT_ROLE_ID
     assert conv.list_conversation_ids(role_id=created["id"]) == []
+    with pytest.raises(ValueError, match="role_id"):
+        conv.delete_for_role("")
+    assert conv.get_role_id(keep) == DEFAULT_ROLE_ID
 
 
 def test_roles_list_uses_last_reply_and_last_active_at(client):
@@ -284,6 +283,21 @@ def test_role_timeline_excludes_other_roles(client):
     other_ids = [s["id"] for s in other_tl.json()["segments"]]
     assert other_cid in other_ids
     assert default_cid not in other_ids
+
+
+def test_chat_rejects_conversation_role_mismatch(client):
+    other = client.post(
+        "/api/roles", json={"name": "专员", "system_prompt": "专注"}
+    )
+    assert other.status_code == 200
+    rid = other.json()["id"]
+    cid = client.post("/api/conversations", json={"role_id": rid}).json()["id"]
+    r = client.post(
+        "/api/chat",
+        json={"text": "hi", "conversation_id": cid, "role_id": "default"},
+    )
+    assert r.status_code == 409
+    assert r.json()["detail"]["code"] == "role_mismatch"
 
 
 def test_conversations_search_http(client):

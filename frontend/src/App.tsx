@@ -93,14 +93,6 @@ function AppMain() {
   const doc = useDocPreviewLayout(refreshSidebar);
   const composer = useComposerDocState();
   const role = useRoleShell();
-  
-  // Register role switch handler to update conversation
-  useEffect(() => {
-    role.registerRoleSwitchHandler((_roleId, conversationId) => {
-      conversation.setActiveConversationId(conversationId);
-      refreshSidebar();
-    });
-  }, [role.registerRoleSwitchHandler]);
   const {
     skillPick,
     saving: skillPickSaving,
@@ -293,7 +285,7 @@ function AppMain() {
         chat={
           <Chat
             conversationId={conversation.activeConversationId}
-            roleId={conversation.activeRoleId}
+            roleId={conversation.activeRoleId || role.activeRoleId}
             roles={conversation.roles}
             timelineRefreshKey={conversation.timelineRefreshKey}
             roleConfigCollapsed={role.configPanelCollapsed}
@@ -304,6 +296,11 @@ function AppMain() {
             mobileLayout={mobileLayout}
             mobileHeaderTitle={mobileHeaderTitle}
             onOpenMobileNav={openMobileNav}
+            onConversationRoleMismatch={(cid) => {
+              if (conversation.activeConversationId === cid) {
+                conversation.setActiveConversationId(null);
+              }
+            }}
             onConversationCreated={(id) => {
               void conversation.acceptCreatedConversation(id);
             }}

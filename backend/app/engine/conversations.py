@@ -967,7 +967,10 @@ class ConversationStore:
         delete_summary: bool = True,
     ) -> int:
         """删除某角色下全部会话（含消息、turn、派生索引）；返回删除条数。"""
-        ids = self.list_conversation_ids(role_id=role_id)
+        rid = (role_id or "").strip()
+        if not rid:
+            raise ValueError("role_id 不能为空")
+        ids = self.list_conversation_ids(role_id=rid)
         for cid in ids:
             self.delete(
                 cid,

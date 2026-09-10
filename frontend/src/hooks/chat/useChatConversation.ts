@@ -29,6 +29,8 @@ type Options = {
   onActiveTurn?: (conversationId: string, startedAt?: string | null) => void;
   /** 首屏只取尾部 N 条；定位某条消息时仍拉全量 */
   messageTail?: number;
+  /** 已加载会话不属于当前角色 */
+  onRoleMismatch?: (conversationId: string, roleId: string) => void;
 };
 
 function toLoadedMessages(
@@ -59,6 +61,7 @@ export function useChatConversation({
   onJumpHandled,
   onActiveTurn,
   messageTail,
+  onRoleMismatch,
 }: Options) {
   const [msgs, setMsgs] = useState<ChatMessage[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
@@ -72,10 +75,12 @@ export function useChatConversation({
   const onJumpHandledRef = useRef(onJumpHandled);
   const messageTailRef = useRef(messageTail);
   const roleIdRef = useRef(roleId);
+  const onRoleMismatchRef = useRef(onRoleMismatch);
   onActiveTurnRef.current = onActiveTurn;
   onJumpHandledRef.current = onJumpHandled;
   messageTailRef.current = messageTail;
   roleIdRef.current = roleId;
+  onRoleMismatchRef.current = onRoleMismatch;
 
   useEffect(() => {
     if (pendingJump) {
@@ -147,6 +152,7 @@ export function useChatConversation({
             setSummarized(false);
             setSummaryPath(null);
             setOlderMessageCount(0);
+            onRoleMismatchRef.current?.(loadedFor, expectedRole);
             return;
           }
           const activeTurnRunning = conv.active_turn?.status === "running";
@@ -195,6 +201,11 @@ export function useChatConversation({
       .then((conv) => {
         if (cancelled) return;
         if (shouldProtectStreamingHistory(streamOwnership, conversationId)) {
+          return;
+        }
+        const expectedRole = roleIdRef.current;
+        if (expectedRole && conv.role_id && conv.role_id !== expectedRole) {
+          onRoleMismatchRef.current?.(conversationId, expectedRole);
           return;
         }
         setMsgs(

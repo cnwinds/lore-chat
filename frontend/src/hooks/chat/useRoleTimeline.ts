@@ -147,8 +147,7 @@ export function useRoleTimeline({
   const loadOlder = useCallback(async () => {
     if (!roleId || loadingOlder || loading) return false;
 
-    const oldest =
-      segments.find((s) => !s.roleId || s.roleId === roleId) ?? null;
+    const oldest = segments.find((s) => s.roleId === roleId) ?? null;
     if (oldest?.olderMessageCount && oldest.messages[0]?.id) {
       const gen = genRef.current;
       setLoadingOlder(true);
@@ -211,7 +210,7 @@ export function useRoleTimeline({
         return false;
       }
       setSegments((prev) => {
-        const kept = prev.filter((p) => !p.roleId || p.roleId === roleId);
+        const kept = prev.filter((p) => p.roleId === roleId);
         const seen = new Set(kept.map((p) => p.conversationId));
         return [
           ...older.filter((o) => !seen.has(o.conversationId)),
@@ -238,6 +237,10 @@ export function useRoleTimeline({
     try {
       const conv = await getConversation(conversationId);
       if (gen !== genRef.current) return false;
+      const expectedRole = roleRef.current;
+      if (expectedRole && conv.role_id && conv.role_id !== expectedRole) {
+        return false;
+      }
       setSegments((prev) =>
         prev.map((s) =>
           s.conversationId === conversationId
@@ -265,7 +268,7 @@ export function useRoleTimeline({
       segments.filter(
         (s) =>
           s.conversationId !== tipConversationId &&
-          (!roleId || !s.roleId || s.roleId === roleId),
+          (!roleId || s.roleId === roleId),
       ),
     [segments, tipConversationId, roleId],
   );

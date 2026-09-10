@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { useAgentStream } from "./useAgentStream";
+import { isConversationRoleMismatch } from "./turnObservationClient";
 import { createStreamOwnership } from "./streamOwnership";
 import * as api from "../../api";
 import type { ChatMessage, DocContextItem } from "../../api";
@@ -88,6 +89,33 @@ async function runStreamThroughReconcileProbes(
   });
   return run;
 }
+
+describe("isConversationRoleMismatch", () => {
+  it("detects structured and plain 409 role mismatch", () => {
+    expect(
+      isConversationRoleMismatch(
+        Object.assign(new Error('{"detail":{"code":"role_mismatch"}}'), {
+          status: 409,
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      isConversationRoleMismatch(
+        Object.assign(new Error("会话不属于当前角色"), { status: 409 }),
+      ),
+    ).toBe(true);
+    expect(
+      isConversationRoleMismatch(
+        Object.assign(new Error('{"detail":{"code":"turn_in_progress"}}'), {
+          status: 409,
+        }),
+      ),
+    ).toBe(false);
+    expect(isConversationRoleMismatch(new Error("会话不属于当前角色"))).toBe(
+      false,
+    );
+  });
+});
 
 describe("useAgentStream", () => {
   beforeEach(() => {
@@ -407,6 +435,63 @@ describe("useAgentStream", () => {
     expect(options.skipLoadRef.current).toBe("new-cid");
     expect(options.conversationIdRef.current).toBe("new-cid");
     expect(options.onConversationCreated).toHaveBeenCalledWith("new-cid");
+  });
+
+  it("retries on a new conversation when chat rejects role mismatch", async () => {
+    const mismatch = Object.assign(new Error("会话不属于当前角色"), {
+      status: 409,
+    });
+    vi.mocked(api.chatStream)
+      .mockImplementationOnce(async function* () {
+        throw mismatch;
+        yield { event: "done", data: {} };
+      })
+      .mockImplementationOnce(async function* () {
+        yield { event: "done", data: { sources: [] } };
+      });
+    const options = baseOptions({
+      conversationId: "cid-1",
+      roleId: "role-b",
+      conversationIdRef: { current: "cid-1" },
+      onConversationCreated: vi.fn(),
+    });
+    const { result } = renderHook(() => useAgentStream(options));
+
+    await act(async () => {
+      await result.current.runAgentStream("hello");
+    });
+
+    expect(api.createConversation).toHaveBeenCalledWith({ roleId: "role-b" });
+    expect(options.onConversationCreated).toHaveBeenCalledWith("new-cid");
+    expect(vi.mocked(api.chatStream)).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(api.chatStream).mock.calls[1][1]).toMatchObject({
+      conversationId: "new-cid",
+      roleId: "role-b",
+    });
+    expect(result.current.streaming).toBe(false);
+  });
+
+  it("does not treat turn_in_progress 409 as a role mismatch", async () => {
+    const busy = Object.assign(
+      new Error(JSON.stringify({ detail: { code: "turn_in_progress" } })),
+      { status: 409 },
+    );
+    vi.mocked(api.chatStream).mockImplementation(async function* () {
+      throw busy;
+      yield { event: "done", data: {} };
+    });
+    const options = baseOptions({
+      onConversationCreated: vi.fn(),
+    });
+    const { result } = renderHook(() => useAgentStream(options));
+
+    await act(async () => {
+      await result.current.runAgentStream("hello");
+    });
+
+    expect(isConversationRoleMismatch(busy)).toBe(false);
+    expect(api.createConversation).not.toHaveBeenCalled();
+    expect(options.onConversationCreated).not.toHaveBeenCalled();
   });
 
   it("ensureConversationId refuses to create when roleId is not ready", async () => {

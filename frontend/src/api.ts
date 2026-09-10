@@ -490,6 +490,7 @@ export async function chat(text: string, conversationId?: string | null) {
 
 export type ChatStreamOptions = {
   conversationId?: string | null;
+  roleId?: string | null;
   activeDocPaths?: string[];
   docContext?: DocContextItem[];
   primaryDocPath?: string | null;
@@ -508,6 +509,7 @@ export async function* chatStream(
 ): AsyncGenerator<ChatStreamEvent> {
   const {
     conversationId,
+    roleId,
     activeDocPaths = [],
     docContext,
     primaryDocPath,
@@ -520,6 +522,7 @@ export async function* chatStream(
   const body: Record<string, unknown> = {
     text,
     conversation_id: conversationId ?? undefined,
+    role_id: roleId ?? undefined,
     client_message_id: clientMessageId ?? undefined,
     primary_doc_path: primaryDocPath ?? undefined,
     web_enabled: webEnabled,

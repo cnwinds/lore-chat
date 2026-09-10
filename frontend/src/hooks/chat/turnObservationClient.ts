@@ -78,7 +78,7 @@ export type TurnObservationCallbacks = {
 
 export type TurnObservationRefs = {
   getConversationIdProp: () => string | null;
-  /** 无会话时新建所归属的角色；缺省则后端绑默认角色 */
+  /** 当前角色：无会话时新建，并向 /api/chat 声明归属以便服务端拒绝写错角色 */
   getRoleId?: () => string | null;
   conversationIdRef: { current: string | null };
   skipLoadRef: { current: string | null };
@@ -87,6 +87,15 @@ export type TurnObservationRefs = {
 };
 
 const MAX_RECONCILE_PASSES = 3;
+
+/** POST /api/chat 在会话与当前角色不一致时返回 409；勿与 turn_in_progress 混淆。 */
+export function isConversationRoleMismatch(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const status = (err as { status?: number }).status;
+  if (status !== 409) return false;
+  const msg = err instanceof Error ? err.message : String(err);
+  return msg.includes("role_mismatch") || msg.includes("会话不属于当前角色");
+}
 
 export class TurnObservationEngine {
   private abortController: AbortController | null = null;
@@ -143,6 +152,10 @@ export class TurnObservationEngine {
     const prop = this.refs.getConversationIdProp();
     if (prop) return prop;
     const roleId = this.refs.getRoleId?.() ?? null;
+    return this.createConversationForRole(roleId);
+  }
+
+  private async createConversationForRole(roleId: string | null): Promise<string> {
     if (!roleId) {
       throw new Error("角色尚未就绪，请稍后再试");
     }
@@ -234,29 +247,56 @@ export class TurnObservationEngine {
     let cid: string | null = null;
 
     try {
+      const roleId = this.refs.getRoleId?.() ?? null;
       cid = await this.ensureConversationId();
       this.claimStream(cid);
       if (isFirstUserQuestion) {
         this.callbacks.onFirstQuestionTitle?.(cid, titleFromText(display));
       }
-      const clientMessageId = newId();
-      const result = await this.consumeEvents(
-        chatStream(apiText, {
-          conversationId: cid,
-          activeDocPaths: ctx.docCtx.trayPaths,
-          docContext: ctx.docCtx.docContext.length ? ctx.docCtx.docContext : undefined,
-          primaryDocPath: ctx.docCtx.primary,
-          webEnabled: useWeb,
-          attachments: userMeta?.attachments ?? [],
-          clientMessageId,
-          reuseUserMessageId,
-          signal: this.abortController!.signal,
-        }),
-        cid,
-      );
-      serverStreamError = result.serverStreamError;
-      awaitingUser = result.awaitingUser;
-      completed = result.completed;
+      const startStream = (conversationId: string) =>
+        this.consumeEvents(
+          chatStream(apiText, {
+            conversationId,
+            roleId,
+            activeDocPaths: ctx.docCtx.trayPaths,
+            docContext: ctx.docCtx.docContext.length
+              ? ctx.docCtx.docContext
+              : undefined,
+            primaryDocPath: ctx.docCtx.primary,
+            webEnabled: useWeb,
+            attachments: userMeta?.attachments ?? [],
+            clientMessageId: newId(),
+            reuseUserMessageId,
+            signal: this.abortController!.signal,
+          }),
+          conversationId,
+        );
+      try {
+        const result = await startStream(cid);
+        serverStreamError = result.serverStreamError;
+        awaitingUser = result.awaitingUser;
+        completed = result.completed;
+      } catch (err) {
+        if (this.isAbortError(err) && this.stopRequested) {
+          aborted = true;
+        } else if (!isConversationRoleMismatch(err)) {
+          throw err;
+        } else if (!roleId) {
+          cid = null;
+          serverStreamError = true;
+        } else {
+          cid = null;
+          cid = await this.createConversationForRole(roleId);
+          this.claimStream(cid);
+          if (isFirstUserQuestion) {
+            this.callbacks.onFirstQuestionTitle?.(cid, titleFromText(display));
+          }
+          const result = await startStream(cid);
+          serverStreamError = result.serverStreamError;
+          awaitingUser = result.awaitingUser;
+          completed = result.completed;
+        }
+      }
     } catch (err) {
       if (this.isAbortError(err) && this.stopRequested) aborted = true;
     } finally {
