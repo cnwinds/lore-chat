@@ -202,8 +202,11 @@ describe("RoleConfigPanel", () => {
     expect(
       await screen.findByText("例行任务是这个角色按时间表定期运行的任务。"),
     ).toBeInTheDocument();
+    expect(screen.getByText("通用的屏幕")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "创建例行任务" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "收起角色设置" })).toBeInTheDocument();
+    expect(document.querySelector(".role-config-routines--empty")).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "例行任务" })).not.toBeInTheDocument();
   });
 
   it("resolves a knowledge-base avatar path on the cover", async () => {
@@ -288,9 +291,11 @@ describe("RoleConfigPanel", () => {
     expect(
       await screen.findByRole("heading", { name: "例行任务" }),
     ).toBeInTheDocument();
+    expect(screen.getByText("通用的屏幕")).toBeInTheDocument();
     expect(
       screen.queryByText("例行任务是这个角色按时间表定期运行的任务。"),
     ).not.toBeInTheDocument();
+    expect(document.querySelector(".role-config-routines--empty")).toBeFalsy();
     expect(screen.getByRole("button", { name: "创建例行任务" })).toBeInTheDocument();
     await user.click(await screen.findByRole("button", { name: /每日简报/ }));
     expect(await screen.findByRole("heading", { name: "例行任务" })).toBeInTheDocument();

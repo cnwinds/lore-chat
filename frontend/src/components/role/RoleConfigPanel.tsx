@@ -255,7 +255,9 @@ export function RoleConfigPanel({
                   </span>
                 )}
               </div>
-              <div className="role-config-cover-caption">{role?.name}</div>
+              <div className="role-config-cover-caption">
+                {role?.name}的屏幕
+              </div>
             </button>
 
             {editing ? (
@@ -319,56 +321,58 @@ export function RoleConfigPanel({
             ) : null}
           </div>
 
-          <div className="role-config-routines">
-            <div className="role-config-routines-head">
-              <h4>例行任务</h4>
-              {schedules.length > 0 ? (
-                <button
-                  type="button"
-                  className="role-config-icon-btn"
-                  onClick={() => setDetail("new")}
-                  disabled={!roleId}
-                  title="创建例行任务"
-                  aria-label="创建例行任务"
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
-                    <path
-                      d="M12 5v14M5 12h14"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                    />
-                  </svg>
-                </button>
-              ) : null}
-            </div>
+          <div
+            className={`role-config-routines${schedules.length === 0 ? " role-config-routines--empty" : ""}`}
+          >
             {schedules.length > 0 ? (
-              <ul className="role-config-schedules">
-                {schedules.map((schedule) => (
-                  <li key={schedule.id}>
-                    <button
-                      type="button"
-                      className={`role-config-schedule-item${schedule.enabled ? "" : " is-off"}`}
-                      onClick={() => setDetail(schedule)}
-                    >
-                      <span
-                        className={`role-config-schedule-dot${schedule.enabled ? " is-on" : ""}`}
-                        aria-hidden
+              <>
+                <div className="role-config-routines-head">
+                  <h4>例行任务</h4>
+                  <button
+                    type="button"
+                    className="role-config-icon-btn"
+                    onClick={() => setDetail("new")}
+                    disabled={!roleId}
+                    title="创建例行任务"
+                    aria-label="创建例行任务"
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
+                      <path
+                        d="M12 5v14M5 12h14"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
                       />
-                      <span className="role-config-schedule-copy">
-                        <span className="role-config-schedule-prompt">
-                          {routineListTitle(schedule.prompt)}
+                    </svg>
+                  </button>
+                </div>
+                <ul className="role-config-schedules">
+                  {schedules.map((schedule) => (
+                    <li key={schedule.id}>
+                      <button
+                        type="button"
+                        className={`role-config-schedule-item${schedule.enabled ? "" : " is-off"}`}
+                        onClick={() => setDetail(schedule)}
+                      >
+                        <span
+                          className={`role-config-schedule-dot${schedule.enabled ? " is-on" : ""}`}
+                          aria-hidden
+                        />
+                        <span className="role-config-schedule-copy">
+                          <span className="role-config-schedule-prompt">
+                            {routineListTitle(schedule.prompt)}
+                          </span>
+                          <span className="role-config-schedule-meta">
+                            {schedule.timing_summary ||
+                              `每 ${schedule.interval_hours} 小时`}
+                            {schedule.enabled ? "" : " · 已停用"}
+                          </span>
                         </span>
-                        <span className="role-config-schedule-meta">
-                          {schedule.timing_summary ||
-                            `每 ${schedule.interval_hours} 小时`}
-                          {schedule.enabled ? "" : " · 已停用"}
-                        </span>
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </>
             ) : (
               <>
                 <p className="role-config-routines-hint">
@@ -380,6 +384,14 @@ export function RoleConfigPanel({
                   onClick={() => setDetail("new")}
                   disabled={!roleId}
                 >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden>
+                    <path
+                      d="M12 5v14M5 12h14"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                    />
+                  </svg>
                   创建例行任务
                 </button>
               </>
