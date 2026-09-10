@@ -206,4 +206,85 @@ describe("useRoleTimeline", () => {
     ]);
     expect(result.current.historicalSegments[0].olderMessageCount).toBe(0);
   });
+
+  it("switching role drops the previous role's segments", async () => {
+    vi.mocked(api.getRoleTimeline)
+      .mockResolvedValueOnce({
+        role_id: "r1",
+        tip_conversation_id: "tip",
+        continuity_idle_hours: 6,
+        has_more: true,
+        segments: [
+          {
+            id: "tip",
+            title: "新对话",
+            created_at: "2026-01-02T00:00:00Z",
+            updated_at: "2026-01-02T00:00:00Z",
+            message_count: 0,
+            role_id: "r1",
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        role_id: "r1",
+        tip_conversation_id: "tip",
+        continuity_idle_hours: 6,
+        has_more: false,
+        segments: [
+          {
+            id: "old",
+            title: "旧段",
+            created_at: "2026-01-01T00:00:00Z",
+            updated_at: "2026-01-01T00:00:00Z",
+            message_count: 1,
+            role_id: "r1",
+            messages: [
+              {
+                id: "m1",
+                role: "assistant",
+                text: "other-role",
+                ts: "2026-01-01T00:00:00Z",
+              },
+            ],
+          },
+        ],
+      })
+      .mockResolvedValue({
+        role_id: "default",
+        tip_conversation_id: "d-tip",
+        continuity_idle_hours: 6,
+        has_more: false,
+        segments: [
+          {
+            id: "d-tip",
+            title: "新对话",
+            created_at: "2026-01-03T00:00:00Z",
+            updated_at: "2026-01-03T00:00:00Z",
+            message_count: 0,
+            role_id: "default",
+          },
+        ],
+      });
+
+    const { result, rerender } = renderHook(
+      ({ roleId, tip }) =>
+        useRoleTimeline({
+          roleId,
+          tipConversationId: tip,
+          messageLimit: 8,
+        }),
+      { initialProps: { roleId: "r1", tip: "tip" } },
+    );
+    await waitFor(() => expect(result.current.hasMore).toBe(true));
+    await act(async () => {
+      await result.current.loadOlder();
+    });
+    expect(result.current.historicalSegments).toHaveLength(1);
+    expect(result.current.historicalSegments[0].conversationId).toBe("old");
+
+    rerender({ roleId: "default", tip: "d-tip" });
+    await waitFor(() => {
+      expect(result.current.historicalSegments).toEqual([]);
+    });
+  });
 });

@@ -128,6 +128,9 @@ export function useConversationShell({
         limit: 0,
       });
       if (gen !== roleSwitchGenRef.current) return;
+      if (tl.role_id && tl.role_id !== roleId) {
+        throw new Error("角色时间线与所选角色不一致");
+      }
       setActiveRoleId(roleId);
       try {
         localStorage.setItem(ACTIVE_ROLE_KEY, roleId);

@@ -305,4 +305,43 @@ describe("useChatConversation", () => {
     });
     expect(api.getConversation).not.toHaveBeenCalledWith("cid-1", { tail: 8 });
   });
+
+  it("does not paint a conversation that belongs to another role", async () => {
+    vi.mocked(api.getConversation).mockResolvedValue({
+      id: "cid-other",
+      title: "t",
+      created_at: "",
+      updated_at: "",
+      message_count: 1,
+      role_id: "role-b",
+      summarized: false,
+      summary_path: null,
+      messages: [
+        {
+          role: "user",
+          text: "other-role-msg",
+          ts: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+    });
+
+    const skipLoadRef = { current: null as string | null };
+    const streamOwnership = createStreamOwnership();
+    const onRoleMismatch = vi.fn();
+    const { result } = renderHook(() =>
+      useChatConversation({
+        conversationId: "cid-other",
+        roleId: "default",
+        skipLoadRef,
+        streamOwnership,
+        onRoleMismatch,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(result.current.loadingHistory).toBe(false);
+    });
+    expect(result.current.msgs).toEqual([]);
+    expect(onRoleMismatch).toHaveBeenCalledWith("cid-other", "default");
+  });
 });

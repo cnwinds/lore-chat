@@ -54,6 +54,7 @@ class DocContextItem(BaseModel):
 class ChatBody(BaseModel):
     text: str
     conversation_id: str | None = None
+    role_id: str | None = None
     client_message_id: str | None = None
     active_doc_path: str | None = None
     active_doc_paths: list[str] = []

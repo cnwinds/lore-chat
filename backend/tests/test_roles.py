@@ -1,3 +1,5 @@
+import pytest
+
 from app.engine.roles import DEFAULT_ROLE_ID, DEFAULT_ROLE_NAME, RoleStore
 from app.engine.conversations import ConversationStore
 
@@ -112,6 +114,26 @@ def test_reassign_role_conversations(tmp_path):
     assert conv.get_role_id(cid) == DEFAULT_ROLE_ID
 
 
+def test_delete_for_role_removes_only_that_role(tmp_path):
+    roles = _roles(tmp_path)
+    conv = _conv(tmp_path)
+    created = roles.create(name="临时")
+    keep = conv.create(role_id=DEFAULT_ROLE_ID)
+    cid = conv.create(role_id=created["id"])
+    extra = conv.create(role_id=created["id"])
+    n = conv.delete_for_role(created["id"])
+    assert n == 2
+    with pytest.raises(KeyError):
+        conv.get(cid)
+    with pytest.raises(KeyError):
+        conv.get(extra)
+    assert conv.get_role_id(keep) == DEFAULT_ROLE_ID
+    assert conv.list_conversation_ids(role_id=created["id"]) == []
+    with pytest.raises(ValueError, match="role_id"):
+        conv.delete_for_role("")
+    assert conv.get_role_id(keep) == DEFAULT_ROLE_ID
+
+
 def test_roles_list_uses_last_reply_and_last_active_at(client):
     created = client.post(
         "/api/roles",
@@ -188,17 +210,94 @@ def test_roles_http_api(client):
     made = client.post("/api/conversations", json={"role_id": rid})
     assert made.status_code == 200
     assert made.json()["role_id"] == rid
+    keep = client.post("/api/conversations", json={"role_id": "default"})
+    assert keep.status_code == 200
+    keep_id = keep.json()["id"]
 
     deleted = client.delete(f"/api/roles/{rid}")
     assert deleted.status_code == 200
     assert deleted.json()["ok"] is True
-    # 会话应迁回默认角色
+    assert deleted.json()["deleted_conversations"] == 2
     after = client.get(f"/api/conversations/{cid}")
-    assert after.status_code == 200
-    assert after.json()["role_id"] == "default"
+    assert after.status_code == 404
+    gone = client.get(f"/api/conversations/{made.json()['id']}")
+    assert gone.status_code == 404
+    still = client.get(f"/api/conversations/{keep_id}")
+    assert still.status_code == 200
+    assert still.json()["role_id"] == "default"
 
     bad = client.delete("/api/roles/default")
     assert bad.status_code == 400
+
+
+def test_role_timeline_excludes_other_roles(client):
+    other = client.post(
+        "/api/roles", json={"name": "专员", "system_prompt": "专注"}
+    )
+    assert other.status_code == 200
+    rid = other.json()["id"]
+    other_cid = client.post(f"/api/roles/{rid}/ensure-active").json()[
+        "conversation_id"
+    ]
+    default_cid = client.post("/api/roles/default/ensure-active").json()[
+        "conversation_id"
+    ]
+    store = client.app.state.container.conversations
+
+    def _say(cid: str, text: str, reply: str, client_id: str) -> None:
+        turn = store.begin_turn(cid, text, client_id, observation_allowed=False)
+        store.finalize_turn(
+            cid,
+            turn_id=turn["turn_id"],
+            assistant={
+                "text": reply,
+                "timeline": [],
+                "sources": [],
+                "status": "complete",
+            },
+        )
+
+    _say(other_cid, "专员的话", "专员的答", "cli-other")
+    _say(default_cid, "通用的话", "通用的答", "cli-def")
+
+    default_tl = client.get(
+        "/api/roles/default/timeline",
+        params={"limit": 20, "include_messages": True, "message_limit": 0},
+    )
+    assert default_tl.status_code == 200
+    default_ids = [s["id"] for s in default_tl.json()["segments"]]
+    assert other_cid not in default_ids
+    default_text = " ".join(
+        (m.get("text") or "")
+        for s in default_tl.json()["segments"]
+        for m in (s.get("messages") or [])
+    )
+    assert "专员的话" not in default_text
+    assert "通用的话" in default_text
+
+    other_tl = client.get(
+        f"/api/roles/{rid}/timeline",
+        params={"limit": 20, "include_messages": True, "message_limit": 0},
+    )
+    assert other_tl.status_code == 200
+    other_ids = [s["id"] for s in other_tl.json()["segments"]]
+    assert other_cid in other_ids
+    assert default_cid not in other_ids
+
+
+def test_chat_rejects_conversation_role_mismatch(client):
+    other = client.post(
+        "/api/roles", json={"name": "专员", "system_prompt": "专注"}
+    )
+    assert other.status_code == 200
+    rid = other.json()["id"]
+    cid = client.post("/api/conversations", json={"role_id": rid}).json()["id"]
+    r = client.post(
+        "/api/chat",
+        json={"text": "hi", "conversation_id": cid, "role_id": "default"},
+    )
+    assert r.status_code == 409
+    assert r.json()["detail"]["code"] == "role_mismatch"
 
 
 def test_conversations_search_http(client):
@@ -502,7 +601,7 @@ def test_ensure_active_outside_window_closes_previous(tmp_path, monkeypatch):
 
 
 def test_reassign_role_preserves_updated_at(tmp_path):
-    """删角色迁会话不得把目标角色 tip 劫持为迁入会话。"""
+    """reassign_role 不改 updated_at，避免迁入会话劫持目标角色 tip。"""
     from datetime import datetime, timedelta, timezone
 
     roles = _roles(tmp_path)

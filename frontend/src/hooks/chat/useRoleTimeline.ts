@@ -36,6 +36,7 @@ function normalizeSegmentMessages(
 
 export type TimelineSegmentView = {
   conversationId: string;
+  roleId?: string;
   title: string;
   createdAt: string;
   messages: ChatMessage[];
@@ -46,6 +47,7 @@ export type TimelineSegmentView = {
 function toView(
   seg: RoleTimelineSegment,
   tipId: string | null,
+  roleId: string,
 ): TimelineSegmentView | null {
   const msgs = normalizeSegmentMessages(
     seg.messages,
@@ -54,8 +56,11 @@ function toView(
   const isTip = !!tipId && seg.id === tipId;
   if (!isTip && msgs.length === 0) return null;
   if (isTip) return null; // tip 消息由 useChatConversation 维护
+  const segRole = seg.role_id || roleId;
+  if (segRole && segRole !== roleId) return null;
   return {
     conversationId: seg.id,
+    roleId: segRole,
     title: seg.title,
     createdAt: seg.created_at,
     messages: msgs,
@@ -108,9 +113,10 @@ export function useRoleTimeline({
   };
 
   const resetAndLoadRecent = useCallback(async () => {
+    // 先丢掉上一角色的段，避免切到「通用」时仍看见别人的会话
+    setSegments([]);
+    setHasMore(false);
     if (!roleId) {
-      setSegments([]);
-      setHasMore(false);
       tipMetaRef.current = null;
       return;
     }
@@ -123,12 +129,10 @@ export function useRoleTimeline({
       });
       if (gen !== genRef.current || roleRef.current !== roleId) return;
       rememberTipMeta(tl);
-      setSegments([]);
       setHasMore(!!tl.has_more);
       setContinuityIdleHours(tl.continuity_idle_hours ?? 6);
     } catch {
       if (gen === genRef.current) {
-        setSegments([]);
         setHasMore(false);
       }
     } finally {
@@ -143,7 +147,7 @@ export function useRoleTimeline({
   const loadOlder = useCallback(async () => {
     if (!roleId || loadingOlder || loading) return false;
 
-    const oldest = segments[0];
+    const oldest = segments.find((s) => s.roleId === roleId) ?? null;
     if (oldest?.olderMessageCount && oldest.messages[0]?.id) {
       const gen = genRef.current;
       setLoadingOlder(true);
@@ -199,17 +203,18 @@ export function useRoleTimeline({
       rememberTipMeta(tl);
       const tipId = tipRef.current || tl.tip_conversation_id;
       const older = tl.segments
-        .map((s) => toView(s, tipId))
+        .map((s) => toView(s, tipId, roleId))
         .filter((v): v is TimelineSegmentView => !!v);
       if (older.length === 0) {
         setHasMore(false);
         return false;
       }
       setSegments((prev) => {
-        const seen = new Set(prev.map((p) => p.conversationId));
+        const kept = prev.filter((p) => p.roleId === roleId);
+        const seen = new Set(kept.map((p) => p.conversationId));
         return [
           ...older.filter((o) => !seen.has(o.conversationId)),
-          ...prev,
+          ...kept,
         ];
       });
       setHasMore(!!tl.has_more);
@@ -232,6 +237,10 @@ export function useRoleTimeline({
     try {
       const conv = await getConversation(conversationId);
       if (gen !== genRef.current) return false;
+      const expectedRole = roleRef.current;
+      if (expectedRole && conv.role_id && conv.role_id !== expectedRole) {
+        return false;
+      }
       setSegments((prev) =>
         prev.map((s) =>
           s.conversationId === conversationId
@@ -255,8 +264,13 @@ export function useRoleTimeline({
   }, []);
 
   const historicalSegments = useMemo(
-    () => segments.filter((s) => s.conversationId !== tipConversationId),
-    [segments, tipConversationId],
+    () =>
+      segments.filter(
+        (s) =>
+          s.conversationId !== tipConversationId &&
+          (!roleId || s.roleId === roleId),
+      ),
+    [segments, tipConversationId, roleId],
   );
 
   return {

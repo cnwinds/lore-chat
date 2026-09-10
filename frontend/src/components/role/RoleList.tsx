@@ -134,7 +134,7 @@ export function RoleList({
     }
     if (
       !window.confirm(
-        `确定删除角色「${role.name}」？\n其会话将迁回默认角色，此操作不可撤销。`,
+        `确定删除角色「${role.name}」？\n其会话将一并删除，此操作不可撤销。`,
       )
     ) {
       return;

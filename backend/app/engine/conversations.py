@@ -349,9 +349,15 @@ class ConversationStore:
             idle_hours=idle_hours, limit=limit
         )
 
-    def list_conversation_ids(self) -> list[str]:
+    def list_conversation_ids(self, *, role_id: str | None = None) -> list[str]:
         with self._lock:
-            rows = self.conn.execute("SELECT id FROM conversations").fetchall()
+            if role_id:
+                rows = self.conn.execute(
+                    "SELECT id FROM conversations WHERE role_id = ?",
+                    (role_id,),
+                ).fetchall()
+            else:
+                rows = self.conn.execute("SELECT id FROM conversations").fetchall()
             return [r["id"] for r in rows]
 
     def list_user_messages_text(self, cid: str) -> list[str]:
@@ -786,7 +792,13 @@ class ConversationStore:
         - ``message_limit``：每段只取尾部 N 条；``None`` 表示该段全量。
         返回 (segments, has_more_older)。
         """
-        items = self.list_all(role_id=role_id)
+        from app.engine.roles import DEFAULT_ROLE_ID
+
+        items = [
+            c
+            for c in self.list_all(role_id=role_id)
+            if (c.get("role_id") or DEFAULT_ROLE_ID) == role_id
+        ]
         items = sorted(
             items,
             key=lambda c: (c.get("created_at") or "", c.get("id") or ""),
@@ -942,6 +954,34 @@ class ConversationStore:
             ledger_path=ledger_path,
             delete_summary=delete_summary,
         )
+
+    def delete_for_role(
+        self,
+        role_id: str,
+        *,
+        conversation_fts=None,
+        conversation_vector=None,
+        indexer=None,
+        index_revision=None,
+        ledger_path: str | Path | None = None,
+        delete_summary: bool = True,
+    ) -> int:
+        """删除某角色下全部会话（含消息、turn、派生索引）；返回删除条数。"""
+        rid = (role_id or "").strip()
+        if not rid:
+            raise ValueError("role_id 不能为空")
+        ids = self.list_conversation_ids(role_id=rid)
+        for cid in ids:
+            self.delete(
+                cid,
+                conversation_fts=conversation_fts,
+                conversation_vector=conversation_vector,
+                indexer=indexer,
+                index_revision=index_revision,
+                ledger_path=ledger_path,
+                delete_summary=delete_summary,
+            )
+        return len(ids)
 
     # ------------------------------------------------------------------
     # Turn-based 持久化

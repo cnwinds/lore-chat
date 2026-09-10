@@ -65,9 +65,20 @@ async def chat(body: ChatBody, request: Request):
         raise HTTPException(400, str(e)) from e
     if body.conversation_id:
         try:
-            c.conversations.get(body.conversation_id)
+            conv = c.conversations.get(body.conversation_id)
         except KeyError as e:
             raise HTTPException(404, "对话不存在") from e
+        want_role = (body.role_id or "").strip()
+        if want_role:
+            actual = (conv.get("role_id") or "").strip()
+            if actual and actual != want_role:
+                raise HTTPException(
+                    409,
+                    detail={
+                        "code": "role_mismatch",
+                        "message": "会话不属于当前角色",
+                    },
+                )
 
     if not body.conversation_id:
         return StreamingResponse(

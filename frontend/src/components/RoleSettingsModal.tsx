@@ -76,7 +76,7 @@ export function RoleSettingsModal({
 
   async function handleDelete() {
     if (role.is_default) return;
-    if (!window.confirm(`删除角色「${role.name}」？其会话将迁回默认角色。`)) {
+    if (!window.confirm(`删除角色「${role.name}」？其会话将一并删除，不可撤销。`)) {
       return;
     }
     setSaving(true);
