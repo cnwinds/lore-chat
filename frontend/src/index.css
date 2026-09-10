@@ -5071,21 +5071,6 @@ button.memory-fact-statement--jump:focus-visible {
   color: var(--text);
 }
 
-.chat-welcome-lead {
-  margin: 0;
-  font-size: 1.05rem;
-  font-weight: 600;
-  color: var(--text);
-}
-
-.chat-welcome-hint {
-  margin: 0;
-  max-width: 28rem;
-  font-size: var(--text-sm);
-  line-height: 1.55;
-  color: var(--muted);
-}
-
 .chat-row {
   margin: 10px 0;
   display: flex;
