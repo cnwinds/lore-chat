@@ -287,4 +287,98 @@ describe("useRoleTimeline", () => {
       expect(result.current.historicalSegments).toEqual([]);
     });
   });
+
+  it("loadOlder after a role switch uses the new role tip, not the previous conversation", async () => {
+    vi.mocked(api.getRoleTimeline)
+      .mockResolvedValueOnce({
+        role_id: "r1",
+        tip_conversation_id: "old-tip",
+        continuity_idle_hours: 6,
+        has_more: true,
+        segments: [
+          {
+            id: "old-tip",
+            title: "旧角色 tip",
+            created_at: "2026-01-01T00:00:00Z",
+            updated_at: "2026-01-01T00:00:00Z",
+            message_count: 0,
+            role_id: "r1",
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        role_id: "default",
+        tip_conversation_id: "d-tip",
+        continuity_idle_hours: 6,
+        has_more: true,
+        segments: [
+          {
+            id: "d-tip",
+            title: "通用 tip",
+            created_at: "2026-01-10T00:00:00Z",
+            updated_at: "2026-01-10T00:00:00Z",
+            message_count: 0,
+            role_id: "default",
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        role_id: "default",
+        tip_conversation_id: "d-tip",
+        continuity_idle_hours: 6,
+        has_more: false,
+        segments: [
+          {
+            id: "d-old",
+            title: "通用旧段",
+            created_at: "2026-01-09T00:00:00Z",
+            updated_at: "2026-01-09T00:00:00Z",
+            message_count: 1,
+            role_id: "default",
+            messages: [
+              {
+                id: "m-def",
+                role: "assistant",
+                text: "default-history",
+                ts: "2026-01-09T00:00:00Z",
+              },
+            ],
+          },
+        ],
+      });
+
+    const { result, rerender } = renderHook(
+      ({ roleId, tip }) =>
+        useRoleTimeline({
+          roleId,
+          tipConversationId: tip,
+          messageLimit: 8,
+        }),
+      { initialProps: { roleId: "r1", tip: "old-tip" } },
+    );
+    await waitFor(() => expect(result.current.hasMore).toBe(true));
+
+    // 父组件还没把 tip 改过来：模拟切角色后 conversationId 仍是上一角色的会话
+    rerender({ roleId: "default", tip: "old-tip" });
+    await waitFor(() => {
+      expect(api.getRoleTimeline).toHaveBeenCalledWith("default", {
+        includeMessages: false,
+        limit: TIMELINE_FIRST_PAGE_SIZE,
+      });
+    });
+    await waitFor(() => expect(result.current.hasMore).toBe(true));
+
+    await act(async () => {
+      await result.current.loadOlder();
+    });
+    expect(api.getRoleTimeline).toHaveBeenLastCalledWith("default", {
+      limit: TIMELINE_PAGE_SIZE,
+      messageLimit: 8,
+      beforeCreatedAt: "2026-01-10T00:00:00Z",
+      beforeId: "d-tip",
+    });
+    expect(result.current.historicalSegments).toEqual([
+      expect.objectContaining({ conversationId: "d-old" }),
+    ]);
+  });
 });

@@ -147,7 +147,8 @@ export function useChatConversation({
       .then((conv) => {
         applyIfSafe(() => {
           const expectedRole = roleIdRef.current;
-          if (expectedRole && conv.role_id && conv.role_id !== expectedRole) {
+          const loadedRole = (conv.role_id || "default").trim() || "default";
+          if (expectedRole && loadedRole !== expectedRole) {
             setMsgs([]);
             setSummarized(false);
             setSummaryPath(null);
@@ -204,7 +205,8 @@ export function useChatConversation({
           return;
         }
         const expectedRole = roleIdRef.current;
-        if (expectedRole && conv.role_id && conv.role_id !== expectedRole) {
+        const loadedRole = (conv.role_id || "default").trim() || "default";
+        if (expectedRole && loadedRole !== expectedRole) {
           onRoleMismatchRef.current?.(conversationId, expectedRole);
           return;
         }
