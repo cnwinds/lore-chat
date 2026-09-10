@@ -109,13 +109,13 @@ HTTP `/api/roles*` 保留用于 UI shell（列表、ensure-active、可选右栏
 
 新角色创建时，`onboarding_status` 默认为 `active`（有 system_prompt 则为 `completed`）。
 
-当 `onboarding_status=active` 时，系统注入引导提示层，指导 Agent：
-- 每次只问一个问题
+当 `onboarding_status=active` 时，创建并切换到该角色后，系统用隐藏触发回合让角色**先开口**（不空等主人先说话），并注入引导提示层：
+- 简短自我介绍，每次只问一个问题
 - 了解职责、输出、边界、风格
 - 询问是否需要定时任务
-- 整理人设草案 → 展示 → 确认 → `finalize_role_onboarding`
+- 整理人设草案 → 展示 → 确认 → `finalize_role_onboarding`（写入角色设置中的人设）
 
-用户可选择跳过引导（设置 `onboarding_status=skipped`）。
+用户可选择跳过引导（设置 `onboarding_status=skipped`）。已写人设（创建时带 `system_prompt`）则直接 `completed`，不发起引导。
 
 ### 3.4 HTTP（UI Shell 用）
 
@@ -157,7 +157,8 @@ HTTP `/api/roles*` 保留用于 UI shell（列表、ensure-active、可选右栏
 ### 新建角色
 1. 点击角色列表顶部「＋」按钮
 2. 创建角色并自动切换
-3. 在右侧配置面板编辑名称、头像、人设
+3. 若未预填人设，中栏由角色主动开口，一次一问了解职责与协作方式
+4. 主人确认草案后，角色调用 `finalize_role_onboarding` 写入设置中的人设（也可随时在右侧面板改）
 
 ### 切换角色
 1. 点击角色列表中的角色卡片

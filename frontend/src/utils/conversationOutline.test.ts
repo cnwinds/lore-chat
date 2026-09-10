@@ -47,6 +47,20 @@ describe("buildConversationOutline", () => {
     expect(items.length).toBeGreaterThanOrEqual(CONVERSATION_OUTLINE_MIN_ITEMS);
   });
 
+  it("skips onboarding kickoff and injected user bubbles", () => {
+    const items = buildConversationOutline([
+      user("kick", "（系统）这个角色刚创建。", {
+        client_message_id: "onboarding-kickoff:r1",
+      }),
+      user("inj", "插入", {
+        injected: true,
+        client_message_id: "inject:1",
+      }),
+      user("u1", "真实提问"),
+    ]);
+    expect(items.map((i) => i.messageId)).toEqual(["u1"]);
+  });
+
   it("includes doc_context-only user turns as attachment placeholder", () => {
     const items = buildConversationOutline([
       user("u1", "", {
