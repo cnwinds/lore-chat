@@ -48,13 +48,13 @@ describe("useRoleTimeline", () => {
     );
 
     await waitFor(() => {
-      expect(api.getRoleTimeline).toHaveBeenCalledWith("r1", {
-        includeMessages: false,
-        limit: TIMELINE_FIRST_PAGE_SIZE,
-      });
+      expect(result.current.hasMore).toBe(true);
+    });
+    expect(api.getRoleTimeline).toHaveBeenCalledWith("r1", {
+      includeMessages: false,
+      limit: TIMELINE_FIRST_PAGE_SIZE,
     });
     expect(result.current.historicalSegments).toEqual([]);
-    expect(result.current.hasMore).toBe(true);
   });
 
   it("loadOlder fetches one truncated historical segment", async () => {

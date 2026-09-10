@@ -239,10 +239,19 @@ def test_timeline_first_page_kicks_off(client, monkeypatch):
 
 
 def test_timeline_http_default_is_tip_only(client):
+    from datetime import datetime, timedelta, timezone
+
     role = client.app.state.container.roles.create(name="首屏减负")
     conv = client.app.state.container.conversations
     old = conv.create(role_id=role["id"], title="旧段")
     conv.append_exchange(old, "旧问", {"role": "assistant", "text": "旧答"})
+    past = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    with conv._lock:
+        conv.conn.execute(
+            "UPDATE conversations SET created_at = ?, updated_at = ?, last_user_message_at = ? WHERE id = ?",
+            (past, past, past, old),
+        )
+        conv.conn.commit()
     # 最新空会话才会被 ensure 复用为 tip，旧有消息段留作 has_more
     tip = conv.create(role_id=role["id"], title="新话题")
     r = client.get(f"/api/roles/{role['id']}/timeline")
