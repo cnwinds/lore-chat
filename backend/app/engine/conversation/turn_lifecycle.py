@@ -9,6 +9,7 @@ from app.engine.conversation.shared import (
     now_iso,
     title_from_text,
 )
+from app.engine.role_onboarding import is_onboarding_kickoff_id
 
 if TYPE_CHECKING:
     from app.engine.conversations import ConversationStore
@@ -116,14 +117,15 @@ class TurnLifecycle:
                 (turn_id, cid, client_message_id, msg_id, int(observation_allowed), started_at),
             )
 
-            if not reuse_user_message_id:
+            kickoff = is_onboarding_kickoff_id(client_message_id)
+            if not reuse_user_message_id and not kickoff:
                 store._enqueue_index_jobs(msg_id, turn_id)
             # 会话级空闲抽取：只打 dirty（已持锁，用 unlocked 变体）
             store.memory_schedule.mark_dirty_unlocked(cid, at=started_at)
             store._mark_dirty_and_stale(cid)
 
             title = conv_row["title"]
-            if title == "新对话" and user_text.strip():
+            if title == "新对话" and user_text.strip() and not kickoff:
                 store.conn.execute(
                     "UPDATE conversations SET title = ? WHERE id = ?",
                     (title_from_text(user_text), cid),

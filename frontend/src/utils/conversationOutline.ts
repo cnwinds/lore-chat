@@ -1,4 +1,5 @@
 import type { ChatMessage } from "../types/chat";
+import { isHiddenUserBubble } from "./chatMessage";
 import { normalizeDocContext } from "./chatMessageFormat";
 
 export const CONVERSATION_OUTLINE_MIN_ITEMS = 3;
@@ -44,6 +45,7 @@ export function buildConversationOutline(
   const items: ConversationOutlineItem[] = [];
   for (const m of msgs) {
     if (m.role !== "user" || !m.id || !hasUserPayload(m)) continue;
+    if (isHiddenUserBubble(m)) continue;
     const fullText = m.text?.replace(/\s+/g, " ").trim() ?? "";
     const label = formatOutlineLabel(fullText) || "（附件）";
     items.push({

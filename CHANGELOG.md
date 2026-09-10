@@ -6,6 +6,7 @@
 
 ### Added
 
+- 新建角色后由角色主动开口了解职责，确认后写入设置中的人设；不再空等主人先说话
 - 多角色底座：默认「通用」角色、角色 CRUD / 活跃线 API、会话 `role_id`；侧栏在多角色时切换角色，单角色仍为对话列表；Agent 注入角色 system_prompt（[ADR 2026-09-09](docs/adr/2026-09-09-multi-role-shell.md)）
 - P1：侧栏会话全文搜索、`GET /api/conversations/search`；空态引导；设置 → Agent「连续窗口」；手机顶栏多角色切换 sheet；提示词强化「接着上次 / 我们说过」须先搜会话
 - P2：角色设置（人设/头像/改名/删除）、角色级定时任务与后台触发、Agent `create_role` 工具、侧栏忙碌角标、本角色历史抽屉

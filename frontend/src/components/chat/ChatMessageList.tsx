@@ -1,6 +1,10 @@
 import type { MutableRefObject, RefObject } from "react";
 import { formatDuration, type ChatMessage, type IngestResult, type SourceRef } from "../../api";
-import { expandMessagesForDisplay, canRetryAssistantReply, findPrecedingUserForRetry } from "../../utils/chatMessage";
+import {
+  expandMessagesForDisplay,
+  canRetryAssistantReply,
+  findPrecedingUserForRetry,
+} from "../../utils/chatMessage";
 import type { ConversationLinkTarget } from "../../utils/conversationLinks";
 import type { TimelineSegmentView } from "../../hooks/chat/useRoleTimeline";
 import { LoreLogo } from "../LoreLogo";
@@ -144,9 +148,11 @@ export function ChatMessageList({
   outlineLayout = "rail",
 }: ChatMessageListProps) {
   const hasHistory = historicalSegments.some((s) => s.messages.length > 0);
-  const tipHasBody = msgs.length > 0;
+  const tipHasBody = expandMessagesForDisplay(msgs).some((row) =>
+    messageHasBody(row.message, false),
+  );
   const showWelcome =
-    !loadingHistory && !hasHistory && !tipHasBody;
+    !loadingHistory && !hasHistory && !tipHasBody && !streaming;
 
   const showTipSeparator = hasHistory && (tipHasBody || streaming);
 

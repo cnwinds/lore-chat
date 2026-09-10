@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field, model_validator
 
 from app.api.http_deps import container
+from app.engine.role_onboarding import maybe_kickoff_role_onboarding
 
 router = APIRouter()
 
@@ -78,6 +79,8 @@ async def create_role(body: CreateRoleBody, request: Request):
         )
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
+    if role.get("onboarding_status") == "active":
+        maybe_kickoff_role_onboarding(c, role["id"])
     return role
 
 
@@ -142,6 +145,7 @@ async def ensure_active_conversation(role_id: str, request: Request):
         role_id,
         idle_hours=float(c.settings.continuity_idle_hours),
     )
+    maybe_kickoff_role_onboarding(c, role_id)
     return {
         "conversation_id": cid,
         "role_id": role_id,
@@ -181,6 +185,7 @@ async def get_role_timeline(
             role_id,
             idle_hours=float(c.settings.continuity_idle_hours),
         )
+        maybe_kickoff_role_onboarding(c, role_id)
     # 续载更早历史时不要反复 ensure 干扰；仍返回当前 tip id
     page_limit = max(1, min(int(limit or 5), 30))
     segments, has_more = c.conversations.list_timeline(

@@ -227,7 +227,9 @@ def test_role_schedule_daily_timing(tmp_path):
 
 
 def test_role_schedules_and_busy_http(client):
-    created = client.post("/api/roles", json={"name": "忙角色"})
+    created = client.post(
+        "/api/roles", json={"name": "忙角色", "system_prompt": "处理忙碌态"}
+    )
     assert created.status_code == 200
     rid = created.json()["id"]
 

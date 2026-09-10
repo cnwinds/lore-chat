@@ -8,6 +8,8 @@ import {
   normalizeLoadedMessage,
   canRetryAssistantReply,
   findPrecedingUserForRetry,
+  isOnboardingKickoffMessage,
+  isHiddenUserBubble,
 } from "./chatMessage";
 import type { ChatMessage } from "../api";
 
@@ -104,6 +106,22 @@ describe("expandMessagesForDisplay", () => {
     });
     expect(rows[1].message.timeline?.map((b) => b.type)).toEqual(["tool"]);
     expect(rows[3].message.timeline?.map((b) => b.type)).toEqual(["text"]);
+  });
+
+  it("hides onboarding kickoff user bubbles", () => {
+    const msgs: ChatMessage[] = [
+      {
+        role: "user",
+        text: "（系统）这个角色刚创建。",
+        id: "kick",
+        client_message_id: "onboarding-kickoff:role-1",
+      },
+      { role: "assistant", text: "请问主要负责什么？", id: "a0" },
+    ];
+    const rows = expandMessagesForDisplay(msgs);
+    expect(rows.map((r) => r.message.role)).toEqual(["assistant"]);
+    expect(isOnboardingKickoffMessage(msgs[0])).toBe(true);
+    expect(isHiddenUserBubble(msgs[0])).toBe(true);
   });
 });
 
@@ -304,5 +322,17 @@ describe("findPrecedingUserForRetry", () => {
       { role: "assistant", text: "错误：x", status: "error" },
     ];
     expect(findPrecedingUserForRetry(msgs, 2)?.text).toBe("主问");
+  });
+
+  it("skips onboarding kickoff as the preceding user", () => {
+    const msgs: ChatMessage[] = [
+      {
+        role: "user",
+        text: "（系统）这个角色刚创建。",
+        client_message_id: "onboarding-kickoff:r1",
+      },
+      { role: "assistant", text: "错误：x", status: "error" },
+    ];
+    expect(findPrecedingUserForRetry(msgs, 1)).toBeNull();
   });
 });

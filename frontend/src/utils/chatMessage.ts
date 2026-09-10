@@ -23,6 +23,19 @@ export function isInjectedUserMessage(m: ChatMessage): boolean {
   );
 }
 
+/** 新角色引导的系统触发，对模型可见、对 UI 隐藏。 */
+export function isOnboardingKickoffMessage(m: ChatMessage): boolean {
+  return (
+    m.role === "user" &&
+    !!m.client_message_id &&
+    m.client_message_id.startsWith("onboarding-kickoff:")
+  );
+}
+
+export function isHiddenUserBubble(m: ChatMessage): boolean {
+  return isInjectedUserMessage(m) || isOnboardingKickoffMessage(m);
+}
+
 function toolBlockAwaitsUser(
   block: Extract<TimelineBlock, { type: "tool" }>,
 ): boolean {
@@ -71,7 +84,7 @@ export function findPrecedingUserForRetry(
   for (let i = assistantSourceIndex - 1; i >= 0; i--) {
     const m = msgs[i];
     if (m.role === "assistant") break;
-    if (m.role === "user" && !isInjectedUserMessage(m)) return m;
+    if (m.role === "user" && !isHiddenUserBubble(m)) return m;
   }
   return null;
 }
@@ -161,7 +174,7 @@ export function expandMessagesForDisplay(msgs: ChatMessage[]): ChatDisplayRow[] 
   const rows: ChatDisplayRow[] = [];
   for (let i = 0; i < msgs.length; i++) {
     const m = msgs[i];
-    if (isInjectedUserMessage(m)) continue;
+    if (isHiddenUserBubble(m)) continue;
 
     if (m.role !== "assistant" || !m.timeline?.some((b) => b.type === "user_inject")) {
       rows.push({
