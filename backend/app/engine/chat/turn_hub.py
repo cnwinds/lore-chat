@@ -96,12 +96,42 @@ class TurnExecutionHub:
             return ""
         try:
             rid = self.conversations.get_role_id(cid)
-            return (self.roles.get(rid).get("system_prompt") or "").strip()
+            role = self.roles.get(rid)
+            base_prompt = (role.get("system_prompt") or "").strip()
+            onboarding_status = role.get("onboarding_status", "none")
+            if onboarding_status == "active":
+                onboarding_layer = self._build_onboarding_layer(role.get("name", "角色"))
+                if base_prompt:
+                    return f"{onboarding_layer}\n\n{base_prompt}"
+                return onboarding_layer
+            return base_prompt
         except KeyError:
             return ""
         except Exception:
             _log.exception("role prompt lookup failed cid=%s", cid)
             return ""
+
+    def _build_onboarding_layer(self, role_name: str) -> str:
+        return f"""[角色引导]
+
+你正在协助用户完成角色「{role_name}」的职责与人设定义。
+
+引导原则：
+- 每次只问一个问题，保持简短，可提供 2-3 个选项帮助选择
+- 逐步了解：职责范围、典型输出、边界约束、语气风格
+- 询问是否需要定时任务（例如每日总结、周报提醒等）
+- 根据对话整理出一份人设草案（system_prompt）
+- 向用户展示草案，待确认后调用 finalize_role_onboarding 完成引导
+- 在用户确认前，不要擅自调用 update_role 修改 system_prompt
+
+示例流程：
+1. "请问这个角色主要负责什么？是研究分析、内容创作、还是任务管理？"
+2. "你希望 TA 的输出是什么形式？简报、详细报告、还是对话式建议？"
+3. "有什么明确的边界或不做的事吗？"
+4. "需要定时任务吗？比如每天自动提醒、周总结等。"
+5. 整理草案 → 展示 → 确认 → finalize_role_onboarding
+
+若用户要求跳过引导，告知可以随时在设置中配置，并询问是否调用 update_role(..., onboarding_status="skipped")。"""
 
     def _prefetch_context_for(
         self, cid: str, text: str, history: list[dict] | None

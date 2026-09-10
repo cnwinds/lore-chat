@@ -45,6 +45,8 @@ def build_tool_dispatch(registry: ToolRegistry) -> dict[str, ToolHandler]:
             memory.manage_memory, args, conversation_id=kw.get("conversation_id")
         )
 
+    roles = registry.roles_tools
+
     return {
         "search_kb": _search,
         "read_doc": _read_doc,
@@ -72,7 +74,21 @@ def build_tool_dispatch(registry: ToolRegistry) -> dict[str, ToolHandler]:
         "delete_kb": lambda args, **kw: asyncio.to_thread(kb_mutate.delete_kb, args),
         "move_entry": lambda args, **kw: asyncio.to_thread(kb_mutate.move_entry, args),
         "ask_user": lambda args, **kw: interaction.ask_user(args),
-        "create_role": lambda args, **kw: registry.roles_tools.create_role(args),
+        "create_role": lambda args, **kw: roles.create_role(args),
+        "update_role": lambda args, **kw: roles.update_role(
+            args, conversation_id=kw.get("conversation_id")
+        ),
+        "list_role_schedules": lambda args, **kw: roles.list_role_schedules(
+            args, conversation_id=kw.get("conversation_id")
+        ),
+        "create_role_schedule": lambda args, **kw: roles.create_role_schedule(
+            args, conversation_id=kw.get("conversation_id")
+        ),
+        "update_role_schedule": lambda args, **kw: roles.update_role_schedule(args),
+        "delete_role_schedule": lambda args, **kw: roles.delete_role_schedule(args),
+        "finalize_role_onboarding": lambda args, **kw: roles.finalize_role_onboarding(
+            args, conversation_id=kw.get("conversation_id")
+        ),
         "manage_memory": _manage_memory,
         "recall_memory": lambda args, **kw: asyncio.to_thread(
             memory.recall_memory, args

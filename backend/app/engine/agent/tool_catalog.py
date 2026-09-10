@@ -730,6 +730,172 @@ TOOL_DEFINITIONS: list[dict] = [
     {
         "type": "function",
         "function": {
+            "name": "update_role",
+            "description": (
+                "更新角色的名称、头像或人设提示词。默认更新当前会话的角色；"
+                "也可通过 role_id 指定其它角色。不能修改默认角色的核心属性。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "role_id": {
+                        "type": "string",
+                        "description": "角色 ID（可选，默认为当前会话角色）",
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "新的角色名称（可选）",
+                    },
+                    "avatar": {
+                        "type": "string",
+                        "description": "新的头像 URL（可选）",
+                    },
+                    "system_prompt": {
+                        "type": "string",
+                        "description": "新的人设/职责提示词（可选）",
+                    },
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_role_schedules",
+            "description": "列出角色的定时任务。默认查询当前会话的角色。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "role_id": {
+                        "type": "string",
+                        "description": "角色 ID（可选，默认为当前会话角色）",
+                    },
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_role_schedule",
+            "description": (
+                "为角色创建定时任务。任务将按指定间隔（小时）自动触发，"
+                "在该角色的活跃时间线插入系统提示。默认对当前会话角色操作。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "role_id": {
+                        "type": "string",
+                        "description": "角色 ID（可选，默认为当前会话角色）",
+                    },
+                    "prompt": {
+                        "type": "string",
+                        "description": "定时触发的提示词内容",
+                    },
+                    "interval_hours": {
+                        "type": "number",
+                        "description": "触发间隔（小时，最小 0.5）",
+                        "minimum": 0.5,
+                    },
+                    "enabled": {
+                        "type": "boolean",
+                        "description": "是否启用（默认 true）",
+                        "default": True,
+                    },
+                },
+                "required": ["prompt", "interval_hours"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "update_role_schedule",
+            "description": "更新现有定时任务的提示词、间隔或启用状态。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "schedule_id": {
+                        "type": "string",
+                        "description": "定时任务 ID",
+                    },
+                    "prompt": {
+                        "type": "string",
+                        "description": "新的提示词（可选）",
+                    },
+                    "interval_hours": {
+                        "type": "number",
+                        "description": "新的间隔（小时，可选）",
+                        "minimum": 0.5,
+                    },
+                    "enabled": {
+                        "type": "boolean",
+                        "description": "启用/禁用（可选）",
+                    },
+                },
+                "required": ["schedule_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "delete_role_schedule",
+            "description": "删除角色的定时任务。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "schedule_id": {
+                        "type": "string",
+                        "description": "定时任务 ID",
+                    },
+                },
+                "required": ["schedule_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "finalize_role_onboarding",
+            "description": (
+                "完成角色引导流程：写入最终的人设提示词，可选地创建定时任务，"
+                "并将 onboarding_status 标记为 completed。"
+                "仅在引导对话中、用户确认人设草稿后调用。默认对当前会话角色操作。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "role_id": {
+                        "type": "string",
+                        "description": "角色 ID（可选，默认为当前会话角色）",
+                    },
+                    "system_prompt": {
+                        "type": "string",
+                        "description": "最终确认的人设提示词（必填）",
+                    },
+                    "schedules": {
+                        "type": "array",
+                        "description": "可选的定时任务列表",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "prompt": {"type": "string"},
+                                "interval_hours": {"type": "number", "minimum": 0.5},
+                                "enabled": {"type": "boolean", "default": True},
+                            },
+                            "required": ["prompt", "interval_hours"],
+                        },
+                    },
+                },
+                "required": ["system_prompt"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "sandbox_run",
             "description": (
                 "在服务器持久沙箱中执行 shell 命令（工作目录默认 /workspace）。"
