@@ -1,8 +1,9 @@
-import type { ComponentProps, ReactNode } from "react";
+import type { ComponentProps, CSSProperties, ReactNode } from "react";
 import { RoleList } from "../role/RoleList";
 import { KbSidebar } from "../KbSidebar";
 import { RoleConfigPanel } from "../role/RoleConfigPanel";
 import { LeftSidebarFooter } from "./LeftSidebarFooter";
+import { useLeftSidebarWidth } from "../../hooks/useLeftSidebarWidth";
 
 type RoleListProps = ComponentProps<typeof RoleList>;
 type KbSidebarProps = ComponentProps<typeof KbSidebar>;
@@ -45,6 +46,7 @@ export function AppShell({
   settingsAttention = false,
   onOpenSettings,
 }: Props) {
+  const leftSidebar = useLeftSidebarWidth();
   const shellClass = [
     "app-shell",
     "app-shell--three-pane",
@@ -53,12 +55,20 @@ export function AppShell({
     floatFocus ? "app-shell--doc-focus-float" : "",
     mobileLayout ? "app-shell--mobile" : "",
     mobileLayout && mobileNavOpen ? "app-shell--mobile-nav-open" : "",
+    leftSidebar.dragging ? "app-shell--left-resizing" : "",
   ]
     .filter(Boolean)
     .join(" ");
+  const leftStyle = {
+    "--app-left-width": `${leftSidebar.width}px`,
+  } as CSSProperties;
 
   return (
-    <div className={shellClass} data-has-merge-review={hasMergeReview ? "1" : "0"}>
+    <div
+      className={shellClass}
+      style={leftStyle}
+      data-has-merge-review={hasMergeReview ? "1" : "0"}
+    >
       {mobileLayout && mobileNavOpen && (
         <button
           type="button"
@@ -67,13 +77,27 @@ export function AppShell({
           onClick={onMobileNavClose}
         />
       )}
-      <div className="app-shell-left">
+      <div
+        className={`app-shell-left${leftSidebar.iconOnly ? " app-shell-left--icons" : ""}`}
+      >
         <RoleList {...roleListProps} />
         <KbSidebar {...kbSidebarProps} />
         <LeftSidebarFooter
           settingsAttention={settingsAttention}
           onOpenSettings={onOpenSettings}
         />
+        {!mobileLayout && (
+          <div
+            className="app-shell-left-resizer"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="调整侧栏宽度"
+            onPointerDown={leftSidebar.onPointerDown}
+            onPointerMove={leftSidebar.onPointerMove}
+            onPointerUp={leftSidebar.onPointerUp}
+            onPointerCancel={leftSidebar.onPointerUp}
+          />
+        )}
       </div>
       <main
         className={`main-panel${mainFloatWide ? " main-panel--float-wide" : ""}`}

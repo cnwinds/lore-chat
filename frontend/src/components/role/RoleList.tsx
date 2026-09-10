@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   listRoles,
@@ -7,7 +7,10 @@ import {
   type Role,
 } from "../../api";
 import { formatRoleListTime } from "../../utils/displayTime";
-import { rolePersonaPreview } from "../../utils/roleListPreview";
+import {
+  rolePersonaPreview,
+  sortRolesByRecentActivity,
+} from "../../utils/roleListPreview";
 import { RoleAvatar } from "./RoleAvatar";
 
 type RoleMenu = {
@@ -43,6 +46,10 @@ export function RoleList({
   const [menu, setMenu] = useState<RoleMenu | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const searchGenRef = useRef(0);
+  const orderedRoles = useMemo(
+    () => sortRolesByRecentActivity(roles),
+    [roles],
+  );
 
   async function loadRoles() {
     try {
@@ -215,7 +222,7 @@ export function RoleList({
         ) : roles.length === 0 ? (
           <div className="role-list-empty">暂无角色</div>
         ) : (
-          roles.map((role) => {
+          orderedRoles.map((role) => {
             const isActive = activeRoleId === role.id;
             const busy = busyRoleIds.includes(role.id);
             const preview = rolePersonaPreview(role);
@@ -240,13 +247,15 @@ export function RoleList({
                   ) : null}
                 </div>
                 <div className="role-item-content">
-                  <div className="role-item-name">{role.name}</div>
+                  <div className="role-item-top">
+                    <div className="role-item-name">{role.name}</div>
+                    <div className="role-item-meta">
+                      {formatRoleListTime(activityAt)}
+                    </div>
+                  </div>
                   <div className="role-item-preview">
                     {preview || "暂无人设"}
                   </div>
-                </div>
-                <div className="role-item-meta">
-                  {formatRoleListTime(activityAt)}
                 </div>
               </button>
             );

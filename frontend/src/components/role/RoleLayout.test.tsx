@@ -86,6 +86,47 @@ describe("RoleList", () => {
     expect(screen.getByLabelText("新建角色")).toBeInTheDocument();
   });
 
+  it("lists recently active roles first", async () => {
+    vi.mocked(listRoles).mockResolvedValueOnce({
+      roles: [
+        {
+          id: "old",
+          name: "旧角色",
+          avatar: null,
+          system_prompt: "旧",
+          is_default: false,
+          sort_order: 0,
+          created_at: "2026-08-01T10:00:00+08:00",
+          updated_at: "2026-08-01T10:00:00+08:00",
+          last_active_at: "2026-08-01T10:00:00+08:00",
+        },
+        {
+          id: "new",
+          name: "新聊的",
+          avatar: null,
+          system_prompt: "新",
+          is_default: false,
+          sort_order: 1,
+          created_at: "2026-08-02T10:00:00+08:00",
+          updated_at: "2026-08-02T10:00:00+08:00",
+          last_active_at: "2026-08-07T20:00:00+08:00",
+        },
+      ],
+    });
+    render(
+      <RoleList
+        activeRoleId="new"
+        onSelectRole={vi.fn()}
+        onNewRole={vi.fn()}
+      />,
+    );
+    const names = (await screen.findAllByText(/旧角色|新聊的/)).map(
+      (el) => el.textContent,
+    );
+    expect(names[0]).toBe("新聊的");
+    expect(names[1]).toBe("旧角色");
+  });
+
   it("shows persona text instead of last chat line", async () => {
     vi.mocked(listRoles).mockResolvedValueOnce({
       roles: [
