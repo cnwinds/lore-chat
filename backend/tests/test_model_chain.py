@@ -9,7 +9,7 @@ import pytest
 from app.config import Settings
 from app.models.candidate import ModelCandidate, migrate_settings_dict, resolve_chain_candidates
 from app.models.catalog import lookup_capabilities
-from app.models.cooldown import CooldownStore, ErrorClass, classify_error
+from app.models.cooldown import CooldownStore, ErrorClass, classify_error, is_local_abort
 from app.models.router import NoCandidateAvailable, select_candidate
 from app.models.vision import sign_attachment_token, verify_attachment_token
 
@@ -187,6 +187,19 @@ def test_classify_error():
         )
         == ErrorClass.CAPABILITY
     )
+
+
+def test_is_local_abort():
+    import asyncio
+    import concurrent.futures
+
+    assert is_local_abort(asyncio.CancelledError())
+    assert is_local_abort(concurrent.futures.CancelledError())
+    assert is_local_abort(GeneratorExit())
+    assert is_local_abort(KeyboardInterrupt())
+    assert is_local_abort(SystemExit())
+    assert not is_local_abort(RuntimeError("boom"))
+    assert not is_local_abort(TimeoutError("timed out"))
 
 
 def test_cooldown_exponential_and_independent(tmp_path):
@@ -419,6 +432,150 @@ def test_stream_capability_failover_before_output(tmp_path):
     finals = [c for c in chunks if c.result is not None]
     assert finals[-1].result.content == "hi"
     assert finals[-1].candidate_id == "b"
+
+
+def test_stream_close_after_output_does_not_cooldown(tmp_path):
+    """用户点停止会 close 流式生成器（GeneratorExit），不得记模型失败。"""
+    from unittest.mock import MagicMock, patch
+
+    from app.models.llm import OpenAILLMClient
+    from tests.test_llm_stream import _chunk
+
+    store = CooldownStore(tmp_path / "cd.json")
+    s = Settings(
+        kb_path=tmp_path,
+        chat_models=[
+            {"id": "a", "model": "m-a", "image": True, "thinking": False},
+        ],
+    )
+    llm = OpenAILLMClient(s, cooldown=store)
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.return_value = iter(
+        [
+            _chunk(content="hello"),
+            _chunk(content=" world", finish_reason="stop"),
+        ]
+    )
+    with patch.object(llm, "_client_for", return_value=mock_client):
+        gen = llm.stream_chat_with_tools(
+            [{"role": "user", "content": "x"}],
+            [],
+            big=True,
+        )
+        next(gen)  # model_selected
+        next(gen)  # text
+        gen.close()
+    assert store.is_available("a") is True
+    assert store.get("a").consecutive_failures == 0
+    assert store.get("a").disabled is False
+
+
+def test_stream_cancelled_before_output_does_not_failover(tmp_path):
+    """停止发生在尚未产出内容时：不得冷却，也不得切到备胎继续生成。"""
+    import asyncio
+    from unittest.mock import MagicMock, patch
+
+    from app.models.llm import OpenAILLMClient
+
+    store = CooldownStore(tmp_path / "cd.json")
+    s = Settings(
+        kb_path=tmp_path,
+        chat_models=[
+            {"id": "a", "model": "m-a", "image": True, "thinking": False},
+            {"id": "b", "model": "m-b", "image": True, "thinking": False},
+        ],
+    )
+    llm = OpenAILLMClient(s, cooldown=store)
+    seen: list[str] = []
+
+    def create(**kwargs):
+        seen.append(kwargs["model"])
+        raise asyncio.CancelledError()
+
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.side_effect = create
+    with patch.object(llm, "_client_for", return_value=mock_client):
+        with pytest.raises(asyncio.CancelledError):
+            list(
+                llm.stream_chat_with_tools(
+                    [{"role": "user", "content": "x"}],
+                    [],
+                    big=True,
+                )
+            )
+    assert seen == ["m-a"]
+    assert store.is_available("a") is True
+    assert store.get("a").consecutive_failures == 0
+
+
+def test_stream_cancelled_after_output_does_not_cooldown(tmp_path):
+    """流式已产出增量时收到 CancelledError（停止回合），不得记模型失败。"""
+    import asyncio
+    from unittest.mock import MagicMock, patch
+
+    from app.models.llm import OpenAILLMClient
+    from tests.test_llm_stream import _chunk
+
+    store = CooldownStore(tmp_path / "cd.json")
+    s = Settings(
+        kb_path=tmp_path,
+        chat_models=[
+            {"id": "a", "model": "m-a", "image": True, "thinking": False},
+        ],
+    )
+    llm = OpenAILLMClient(s, cooldown=store)
+
+    def create(**kwargs):
+        def it():
+            yield _chunk(content="hello")
+            raise asyncio.CancelledError()
+
+        return it()
+
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.side_effect = create
+    with patch.object(llm, "_client_for", return_value=mock_client):
+        with pytest.raises(asyncio.CancelledError):
+            list(
+                llm.stream_chat_with_tools(
+                    [{"role": "user", "content": "x"}],
+                    [],
+                    big=True,
+                )
+            )
+    assert store.is_available("a") is True
+    assert store.get("a").consecutive_failures == 0
+
+
+def test_chat_cancelled_does_not_cooldown(tmp_path):
+    import asyncio
+    from unittest.mock import MagicMock, patch
+
+    from app.models.llm import OpenAILLMClient
+
+    store = CooldownStore(tmp_path / "cd.json")
+    s = Settings(
+        kb_path=tmp_path,
+        chat_models=[
+            {"id": "a", "model": "m-a", "image": True, "thinking": False},
+            {"id": "b", "model": "m-b", "image": True, "thinking": False},
+        ],
+    )
+    llm = OpenAILLMClient(s, cooldown=store)
+    seen: list[str] = []
+
+    def create(**kwargs):
+        seen.append(kwargs["model"])
+        raise asyncio.CancelledError()
+
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.side_effect = create
+    with patch.object(llm, "_client_for", return_value=mock_client):
+        with pytest.raises(asyncio.CancelledError):
+            llm.chat([{"role": "user", "content": "hi"}], big=True)
+    assert seen == ["m-a"]
+    assert store.is_available("a") is True
+    assert store.get("a").consecutive_failures == 0
 
 
 def test_attachment_is_image_by_magic_without_suffix(tmp_path):

@@ -14,7 +14,12 @@ from openai import OpenAI
 from app.config import Settings
 from app.logging_config import get_logger
 from app.models.candidate import ModelCandidate, ModelChain
-from app.models.cooldown import CooldownStore, classify_error, shared_cooldown_store
+from app.models.cooldown import (
+    CooldownStore,
+    classify_error,
+    is_local_abort,
+    shared_cooldown_store,
+)
 from app.models.effort import format_model_label
 from app.models.router import NoCandidateAvailable, Selection, select_candidate
 from app.models.thinking import thinking_request_kwargs
@@ -304,6 +309,8 @@ class OpenAILLMClient:
             try:
                 resp = client.chat.completions.create(**kwargs)
             except BaseException as e:
+                if is_local_abort(e):
+                    raise
                 last_exc = e
                 self._record(
                     model=model,
@@ -366,6 +373,8 @@ class OpenAILLMClient:
             try:
                 resp = client.chat.completions.create(**kwargs)
             except BaseException as e:
+                if is_local_abort(e):
+                    raise
                 last_exc = e
                 self._record(
                     model=model,
@@ -577,6 +586,8 @@ class OpenAILLMClient:
                         },
                     )
             except BaseException as e:
+                if is_local_abort(e):
+                    raise
                 elapsed_ms = int((time.monotonic() - t0) * 1000)
                 _log.error(
                     "llm stream error id=%s model=%s ms=%d chunks=%d err=%s",
@@ -678,6 +689,8 @@ class OpenAILLMClient:
                         elif pt is not None:
                             total_tokens += pt
             except BaseException as e:
+                if is_local_abort(e):
+                    raise
                 last_exc = e
                 self._record(
                     model=model,
