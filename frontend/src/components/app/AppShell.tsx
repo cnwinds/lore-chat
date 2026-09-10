@@ -48,6 +48,7 @@ export function AppShell({
   const shellClass = [
     "app-shell",
     "app-shell--three-pane",
+    roleConfigPanelProps.collapsed ? "app-shell--config-collapsed" : "",
     panelFocus ? "app-shell--doc-focus" : "",
     floatFocus ? "app-shell--doc-focus-float" : "",
     mobileLayout ? "app-shell--mobile" : "",

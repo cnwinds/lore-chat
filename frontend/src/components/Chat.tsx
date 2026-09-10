@@ -89,6 +89,8 @@ type Props = {
   roles?: RoleSummary[];
   onSelectRole?: (id: string) => void;
   timelineRefreshKey?: number;
+  roleConfigCollapsed?: boolean;
+  onToggleRoleConfig?: () => void;
 };
 
 export function Chat({
@@ -113,6 +115,8 @@ export function Chat({
   roles = [],
   onSelectRole,
   timelineRefreshKey = 0,
+  roleConfigCollapsed = false,
+  onToggleRoleConfig,
 }: Props) {
   const { previewPath, openDoc, refreshKb } = useDocPreview();
 
@@ -817,6 +821,9 @@ export function Chat({
     ],
   );
 
+  const activeRoleName =
+    roles.find((r) => r.id === roleId)?.name || mobileHeaderTitle || "对话";
+
   return (
     <div className={`chat-panel${mobileLayout ? " chat-panel--mobile" : ""}`}>
       {mobileLayout && onOpenMobileNav && (
@@ -828,6 +835,32 @@ export function Chat({
           activeRoleId={roleId}
           onSelectRole={onSelectRole}
         />
+      )}
+      {!mobileLayout && (
+        <header className="chat-desktop-header">
+          <h1 className="chat-desktop-header-title">{activeRoleName}</h1>
+          {roleConfigCollapsed && onToggleRoleConfig ? (
+            <div className="chat-desktop-header-actions">
+              <button
+                type="button"
+                className="chat-desktop-header-btn"
+                onClick={onToggleRoleConfig}
+                title="展开角色设置"
+                aria-label="展开角色设置"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
+                  <path
+                    d="M15 6l-6 6 6 6M10 6l-6 6 6 6"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </button>
+            </div>
+          ) : null}
+        </header>
       )}
       <ConversationTranscriptPanel
         msgs={msgs}

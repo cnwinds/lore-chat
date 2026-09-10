@@ -2,11 +2,18 @@ import { useState, useCallback, useEffect } from "react";
 import { createRole, ensureActiveConversation, listRoles } from "../../api";
 
 const STORAGE_KEY = "lorechat.lastRoleId";
+const CONFIG_COLLAPSED_KEY = "lorechat.roleConfigCollapsed";
 
 export function useRoleShell() {
   const [activeRoleId, setActiveRoleId] = useState<string | null>(null);
   const [roleRefreshKey, setRoleRefreshKey] = useState(0);
-  const [configPanelCollapsed, setConfigPanelCollapsed] = useState(false);
+  const [configPanelCollapsed, setConfigPanelCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem(CONFIG_COLLAPSED_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
   const [onRoleSwitch, setOnRoleSwitch] = useState<
     ((roleId: string, conversationId: string) => void) | null
   >(null);
@@ -81,7 +88,15 @@ export function useRoleShell() {
   );
 
   const toggleConfigPanel = useCallback(() => {
-    setConfigPanelCollapsed((c) => !c);
+    setConfigPanelCollapsed((c) => {
+      const next = !c;
+      try {
+        localStorage.setItem(CONFIG_COLLAPSED_KEY, next ? "1" : "0");
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
   }, []);
 
   const registerRoleSwitchHandler = useCallback(

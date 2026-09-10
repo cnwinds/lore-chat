@@ -126,6 +126,32 @@ export function formatSidebarConversationTime(
   return formatDateAndTime(d, now);
 }
 
+function ymdOrdinal(ymd: Ymd): number {
+  return Date.UTC(ymd.y, ymd.m - 1, ymd.d) / 86_400_000;
+}
+
+/** 角色列表时间：当天时刻、昨天、本周星期、更早日期。 */
+export function formatRoleListTime(
+  iso: string,
+  now: Date = new Date(),
+): string {
+  const d = parseStoredInstant(iso);
+  if (!d) return "";
+  if (sameCalendarDay(d, now)) return formatClockHm(d);
+  const then = ymdInDisplayZone(d);
+  const today = ymdInDisplayZone(now);
+  const days = ymdOrdinal(today) - ymdOrdinal(then);
+  if (days === 1) return "昨天";
+  if (days > 1 && days < 7) {
+    return d.toLocaleDateString(LOCALE, {
+      timeZone: DISPLAY_TIME_ZONE,
+      weekday: "long",
+    });
+  }
+  if (then.y === today.y) return `${then.m}月${then.d}日`;
+  return `${then.y}/${then.m}/${then.d}`;
+}
+
 /** 文档元数据等：`YYYY-MM-DD HH:mm:ss`（已是该格式则原样返回）。 */
 export function formatDisplayDateTime(iso: string): string {
   const trimmed = iso.trim();

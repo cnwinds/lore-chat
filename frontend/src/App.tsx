@@ -267,6 +267,7 @@ function AppMain() {
               refreshSidebar();
             })();
           },
+          busyRoleIds: conversation.sidebarProps.busyRoleIds,
           refreshKey: role.roleRefreshKey + sidebarRefreshKey,
         }}
         kbSidebarProps={{
@@ -295,6 +296,8 @@ function AppMain() {
             roleId={conversation.activeRoleId}
             roles={conversation.roles}
             timelineRefreshKey={conversation.timelineRefreshKey}
+            roleConfigCollapsed={role.configPanelCollapsed}
+            onToggleRoleConfig={role.toggleConfigPanel}
             onSelectRole={(id) => {
               void conversation.sidebarProps.onSelectRole?.(id);
             }}
