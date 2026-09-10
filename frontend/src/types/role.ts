@@ -6,6 +6,7 @@ export type Role = {
   created_at: string;
   updated_at: string;
   last_active_at?: string | null;
+  last_reply_preview?: string | null;
 };
 
 export type RoleSchedule = {

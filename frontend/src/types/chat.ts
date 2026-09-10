@@ -177,6 +177,8 @@ export type RoleSummary = {
   updated_at: string;
   /** 该角色最近一次会话活动；列表右侧时间用这个，不是人设更新时间 */
   last_active_at?: string | null;
+  /** 该角色最近一条助手回复的单行预览 */
+  last_reply_preview?: string | null;
 };
 
 export type ActiveTurnStatus = {

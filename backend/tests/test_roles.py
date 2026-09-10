@@ -112,7 +112,7 @@ def test_reassign_role_conversations(tmp_path):
     assert conv.get_role_id(cid) == DEFAULT_ROLE_ID
 
 
-def test_roles_list_uses_persona_and_last_active_at(client):
+def test_roles_list_uses_last_reply_and_last_active_at(client):
     created = client.post(
         "/api/roles",
         json={"name": "股票研究院", "system_prompt": "专注基本面研究"},
@@ -127,10 +127,26 @@ def test_roles_list_uses_persona_and_last_active_at(client):
     listed = client.get("/api/roles").json()["roles"]
     row = next(x for x in listed if x["id"] == rid)
     assert row["system_prompt"] == "专注基本面研究"
-    assert "帮我看看今天行情" not in row["system_prompt"]
+    assert row.get("last_reply_preview") in (None, "")
     meta = store.get_turn(turn["turn_id"])
     assert meta is not None
     assert row["last_active_at"] == meta["started_at"]
+
+    store.finalize_turn(
+        cid,
+        turn_id=turn["turn_id"],
+        assistant={
+            "text": "今日沪深三百震荡，建议先看成交量。",
+            "timeline": [],
+            "sources": [],
+            "status": "complete",
+        },
+    )
+    after = next(
+        x for x in client.get("/api/roles").json()["roles"] if x["id"] == rid
+    )
+    assert after["last_reply_preview"] == "今日沪深三百震荡，建议先看成交量。"
+    assert "专注基本面研究" not in (after.get("last_reply_preview") or "")
 
 
 def test_roles_last_active_at_ignores_empty_conversation(client):

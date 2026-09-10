@@ -552,17 +552,13 @@
 }
 
 .role-config-main {
-  flex: 1;
+  flex: 0 0 auto;
   min-height: 0;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  padding: 12px 20px 8px;
-}
-
-.role-config-main:has(.role-config-editor) {
   justify-content: flex-start;
+  padding: 8px 20px 16px;
 }
 
 .role-config-cover {

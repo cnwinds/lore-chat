@@ -1,22 +1,22 @@
 import { describe, expect, it } from "vitest";
 import {
-  rolePersonaPreview,
+  roleReplyPreview,
   sortRolesByRecentActivity,
 } from "./roleListPreview";
 
-describe("rolePersonaPreview", () => {
-  it("uses system_prompt and ignores other chatter-like fields", () => {
+describe("roleReplyPreview", () => {
+  it("uses the last assistant reply and ignores persona", () => {
     expect(
-      rolePersonaPreview({
-        system_prompt: "  专注基本面研究\n与估值 ",
+      roleReplyPreview({
+        last_reply_preview: "  今日沪深三百震荡\n建议先看量 ",
       }),
-    ).toBe("专注基本面研究 与估值");
+    ).toBe("今日沪深三百震荡 建议先看量");
   });
 
-  it("returns empty when there is no persona", () => {
-    expect(rolePersonaPreview({ system_prompt: "" })).toBe("");
-    expect(rolePersonaPreview({ system_prompt: "   " })).toBe("");
-    expect(rolePersonaPreview({ system_prompt: null })).toBe("");
+  it("returns empty when there is no reply", () => {
+    expect(roleReplyPreview({ last_reply_preview: "" })).toBe("");
+    expect(roleReplyPreview({ last_reply_preview: "   " })).toBe("");
+    expect(roleReplyPreview({ last_reply_preview: null })).toBe("");
   });
 });
 

@@ -8,7 +8,7 @@ import {
 } from "../../api";
 import { formatRoleListTime } from "../../utils/displayTime";
 import {
-  rolePersonaPreview,
+  roleReplyPreview,
   sortRolesByRecentActivity,
 } from "../../utils/roleListPreview";
 import { RoleAvatar } from "./RoleAvatar";
@@ -225,7 +225,7 @@ export function RoleList({
           orderedRoles.map((role) => {
             const isActive = activeRoleId === role.id;
             const busy = busyRoleIds.includes(role.id);
-            const preview = rolePersonaPreview(role);
+            const preview = roleReplyPreview(role);
             const activityAt = role.last_active_at || role.updated_at;
             return (
               <button
@@ -254,7 +254,7 @@ export function RoleList({
                     </div>
                   </div>
                   <div className="role-item-preview">
-                    {preview || "暂无人设"}
+                    {preview || "暂无对话"}
                   </div>
                 </div>
               </button>
