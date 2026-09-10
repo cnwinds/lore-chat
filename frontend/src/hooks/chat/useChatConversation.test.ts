@@ -9,6 +9,7 @@ vi.mock("../../api", async (importOriginal) => {
   return {
     ...mod,
     getConversation: vi.fn(),
+    getConversationMessages: vi.fn(),
   };
 });
 
@@ -237,5 +238,71 @@ describe("useChatConversation", () => {
     await waitFor(() => {
       expect(result.current.msgs[0]).toMatchObject({ text: "msg-b" });
     });
+  });
+
+  it("loads only a tail when messageTail is set", async () => {
+    vi.mocked(api.getConversation).mockResolvedValue({
+      id: "cid-1",
+      title: "t",
+      created_at: "",
+      updated_at: "",
+      message_count: 20,
+      summarized: false,
+      summary_path: null,
+      older_message_count: 12,
+      messages: [
+        { id: "m-tail", role: "user", text: "recent", ts: "2026-01-01T00:00:00.000Z" },
+      ],
+    });
+
+    const skipLoadRef = { current: null as string | null };
+    const streamOwnership = createStreamOwnership();
+    const { result } = renderHook(() =>
+      useChatConversation({
+        conversationId: "cid-1",
+        skipLoadRef,
+        streamOwnership,
+        messageTail: 8,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(result.current.msgs[0]).toMatchObject({ text: "recent" });
+    });
+    expect(api.getConversation).toHaveBeenCalledWith("cid-1", { tail: 8 });
+    expect(result.current.olderMessageCount).toBe(12);
+  });
+
+  it("loads the full conversation when jumping to a message", async () => {
+    vi.mocked(api.getConversation).mockResolvedValue({
+      id: "cid-1",
+      title: "t",
+      created_at: "",
+      updated_at: "",
+      message_count: 2,
+      summarized: false,
+      summary_path: null,
+      older_message_count: 0,
+      messages: [
+        { id: "hit", role: "user", text: "found", ts: "2026-01-01T00:00:00.000Z" },
+      ],
+    });
+
+    const skipLoadRef = { current: null as string | null };
+    const streamOwnership = createStreamOwnership();
+    renderHook(() =>
+      useChatConversation({
+        conversationId: "cid-1",
+        skipLoadRef,
+        streamOwnership,
+        messageTail: 8,
+        pendingJump: { conversationId: "cid-1", messageId: "hit" },
+      }),
+    );
+
+    await waitFor(() => {
+      expect(api.getConversation).toHaveBeenCalledWith("cid-1");
+    });
+    expect(api.getConversation).not.toHaveBeenCalledWith("cid-1", { tail: 8 });
   });
 });

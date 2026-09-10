@@ -536,6 +536,54 @@ def test_reassign_role_preserves_updated_at(tmp_path):
     assert active == default_tip
 
 
+def test_list_timeline_limit_zero_is_tip_only(tmp_path):
+    from datetime import datetime, timedelta, timezone
+
+    conv = _conv(tmp_path)
+    now = datetime.now(timezone.utc)
+    ids = []
+    for i in range(3):
+        cid = conv.create(role_id=DEFAULT_ROLE_ID, title=f"h{i}")
+        conv.append_exchange(cid, f"u{i}", {"role": "assistant", "text": f"a{i}"})
+        ids.append(cid)
+        with conv._lock:
+            conv.conn.execute(
+                "UPDATE conversations SET created_at = ? WHERE id = ?",
+                ((now - timedelta(hours=3 - i)).isoformat(), cid),
+            )
+            conv.conn.commit()
+    tip = conv.create(role_id=DEFAULT_ROLE_ID, title="tip")
+    page, has_more = conv.list_timeline(
+        DEFAULT_ROLE_ID,
+        include_messages=False,
+        limit=0,
+        tip_id=tip,
+        only_with_messages=True,
+    )
+    assert has_more is True
+    assert [s["id"] for s in page] == [tip]
+
+
+def test_list_timeline_message_limit_keeps_tail(tmp_path):
+    conv = _conv(tmp_path)
+    cid = conv.create(role_id=DEFAULT_ROLE_ID, title="long")
+    for i in range(5):
+        conv.append_exchange(
+            cid, f"u{i}", {"role": "assistant", "text": f"a{i}"}
+        )
+    page, has_more = conv.list_timeline(
+        DEFAULT_ROLE_ID,
+        include_messages=True,
+        limit=1,
+        message_limit=3,
+        only_with_messages=True,
+    )
+    assert has_more is False
+    assert len(page) == 1
+    assert [m["text"] for m in page[0]["messages"]] == ["a3", "u4", "a4"]
+    assert page[0]["older_message_count"] == 7
+
+
 def test_list_timeline_limit_excludes_empty_tip_from_quota(tmp_path):
     from datetime import datetime, timedelta, timezone
 

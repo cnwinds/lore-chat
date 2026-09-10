@@ -191,14 +191,16 @@ async def get_role_timeline(
     role_id: str,
     request: Request,
     include_messages: bool = True,
-    limit: int = 5,
+    limit: int = 0,
     before_created_at: str | None = None,
     before_id: str | None = None,
+    message_limit: int = 16,
 ):
-    """角色统一时间线（分页）：默认最近若干段；before_* 取更早。
+    """角色统一时间线（分页）：默认只要 tip；before_* 取更早历史段。
 
-    首屏不传 before → 最近 ``limit`` 段（含 tip 空壳）；上滚传最旧段的
-    created_at/id 作为 before 游标。
+    首屏不传 before → ``limit`` 段历史（默认 0，只带 tip 空壳/尾部）+ tip；
+    上滚传最旧段的 created_at/id 作为 before 游标。
+    ``message_limit`` 为每段尾部消息数；``0`` 表示该段全量。
     """
     c = container(request)
     try:
@@ -220,7 +222,13 @@ async def get_role_timeline(
         )
         maybe_kickoff_role_onboarding(c, role_id)
     # 续载更早历史时不要反复 ensure 干扰；仍返回当前 tip id
-    page_limit = max(1, min(int(limit or 5), 30))
+    # 勿用 ``limit or 1``：0 是合法的「只要 tip」
+    page_limit = max(0, min(int(limit), 30))
+    msg_tail: int | None
+    if message_limit is None or int(message_limit) <= 0:
+        msg_tail = None
+    else:
+        msg_tail = max(1, min(int(message_limit), 80))
     segments, has_more = c.conversations.list_timeline(
         role_id,
         include_messages=include_messages,
@@ -229,6 +237,7 @@ async def get_role_timeline(
         before_id=before_id,
         tip_id=None if before_created_at else tip_id,
         only_with_messages=True,
+        message_limit=msg_tail,
     )
     return {
         "role_id": role_id,

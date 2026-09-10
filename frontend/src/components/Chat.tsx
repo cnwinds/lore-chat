@@ -17,7 +17,12 @@ import type { JumpTarget } from "../hooks/chat/useConversationJump";
 import {
   scrollToMessageHighlight,
 } from "../hooks/chat/useConversationJump";
-import { useRoleTimeline } from "../hooks/chat/useRoleTimeline";
+import {
+  TIMELINE_AUTOFILL_MAX,
+  TIMELINE_MESSAGE_TAIL_DESKTOP,
+  TIMELINE_MESSAGE_TAIL_MOBILE,
+  useRoleTimeline,
+} from "../hooks/chat/useRoleTimeline";
 import {
   getConversation,
   isMarkdownPath,
@@ -143,10 +148,17 @@ export function Chat({
     (cid: string, startedAt?: string | null) => Promise<boolean>
   >(async () => false);
 
+  const messageTail = mobileLayout
+    ? TIMELINE_MESSAGE_TAIL_MOBILE
+    : TIMELINE_MESSAGE_TAIL_DESKTOP;
+
   const {
     msgs,
     setMsgs,
     loadingHistory,
+    loadingOlderMessages,
+    olderMessageCount,
+    loadOlderMessages,
     summarized,
     setSummarized,
     summaryPath,
@@ -157,6 +169,7 @@ export function Chat({
     streamOwnership,
     pendingJump,
     onJumpHandled,
+    messageTail,
     onActiveTurn: (cid, startedAt) => {
       void resumeActiveTurnRef.current(cid, startedAt);
     },
@@ -169,21 +182,42 @@ export function Chat({
     loadingOlder,
     hasMore: timelineHasMore,
     loadOlder,
+    expandSegment,
   } = useRoleTimeline({
     roleId,
     tipConversationId: conversationId,
+    messageLimit: messageTail,
     refreshKey: timelineRefreshKey,
   });
+
+  const loadingOlderContent = loadingOlder || loadingOlderMessages;
+  const canLoadOlder =
+    olderMessageCount > 0 ||
+    (historicalSegments[0]?.olderMessageCount ?? 0) > 0 ||
+    timelineHasMore;
+
+  const loadOlderContent = useCallback(async () => {
+    if (olderMessageCount > 0) {
+      return loadOlderMessages();
+    }
+    return loadOlder();
+  }, [olderMessageCount, loadOlderMessages, loadOlder]);
 
   // 时间线内跨段跳转：不必切 tip，直接滚到 DOM 中的消息
   useEffect(() => {
     if (!pendingJump?.messageId) return;
     if (pendingJump.conversationId === conversationId) return;
     if (loadingTimeline || loadingHistory) return;
-    const inTimeline = historicalSegments.some(
+    const seg = historicalSegments.find(
       (s) => s.conversationId === pendingJump.conversationId,
     );
-    if (!inTimeline) return;
+    if (!seg) return;
+    if (!seg.messages.some((m) => m.id === pendingJump.messageId)) {
+      if (seg.olderMessageCount > 0) {
+        void expandSegment(seg.conversationId);
+      }
+      return;
+    }
     const range =
       pendingJump.startChar !== undefined && pendingJump.endChar !== undefined
         ? { start: pendingJump.startChar, end: pendingJump.endChar }
@@ -204,24 +238,30 @@ export function Chat({
     loadingHistory,
     historicalSegments,
     onJumpHandled,
+    expandSegment,
   ]);
 
   // 搜索命中不在已加载页内时，尽量向上翻页直到找到或没有更多
   useEffect(() => {
     if (!pendingJump?.messageId) return;
     if (pendingJump.conversationId === conversationId) return;
-    if (loadingTimeline || loadingOlder) return;
+    if (loadingTimeline || loadingOlderContent) return;
     const inTimeline = historicalSegments.some(
       (s) => s.conversationId === pendingJump.conversationId,
     );
     if (inTimeline) return;
-    if (!timelineHasMore) return;
+    if (
+      !timelineHasMore &&
+      !(historicalSegments[0]?.olderMessageCount)
+    ) {
+      return;
+    }
     void loadOlder();
   }, [
     pendingJump,
     conversationId,
     loadingTimeline,
-    loadingOlder,
+    loadingOlderContent,
     historicalSegments,
     timelineHasMore,
     loadOlder,
@@ -329,12 +369,12 @@ export function Chat({
     if (!el) return;
     let busy = false;
     const onScroll = () => {
-      if (busy || loadingOlder || loadingTimeline || !timelineHasMore) return;
+      if (busy || loadingOlderContent || loadingTimeline || !canLoadOlder) return;
       if (el.scrollTop > 80) return;
       busy = true;
       const prevHeight = el.scrollHeight;
       const prevTop = el.scrollTop;
-      void loadOlder().then((loaded) => {
+      void loadOlderContent().then((loaded) => {
         requestAnimationFrame(() => {
           if (loaded) {
             el.scrollTop = prevTop + (el.scrollHeight - prevHeight);
@@ -347,10 +387,10 @@ export function Chat({
     return () => el.removeEventListener("scroll", onScroll);
   }, [
     messagesContainerRef,
-    loadOlder,
-    loadingOlder,
+    loadOlderContent,
+    loadingOlderContent,
     loadingTimeline,
-    timelineHasMore,
+    canLoadOlder,
   ]);
 
   // 内容不足以溢出滚动时仍自动续载更早段（失败/无更多则停，防死循环）
@@ -360,17 +400,18 @@ export function Chat({
   }, [roleId, conversationId, timelineRefreshKey]);
   useEffect(() => {
     const el = messagesContainerRef.current;
-    if (!el || loadingOlder || loadingTimeline || !timelineHasMore) return;
+    if (!el || loadingOlderContent || loadingTimeline || !canLoadOlder) return;
     if (el.scrollHeight > el.clientHeight + 8) return;
-    if (autoFillAttemptsRef.current >= 30) return;
+    if (autoFillAttemptsRef.current >= TIMELINE_AUTOFILL_MAX) return;
     autoFillAttemptsRef.current += 1;
-    void loadOlder();
+    void loadOlderContent();
   }, [
     historicalSegments,
-    timelineHasMore,
-    loadingOlder,
+    msgs,
+    canLoadOlder,
+    loadingOlderContent,
     loadingTimeline,
-    loadOlder,
+    loadOlderContent,
     messagesContainerRef,
   ]);
 
@@ -866,8 +907,8 @@ export function Chat({
         msgs={msgs}
         historicalSegments={historicalSegments}
         continuityIdleHours={continuityIdleHours}
-        timelineHasMore={timelineHasMore}
-        loadingOlder={loadingOlder}
+        timelineHasMore={canLoadOlder}
+        loadingOlder={loadingOlderContent}
         loadingHistory={loadingHistory || loadingTimeline}
         streaming={streamingForView}
         reconciling={reconciling}

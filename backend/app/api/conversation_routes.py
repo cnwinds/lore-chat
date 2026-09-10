@@ -135,11 +135,36 @@ async def list_conversation_events(
 
 
 @router.get("/conversations/{cid}")
-async def get_conversation(cid: str, request: Request):
+async def get_conversation(
+    cid: str, request: Request, tail: int | None = None
+):
+    tail_n: int | None = None
+    if tail is not None:
+        tail_n = max(1, min(int(tail), 80))
     try:
-        return container(request).conversations.get(cid)
+        return container(request).conversations.get(cid, tail=tail_n)
     except KeyError as e:
         raise HTTPException(404, "对话不存在") from e
+
+
+@router.get("/conversations/{cid}/messages")
+async def list_conversation_messages(
+    cid: str,
+    request: Request,
+    before_id: str | None = None,
+    limit: int = 16,
+):
+    """向前翻页：``before_id`` 之前的一页消息（正序）。"""
+    if not before_id:
+        raise HTTPException(400, "before_id 必填")
+    page_limit = max(1, min(int(limit or 16), 80))
+    try:
+        messages, older = container(request).conversations.load_messages_before(
+            cid, before_id=before_id, limit=page_limit
+        )
+    except KeyError as e:
+        raise HTTPException(404, "对话不存在") from e
+    return {"messages": messages, "older_message_count": older}
 
 
 @router.post("/conversations/{cid}/messages")

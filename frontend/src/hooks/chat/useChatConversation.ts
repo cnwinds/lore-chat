@@ -1,5 +1,9 @@
-import { useEffect, useRef, useState } from "react";
-import { getConversation, type ChatMessage } from "../../api";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  getConversation,
+  getConversationMessages,
+  type ChatMessage,
+} from "../../api";
 import {
   isInjectedUserMessage,
   normalizeLoadedMessage,
@@ -21,7 +25,24 @@ type Options = {
   onJumpHandled?: () => void;
   /** Called when loaded conversation has a server-side running turn. */
   onActiveTurn?: (conversationId: string, startedAt?: string | null) => void;
+  /** 首屏只取尾部 N 条；定位某条消息时仍拉全量 */
+  messageTail?: number;
 };
+
+function toLoadedMessages(
+  messages: ChatMessage[],
+  activeTurnRunning: boolean,
+): ChatMessage[] {
+  return messages.map((m) =>
+    normalizeLoadedMessage(
+      {
+        ...m,
+        injected: isInjectedUserMessage(m),
+      },
+      { activeTurnRunning },
+    ),
+  );
+}
 
 /**
  * 跳转会话后：无 messageId 时只要会话已切过去即可完成（不必等消息加载）。
@@ -34,16 +55,22 @@ export function useChatConversation({
   pendingJump = null,
   onJumpHandled,
   onActiveTurn,
+  messageTail,
 }: Options) {
   const [msgs, setMsgs] = useState<ChatMessage[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const [loadingOlderMessages, setLoadingOlderMessages] = useState(false);
+  const [olderMessageCount, setOlderMessageCount] = useState(0);
   const [summarized, setSummarized] = useState(false);
   const [summaryPath, setSummaryPath] = useState<string | null>(null);
   const pendingJumpRef = useRef<JumpTarget | null>(null);
+  const jumpExpandKeyRef = useRef<string | null>(null);
   const onActiveTurnRef = useRef(onActiveTurn);
   const onJumpHandledRef = useRef(onJumpHandled);
+  const messageTailRef = useRef(messageTail);
   onActiveTurnRef.current = onActiveTurn;
   onJumpHandledRef.current = onJumpHandled;
+  messageTailRef.current = messageTail;
 
   useEffect(() => {
     if (pendingJump) {
@@ -66,14 +93,17 @@ export function useChatConversation({
       streamOwnership.msgsConversationIdRef.current = null;
       setSummarized(false);
       setSummaryPath(null);
+      setOlderMessageCount(0);
       return;
     }
     // Only skip reload for the conversation we just created / own optimistically.
     // Do NOT skip because some *other* conversation is still streaming — that left
     // the previous chat's messages on screen after switching.
     if (skipLoadRef.current === conversationId) {
+      setOlderMessageCount(0);
       return;
     }
+    jumpExpandKeyRef.current = null;
     let cancelled = false;
     const loadedFor = conversationId;
     // Drop foreign messages immediately so a fast send/resume cannot append onto
@@ -94,24 +124,24 @@ export function useChatConversation({
       apply();
     };
 
-    getConversation(conversationId)
+    const jumpHere =
+      !!pendingJumpRef.current?.messageId &&
+      pendingJumpRef.current.conversationId === conversationId;
+    const tail = !jumpHere && messageTail ? messageTail : undefined;
+
+    const req = tail
+      ? getConversation(conversationId, { tail })
+      : getConversation(conversationId);
+
+    req
       .then((conv) => {
         applyIfSafe(() => {
           const activeTurnRunning = conv.active_turn?.status === "running";
-          setMsgs(
-            conv.messages.map((m) =>
-              normalizeLoadedMessage(
-                {
-                  ...m,
-                  injected: isInjectedUserMessage(m),
-                },
-                { activeTurnRunning },
-              ),
-            ),
-          );
+          setMsgs(toLoadedMessages(conv.messages, activeTurnRunning));
           streamOwnership.msgsConversationIdRef.current = loadedFor;
           setSummarized(!!conv.summarized);
           setSummaryPath(conv.summary_path ?? null);
+          setOlderMessageCount(conv.older_message_count ?? 0);
           if (conv.active_turn?.status === "running") {
             onActiveTurnRef.current?.(
               loadedFor,
@@ -126,6 +156,7 @@ export function useChatConversation({
           streamOwnership.msgsConversationIdRef.current = loadedFor;
           setSummarized(false);
           setSummaryPath(null);
+          setOlderMessageCount(0);
         });
       })
       .finally(() => {
@@ -134,7 +165,44 @@ export function useChatConversation({
     return () => {
       cancelled = true;
     };
-  }, [conversationId, skipLoadRef, streamOwnership]);
+  }, [conversationId, skipLoadRef, streamOwnership, messageTail]);
+
+  // 定位消息不在已加载尾部时，补拉该会话全量
+  useEffect(() => {
+    const target = pendingJumpRef.current;
+    if (!target?.messageId || target.conversationId !== conversationId) return;
+    if (loadingHistory || msgs.length === 0) return;
+    if (msgs.some((m) => m.id === target.messageId)) return;
+    if (olderMessageCount <= 0) return;
+    const expandKey = `${conversationId}:${target.messageId}`;
+    if (jumpExpandKeyRef.current === expandKey) return;
+    jumpExpandKeyRef.current = expandKey;
+    let cancelled = false;
+    getConversation(conversationId)
+      .then((conv) => {
+        if (cancelled) return;
+        if (shouldProtectStreamingHistory(streamOwnership, conversationId)) {
+          return;
+        }
+        setMsgs(
+          toLoadedMessages(conv.messages, conv.active_turn?.status === "running"),
+        );
+        setOlderMessageCount(0);
+      })
+      .catch(() => {
+        /* keep tail */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    conversationId,
+    loadingHistory,
+    msgs,
+    olderMessageCount,
+    pendingJump,
+    streamOwnership,
+  ]);
 
   useEffect(() => {
     const target = pendingJumpRef.current;
@@ -160,10 +228,54 @@ export function useChatConversation({
     return () => cancelAnimationFrame(frame);
   }, [conversationId, loadingHistory, msgs]);
 
+  const loadOlderMessages = useCallback(async () => {
+    if (
+      !conversationId ||
+      loadingOlderMessages ||
+      loadingHistory ||
+      olderMessageCount <= 0
+    ) {
+      return false;
+    }
+    const firstId = msgs.find((m) => m.id)?.id;
+    if (!firstId) return false;
+    setLoadingOlderMessages(true);
+    try {
+      const page = await getConversationMessages(conversationId, {
+        beforeId: firstId,
+        limit: messageTailRef.current || 16,
+      });
+      setMsgs((prev) => {
+        const seen = new Set(
+          prev.map((m) => m.id).filter((id): id is string => !!id),
+        );
+        const prepend = toLoadedMessages(page.messages, false).filter(
+          (m) => !m.id || !seen.has(m.id),
+        );
+        return [...prepend, ...prev];
+      });
+      setOlderMessageCount(page.older_message_count);
+      return page.messages.length > 0;
+    } catch {
+      return false;
+    } finally {
+      setLoadingOlderMessages(false);
+    }
+  }, [
+    conversationId,
+    loadingOlderMessages,
+    loadingHistory,
+    olderMessageCount,
+    msgs,
+  ]);
+
   return {
     msgs,
     setMsgs,
     loadingHistory,
+    loadingOlderMessages,
+    olderMessageCount,
+    loadOlderMessages,
     summarized,
     setSummarized,
     summaryPath,

@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  getConversation,
+  getConversationMessages,
   getRoleTimeline,
   type ChatMessage,
   type RoleTimelineSegment,
@@ -9,8 +11,13 @@ import {
   normalizeLoadedMessage,
 } from "../../utils/chatMessage";
 
-/** 首屏 / 每次上滚加载的段数（有消息的历史段；tip 另算） */
-export const TIMELINE_PAGE_SIZE = 5;
+/** 首屏不拉历史段（只要 tip）；上滚每次续 1 段 */
+export const TIMELINE_FIRST_PAGE_SIZE = 0;
+export const TIMELINE_PAGE_SIZE = 1;
+export const TIMELINE_MESSAGE_TAIL_DESKTOP = 12;
+export const TIMELINE_MESSAGE_TAIL_MOBILE = 8;
+/** 内容撑不满一屏时自动续载的次数上限，避免短气泡把整条时间线拉齐 */
+export const TIMELINE_AUTOFILL_MAX = 4;
 
 function normalizeSegmentMessages(
   messages: ChatMessage[] | undefined,
@@ -33,6 +40,7 @@ export type TimelineSegmentView = {
   createdAt: string;
   messages: ChatMessage[];
   isTip: boolean;
+  olderMessageCount: number;
 };
 
 function toView(
@@ -52,22 +60,26 @@ function toView(
     createdAt: seg.created_at,
     messages: msgs,
     isTip: false,
+    olderMessageCount: seg.older_message_count ?? 0,
   };
 }
 
 type Options = {
   roleId: string | null;
   tipConversationId: string | null;
+  /** 每段只取尾部若干条；手机更少 */
+  messageLimit?: number;
   /** 新话题等强制重置近端窗口 */
   refreshKey?: number;
 };
 
 /**
- * 角色时间线：默认只拉最近若干段；上滚调用 loadOlder 续取。
+ * 角色时间线：首屏不拉历史段；上滚先补当前最旧段更早消息，再续更早段。
  */
 export function useRoleTimeline({
   roleId,
   tipConversationId,
+  messageLimit = TIMELINE_MESSAGE_TAIL_DESKTOP,
   refreshKey = 0,
 }: Options) {
   const [segments, setSegments] = useState<TimelineSegmentView[]>([]);
@@ -80,23 +92,38 @@ export function useRoleTimeline({
   roleRef.current = roleId;
   const tipRef = useRef(tipConversationId);
   tipRef.current = tipConversationId;
+  const tipMetaRef = useRef<{ createdAt: string; id: string } | null>(null);
+  const messageLimitRef = useRef(messageLimit);
+  messageLimitRef.current = messageLimit;
+
+  const rememberTipMeta = (tl: {
+    tip_conversation_id: string;
+    segments: RoleTimelineSegment[];
+  }) => {
+    const tipId = tipRef.current || tl.tip_conversation_id;
+    const tipSeg = tl.segments.find((s) => s.id === tipId);
+    if (tipSeg) {
+      tipMetaRef.current = { createdAt: tipSeg.created_at, id: tipSeg.id };
+    }
+  };
 
   const resetAndLoadRecent = useCallback(async () => {
     if (!roleId) {
       setSegments([]);
       setHasMore(false);
+      tipMetaRef.current = null;
       return;
     }
     const gen = ++genRef.current;
     setLoading(true);
     try {
-      const tl = await getRoleTimeline(roleId, { limit: TIMELINE_PAGE_SIZE });
+      const tl = await getRoleTimeline(roleId, {
+        includeMessages: false,
+        limit: TIMELINE_FIRST_PAGE_SIZE,
+      });
       if (gen !== genRef.current || roleRef.current !== roleId) return;
-      const tipId = tipRef.current || tl.tip_conversation_id;
-      const views = tl.segments
-        .map((s) => toView(s, tipId))
-        .filter((v): v is TimelineSegmentView => !!v);
-      setSegments(views);
+      rememberTipMeta(tl);
+      setSegments([]);
       setHasMore(!!tl.has_more);
       setContinuityIdleHours(tl.continuity_idle_hours ?? 6);
     } catch {
@@ -114,19 +141,62 @@ export function useRoleTimeline({
   }, [resetAndLoadRecent, refreshKey, tipConversationId]);
 
   const loadOlder = useCallback(async () => {
-    if (!roleId || loadingOlder || loading || !hasMore || segments.length === 0) {
-      return false;
-    }
+    if (!roleId || loadingOlder || loading) return false;
+
     const oldest = segments[0];
+    if (oldest?.olderMessageCount && oldest.messages[0]?.id) {
+      const gen = genRef.current;
+      setLoadingOlder(true);
+      try {
+        const page = await getConversationMessages(oldest.conversationId, {
+          beforeId: oldest.messages[0].id,
+          limit: messageLimitRef.current,
+        });
+        if (gen !== genRef.current || roleRef.current !== roleId) return false;
+        setSegments((prev) =>
+          prev.map((s) => {
+            if (s.conversationId !== oldest.conversationId) return s;
+            const seen = new Set(
+              s.messages.map((m) => m.id).filter((id): id is string => !!id),
+            );
+            const prepend = normalizeSegmentMessages(page.messages, false).filter(
+              (m) => !m.id || !seen.has(m.id),
+            );
+            return {
+              ...s,
+              messages: [...prepend, ...s.messages],
+              olderMessageCount: page.older_message_count,
+            };
+          }),
+        );
+        return true;
+      } catch {
+        return false;
+      } finally {
+        if (gen === genRef.current) setLoadingOlder(false);
+      }
+    }
+
+    if (!hasMore) return false;
+
     const gen = genRef.current;
     setLoadingOlder(true);
     try {
+      const before = oldest
+        ? { beforeCreatedAt: oldest.createdAt, beforeId: oldest.conversationId }
+        : tipMetaRef.current
+          ? {
+              beforeCreatedAt: tipMetaRef.current.createdAt,
+              beforeId: tipMetaRef.current.id,
+            }
+          : {};
       const tl = await getRoleTimeline(roleId, {
         limit: TIMELINE_PAGE_SIZE,
-        beforeCreatedAt: oldest.createdAt,
-        beforeId: oldest.conversationId,
+        messageLimit: messageLimitRef.current,
+        ...before,
       });
       if (gen !== genRef.current || roleRef.current !== roleId) return false;
+      rememberTipMeta(tl);
       const tipId = tipRef.current || tl.tip_conversation_id;
       const older = tl.segments
         .map((s) => toView(s, tipId))
@@ -156,6 +226,34 @@ export function useRoleTimeline({
     }
   }, [roleId, loadingOlder, loading, hasMore, segments]);
 
+  const expandSegment = useCallback(async (conversationId: string) => {
+    const gen = genRef.current;
+    setLoadingOlder(true);
+    try {
+      const conv = await getConversation(conversationId);
+      if (gen !== genRef.current) return false;
+      setSegments((prev) =>
+        prev.map((s) =>
+          s.conversationId === conversationId
+            ? {
+                ...s,
+                messages: normalizeSegmentMessages(
+                  conv.messages,
+                  conv.active_turn?.status === "running",
+                ),
+                olderMessageCount: 0,
+              }
+            : s,
+        ),
+      );
+      return true;
+    } catch {
+      return false;
+    } finally {
+      if (gen === genRef.current) setLoadingOlder(false);
+    }
+  }, []);
+
   const historicalSegments = useMemo(
     () => segments.filter((s) => s.conversationId !== tipConversationId),
     [segments, tipConversationId],
@@ -168,6 +266,7 @@ export function useRoleTimeline({
     loadingOlder,
     hasMore,
     loadOlder,
+    expandSegment,
     reload: resetAndLoadRecent,
   };
 }

@@ -823,6 +823,7 @@ export const ensureActiveConversation = ensureRoleActive;
 export type RoleTimelineSegment = ConversationSummary & {
   messages?: ChatMessage[];
   active_turn?: Conversation["active_turn"];
+  older_message_count?: number;
 };
 
 export type RoleTimeline = {
@@ -842,6 +843,7 @@ export async function getRoleTimeline(
     limit?: number;
     beforeCreatedAt?: string;
     beforeId?: string;
+    messageLimit?: number;
   },
 ) {
   const params = new URLSearchParams();
@@ -856,6 +858,9 @@ export async function getRoleTimeline(
   }
   if (opts?.beforeId) {
     params.set("before_id", opts.beforeId);
+  }
+  if (opts?.messageLimit !== undefined) {
+    params.set("message_limit", String(opts.messageLimit));
   }
   const q = params.toString();
   return apiFetch<RoleTimeline>(
@@ -1005,8 +1010,28 @@ export async function searchConversations(opts: {
   );
 }
 
-export async function getConversation(id: string) {
-  return apiFetch<Conversation>(`/api/conversations/${encodeURIComponent(id)}`);
+export async function getConversation(
+  id: string,
+  opts?: { tail?: number },
+) {
+  const params = new URLSearchParams();
+  if (opts?.tail) params.set("tail", String(opts.tail));
+  const q = params.toString();
+  return apiFetch<Conversation>(
+    `/api/conversations/${encodeURIComponent(id)}${q ? `?${q}` : ""}`,
+  );
+}
+
+export async function getConversationMessages(
+  id: string,
+  opts: { beforeId: string; limit?: number },
+) {
+  const params = new URLSearchParams();
+  params.set("before_id", opts.beforeId);
+  if (opts.limit !== undefined) params.set("limit", String(opts.limit));
+  return apiFetch<{ messages: ChatMessage[]; older_message_count: number }>(
+    `/api/conversations/${encodeURIComponent(id)}/messages?${params.toString()}`,
+  );
 }
 
 export async function getActiveTurnStatus(conversationId: string) {

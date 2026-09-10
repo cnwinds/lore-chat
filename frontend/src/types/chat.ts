@@ -207,4 +207,6 @@ export type Conversation = ConversationSummary & {
     status: string;
     started_at?: string;
   } | null;
+  /** 当前页之前还有多少条未加载消息（tail / 向前翻页） */
+  older_message_count?: number;
 };
