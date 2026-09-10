@@ -1,7 +1,14 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getRole, listRoles, type Role } from "../../api";
+import {
+  getRole,
+  listRoleScheduleRuns,
+  listRoleSchedules,
+  listRoles,
+  type Role,
+  type RoleSchedule,
+} from "../../api";
 import { RoleConfigPanel } from "./RoleConfigPanel";
 import { RoleList } from "./RoleList";
 
@@ -39,8 +46,22 @@ vi.mock("../../api", async (importOriginal) => {
       updated_at: "2026-08-07T15:36:00+08:00",
     })),
     listRoleSchedules: vi.fn(async () => ({ schedules: [] })),
+    listRoleScheduleRuns: vi.fn(async () => ({ runs: [] })),
   };
 });
+
+const sampleSchedule = {
+  id: "sched-1",
+  role_id: "default",
+  prompt: "每日简报",
+  interval_hours: 24,
+  timing_summary: "每天 09:00",
+  enabled: true,
+  next_run_at: "2026-08-08T09:00:00+08:00",
+  last_run_at: "2026-08-07T09:00:00+08:00",
+  created_at: "2026-08-01T10:00:00+08:00",
+  updated_at: "2026-08-07T09:00:00+08:00",
+} satisfies RoleSchedule;
 
 describe("RoleList", () => {
   it("renders knowledge-base avatars in the list via download URL", async () => {
@@ -235,6 +256,39 @@ describe("RoleConfigPanel", () => {
     expect(screen.getByLabelText("何时运行")).toBeInTheDocument();
     expect(screen.getByLabelText("时间（北京时间）")).toBeInTheDocument();
     expect(screen.queryByLabelText("间隔（小时）")).not.toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "创建例行任务" })).toBeInTheDocument();
+    expect(screen.queryByText("执行历史")).not.toBeInTheDocument();
+  });
+
+  it("opens an existing routine with run history", async () => {
+    const user = userEvent.setup();
+    vi.mocked(listRoleSchedules).mockResolvedValueOnce({
+      schedules: [sampleSchedule],
+    });
+    vi.mocked(listRoleScheduleRuns).mockResolvedValueOnce({
+      runs: [
+        {
+          turn_id: "t1",
+          conversation_id: "c1",
+          status: "complete",
+          started_at: "2026-08-07T09:00:00+08:00",
+          finalized_at: "2026-08-07T09:01:00+08:00",
+          summary: "今日无重大事项",
+        },
+      ],
+    });
+    render(
+      <RoleConfigPanel
+        roleId="default"
+        collapsed={false}
+        onToggleCollapsed={vi.fn()}
+      />,
+    );
+    await user.click(await screen.findByRole("button", { name: /每日简报/ }));
+    expect(await screen.findByRole("dialog", { name: "例行任务" })).toBeInTheDocument();
+    expect(screen.getByText("执行历史")).toBeInTheDocument();
+    expect(await screen.findByText("今日无重大事项")).toBeInTheDocument();
+    expect(screen.getByLabelText("何时运行")).toBeInTheDocument();
   });
 
   it("opens identity editor from the gear", async () => {

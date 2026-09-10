@@ -9,9 +9,9 @@ import {
   type Role,
   type RoleSchedule,
 } from "../../api";
-import { ScheduleTimingFields } from "./ScheduleTimingFields";
 import { avatarStorageRef } from "../../utils/kbImageUrls";
-import { defaultScheduleTiming, type ScheduleTiming } from "../../utils/scheduleTiming";
+import { RoutineDetailModal } from "./RoutineDetailModal";
+import type { ScheduleTiming } from "../../utils/scheduleTiming";
 import { roleAccent } from "../../utils/roleAccent";
 import { useRoleAvatarSrc } from "../../hooks/useRoleAvatarSrc";
 
@@ -33,13 +33,11 @@ export function RoleConfigPanel({
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState(false);
-  const [creating, setCreating] = useState(false);
 
   const [name, setName] = useState("");
   const [avatar, setAvatar] = useState("");
   const [systemPrompt, setSystemPrompt] = useState("");
-  const [schedPrompt, setSchedPrompt] = useState("");
-  const [schedTiming, setSchedTiming] = useState<ScheduleTiming>(defaultScheduleTiming);
+  const [detail, setDetail] = useState<RoleSchedule | "new" | null>(null);
   const coverAvatar = useRoleAvatarSrc(role?.avatar);
 
   async function loadRole(id: string) {
@@ -55,7 +53,7 @@ export function RoleConfigPanel({
       setAvatar(roleData.avatar || "");
       setSystemPrompt(roleData.system_prompt || "");
       setEditing(false);
-      setCreating(false);
+      setDetail(null);
     } catch (err) {
       console.error("Failed to load role:", err);
     } finally {
@@ -73,7 +71,7 @@ export function RoleConfigPanel({
       setAvatar("");
       setSystemPrompt("");
       setEditing(false);
-      setCreating(false);
+      setDetail(null);
     }
   }, [roleId]);
 
@@ -97,24 +95,42 @@ export function RoleConfigPanel({
     }
   }
 
-  async function handleAddSchedule() {
+  async function handleSaveRoutine(body: {
+    prompt: string;
+    timing: ScheduleTiming;
+    enabled: boolean;
+  }) {
     if (!roleId) return;
-    const prompt = schedPrompt.trim();
-    if (!prompt) return;
     try {
       setSaving(true);
-      const created = await createRoleSchedule(roleId, {
-        prompt,
-        timing: schedTiming,
-        enabled: true,
-      });
-      setSchedules((prev) => [...prev, created]);
-      setSchedPrompt("");
-      setSchedTiming(defaultScheduleTiming);
-      setCreating(false);
+      if (detail && detail !== "new") {
+        const next = await updateRoleSchedule(roleId, detail.id, body);
+        setSchedules((prev) => prev.map((x) => (x.id === next.id ? next : x)));
+        setDetail(next);
+      } else {
+        const created = await createRoleSchedule(roleId, body);
+        setSchedules((prev) => [...prev, created]);
+        setDetail(null);
+      }
     } catch (err) {
-      console.error("Failed to create schedule:", err);
-      window.alert("创建例行任务失败");
+      console.error("Failed to save schedule:", err);
+      window.alert(detail === "new" ? "创建例行任务失败" : "保存失败");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDeleteRoutine() {
+    if (!roleId || !detail || detail === "new") return;
+    if (!window.confirm("确定删除这个例行任务？")) return;
+    try {
+      setSaving(true);
+      await deleteRoleSchedule(roleId, detail.id);
+      setSchedules((prev) => prev.filter((x) => x.id !== detail.id));
+      setDetail(null);
+    } catch (err) {
+      console.error("Failed to delete schedule:", err);
+      window.alert("删除失败");
     } finally {
       setSaving(false);
     }
@@ -271,102 +287,52 @@ export function RoleConfigPanel({
             {schedules.length > 0 ? (
               <ul className="role-config-schedules">
                 {schedules.map((schedule) => (
-                  <li key={schedule.id} className="role-config-schedule-item">
-                    <div className="role-config-schedule-prompt">
-                      {schedule.prompt}
-                    </div>
-                    <div className="role-config-schedule-meta">
-                      {schedule.timing_summary ||
-                        `每 ${schedule.interval_hours} 小时`}
-                      {schedule.enabled ? "" : " · 已停用"}
-                    </div>
-                    <div className="role-config-schedule-actions">
-                      <button
-                        type="button"
-                        disabled={saving || !roleId}
-                        onClick={() => {
-                          if (!roleId) return;
-                          void updateRoleSchedule(roleId, schedule.id, {
-                            enabled: !schedule.enabled,
-                          }).then((next) =>
-                            setSchedules((prev) =>
-                              prev.map((x) => (x.id === next.id ? next : x)),
-                            ),
-                          );
-                        }}
-                      >
-                        {schedule.enabled ? "停用" : "启用"}
-                      </button>
-                      <button
-                        type="button"
-                        disabled={saving || !roleId}
-                        onClick={() => {
-                          if (!roleId) return;
-                          void deleteRoleSchedule(roleId, schedule.id).then(() =>
-                            setSchedules((prev) =>
-                              prev.filter((x) => x.id !== schedule.id),
-                            ),
-                          );
-                        }}
-                      >
-                        删除
-                      </button>
-                    </div>
+                  <li key={schedule.id}>
+                    <button
+                      type="button"
+                      className="role-config-schedule-item"
+                      onClick={() => setDetail(schedule)}
+                    >
+                      <div className="role-config-schedule-prompt">
+                        {schedule.prompt}
+                      </div>
+                      <div className="role-config-schedule-meta">
+                        {schedule.timing_summary ||
+                          `每 ${schedule.interval_hours} 小时`}
+                        {schedule.enabled ? "" : " · 已停用"}
+                      </div>
+                    </button>
                   </li>
                 ))}
               </ul>
             ) : null}
-            {creating ? (
-              <div className="role-config-schedule-form">
-                <textarea
-                  className="role-config-textarea"
-                  value={schedPrompt}
-                  onChange={(e) => setSchedPrompt(e.target.value)}
-                  rows={3}
-                  placeholder="定时发送的提示词，例如：汇总今日进展"
-                  disabled={saving}
-                />
-                <ScheduleTimingFields
-                  value={schedTiming}
-                  onChange={setSchedTiming}
-                  disabled={saving}
-                />
-                <div className="role-config-editor-actions">
-                  <button
-                    type="button"
-                    className="role-config-ghost-btn"
-                    onClick={() => {
-                      setCreating(false);
-                      setSchedPrompt("");
-                      setSchedTiming(defaultScheduleTiming);
-                    }}
-                    disabled={saving}
-                  >
-                    取消
-                  </button>
-                  <button
-                    type="button"
-                    className="role-config-primary-btn"
-                    onClick={() => void handleAddSchedule()}
-                    disabled={saving || !schedPrompt.trim()}
-                  >
-                    创建
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <button
-                type="button"
-                className="role-config-create-routine"
-                onClick={() => setCreating(true)}
-                disabled={!roleId}
-              >
-                创建例行任务
-              </button>
-            )}
+            <button
+              type="button"
+              className="role-config-create-routine"
+              onClick={() => setDetail("new")}
+              disabled={!roleId}
+            >
+              创建例行任务
+            </button>
           </div>
         </>
       )}
+
+      {roleId ? (
+        <RoutineDetailModal
+          open={detail !== null}
+          roleId={roleId}
+          schedule={detail && detail !== "new" ? detail : null}
+          saving={saving}
+          onClose={() => setDetail(null)}
+          onSave={(body) => void handleSaveRoutine(body)}
+          onDelete={
+            detail && detail !== "new"
+              ? () => void handleDeleteRoutine()
+              : undefined
+          }
+        />
+      ) : null}
     </aside>
   );
 }

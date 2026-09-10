@@ -966,6 +966,21 @@ export async function deleteRoleSchedule(roleId: string, scheduleId: string) {
   );
 }
 
+export type RoleScheduleRun = {
+  turn_id: string;
+  conversation_id: string;
+  status: string;
+  started_at: string;
+  finalized_at: string | null;
+  summary: string;
+};
+
+export async function listRoleScheduleRuns(roleId: string, scheduleId: string) {
+  return apiFetch<{ runs: RoleScheduleRun[] }>(
+    `/api/roles/${encodeURIComponent(roleId)}/schedules/${encodeURIComponent(scheduleId)}/runs`,
+  );
+}
+
 export type ConversationSearchHit = {
   conversation_id: string;
   message_id: string | null;

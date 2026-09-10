@@ -291,6 +291,62 @@ def test_role_schedules_and_busy_http(client):
     assert "每天 09:00" in body["timing_summary"]
 
 
+def test_role_schedule_runs_http(client):
+    created = client.post(
+        "/api/roles", json={"name": "定时角色", "system_prompt": "跑定时"}
+    )
+    assert created.status_code == 200
+    rid = created.json()["id"]
+    sched = client.post(
+        f"/api/roles/{rid}/schedules",
+        json={"prompt": "每日简报", "interval_hours": 24},
+    )
+    assert sched.status_code == 200
+    sid = sched.json()["id"]
+
+    empty = client.get(f"/api/roles/{rid}/schedules/{sid}/runs")
+    assert empty.status_code == 200
+    assert empty.json()["runs"] == []
+
+    cid = client.post(f"/api/roles/{rid}/ensure-active").json()["conversation_id"]
+    store = client.app.state.container.conversations
+    turn = store.begin_turn(
+        cid,
+        "每日简报",
+        f"role-schedule:{sid}:abc123",
+        observation_allowed=False,
+    )
+    store.finalize_turn(
+        cid,
+        turn_id=turn["turn_id"],
+        assistant={
+            "text": "今日无重大事项",
+            "timeline": [
+                {"type": "text", "content": "今日无重大事项", "ts": "t"}
+            ],
+            "sources": [],
+            "status": "complete",
+        },
+    )
+
+    listed = client.get(f"/api/roles/{rid}/schedules/{sid}/runs")
+    assert listed.status_code == 200
+    runs = listed.json()["runs"]
+    assert len(runs) == 1
+    assert runs[0]["summary"] == "今日无重大事项"
+    assert runs[0]["status"] == "complete"
+    assert runs[0]["turn_id"] == turn["turn_id"]
+
+    other = client.post(
+        "/api/roles", json={"name": "别人", "system_prompt": "无权看"}
+    )
+    assert other.status_code == 200
+    forbidden = client.get(
+        f"/api/roles/{other.json()['id']}/schedules/{sid}/runs"
+    )
+    assert forbidden.status_code == 404
+
+
 def test_create_role_tool(tmp_path):
     from app.engine.agent.tool_impl.role_tools import RoleTools
 

@@ -291,6 +291,21 @@ async def update_schedule(
         raise HTTPException(400, str(e)) from e
 
 
+@router.get("/roles/{role_id}/schedules/{schedule_id}/runs")
+async def list_schedule_runs(role_id: str, schedule_id: str, request: Request):
+    c = container(request)
+    try:
+        c.roles.get(role_id)
+        owned = {s["id"] for s in c.roles.schedules.list_for_role(role_id)}
+        if schedule_id not in owned:
+            raise KeyError(schedule_id)
+    except KeyError as e:
+        raise HTTPException(404, "不存在") from e
+    return {
+        "runs": c.conversations.list_role_schedule_runs(schedule_id),
+    }
+
+
 @router.delete("/roles/{role_id}/schedules/{schedule_id}")
 async def delete_schedule(role_id: str, schedule_id: str, request: Request):
     c = container(request)
