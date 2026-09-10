@@ -179,7 +179,13 @@ export function ChatMessageList({
           </div>
         )}
         <div className="chat-messages" ref={messagesContainerRef}>
-          <div className="chat-messages-inner">
+          <div
+            className={
+              showWelcome
+                ? "chat-messages-inner chat-messages-inner--fill"
+                : "chat-messages-inner"
+            }
+          >
             {showLoadOlderHint && (
               <div className="chat-timeline-load-older" aria-live="polite">
                 {loadingOlder ? "加载更早对话…" : "向上滚动加载更早对话"}

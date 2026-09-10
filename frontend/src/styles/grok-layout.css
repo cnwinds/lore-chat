@@ -1178,7 +1178,17 @@ select.role-config-input {
   .app-shell--mobile.app-shell--three-pane,
   .app-shell--mobile.app-shell--three-pane:has(.role-config-panel--collapsed),
   .app-shell--mobile.app-shell--three-pane.app-shell--config-collapsed {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
+    grid-auto-columns: minmax(0, 1fr);
+  }
+
+  /* 桌面中栏是 grid-column:2。手机只剩 1 列时若不改回第 1 列，
+     会多出一条 implicit 列：空会话时中栏按内容缩成窄条贴在右侧。 */
+  .app-shell--mobile.app-shell--three-pane .app-shell-left,
+  .app-shell--mobile.app-shell--three-pane .main-panel,
+  .app-shell--mobile.app-shell--three-pane .role-config-panel {
+    grid-column: 1;
+    grid-row: 1;
   }
 
   .app-shell--mobile .app-shell-left {
