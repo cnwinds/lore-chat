@@ -36,12 +36,17 @@ def build_agent_messages(
     primary_doc_path: str | None,
     extra_system_messages: list[dict] | None = None,
     attachments: list[str] | None = None,
+    role_system_prompt: str = "",
 ) -> list[dict]:
     messages: list[dict] = [
         {
             "role": "system",
             "content": build_system_prompt(
-                mode, system_layer_text, web_enabled, user_memory
+                mode,
+                system_layer_text,
+                web_enabled,
+                user_memory,
+                role_system_prompt=role_system_prompt,
             ),
         },
     ]

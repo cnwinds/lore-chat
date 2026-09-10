@@ -215,6 +215,10 @@ export function SettingsPanel({
                       onAgentParallelToolsChange={session.setAgentParallelTools}
                       agentMaxParallel={session.agentMaxParallel}
                       onAgentMaxParallelChange={session.setAgentMaxParallel}
+                      continuityIdleHours={session.continuityIdleHours}
+                      onContinuityIdleHoursChange={
+                        session.setContinuityIdleHours
+                      }
                       sandboxEnabled={session.sandboxEnabled}
                       sandboxTrustMode={session.sandboxTrustMode}
                       onSandboxTrustModeChange={session.setSandboxTrustMode}

@@ -48,6 +48,7 @@ export type SettingsFormDrafts = {
   sandboxEnabled: boolean;
   sandboxTrustMode: boolean;
   sandboxMirrorRegion: "cn" | "global";
+  continuityIdleHours: number;
 };
 
 function str(v: unknown): string {
@@ -189,6 +190,10 @@ export function hydrateSettingsDrafts(
     sandboxTrustMode: bool(data.sandbox_trust_mode, true),
     sandboxMirrorRegion:
       data.sandbox_mirror_region === "global" ? "global" : "cn",
+    continuityIdleHours: Math.min(
+      168,
+      Math.max(0.5, num(data.continuity_idle_hours, 6)),
+    ),
   };
 }
 
@@ -208,6 +213,7 @@ export function toSettingsPatch(drafts: {
   agentMaxParallel: number;
   sandboxTrustMode: boolean;
   sandboxMirrorRegion: "cn" | "global";
+  continuityIdleHours: number;
 }): Record<string, unknown> {
   return {
     public_base_url: drafts.publicBaseUrl.trim() || null,
@@ -279,5 +285,9 @@ export function toSettingsPatch(drafts: {
     agent_max_parallel: drafts.agentMaxParallel,
     sandbox_trust_mode: drafts.sandboxTrustMode,
     sandbox_mirror_region: drafts.sandboxMirrorRegion,
+    continuity_idle_hours: Math.min(
+      168,
+      Math.max(0.5, Number(drafts.continuityIdleHours) || 6),
+    ),
   };
 }

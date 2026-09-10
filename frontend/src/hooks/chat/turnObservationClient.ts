@@ -78,6 +78,8 @@ export type TurnObservationCallbacks = {
 
 export type TurnObservationRefs = {
   getConversationIdProp: () => string | null;
+  /** 无会话时新建所归属的角色；缺省则后端绑默认角色 */
+  getRoleId?: () => string | null;
   conversationIdRef: { current: string | null };
   skipLoadRef: { current: string | null };
   stickToBottomRef: { current: boolean };
@@ -140,7 +142,11 @@ export class TurnObservationEngine {
   async ensureConversationId(): Promise<string> {
     const prop = this.refs.getConversationIdProp();
     if (prop) return prop;
-    const { id } = await createConversation();
+    const roleId = this.refs.getRoleId?.() ?? null;
+    if (!roleId) {
+      throw new Error("角色尚未就绪，请稍后再试");
+    }
+    const { id } = await createConversation({ roleId });
     this.refs.skipLoadRef.current = id;
     this.refs.conversationIdRef.current = id;
     this.callbacks.onConversationCreated?.(id);

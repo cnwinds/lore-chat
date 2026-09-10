@@ -22,16 +22,23 @@ class ChatSessionRunner:
         turn_hub: TurnExecutionHub | None = None,
         *,
         enabled_skills=None,
+        roles=None,
     ):
         self.agent = agent
         self.conversations = conversations
+        self.roles = roles
         self.enabled_skills = enabled_skills
         self.inject_broker = inject_broker or TurnInjectBroker()
         self.turn_hub = turn_hub or TurnExecutionHub(
-            agent, conversations, inject_broker=self.inject_broker
+            agent,
+            conversations,
+            inject_broker=self.inject_broker,
+            roles=roles,
         )
         if turn_hub is not None:
             self.inject_broker = self.turn_hub.inject_broker
+            if roles is not None:
+                self.turn_hub.roles = roles
 
     def resolve_skill_catalog(
         self, skill_catalog: list[SkillCatalogEntry] | None = None

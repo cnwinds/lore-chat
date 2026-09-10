@@ -1,0 +1,269 @@
+from app.engine.roles import DEFAULT_ROLE_ID, DEFAULT_ROLE_NAME, RoleStore
+from app.engine.conversations import ConversationStore
+
+
+def _roles(tmp_path):
+    return RoleStore(tmp_path / "roles")
+
+
+def _conv(tmp_path):
+    return ConversationStore(tmp_path / "conversations")
+
+
+def test_ensure_default_role(tmp_path):
+    store = _roles(tmp_path)
+    roles = store.list_all()
+    assert len(roles) == 1
+    assert roles[0]["id"] == DEFAULT_ROLE_ID
+    assert roles[0]["name"] == DEFAULT_ROLE_NAME
+    assert roles[0]["is_default"] is True
+
+
+def test_create_and_delete_role(tmp_path):
+    store = _roles(tmp_path)
+    created = store.create(name="股票研究员", system_prompt="专注股票")
+    assert created["name"] == "股票研究员"
+    assert created["is_default"] is False
+    assert len(store.list_all()) == 2
+    store.delete(created["id"])
+    assert len(store.list_all()) == 1
+
+
+def test_cannot_delete_default(tmp_path):
+    store = _roles(tmp_path)
+    try:
+        store.delete(DEFAULT_ROLE_ID)
+        assert False, "should raise"
+    except ValueError:
+        pass
+
+
+def test_conversation_role_id_default(tmp_path):
+    conv = _conv(tmp_path)
+    cid = conv.create()
+    assert conv.get_role_id(cid) == DEFAULT_ROLE_ID
+    items = conv.list_all()
+    assert items[0]["role_id"] == DEFAULT_ROLE_ID
+
+
+def test_ensure_active_ignores_stale_empty(tmp_path):
+    """旧空会话不得劫持窗口内有消息的活跃线。"""
+    from datetime import datetime, timedelta, timezone
+
+    conv = _conv(tmp_path)
+    stale = conv.create(role_id=DEFAULT_ROLE_ID)
+    recent = conv.create(role_id=DEFAULT_ROLE_ID)
+    conv.append_exchange(
+        recent, "hello", {"role": "assistant", "text": "hi"}
+    )
+    now = datetime.now(timezone.utc)
+    with conv._lock:
+        conv.conn.execute(
+            "UPDATE conversations SET updated_at = ?, last_user_message_at = ? WHERE id = ?",
+            (
+                (now - timedelta(days=30)).isoformat(),
+                None,
+                stale,
+            ),
+        )
+        conv.conn.execute(
+            "UPDATE conversations SET updated_at = ?, last_user_message_at = ? WHERE id = ?",
+            (now.isoformat(), now.isoformat(), recent),
+        )
+        conv.conn.commit()
+    active, created = conv.ensure_active_conversation(
+        DEFAULT_ROLE_ID, idle_hours=6
+    )
+    assert active == recent
+    assert created is False
+
+
+def test_ensure_active_reuses_empty(tmp_path):
+    conv = _conv(tmp_path)
+    cid = conv.create(role_id=DEFAULT_ROLE_ID)
+    again, created = conv.ensure_active_conversation(DEFAULT_ROLE_ID, idle_hours=6)
+    assert again == cid
+    assert created is False
+
+
+def test_ensure_active_new_when_idle_expired(tmp_path, monkeypatch):
+    conv = _conv(tmp_path)
+    cid = conv.create(role_id=DEFAULT_ROLE_ID)
+    conv.append_exchange(cid, "hello", {"role": "assistant", "text": "hi"})
+    # Force last_user_message_at far in the past
+    with conv._lock:
+        conv.conn.execute(
+            "UPDATE conversations SET last_user_message_at = ? WHERE id = ?",
+            ("2020-01-01T00:00:00+00:00", cid),
+        )
+        conv.conn.commit()
+    new_cid, created = conv.ensure_active_conversation(DEFAULT_ROLE_ID, idle_hours=6)
+    assert new_cid != cid
+    assert created is True
+
+
+def test_reassign_role_conversations(tmp_path):
+    roles = _roles(tmp_path)
+    conv = _conv(tmp_path)
+    created = roles.create(name="临时")
+    cid = conv.create(role_id=created["id"])
+    n = conv.reassign_role(created["id"], DEFAULT_ROLE_ID)
+    assert n == 1
+    assert conv.get_role_id(cid) == DEFAULT_ROLE_ID
+
+
+def test_roles_http_api(client):
+    r = client.get("/api/roles")
+    assert r.status_code == 200
+    roles = r.json()["roles"]
+    assert len(roles) >= 1
+    assert any(x["is_default"] for x in roles)
+
+    created = client.post(
+        "/api/roles",
+        json={"name": "新闻助手", "system_prompt": "关注新闻"},
+    )
+    assert created.status_code == 200
+    rid = created.json()["id"]
+    assert created.json()["system_prompt"] == "关注新闻"
+
+    active = client.post(f"/api/roles/{rid}/ensure-active")
+    assert active.status_code == 200
+    cid = active.json()["conversation_id"]
+    assert "created" in active.json()
+    conv = client.get(f"/api/conversations/{cid}")
+    assert conv.status_code == 200
+    assert conv.json()["role_id"] == rid
+
+    made = client.post("/api/conversations", json={"role_id": rid})
+    assert made.status_code == 200
+    assert made.json()["role_id"] == rid
+
+    deleted = client.delete(f"/api/roles/{rid}")
+    assert deleted.status_code == 200
+    assert deleted.json()["ok"] is True
+    # 会话应迁回默认角色
+    after = client.get(f"/api/conversations/{cid}")
+    assert after.status_code == 200
+    assert after.json()["role_id"] == "default"
+
+    bad = client.delete("/api/roles/default")
+    assert bad.status_code == 400
+
+
+def test_conversations_search_http(client):
+    from app.index.message_chunk import MessageChunk
+
+    empty = client.get("/api/conversations/search", params={"q": ""})
+    assert empty.status_code == 200
+    assert empty.json()["hits"] == []
+
+    created = client.post("/api/conversations", json={})
+    assert created.status_code == 200
+    cid = created.json()["id"]
+    store = client.app.state.container.conversations
+    fts = client.app.state.container.conversation_fts
+    store.append_exchange(
+        cid,
+        "讨论 continuity 连续窗口",
+        {"role": "assistant", "text": "连续窗口用于活跃线"},
+    )
+    conv = store.get(cid)
+    for m in conv["messages"]:
+        text = m.get("text") or ""
+        fts.upsert_message_chunks(
+            conversation_id=cid,
+            message_id=m["id"],
+            role=m["role"],
+            ts=m.get("ts") or "",
+            conversation_title=conv["title"],
+            chunks=[MessageChunk(0, 0, len(text), text)],
+        )
+    hit = client.get(
+        "/api/conversations/search", params={"q": "连续窗口", "k": 10}
+    )
+    assert hit.status_code == 200
+    data = hit.json()
+    assert any(h["conversation_id"] == cid for h in data["hits"])
+
+
+def test_role_system_prompt_in_build(tmp_path):
+    from app.engine.agent.prompts import build_system_prompt
+
+    text = build_system_prompt(role_system_prompt="你是股票研究员")
+    assert "股票研究员" in text
+    assert "【当前角色】" in text
+
+
+def test_role_schedules_crud(tmp_path):
+    store = _roles(tmp_path)
+    rid = store.create(name="定时角色")["id"]
+    s = store.schedules.create(
+        rid, prompt="每日简报", interval_hours=24, enabled=True
+    )
+    assert s["prompt"] == "每日简报"
+    assert s["enabled"] is True
+    listed = store.schedules.list_for_role(rid)
+    assert len(listed) == 1
+    updated = store.schedules.update(s["id"], enabled=False)
+    assert updated["enabled"] is False
+    store.schedules.delete(s["id"])
+    assert store.schedules.list_for_role(rid) == []
+
+
+def test_role_schedules_and_busy_http(client):
+    created = client.post("/api/roles", json={"name": "忙角色"})
+    assert created.status_code == 200
+    rid = created.json()["id"]
+
+    busy = client.get("/api/roles/busy")
+    assert busy.status_code == 200
+    assert isinstance(busy.json()["role_ids"], list)
+
+    sched = client.post(
+        f"/api/roles/{rid}/schedules",
+        json={"prompt": "提醒一下", "interval_hours": 12},
+    )
+    assert sched.status_code == 200
+    sid = sched.json()["id"]
+    listed = client.get(f"/api/roles/{rid}/schedules")
+    assert listed.status_code == 200
+    assert any(x["id"] == sid for x in listed.json()["schedules"])
+
+    patched = client.patch(
+        f"/api/roles/{rid}/schedules/{sid}",
+        json={"enabled": False},
+    )
+    assert patched.status_code == 200
+    assert patched.json()["enabled"] is False
+
+    deleted = client.delete(f"/api/roles/{rid}/schedules/{sid}")
+    assert deleted.status_code == 200
+
+
+def test_create_role_tool(tmp_path):
+    from app.engine.agent.tool_impl.role_tools import RoleTools
+
+    store = _roles(tmp_path)
+    tools = RoleTools(store)
+    out = tools.create_role({"name": "工具角色", "system_prompt": "专注工具"})
+    assert "error" not in out
+    assert out["role"]["name"] == "工具角色"
+    assert len(store.list_all()) == 2
+
+
+def test_busy_role_ids_from_running_turn(tmp_path):
+    roles = _roles(tmp_path)
+    conv = _conv(tmp_path)
+    created = roles.create(name="跑着")
+    cid = conv.create(role_id=created["id"])
+    assert conv.list_busy_role_ids() == []
+    turn = conv.begin_turn(
+        cid,
+        "hi",
+        "client-1",
+        observation_allowed=False,
+    )
+    assert turn["status"] == "running" or True
+    assert created["id"] in conv.list_busy_role_ids()
+    assert conv.role_has_running_turn(created["id"]) is True

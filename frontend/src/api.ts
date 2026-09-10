@@ -10,6 +10,7 @@ import type {
   DocContextItem,
   IngestResult,
   Question,
+  RoleSummary,
 } from "./types/chat";
 import {
   apiBase,
@@ -460,6 +461,7 @@ export type {
   ChatStreamEvent,
   ConversationSummary,
   Conversation,
+  RoleSummary,
 } from "./types/chat";
 export { KB_MUTATING_TOOLS } from "./types/chat";
 export {
@@ -756,12 +758,164 @@ export async function downloadKbDirectory(directory: string) {
   URL.revokeObjectURL(url);
 }
 
-export async function listConversations() {
-  return apiFetch<{ conversations: ConversationSummary[] }>("/api/conversations");
+export async function listConversations(opts?: { roleId?: string }) {
+  const qs = opts?.roleId
+    ? `?role_id=${encodeURIComponent(opts.roleId)}`
+    : "";
+  return apiFetch<{ conversations: ConversationSummary[] }>(
+    `/api/conversations${qs}`,
+  );
 }
 
-export async function createConversation() {
-  return apiFetch<{ id: string }>("/api/conversations", { method: "POST" });
+export async function createConversation(opts?: {
+  roleId?: string;
+  title?: string;
+}) {
+  const body: Record<string, string> = {};
+  if (opts?.roleId) body.role_id = opts.roleId;
+  if (opts?.title) body.title = opts.title;
+  return apiFetch<{ id: string; role_id?: string }>("/api/conversations", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export async function listRoles() {
+  return apiFetch<{ roles: RoleSummary[] }>("/api/roles");
+}
+
+export async function createRole(body: {
+  name: string;
+  system_prompt?: string;
+  avatar?: string | null;
+}) {
+  return apiFetch<RoleSummary>("/api/roles", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export async function ensureRoleActive(roleId: string) {
+  return apiFetch<{
+    conversation_id: string;
+    role_id: string;
+    created?: boolean;
+  }>(`/api/roles/${encodeURIComponent(roleId)}/ensure-active`, {
+    method: "POST",
+  });
+}
+
+export async function updateRole(
+  roleId: string,
+  body: {
+    name?: string;
+    system_prompt?: string;
+    avatar?: string | null;
+  },
+) {
+  return apiFetch<RoleSummary>(
+    `/api/roles/${encodeURIComponent(roleId)}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
+}
+
+export async function deleteRole(roleId: string) {
+  return apiFetch<{ ok: boolean; reassigned_conversations?: number }>(
+    `/api/roles/${encodeURIComponent(roleId)}`,
+    { method: "DELETE" },
+  );
+}
+
+export async function listBusyRoles() {
+  return apiFetch<{ role_ids: string[] }>("/api/roles/busy");
+}
+
+export type RoleSchedule = {
+  id: string;
+  role_id: string;
+  prompt: string;
+  interval_hours: number;
+  enabled: boolean;
+  next_run_at: string | null;
+  last_run_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export async function listRoleSchedules(roleId: string) {
+  return apiFetch<{ schedules: RoleSchedule[] }>(
+    `/api/roles/${encodeURIComponent(roleId)}/schedules`,
+  );
+}
+
+export async function createRoleSchedule(
+  roleId: string,
+  body: { prompt: string; interval_hours: number; enabled?: boolean },
+) {
+  return apiFetch<RoleSchedule>(
+    `/api/roles/${encodeURIComponent(roleId)}/schedules`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
+}
+
+export async function updateRoleSchedule(
+  roleId: string,
+  scheduleId: string,
+  body: {
+    prompt?: string;
+    interval_hours?: number;
+    enabled?: boolean;
+  },
+) {
+  return apiFetch<RoleSchedule>(
+    `/api/roles/${encodeURIComponent(roleId)}/schedules/${encodeURIComponent(scheduleId)}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
+}
+
+export async function deleteRoleSchedule(roleId: string, scheduleId: string) {
+  return apiFetch<{ ok: boolean }>(
+    `/api/roles/${encodeURIComponent(roleId)}/schedules/${encodeURIComponent(scheduleId)}`,
+    { method: "DELETE" },
+  );
+}
+
+export type ConversationSearchHit = {
+  conversation_id: string;
+  message_id: string | null;
+  role_id: string;
+  message_role?: string;
+  title: string;
+  snippet: string;
+  ts?: string | null;
+};
+
+export async function searchConversations(opts: {
+  q: string;
+  k?: number;
+  roleId?: string;
+}) {
+  const params = new URLSearchParams();
+  params.set("q", opts.q);
+  if (opts.k !== undefined) params.set("k", String(opts.k));
+  if (opts.roleId) params.set("role_id", opts.roleId);
+  return apiFetch<{ hits: ConversationSearchHit[]; tier: string }>(
+    `/api/conversations/search?${params.toString()}`,
+  );
 }
 
 export async function getConversation(id: string) {

@@ -28,6 +28,7 @@ from app.engine.retriever import Retriever
 from app.engine.pending import PendingStore
 from app.engine.merge_sessions import MergeSessionStore
 from app.engine.conversations import ConversationStore
+from app.engine.roles import RoleStore
 from app.engine.derivation_worker import DerivationWorker
 from app.engine.memory.session_observe import SessionMemoryObserve
 from app.engine.memory_maintenance import MemoryMaintenanceJob
@@ -65,6 +66,7 @@ class Container:
     pending: PendingStore
     merge_sessions: MergeSessionStore
     conversations: ConversationStore
+    roles: RoleStore
     conversation_fts: ConversationFTS
     conversation_vector: ConversationVector
     index_revision: IndexRevision
@@ -143,6 +145,7 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
     conversations = ConversationStore(
         settings.kb_path / ".kb" / "conversations"
     )
+    roles = RoleStore(settings.kb_path / ".kb" / "roles")
 
     memory = build_memory_subgraph(
         settings, repo, llm, conversations, memory_service=memory_service
@@ -167,6 +170,7 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
         indexer=index.indexer,
         pending=pending,
         conversations=conversations,
+        roles=roles,
         system_layer=system_layer,
         knowledge_writer=knowledge_writer,
         memory_service=memory.service,
@@ -199,6 +203,7 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
         pending=pending,
         merge_sessions=merge_sessions,
         conversations=conversations,
+        roles=roles,
         conversation_fts=index.conversation_fts,
         conversation_vector=index.conversation_vector,
         index_revision=index.index_revision,
@@ -237,6 +242,7 @@ def dispose_container(container: Container | None) -> None:
         obj.conn = None
 
     _close_sqlite(container.conversations)
+    _close_sqlite(container.roles)
     _close_sqlite(container.conversation_fts)
     _close_sqlite(container.indexer.fulltext)
     close_quietly(container.indexer.vector)

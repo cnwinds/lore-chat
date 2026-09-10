@@ -105,6 +105,11 @@ class SummarizeBody(BaseModel):
     filename: str
 
 
+class CreateConversationBody(BaseModel):
+    role_id: str | None = None
+    title: str | None = None
+
+
 class KbMoveBody(BaseModel):
     from_path: str
     to_directory: str

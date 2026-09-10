@@ -72,6 +72,7 @@ def build_tool_dispatch(registry: ToolRegistry) -> dict[str, ToolHandler]:
         "delete_kb": lambda args, **kw: asyncio.to_thread(kb_mutate.delete_kb, args),
         "move_entry": lambda args, **kw: asyncio.to_thread(kb_mutate.move_entry, args),
         "ask_user": lambda args, **kw: interaction.ask_user(args),
+        "create_role": lambda args, **kw: registry.roles_tools.create_role(args),
         "manage_memory": _manage_memory,
         "recall_memory": lambda args, **kw: asyncio.to_thread(
             memory.recall_memory, args

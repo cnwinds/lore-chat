@@ -1,8 +1,14 @@
+import { useEffect, useRef, useState } from "react";
+import type { RoleSummary } from "../../api";
+
 type Props = {
   title: string;
   onOpenNav: () => void;
   onNewChat: () => void;
   onShare?: () => void;
+  roles?: RoleSummary[];
+  activeRoleId?: string | null;
+  onSelectRole?: (id: string) => void;
 };
 
 export function MobileChatHeader({
@@ -10,7 +16,23 @@ export function MobileChatHeader({
   onOpenNav,
   onNewChat,
   onShare,
+  roles = [],
+  activeRoleId = null,
+  onSelectRole,
 }: Props) {
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const sheetRef = useRef<HTMLDivElement>(null);
+  const multiRole = roles.length > 1 && !!onSelectRole;
+
+  useEffect(() => {
+    if (!sheetOpen) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setSheetOpen(false);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [sheetOpen]);
+
   return (
     <header className="mobile-chat-header">
       <button
@@ -28,7 +50,22 @@ export function MobileChatHeader({
           />
         </svg>
       </button>
-      <h1 className="mobile-chat-header-title">{title}</h1>
+      {multiRole ? (
+        <button
+          type="button"
+          className="mobile-chat-header-title mobile-chat-header-title--btn"
+          onClick={() => setSheetOpen(true)}
+          aria-haspopup="dialog"
+          aria-expanded={sheetOpen}
+        >
+          {title}
+          <span className="mobile-chat-header-caret" aria-hidden>
+            ▾
+          </span>
+        </button>
+      ) : (
+        <h1 className="mobile-chat-header-title">{title}</h1>
+      )}
       <div className="mobile-chat-header-actions">
         {onShare && (
           <button
@@ -52,7 +89,7 @@ export function MobileChatHeader({
           type="button"
           className="mobile-chat-header-btn mobile-chat-header-btn--accent"
           onClick={onNewChat}
-          aria-label="新对话"
+          aria-label="新话题"
         >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
             <path
@@ -64,6 +101,39 @@ export function MobileChatHeader({
           </svg>
         </button>
       </div>
+      {sheetOpen && multiRole && (
+        <div
+          className="mobile-role-sheet-backdrop"
+          onClick={() => setSheetOpen(false)}
+        >
+          <div
+            ref={sheetRef}
+            className="mobile-role-sheet"
+            role="dialog"
+            aria-label="切换角色"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mobile-role-sheet-title">切换角色</div>
+            <div className="mobile-role-sheet-list">
+              {roles.map((r) => (
+                <button
+                  key={r.id}
+                  type="button"
+                  className={`mobile-role-sheet-item${
+                    activeRoleId === r.id ? " active" : ""
+                  }`}
+                  onClick={() => {
+                    onSelectRole?.(r.id);
+                    setSheetOpen(false);
+                  }}
+                >
+                  {r.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </header>
   );
 }

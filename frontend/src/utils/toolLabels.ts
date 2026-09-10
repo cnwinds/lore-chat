@@ -10,6 +10,7 @@ export const TOOL_LABELS: Record<string, string> = {
   summarize_conversation: "归档整段会话",
   delete_kb: "删除知识库内容",
   ask_user: "征询用户",
+  create_role: "创建角色",
   edit_doc: "局部编辑文档",
   update_doc_meta: "更新文档元数据",
   move_entry: "移动或重命名路径",

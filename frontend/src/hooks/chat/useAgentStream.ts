@@ -19,6 +19,7 @@ export type { DocContext, StreamEndInfo } from "./turnObservationClient";
 
 type UseAgentStreamOptions = {
   conversationId: string | null;
+  roleId?: string | null;
   previewPath?: string | null;
   webEnabled: boolean;
   docContextItems: DocContextItem[];
@@ -42,6 +43,7 @@ type UseAgentStreamOptions = {
 
 export function useAgentStream({
   conversationId,
+  roleId = null,
   webEnabled,
   docContextItems,
   primaryDocPath,
@@ -72,6 +74,8 @@ export function useAgentStream({
   const streamingAssistantIdxRef = useRef<number | null>(null);
   const conversationIdPropRef = useRef(conversationId);
   conversationIdPropRef.current = conversationId;
+  const roleIdRef = useRef(roleId);
+  roleIdRef.current = roleId;
 
   const onStreamEndRef = useRef(onStreamEnd);
   const onInjectDeferredRef = useRef(onInjectDeferred);
@@ -109,6 +113,7 @@ export function useAgentStream({
       },
       {
         getConversationIdProp: () => conversationIdPropRef.current,
+        getRoleId: () => roleIdRef.current,
         conversationIdRef,
         skipLoadRef,
         stickToBottomRef,

@@ -97,6 +97,7 @@ export function useSettingsSession({
   const [sandboxMirrorRegion, setSandboxMirrorRegion] = useState<"cn" | "global">(
     "cn",
   );
+  const [continuityIdleHours, setContinuityIdleHours] = useState(6);
 
   const [oldPassword, setOldPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -153,6 +154,7 @@ export function useSettingsSession({
       setSandboxEnabled(drafts.sandboxEnabled);
       setSandboxTrustMode(drafts.sandboxTrustMode);
       setSandboxMirrorRegion(drafts.sandboxMirrorRegion);
+      setContinuityIdleHours(drafts.continuityIdleHours);
       setSettingsReady(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "加载设置失败");
@@ -266,6 +268,7 @@ export function useSettingsSession({
         agentMaxParallel,
         sandboxTrustMode,
         sandboxMirrorRegion,
+        continuityIdleHours,
       });
 
       const wasSearchConfigured = searchConfiguredRef.current;
@@ -452,6 +455,8 @@ export function useSettingsSession({
     setSandboxTrustMode,
     sandboxMirrorRegion,
     setSandboxMirrorRegion,
+    continuityIdleHours,
+    setContinuityIdleHours,
     oldPassword,
     setOldPassword,
     newPassword,

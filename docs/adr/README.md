@@ -16,3 +16,4 @@
 | [2026-08-09](2026-08-09-deepen-transcript-archive-chat-types.md) | Transcript / 归档 / 聊天类型 / 设置拆分 |
 | [2026-08-12](2026-08-12-image-generation-providers.md) | 多厂商生图 ImageGen |
 | [2026-08-28](2026-08-28-sandbox-execution-wait-budget.md) | 沙箱 wait 预算与 60s 检查点 |
+| [2026-09-09](2026-09-09-multi-role-shell.md) | 多角色底座与侧栏角色列表 |

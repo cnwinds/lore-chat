@@ -106,6 +106,7 @@ describe("toSettingsPatch", () => {
       agentMaxParallel: 2,
       sandboxTrustMode: true,
       sandboxMirrorRegion: "global",
+      continuityIdleHours: 6,
     });
     expect(patch.public_base_url).toBe("https://host");
     expect(patch.chat_models).toHaveLength(1);

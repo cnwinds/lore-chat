@@ -72,12 +72,32 @@ class ActiveTurn:
 class TurnExecutionHub:
     """Owns persisted-turn Agent Tasks independent of any SSE consumer."""
 
-    def __init__(self, agent, conversations, inject_broker: TurnInjectBroker | None = None):
+    def __init__(
+        self,
+        agent,
+        conversations,
+        inject_broker: TurnInjectBroker | None = None,
+        *,
+        roles=None,
+    ):
         self.agent = agent
         self.conversations = conversations
+        self.roles = roles
         self.inject_broker = inject_broker or TurnInjectBroker()
         self._by_turn: dict[str, ActiveTurn] = {}
         self._cid_to_turn: dict[str, str] = {}
+
+    def _role_system_prompt_for(self, cid: str) -> str:
+        if self.roles is None:
+            return ""
+        try:
+            rid = self.conversations.get_role_id(cid)
+            return (self.roles.get(rid).get("system_prompt") or "").strip()
+        except KeyError:
+            return ""
+        except Exception:
+            _log.exception("role prompt lookup failed cid=%s", cid)
+            return ""
 
     def _purge_expired(self) -> None:
         """Drop finished turns past retain window so SSE buffers cannot linger forever."""
@@ -409,6 +429,7 @@ class TurnExecutionHub:
                 inject_broker=self.inject_broker,
                 on_inject_applied=_on_inject_applied,
                 attachments=spec.attachments,
+                role_system_prompt=self._role_system_prompt_for(cid),
             ):
                 parsed = parse_agent_sse_event(ev)
                 if parsed:

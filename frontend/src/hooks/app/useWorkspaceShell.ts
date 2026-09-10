@@ -84,6 +84,17 @@ export function useWorkspaceShell({
       collapsed: mobileLayout ? false : base.collapsed,
       onToggleCollapsed: mobileLayout ? undefined : base.onToggleCollapsed,
       onSelectConversation: wrapClose(base.onSelectConversation),
+      onSearchHit: base.onSearchHit
+        ? wrapClose(base.onSearchHit)
+        : undefined,
+      onSelectRole: base.onSelectRole
+        ? wrapClose(base.onSelectRole)
+        : undefined,
+      onAddRole: base.onAddRole ? wrapClose(base.onAddRole) : undefined,
+      onEditRole: base.onEditRole ? wrapClose(base.onEditRole) : undefined,
+      onOpenRoleHistory: base.onOpenRoleHistory
+        ? wrapClose(base.onOpenRoleHistory)
+        : undefined,
       onSelectFile: wrapClose(base.onSelectFile),
       onSelectFolder: base.onSelectFolder
         ? wrapClose(base.onSelectFolder)
@@ -119,10 +130,19 @@ export function useWorkspaceShell({
   ]);
 
   const mobileHeaderTitle = useMemo(() => {
+    const roles = conversation.roles ?? [];
+    if (roles.length > 1 && conversation.activeRole) {
+      return conversation.activeRole.name;
+    }
     const id = conversation.activeConversationId;
-    if (!id) return "新对话";
+    if (!id) return "新话题";
     return conversation.titleOverrides[id] || "对话";
-  }, [conversation.activeConversationId, conversation.titleOverrides]);
+  }, [
+    conversation.roles,
+    conversation.activeRole,
+    conversation.activeConversationId,
+    conversation.titleOverrides,
+  ]);
 
   return {
     mobileNavOpen,
