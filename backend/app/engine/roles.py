@@ -217,19 +217,12 @@ class RoleStore:
                 row["system_prompt"] if system_prompt is None else system_prompt
             )
             new_avatar = row["avatar"] if avatar is None else avatar
-<<<<<<< Updated upstream
-            new_onboarding = (
-                row.get("onboarding_status", "none")
-                if onboarding_status is None
-                else onboarding_status
-=======
             try:
                 current_onboarding = row["onboarding_status"]
             except (KeyError, IndexError):
                 current_onboarding = "none"
             new_onboarding = (
                 current_onboarding if onboarding_status is None else onboarding_status
->>>>>>> Stashed changes
             )
             if new_onboarding not in ("none", "active", "completed", "skipped"):
                 raise ValueError(
