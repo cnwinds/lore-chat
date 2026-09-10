@@ -909,7 +909,7 @@ export function Chat({
         continuityIdleHours={continuityIdleHours}
         timelineHasMore={canLoadOlder}
         loadingOlder={loadingOlderContent}
-        loadingHistory={loadingHistory || loadingTimeline}
+        loadingHistory={loadingHistory}
         streaming={streamingForView}
         reconciling={reconciling}
         networkReconnectNeeded={networkReconnectNeeded}

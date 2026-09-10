@@ -7,6 +7,7 @@ import {
 } from "../../utils/chatMessage";
 import type { ConversationLinkTarget } from "../../utils/conversationLinks";
 import type { TimelineSegmentView } from "../../hooks/chat/useRoleTimeline";
+import { chatTranscriptChrome } from "../../utils/chatTranscriptChrome";
 import { LoreLogo } from "../LoreLogo";
 import { ChatMessageRow, messageHasBody } from "./ChatMessageRow";
 import { ConversationOutline } from "./ConversationOutline";
@@ -151,8 +152,15 @@ export function ChatMessageList({
   const tipHasBody = expandMessagesForDisplay(msgs).some((row) =>
     messageHasBody(row.message, false),
   );
-  const showWelcome =
-    !loadingHistory && !hasHistory && !tipHasBody && !streaming;
+  const { showWelcome, showWelcomeLoading, showLoadOlderHint } =
+    chatTranscriptChrome({
+      loadingHistory,
+      hasHistory,
+      tipHasBody,
+      streaming,
+      timelineHasMore,
+      loadingOlder,
+    });
 
   const showTipSeparator = hasHistory && (tipHasBody || streaming);
 
@@ -160,14 +168,19 @@ export function ChatMessageList({
     <>
       <div className="chat-messages-shell">
         {showWelcome && (
-          <div className="chat-welcome">
+          <div
+            className="chat-welcome"
+            role={showWelcomeLoading ? "status" : undefined}
+          >
             <LoreLogo variant="wordmark" className="chat-welcome-logo" />
+            {showWelcomeLoading && (
+              <div className="chat-welcome-status">加载对话中…</div>
+            )}
           </div>
         )}
         <div className="chat-messages" ref={messagesContainerRef}>
           <div className="chat-messages-inner">
-            {loadingHistory && <div className="chat-empty">加载对话中…</div>}
-            {(timelineHasMore || loadingOlder) && (
+            {showLoadOlderHint && (
               <div className="chat-timeline-load-older" aria-live="polite">
                 {loadingOlder ? "加载更早对话…" : "向上滚动加载更早对话"}
               </div>
