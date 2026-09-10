@@ -231,6 +231,61 @@ def test_roles_http_api(client):
     assert bad.status_code == 400
 
 
+def test_role_timeline_excludes_other_roles(client):
+    other = client.post(
+        "/api/roles", json={"name": "专员", "system_prompt": "专注"}
+    )
+    assert other.status_code == 200
+    rid = other.json()["id"]
+    other_cid = client.post(f"/api/roles/{rid}/ensure-active").json()[
+        "conversation_id"
+    ]
+    default_cid = client.post("/api/roles/default/ensure-active").json()[
+        "conversation_id"
+    ]
+    store = client.app.state.container.conversations
+
+    def _say(cid: str, text: str, reply: str, client_id: str) -> None:
+        turn = store.begin_turn(cid, text, client_id, observation_allowed=False)
+        store.finalize_turn(
+            cid,
+            turn_id=turn["turn_id"],
+            assistant={
+                "text": reply,
+                "timeline": [],
+                "sources": [],
+                "status": "complete",
+            },
+        )
+
+    _say(other_cid, "专员的话", "专员的答", "cli-other")
+    _say(default_cid, "通用的话", "通用的答", "cli-def")
+
+    default_tl = client.get(
+        "/api/roles/default/timeline",
+        params={"limit": 20, "include_messages": True, "message_limit": 0},
+    )
+    assert default_tl.status_code == 200
+    default_ids = [s["id"] for s in default_tl.json()["segments"]]
+    assert other_cid not in default_ids
+    default_text = " ".join(
+        (m.get("text") or "")
+        for s in default_tl.json()["segments"]
+        for m in (s.get("messages") or [])
+    )
+    assert "专员的话" not in default_text
+    assert "通用的话" in default_text
+
+    other_tl = client.get(
+        f"/api/roles/{rid}/timeline",
+        params={"limit": 20, "include_messages": True, "message_limit": 0},
+    )
+    assert other_tl.status_code == 200
+    other_ids = [s["id"] for s in other_tl.json()["segments"]]
+    assert other_cid in other_ids
+    assert default_cid not in other_ids
+
+
 def test_conversations_search_http(client):
     from app.index.message_chunk import MessageChunk
 

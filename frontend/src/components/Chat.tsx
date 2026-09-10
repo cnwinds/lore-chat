@@ -165,6 +165,7 @@ export function Chat({
     setSummaryPath,
   } = useChatConversation({
     conversationId,
+    roleId,
     skipLoadRef,
     streamOwnership,
     pendingJump,

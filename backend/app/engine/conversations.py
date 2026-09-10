@@ -792,7 +792,13 @@ class ConversationStore:
         - ``message_limit``：每段只取尾部 N 条；``None`` 表示该段全量。
         返回 (segments, has_more_older)。
         """
-        items = self.list_all(role_id=role_id)
+        from app.engine.roles import DEFAULT_ROLE_ID
+
+        items = [
+            c
+            for c in self.list_all(role_id=role_id)
+            if (c.get("role_id") or DEFAULT_ROLE_ID) == role_id
+        ]
         items = sorted(
             items,
             key=lambda c: (c.get("created_at") or "", c.get("id") or ""),

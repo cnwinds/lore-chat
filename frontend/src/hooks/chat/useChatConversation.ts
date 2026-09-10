@@ -19,6 +19,8 @@ import {
 
 type Options = {
   conversationId: string | null;
+  /** 当前角色；会话不属于该角色时不当成 tip 展示 */
+  roleId?: string | null;
   skipLoadRef: { current: string | null };
   streamOwnership: StreamOwnership;
   pendingJump?: JumpTarget | null;
@@ -50,6 +52,7 @@ function toLoadedMessages(
  */
 export function useChatConversation({
   conversationId,
+  roleId = null,
   skipLoadRef,
   streamOwnership,
   pendingJump = null,
@@ -68,9 +71,11 @@ export function useChatConversation({
   const onActiveTurnRef = useRef(onActiveTurn);
   const onJumpHandledRef = useRef(onJumpHandled);
   const messageTailRef = useRef(messageTail);
+  const roleIdRef = useRef(roleId);
   onActiveTurnRef.current = onActiveTurn;
   onJumpHandledRef.current = onJumpHandled;
   messageTailRef.current = messageTail;
+  roleIdRef.current = roleId;
 
   useEffect(() => {
     if (pendingJump) {
@@ -136,6 +141,14 @@ export function useChatConversation({
     req
       .then((conv) => {
         applyIfSafe(() => {
+          const expectedRole = roleIdRef.current;
+          if (expectedRole && conv.role_id && conv.role_id !== expectedRole) {
+            setMsgs([]);
+            setSummarized(false);
+            setSummaryPath(null);
+            setOlderMessageCount(0);
+            return;
+          }
           const activeTurnRunning = conv.active_turn?.status === "running";
           setMsgs(toLoadedMessages(conv.messages, activeTurnRunning));
           streamOwnership.msgsConversationIdRef.current = loadedFor;
@@ -165,7 +178,7 @@ export function useChatConversation({
     return () => {
       cancelled = true;
     };
-  }, [conversationId, skipLoadRef, streamOwnership, messageTail]);
+  }, [conversationId, roleId, skipLoadRef, streamOwnership, messageTail]);
 
   // 定位消息不在已加载尾部时，补拉该会话全量
   useEffect(() => {
