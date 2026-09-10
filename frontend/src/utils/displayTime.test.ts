@@ -3,6 +3,7 @@ import {
   formatDisplayDateTime,
   formatMessageTime,
   formatRoleListTime,
+  formatRoutineRunTime,
   formatSidebarConversationTime,
   parseStoredInstant,
   ymdInDisplayZone,
@@ -75,6 +76,22 @@ describe("formatRoleListTime", () => {
   it("uses year when crossing year boundary", () => {
     expect(formatRoleListTime("2025-12-31T10:00:00+08:00", now)).toBe(
       "2025/12/31",
+    );
+  });
+});
+
+describe("formatRoutineRunTime", () => {
+  const now = new Date("2026-08-07T16:00:00+08:00");
+
+  it("prefixes today / yesterday / weekday with the clock", () => {
+    expect(formatRoutineRunTime("2026-08-07T17:07:00+08:00", now)).toBe(
+      "今天 17:07",
+    );
+    expect(formatRoutineRunTime("2026-08-06T09:34:00+08:00", now)).toBe(
+      "昨天 09:34",
+    );
+    expect(formatRoutineRunTime("2026-08-05T10:00:00+08:00", now)).toBe(
+      "周三 10:00",
     );
   });
 });

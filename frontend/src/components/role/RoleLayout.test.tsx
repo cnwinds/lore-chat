@@ -256,7 +256,8 @@ describe("RoleConfigPanel", () => {
     expect(screen.getByLabelText("何时运行")).toBeInTheDocument();
     expect(screen.getByLabelText("时间（北京时间）")).toBeInTheDocument();
     expect(screen.queryByLabelText("间隔（小时）")).not.toBeInTheDocument();
-    expect(screen.getByRole("dialog", { name: "创建例行任务" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "创建例行任务" })).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(screen.queryByText("执行历史")).not.toBeInTheDocument();
   });
 
@@ -284,11 +285,23 @@ describe("RoleConfigPanel", () => {
         onToggleCollapsed={vi.fn()}
       />,
     );
+    expect(
+      await screen.findByRole("heading", { name: "例行任务" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("例行任务是这个角色按时间表定期运行的任务。"),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "创建例行任务" })).toBeInTheDocument();
     await user.click(await screen.findByRole("button", { name: /每日简报/ }));
-    expect(await screen.findByRole("dialog", { name: "例行任务" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "例行任务" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "返回例行任务列表" })).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.queryByText("通用")).not.toBeInTheDocument();
     expect(screen.getByText("执行历史")).toBeInTheDocument();
     expect(await screen.findByText("今日无重大事项")).toBeInTheDocument();
     expect(screen.getByLabelText("何时运行")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "返回例行任务列表" }));
+    expect(await screen.findByRole("button", { name: /每日简报/ })).toBeInTheDocument();
   });
 
   it("opens identity editor from the gear", async () => {

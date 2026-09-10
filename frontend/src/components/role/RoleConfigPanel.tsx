@@ -10,7 +10,8 @@ import {
   type RoleSchedule,
 } from "../../api";
 import { avatarStorageRef } from "../../utils/kbImageUrls";
-import { RoutineDetailModal } from "./RoutineDetailModal";
+import { routineListTitle } from "../../utils/routineTitle";
+import { RoutineDetailView } from "./RoutineDetailView";
 import type { ScheduleTiming } from "../../utils/scheduleTiming";
 import { roleAccent } from "../../utils/roleAccent";
 import { useRoleAvatarSrc } from "../../hooks/useRoleAvatarSrc";
@@ -110,7 +111,7 @@ export function RoleConfigPanel({
       } else {
         const created = await createRoleSchedule(roleId, body);
         setSchedules((prev) => [...prev, created]);
-        setDetail(null);
+        setDetail(created);
       }
     } catch (err) {
       console.error("Failed to save schedule:", err);
@@ -137,54 +138,92 @@ export function RoleConfigPanel({
   }
 
   const coverBg = role ? roleAccent(role.id) : "hsl(220 20% 24%)";
+  const showingDetail = detail !== null;
 
   return (
     <aside
-      className={`role-config-panel${collapsed ? " role-config-panel--collapsed" : ""}`}
+      className={`role-config-panel${collapsed ? " role-config-panel--collapsed" : ""}${showingDetail ? " role-config-panel--routine" : ""}`}
       hidden={collapsed}
     >
       <div className="role-config-toolbar">
-        <button
-          type="button"
-          className={`role-config-icon-btn${editing ? " role-config-icon-btn--on" : ""}`}
-          onClick={() => setEditing((v) => !v)}
-          title="角色设置"
-          aria-label="角色设置"
-          disabled={!role}
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
-            <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="2" />
-            <path
-              d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9c.3.7 1 1.2 1.8 1.2H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"
-              stroke="currentColor"
-              strokeWidth="1.6"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </button>
-        <button
-          type="button"
-          className="role-config-icon-btn"
-          onClick={onToggleCollapsed}
-          title="收起角色设置"
-          aria-label="收起角色设置"
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
-            <path
-              d="M9 6l6 6-6 6M14 6l6 6-6 6"
-              stroke="currentColor"
-              strokeWidth="1.8"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </button>
+        {showingDetail ? (
+          <button
+            type="button"
+            className="role-config-icon-btn"
+            onClick={() => setDetail(null)}
+            title="返回"
+            aria-label="返回例行任务列表"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
+              <path
+                d="M15 6l-6 6 6 6"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+        ) : (
+          <span className="role-config-toolbar-spacer" />
+        )}
+        <div className="role-config-toolbar-end">
+          {!showingDetail ? (
+            <button
+              type="button"
+              className={`role-config-icon-btn${editing ? " role-config-icon-btn--on" : ""}`}
+              onClick={() => setEditing((v) => !v)}
+              title="角色设置"
+              aria-label="角色设置"
+              disabled={!role}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
+                <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="2" />
+                <path
+                  d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9c.3.7 1 1.2 1.8 1.2H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
+          ) : null}
+          <button
+            type="button"
+            className="role-config-icon-btn"
+            onClick={onToggleCollapsed}
+            title="收起角色设置"
+            aria-label="收起角色设置"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
+              <path
+                d="M9 6l6 6-6 6M14 6l6 6-6 6"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+        </div>
       </div>
 
       {!roleId ? (
         <div className="role-config-empty">请选择一个角色</div>
       ) : loading && !role ? (
         <div className="role-config-loading">加载中…</div>
+      ) : showingDetail && roleId ? (
+        <RoutineDetailView
+          roleId={roleId}
+          schedule={detail && detail !== "new" ? detail : null}
+          saving={saving}
+          onSave={(body) => void handleSaveRoutine(body)}
+          onDelete={
+            detail && detail !== "new"
+              ? () => void handleDeleteRoutine()
+              : undefined
+          }
+        />
       ) : (
         <>
           <div className="role-config-main">
@@ -281,58 +320,73 @@ export function RoleConfigPanel({
           </div>
 
           <div className="role-config-routines">
-            <p className="role-config-routines-hint">
-              例行任务是这个角色按时间表定期运行的任务。
-            </p>
+            <div className="role-config-routines-head">
+              <h4>例行任务</h4>
+              {schedules.length > 0 ? (
+                <button
+                  type="button"
+                  className="role-config-icon-btn"
+                  onClick={() => setDetail("new")}
+                  disabled={!roleId}
+                  title="创建例行任务"
+                  aria-label="创建例行任务"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
+                    <path
+                      d="M12 5v14M5 12h14"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                </button>
+              ) : null}
+            </div>
             {schedules.length > 0 ? (
               <ul className="role-config-schedules">
                 {schedules.map((schedule) => (
                   <li key={schedule.id}>
                     <button
                       type="button"
-                      className="role-config-schedule-item"
+                      className={`role-config-schedule-item${schedule.enabled ? "" : " is-off"}`}
                       onClick={() => setDetail(schedule)}
                     >
-                      <div className="role-config-schedule-prompt">
-                        {schedule.prompt}
-                      </div>
-                      <div className="role-config-schedule-meta">
-                        {schedule.timing_summary ||
-                          `每 ${schedule.interval_hours} 小时`}
-                        {schedule.enabled ? "" : " · 已停用"}
-                      </div>
+                      <span
+                        className={`role-config-schedule-dot${schedule.enabled ? " is-on" : ""}`}
+                        aria-hidden
+                      />
+                      <span className="role-config-schedule-copy">
+                        <span className="role-config-schedule-prompt">
+                          {routineListTitle(schedule.prompt)}
+                        </span>
+                        <span className="role-config-schedule-meta">
+                          {schedule.timing_summary ||
+                            `每 ${schedule.interval_hours} 小时`}
+                          {schedule.enabled ? "" : " · 已停用"}
+                        </span>
+                      </span>
                     </button>
                   </li>
                 ))}
               </ul>
-            ) : null}
-            <button
-              type="button"
-              className="role-config-create-routine"
-              onClick={() => setDetail("new")}
-              disabled={!roleId}
-            >
-              创建例行任务
-            </button>
+            ) : (
+              <>
+                <p className="role-config-routines-hint">
+                  例行任务是这个角色按时间表定期运行的任务。
+                </p>
+                <button
+                  type="button"
+                  className="role-config-create-routine"
+                  onClick={() => setDetail("new")}
+                  disabled={!roleId}
+                >
+                  创建例行任务
+                </button>
+              </>
+            )}
           </div>
         </>
       )}
-
-      {roleId ? (
-        <RoutineDetailModal
-          open={detail !== null}
-          roleId={roleId}
-          schedule={detail && detail !== "new" ? detail : null}
-          saving={saving}
-          onClose={() => setDetail(null)}
-          onSave={(body) => void handleSaveRoutine(body)}
-          onDelete={
-            detail && detail !== "new"
-              ? () => void handleDeleteRoutine()
-              : undefined
-          }
-        />
-      ) : null}
     </aside>
   );
 }
