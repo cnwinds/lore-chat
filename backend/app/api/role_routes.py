@@ -63,9 +63,24 @@ def _timing_payload(timing: ScheduleTimingBody | None) -> dict[str, Any] | None:
     return timing.model_dump(exclude_none=True)
 
 
+def _attach_last_active(
+    role: dict[str, Any], activity: dict[str, str]
+) -> dict[str, Any]:
+    return {
+        **role,
+        "last_active_at": activity.get(role["id"]),
+    }
+
+
 @router.get("/roles")
 async def list_roles(request: Request):
-    return {"roles": container(request).roles.list_all()}
+    c = container(request)
+    activity = c.conversations.last_active_at_by_role()
+    return {
+        "roles": [
+            _attach_last_active(role, activity) for role in c.roles.list_all()
+        ]
+    }
 
 
 @router.post("/roles")
@@ -92,10 +107,12 @@ async def list_busy_roles(request: Request):
 
 @router.get("/roles/{role_id}")
 async def get_role(role_id: str, request: Request):
+    c = container(request)
     try:
-        return container(request).roles.get(role_id)
+        role = c.roles.get(role_id)
     except KeyError as e:
         raise HTTPException(404, "角色不存在") from e
+    return _attach_last_active(role, c.conversations.last_active_at_by_role())
 
 
 @router.patch("/roles/{role_id}")
@@ -272,6 +289,21 @@ async def update_schedule(
         raise HTTPException(404, "不存在") from e
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
+
+
+@router.get("/roles/{role_id}/schedules/{schedule_id}/runs")
+async def list_schedule_runs(role_id: str, schedule_id: str, request: Request):
+    c = container(request)
+    try:
+        c.roles.get(role_id)
+        owned = {s["id"] for s in c.roles.schedules.list_for_role(role_id)}
+        if schedule_id not in owned:
+            raise KeyError(schedule_id)
+    except KeyError as e:
+        raise HTTPException(404, "不存在") from e
+    return {
+        "runs": c.conversations.list_role_schedule_runs(schedule_id),
+    }
 
 
 @router.delete("/roles/{role_id}/schedules/{schedule_id}")

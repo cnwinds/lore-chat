@@ -927,6 +927,62 @@ class ConversationStore:
             ).fetchone()
             return row is not None
 
+    def list_role_schedule_runs(
+        self, schedule_id: str, *, limit: int = 30
+    ) -> list[dict]:
+        """例行任务执行历史：``role-schedule:{sid}:`` 前缀的回合。"""
+        prefix = f"role-schedule:{schedule_id}:"
+        page = max(1, min(int(limit or 30), 50))
+        with self._lock:
+            rows = self.conn.execute(
+                """
+                SELECT t.id AS turn_id, t.conversation_id, t.status,
+                       t.started_at, t.finalized_at, a.text AS assistant_text
+                FROM turns t
+                LEFT JOIN messages a ON a.id = t.assistant_message_id
+                WHERE t.client_message_id LIKE ?
+                ORDER BY t.started_at DESC
+                LIMIT ?
+                """,
+                (f"{prefix}%", page),
+            ).fetchall()
+            return [
+                {
+                    "turn_id": r["turn_id"],
+                    "conversation_id": r["conversation_id"],
+                    "status": r["status"],
+                    "started_at": r["started_at"],
+                    "finalized_at": r["finalized_at"],
+                    "summary": (r["assistant_text"] or "").strip()[:180],
+                }
+                for r in rows
+            ]
+
+    def last_active_at_by_role(self) -> dict[str, str]:
+        """每个角色最近一次真正开聊的时间（``turns.started_at`` 最大者）。
+
+        不用会话 ``updated_at``：ensure-active 空会话或改人设都会抬高它，
+        不能当成「最近聊天」。
+        """
+        from app.engine.roles import DEFAULT_ROLE_ID
+
+        with self._lock:
+            rows = self.conn.execute(
+                """
+                SELECT COALESCE(NULLIF(c.role_id, ''), ?) AS role_id,
+                       MAX(t.started_at) AS last_active_at
+                FROM turns t
+                JOIN conversations c ON c.id = t.conversation_id
+                GROUP BY COALESCE(NULLIF(c.role_id, ''), ?)
+                """,
+                (DEFAULT_ROLE_ID, DEFAULT_ROLE_ID),
+            ).fetchall()
+            return {
+                str(r["role_id"]): r["last_active_at"]
+                for r in rows
+                if r["last_active_at"]
+            }
+
     def get_turn(self, turn_id: str) -> dict | None:
         with self._lock:
             row = self.conn.execute(

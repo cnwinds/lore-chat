@@ -145,11 +145,35 @@ export function formatRoleListTime(
   if (days > 1 && days < 7) {
     return d.toLocaleDateString(LOCALE, {
       timeZone: DISPLAY_TIME_ZONE,
-      weekday: "long",
+      weekday: "short",
     });
   }
   if (then.y === today.y) return `${then.m}月${then.d}日`;
   return `${then.y}/${then.m}/${then.d}`;
+}
+
+/** 例行任务执行历史：今天/昨天/周几 + 时刻。 */
+export function formatRoutineRunTime(
+  iso: string,
+  now: Date = new Date(),
+): string {
+  const d = parseStoredInstant(iso);
+  if (!d) return "";
+  const time = formatClockHm(d);
+  if (sameCalendarDay(d, now)) return `今天 ${time}`;
+  const then = ymdInDisplayZone(d);
+  const today = ymdInDisplayZone(now);
+  const days = ymdOrdinal(today) - ymdOrdinal(then);
+  if (days === 1) return `昨天 ${time}`;
+  if (days > 1 && days < 7) {
+    const weekday = d.toLocaleDateString(LOCALE, {
+      timeZone: DISPLAY_TIME_ZONE,
+      weekday: "short",
+    });
+    return `${weekday} ${time}`;
+  }
+  if (then.y === today.y) return `${then.m}月${then.d}日 ${time}`;
+  return `${then.y}/${then.m}/${then.d} ${time}`;
 }
 
 /** 文档元数据等：`YYYY-MM-DD HH:mm:ss`（已是该格式则原样返回）。 */

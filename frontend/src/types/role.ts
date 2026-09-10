@@ -5,6 +5,7 @@ export type Role = {
   system_prompt?: string | null;
   created_at: string;
   updated_at: string;
+  last_active_at?: string | null;
 };
 
 export type RoleSchedule = {

@@ -9,9 +9,10 @@ import {
   type Role,
   type RoleSchedule,
 } from "../../api";
-import { ScheduleTimingFields } from "./ScheduleTimingFields";
 import { avatarStorageRef } from "../../utils/kbImageUrls";
-import { defaultScheduleTiming, type ScheduleTiming } from "../../utils/scheduleTiming";
+import { routineListTitle } from "../../utils/routineTitle";
+import { RoutineDetailView } from "./RoutineDetailView";
+import type { ScheduleTiming } from "../../utils/scheduleTiming";
 import { roleAccent } from "../../utils/roleAccent";
 import { useRoleAvatarSrc } from "../../hooks/useRoleAvatarSrc";
 
@@ -33,13 +34,11 @@ export function RoleConfigPanel({
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState(false);
-  const [creating, setCreating] = useState(false);
 
   const [name, setName] = useState("");
   const [avatar, setAvatar] = useState("");
   const [systemPrompt, setSystemPrompt] = useState("");
-  const [schedPrompt, setSchedPrompt] = useState("");
-  const [schedTiming, setSchedTiming] = useState<ScheduleTiming>(defaultScheduleTiming);
+  const [detail, setDetail] = useState<RoleSchedule | "new" | null>(null);
   const coverAvatar = useRoleAvatarSrc(role?.avatar);
 
   async function loadRole(id: string) {
@@ -55,7 +54,7 @@ export function RoleConfigPanel({
       setAvatar(roleData.avatar || "");
       setSystemPrompt(roleData.system_prompt || "");
       setEditing(false);
-      setCreating(false);
+      setDetail(null);
     } catch (err) {
       console.error("Failed to load role:", err);
     } finally {
@@ -73,7 +72,7 @@ export function RoleConfigPanel({
       setAvatar("");
       setSystemPrompt("");
       setEditing(false);
-      setCreating(false);
+      setDetail(null);
     }
   }, [roleId]);
 
@@ -97,78 +96,134 @@ export function RoleConfigPanel({
     }
   }
 
-  async function handleAddSchedule() {
+  async function handleSaveRoutine(body: {
+    prompt: string;
+    timing: ScheduleTiming;
+    enabled: boolean;
+  }) {
     if (!roleId) return;
-    const prompt = schedPrompt.trim();
-    if (!prompt) return;
     try {
       setSaving(true);
-      const created = await createRoleSchedule(roleId, {
-        prompt,
-        timing: schedTiming,
-        enabled: true,
-      });
-      setSchedules((prev) => [...prev, created]);
-      setSchedPrompt("");
-      setSchedTiming(defaultScheduleTiming);
-      setCreating(false);
+      if (detail && detail !== "new") {
+        const next = await updateRoleSchedule(roleId, detail.id, body);
+        setSchedules((prev) => prev.map((x) => (x.id === next.id ? next : x)));
+        setDetail(next);
+      } else {
+        const created = await createRoleSchedule(roleId, body);
+        setSchedules((prev) => [...prev, created]);
+        setDetail(created);
+      }
     } catch (err) {
-      console.error("Failed to create schedule:", err);
-      window.alert("创建例行任务失败");
+      console.error("Failed to save schedule:", err);
+      window.alert(detail === "new" ? "创建例行任务失败" : "保存失败");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDeleteRoutine() {
+    if (!roleId || !detail || detail === "new") return;
+    if (!window.confirm("确定删除这个例行任务？")) return;
+    try {
+      setSaving(true);
+      await deleteRoleSchedule(roleId, detail.id);
+      setSchedules((prev) => prev.filter((x) => x.id !== detail.id));
+      setDetail(null);
+    } catch (err) {
+      console.error("Failed to delete schedule:", err);
+      window.alert("删除失败");
     } finally {
       setSaving(false);
     }
   }
 
   const coverBg = role ? roleAccent(role.id) : "hsl(220 20% 24%)";
+  const showingDetail = detail !== null;
 
   return (
     <aside
-      className={`role-config-panel${collapsed ? " role-config-panel--collapsed" : ""}`}
+      className={`role-config-panel${collapsed ? " role-config-panel--collapsed" : ""}${showingDetail ? " role-config-panel--routine" : ""}`}
       hidden={collapsed}
     >
       <div className="role-config-toolbar">
-        <button
-          type="button"
-          className={`role-config-icon-btn${editing ? " role-config-icon-btn--on" : ""}`}
-          onClick={() => setEditing((v) => !v)}
-          title="角色设置"
-          aria-label="角色设置"
-          disabled={!role}
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
-            <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="2" />
-            <path
-              d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9c.3.7 1 1.2 1.8 1.2H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"
-              stroke="currentColor"
-              strokeWidth="1.6"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </button>
-        <button
-          type="button"
-          className="role-config-icon-btn"
-          onClick={onToggleCollapsed}
-          title="收起角色设置"
-          aria-label="收起角色设置"
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
-            <path
-              d="M9 6l6 6-6 6M14 6l6 6-6 6"
-              stroke="currentColor"
-              strokeWidth="1.8"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </button>
+        {showingDetail ? (
+          <button
+            type="button"
+            className="role-config-icon-btn"
+            onClick={() => setDetail(null)}
+            title="返回"
+            aria-label="返回例行任务列表"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
+              <path
+                d="M15 6l-6 6 6 6"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+        ) : (
+          <span className="role-config-toolbar-spacer" />
+        )}
+        <div className="role-config-toolbar-end">
+          {!showingDetail ? (
+            <button
+              type="button"
+              className={`role-config-icon-btn${editing ? " role-config-icon-btn--on" : ""}`}
+              onClick={() => setEditing((v) => !v)}
+              title="角色设置"
+              aria-label="角色设置"
+              disabled={!role}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
+                <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="2" />
+                <path
+                  d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9c.3.7 1 1.2 1.8 1.2H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
+          ) : null}
+          <button
+            type="button"
+            className="role-config-icon-btn"
+            onClick={onToggleCollapsed}
+            title="收起角色设置"
+            aria-label="收起角色设置"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
+              <path
+                d="M9 6l6 6-6 6M14 6l6 6-6 6"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+        </div>
       </div>
 
       {!roleId ? (
         <div className="role-config-empty">请选择一个角色</div>
       ) : loading && !role ? (
         <div className="role-config-loading">加载中…</div>
+      ) : showingDetail && roleId ? (
+        <RoutineDetailView
+          roleId={roleId}
+          schedule={detail && detail !== "new" ? detail : null}
+          saving={saving}
+          onSave={(body) => void handleSaveRoutine(body)}
+          onDelete={
+            detail && detail !== "new"
+              ? () => void handleDeleteRoutine()
+              : undefined
+          }
+        />
       ) : (
         <>
           <div className="role-config-main">
@@ -200,7 +255,9 @@ export function RoleConfigPanel({
                   </span>
                 )}
               </div>
-              <div className="role-config-cover-caption">{role?.name}</div>
+              <div className="role-config-cover-caption">
+                {role?.name}的屏幕
+              </div>
             </button>
 
             {editing ? (
@@ -264,105 +321,80 @@ export function RoleConfigPanel({
             ) : null}
           </div>
 
-          <div className="role-config-routines">
-            <p className="role-config-routines-hint">
-              例行任务是这个角色按时间表定期运行的任务。
-            </p>
+          <div
+            className={`role-config-routines${schedules.length === 0 ? " role-config-routines--empty" : ""}`}
+          >
             {schedules.length > 0 ? (
-              <ul className="role-config-schedules">
-                {schedules.map((schedule) => (
-                  <li key={schedule.id} className="role-config-schedule-item">
-                    <div className="role-config-schedule-prompt">
-                      {schedule.prompt}
-                    </div>
-                    <div className="role-config-schedule-meta">
-                      {schedule.timing_summary ||
-                        `每 ${schedule.interval_hours} 小时`}
-                      {schedule.enabled ? "" : " · 已停用"}
-                    </div>
-                    <div className="role-config-schedule-actions">
-                      <button
-                        type="button"
-                        disabled={saving || !roleId}
-                        onClick={() => {
-                          if (!roleId) return;
-                          void updateRoleSchedule(roleId, schedule.id, {
-                            enabled: !schedule.enabled,
-                          }).then((next) =>
-                            setSchedules((prev) =>
-                              prev.map((x) => (x.id === next.id ? next : x)),
-                            ),
-                          );
-                        }}
-                      >
-                        {schedule.enabled ? "停用" : "启用"}
-                      </button>
-                      <button
-                        type="button"
-                        disabled={saving || !roleId}
-                        onClick={() => {
-                          if (!roleId) return;
-                          void deleteRoleSchedule(roleId, schedule.id).then(() =>
-                            setSchedules((prev) =>
-                              prev.filter((x) => x.id !== schedule.id),
-                            ),
-                          );
-                        }}
-                      >
-                        删除
-                      </button>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-            {creating ? (
-              <div className="role-config-schedule-form">
-                <textarea
-                  className="role-config-textarea"
-                  value={schedPrompt}
-                  onChange={(e) => setSchedPrompt(e.target.value)}
-                  rows={3}
-                  placeholder="定时发送的提示词，例如：汇总今日进展"
-                  disabled={saving}
-                />
-                <ScheduleTimingFields
-                  value={schedTiming}
-                  onChange={setSchedTiming}
-                  disabled={saving}
-                />
-                <div className="role-config-editor-actions">
+              <>
+                <div className="role-config-routines-head">
+                  <h4>例行任务</h4>
                   <button
                     type="button"
-                    className="role-config-ghost-btn"
-                    onClick={() => {
-                      setCreating(false);
-                      setSchedPrompt("");
-                      setSchedTiming(defaultScheduleTiming);
-                    }}
-                    disabled={saving}
+                    className="role-config-icon-btn"
+                    onClick={() => setDetail("new")}
+                    disabled={!roleId}
+                    title="创建例行任务"
+                    aria-label="创建例行任务"
                   >
-                    取消
-                  </button>
-                  <button
-                    type="button"
-                    className="role-config-primary-btn"
-                    onClick={() => void handleAddSchedule()}
-                    disabled={saving || !schedPrompt.trim()}
-                  >
-                    创建
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
+                      <path
+                        d="M12 5v14M5 12h14"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                      />
+                    </svg>
                   </button>
                 </div>
-              </div>
+                <ul className="role-config-schedules">
+                  {schedules.map((schedule) => (
+                    <li key={schedule.id}>
+                      <button
+                        type="button"
+                        className={`role-config-schedule-item${schedule.enabled ? "" : " is-off"}`}
+                        onClick={() => setDetail(schedule)}
+                      >
+                        <span
+                          className={`role-config-schedule-dot${schedule.enabled ? " is-on" : ""}`}
+                          aria-hidden
+                        />
+                        <span className="role-config-schedule-copy">
+                          <span className="role-config-schedule-prompt">
+                            {routineListTitle(schedule.prompt)}
+                          </span>
+                          <span className="role-config-schedule-meta">
+                            {schedule.timing_summary ||
+                              `每 ${schedule.interval_hours} 小时`}
+                            {schedule.enabled ? "" : " · 已停用"}
+                          </span>
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </>
             ) : (
-              <button
-                type="button"
-                className="role-config-create-routine"
-                onClick={() => setCreating(true)}
-                disabled={!roleId}
-              >
-                创建例行任务
-              </button>
+              <>
+                <p className="role-config-routines-hint">
+                  例行任务是这个角色按时间表定期运行的任务。
+                </p>
+                <button
+                  type="button"
+                  className="role-config-create-routine"
+                  onClick={() => setDetail("new")}
+                  disabled={!roleId}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden>
+                    <path
+                      d="M12 5v14M5 12h14"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                  创建例行任务
+                </button>
+              </>
             )}
           </div>
         </>
