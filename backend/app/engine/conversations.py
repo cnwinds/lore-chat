@@ -160,6 +160,7 @@ class ConversationStore:
             self._ensure_memory_schedule_columns()
             self._ensure_message_model_columns()
             self._ensure_message_web_enabled_column()
+            self._ensure_conversation_role_id_column()
             self.conn.commit()
 
         if legacy_single.exists():
@@ -232,6 +233,17 @@ class ConversationStore:
         }
         if "web_enabled" not in cols:
             self.conn.execute("ALTER TABLE messages ADD COLUMN web_enabled INTEGER")
+
+    def _ensure_conversation_role_id_column(self) -> None:
+        """Add role_id column to conversations (multi-role support)."""
+        cols = {
+            r[1]
+            for r in self.conn.execute("PRAGMA table_info(conversations)").fetchall()
+        }
+        if "role_id" not in cols:
+            self.conn.execute("ALTER TABLE conversations ADD COLUMN role_id TEXT DEFAULT 'default'")
+            # Backfill existing conversations to default role
+            self.conn.execute("UPDATE conversations SET role_id = 'default' WHERE role_id IS NULL")
 
     def _json_shards_migrated(self) -> bool:
         row = self.conn.execute(
@@ -485,7 +497,7 @@ class ConversationStore:
                     "status": trow["status"],
                     "started_at": trow["started_at"],
                 }
-        return {
+        result = {
             "id": cid,
             "title": row["title"],
             "created_at": row["created_at"],
@@ -499,6 +511,12 @@ class ConversationStore:
             "summarized_at": summarized_at,
             "indexed_dirty": bool(row["indexed_dirty"]),
         }
+        # Add role_id if column exists
+        try:
+            result["role_id"] = row["role_id"] or "default"
+        except (KeyError, IndexError):
+            result["role_id"] = "default"
+        return result
 
     def _mark_dirty_and_stale(self, cid: str) -> None:
         self.conn.execute(
@@ -510,16 +528,16 @@ class ConversationStore:
     # CRUD
     # ------------------------------------------------------------------
 
-    def create(self, title: str | None = None) -> str:
+    def create(self, title: str | None = None, role_id: str | None = None) -> str:
         cid = uuid.uuid4().hex[:12]
         stamp = _now()
         with self._lock:
             self.conn.execute(
                 """
-                INSERT INTO conversations(id, title, created_at, updated_at, active_turn_id, indexed_dirty)
-                VALUES (?, ?, ?, ?, NULL, 0)
+                INSERT INTO conversations(id, title, created_at, updated_at, active_turn_id, indexed_dirty, role_id)
+                VALUES (?, ?, ?, ?, NULL, 0, ?)
                 """,
-                (cid, title or "新对话", stamp, stamp),
+                (cid, title or "新对话", stamp, stamp, role_id or "default"),
             )
             self.conn.commit()
         return cid
@@ -570,17 +588,21 @@ class ConversationStore:
                     (cid,),
                 ).fetchone()["n"]
                 summarized, summary_path, _ = self._summary_state(cid)
-                items.append(
-                    {
-                        "id": cid,
-                        "title": row["title"],
-                        "created_at": row["created_at"],
-                        "updated_at": row["updated_at"],
-                        "message_count": int(count),
-                        "summarized": summarized,
-                        "summary_path": summary_path,
-                    }
-                )
+                item = {
+                    "id": cid,
+                    "title": row["title"],
+                    "created_at": row["created_at"],
+                    "updated_at": row["updated_at"],
+                    "message_count": int(count),
+                    "summarized": summarized,
+                    "summary_path": summary_path,
+                }
+                # Add role_id if column exists
+                try:
+                    item["role_id"] = row["role_id"] or "default"
+                except (KeyError, IndexError):
+                    item["role_id"] = "default"
+                items.append(item)
         return sorted(items, key=lambda c: c["updated_at"], reverse=True)
 
     def delete(

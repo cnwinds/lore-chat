@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Request
 
+from pydantic import BaseModel
+
 from app.api.http_deps import (
     AppendMessagesBody,
     ResolveBody,
