@@ -54,7 +54,7 @@
 3. **右栏（可折叠）**
    - 展开：顶栏齿轮（名称/头像/人设）+ 收起；中部角色形象卡（头像或色块，**不是**虚拟机屏幕）；底部例行任务说明与「创建例行任务」
    - 收起：右栏完全隐藏，中栏顶栏出现展开按钮
-   - 字段仍是名称、头像、人设、定时任务（interval_hours + prompt）
+   - 字段仍是名称、头像、人设、例行任务（每天/工作日/每周/每月时刻，或间隔 / cron；北京时间）
 
 ### 无虚拟机 / 桌面屏幕
 
@@ -100,10 +100,10 @@ HTTP `/api/roles*` 保留用于 UI shell（列表、ensure-active、可选右栏
 | `create_role` | 创建新角色 `{name, system_prompt?, avatar?}` |
 | `update_role` | 更新角色属性 `{role_id?, name?, avatar?, system_prompt?}`；默认当前会话角色 |
 | `list_role_schedules` | 列出角色定时任务 `{role_id?}` |
-| `create_role_schedule` | 创建定时任务 `{role_id?, prompt, interval_hours, enabled?}` |
-| `update_role_schedule` | 更新定时任务 `{schedule_id, prompt?, interval_hours?, enabled?}` |
+| `create_role_schedule` | 创建例行任务 `{role_id?, prompt, timing?, interval_hours?, enabled?}` |
+| `update_role_schedule` | 更新例行任务 `{schedule_id, prompt?, timing?, interval_hours?, enabled?}` |
 | `delete_role_schedule` | 删除定时任务 `{schedule_id}` |
-| `finalize_role_onboarding` | 完成角色引导 `{role_id?, system_prompt, schedules?}` |
+例行任务 `timing.kind`：`interval`（间隔小时）/ `hourly` / `daily` / `weekdays` / `weekly` / `monthly` / `cron`。日历时刻按**北京时间**。旧客户端仍可只传 `interval_hours`。
 
 #### 角色引导流程
 
@@ -129,7 +129,7 @@ HTTP `/api/roles*` 保留用于 UI shell（列表、ensure-active、可选右栏
 | POST | `/api/roles/{id}/new-topic` | 强制新话题（关段抽取 + 新空段） |
 | GET | `/api/roles/busy` | 有 running turn 的 `role_ids` |
 | GET/POST | `/api/roles/{id}/schedules` | 角色定时列表 / 创建 |
-| PATCH/DELETE | `/api/roles/{id}/schedules/{sid}` | 改启停与间隔 / 删除 |
+| PATCH/DELETE | `/api/roles/{id}/schedules/{sid}` | 改启停与定时规格 / 删除 |
 | POST | `/api/conversations` | body 可选 `{role_id, title}`；缺省绑默认角色 |
 | GET | `/api/conversations?role_id=` | 可选按角色过滤 |
 | GET | `/api/conversations/search` | 会话全文搜索，可选按角色过滤 |

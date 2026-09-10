@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from typing import Any, Literal
+
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.api.http_deps import container
 
@@ -22,16 +24,42 @@ class UpdateRoleBody(BaseModel):
     avatar: str | None = None
 
 
+class ScheduleTimingBody(BaseModel):
+    kind: Literal[
+        "interval", "hourly", "daily", "weekdays", "weekly", "monthly", "cron"
+    ]
+    interval_hours: float | None = Field(default=None, ge=0.5)
+    hour: int | None = Field(default=None, ge=0, le=23)
+    minute: int | None = Field(default=None, ge=0, le=59)
+    weekdays: list[int] | None = None
+    day_of_month: int | None = Field(default=None, ge=1, le=31)
+    cron: str | None = None
+
+
 class CreateScheduleBody(BaseModel):
     prompt: str
-    interval_hours: float = Field(..., ge=0.5)
+    timing: ScheduleTimingBody | None = None
+    interval_hours: float | None = Field(default=None, ge=0.5)
     enabled: bool = True
+
+    @model_validator(mode="after")
+    def _need_timing(self) -> CreateScheduleBody:
+        if self.timing is None and self.interval_hours is None:
+            raise ValueError("请提供 timing 或 interval_hours")
+        return self
 
 
 class UpdateScheduleBody(BaseModel):
     prompt: str | None = None
+    timing: ScheduleTimingBody | None = None
     interval_hours: float | None = Field(default=None, ge=0.5)
     enabled: bool | None = None
+
+
+def _timing_payload(timing: ScheduleTimingBody | None) -> dict[str, Any] | None:
+    if timing is None:
+        return None
+    return timing.model_dump(exclude_none=True)
 
 
 @router.get("/roles")
@@ -209,6 +237,7 @@ async def create_schedule(role_id: str, body: CreateScheduleBody, request: Reque
             role_id,
             prompt=body.prompt,
             interval_hours=body.interval_hours,
+            timing=_timing_payload(body.timing),
             enabled=body.enabled,
         )
     except ValueError as e:
@@ -231,6 +260,7 @@ async def update_schedule(
             schedule_id,
             prompt=body.prompt,
             interval_hours=body.interval_hours,
+            timing=_timing_payload(body.timing),
             enabled=body.enabled,
         )
     except KeyError as e:

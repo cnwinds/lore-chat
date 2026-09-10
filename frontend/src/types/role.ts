@@ -10,8 +10,11 @@ export type Role = {
 export type RoleSchedule = {
   id: string;
   role_id: string;
-  cron: string;
   prompt: string;
+  interval_hours?: number;
+  kind?: string;
+  timing?: import("../utils/scheduleTiming").ScheduleTiming;
+  timing_summary?: string;
   enabled: boolean;
   created_at: string;
   updated_at: string;

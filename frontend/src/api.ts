@@ -21,6 +21,7 @@ import {
   type PathExistsDetail,
 } from "./lib/httpTransport";
 import { messageFromImportErrorBody } from "./utils/importKbError";
+import type { ScheduleTiming } from "./utils/scheduleTiming";
 
 export type { ApiError, PathExistsDetail, ActiveTurnStatus };
 
@@ -903,6 +904,9 @@ export type RoleSchedule = {
   role_id: string;
   prompt: string;
   interval_hours: number;
+  kind?: string;
+  timing?: ScheduleTiming;
+  timing_summary?: string;
   enabled: boolean;
   next_run_at: string | null;
   last_run_at: string | null;
@@ -918,7 +922,12 @@ export async function listRoleSchedules(roleId: string) {
 
 export async function createRoleSchedule(
   roleId: string,
-  body: { prompt: string; interval_hours: number; enabled?: boolean },
+  body: {
+    prompt: string;
+    timing?: ScheduleTiming;
+    interval_hours?: number;
+    enabled?: boolean;
+  },
 ) {
   return apiFetch<RoleSchedule>(
     `/api/roles/${encodeURIComponent(roleId)}/schedules`,
@@ -935,6 +944,7 @@ export async function updateRoleSchedule(
   scheduleId: string,
   body: {
     prompt?: string;
+    timing?: ScheduleTiming;
     interval_hours?: number;
     enabled?: boolean;
   },

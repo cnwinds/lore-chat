@@ -1,12 +1,21 @@
-"""角色定时任务：间隔触发，写入该角色活跃线。"""
+"""角色定时任务：按 timing 规格触发，写入该角色活跃线。"""
 
 from __future__ import annotations
 
+import json
 import sqlite3
 import threading
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+from app.engine.schedule_timing import (
+    interval_hours_for_storage,
+    next_run_iso,
+    normalize_timing,
+    summarize_timing,
+    timing_from_row,
+)
 
 
 def _now() -> datetime:
@@ -44,14 +53,45 @@ class RoleScheduleStore:
         self._lock = lock
         with self._lock:
             self.conn.executescript(_SCHEMA)
+            self._migrate_timing_columns()
             self.conn.commit()
 
+    def _migrate_timing_columns(self) -> None:
+        cols = {row[1] for row in self.conn.execute("PRAGMA table_info(role_schedules)")}
+        if "kind" not in cols:
+            self.conn.execute(
+                "ALTER TABLE role_schedules ADD COLUMN kind TEXT NOT NULL DEFAULT 'interval'"
+            )
+        if "spec_json" not in cols:
+            self.conn.execute(
+                "ALTER TABLE role_schedules ADD COLUMN spec_json TEXT NOT NULL DEFAULT '{}'"
+            )
+        rows = self.conn.execute(
+            "SELECT id, interval_hours, spec_json FROM role_schedules"
+        ).fetchall()
+        for row in rows:
+            raw = row["spec_json"] or ""
+            if raw and raw not in ("{}", ""):
+                continue
+            spec = {
+                "kind": "interval",
+                "interval_hours": float(row["interval_hours"]),
+            }
+            self.conn.execute(
+                "UPDATE role_schedules SET kind = 'interval', spec_json = ? WHERE id = ?",
+                (json.dumps(spec, ensure_ascii=False), row["id"]),
+            )
+
     def _row(self, row: sqlite3.Row) -> dict:
+        timing = timing_from_row(row)
         return {
             "id": row["id"],
             "role_id": row["role_id"],
             "prompt": row["prompt"],
             "interval_hours": float(row["interval_hours"]),
+            "kind": timing["kind"],
+            "timing": timing,
+            "timing_summary": summarize_timing(timing),
             "enabled": bool(row["enabled"]),
             "next_run_at": row["next_run_at"],
             "last_run_at": row["last_run_at"],
@@ -67,30 +107,40 @@ class RoleScheduleStore:
             ).fetchall()
             return [self._row(r) for r in rows]
 
+    def get(self, schedule_id: str) -> dict:
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT * FROM role_schedules WHERE id = ?", (schedule_id,)
+            ).fetchone()
+            if row is None:
+                raise KeyError(schedule_id)
+            return self._row(row)
+
     def create(
         self,
         role_id: str,
         *,
         prompt: str,
-        interval_hours: float,
+        interval_hours: float | None = None,
+        timing: dict | None = None,
         enabled: bool = True,
     ) -> dict:
         prompt = (prompt or "").strip()
         if not prompt:
             raise ValueError("定时提示词不能为空")
-        hours = float(interval_hours)
-        if hours < 0.5:
-            raise ValueError("间隔至少 0.5 小时")
+        spec = normalize_timing(timing, interval_hours=interval_hours)
+        hours = interval_hours_for_storage(spec)
         sid = _new_id()
         stamp = _now_iso()
-        next_run = (_now() + timedelta(hours=hours)).isoformat()
+        next_run = next_run_iso(spec) if enabled else None
         with self._lock:
             self.conn.execute(
                 """
                 INSERT INTO role_schedules(
                     id, role_id, prompt, interval_hours, enabled,
-                    next_run_at, last_run_at, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?)
+                    next_run_at, last_run_at, created_at, updated_at,
+                    kind, spec_json
+                ) VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)
                 """,
                 (
                     sid,
@@ -101,6 +151,8 @@ class RoleScheduleStore:
                     next_run,
                     stamp,
                     stamp,
+                    spec["kind"],
+                    json.dumps(spec, ensure_ascii=False),
                 ),
             )
             self.conn.commit()
@@ -116,6 +168,7 @@ class RoleScheduleStore:
         *,
         prompt: str | None = None,
         interval_hours: float | None = None,
+        timing: dict | None = None,
         enabled: bool | None = None,
     ) -> dict:
         with self._lock:
@@ -127,33 +180,41 @@ class RoleScheduleStore:
             new_prompt = row["prompt"] if prompt is None else prompt.strip()
             if not new_prompt:
                 raise ValueError("定时提示词不能为空")
-            new_hours = (
-                float(row["interval_hours"])
-                if interval_hours is None
-                else float(interval_hours)
-            )
-            if new_hours < 0.5:
-                raise ValueError("间隔至少 0.5 小时")
+            current = timing_from_row(row)
+            if timing is not None:
+                spec = normalize_timing(timing, interval_hours=interval_hours)
+            elif interval_hours is not None:
+                spec = normalize_timing(
+                    {"kind": "interval", "interval_hours": interval_hours}
+                )
+            else:
+                spec = current
+            hours = interval_hours_for_storage(spec)
             new_enabled = (
                 bool(row["enabled"]) if enabled is None else bool(enabled)
             )
+            timing_changed = spec != current
             next_run = row["next_run_at"]
-            if interval_hours is not None or (enabled is True and not row["enabled"]):
-                next_run = (_now() + timedelta(hours=new_hours)).isoformat()
+            if not new_enabled:
+                next_run = None
+            elif timing_changed or (enabled is True and not row["enabled"]):
+                next_run = next_run_iso(spec)
             stamp = _now_iso()
             self.conn.execute(
                 """
                 UPDATE role_schedules
                 SET prompt = ?, interval_hours = ?, enabled = ?,
-                    next_run_at = ?, updated_at = ?
+                    next_run_at = ?, updated_at = ?, kind = ?, spec_json = ?
                 WHERE id = ?
                 """,
                 (
                     new_prompt,
-                    new_hours,
+                    hours,
                     1 if new_enabled else 0,
                     next_run,
                     stamp,
+                    spec["kind"],
+                    json.dumps(spec, ensure_ascii=False),
                     schedule_id,
                 ),
             )
@@ -194,10 +255,17 @@ class RoleScheduleStore:
             ).fetchall()
             return [self._row(r) for r in rows]
 
-    def mark_ran(self, schedule_id: str, *, interval_hours: float) -> None:
+    def mark_ran(self, schedule_id: str, *, interval_hours: float | None = None) -> None:
+        del interval_hours  # 日历定时按 spec 重算，忽略旧的间隔参数
         stamp = _now_iso()
-        next_run = (_now() + timedelta(hours=float(interval_hours))).isoformat()
         with self._lock:
+            row = self.conn.execute(
+                "SELECT * FROM role_schedules WHERE id = ?", (schedule_id,)
+            ).fetchone()
+            if row is None:
+                return
+            spec = timing_from_row(row)
+            next_run = next_run_iso(spec)
             self.conn.execute(
                 """
                 UPDATE role_schedules

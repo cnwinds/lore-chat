@@ -9,6 +9,8 @@ import {
   type Role,
   type RoleSchedule,
 } from "../../api";
+import { ScheduleTimingFields } from "./ScheduleTimingFields";
+import { defaultScheduleTiming, type ScheduleTiming } from "../../utils/scheduleTiming";
 import { roleAccent } from "../../utils/roleAccent";
 
 type Props = {
@@ -35,7 +37,7 @@ export function RoleConfigPanel({
   const [avatar, setAvatar] = useState("");
   const [systemPrompt, setSystemPrompt] = useState("");
   const [schedPrompt, setSchedPrompt] = useState("");
-  const [schedHours, setSchedHours] = useState(24);
+  const [schedTiming, setSchedTiming] = useState<ScheduleTiming>(defaultScheduleTiming);
 
   async function loadRole(id: string) {
     try {
@@ -100,12 +102,12 @@ export function RoleConfigPanel({
       setSaving(true);
       const created = await createRoleSchedule(roleId, {
         prompt,
-        interval_hours: schedHours,
+        timing: schedTiming,
         enabled: true,
       });
       setSchedules((prev) => [...prev, created]);
       setSchedPrompt("");
-      setSchedHours(24);
+      setSchedTiming(defaultScheduleTiming);
       setCreating(false);
     } catch (err) {
       console.error("Failed to create schedule:", err);
@@ -267,7 +269,8 @@ export function RoleConfigPanel({
                       {schedule.prompt}
                     </div>
                     <div className="role-config-schedule-meta">
-                      每 {schedule.interval_hours} 小时
+                      {schedule.timing_summary ||
+                        `每 ${schedule.interval_hours} 小时`}
                       {schedule.enabled ? "" : " · 已停用"}
                     </div>
                     <div className="role-config-schedule-actions">
@@ -316,18 +319,11 @@ export function RoleConfigPanel({
                   placeholder="定时发送的提示词，例如：汇总今日进展"
                   disabled={saving}
                 />
-                <label className="role-config-label">
-                  <span>间隔（小时）</span>
-                  <input
-                    type="number"
-                    className="role-config-input"
-                    min={0.5}
-                    step={0.5}
-                    value={schedHours}
-                    onChange={(e) => setSchedHours(Number(e.target.value) || 24)}
-                    disabled={saving}
-                  />
-                </label>
+                <ScheduleTimingFields
+                  value={schedTiming}
+                  onChange={setSchedTiming}
+                  disabled={saving}
+                />
                 <div className="role-config-editor-actions">
                   <button
                     type="button"
@@ -335,6 +331,7 @@ export function RoleConfigPanel({
                     onClick={() => {
                       setCreating(false);
                       setSchedPrompt("");
+                      setSchedTiming(defaultScheduleTiming);
                     }}
                     disabled={saving}
                   >
