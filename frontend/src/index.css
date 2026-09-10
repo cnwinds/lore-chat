@@ -5077,6 +5077,12 @@ button.memory-fact-statement--jump:focus-visible {
   color: var(--text);
 }
 
+.chat-welcome-status {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+}
+
 .chat-row {
   margin: 10px 0;
   display: flex;
