@@ -14,7 +14,7 @@ docker build -t lorechat-sandbox-agent:local \
 - backend / compose 开发默认 → `SANDBOX_IMAGE=lorechat-sandbox-agent:local`（本镜像）
 - 预构建单文件启动器默认 → `ghcr.io/cnwinds/lore-chat-sandbox-agent:latest`（由 `scripts/gen-deploy-launchers.py` 嵌入）
 
-换镜像后需重建沙箱容器（清 `.kb/sandbox_runtime.json` 的 `sandbox_id`）。
+换镜像后需重建沙箱容器（清 `.kb/sandbox_runtime.json` 里对应角色 slot 的 `sandbox_id`；v2 为 `slots.<role_id>.sandbox_id`，勿整文件删除以免丢掉其他角色的卷绑定）。
 
 ## 预装
 

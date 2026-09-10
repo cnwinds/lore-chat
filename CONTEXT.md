@@ -15,7 +15,7 @@
 | 会话 | `conversations.py` + `conversation/*` | SQLite 消息/turn；`role_id` 归属角色；outbox；`MemoryExtractSchedule`；`ConversationTranscript`；`ConversationDeletionWorkflow`；`ConversationMessageGraph`；`ConversationSummaryLedger`（`store.summaries`）；`ConversationSystemEvents`（`store.system_events`）；其余 store 兼容委托逐步收口 |
 | 角色 | `roles.py`（`RoleStore`） | 默认通用角色 + 可创建；人设/头像/system_prompt；侧栏角色列表 + **统一时间线**见 [ADR 2026-09-09](docs/adr/2026-09-09-multi-role-shell.md) / [ADR 2026-09-10 timeline](docs/adr/2026-09-10-role-timeline.md) / [product-multi-role.md](docs/product-multi-role.md) |
 | 知识写入 | `backend/app/engine/knowledge_writer.py` | 路径 + git + 索引 + changelog **唯一写入 seam**；意图级 `persist_document` / `import_entry`（`allow_binary`）/ `read_entry_bytes` / `move_entry` / `delete_entry`；非 MD 准入经 `assert_non_md_asset_allowed`；Merge/Agent 勿自组 drop_index |
-| 沙箱 | `backend/app/engine/sandbox/` | `SandboxRuntime` 端口；`SandboxExecutionEngine`（统一 job+poll 流式、wait 预算检查点）；`SandboxCommandGate`（高风险确认）；`KbSandboxExchange`（stage/publish）；`SandboxTools` 为薄 tool adapter |
+| 沙箱 | `backend/app/engine/sandbox/` | `RoleSandboxPool`（每角色固定 agent+PVC；控制面仍一个 `opensandbox-server`）；`SandboxRuntime` 端口；`SandboxExecutionEngine`（统一 job+poll 流式、wait 预算检查点）；`SandboxCommandGate`（高风险确认）；`KbSandboxExchange`（stage/publish）；`SandboxTools` 按 `conversation.role_id` 取 slot，stop 不跨角色 |
 | 文档成文 | `backend/app/engine/document_synthesis.py` | 归档/合并/入库合并的 LLM 成文；Organizer 与 MergeWorkflow 共用 |
 | 会话定稿观察 | `backend/app/engine/memory/session_observe.py` | dirty / idle / extract / SlotResolver / CAS **deep module**（`SessionMemoryObserve`；`MemoryWorker` 为兼容别名） |
 | 记忆写入 | `backend/app/engine/memory/resolver.py` + `service.py` | 全部突变经 `MemoryService` → 唯一 `SlotResolver`（remember/confirm/edit/correct/forget） |
@@ -43,6 +43,8 @@
 
 `apply_settings()`：`IndexSubgraph.apply_settings`（检索 tunables）+ 各子图 `rebind_llm` + `AgentSubgraph.publish`（同步 Container facade）。
 
+沙箱：`build_sandbox_pool` 由 `AgentSubgraph` / `ToolRegistry` 持有；热更新经 `apply_sandbox_settings(..., pool=)`，不要再假设全局只有一个 `sandbox_runtime`。
+
 ## 知识库路径约定
 
 所有**新建/归档**到 KB 的入口必须带 **`directory` + `filename`**（`.md`）：
@@ -69,7 +71,7 @@
 
 - **一键拉取（小白）**：单文件启动器 [`deploy/lorechat.sh`](deploy/lorechat.sh) / [`deploy/lorechat.ps1`](deploy/lorechat.ps1)（由 [`scripts/gen-deploy-launchers.py`](scripts/gen-deploy-launchers.py) 生成；运行时在脚本旁写出 compose / 沙箱配置）。数据默认 `./data/knowledge/`、`./data/backups/`。镜像 tag：`LORECHAT_IMAGE_TAG`（`latest` 或 `0.1.0` 这类，不带 `v`；git tag 仍是 `v0.1.0`）；发版流程见 [AGENTS.md](AGENTS.md#二版本发布)
 - **源码构建（开发者）**：`docker/docker-compose.yml` + 根 `./lorechat.sh start --chat|--work`（共用 [`scripts/lorechat-compose-lib.sh`](scripts/lorechat-compose-lib.sh)）
-- **可选执行能力**：叠加 sandbox compose；`SANDBOX_ENABLED` / `GET /api/health` → `capabilities.sandbox`。见 [ADR 2026-08-06](docs/adr/2026-08-06-opensandbox-runtime.md)
+- **可选执行能力**：叠加 sandbox compose；`SANDBOX_ENABLED` / `GET /api/health` → `capabilities.sandbox`。见 [ADR 2026-08-06](docs/adr/2026-08-06-opensandbox-runtime.md)；多角色并行时每角色一把执行沙箱，见 [ADR 2026-09-10](docs/adr/2026-09-10-role-scoped-sandbox.md)
 - OpenSandbox 配置源：`docker/opensandbox/config.toml`（嵌入预构建启动器；开发路径挂载 `docker/opensandbox/`）
 - 镜像 pin：`scripts/opensandbox-pins.sh` 由 `gen-deploy-launchers.py` 从 config.toml + sandbox compose 生成；根 `lorechat-compose-lib.sh` source 该文件
 

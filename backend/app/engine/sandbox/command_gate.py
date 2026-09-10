@@ -25,7 +25,16 @@ class SandboxCommandGate:
         self.pending = pending
         self.trust_mode = trust_mode
 
-    def maybe_confirm(self, args: dict, command: str) -> dict | None:
+    def maybe_confirm(
+        self,
+        args: dict,
+        command: str,
+        *,
+        role_id: str | None = None,
+        conversation_id: str | None = None,
+        schedule_id: str | None = None,
+        cwd: str | None = None,
+    ) -> dict | None:
         """需要确认时返回 ask_user 形态结果；否则 None。"""
         if self.trust_mode or bool(args.get("confirmed")):
             return None
@@ -37,20 +46,27 @@ class SandboxCommandGate:
                 "sources": [],
                 "error": "pending unavailable",
             }
-        cwd = (args.get("cwd") or "/workspace").strip() or "/workspace"
+        resolved_cwd = (cwd or args.get("cwd") or "/workspace").strip() or "/workspace"
         wait = args.get("wait_sec")
         wait_sec = float(wait) if wait is not None else None
         if_exceeded = (args.get("if_exceeded") or "return").strip().lower()
+        payload = {
+            "kind": "sandbox_confirm",
+            "command": command,
+            "cwd": resolved_cwd,
+            "wait_sec": wait_sec,
+            "if_exceeded": if_exceeded,
+        }
+        if role_id:
+            payload["role_id"] = role_id
+        if conversation_id:
+            payload["conversation_id"] = conversation_id
+        if schedule_id:
+            payload["schedule_id"] = schedule_id
         qid = self.pending.create(
-            f"是否在沙箱执行此命令？\n\n```\n{command}\n```\ncwd={cwd}",
+            f"是否在沙箱执行此命令？\n\n```\n{command}\n```\ncwd={resolved_cwd}",
             list(CONFIRM_OPTIONS),
-            {
-                "kind": "sandbox_confirm",
-                "command": command,
-                "cwd": cwd,
-                "wait_sec": wait_sec,
-                "if_exceeded": if_exceeded,
-            },
+            payload,
         )
         return {
             "summary": "等待用户确认是否执行沙箱命令",
@@ -116,6 +132,12 @@ class SandboxCommandGate:
         }
         if wait_sec is not None:
             run_args["wait_sec"] = wait_sec
+        if payload.get("role_id"):
+            run_args["role_id"] = payload["role_id"]
+        if payload.get("conversation_id"):
+            run_args["conversation_id"] = payload["conversation_id"]
+        if payload.get("schedule_id"):
+            run_args["schedule_id"] = payload["schedule_id"]
         return IngestResult(
             status="sandbox_execute",
             rel_path=None,

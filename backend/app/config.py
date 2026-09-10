@@ -165,6 +165,10 @@ class Settings(BaseSettings):
     sandbox_trust_mode: bool = True
     # 沙箱软件源：cn=国内镜像（阿里云/npmmirror），global=官方源
     sandbox_mirror_region: str = "cn"
+    # P1：角色沙箱池上限（P0 只记录绑定，不拒绝新角色）
+    sandbox_max_roles: int = 8
+    # P1：空闲 TTL（秒）到期可销毁容器、保留 PVC；0=不回收
+    sandbox_idle_ttl_sec: float = 0
 
 
 EDITABLE_SETTING_KEYS: frozenset[str] = frozenset(
@@ -181,6 +185,9 @@ EDITABLE_SETTING_KEYS: frozenset[str] = frozenset(
         "opensandbox_use_server_proxy",
         "opensandbox_workspace_volume",
         "sandbox_image",
+        # P1 回收挂钩：P0 不经 UI 热改，避免误以为已生效
+        "sandbox_max_roles",
+        "sandbox_idle_ttl_sec",
     }
 )
 

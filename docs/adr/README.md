@@ -19,3 +19,4 @@
 | [2026-09-09](2026-09-09-multi-role-shell.md) | 多角色底座与侧栏角色列表 |
 | [2026-09-10](2026-09-10-multi-role-always-visible.md) | 角色列表始终可见 |
 | [2026-09-10](2026-09-10-role-timeline.md) | 角色统一时间线（多段+分隔+默认检索） |
+| [2026-09-10](2026-09-10-role-scoped-sandbox.md) | 每角色固定执行沙箱（单控制面 + RoleSandboxPool） |

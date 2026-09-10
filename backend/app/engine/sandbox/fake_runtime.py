@@ -11,10 +11,13 @@ from app.engine.sandbox.protocol import CommandResult, DirEntry, JobStatus
 
 
 class FakeSandboxRuntime:
-    def __init__(self) -> None:
-        self.sandbox_id = "fake-sandbox"
+    def __init__(self, *, sandbox_id: str | None = None, role_id: str | None = None) -> None:
+        self.sandbox_id = sandbox_id or "fake-sandbox"
+        self.role_id = role_id
         self._files: dict[str, bytes] = {"/workspace/.keep": b""}
         self._jobs: dict[str, JobStatus] = {}
+        self.last_cwd: str | None = None
+        self._active_executions: set[str] = set()
 
     async def ensure_ready(self) -> str:
         return self.sandbox_id
@@ -45,6 +48,7 @@ class FakeSandboxRuntime:
                     break
             return CommandResult(stdout=stdout_all, stderr=stderr_all, exit_code=code)
 
+        self.last_cwd = cwd
         cwd_n = self._norm(cwd)
         parts = shlex.split(command)
         if not parts:
@@ -121,7 +125,9 @@ class FakeSandboxRuntime:
 
     async def start_job(self, command: str, *, cwd: str = "/workspace") -> str:
         eid = uuid.uuid4().hex
+        self.last_cwd = cwd
         self._jobs[eid] = JobStatus(execution_id=eid, running=True, logs="")
+        self._active_executions.add(eid)
 
         async def _finish() -> None:
             if command.strip() == "__stream_echo__":
@@ -179,6 +185,8 @@ class FakeSandboxRuntime:
             )
         cursor = int(log_cursor or 0)
         logs = st.logs[cursor:]
+        if not st.running:
+            self._active_executions.discard(execution_id)
         return JobStatus(
             execution_id=st.execution_id,
             running=st.running,
@@ -197,6 +205,7 @@ class FakeSandboxRuntime:
             exit_code=-1,
             logs=(st.logs or "") + "\n[interrupted]\n",
         )
+        self._active_executions.discard(execution_id)
 
     async def interrupt_all(self) -> None:
         for eid, st in list(self._jobs.items()):

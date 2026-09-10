@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import shlex
+
 from app.engine.knowledge_writer import KnowledgeWriter
 from app.engine.pending import PendingStore
+from app.engine.roles import DEFAULT_ROLE_ID
 from app.engine.sandbox.command_gate import SandboxCommandGate
 from app.engine.sandbox.command_prep import prepare_streaming_command
 from app.engine.sandbox.execution_engine import SandboxExecutionEngine
 from app.engine.sandbox.kb_exchange import KbSandboxExchange
 from app.engine.sandbox.protocol import SandboxRuntime
+from app.engine.sandbox.role_pool import RoleSandboxPool, parse_role_schedule_id
+from app.engine.sandbox.workspace_cwd import resolve_sandbox_cwd
 
 
 class SandboxTools:
@@ -22,8 +27,12 @@ class SandboxTools:
         default_wait_sec: float = SandboxExecutionEngine.DEFAULT_WAIT_SEC,
         poll_interval_sec: float = SandboxExecutionEngine.DEFAULT_POLL_INTERVAL,
         read_max_chars: int = 50_000,
+        pool: RoleSandboxPool | None = None,
+        conversations=None,
     ) -> None:
         self.runtime = runtime
+        self.pool = pool
+        self.conversations = conversations
         self.knowledge_writer = knowledge_writer
         self.pending = pending
         self.command_gate = SandboxCommandGate(pending, trust_mode=trust_mode)
@@ -42,62 +51,162 @@ class SandboxTools:
     def trust_mode(self, value: bool) -> None:
         self.command_gate.trust_mode = value
 
-    def _require(self) -> SandboxRuntime | dict:
-        if self.runtime is None:
-            return {
-                "summary": "当前实例未启用沙箱执行能力（请用 docker-compose.sandbox.yml 启动）",
-                "sources": [],
-                "error": "sandbox disabled",
-            }
-        return self.runtime
+    @property
+    def available(self) -> bool:
+        return self.pool is not None or self.runtime is not None
+
+    def _disabled(self) -> dict:
+        return {
+            "summary": "当前实例未启用沙箱执行能力（请用 docker-compose.sandbox.yml 启动）",
+            "sources": [],
+            "error": "sandbox disabled",
+        }
+
+    def _resolve_role_id(
+        self,
+        args: dict,
+        conversation_id: str | None = None,
+    ) -> str:
+        """会话角色优先，避免模型传 role_id 借用其他角色 slot。"""
+        if conversation_id and self.conversations is not None:
+            try:
+                return self.conversations.get_role_id(conversation_id)
+            except KeyError:
+                pass
+        rid = (args.get("role_id") or "").strip()
+        if rid:
+            return rid
+        return DEFAULT_ROLE_ID
+
+    def _resolve_schedule_id(
+        self,
+        args: dict,
+        conversation_id: str | None = None,
+    ) -> str | None:
+        sid = (args.get("schedule_id") or "").strip()
+        if sid:
+            return sid
+        if not conversation_id or self.conversations is None:
+            return None
+        try:
+            for turn in self.conversations.list_running_turns():
+                if turn.get("conversation_id") != conversation_id:
+                    continue
+                parsed = parse_role_schedule_id(turn.get("client_message_id"))
+                if parsed:
+                    return parsed
+        except Exception:
+            return None
+        return None
+
+    async def _runtime_for(
+        self,
+        args: dict,
+        *,
+        conversation_id: str | None = None,
+        role_id: str | None = None,
+    ) -> SandboxRuntime | dict:
+        if self.pool is None and self.runtime is None:
+            return self._disabled()
+        if self.pool is None:
+            return self.runtime  # 单测单 runtime：不发明其他角色 slot
+        rid = role_id or self._resolve_role_id(args, conversation_id)
+        return await self.pool.get(rid)
+
+    async def _runtime_for_execution(
+        self,
+        execution_id: str,
+        args: dict,
+        *,
+        conversation_id: str | None = None,
+    ) -> SandboxRuntime | dict:
+        rec = self.execution_engine.registry.get(execution_id)
+        if rec and rec.role_id and self.pool is not None:
+            return await self.pool.get(rec.role_id)
+        return await self._runtime_for(args, conversation_id=conversation_id)
+
+    async def _ensure_cwd(self, runtime: SandboxRuntime, cwd: str) -> None:
+        if cwd in ("", "/", "/workspace"):
+            return
+        quoted = shlex.quote(cwd)
+        run = getattr(runtime, "run", None)
+        if run is None:
+            return
+        try:
+            await run(f"mkdir -p -- {quoted}", cwd="/", timeout_sec=30)
+        except TypeError:
+            await run(f"mkdir -p -- {quoted}", cwd="/")
 
     @staticmethod
-    def _parse_run_args(args: dict) -> tuple[str | None, str, str | None, float, str]:
-        cwd = (args.get("cwd") or "/workspace").strip() or "/workspace"
+    def _parse_run_flags(args: dict) -> tuple[str | None, str | None, float, str]:
         command = (args.get("command") or "").strip() or None
         execution_id = (args.get("execution_id") or "").strip() or None
         wait = args.get("wait_sec")
-        wait_sec = float(wait) if wait is not None else SandboxExecutionEngine.DEFAULT_WAIT_SEC
+        wait_sec = (
+            float(wait) if wait is not None else SandboxExecutionEngine.DEFAULT_WAIT_SEC
+        )
         if_exceeded = (args.get("if_exceeded") or "return").strip().lower()
-        return command, cwd, execution_id, wait_sec, if_exceeded
+        return command, execution_id, wait_sec, if_exceeded
 
-    async def sandbox_run(self, args: dict) -> dict:
-        rt = self._require()
-        if isinstance(rt, dict):
-            return rt
-        command, cwd, execution_id, wait_sec, if_exceeded = self._parse_run_args(args)
+    async def sandbox_run(
+        self,
+        args: dict,
+        *,
+        conversation_id: str | None = None,
+        schedule_id: str | None = None,
+    ) -> dict:
+        cid = conversation_id or (args.get("conversation_id") or "").strip() or None
+        sid = schedule_id or self._resolve_schedule_id(args, cid)
+        role_id = self._resolve_role_id(args, cid)
+        cwd_or_err = resolve_sandbox_cwd(args, conversation_id=cid, schedule_id=sid)
+        if isinstance(cwd_or_err, dict):
+            return cwd_or_err
+        cwd = cwd_or_err
 
+        command, execution_id, wait_sec, if_exceeded = self._parse_run_flags(args)
         if not execution_id and not command:
             return {"summary": "缺少 command", "sources": [], "error": "missing command"}
 
         if not execution_id:
-            gate = self.command_gate.maybe_confirm(args, command or "")
+            gate = self.command_gate.maybe_confirm(
+                args,
+                command or "",
+                role_id=role_id,
+                conversation_id=cid,
+                schedule_id=sid,
+                cwd=cwd,
+            )
             if gate is not None:
                 return gate
             command = prepare_streaming_command(command or "")
 
+        rt = await self._runtime_for(args, conversation_id=cid, role_id=role_id)
+        if isinstance(rt, dict):
+            return rt
         await rt.ensure_ready()
+        if not execution_id:
+            await self._ensure_cwd(rt, cwd)
 
-        if execution_id:
-            return await self.execution_engine.execute(
-                rt,
-                execution_id=execution_id,
-                cwd=cwd,
-                wait_sec=wait_sec,
-                if_exceeded=if_exceeded,
-            )
-        return await self.execution_engine.execute(
-            rt,
-            command=command,
+        kwargs = dict(
             cwd=cwd,
             wait_sec=wait_sec,
             if_exceeded=if_exceeded,
+            role_id=role_id,
+            conversation_id=cid,
+            schedule_id=sid,
         )
+        if execution_id:
+            return await self.execution_engine.execute(
+                rt, execution_id=execution_id, **kwargs
+            )
+        return await self.execution_engine.execute(rt, command=command, **kwargs)
 
-    async def sandbox_stop(self, args: dict) -> dict:
-        rt = self._require()
-        if isinstance(rt, dict):
-            return rt
+    async def sandbox_stop(
+        self,
+        args: dict,
+        *,
+        conversation_id: str | None = None,
+    ) -> dict:
         eid = (args.get("execution_id") or "").strip()
         if not eid:
             return {
@@ -105,13 +214,26 @@ class SandboxTools:
                 "sources": [],
                 "error": "missing execution_id",
             }
+        cid = conversation_id or (args.get("conversation_id") or "").strip() or None
+        rec = self.execution_engine.registry.get(eid)
+        if rec and cid and rec.conversation_id and rec.conversation_id != cid:
+            return {
+                "summary": "execution_id 不属于当前会话，已拒绝跨会话停止",
+                "sources": [],
+                "error": "execution not in conversation",
+            }
+        rt = await self._runtime_for_execution(eid, args, conversation_id=cid)
+        if isinstance(rt, dict):
+            return rt
         await rt.ensure_ready()
         return await self.execution_engine.stop(rt, eid)
 
-    async def sandbox_job_status(self, args: dict) -> dict:
-        rt = self._require()
-        if isinstance(rt, dict):
-            return rt
+    async def sandbox_job_status(
+        self,
+        args: dict,
+        *,
+        conversation_id: str | None = None,
+    ) -> dict:
         eid = (args.get("execution_id") or "").strip()
         if not eid:
             return {
@@ -119,6 +241,10 @@ class SandboxTools:
                 "sources": [],
                 "error": "missing execution_id",
             }
+        cid = conversation_id or (args.get("conversation_id") or "").strip() or None
+        rt = await self._runtime_for_execution(eid, args, conversation_id=cid)
+        if isinstance(rt, dict):
+            return rt
         await rt.ensure_ready()
         status = await rt.poll_job(eid, log_cursor=None)
         state = "running" if status.running else f"exit={status.exit_code}"
@@ -135,8 +261,13 @@ class SandboxTools:
             "stdout": status.logs,
         }
 
-    async def sandbox_list_dir(self, args: dict) -> dict:
-        rt = self._require()
+    async def sandbox_list_dir(
+        self,
+        args: dict,
+        *,
+        conversation_id: str | None = None,
+    ) -> dict:
+        rt = await self._runtime_for(args, conversation_id=conversation_id)
         if isinstance(rt, dict):
             return rt
         path = (args.get("path") or "/workspace").strip() or "/workspace"
@@ -163,8 +294,13 @@ class SandboxTools:
             ],
         }
 
-    async def sandbox_read_file(self, args: dict) -> dict:
-        rt = self._require()
+    async def sandbox_read_file(
+        self,
+        args: dict,
+        *,
+        conversation_id: str | None = None,
+    ) -> dict:
+        rt = await self._runtime_for(args, conversation_id=conversation_id)
         if isinstance(rt, dict):
             return rt
         path = (args.get("path") or "").strip()
@@ -192,14 +328,24 @@ class SandboxTools:
             "path": path,
         }
 
-    async def publish_from_sandbox(self, args: dict) -> dict:
-        rt = self._require()
+    async def publish_from_sandbox(
+        self,
+        args: dict,
+        *,
+        conversation_id: str | None = None,
+    ) -> dict:
+        rt = await self._runtime_for(args, conversation_id=conversation_id)
         if isinstance(rt, dict):
             return rt
         return await self.exchange.publish(rt, args, allow_binary=True)
 
-    async def stage_to_sandbox(self, args: dict) -> dict:
-        rt = self._require()
+    async def stage_to_sandbox(
+        self,
+        args: dict,
+        *,
+        conversation_id: str | None = None,
+    ) -> dict:
+        rt = await self._runtime_for(args, conversation_id=conversation_id)
         if isinstance(rt, dict):
             return rt
         return await self.exchange.stage(rt, args)

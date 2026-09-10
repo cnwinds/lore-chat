@@ -961,7 +961,10 @@ TOOL_DEFINITIONS: list[dict] = [
         "function": {
             "name": "sandbox_run",
             "description": (
-                "在服务器持久沙箱中执行 shell 命令（工作目录默认 /workspace）。"
+                "在该角色固定绑定的执行沙箱中跑 shell 命令"
+                "（默认 cwd 为 /workspace/conversations/{当前会话}；"
+                "定时任务为 /workspace/schedules/{schedule_id}；"
+                "显式 cwd 须仍在 /workspace 下）。"
                 "统一后台 job + 流式 poll；默认每 wait_sec 秒（60）检查点交还控制权。"
                 "if_exceeded=return 时到期返回 checkpoint；wait_until_done 等到完成；"
                 "stop 到期则 sandbox_stop 等价中断。"
@@ -980,8 +983,11 @@ TOOL_DEFINITIONS: list[dict] = [
                     },
                     "cwd": {
                         "type": "string",
-                        "description": "工作目录，默认 /workspace",
-                        "default": "/workspace",
+                        "description": (
+                            "工作目录，须在 /workspace 下。"
+                            "省略时：交互回合用 /workspace/conversations/{conversation_id}，"
+                            "定时任务用 /workspace/schedules/{schedule_id}"
+                        ),
                     },
                     "wait_sec": {
                         "type": "number",

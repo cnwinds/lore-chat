@@ -122,7 +122,13 @@ class PendingResolver:
             return result
         if self.sandbox_tools is None:
             raise RuntimeError("沙箱未启用，无法执行已批准的命令")
-        out = await self.sandbox_tools.sandbox_run(dict(run_args))
+        run_payload = dict(run_args)
+        if body.conversation_id and not run_payload.get("conversation_id"):
+            run_payload["conversation_id"] = body.conversation_id
+        out = await self.sandbox_tools.sandbox_run(
+            run_payload,
+            conversation_id=run_payload.get("conversation_id") or body.conversation_id,
+        )
         summary = (out.get("summary") or "").strip() or "(无输出)"
         return IngestResult(
             status="continue",
