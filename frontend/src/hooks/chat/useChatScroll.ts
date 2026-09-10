@@ -9,6 +9,10 @@ function isNearBottom(container: HTMLElement): boolean {
   return distance <= SCROLL_BOTTOM_THRESHOLD;
 }
 
+function isMediaElement(node: EventTarget | null): boolean {
+  return node instanceof HTMLImageElement || node instanceof HTMLVideoElement;
+}
+
 export function useChatScroll(
   deps: unknown[] = [],
   externalStickToBottomRef?: MutableRefObject<boolean>,
@@ -19,6 +23,8 @@ export function useChatScroll(
   const pendingRafRef = useRef<number | null>(null);
   const programmaticRef = useRef(false);
   const touchStartYRef = useRef<number | null>(null);
+  const lastScrollTopRef = useRef(0);
+  const lastScrollHeightRef = useRef(0);
 
   function cancelPendingScroll() {
     if (pendingRafRef.current != null) {
@@ -36,6 +42,8 @@ export function useChatScroll(
       if (!stickToBottomRef.current) return;
       programmaticRef.current = true;
       el.scrollTop = el.scrollHeight;
+      lastScrollTopRef.current = el.scrollTop;
+      lastScrollHeightRef.current = el.scrollHeight;
       requestAnimationFrame(() => {
         programmaticRef.current = false;
       });
@@ -46,16 +54,35 @@ export function useChatScroll(
     const el = messagesContainerRef.current;
     if (!el) return;
 
+    lastScrollTopRef.current = el.scrollTop;
+    lastScrollHeightRef.current = el.scrollHeight;
+
     const unstick = () => {
       stickToBottomRef.current = false;
       cancelPendingScroll();
     };
 
     const handleScroll = () => {
-      if (programmaticRef.current) return;
-      const near = isNearBottom(el);
-      if (!near) cancelPendingScroll();
-      stickToBottomRef.current = near;
+      if (programmaticRef.current) {
+        lastScrollTopRef.current = el.scrollTop;
+        lastScrollHeightRef.current = el.scrollHeight;
+        return;
+      }
+      const prevTop = lastScrollTopRef.current;
+      const prevHeight = lastScrollHeightRef.current;
+      lastScrollTopRef.current = el.scrollTop;
+      lastScrollHeightRef.current = el.scrollHeight;
+      if (isNearBottom(el)) {
+        stickToBottomRef.current = true;
+        return;
+      }
+      const heightGrew = el.scrollHeight > prevHeight + 1;
+      // 内容变高（如图片加载）时 scrollTop 往往不变，不要当成用户上翻
+      const scrolledUp = el.scrollTop < prevTop - 1;
+      if (scrolledUp && !heightGrew) {
+        cancelPendingScroll();
+        stickToBottomRef.current = false;
+      }
     };
 
     const handleWheel = (e: WheelEvent) => {
@@ -75,15 +102,39 @@ export function useChatScroll(
       if (y - startY > 8) unstick();
     };
 
+    const handleMediaSettle = (e: Event) => {
+      if (!isMediaElement(e.target)) return;
+      if (e.target instanceof Node && !el.contains(e.target)) return;
+      scrollMessagesToBottom();
+    };
+
     el.addEventListener("scroll", handleScroll, { passive: true });
     el.addEventListener("wheel", handleWheel, { passive: true });
     el.addEventListener("touchstart", handleTouchStart, { passive: true });
     el.addEventListener("touchmove", handleTouchMove, { passive: true });
+    // img 的 load 不冒泡，必须捕获；视频尺寸在 loadedmetadata
+    el.addEventListener("load", handleMediaSettle, true);
+    el.addEventListener("error", handleMediaSettle, true);
+    el.addEventListener("loadedmetadata", handleMediaSettle, true);
+
+    let ro: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== "undefined") {
+      ro = new ResizeObserver(() => {
+        scrollMessagesToBottom();
+      });
+      const inner = el.firstElementChild;
+      if (inner instanceof HTMLElement) ro.observe(inner);
+    }
+
     return () => {
       el.removeEventListener("scroll", handleScroll);
       el.removeEventListener("wheel", handleWheel);
       el.removeEventListener("touchstart", handleTouchStart);
       el.removeEventListener("touchmove", handleTouchMove);
+      el.removeEventListener("load", handleMediaSettle, true);
+      el.removeEventListener("error", handleMediaSettle, true);
+      el.removeEventListener("loadedmetadata", handleMediaSettle, true);
+      ro?.disconnect();
       cancelPendingScroll();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
