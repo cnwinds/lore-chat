@@ -161,6 +161,7 @@ class ConversationStore:
             self._ensure_role_id_column()
             self._ensure_message_model_columns()
             self._ensure_message_web_enabled_column()
+            self._ensure_conversation_role_id_column()
             self.conn.commit()
 
         if legacy_single.exists():
@@ -252,6 +253,17 @@ class ConversationStore:
         }
         if "web_enabled" not in cols:
             self.conn.execute("ALTER TABLE messages ADD COLUMN web_enabled INTEGER")
+
+    def _ensure_conversation_role_id_column(self) -> None:
+        """Add role_id column to conversations (multi-role support)."""
+        cols = {
+            r[1]
+            for r in self.conn.execute("PRAGMA table_info(conversations)").fetchall()
+        }
+        if "role_id" not in cols:
+            self.conn.execute("ALTER TABLE conversations ADD COLUMN role_id TEXT DEFAULT 'default'")
+            # Backfill existing conversations to default role
+            self.conn.execute("UPDATE conversations SET role_id = 'default' WHERE role_id IS NULL")
 
     def _json_shards_migrated(self) -> bool:
         row = self.conn.execute(

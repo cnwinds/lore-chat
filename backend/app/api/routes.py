@@ -21,6 +21,7 @@ router.include_router(merge_routes.router)
 router.include_router(conversation_routes.router)
 router.include_router(role_routes.router)
 router.include_router(memory_routes.router)
+router.include_router(role_routes.router)
 router.include_router(share_routes.router)
 
 # 兼容旧测试从 routes 导入的符号

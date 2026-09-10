@@ -1151,4 +1151,3 @@ export function forgetMemoryFact(factId: string) {
     { method: "POST" },
   );
 }
-

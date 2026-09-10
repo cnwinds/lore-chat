@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Request
 
+from pydantic import BaseModel
+
 from app.api.http_deps import (
     AppendMessagesBody,
     CreateConversationBody,
@@ -94,6 +96,10 @@ async def search_conversations(
         if len(hits) >= limit:
             break
     return {"hits": hits, "tier": outcome.tier}
+
+
+class CreateConversationBody(BaseModel):
+    role_id: str | None = None
 
 
 @router.post("/conversations")
