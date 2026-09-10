@@ -17,3 +17,5 @@
 | [2026-08-12](2026-08-12-image-generation-providers.md) | 多厂商生图 ImageGen |
 | [2026-08-28](2026-08-28-sandbox-execution-wait-budget.md) | 沙箱 wait 预算与 60s 检查点 |
 | [2026-09-09](2026-09-09-multi-role-shell.md) | 多角色底座与侧栏角色列表 |
+| [2026-09-10](2026-09-10-multi-role-always-visible.md) | 角色列表始终可见 |
+| [2026-09-10](2026-09-10-role-timeline.md) | 角色统一时间线（多段+分隔+默认检索） |

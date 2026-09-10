@@ -3,9 +3,6 @@ import {
   getRole,
   updateRole,
   listRoleSchedules,
-  createRoleSchedule,
-  updateRoleSchedule,
-  deleteRoleSchedule,
   type Role,
   type RoleSchedule,
 } from "../../api";
@@ -72,7 +69,7 @@ export function RoleConfigPanel({
       const updated = await updateRole(roleId, {
         name: name.trim() || role.name,
         avatar: avatar.trim() || null,
-        system_prompt: systemPrompt.trim() || null,
+        system_prompt: systemPrompt,
       });
       setRole(updated);
       onRoleUpdated?.();
@@ -89,7 +86,7 @@ export function RoleConfigPanel({
       <aside className="role-config-panel role-config-panel--collapsed">
         <button
           type="button"
-          className="role-config-toggle"
+          className="role-config-toggle role-config-toggle--collapsed"
           onClick={onToggleCollapsed}
           title="展开配置面板"
         >
@@ -177,7 +174,7 @@ export function RoleConfigPanel({
                 {schedules.map((schedule) => (
                   <div key={schedule.id} className="role-config-schedule-item">
                     <div className="role-config-schedule-cron">
-                      {schedule.cron}
+                      每 {schedule.interval_hours} 小时
                     </div>
                     <div className="role-config-schedule-prompt">
                       {schedule.prompt}

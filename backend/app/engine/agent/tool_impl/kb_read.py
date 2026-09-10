@@ -33,12 +33,20 @@ class KbReadTools:
         explicit_cid = args.get("conversation_id")
         exclude_cid = None if explicit_cid else conversation_id
         cursor = args.get("cursor")
+        role_id = args.get("role_id")
+        if conversation_id and self.conversations is not None:
+            try:
+                # 强制当前会话所属角色，忽略模型随意传的 role_id
+                role_id = self.conversations.get_role_id(conversation_id)
+            except KeyError:
+                role_id = None
         page = self.retriever.search(
             query,
             k=k,
             scope=scope,
             conversation_id=explicit_cid,
             exclude_conversation_id=exclude_cid,
+            role_id=role_id if scope in ("all", "conversations") else None,
             cursor=cursor,
         )
         hits = page.hits

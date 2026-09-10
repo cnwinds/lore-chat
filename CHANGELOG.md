@@ -9,13 +9,15 @@
 - 多角色底座：默认「通用」角色、角色 CRUD / 活跃线 API、会话 `role_id`；侧栏在多角色时切换角色，单角色仍为对话列表；Agent 注入角色 system_prompt（[ADR 2026-09-09](docs/adr/2026-09-09-multi-role-shell.md)）
 - P1：侧栏会话全文搜索、`GET /api/conversations/search`；空态引导；设置 → Agent「连续窗口」；手机顶栏多角色切换 sheet；提示词强化「接着上次 / 我们说过」须先搜会话
 - P2：角色设置（人设/头像/改名/删除）、角色级定时任务与后台触发、Agent `create_role` 工具、侧栏忙碌角标、本角色历史抽屉
+- **角色统一时间线**：选中角色展示该角色全部会话段（段间分隔）；`GET /api/roles/{id}/timeline`、`POST .../new-topic`；新 tip 首轮默认检索本角色历史 + KB；关段触发记忆抽取（[ADR 2026-09-10 timeline](docs/adr/2026-09-10-role-timeline.md)）
 
 ### Changed
 
+- 角色主区从「只看 tip 活跃线」改为整条时间线；历史抽屉降为可选；角色列表支持本角色会话搜索定位与「新话题」
 - `sandbox_list_dir`：summary 仅单行条数，路径以 `entries[].path` 为准，避免模型把相邻文件名粘成一个路径
 - 「新建」对话改文案为「新话题」
 - `ensure-active` 响应增加 `created`，标识是否因连续窗口外而新建话题
-
+- 会话检索支持按 `role_id` 过滤；`search_kb` 默认限定当前角色历史会话
 ### Fixed
 
 - 创建会话/角色请求补齐 `Content-Type: application/json`，避免浏览器 422

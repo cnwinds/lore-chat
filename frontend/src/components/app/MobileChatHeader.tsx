@@ -4,7 +4,6 @@ import type { RoleSummary } from "../../api";
 type Props = {
   title: string;
   onOpenNav: () => void;
-  onNewChat: () => void;
   onShare?: () => void;
   roles?: RoleSummary[];
   activeRoleId?: string | null;
@@ -14,7 +13,6 @@ type Props = {
 export function MobileChatHeader({
   title,
   onOpenNav,
-  onNewChat,
   onShare,
   roles = [],
   activeRoleId = null,
@@ -85,21 +83,6 @@ export function MobileChatHeader({
             </svg>
           </button>
         )}
-        <button
-          type="button"
-          className="mobile-chat-header-btn mobile-chat-header-btn--accent"
-          onClick={onNewChat}
-          aria-label="新话题"
-        >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
-            <path
-              d="M12 5v14M5 12h14"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-            />
-          </svg>
-        </button>
       </div>
       {sheetOpen && multiRole && (
         <div

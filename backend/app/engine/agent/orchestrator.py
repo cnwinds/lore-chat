@@ -63,6 +63,7 @@ class AgentOrchestrator:
         on_inject_applied=None,
         attachments: list[str] | None = None,
         role_system_prompt: str = "",
+        prefetch_context: str | None = None,
     ) -> AsyncIterator[str]:
         system_layer_text = (
             self.system_layer.compose_rules() if self.system_layer else ""
@@ -72,6 +73,9 @@ class AgentOrchestrator:
         )
         catalog = list(skill_catalog) if skill_catalog else []
         skill_msgs = build_skill_catalog_system_messages(catalog)
+        extra = list(skill_msgs) if skill_msgs else []
+        if prefetch_context and prefetch_context.strip():
+            extra.append({"role": "system", "content": prefetch_context.strip()})
         search_configured = (
             self.tools.web_search is not None
             and self.tools.web_search.provider is not None
@@ -91,7 +95,7 @@ class AgentOrchestrator:
             active_doc_path=active_doc_path,
             active_doc_paths=active_doc_paths,
             primary_doc_path=primary_doc_path,
-            extra_system_messages=skill_msgs or None,
+            extra_system_messages=extra or None,
             attachments=attachments,
             role_system_prompt=role_system_prompt,
         )

@@ -1,12 +1,17 @@
 import { type MutableRefObject, type RefObject } from "react";
 import type { ChatMessage, IngestResult, SourceRef } from "../../api";
 import type { MemoryEventNotice } from "../../hooks/chat/useConversationMemoryEvents";
+import type { TimelineSegmentView } from "../../hooks/chat/useRoleTimeline";
 import { ChatMessageList } from "./ChatMessageList";
 
 export type TranscriptOutlineLayout = "rail" | "sheet";
 
 type Props = {
   msgs: ChatMessage[];
+  historicalSegments?: TimelineSegmentView[];
+  continuityIdleHours?: number;
+  timelineHasMore?: boolean;
+  loadingOlder?: boolean;
   loadingHistory: boolean;
   streaming: boolean;
   reconciling?: boolean;
@@ -38,6 +43,10 @@ type Props = {
 /** 会话消息区：列表 + 可选记忆提示。 */
 export function ConversationTranscriptPanel({
   msgs,
+  historicalSegments,
+  continuityIdleHours,
+  timelineHasMore,
+  loadingOlder,
   loadingHistory,
   streaming,
   reconciling,
@@ -75,6 +84,10 @@ export function ConversationTranscriptPanel({
       )}
       <ChatMessageList
         msgs={msgs}
+        historicalSegments={historicalSegments}
+        continuityIdleHours={continuityIdleHours}
+        timelineHasMore={timelineHasMore}
+        loadingOlder={loadingOlder}
         loadingHistory={loadingHistory}
         streaming={streaming}
         reconciling={reconciling}

@@ -1,6 +1,6 @@
 # 多角色产品设计（ADR 配套 + Grok Bot 三栏布局）
 
-> 权威决策见 [ADR 2026-09-09](adr/2026-09-09-multi-role-shell.md) 及 [ADR 2026-09-10](adr/2026-09-10-multi-role-always-visible.md)。本文展开产品/界面/分期,供实现对照。
+> 权威决策见 [ADR 2026-09-09](adr/2026-09-09-multi-role-shell.md)、[ADR 2026-09-10 always-visible](adr/2026-09-10-multi-role-always-visible.md)、[ADR 2026-09-10 timeline](adr/2026-09-10-role-timeline.md)。本文展开产品/界面/分期,供实现对照。
 
 ## 0. 角色列表始终可见（2026-09-10 更新）
 
@@ -14,6 +14,12 @@
 
 **废弃规则**：~~早期设计（ADR 2026-09-09 §2）曾考虑「单角色时隐藏角色列表，多角色时显示」，现已被明确废弃。~~ 详见 [ADR 2026-09-10](adr/2026-09-10-multi-role-always-visible.md)。
 
+## 0.1 角色统一时间线（2026-09-10）
+
+**最新决策**：选中角色后，中栏展示该角色**全部会话段**拼成一条时间线（段间分隔），而非只加载空 tip。详见 [ADR 2026-09-10 timeline](adr/2026-09-10-role-timeline.md)。
+
+**废弃规则**：~~主区只看活跃线、历史主要靠抽屉~~。
+
 ## 1. 产品模型
 
 | 维度 | 约定 |
@@ -21,7 +27,7 @@
 | 角色 | 可多个；字段：名称、头像、系统提示词、定时任务（定时后续） |
 | 默认 | 启动仅一个「通用」默认角色（`id=default`） |
 | 知识库 | **全角色共享**读写 |
-| 记忆 | **全局抽取**覆盖所有角色会话；规则仍为关于主人 / 耐久性 / 语境保全 |
+| 记忆 | **全局抽取**覆盖所有角色会话；规则仍为关于主人 / 耐久性 / 语境保全；**关段**亦触发抽取 |
 | 并行 | 角色独立上下文与 turn；切换 UI **不取消**其他角色 running turn |
 | 生长 | 用户可创建新角色（设置 / 后续对话工具）；不强制安装向导 |
 
@@ -33,8 +39,8 @@
 
 1. **左栏（固定）**
    - **上半部分**：角色列表（始终可见）
-     - 搜索框（占位，暂未实现）
-     - ＋新建角色按钮
+     - 本角色会话搜索（命中滚动定位）
+     - ＋新建角色
      - 角色卡片列表（头像、名称、人设预览、更新时间）
      - 活跃角色高亮显示
    - **下半部分**：知识库树
@@ -42,9 +48,8 @@
      - 保留所有拖放、重命名、下载等功能
 
 2. **中栏（弹性）**
-   - 聊天区域（Chat 组件）
-   - 保持现有对话交互不变
-   - 对话归属于角色
+   - 角色统一时间线（多段 + 分隔）+ tip composer
+   - 对话段归属于角色
 
 3. **右栏（可折叠）**
    - 角色配置面板（RoleConfigPanel）
@@ -59,11 +64,14 @@
 
 Grok Bot 参考截图中的「连接中 / 屏幕」大块不在 lore-chat 的产品范围内。**严格不实现任何 VM / 桌面显示 UI**。
 
-### 对话与角色关联
+### 对话与角色关联（统一时间线）
 
-- 每条对话归属于一个角色
-- 切换角色时，显示该角色的历史对话（活跃线）
-- 新建对话在当前活跃角色下创建
+- 每条会话段（`conversation`）归属于一个角色；**不**把多段物理合并成一行。
+- 选中角色 → 中栏展示该角色**全部段**拼成一条时间线（旧上新下），段间有分隔线。
+- 可输入/发送的只有当前 tip 段；更早段只读，搜索命中则滚动定位。
+- Agent `history` **仅当前 tip 段**；跨段靠默认检索 / `search_kb`，不自动拼接。
+- 「新话题」= 强制新开一段；超时超出 `continuity_idle_hours` 也会静默新段。
+- 关段（窗口外新建 / 新话题）时对上一有内容段触发记忆抽取。
 
 ## 3. 数据与 API（实现清单）
 
@@ -74,13 +82,13 @@ Grok Bot 参考截图中的「连接中 / 屏幕」大块不在 lore-chat 的产
 - `conversations.role_id`（缺列 `ALTER` + 默认 `default`；旧会话回填）
 - 配置：`Settings.continuity_idle_hours: float = 6.0`
 
-### 3.2 活跃线算法
+### 3.2 活跃 tip 算法
 
-对给定 `role_id`：
+对给定 `role_id`（决定**可写 tip**，不是「只展示这一段」）：
 
-1. 优先复用该角色下 `message_count == 0` 的会话；
-2. 否则取该角色 `updated_at` 最新会话：若 `last_user_message_at`（无则 `updated_at`）在连续窗口内 → 用之；
-3. 否则创建新会话并返回。
+1. 优先复用该角色下最新且 `message_count == 0` 的会话；
+2. 否则取该角色最新会话：若 `last_user_message_at`（无则 `updated_at`）在连续窗口内 → 用之；
+3. 否则创建新会话；并对被顶替的上一 tip（有消息时）`request_immediate` 记忆抽取。
 
 ### 3.3 HTTP（建议）
 
@@ -89,17 +97,20 @@ Grok Bot 参考截图中的「连接中 / 屏幕」大块不在 lore-chat 的产
 | GET | `/api/roles` | 列表（启动确保默认角色） |
 | POST | `/api/roles` | 创建 `{name, system_prompt?, avatar?}` |
 | GET/PATCH/DELETE | `/api/roles/{id}` | 读/改；默认角色不可删 |
-| POST | `/api/roles/{id}/ensure-active` | 解析/创建活跃线 → `{conversation_id, created}` |
+| POST | `/api/roles/{id}/ensure-active` | 解析/创建 tip → `{conversation_id, created}` |
+| GET | `/api/roles/{id}/timeline` | 角色统一时间线（段列表 + 消息；含 tip） |
+| POST | `/api/roles/{id}/new-topic` | 强制新话题（关段抽取 + 新空段） |
 | GET | `/api/roles/busy` | 有 running turn 的 `role_ids` |
 | GET/POST | `/api/roles/{id}/schedules` | 角色定时列表 / 创建 |
 | PATCH/DELETE | `/api/roles/{id}/schedules/{sid}` | 改启停与间隔 / 删除 |
 | POST | `/api/conversations` | body 可选 `{role_id, title}`；缺省绑默认角色 |
-| GET | `/api/conversations?role_id=` | 可选按角色过滤（次级历史用） |
+| GET | `/api/conversations?role_id=` | 可选按角色过滤 |
 | GET | `/api/conversations/search` | 会话全文搜索，可选按角色过滤 |
 
 ### 3.4 Agent 注入
 
-顺序：心法戒律 →（可选）角色 system_prompt 块 → 内置 SYSTEM_PROMPT → user_memory → …
+顺序：心法戒律 →（可选）角色 system_prompt 块 → 内置 SYSTEM_PROMPT → user_memory → …  
+新 tip 首轮另注入「检索摘要」（本角色会话 + KB）。
 
 在 `TurnExecutionHub` / `AgentOrchestrator.run` 按 `conversation.role_id` 查 `RoleStore`。
 
@@ -107,37 +118,36 @@ Grok Bot 参考截图中的「连接中 / 屏幕」大块不在 lore-chat 的产
 
 | 模块 | 改动 |
 |------|------|
-| [`AppShell.tsx`](../frontend/src/components/AppShell.tsx) | 三栏布局容器：左（角色列表 + KB）、中（Chat）、右（RoleConfigPanel） |
-| [`RoleList.tsx`](../frontend/src/components/RoleList.tsx) | 角色列表组件：始终可见，显示所有角色，高亮当前活跃角色 |
-| [`RoleConfigPanel.tsx`](../frontend/src/components/RoleConfigPanel.tsx) | 右侧角色配置面板：名称、头像、人设、定时任务 CRUD |
-| [`KbSidebar.tsx`](../frontend/src/components/KbSidebar.tsx) | 左侧知识库树（原 Sidebar 的 KB 部分） |
-| [`useRoleShell.ts`](../frontend/src/hooks/app/useRoleShell.ts) | 角色状态管理 hook：activeRoleId、切换角色、ensure-active、localStorage 持久化 |
-| [`api.ts`](../frontend/src/api.ts) | Role API 函数与类型定义 |
+| [`AppShell.tsx`](../frontend/src/components/app/AppShell.tsx) | 三栏布局容器：左（角色列表 + KB）、中（Chat）、右（RoleConfigPanel） |
+| [`RoleList.tsx`](../frontend/src/components/role/RoleList.tsx) | 角色列表：始终可见；角色内搜索定位；「新话题」 |
+| [`RoleConfigPanel.tsx`](../frontend/src/components/role/RoleConfigPanel.tsx) | 右侧角色配置面板 |
+| [`ChatMessageList.tsx`](../frontend/src/components/chat/ChatMessageList.tsx) | 多段时间线 + 段间分隔 |
+| [`useRoleTimeline.ts`](../frontend/src/hooks/chat/useRoleTimeline.ts) | 加载角色 timeline |
+| [`api.ts`](../frontend/src/api.ts) | Role / timeline API |
 
 ## 5. 交互流程
 
 ### 新建角色
 1. 点击角色列表顶部「＋」按钮
-2. 创建默认角色（`新角色 <timestamp>`）
-3. 自动切换到新角色
-4. 在右侧配置面板编辑名称、头像、人设
+2. 创建角色并自动切换
+3. 在右侧配置面板编辑名称、头像、人设
 
 ### 切换角色
 1. 点击角色列表中的角色卡片
-2. 调用 `/api/roles/{id}/ensure-active` 解析或创建活跃会话
-3. 右侧配置面板加载该角色信息
-4. 中间聊天区加载该角色的活跃会话
+2. 调用 `/api/roles/{id}/timeline`（内含 ensure tip）
+3. 中栏展示该角色整条时间线；composer 绑定 tip
+4. 右侧配置面板加载该角色信息
+
+### 新话题
+1. 点击「新话题」→ `POST .../new-topic`
+2. 时间线底部出现新空段与分隔线；上一 tip 进入只读并触发记忆抽取
 
 ### 编辑角色配置
-1. 在右侧面板修改字段
-2. 点击「保存」按钮
-3. 通过 API 更新角色
-4. 刷新角色列表显示
+1. 在右侧面板修改字段并保存
+2. 刷新角色列表显示
 
 ### 定时任务
-- 右侧面板「定时任务」区域显示当前角色的所有定时任务
-- 显示 interval_hours、prompt、启用状态
-- 支持添加/编辑/删除定时任务
+- 右侧面板「定时任务」区域 CRUD
 
 ## 6. 分期
 

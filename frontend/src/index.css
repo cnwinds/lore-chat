@@ -206,9 +206,6 @@ body {
   height: 100vh;
 }
 
-/* Import Grok-style three-pane layout */
-@import url('./styles/grok-layout.css');
-
 button {
   border-radius: var(--radius-sm);
   border: 1px solid var(--border-strong);
@@ -1837,6 +1834,19 @@ a:hover {
 
 .kb-tree-context-menu button:hover {
   background: var(--bg-hover);
+}
+
+.role-list-context-menu button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.role-list-context-menu--danger {
+  color: var(--danger, #c44);
+}
+
+.role-list-context-menu button.role-list-context-menu--danger:hover {
+  background: color-mix(in srgb, var(--danger, #c44) 12%, transparent);
 }
 
 .modal-backdrop {
@@ -5011,6 +5021,41 @@ button.memory-fact-statement--jump:focus-visible {
   pointer-events: none;
   text-align: center;
 }
+
+.chat-timeline-separator {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 28px 0 20px;
+  padding: 0 4px;
+  user-select: none;
+}
+
+.chat-timeline-separator-line {
+  flex: 1;
+  height: 1px;
+  background: var(--border, rgba(128, 128, 128, 0.35));
+}
+
+.chat-timeline-separator-label {
+  flex: 0 0 auto;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--muted, #888);
+  white-space: nowrap;
+}
+
+.chat-timeline-load-older {
+  text-align: center;
+  font-size: 12px;
+  color: var(--muted, #888);
+  padding: 12px 8px 4px;
+}
+
+.chat-timeline-segment {
+  min-width: 0;
+}
+
 
 .chat-welcome-logo {
   width: min(220px, 60vw);

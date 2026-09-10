@@ -2,12 +2,19 @@ import type { MutableRefObject, RefObject } from "react";
 import { formatDuration, type ChatMessage, type IngestResult, type SourceRef } from "../../api";
 import { expandMessagesForDisplay, canRetryAssistantReply, findPrecedingUserForRetry } from "../../utils/chatMessage";
 import type { ConversationLinkTarget } from "../../utils/conversationLinks";
+import type { TimelineSegmentView } from "../../hooks/chat/useRoleTimeline";
 import { LoreLogo } from "../LoreLogo";
 import { ChatMessageRow, messageHasBody } from "./ChatMessageRow";
 import { ConversationOutline } from "./ConversationOutline";
+import { TimelineSeparator } from "./TimelineSeparator";
 
 export type ChatMessageListProps = {
   msgs: ChatMessage[];
+  /** 角色时间线：tip 之前的只读段（旧→新） */
+  historicalSegments?: TimelineSegmentView[];
+  continuityIdleHours?: number;
+  timelineHasMore?: boolean;
+  loadingOlder?: boolean;
   loadingHistory: boolean;
   streaming: boolean;
   reconciling?: boolean;
@@ -35,8 +42,87 @@ export type ChatMessageListProps = {
   outlineLayout?: "rail" | "sheet";
 };
 
+function renderSegmentRows(opts: {
+  msgs: ChatMessage[];
+  conversationId: string | null;
+  isTip: boolean;
+  streaming: boolean;
+  readOnly: boolean;
+  liveElapsedMs: number;
+  streamNowMs?: number;
+  streamingAssistantIdxRef: MutableRefObject<number | null>;
+  previewPath?: string | null;
+  onOpenSource: (src: SourceRef) => void;
+  onOpenConversation?: (target: ConversationLinkTarget) => void;
+  onQuestionResolved: ChatMessageListProps["onQuestionResolved"];
+  onRetryReply?: (assistantSourceIndex: number) => void;
+}) {
+  const {
+    msgs,
+    conversationId,
+    isTip,
+    streaming,
+    readOnly,
+    liveElapsedMs,
+    streamNowMs,
+    streamingAssistantIdxRef,
+    previewPath,
+    onOpenSource,
+    onOpenConversation,
+    onQuestionResolved,
+    onRetryReply,
+  } = opts;
+  const rows = expandMessagesForDisplay(msgs);
+  return rows.map((row) => {
+    const isLiveStreaming =
+      isTip &&
+      streaming &&
+      row.isTailSlice &&
+      streamingAssistantIdxRef.current === row.sourceIndex;
+    if (!messageHasBody(row.message, isLiveStreaming)) {
+      return null;
+    }
+    const preceding = findPrecedingUserForRetry(msgs, row.sourceIndex);
+    const precedingRetryable =
+      !!preceding &&
+      (!!(preceding.text || "").trim() ||
+        !!(preceding.attachments && preceding.attachments.length));
+    const canRetry =
+      isTip &&
+      !readOnly &&
+      row.isTailSlice &&
+      !isLiveStreaming &&
+      canRetryAssistantReply(row.message) &&
+      precedingRetryable &&
+      !!onRetryReply;
+    return (
+      <ChatMessageRow
+        key={`${conversationId || "seg"}:${row.key}`}
+        message={row.message}
+        isLiveStreaming={isLiveStreaming}
+        liveElapsedMs={liveElapsedMs}
+        streamNowMs={streamNowMs}
+        previewPath={previewPath}
+        conversationId={conversationId}
+        onOpenSource={onOpenSource}
+        onOpenConversation={readOnly || !isTip ? onOpenConversation : onOpenConversation}
+        onQuestionResolved={onQuestionResolved}
+        readOnly={readOnly || !isTip}
+        onRetryReply={
+          canRetry ? () => onRetryReply!(row.sourceIndex) : undefined
+        }
+        retryDisabled={streaming}
+      />
+    );
+  });
+}
+
 export function ChatMessageList({
   msgs,
+  historicalSegments = [],
+  continuityIdleHours = 6,
+  timelineHasMore = false,
+  loadingOlder = false,
   loadingHistory,
   streaming,
   reconciling = false,
@@ -57,8 +143,12 @@ export function ChatMessageList({
   showOutline = false,
   outlineLayout = "rail",
 }: ChatMessageListProps) {
-  const rows = expandMessagesForDisplay(msgs);
-  const showWelcome = !loadingHistory && msgs.length === 0;
+  const hasHistory = historicalSegments.some((s) => s.messages.length > 0);
+  const tipHasBody = msgs.length > 0;
+  const showWelcome =
+    !loadingHistory && !hasHistory && !tipHasBody;
+
+  const showTipSeparator = hasHistory && (tipHasBody || streaming);
 
   return (
     <>
@@ -68,7 +158,7 @@ export function ChatMessageList({
             <LoreLogo variant="wordmark" className="chat-welcome-logo" />
             <p className="chat-welcome-lead">直接说就行</p>
             <p className="chat-welcome-hint">
-              超时会静默开新话题。找旧内容用侧栏搜索，或说「接着上次」「我们说过…」。
+              超时会静默开新段（段间有分隔线，上文不自动带入）。找旧内容可向上滚动时间线或用侧栏搜索；也可说「接着上次」。
               需要专项助手时可以说「帮我建一个…角色」。
             </p>
           </div>
@@ -76,48 +166,60 @@ export function ChatMessageList({
         <div className="chat-messages" ref={messagesContainerRef}>
           <div className="chat-messages-inner">
             {loadingHistory && <div className="chat-empty">加载对话中…</div>}
-            {rows.map((row) => {
-              const isLiveStreaming =
-                streaming &&
-                row.isTailSlice &&
-                streamingAssistantIdxRef.current === row.sourceIndex;
-              if (!messageHasBody(row.message, isLiveStreaming)) {
-                return null;
-              }
-              const preceding = findPrecedingUserForRetry(msgs, row.sourceIndex);
-              const precedingRetryable =
-                !!preceding &&
-                (!!(preceding.text || "").trim() ||
-                  !!(preceding.attachments && preceding.attachments.length));
-              const canRetry =
-                !readOnly &&
-                row.isTailSlice &&
-                !isLiveStreaming &&
-                canRetryAssistantReply(row.message) &&
-                precedingRetryable &&
-                !!onRetryReply;
-              return (
-                <ChatMessageRow
-                  key={row.key}
-                  message={row.message}
-                  isLiveStreaming={isLiveStreaming}
-                  liveElapsedMs={liveElapsedMs}
-                  streamNowMs={streamNowMs}
-                  previewPath={previewPath}
-                  conversationId={conversationId}
-                  onOpenSource={onOpenSource}
-                  onOpenConversation={readOnly ? undefined : onOpenConversation}
-                  onQuestionResolved={onQuestionResolved}
-                  readOnly={readOnly}
-                  onRetryReply={
-                    canRetry
-                      ? () => onRetryReply(row.sourceIndex)
-                      : undefined
-                  }
-                  retryDisabled={streaming}
-                />
-              );
-            })}
+            {(timelineHasMore || loadingOlder) && (
+              <div className="chat-timeline-load-older" aria-live="polite">
+                {loadingOlder ? "加载更早对话…" : "向上滚动加载更早对话"}
+              </div>
+            )}
+            {historicalSegments.map((seg, i) => (
+              <div
+                key={seg.conversationId}
+                className="chat-timeline-segment"
+                data-conversation-id={seg.conversationId}
+              >
+                {i > 0 && (
+                  <TimelineSeparator idleHours={continuityIdleHours} />
+                )}
+                {renderSegmentRows({
+                  msgs: seg.messages,
+                  conversationId: seg.conversationId,
+                  isTip: false,
+                  streaming: false,
+                  readOnly: true,
+                  liveElapsedMs: 0,
+                  streamingAssistantIdxRef,
+                  previewPath,
+                  onOpenSource,
+                  onOpenConversation,
+                  onQuestionResolved,
+                })}
+              </div>
+            ))}
+            {(showTipSeparator || tipHasBody || streaming) && (
+              <div
+                className="chat-timeline-segment chat-timeline-segment--tip"
+                data-conversation-id={conversationId || undefined}
+              >
+                {showTipSeparator && (
+                  <TimelineSeparator idleHours={continuityIdleHours} />
+                )}
+                {renderSegmentRows({
+                  msgs,
+                  conversationId,
+                  isTip: true,
+                  streaming,
+                  readOnly,
+                  liveElapsedMs,
+                  streamNowMs,
+                  streamingAssistantIdxRef,
+                  previewPath,
+                  onOpenSource,
+                  onOpenConversation,
+                  onQuestionResolved,
+                  onRetryReply,
+                })}
+              </div>
+            )}
             <div
               ref={messagesEndRef}
               className="chat-messages-anchor"

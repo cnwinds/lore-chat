@@ -15,6 +15,10 @@ import { useSendQueue } from "../hooks/chat/useSendQueue";
 import { useOutboundOrchestrator } from "../hooks/chat/useOutboundOrchestrator";
 import type { JumpTarget } from "../hooks/chat/useConversationJump";
 import {
+  scrollToMessageHighlight,
+} from "../hooks/chat/useConversationJump";
+import { useRoleTimeline } from "../hooks/chat/useRoleTimeline";
+import {
   getConversation,
   isMarkdownPath,
   normalizeDocContext,
@@ -82,9 +86,9 @@ type Props = {
   mobileLayout?: boolean;
   mobileHeaderTitle?: string;
   onOpenMobileNav?: () => void;
-  onMobileNewChat?: () => void;
   roles?: RoleSummary[];
   onSelectRole?: (id: string) => void;
+  timelineRefreshKey?: number;
 };
 
 export function Chat({
@@ -106,9 +110,9 @@ export function Chat({
   mobileLayout = false,
   mobileHeaderTitle = "新对话",
   onOpenMobileNav,
-  onMobileNewChat,
   roles = [],
   onSelectRole,
+  timelineRefreshKey = 0,
 }: Props) {
   const { previewPath, openDoc, refreshKb } = useDocPreview();
 
@@ -153,6 +157,71 @@ export function Chat({
       void resumeActiveTurnRef.current(cid, startedAt);
     },
   });
+
+  const {
+    historicalSegments,
+    continuityIdleHours,
+    loading: loadingTimeline,
+    loadingOlder,
+    hasMore: timelineHasMore,
+    loadOlder,
+  } = useRoleTimeline({
+    roleId,
+    tipConversationId: conversationId,
+    refreshKey: timelineRefreshKey,
+  });
+
+  // 时间线内跨段跳转：不必切 tip，直接滚到 DOM 中的消息
+  useEffect(() => {
+    if (!pendingJump?.messageId) return;
+    if (pendingJump.conversationId === conversationId) return;
+    if (loadingTimeline || loadingHistory) return;
+    const inTimeline = historicalSegments.some(
+      (s) => s.conversationId === pendingJump.conversationId,
+    );
+    if (!inTimeline) return;
+    const range =
+      pendingJump.startChar !== undefined && pendingJump.endChar !== undefined
+        ? { start: pendingJump.startChar, end: pendingJump.endChar }
+        : undefined;
+    const frame = requestAnimationFrame(() => {
+      const ok = scrollToMessageHighlight(
+        pendingJump.messageId!,
+        range,
+        pendingJump.offsetVersion,
+      );
+      if (ok) onJumpHandled?.();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [
+    pendingJump,
+    conversationId,
+    loadingTimeline,
+    loadingHistory,
+    historicalSegments,
+    onJumpHandled,
+  ]);
+
+  // 搜索命中不在已加载页内时，尽量向上翻页直到找到或没有更多
+  useEffect(() => {
+    if (!pendingJump?.messageId) return;
+    if (pendingJump.conversationId === conversationId) return;
+    if (loadingTimeline || loadingOlder) return;
+    const inTimeline = historicalSegments.some(
+      (s) => s.conversationId === pendingJump.conversationId,
+    );
+    if (inTimeline) return;
+    if (!timelineHasMore) return;
+    void loadOlder();
+  }, [
+    pendingJump,
+    conversationId,
+    loadingTimeline,
+    loadingOlder,
+    historicalSegments,
+    timelineHasMore,
+    loadOlder,
+  ]);
 
   const sendQueue = useSendQueue(conversationId);
 
@@ -244,11 +313,62 @@ export function Chat({
   userInjectedRef.current = outbound.handleUserInjected;
 
   const { messagesContainerRef } = useChatScroll(
-    [msgs, loadingHistory, streamingForView],
+    [msgs, loadingHistory, streamingForView, historicalSegments],
     stickToBottomRef,
   );
   const { notice: memoryNotice, dismissNotice: dismissMemoryNotice } =
     useConversationMemoryEvents(conversationId);
+
+  // 上滚接近顶部 → 续载更早段，并保持视口锚点
+  useEffect(() => {
+    const el = messagesContainerRef.current;
+    if (!el) return;
+    let busy = false;
+    const onScroll = () => {
+      if (busy || loadingOlder || loadingTimeline || !timelineHasMore) return;
+      if (el.scrollTop > 80) return;
+      busy = true;
+      const prevHeight = el.scrollHeight;
+      const prevTop = el.scrollTop;
+      void loadOlder().then((loaded) => {
+        requestAnimationFrame(() => {
+          if (loaded) {
+            el.scrollTop = prevTop + (el.scrollHeight - prevHeight);
+          }
+          busy = false;
+        });
+      });
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, [
+    messagesContainerRef,
+    loadOlder,
+    loadingOlder,
+    loadingTimeline,
+    timelineHasMore,
+  ]);
+
+  // 内容不足以溢出滚动时仍自动续载更早段（失败/无更多则停，防死循环）
+  const autoFillAttemptsRef = useRef(0);
+  useEffect(() => {
+    autoFillAttemptsRef.current = 0;
+  }, [roleId, conversationId, timelineRefreshKey]);
+  useEffect(() => {
+    const el = messagesContainerRef.current;
+    if (!el || loadingOlder || loadingTimeline || !timelineHasMore) return;
+    if (el.scrollHeight > el.clientHeight + 8) return;
+    if (autoFillAttemptsRef.current >= 30) return;
+    autoFillAttemptsRef.current += 1;
+    void loadOlder();
+  }, [
+    historicalSegments,
+    timelineHasMore,
+    loadingOlder,
+    loadingTimeline,
+    loadOlder,
+    messagesContainerRef,
+  ]);
 
   // Sync before child effects load history so stream patches don't cross conversations.
   useLayoutEffect(() => {
@@ -699,11 +819,10 @@ export function Chat({
 
   return (
     <div className={`chat-panel${mobileLayout ? " chat-panel--mobile" : ""}`}>
-      {mobileLayout && onOpenMobileNav && onMobileNewChat && (
+      {mobileLayout && onOpenMobileNav && (
         <MobileChatHeader
           title={mobileHeaderTitle}
           onOpenNav={onOpenMobileNav}
-          onNewChat={onMobileNewChat}
           onShare={onShareConversation}
           roles={roles}
           activeRoleId={roleId}
@@ -712,7 +831,11 @@ export function Chat({
       )}
       <ConversationTranscriptPanel
         msgs={msgs}
-        loadingHistory={loadingHistory}
+        historicalSegments={historicalSegments}
+        continuityIdleHours={continuityIdleHours}
+        timelineHasMore={timelineHasMore}
+        loadingOlder={loadingOlder}
+        loadingHistory={loadingHistory || loadingTimeline}
         streaming={streamingForView}
         reconciling={reconciling}
         networkReconnectNeeded={networkReconnectNeeded}

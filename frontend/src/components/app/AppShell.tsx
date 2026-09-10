@@ -2,6 +2,7 @@ import type { ComponentProps, ReactNode } from "react";
 import { RoleList } from "../role/RoleList";
 import { KbSidebar } from "../KbSidebar";
 import { RoleConfigPanel } from "../role/RoleConfigPanel";
+import { LeftSidebarFooter } from "./LeftSidebarFooter";
 
 type RoleListProps = ComponentProps<typeof RoleList>;
 type KbSidebarProps = ComponentProps<typeof KbSidebar>;
@@ -22,6 +23,8 @@ type Props = {
   mobileLayout?: boolean;
   mobileNavOpen?: boolean;
   onMobileNavClose?: () => void;
+  settingsAttention?: boolean;
+  onOpenSettings?: () => void;
 };
 
 export function AppShell({
@@ -39,6 +42,8 @@ export function AppShell({
   mobileLayout = false,
   mobileNavOpen = false,
   onMobileNavClose,
+  settingsAttention = false,
+  onOpenSettings,
 }: Props) {
   const shellClass = [
     "app-shell",
@@ -64,6 +69,10 @@ export function AppShell({
       <div className="app-shell-left">
         <RoleList {...roleListProps} />
         <KbSidebar {...kbSidebarProps} />
+        <LeftSidebarFooter
+          settingsAttention={settingsAttention}
+          onOpenSettings={onOpenSettings}
+        />
       </div>
       <main
         className={`main-panel${mainFloatWide ? " main-panel--float-wide" : ""}`}

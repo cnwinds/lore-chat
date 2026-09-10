@@ -48,11 +48,10 @@ type Props = {
   onSelectFile: (path: string, mods?: SelectMods) => void;
   onSelectFolder?: (path: string, mods?: SelectMods) => void;
   onOpenEnabledSkills?: () => void;
-  onNewChat: () => void;
+  onNewChat?: () => void;
   onSelectRole?: (id: string) => void;
   onAddRole?: () => void;
   onEditRole?: (id: string) => void;
-  onOpenRoleHistory?: () => void;
   busyRoleIds?: string[];
   onSelectConversation: (id: string) => void;
   onSearchHit?: (hit: ConversationSearchHit) => void;
@@ -81,11 +80,9 @@ export function Sidebar({
   onSelectFile,
   onSelectFolder,
   onOpenEnabledSkills,
-  onNewChat,
   onSelectRole,
   onAddRole,
   onEditRole,
-  onOpenRoleHistory,
   busyRoleIds = [],
   onSelectConversation,
   onSearchHit,
@@ -340,16 +337,6 @@ export function Sidebar({
                     设置
                   </button>
                 )}
-                {roles.length > 1 && onOpenRoleHistory && (
-                  <button
-                    type="button"
-                    className="sidebar-new-chat"
-                    onClick={onOpenRoleHistory}
-                    title="本角色历史"
-                  >
-                    历史
-                  </button>
-                )}
                 {onAddRole && (
                   <button
                     type="button"
@@ -360,14 +347,6 @@ export function Sidebar({
                     ＋ 角色
                   </button>
                 )}
-                <button
-                  type="button"
-                  className="sidebar-new-chat"
-                  onClick={onNewChat}
-                  title="新话题"
-                >
-                  ＋ 新话题
-                </button>
               </div>
             </div>
             <div className="sidebar-search">
