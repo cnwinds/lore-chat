@@ -1,12 +1,20 @@
 import type { ComponentProps, ReactNode } from "react";
-import { Sidebar } from "../Sidebar";
+import { RoleList } from "../role/RoleList";
+import { KbSidebar } from "../KbSidebar";
+import { RoleConfigPanel } from "../role/RoleConfigPanel";
+
+type RoleListProps = ComponentProps<typeof RoleList>;
+type KbSidebarProps = ComponentProps<typeof KbSidebar>;
+type RoleConfigPanelProps = ComponentProps<typeof RoleConfigPanel>;
 
 type Props = {
   panelFocus: boolean;
   floatFocus: boolean;
   hasMergeReview: boolean;
   mainFloatWide: boolean;
-  sidebarProps: ComponentProps<typeof Sidebar>;
+  roleListProps: RoleListProps;
+  kbSidebarProps: KbSidebarProps;
+  roleConfigPanelProps: RoleConfigPanelProps;
   chat: ReactNode;
   docFloat: ReactNode | null;
   docPinned: ReactNode | null;
@@ -21,7 +29,9 @@ export function AppShell({
   floatFocus,
   hasMergeReview,
   mainFloatWide,
-  sidebarProps,
+  roleListProps,
+  kbSidebarProps,
+  roleConfigPanelProps,
   chat,
   docFloat,
   docPinned,
@@ -32,6 +42,7 @@ export function AppShell({
 }: Props) {
   const shellClass = [
     "app-shell",
+    "app-shell--three-pane",
     panelFocus ? "app-shell--doc-focus" : "",
     floatFocus ? "app-shell--doc-focus-float" : "",
     mobileLayout ? "app-shell--mobile" : "",
@@ -50,13 +61,17 @@ export function AppShell({
           onClick={onMobileNavClose}
         />
       )}
-      <Sidebar {...sidebarProps} />
+      <div className="app-shell-left">
+        <RoleList {...roleListProps} />
+        <KbSidebar {...kbSidebarProps} />
+      </div>
       <main
         className={`main-panel${mainFloatWide ? " main-panel--float-wide" : ""}`}
       >
         {chat}
         {docFloat}
       </main>
+      <RoleConfigPanel {...roleConfigPanelProps} />
       {docPinned}
       {modals}
     </div>

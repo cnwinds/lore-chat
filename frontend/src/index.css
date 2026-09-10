@@ -206,6 +206,9 @@ body {
   height: 100vh;
 }
 
+/* Import Grok-style three-pane layout */
+@import url('./styles/grok-layout.css');
+
 button {
   border-radius: var(--radius-sm);
   border: 1px solid var(--border-strong);

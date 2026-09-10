@@ -18,6 +18,7 @@ import { useConversationShell } from "./hooks/app/useConversationShell";
 import { useDocPreviewLayout } from "./hooks/app/useDocPreviewLayout";
 import { useLlmSetupGuide } from "./hooks/app/useLlmSetupGuide";
 import { useSettingsAttention } from "./hooks/app/useSettingsAttention";
+import { useRoleShell } from "./hooks/app/useRoleShell";
 import { useComposerDocState } from "./hooks/useComposerDocState";
 import { useComposerPreviewBridge } from "./hooks/useComposerPreviewBridge";
 import { useEnabledSkillsAttach } from "./hooks/useEnabledSkillsAttach";
@@ -27,6 +28,7 @@ import { MemoryFloatLayer } from "./components/app/MemoryFloatLayer";
 import { SkillPickModal } from "./components/SkillPickModal";
 import { useWorkspaceShell } from "./hooks/app/useWorkspaceShell";
 import { useMobileLayout } from "./hooks/useMobileLayout";
+import { MEMORY_DIR } from "./utils/fileTree";
 
 type Gate = "loading" | "setup" | "login" | "app";
 
@@ -90,6 +92,7 @@ function AppMain() {
   const refreshSidebar = () => setSidebarRefreshKey((k) => k + 1);
   const doc = useDocPreviewLayout(refreshSidebar);
   const composer = useComposerDocState();
+  const role = useRoleShell();
   const {
     skillPick,
     saving: skillPickSaving,
@@ -191,6 +194,15 @@ function AppMain() {
     setKbPaths,
   });
 
+  // Build KB sidebar active paths
+  const kbActivePaths = [
+    doc.pinnedPath,
+    doc.floatPath,
+    doc.mediaFolderPath,
+    doc.memoryPanelOpen ? MEMORY_DIR : null,
+    composer.primaryPath,
+  ].filter((p): p is string => Boolean(p));
+
   return (
     <DocPreviewProvider value={doc.contextValue}>
       <AppShell
@@ -201,7 +213,32 @@ function AppMain() {
         mobileLayout={mobileLayout}
         mobileNavOpen={mobileNavOpen}
         onMobileNavClose={closeMobileNav}
-        sidebarProps={sidebarProps}
+        roleListProps={{
+          activeRoleId: role.activeRoleId,
+          onSelectRole: role.handleSelectRole,
+          onNewRole: role.handleNewRole,
+          refreshKey: role.roleRefreshKey,
+        }}
+        kbSidebarProps={{
+          refreshKey: sidebarRefreshKey,
+          activePaths: kbActivePaths,
+          memoryAttention: displayAttention.memory.any,
+          onSelectFile: bridge.handleSelectFile,
+          onSelectFolder: bridge.handleSelectFolder,
+          onOpenEnabledSkills: openEnabledSkillsModal,
+          onKbPathChanged: bridge.handleKbPathChanged,
+          onKbPathsDeleted: bridge.handleKbPathsDeleted,
+          onDocsChange: setKbPaths,
+          onBindLocateKbPath: (locate) => {
+            conversation.locateKbPathInTree = locate ?? (() => {});
+          },
+        }}
+        roleConfigPanelProps={{
+          roleId: role.activeRoleId,
+          collapsed: role.configPanelCollapsed,
+          onToggleCollapsed: role.toggleConfigPanel,
+          onRoleUpdated: role.refreshRoles,
+        }}
         chat={
           <Chat
             conversationId={conversation.activeConversationId}

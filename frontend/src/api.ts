@@ -998,3 +998,79 @@ export function forgetMemoryFact(factId: string) {
   );
 }
 
+export type { Role, RoleSchedule, CreateRoleBody, UpdateRoleBody } from "./types/role";
+
+export function listRoles() {
+  return apiFetch<{ roles: import("./types/role").Role[] }>("/api/roles");
+}
+
+export function createRole(body: import("./types/role").CreateRoleBody) {
+  return apiFetch<import("./types/role").Role>("/api/roles", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export function getRole(id: string) {
+  return apiFetch<import("./types/role").Role>(`/api/roles/${encodeURIComponent(id)}`);
+}
+
+export function updateRole(id: string, body: import("./types/role").UpdateRoleBody) {
+  return apiFetch<import("./types/role").Role>(`/api/roles/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export function deleteRole(id: string) {
+  return apiFetch<{ ok: boolean }>(`/api/roles/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+}
+
+export function listRoleSchedules(roleId: string) {
+  return apiFetch<{ schedules: import("./types/role").RoleSchedule[] }>(
+    `/api/roles/${encodeURIComponent(roleId)}/schedules`,
+  );
+}
+
+export function createRoleSchedule(
+  roleId: string,
+  body: { cron: string; prompt: string; enabled?: boolean },
+) {
+  return apiFetch<import("./types/role").RoleSchedule>(
+    `/api/roles/${encodeURIComponent(roleId)}/schedules`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
+}
+
+export function updateRoleSchedule(
+  roleId: string,
+  scheduleId: string,
+  body: { cron?: string; prompt?: string; enabled?: boolean },
+) {
+  return apiFetch<import("./types/role").RoleSchedule>(
+    `/api/roles/${encodeURIComponent(roleId)}/schedules/${encodeURIComponent(scheduleId)}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
+}
+
+export function deleteRoleSchedule(roleId: string, scheduleId: string) {
+  return apiFetch<{ ok: boolean }>(
+    `/api/roles/${encodeURIComponent(roleId)}/schedules/${encodeURIComponent(scheduleId)}`,
+    {
+      method: "DELETE",
+    },
+  );
+}
+
