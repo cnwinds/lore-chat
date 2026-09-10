@@ -760,8 +760,19 @@ export async function listConversations() {
   return apiFetch<{ conversations: ConversationSummary[] }>("/api/conversations");
 }
 
-export async function createConversation() {
-  return apiFetch<{ id: string }>("/api/conversations", { method: "POST" });
+export async function createConversation(roleId?: string) {
+  return apiFetch<{ id: string }>("/api/conversations", {
+    method: "POST",
+    headers: roleId ? { "Content-Type": "application/json" } : undefined,
+    body: roleId ? JSON.stringify({ role_id: roleId }) : undefined,
+  });
+}
+
+export async function ensureActiveConversation(roleId: string) {
+  return apiFetch<{ conversation_id: string; role_id: string }>(
+    `/api/roles/${encodeURIComponent(roleId)}/ensure-active`,
+    { method: "POST" },
+  );
 }
 
 export async function getConversation(id: string) {

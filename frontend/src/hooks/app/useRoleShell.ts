@@ -1,10 +1,41 @@
-import { useState, useCallback } from "react";
-import { createRole } from "../../api";
+import { useState, useCallback, useEffect } from "react";
+import { createRole, ensureActiveConversation, listRoles } from "../../api";
+
+const STORAGE_KEY = "lorechat.lastRoleId";
 
 export function useRoleShell() {
   const [activeRoleId, setActiveRoleId] = useState<string | null>(null);
   const [roleRefreshKey, setRoleRefreshKey] = useState(0);
   const [configPanelCollapsed, setConfigPanelCollapsed] = useState(false);
+  const [onRoleSwitch, setOnRoleSwitch] = useState<
+    ((roleId: string, conversationId: string) => void) | null
+  >(null);
+
+  // Load last role or default on mount
+  useEffect(() => {
+    async function init() {
+      try {
+        const { roles } = await listRoles();
+        if (roles.length === 0) return;
+
+        // Try last used role
+        const lastRoleId = localStorage.getItem(STORAGE_KEY);
+        const targetRole =
+          roles.find((r) => r.id === lastRoleId) || roles[0];
+
+        setActiveRoleId(targetRole.id);
+
+        // Ensure active conversation for initial role
+        if (onRoleSwitch) {
+          const { conversation_id } = await ensureActiveConversation(targetRole.id);
+          onRoleSwitch(targetRole.id, conversation_id);
+        }
+      } catch (err) {
+        console.error("Failed to initialize role:", err);
+      }
+    }
+    void init();
+  }, []);
 
   const refreshRoles = useCallback(() => {
     setRoleRefreshKey((k) => k + 1);
@@ -16,20 +47,49 @@ export function useRoleShell() {
         name: `新角色 ${Date.now()}`,
       });
       setActiveRoleId(newRole.id);
+      localStorage.setItem(STORAGE_KEY, newRole.id);
       refreshRoles();
+
+      // Switch to new role's active conversation
+      if (onRoleSwitch) {
+        const { conversation_id } = await ensureActiveConversation(newRole.id);
+        onRoleSwitch(newRole.id, conversation_id);
+      }
     } catch (err) {
       console.error("Failed to create role:", err);
       alert("创建角色失败");
     }
-  }, [refreshRoles]);
+  }, [refreshRoles, onRoleSwitch]);
 
-  const handleSelectRole = useCallback((roleId: string) => {
-    setActiveRoleId(roleId);
-  }, []);
+  const handleSelectRole = useCallback(
+    async (roleId: string) => {
+      try {
+        setActiveRoleId(roleId);
+        localStorage.setItem(STORAGE_KEY, roleId);
+
+        // Resolve and switch to role's active conversation
+        if (onRoleSwitch) {
+          const { conversation_id } = await ensureActiveConversation(roleId);
+          onRoleSwitch(roleId, conversation_id);
+        }
+      } catch (err) {
+        console.error("Failed to switch role:", err);
+        alert("切换角色失败");
+      }
+    },
+    [onRoleSwitch],
+  );
 
   const toggleConfigPanel = useCallback(() => {
     setConfigPanelCollapsed((c) => !c);
   }, []);
+
+  const registerRoleSwitchHandler = useCallback(
+    (handler: (roleId: string, conversationId: string) => void) => {
+      setOnRoleSwitch(() => handler);
+    },
+    [],
+  );
 
   return {
     activeRoleId,
@@ -40,5 +100,6 @@ export function useRoleShell() {
     toggleConfigPanel,
     handleNewRole,
     handleSelectRole,
+    registerRoleSwitchHandler,
   };
 }

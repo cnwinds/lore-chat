@@ -93,6 +93,14 @@ function AppMain() {
   const doc = useDocPreviewLayout(refreshSidebar);
   const composer = useComposerDocState();
   const role = useRoleShell();
+  
+  // Register role switch handler to update conversation
+  useEffect(() => {
+    role.registerRoleSwitchHandler((roleId, conversationId) => {
+      conversation.setActiveConversationId(conversationId);
+      refreshSidebar();
+    });
+  }, [role.registerRoleSwitchHandler]);
   const {
     skillPick,
     saving: skillPickSaving,
