@@ -11,7 +11,7 @@ import {
 } from "../../api";
 import { avatarStorageRef } from "../../utils/kbImageUrls";
 import { roleAccent } from "../../utils/roleAccent";
-import { useRoleAvatarSrc } from "./RoleAvatar";
+import { useRoleAvatarSrc } from "../../hooks/useRoleAvatarSrc";
 
 type Props = {
   roleId: string | null;
