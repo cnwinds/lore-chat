@@ -491,3 +491,42 @@ def test_reuse_user_message_rejects_non_latest_turn(tmp_path):
             reuse_user_message_id=t1["user_message"]["id"],
         )
 
+
+def test_get_tail_keeps_recent_messages(tmp_path):
+    store = _store(tmp_path)
+    cid = store.create()
+    for i in range(6):
+        store.append_exchange(
+            cid, f"u{i}", {"role": "assistant", "text": f"a{i}"}
+        )
+    full = store.get(cid)
+    assert len(full["messages"]) == 12
+    assert full["older_message_count"] == 0
+
+    page = store.get(cid, tail=4)
+    assert [m["text"] for m in page["messages"]] == ["u4", "a4", "u5", "a5"]
+    assert page["older_message_count"] == 8
+
+    older, remaining = store.load_messages_before(
+        cid, before_id=page["messages"][0]["id"], limit=4
+    )
+    assert [m["text"] for m in older] == ["u2", "a2", "u3", "a3"]
+    assert remaining == 4
+
+    earlier, remaining2 = store.load_messages_before(
+        cid, before_id=older[0]["id"], limit=4
+    )
+    assert [m["text"] for m in earlier] == ["u0", "a0", "u1", "a1"]
+    assert remaining2 == 0
+
+
+def test_load_messages_before_unknown_anchor_is_empty(tmp_path):
+    store = _store(tmp_path)
+    cid = store.create()
+    store.append_exchange(cid, "u", {"role": "assistant", "text": "a"})
+    older, remaining = store.load_messages_before(
+        cid, before_id="missing", limit=4
+    )
+    assert older == []
+    assert remaining == 0
+

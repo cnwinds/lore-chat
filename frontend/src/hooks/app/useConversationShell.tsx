@@ -123,7 +123,10 @@ export function useConversationShell({
     const gen = ++roleSwitchGenRef.current;
     const prevRoleId = activeRoleId;
     try {
-      const tl = await getRoleTimeline(roleId);
+      const tl = await getRoleTimeline(roleId, {
+        includeMessages: false,
+        limit: 0,
+      });
       if (gen !== roleSwitchGenRef.current) return;
       setActiveRoleId(roleId);
       try {

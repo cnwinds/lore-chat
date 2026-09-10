@@ -454,11 +454,95 @@ class ConversationStore:
         return msg
 
     def _load_messages(self, cid: str) -> list[dict]:
+        messages, _ = self._load_message_page(cid)
+        return messages
+
+    def _load_message_page(
+        self,
+        cid: str,
+        *,
+        tail: int | None = None,
+        before_id: str | None = None,
+        limit: int | None = None,
+    ) -> tuple[list[dict], int]:
+        """按 seq 取一页消息，并返回更早还未加载的条数。
+
+        调用方须已持有 ``_lock``。``tail`` / ``before_id`` 均走 SQL 截断，
+        不要先全量再切片。
+        """
+        if before_id:
+            anchor = self.conn.execute(
+                "SELECT seq FROM messages WHERE conversation_id = ? AND id = ?",
+                (cid, before_id),
+            ).fetchone()
+            if anchor is None:
+                return [], 0
+            before_seq = int(anchor["seq"])
+            older_total = int(
+                self.conn.execute(
+                    """
+                    SELECT COUNT(*) AS n FROM messages
+                    WHERE conversation_id = ? AND seq < ?
+                    """,
+                    (cid, before_seq),
+                ).fetchone()["n"]
+            )
+            take = limit if limit is not None and limit > 0 else older_total
+            rows = self.conn.execute(
+                """
+                SELECT * FROM messages
+                WHERE conversation_id = ? AND seq < ?
+                ORDER BY seq DESC
+                LIMIT ?
+                """,
+                (cid, before_seq, take),
+            ).fetchall()
+            rows = list(reversed(rows))
+            return (
+                [self._message_row_to_dict(r) for r in rows],
+                max(0, older_total - len(rows)),
+            )
+
+        if tail is None:
+            rows = self.conn.execute(
+                "SELECT * FROM messages WHERE conversation_id = ? ORDER BY seq ASC",
+                (cid,),
+            ).fetchall()
+            return [self._message_row_to_dict(r) for r in rows], 0
+
+        take = max(0, int(tail))
+        total = int(
+            self.conn.execute(
+                "SELECT COUNT(*) AS n FROM messages WHERE conversation_id = ?",
+                (cid,),
+            ).fetchone()["n"]
+        )
+        if take <= 0:
+            return [], total
         rows = self.conn.execute(
-            "SELECT * FROM messages WHERE conversation_id = ? ORDER BY seq ASC",
-            (cid,),
+            """
+            SELECT * FROM messages
+            WHERE conversation_id = ?
+            ORDER BY seq DESC
+            LIMIT ?
+            """,
+            (cid, take),
         ).fetchall()
-        return [self._message_row_to_dict(r) for r in rows]
+        rows = list(reversed(rows))
+        return (
+            [self._message_row_to_dict(r) for r in rows],
+            max(0, total - len(rows)),
+        )
+
+    def load_messages_before(
+        self, cid: str, *, before_id: str, limit: int
+    ) -> tuple[list[dict], int]:
+        """锚点消息之前的一页（正序），以及再往前还有多少条。"""
+        with self._lock:
+            self._conversation_row(cid)
+            return self._load_message_page(
+                cid, before_id=before_id, limit=max(0, int(limit))
+            )
 
     def get_message_window(
         self,
@@ -500,7 +584,7 @@ class ConversationStore:
             raise KeyError(cid)
         return row
 
-    def _conv_to_dict(self, row: sqlite3.Row) -> dict:
+    def _conv_to_dict(self, row: sqlite3.Row, *, tail: int | None = None) -> dict:
         cid = row["id"]
         summarized, summary_path, summarized_at = self.summaries.summary_state(cid)
         summaries = self.summaries.list_unlocked(cid)
@@ -518,6 +602,7 @@ class ConversationStore:
                     "started_at": trow["started_at"],
                 }
         role_id = row["role_id"] if "role_id" in row.keys() else None
+        messages, older_count = self._load_message_page(cid, tail=tail)
         return {
             "id": cid,
             "title": row["title"],
@@ -526,7 +611,8 @@ class ConversationStore:
             "role_id": role_id,
             "active_turn_id": active_turn_id,
             "active_turn": active_turn,
-            "messages": self._load_messages(cid),
+            "messages": messages,
+            "older_message_count": older_count,
             "summaries": summaries,
             "summarized": summarized,
             "summary_path": summary_path,
@@ -577,10 +663,10 @@ class ConversationStore:
                 rid = None
             return (rid or DEFAULT_ROLE_ID).strip() or DEFAULT_ROLE_ID
 
-    def get(self, cid: str) -> dict:
+    def get(self, cid: str, *, tail: int | None = None) -> dict:
         with self._lock:
             row = self._conversation_row(cid)
-            return self._conv_to_dict(row)
+            return self._conv_to_dict(row, tail=tail)
 
     def get_active_turn_meta(self, cid: str) -> dict:
         """Lightweight active turn snapshot (no messages)."""
@@ -690,11 +776,14 @@ class ConversationStore:
         before_id: str | None = None,
         tip_id: str | None = None,
         only_with_messages: bool = True,
+        message_limit: int | None = None,
     ) -> tuple[list[dict], bool]:
         """角色时间线分页：按创建时间升序（旧上新下）。
 
         - ``limit``：约束有消息的历史段数（首屏 tip 空壳额外附带，不占 limit）。
+          ``0`` 表示只要 tip、不要历史段（首屏减负）。
         - ``before_*``：只要比该游标更早的段（用于上滚加载更早历史）。
+        - ``message_limit``：每段只取尾部 N 条；``None`` 表示该段全量。
         返回 (segments, has_more_older)。
         """
         items = self.list_all(role_id=role_id)
@@ -730,9 +819,10 @@ class ConversationStore:
             ]
 
         has_more = False
-        if limit is not None and limit > 0 and len(items) > limit:
-            has_more = True
-            items = items[-limit:]
+        if limit is not None and limit >= 0:
+            if len(items) > limit:
+                has_more = True
+            items = items[-limit:] if limit else []
 
         # 首屏：tip（可为空）挂在末尾，不占用 limit 名额
         if tip_item is not None and before_created_at is None:
@@ -745,7 +835,7 @@ class ConversationStore:
         for item in items:
             cid = item["id"]
             try:
-                full = self.get(cid)
+                full = self.get(cid, tail=message_limit)
             except KeyError:
                 continue
             out.append(
@@ -753,6 +843,9 @@ class ConversationStore:
                     **item,
                     "messages": full.get("messages") or [],
                     "active_turn": full.get("active_turn"),
+                    "older_message_count": int(
+                        full.get("older_message_count") or 0
+                    ),
                 }
             )
         return out, has_more

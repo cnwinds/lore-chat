@@ -461,6 +461,44 @@ def test_conversations_crud(client):
     assert client.get(f"/api/conversations/{cid}").status_code == 404
 
 
+def test_conversation_tail_and_older_messages(client):
+    cid = client.post("/api/conversations").json()["id"]
+    for i in range(5):
+        r = client.post(
+            f"/api/conversations/{cid}/messages",
+            json={
+                "messages": [
+                    {"role": "user", "text": f"u{i}"},
+                    {"role": "assistant", "text": f"a{i}"},
+                ]
+            },
+        )
+        assert r.status_code == 200
+
+    full = client.get(f"/api/conversations/{cid}").json()
+    assert len(full["messages"]) == 10
+    assert full.get("older_message_count", 0) == 0
+
+    page = client.get(f"/api/conversations/{cid}", params={"tail": 4}).json()
+    assert [m["text"] for m in page["messages"]] == ["u3", "a3", "u4", "a4"]
+    assert page["older_message_count"] == 6
+
+    older = client.get(
+        f"/api/conversations/{cid}/messages",
+        params={"before_id": page["messages"][0]["id"], "limit": 4},
+    )
+    assert older.status_code == 200
+    body = older.json()
+    assert [m["text"] for m in body["messages"]] == ["u1", "a1", "u2", "a2"]
+    assert body["older_message_count"] == 2
+
+    missing = client.get(
+        f"/api/conversations/{cid}/messages",
+        params={"limit": 4},
+    )
+    assert missing.status_code == 400
+
+
 def test_delete_conversation_clears_fts_and_vector_indexes(client):
     container = client.app.state.container
     store = container.conversations
