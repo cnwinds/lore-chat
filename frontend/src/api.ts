@@ -990,24 +990,32 @@ export async function listRoleScheduleRuns(roleId: string, scheduleId: string) {
 }
 
 export type ConversationSearchHit = {
+  kind?: "message" | "role" | "file";
   conversation_id: string;
   message_id: string | null;
   role_id: string;
+  role_name?: string;
+  role_avatar?: string | null;
   message_role?: string;
+  path?: string;
   title: string;
   snippet: string;
   ts?: string | null;
 };
 
+export type WorkspaceSearchScope = "all" | "messages" | "roles" | "files";
+
 export async function searchConversations(opts: {
   q: string;
   k?: number;
   roleId?: string;
+  scope?: WorkspaceSearchScope;
 }) {
   const params = new URLSearchParams();
   params.set("q", opts.q);
   if (opts.k !== undefined) params.set("k", String(opts.k));
   if (opts.roleId) params.set("role_id", opts.roleId);
+  if (opts.scope) params.set("scope", opts.scope);
   return apiFetch<{ hits: ConversationSearchHit[]; tier: string }>(
     `/api/conversations/search?${params.toString()}`,
   );

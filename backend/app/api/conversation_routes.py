@@ -13,6 +13,7 @@ from app.api.http_deps import (
 )
 from app.engine.knowledge_writer import KnowledgeWriter
 from app.engine.pending_resolver import PendingResolveInput
+from app.engine.workspace_search import search_workspace
 
 router = APIRouter()
 
@@ -61,41 +62,19 @@ async def search_conversations(
     q: str = "",
     k: int = 20,
     role_id: str | None = None,
+    scope: str = "messages",
 ):
-    """用户侧会话全文搜索（FTS）；可选按角色过滤。"""
-    q = (q or "").strip()
-    if not q:
-        return {"hits": [], "tier": "none"}
+    """用户侧工作区搜索：会话 FTS+向量，可选角色名与知识库；可按角色过滤消息。"""
     c = container(request)
-    limit = max(1, min(int(k or 20), 50))
-    # 略放大再按角色过滤
-    fetch_k = limit if not role_id else min(50, limit * 3)
-    outcome = c.conversation_fts.query_with_tier(q, k=fetch_k)
-    hits = []
-    for h in outcome.hits:
-        try:
-            rid = c.conversations.get_role_id(h.conversation_id)
-        except KeyError:
-            continue
-        if role_id and rid != role_id:
-            continue
-        text = (h.text or "").strip().replace("\n", " ")
-        if len(text) > 160:
-            text = text[:157] + "…"
-        hits.append(
-            {
-                "conversation_id": h.conversation_id,
-                "message_id": h.message_id,
-                "role_id": rid,
-                "message_role": h.role,
-                "title": h.conversation_title or "对话",
-                "snippet": text,
-                "ts": h.ts,
-            }
-        )
-        if len(hits) >= limit:
-            break
-    return {"hits": hits, "tier": outcome.tier}
+    return search_workspace(
+        retriever=c.retriever,
+        conversations=c.conversations,
+        roles=c.roles,
+        q=q,
+        k=k,
+        scope=scope,
+        role_id=role_id,
+    )
 
 
 @router.post("/conversations")

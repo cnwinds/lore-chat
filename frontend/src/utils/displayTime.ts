@@ -130,6 +130,24 @@ function ymdOrdinal(ymd: Ymd): number {
   return Date.UTC(ymd.y, ymd.m - 1, ymd.d) / 86_400_000;
 }
 
+/** 搜索结果时间：刚刚 / N分钟前 / N小时前 / N天前，更早回落到角色列表格式。 */
+export function formatSearchRelativeTime(
+  iso: string,
+  now: Date = new Date(),
+): string {
+  const d = parseStoredInstant(iso);
+  if (!d) return "";
+  const diffMs = now.getTime() - d.getTime();
+  if (diffMs < 45_000) return "刚刚";
+  const minutes = Math.round(diffMs / 60_000);
+  if (minutes < 60) return `${Math.max(1, minutes)}分钟前`;
+  const hours = Math.round(diffMs / 3_600_000);
+  if (hours < 24) return `${Math.max(1, hours)}小时前`;
+  const days = Math.round(diffMs / 86_400_000);
+  if (days < 30) return `${Math.max(1, days)}天前`;
+  return formatRoleListTime(iso, now);
+}
+
 /** 角色列表时间：当天时刻、昨天、本周星期、更早日期。 */
 export function formatRoleListTime(
   iso: string,
