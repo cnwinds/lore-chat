@@ -1,4 +1,10 @@
-import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
 import { createPortal } from "react-dom";
 import {
   listRoles,
@@ -84,7 +90,7 @@ export function RoleList({
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") close();
     }
-    function onPointerDown(e: MouseEvent) {
+    function onPointerDown(e: globalThis.MouseEvent) {
       if (menuRef.current?.contains(e.target as Node)) return;
       close();
     }
@@ -98,7 +104,7 @@ export function RoleList({
     };
   }, [menu]);
 
-  function openMenu(e: MouseEvent<HTMLButtonElement>, role: Role) {
+  function openMenu(e: ReactMouseEvent<HTMLButtonElement>, role: Role) {
     e.preventDefault();
     e.stopPropagation();
     const pad = 8;
