@@ -38,6 +38,32 @@ export function formatOutlineLabel(
   return `${cleaned.slice(0, maxLen).trimEnd()}…`;
 }
 
+/**
+ * 已加载时间线：历史段（旧→新）+ 当前 tip。
+ * 按 message id 去重，避免搜索跳转窗口与 tip 重叠时重复入导航。
+ */
+export function flattenVisibleTranscriptMessages(
+  historicalSegments: { messages: ChatMessage[] }[] | undefined,
+  tipMsgs: ChatMessage[],
+): ChatMessage[] {
+  const out: ChatMessage[] = [];
+  const seen = new Set<string>();
+  const pushAll = (list: ChatMessage[]) => {
+    for (const m of list) {
+      if (m.id) {
+        if (seen.has(m.id)) continue;
+        seen.add(m.id);
+      }
+      out.push(m);
+    }
+  };
+  for (const seg of historicalSegments ?? []) {
+    pushAll(seg.messages);
+  }
+  pushAll(tipMsgs);
+  return out;
+}
+
 /** 从会话消息提取可导航的用户提问（旧→新）。 */
 export function buildConversationOutline(
   msgs: ChatMessage[],

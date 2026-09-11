@@ -6,6 +6,7 @@ import { useScrollLock } from "../../hooks/useScrollLock";
 import {
   buildConversationOutline,
   CONVERSATION_OUTLINE_MIN_ITEMS,
+  flattenVisibleTranscriptMessages,
   scrollToUserQuestion,
   type ConversationOutlineItem,
 } from "../../utils/conversationOutline";
@@ -13,8 +14,12 @@ import type { ChatMessage } from "../../api";
 
 export type ConversationOutlineLayout = "rail" | "sheet";
 
+const NO_HISTORICAL: { messages: ChatMessage[] }[] = [];
+
 type Props = {
   msgs: ChatMessage[];
+  /** 上拉续载的更早段；与 tip 一起编入提问导航 */
+  historicalSegments?: { messages: ChatMessage[] }[];
   conversationId: string | null;
   scrollRootRef: RefObject<HTMLElement | null>;
   /** rail：桌面右侧浮条；sheet：手机底部抽屉（分享页等） */
@@ -23,11 +28,18 @@ type Props = {
 
 export function ConversationOutline({
   msgs,
+  historicalSegments = NO_HISTORICAL,
   conversationId,
   scrollRootRef,
   layout = "rail",
 }: Props) {
-  const items = useMemo(() => buildConversationOutline(msgs), [msgs]);
+  const items = useMemo(
+    () =>
+      buildConversationOutline(
+        flattenVisibleTranscriptMessages(historicalSegments, msgs),
+      ),
+    [historicalSegments, msgs],
+  );
   const hoverCapable = useHoverCapable();
   const [hoverOpen, setHoverOpen] = useState(false);
   const [pinned, setPinned] = useState(false);

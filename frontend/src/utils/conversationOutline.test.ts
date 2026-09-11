@@ -3,6 +3,7 @@ import type { ChatMessage } from "../types/chat";
 import {
   buildConversationOutline,
   CONVERSATION_OUTLINE_MIN_ITEMS,
+  flattenVisibleTranscriptMessages,
   formatOutlineLabel,
   getConversationOutlineActiveIndex,
   scrollToUserQuestion,
@@ -75,6 +76,33 @@ describe("buildConversationOutline", () => {
         fullText: "（附件）",
       },
     ]);
+  });
+});
+
+describe("flattenVisibleTranscriptMessages", () => {
+  it("concatenates historical segments then tip, old to new", () => {
+    const flat = flattenVisibleTranscriptMessages(
+      [
+        { messages: [user("h1", "更早"), { id: "ha", role: "assistant", text: "答" }] },
+        { messages: [user("h2", "中间")] },
+      ],
+      [user("t1", "刚才")],
+    );
+    expect(flat.map((m) => m.id)).toEqual(["h1", "ha", "h2", "t1"]);
+  });
+
+  it("dedupes by message id so jump windows do not double-count tip", () => {
+    const overlap = user("same", "重叠");
+    const flat = flattenVisibleTranscriptMessages(
+      [{ messages: [user("h1", "更早"), overlap] }],
+      [overlap, user("t2", "新问")],
+    );
+    expect(flat.map((m) => m.id)).toEqual(["h1", "same", "t2"]);
+  });
+
+  it("treats missing segments as tip-only", () => {
+    const tip = [user("t1", "刚才")];
+    expect(flattenVisibleTranscriptMessages(undefined, tip)).toEqual(tip);
   });
 });
 
