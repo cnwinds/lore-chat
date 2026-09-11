@@ -16,6 +16,7 @@ import {
   roleReplyPreview,
   sortRolesByRecentActivity,
 } from "../../utils/roleListPreview";
+import { workspaceSearchHotkeyLabel } from "../../utils/workspaceSearch";
 import { GlobalSearchPalette } from "./GlobalSearchPalette";
 import { RoleAvatar } from "./RoleAvatar";
 
@@ -73,16 +74,6 @@ export function RoleList({
   }, [refreshKey]);
 
   useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "k") return;
-      e.preventDefault();
-      setSearchOpen(true);
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
-
-  useEffect(() => {
     if (!menu) return;
     function close() {
       setMenu(null);
@@ -138,8 +129,9 @@ export function RoleList({
           type="button"
           className="role-list-search-btn"
           onClick={() => setSearchOpen(true)}
-          title="搜索"
+          title={`搜索 ${workspaceSearchHotkeyLabel()}`}
           aria-label="搜索"
+          aria-keyshortcuts="Control+K Meta+K"
         >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
             <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
@@ -219,6 +211,7 @@ export function RoleList({
       <GlobalSearchPalette
         open={searchOpen}
         roles={roles}
+        onOpen={() => setSearchOpen(true)}
         onClose={() => setSearchOpen(false)}
         onSelectRole={onSelectRole}
         onSearchHit={(hit) => onSearchHit?.(hit)}
