@@ -13,6 +13,8 @@ import { ChatMessageRow, messageHasBody } from "./ChatMessageRow";
 import { ConversationOutline } from "./ConversationOutline";
 import { TimelineSeparator } from "./TimelineSeparator";
 
+const EMPTY_HISTORICAL: TimelineSegmentView[] = [];
+
 export type ChatMessageListProps = {
   msgs: ChatMessage[];
   /** 角色时间线：tip 之前的只读段（旧→新） */
@@ -124,7 +126,7 @@ function renderSegmentRows(opts: {
 
 export function ChatMessageList({
   msgs,
-  historicalSegments = [],
+  historicalSegments = EMPTY_HISTORICAL,
   continuityIdleHours = 6,
   timelineHasMore = false,
   loadingOlder = false,
@@ -258,6 +260,7 @@ export function ChatMessageList({
         {(!readOnly || showOutline) && (
           <ConversationOutline
             msgs={msgs}
+            historicalSegments={historicalSegments}
             conversationId={conversationId}
             scrollRootRef={messagesContainerRef}
             layout={outlineLayout}

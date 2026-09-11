@@ -78,4 +78,44 @@ describe("ChatMessageList loading chrome", () => {
     expect(screen.getByText("定位到搜索结果 · 中间消息未加载")).toBeInTheDocument();
     expect(document.querySelector('[data-jumped="true"]')).not.toBeNull();
   });
+
+  it("rebuilds the session outline after historical messages load", () => {
+    render(
+      <ChatMessageList
+        msgs={[
+          {
+            id: "tip-1",
+            role: "user",
+            text: "刚才",
+          },
+        ]}
+        historicalSegments={[
+          {
+            conversationId: "old",
+            title: "很早",
+            createdAt: "2025-01-01T00:00:00.000Z",
+            messages: [
+              { id: "h1", role: "user", text: "第一问" },
+              { id: "h2", role: "user", text: "第二问" },
+            ],
+            isTip: false,
+            olderMessageCount: 0,
+          },
+        ]}
+        loadingHistory={false}
+        streaming={false}
+        liveElapsedMs={0}
+        streamingAssistantIdxRef={emptyRefs.streamingAssistantIdxRef}
+        messagesContainerRef={emptyRefs.messagesContainerRef}
+        messagesEndRef={emptyRefs.messagesEndRef}
+        conversationId="tip"
+        onOpenSource={() => {}}
+        onQuestionResolved={() => {}}
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: /会话导航（3 条提问）/ }),
+    ).toBeInTheDocument();
+  });
 });
