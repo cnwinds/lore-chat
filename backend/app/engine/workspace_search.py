@@ -1,18 +1,50 @@
-"""用户侧工作区搜索：会话 FTS+向量、角色名、知识库 FTS+向量。"""
+"""用户侧工作区搜索：会话 FTS+向量、角色名、知识库 FTS+向量。
+
+检索器本身面向 RAG（向量近邻即可入围）。面板搜索是「人对着关键词找」，
+向量只参与排序/召回，展示前必须能在正文里看见查询词，否则会把「1」「3」
+这种短消息当近邻塞进来。
+"""
 
 from __future__ import annotations
 
 from typing import Any, Iterable
 
+from app.index.search_query import compile_search_query
+
 SEARCH_SCOPES = frozenset({"all", "messages", "roles", "files"})
 _SNIPPET_LIMIT = 160
 
 
-def _snippet(text: str, limit: int = _SNIPPET_LIMIT) -> str:
+def _snippet(text: str, query: str = "", limit: int = _SNIPPET_LIMIT) -> str:
     cleaned = (text or "").strip().replace("\n", " ")
-    if len(cleaned) > limit:
-        return cleaned[: limit - 1] + "…"
-    return cleaned
+    if not cleaned:
+        return ""
+    start = 0
+    if query.strip():
+        compiled = compile_search_query(query)
+        hay = cleaned.casefold()
+        for term in compiled.match_terms or compiled.signal_terms or (query,):
+            idx = hay.find(term.casefold())
+            if idx >= 0:
+                start = max(0, idx - 20)
+                break
+    piece = cleaned[start:]
+    prefix = "…" if start else ""
+    if len(prefix) + len(piece) > limit:
+        piece = piece[: limit - len(prefix) - 1] + "…"
+    return prefix + piece
+
+
+def hit_has_query_evidence(text: str, query: str) -> bool:
+    """查询词（或其编译项）必须作为子串出现在可见文本里。"""
+    compiled = compile_search_query(query)
+    hay = (text or "").casefold()
+    if not hay:
+        return False
+    terms = compiled.match_terms or compiled.signal_terms
+    if not terms:
+        return query.casefold() in hay
+    return any(term.casefold() in hay for term in terms)
 
 
 def _role_matches(role: dict[str, Any], q: str) -> bool:
@@ -39,7 +71,7 @@ def match_roles(roles: Iterable[dict[str, Any]], q: str, *, k: int) -> list[dict
                 "role_name": name,
                 "role_avatar": role.get("avatar"),
                 "title": name,
-                "snippet": _snippet(role.get("system_prompt") or "") or "角色",
+                "snippet": _snippet(role.get("system_prompt") or "", q) or "角色",
                 "ts": role.get("updated_at"),
             }
         )
@@ -61,7 +93,7 @@ def _role_meta(conversations: Any, roles: Any, cid: str) -> tuple[str, str, Any]
 
 
 def message_hit_from_retriever(
-    hit: Any, *, conversations: Any, roles: Any
+    hit: Any, *, conversations: Any, roles: Any, query: str = ""
 ) -> dict[str, Any] | None:
     src = hit.source or ""
     if not src.startswith("conv:"):
@@ -77,12 +109,12 @@ def message_hit_from_retriever(
         "role_avatar": ravatar,
         "message_role": hit.role,
         "title": hit.conversation_title or "对话",
-        "snippet": _snippet(hit.chunk),
+        "snippet": _snippet(hit.chunk, query),
         "ts": hit.ts,
     }
 
 
-def file_hit_from_retriever(hit: Any) -> dict[str, Any] | None:
+def file_hit_from_retriever(hit: Any, query: str = "") -> dict[str, Any] | None:
     path = hit.source or ""
     if not path or path.startswith("conv:"):
         return None
@@ -94,9 +126,22 @@ def file_hit_from_retriever(hit: Any) -> dict[str, Any] | None:
         "role_id": "",
         "path": path,
         "title": title,
-        "snippet": _snippet(hit.chunk),
+        "snippet": _snippet(hit.chunk, query),
         "ts": None,
     }
+
+
+def _evidence_blob(mapped: dict[str, Any], raw_text: str) -> str:
+    return " ".join(
+        part
+        for part in (
+            raw_text,
+            mapped.get("title"),
+            mapped.get("role_name"),
+            mapped.get("path"),
+        )
+        if part
+    )
 
 
 def search_workspace(
@@ -127,24 +172,35 @@ def search_workspace(
         page = retriever.search(
             query, k=limit, scope="conversations", role_id=role_id
         )
-        tiers.append(getattr(page, "match_strength", "") or "none")
+        kept = 0
         for raw in page.hits:
             mapped = message_hit_from_retriever(
-                raw, conversations=conversations, roles=roles
+                raw, conversations=conversations, roles=roles, query=query
             )
             if mapped is None:
                 continue
             if role_id and mapped["role_id"] != role_id:
                 continue
+            if not hit_has_query_evidence(_evidence_blob(mapped, raw.chunk), query):
+                continue
             hits.append(mapped)
+            kept += 1
+        if kept:
+            tiers.append(getattr(page, "match_strength", "") or "none")
 
     if kind in ("all", "files"):
         page = retriever.search(query, k=limit, scope="knowledge")
-        tiers.append(getattr(page, "match_strength", "") or "none")
+        kept = 0
         for raw in page.hits:
-            mapped = file_hit_from_retriever(raw)
-            if mapped is not None:
-                hits.append(mapped)
+            mapped = file_hit_from_retriever(raw, query=query)
+            if mapped is None:
+                continue
+            if not hit_has_query_evidence(_evidence_blob(mapped, raw.chunk), query):
+                continue
+            hits.append(mapped)
+            kept += 1
+        if kept:
+            tiers.append(getattr(page, "match_strength", "") or "none")
 
     if kind != "all" and len(hits) > limit:
         hits = hits[:limit]
