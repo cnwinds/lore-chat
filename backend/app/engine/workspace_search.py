@@ -48,12 +48,13 @@ def hit_has_query_evidence(text: str, query: str) -> bool:
 
 
 def _role_matches(role: dict[str, Any], q: str) -> bool:
-    needle = q.strip().lower()
-    if not needle:
-        return True
-    name = (role.get("name") or "").lower()
-    prompt = (role.get("system_prompt") or "").lower()
-    return needle in name or needle in prompt
+    compiled = compile_search_query(q)
+    hay = f"{role.get('name') or ''} {role.get('system_prompt') or ''}".casefold()
+    terms = compiled.match_terms or compiled.signal_terms
+    if not terms:
+        needle = q.strip().casefold()
+        return bool(needle) and needle in hay
+    return any(term.casefold() in hay for term in terms)
 
 
 def match_roles(roles: Iterable[dict[str, Any]], q: str, *, k: int) -> list[dict[str, Any]]:
