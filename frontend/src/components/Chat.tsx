@@ -67,6 +67,7 @@ import {
 } from "../utils/chatAttachmentValidation";
 import { suggestArchivePath } from "../utils/suggestArchivePath";
 import { MobileChatHeader } from "./app/MobileChatHeader";
+import { ChatRoleHeading } from "./chat/ChatRoleHeading";
 
 type ComposerDocItem = DocTrayItem;
 
@@ -876,14 +877,15 @@ export function Chat({
     ],
   );
 
+  const activeRole = roles.find((r) => r.id === roleId) ?? null;
   const activeRoleName =
-    roles.find((r) => r.id === roleId)?.name || mobileHeaderTitle || "对话";
+    activeRole?.name || mobileHeaderTitle || "对话";
 
   return (
     <div className={`chat-panel${mobileLayout ? " chat-panel--mobile" : ""}`}>
       {mobileLayout && onOpenMobileNav && (
         <MobileChatHeader
-          title={mobileHeaderTitle}
+          title={activeRoleName}
           onOpenNav={onOpenMobileNav}
           onShare={onShareConversation}
           roles={roles}
@@ -893,7 +895,13 @@ export function Chat({
       )}
       {!mobileLayout && (
         <header className="chat-desktop-header">
-          <h1 className="chat-desktop-header-title">{activeRoleName}</h1>
+          <h1 className="chat-desktop-header-title">
+            <ChatRoleHeading
+              name={activeRoleName}
+              roleId={activeRole?.id || roleId}
+              avatar={activeRole?.avatar}
+            />
+          </h1>
           {roleConfigCollapsed && onToggleRoleConfig ? (
             <div className="chat-desktop-header-actions">
               <button

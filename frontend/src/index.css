@@ -9768,6 +9768,11 @@ button.source-link--inline.conversation-md-link {
     color: inherit;
   }
 
+  .mobile-chat-header-title .chat-role-heading {
+    flex: 1;
+    min-width: 0;
+  }
+
   .mobile-chat-header-caret {
     font-size: 12px;
     opacity: 0.7;
