@@ -2,13 +2,24 @@
    Grok-style Three-Pane Layout
    ======================================== */
 
-/* Three-pane shell layout */
+/* Three-pane shell layout
+   Tracks: left | chat | pinned-doc | role-config
+   Unused right tracks collapse to 0 so pinning a doc never wraps to an
+   implicit row or overlaps the chat. */
 .app-shell--three-pane {
+  --app-config-col: 300px;
+  --app-doc-col: 0px;
   display: grid;
-  grid-template-columns: var(--app-left-width, 272px) 1fr 300px;
+  grid-template-columns:
+    var(--app-left-width, 272px)
+    minmax(0, 1fr)
+    var(--app-doc-col)
+    var(--app-config-col);
   grid-template-rows: 1fr;
+  grid-auto-rows: 0;
   height: 100vh;
   gap: 0;
+  min-width: 0;
   transition: grid-template-columns 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
@@ -19,11 +30,19 @@
 
 .app-shell--three-pane:has(.role-config-panel--collapsed),
 .app-shell--three-pane.app-shell--config-collapsed {
-  grid-template-columns: var(--app-left-width, 272px) 1fr;
+  --app-config-col: 0px;
+}
+
+.app-shell--three-pane:has(> .doc-panel),
+.app-shell--three-pane.app-shell--doc-pinned {
+  --app-doc-col: auto;
 }
 
 .app-shell--three-pane .app-shell-left {
   position: relative;
+  grid-column: 1;
+  grid-row: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   background: var(--bg-surface);
@@ -80,7 +99,23 @@
 
 .app-shell--three-pane .main-panel {
   grid-column: 2;
+  grid-row: 1;
+  min-width: 0;
+  min-height: 0;
   background: var(--bg-app);
+}
+
+.app-shell--three-pane .doc-panel {
+  grid-column: 3;
+  grid-row: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.app-shell--three-pane.app-shell--doc-focus .doc-panel {
+  /* main-panel is display:none; occupy its track so the doc fills the center */
+  grid-column: 2 / 4;
 }
 
 /* ========================================
@@ -599,7 +634,10 @@
    ======================================== */
 
 .role-config-panel {
-  grid-column: 3;
+  grid-column: 4;
+  grid-row: 1;
+  min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   background: var(--bg-app);
@@ -1281,23 +1319,13 @@ select.role-config-input {
 
 @media (max-width: 1200px) {
   .app-shell--three-pane {
-    grid-template-columns: var(--app-left-width, 260px) 1fr 280px;
-  }
-
-  .app-shell--three-pane:has(.role-config-panel--collapsed),
-  .app-shell--three-pane.app-shell--config-collapsed {
-    grid-template-columns: var(--app-left-width, 260px) 1fr;
+    --app-config-col: 280px;
   }
 }
 
 @media (max-width: 1024px) {
   .app-shell--three-pane {
-    grid-template-columns: var(--app-left-width, 240px) 1fr 260px;
-  }
-
-  .app-shell--three-pane:has(.role-config-panel--collapsed),
-  .app-shell--three-pane.app-shell--config-collapsed {
-    grid-template-columns: var(--app-left-width, 240px) 1fr;
+    --app-config-col: 260px;
   }
 
   .role-list {
@@ -1317,7 +1345,8 @@ select.role-config-input {
      会多出一条 implicit 列：空会话时中栏按内容缩成窄条贴在右侧。 */
   .app-shell--mobile.app-shell--three-pane .app-shell-left,
   .app-shell--mobile.app-shell--three-pane .main-panel,
-  .app-shell--mobile.app-shell--three-pane .role-config-panel {
+  .app-shell--mobile.app-shell--three-pane .role-config-panel,
+  .app-shell--mobile.app-shell--three-pane .doc-panel {
     grid-column: 1;
     grid-row: 1;
   }

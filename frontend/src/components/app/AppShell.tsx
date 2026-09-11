@@ -53,6 +53,7 @@ export function AppShell({
     roleConfigPanelProps.collapsed ? "app-shell--config-collapsed" : "",
     panelFocus ? "app-shell--doc-focus" : "",
     floatFocus ? "app-shell--doc-focus-float" : "",
+    docPinned ? "app-shell--doc-pinned" : "",
     mobileLayout ? "app-shell--mobile" : "",
     mobileLayout && mobileNavOpen ? "app-shell--mobile-nav-open" : "",
     leftSidebar.dragging ? "app-shell--left-resizing" : "",
