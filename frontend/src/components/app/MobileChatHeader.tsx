@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { RoleSummary } from "../../api";
+import { ChatRoleHeading } from "../chat/ChatRoleHeading";
 
 type Props = {
   title: string;
@@ -21,6 +22,8 @@ export function MobileChatHeader({
   const [sheetOpen, setSheetOpen] = useState(false);
   const sheetRef = useRef<HTMLDivElement>(null);
   const multiRole = roles.length > 1 && !!onSelectRole;
+  const activeRole = roles.find((r) => r.id === activeRoleId) ?? null;
+  const headingName = activeRole?.name || title;
 
   useEffect(() => {
     if (!sheetOpen) return;
@@ -56,13 +59,23 @@ export function MobileChatHeader({
           aria-haspopup="dialog"
           aria-expanded={sheetOpen}
         >
-          {title}
+          <ChatRoleHeading
+            name={headingName}
+            roleId={activeRole?.id || activeRoleId}
+            avatar={activeRole?.avatar}
+          />
           <span className="mobile-chat-header-caret" aria-hidden>
             ▾
           </span>
         </button>
       ) : (
-        <h1 className="mobile-chat-header-title">{title}</h1>
+        <h1 className="mobile-chat-header-title">
+          <ChatRoleHeading
+            name={headingName}
+            roleId={activeRole?.id || activeRoleId}
+            avatar={activeRole?.avatar}
+          />
+        </h1>
       )}
       <div className="mobile-chat-header-actions">
         {onShare && (

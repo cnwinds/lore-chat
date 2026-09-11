@@ -1168,9 +1168,30 @@ select.role-config-input {
 
 .chat-desktop-header-title {
   margin: 0;
+  min-width: 0;
+  flex: 1;
   font-size: 14px;
   font-weight: 600;
   color: var(--text);
+}
+
+.chat-role-heading {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.chat-role-heading .role-avatar {
+  flex-shrink: 0;
+}
+
+.chat-role-heading .role-avatar-letter {
+  font-size: 11px;
+}
+
+.chat-role-heading-name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
