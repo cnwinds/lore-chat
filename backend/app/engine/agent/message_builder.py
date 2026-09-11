@@ -37,6 +37,7 @@ def build_agent_messages(
     extra_system_messages: list[dict] | None = None,
     attachments: list[str] | None = None,
     role_system_prompt: str = "",
+    search_configured: bool = True,
 ) -> list[dict]:
     messages: list[dict] = [
         {
@@ -47,6 +48,7 @@ def build_agent_messages(
                 web_enabled,
                 user_memory,
                 role_system_prompt=role_system_prompt,
+                search_configured=search_configured,
             ),
         },
     ]

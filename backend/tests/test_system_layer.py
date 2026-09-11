@@ -103,6 +103,26 @@ def test_build_system_prompt_injects_layer():
     assert prompt.index("【系统控制层内容XYZ】") < prompt.index("lorechat")
 
 
+def test_build_system_prompt_web_on_affirms_search():
+    prompt = build_system_prompt("default", web_enabled=True, search_configured=True)
+    assert "本轮已开启联网搜索" in prompt
+    assert "本轮未开启联网搜索" not in prompt
+    assert "禁止凭印象声称不可用" in prompt
+
+
+def test_build_system_prompt_web_off_denies_search():
+    prompt = build_system_prompt("default", web_enabled=False, search_configured=True)
+    assert "本轮未开启联网搜索" in prompt
+    assert "本轮已开启联网搜索" not in prompt
+
+
+def test_build_system_prompt_web_on_but_unconfigured():
+    prompt = build_system_prompt("default", web_enabled=True, search_configured=False)
+    assert "未配置搜索提供商" in prompt
+    assert "本轮未开启联网搜索" not in prompt
+    assert "本轮已开启联网搜索" not in prompt
+
+
 def test_retriever_excludes_system_prefix(tmp_path):
     llm = FakeLLMClient(embed_dim=8)
     vi = VectorIndex(tmp_path / "vec")

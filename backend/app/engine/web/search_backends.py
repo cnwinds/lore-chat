@@ -9,6 +9,13 @@ import httpx
 
 from app.engine.web.search_providers import SearchProviderEntry
 
+# httpx 0.27 默认 timeout=5s。走代理或搜索 API 冷启动经常超过，会误报失败并冷却。
+WEB_SEARCH_TIMEOUT = 20.0
+
+
+def _search_client() -> httpx.AsyncClient:
+    return httpx.AsyncClient(timeout=WEB_SEARCH_TIMEOUT)
+
 
 @dataclass
 class SearchResult:
@@ -26,7 +33,7 @@ class TavilyProvider:
         self._api_key = api_key
 
     async def search(self, query: str, k: int = 5) -> list[SearchResult]:
-        async with httpx.AsyncClient() as client:
+        async with _search_client() as client:
             resp = await client.post(
                 "https://api.tavily.com/search",
                 json={"api_key": self._api_key, "query": query, "max_results": k},
@@ -48,7 +55,7 @@ class SerperProvider:
         self._api_key = api_key
 
     async def search(self, query: str, k: int = 5) -> list[SearchResult]:
-        async with httpx.AsyncClient() as client:
+        async with _search_client() as client:
             resp = await client.post(
                 "https://google.serper.dev/search",
                 headers={"X-API-KEY": self._api_key},
@@ -71,7 +78,7 @@ class BraveSearchProvider:
         self._api_key = api_key
 
     async def search(self, query: str, k: int = 5) -> list[SearchResult]:
-        async with httpx.AsyncClient() as client:
+        async with _search_client() as client:
             resp = await client.get(
                 "https://api.search.brave.com/res/v1/web/search",
                 headers={"X-Subscription-Token": self._api_key},

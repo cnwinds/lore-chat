@@ -108,6 +108,7 @@ def classify_error(exc: BaseException | str, *, message: str | None = None) -> E
             "timed out",
             "connection reset",
             "connection error",
+            "connection attempts",
             "temporarily unavailable",
         )
     ):

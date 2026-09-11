@@ -20,9 +20,23 @@ from app.storage.repo import KnowledgeRepo
 from tests.helpers import make_writer
 
 
-def _make_orchestrator(tmp_path, tool_responses, *, agent_parallel_tools=True):
+def _make_orchestrator(
+    tmp_path,
+    tool_responses,
+    *,
+    agent_parallel_tools=True,
+    search_key: str | None = None,
+):
     kb = tmp_path / "knowledge"
-    settings = Settings(kb_path=kb, agent_parallel_tools=agent_parallel_tools)
+    settings = Settings(
+        kb_path=kb,
+        agent_parallel_tools=agent_parallel_tools,
+        search_providers=(
+            [{"id": "tavily", "provider": "tavily", "api_key": search_key}]
+            if search_key
+            else None
+        ),
+    )
     llm = FakeLLMClient(tool_responses=tool_responses, embed_dim=8)
     repo = KnowledgeRepo(kb)
     vi = VectorIndex(tmp_path / "vec")
@@ -299,6 +313,43 @@ async def test_orchestrator_stream_does_not_block_event_loop(tmp_path):
 
 def _tool_names_from_defs(defs):
     return {d["function"]["name"] for d in defs}
+
+
+@pytest.mark.asyncio
+async def test_run_web_enabled_affirms_search_when_configured(tmp_path):
+    orchestrator = _make_orchestrator(
+        tmp_path,
+        tool_responses=[{"content": "ok", "tool_calls": []}],
+        search_key="tv-test",
+    )
+    async for _ in orchestrator.run("你好", web_enabled=True):
+        pass
+    messages = orchestrator.llm.calls[-1]["messages"]
+    system_contents = "\n".join(
+        m["content"] for m in messages if m["role"] == "system"
+    )
+    assert "本轮已开启联网搜索" in system_contents
+    assert "本轮未开启联网搜索" not in system_contents
+    names = _tool_names_from_defs(orchestrator.llm.calls[-1]["tools"])
+    assert "web_search" in names
+
+
+@pytest.mark.asyncio
+async def test_run_web_enabled_without_provider_does_not_say_toggle_off(tmp_path):
+    orchestrator = _make_orchestrator(
+        tmp_path,
+        tool_responses=[{"content": "ok", "tool_calls": []}],
+    )
+    async for _ in orchestrator.run("你好", web_enabled=True):
+        pass
+    messages = orchestrator.llm.calls[-1]["messages"]
+    system_contents = "\n".join(
+        m["content"] for m in messages if m["role"] == "system"
+    )
+    assert "未配置搜索提供商" in system_contents
+    assert "本轮未开启联网搜索" not in system_contents
+    names = _tool_names_from_defs(orchestrator.llm.calls[-1]["tools"])
+    assert "web_search" not in names
 
 
 @pytest.mark.asyncio
