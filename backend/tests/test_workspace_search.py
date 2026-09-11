@@ -2,9 +2,11 @@ from types import SimpleNamespace
 
 from app.engine.workspace_search import (
     file_hit_from_retriever,
+    hit_has_query_evidence,
     match_roles,
     message_hit_from_retriever,
     search_workspace,
+    _snippet,
 )
 
 
@@ -77,3 +79,58 @@ def test_search_workspace_empty_and_scope():
     )
     assert out["hits"][0]["kind"] == "role"
     assert out["tier"] == "name"
+
+
+def test_hit_has_query_evidence_requires_visible_term():
+    assert hit_has_query_evidence("请用 svg 画一个角标", "svg")
+    assert hit_has_query_evidence("SVG 大师", "svg")
+    assert not hit_has_query_evidence("1", "svg")
+    assert not hit_has_query_evidence("3", "svg")
+    assert not hit_has_query_evidence("先看这张图", "svg")
+
+
+def test_snippet_centers_on_query():
+    text = "前面垫很多无关的字。" * 8 + "这里出现 svg 画法。"
+    snippet = _snippet(text, "svg")
+    assert "svg" in snippet.casefold()
+    assert snippet.startswith("…")
+
+
+def test_search_workspace_drops_vector_neighbors_without_query():
+    conversations = SimpleNamespace(get_role_id=lambda cid: "default")
+    roles = SimpleNamespace(
+        list_all=lambda: [],
+        get=lambda rid: {"name": "通用", "avatar": None},
+    )
+
+    def search(query, k=5, **kwargs):
+        return _Page(
+            [
+                SimpleNamespace(
+                    source="conv:c-noise",
+                    message_id="m-1",
+                    role="assistant",
+                    conversation_title="1",
+                    chunk="1",
+                    ts="2026-09-11T00:00:00+08:00",
+                ),
+                SimpleNamespace(
+                    source="conv:c-hit",
+                    message_id="m-svg",
+                    role="user",
+                    conversation_title="发型",
+                    chunk="我用 svg 画了这撮头发",
+                    ts="2026-09-11T00:00:00+08:00",
+                ),
+            ]
+        )
+
+    out = search_workspace(
+        retriever=SimpleNamespace(search=search),
+        conversations=conversations,
+        roles=roles,
+        q="svg",
+        scope="messages",
+    )
+    assert [h["message_id"] for h in out["hits"]] == ["m-svg"]
+    assert "svg" in out["hits"][0]["snippet"].casefold()

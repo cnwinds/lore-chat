@@ -207,7 +207,10 @@ export function GlobalSearchPalette({
           ) : (
             rows.map((hit, index) => {
               const kind = hit.kind || "message";
-              const name = hit.role_name || hit.title;
+              const name =
+                kind === "role"
+                  ? hit.title
+                  : hit.role_name || "对话";
               const seed = hit.role_id || hit.path || hit.conversation_id || String(index);
               return (
                 <button
