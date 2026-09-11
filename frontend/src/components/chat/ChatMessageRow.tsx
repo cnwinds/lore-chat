@@ -24,6 +24,7 @@ import {
 } from "../../utils/unicodeHighlight";
 import type { HighlightRangeDetail } from "../../hooks/chat/useConversationJump";
 import type { ConversationLinkTarget } from "../../utils/conversationLinks";
+import { stripProtocolMarkup } from "../../utils/visibleText";
 
 export type ChatMessageRowProps = {
   message: ChatMessage;
@@ -260,13 +261,15 @@ function renderMessageContent(
       }
       return <div className="chat-user-text">{m.text}</div>;
     }
+    const text = stripProtocolMarkup(m.text);
+    if (!text) return null;
     return (
       <MarkdownContent
         className="markdown-body chat-markdown"
         onOpenConversation={onOpenConversation}
         highlightRange={highlightRange}
       >
-        {m.text}
+        {text}
       </MarkdownContent>
     );
   }

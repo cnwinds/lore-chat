@@ -19,6 +19,7 @@ import {
 import { toolDisplayDurationMs } from "../utils/toolDuration";
 import type { ConversationLinkTarget } from "../utils/conversationLinks";
 import { toolBlockDefaultOpen } from "../utils/toolFold";
+import { stripProtocolMarkup } from "../utils/visibleText";
 
 type Props = {
   block: TimelineBlock;
@@ -468,6 +469,8 @@ export function TimelineBlockView({
   }
 
   if (block.type === "text") {
+    const content = stripProtocolMarkup(block.content);
+    if (!content) return null;
     return (
       <div className="timeline-text">
         <MarkdownContent
@@ -475,7 +478,7 @@ export function TimelineBlockView({
           onOpenConversation={onOpenConversation}
           highlightRange={textHighlight ?? null}
         >
-          {block.content}
+          {content}
         </MarkdownContent>
       </div>
     );
