@@ -18,7 +18,7 @@ import {
 } from "../utils/progressLog";
 import { toolDisplayDurationMs } from "../utils/toolDuration";
 import type { ConversationLinkTarget } from "../utils/conversationLinks";
-import { isLikelyImagePath } from "../utils/kbImageUrls";
+import { toolBlockDefaultOpen } from "../utils/toolFold";
 
 type Props = {
   block: TimelineBlock;
@@ -105,6 +105,7 @@ function ToolBlockView({
   block,
   liveElapsedMs,
   nowMs,
+  isLive: isLiveProp,
   durationBold,
   onOpenSource,
   onOpenConversation,
@@ -115,6 +116,7 @@ function ToolBlockView({
   block: Extract<TimelineBlock, { type: "tool" }>;
   liveElapsedMs?: number;
   nowMs?: number;
+  isLive?: boolean;
   durationBold?: boolean;
   onOpenSource: (src: SourceRef) => void;
   onOpenConversation?: (target: ConversationLinkTarget) => void;
@@ -126,33 +128,10 @@ function ToolBlockView({
     choiceLabel: string,
   ) => void;
 }) {
-  // 检索/搜索/打开链接默认折叠；其余工具在流式或执行中默认展开。
-  // 未作答的征询始终展开，方便用户直接选择。
-  const isLive = liveElapsedMs !== undefined || nowMs !== undefined;
-  const pendingAsk =
-    (block.tool === "ask_user" || block.tool === "sandbox_run") &&
-    block.status === "done" &&
-    !block.choice_resolved &&
-    !!block.question_id &&
-    Array.isArray(block.options) &&
-    block.options.length > 0;
-  const collapsedByDefault =
-    block.tool === "search_kb" ||
-    block.tool === "web_search" ||
-    block.tool === "fetch_url";
-  const hasImageAttachments =
-    Array.isArray(block.attachments) &&
-    block.attachments.some((p) => isLikelyImagePath(p));
-  // 带图附件（生图 / write_kb_file SVG）完成后默认展开，便于直接预览
-  const defaultOpen =
-    !collapsedByDefault &&
-    (isLive ||
-      pendingAsk ||
-      block.status === "running" ||
-      hasImageAttachments ||
-      (block.tool === "sandbox_run" &&
-        !block.question_id &&
-        (!!block.query || !!block.progress_log?.length)));
+  const isLive =
+    isLiveProp ?? (liveElapsedMs !== undefined || nowMs !== undefined);
+  // 已结束会话默认折叠（仅征询 / 生图 SVG 展开）；流式中检索类仍折叠。
+  const defaultOpen = toolBlockDefaultOpen(block, { isLive });
   // 用户显式点过则以其选择为准，否则用默认值。
   // 展开状态用组件内 state 维护，随组件卸载自动回收（不跨会话泄漏）。
   const [override, setOverride] = useState<boolean | null>(null);
@@ -350,7 +329,8 @@ function ThinkBlockView({
   isLive?: boolean;
   onOpenConversation?: (target: ConversationLinkTarget) => void;
 }) {
-  const [open, setOpen] = useState(!!isLive);
+  const [override, setOverride] = useState<boolean | null>(null);
+  const open = override ?? !!isLive;
   const preview =
     block.content.length > 120
       ? `${block.content.slice(0, 120).trim()}…`
@@ -361,7 +341,7 @@ function ThinkBlockView({
       <button
         type="button"
         className={`timeline-think-header${open ? "" : " timeline-think-header-collapsed"}`}
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => setOverride(!open)}
         aria-expanded={open}
       >
         <span className="timeline-think-label">思考过程</span>
@@ -405,6 +385,7 @@ export function TimelineBlockView({
         block={block}
         liveElapsedMs={liveElapsedMs}
         nowMs={nowMs}
+        isLive={isLive}
         durationBold={inParallel ? durationBold : true}
         onOpenSource={onOpenSource}
         onOpenConversation={onOpenConversation}
@@ -452,6 +433,7 @@ export function TimelineBlockView({
             cumulative={cumulative}
             liveElapsedMs={liveElapsedMs}
             nowMs={nowMs}
+            isLive={isLive}
             inParallel
             durationBold={
               child.type === "tool" &&
