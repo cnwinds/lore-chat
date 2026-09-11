@@ -18,6 +18,8 @@ export const TIMELINE_MESSAGE_TAIL_DESKTOP = 12;
 export const TIMELINE_MESSAGE_TAIL_MOBILE = 8;
 /** 内容撑不满一屏时自动续载的次数上限，避免短气泡把整条时间线拉齐 */
 export const TIMELINE_AUTOFILL_MAX = 4;
+/** 搜索跳转：锚点前后各这么多条，禁止为定位去拉全量 */
+export const SEARCH_JUMP_RADIUS = 16;
 
 function normalizeSegmentMessages(
   messages: ChatMessage[] | undefined,
@@ -42,6 +44,9 @@ export type TimelineSegmentView = {
   messages: ChatMessage[];
   isTip: boolean;
   olderMessageCount: number;
+  newerMessageCount?: number;
+  /** 搜索定位插入的附近窗口；可与当前 tip 同会话并存 */
+  jumped?: boolean;
 };
 
 function toView(
@@ -159,7 +164,8 @@ export function useRoleTimeline({
   const loadOlder = useCallback(async () => {
     if (!roleId || loadingOlder || loading) return false;
 
-    const oldest = segments.find((s) => s.roleId === roleId) ?? null;
+    const jumped = segments.find((s) => s.jumped && s.roleId === roleId);
+    const oldest = jumped ?? segments.find((s) => s.roleId === roleId) ?? null;
     if (oldest?.olderMessageCount && oldest.messages[0]?.id) {
       const gen = genRef.current;
       setLoadingOlder(true);
@@ -171,7 +177,12 @@ export function useRoleTimeline({
         if (gen !== genRef.current || roleRef.current !== roleId) return false;
         setSegments((prev) =>
           prev.map((s) => {
-            if (s.conversationId !== oldest.conversationId) return s;
+            if (
+              s.conversationId !== oldest.conversationId ||
+              !!s.jumped !== !!oldest.jumped
+            ) {
+              return s;
+            }
             const seen = new Set(
               s.messages.map((m) => m.id).filter((id): id is string => !!id),
             );
@@ -192,6 +203,9 @@ export function useRoleTimeline({
         if (gen === genRef.current) setLoadingOlder(false);
       }
     }
+
+    // 搜索窗口耗尽后停住：不要为补齐定位再去走整条角色时间线
+    if (oldest?.jumped) return false;
 
     if (!hasMore) return false;
 
@@ -243,43 +257,45 @@ export function useRoleTimeline({
     }
   }, [roleId, loadingOlder, loading, hasMore, segments]);
 
-  const expandSegment = useCallback(async (conversationId: string) => {
-    const gen = genRef.current;
-    setLoadingOlder(true);
-    try {
-      const conv = await getConversation(conversationId);
-      if (gen !== genRef.current) return false;
-      const expectedRole = roleRef.current;
-      if (expectedRole && conv.role_id && conv.role_id !== expectedRole) {
+  const revealAround = useCallback(
+    async (conversationId: string, messageId: string) => {
+      if (!roleId) return false;
+      const gen = genRef.current;
+      setLoadingOlder(true);
+      try {
+        const conv = await getConversation(conversationId, {
+          aroundId: messageId,
+          radius: SEARCH_JUMP_RADIUS,
+        });
+        if (gen !== genRef.current || roleRef.current !== roleId) return false;
+        if (conv.role_id && conv.role_id !== roleId) return false;
+        const segment: TimelineSegmentView = {
+          conversationId,
+          roleId: conv.role_id || roleId,
+          title: conv.title,
+          createdAt: conv.created_at,
+          messages: normalizeSegmentMessages(conv.messages, false),
+          isTip: false,
+          olderMessageCount: conv.older_message_count ?? 0,
+          newerMessageCount: conv.newer_message_count ?? 0,
+          jumped: true,
+        };
+        setSegments([segment]);
+        return segment.messages.some((m) => m.id === messageId);
+      } catch {
         return false;
+      } finally {
+        if (gen === genRef.current) setLoadingOlder(false);
       }
-      setSegments((prev) =>
-        prev.map((s) =>
-          s.conversationId === conversationId
-            ? {
-                ...s,
-                messages: normalizeSegmentMessages(
-                  conv.messages,
-                  conv.active_turn?.status === "running",
-                ),
-                olderMessageCount: 0,
-              }
-            : s,
-        ),
-      );
-      return true;
-    } catch {
-      return false;
-    } finally {
-      if (gen === genRef.current) setLoadingOlder(false);
-    }
-  }, []);
+    },
+    [roleId],
+  );
 
   const historicalSegments = useMemo(
     () =>
       segments.filter(
         (s) =>
-          s.conversationId !== tipConversationId &&
+          (s.jumped || s.conversationId !== tipConversationId) &&
           (!roleId || s.roleId === roleId),
       ),
     [segments, tipConversationId, roleId],
@@ -292,7 +308,7 @@ export function useRoleTimeline({
     loadingOlder,
     hasMore,
     loadOlder,
-    expandSegment,
+    revealAround,
     reload: resetAndLoadRecent,
   };
 }

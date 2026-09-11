@@ -26,6 +26,10 @@ from app.engine.conversation.shared import (
 from app.engine.conversation.turn_lifecycle import TurnLifecycle
 
 
+MESSAGE_AROUND_RADIUS_DEFAULT = 16
+MESSAGE_AROUND_RADIUS_MAX = 40
+
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS conversations (
     id TEXT PRIMARY KEY,
@@ -630,6 +634,7 @@ class ConversationStore:
             "active_turn": active_turn,
             "messages": messages,
             "older_message_count": older_count,
+            "newer_message_count": 0,
             "summaries": summaries,
             "summarized": summarized,
             "summary_path": summary_path,
@@ -680,10 +685,99 @@ class ConversationStore:
                 rid = None
             return (rid or DEFAULT_ROLE_ID).strip() or DEFAULT_ROLE_ID
 
-    def get(self, cid: str, *, tail: int | None = None) -> dict:
+    def get(
+        self,
+        cid: str,
+        *,
+        tail: int | None = None,
+        around_id: str | None = None,
+        radius: int | None = None,
+    ) -> dict:
         with self._lock:
             row = self._conversation_row(cid)
+            if around_id:
+                return self._conv_to_dict_around(row, around_id, radius)
             return self._conv_to_dict(row, tail=tail)
+
+    def _clamp_around_radius(self, radius: int | None) -> int:
+        n = (
+            MESSAGE_AROUND_RADIUS_DEFAULT
+            if radius is None
+            else int(radius)
+        )
+        return max(1, min(n, MESSAGE_AROUND_RADIUS_MAX))
+
+    def _load_message_around(
+        self, cid: str, around_id: str, radius: int
+    ) -> tuple[list[dict], int, int]:
+        """锚点前后各 ``radius`` 条（按条数，不是 seq 间距），以及两侧未加载条数。
+
+        调用方须已持有 ``_lock``。
+        """
+        take = self._clamp_around_radius(radius)
+        anchor = self.conn.execute(
+            "SELECT * FROM messages WHERE conversation_id = ? AND id = ?",
+            (cid, around_id),
+        ).fetchone()
+        if anchor is None:
+            raise KeyError("消息不存在")
+        seq = int(anchor["seq"])
+        before_rows = self.conn.execute(
+            """
+            SELECT * FROM messages
+            WHERE conversation_id = ? AND seq < ?
+            ORDER BY seq DESC
+            LIMIT ?
+            """,
+            (cid, seq, take),
+        ).fetchall()
+        after_rows = self.conn.execute(
+            """
+            SELECT * FROM messages
+            WHERE conversation_id = ? AND seq > ?
+            ORDER BY seq ASC
+            LIMIT ?
+            """,
+            (cid, seq, take),
+        ).fetchall()
+        oldest_seq = int(before_rows[-1]["seq"]) if before_rows else seq
+        newest_seq = int(after_rows[-1]["seq"]) if after_rows else seq
+        older_count = int(
+            self.conn.execute(
+                """
+                SELECT COUNT(*) AS n FROM messages
+                WHERE conversation_id = ? AND seq < ?
+                """,
+                (cid, oldest_seq),
+            ).fetchone()["n"]
+        )
+        newer_count = int(
+            self.conn.execute(
+                """
+                SELECT COUNT(*) AS n FROM messages
+                WHERE conversation_id = ? AND seq > ?
+                """,
+                (cid, newest_seq),
+            ).fetchone()["n"]
+        )
+        rows = list(reversed(before_rows)) + [anchor] + list(after_rows)
+        return (
+            [self._message_row_to_dict(r) for r in rows],
+            older_count,
+            newer_count,
+        )
+
+    def _conv_to_dict_around(
+        self, row: sqlite3.Row, around_id: str, radius: int | None
+    ) -> dict:
+        data = self._conv_to_dict(row, tail=0)
+        messages, older_count, newer_count = self._load_message_around(
+            row["id"], around_id, self._clamp_around_radius(radius)
+        )
+        data["messages"] = messages
+        data["older_message_count"] = older_count
+        data["newer_message_count"] = newer_count
+        return data
 
     def get_active_turn_meta(self, cid: str) -> dict:
         """Lightweight active turn snapshot (no messages)."""

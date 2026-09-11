@@ -1023,10 +1023,14 @@ export async function searchConversations(opts: {
 
 export async function getConversation(
   id: string,
-  opts?: { tail?: number },
+  opts?: { tail?: number; aroundId?: string; radius?: number },
 ) {
   const params = new URLSearchParams();
-  if (opts?.tail) params.set("tail", String(opts.tail));
+  if (opts?.aroundId) params.set("around_id", opts.aroundId);
+  else if (opts?.tail) params.set("tail", String(opts.tail));
+  if (opts?.aroundId && opts.radius !== undefined) {
+    params.set("radius", String(opts.radius));
+  }
   const q = params.toString();
   return apiFetch<Conversation>(
     `/api/conversations/${encodeURIComponent(id)}${q ? `?${q}` : ""}`,

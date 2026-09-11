@@ -193,9 +193,10 @@ export function ChatMessageList({
             )}
             {historicalSegments.map((seg, i) => (
               <div
-                key={seg.conversationId}
+                key={seg.jumped ? `jump:${seg.conversationId}` : seg.conversationId}
                 className="chat-timeline-segment"
                 data-conversation-id={seg.conversationId}
+                data-jumped={seg.jumped ? "true" : undefined}
               >
                 {i > 0 && (
                   <TimelineSeparator idleHours={continuityIdleHours} />
@@ -221,7 +222,14 @@ export function ChatMessageList({
                 data-conversation-id={conversationId || undefined}
               >
                 {showTipSeparator && (
-                  <TimelineSeparator idleHours={continuityIdleHours} />
+                  <TimelineSeparator
+                    idleHours={continuityIdleHours}
+                    label={
+                      historicalSegments.some((s) => s.jumped)
+                        ? "定位到搜索结果 · 中间消息未加载"
+                        : undefined
+                    }
+                  />
                 )}
                 {renderSegmentRows({
                   msgs,

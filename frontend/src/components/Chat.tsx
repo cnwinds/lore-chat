@@ -15,6 +15,7 @@ import { useSendQueue } from "../hooks/chat/useSendQueue";
 import { useOutboundOrchestrator } from "../hooks/chat/useOutboundOrchestrator";
 import type { JumpTarget } from "../hooks/chat/useConversationJump";
 import {
+  planSearchJump,
   scrollToMessageHighlight,
 } from "../hooks/chat/useConversationJump";
 import {
@@ -187,7 +188,7 @@ export function Chat({
     loadingOlder,
     hasMore: timelineHasMore,
     loadOlder,
-    expandSegment,
+    revealAround,
   } = useRoleTimeline({
     roleId,
     tipConversationId: conversationId,
@@ -196,31 +197,62 @@ export function Chat({
   });
 
   const loadingOlderContent = loadingOlder || loadingOlderMessages;
-  const canLoadOlder =
-    olderMessageCount > 0 ||
-    (historicalSegments[0]?.olderMessageCount ?? 0) > 0 ||
-    timelineHasMore;
+  const jumpedSegment = historicalSegments.find((s) => s.jumped);
+  const displayHistorical = useMemo(() => {
+    const tipIds = new Set(
+      msgs.map((m) => m.id).filter((id): id is string => !!id),
+    );
+    if (!tipIds.size) return historicalSegments;
+    return historicalSegments
+      .map((seg) => {
+        if (!seg.jumped) return seg;
+        const messages = seg.messages.filter((m) => !m.id || !tipIds.has(m.id));
+        return messages.length === seg.messages.length
+          ? seg
+          : { ...seg, messages };
+      })
+      .filter((seg) => !seg.jumped || seg.messages.length > 0);
+  }, [historicalSegments, msgs]);
+  const canLoadOlder = jumpedSegment
+    ? jumpedSegment.olderMessageCount > 0
+    : olderMessageCount > 0 ||
+      (historicalSegments[0]?.olderMessageCount ?? 0) > 0 ||
+      timelineHasMore;
 
   const loadOlderContent = useCallback(async () => {
+    if (jumpedSegment) {
+      return loadOlder();
+    }
     if (olderMessageCount > 0) {
       return loadOlderMessages();
     }
     return loadOlder();
-  }, [olderMessageCount, loadOlderMessages, loadOlder]);
+  }, [jumpedSegment, olderMessageCount, loadOlderMessages, loadOlder]);
 
-  // 时间线内跨段跳转：不必切 tip，直接滚到 DOM 中的消息
+  const revealKeyRef = useRef<string | null>(null);
+
+  // 搜索命中：已在内存则滚过去；否则一次拉附近窗口，绝不顺着时间线翻到古代
   useEffect(() => {
-    if (!pendingJump?.messageId) return;
-    if (pendingJump.conversationId === conversationId) return;
-    if (loadingTimeline || loadingHistory) return;
-    const seg = historicalSegments.find(
-      (s) => s.conversationId === pendingJump.conversationId,
-    );
-    if (!seg) return;
-    if (!seg.messages.some((m) => m.id === pendingJump.messageId)) {
-      if (seg.olderMessageCount > 0) {
-        void expandSegment(seg.conversationId);
-      }
+    if (!pendingJump?.messageId) {
+      revealKeyRef.current = null;
+      return;
+    }
+    const key = `${pendingJump.conversationId}:${pendingJump.messageId}`;
+    const decision = planSearchJump({
+      pendingJump,
+      msgs,
+      historicalSegments: displayHistorical,
+      loading: loadingTimeline || loadingHistory || loadingOlderContent,
+      revealAttempted: revealKeyRef.current === key,
+    });
+    if (decision === "wait") return;
+    if (decision === "settle") {
+      onJumpHandled?.();
+      return;
+    }
+    if (decision === "reveal") {
+      revealKeyRef.current = key;
+      void revealAround(pendingJump.conversationId, pendingJump.messageId);
       return;
     }
     const range =
@@ -238,38 +270,13 @@ export function Chat({
     return () => cancelAnimationFrame(frame);
   }, [
     pendingJump,
-    conversationId,
+    msgs,
+    displayHistorical,
     loadingTimeline,
     loadingHistory,
-    historicalSegments,
-    onJumpHandled,
-    expandSegment,
-  ]);
-
-  // 搜索命中不在已加载页内时，尽量向上翻页直到找到或没有更多
-  useEffect(() => {
-    if (!pendingJump?.messageId) return;
-    if (pendingJump.conversationId === conversationId) return;
-    if (loadingTimeline || loadingOlderContent) return;
-    const inTimeline = historicalSegments.some(
-      (s) => s.conversationId === pendingJump.conversationId,
-    );
-    if (inTimeline) return;
-    if (
-      !timelineHasMore &&
-      !(historicalSegments[0]?.olderMessageCount)
-    ) {
-      return;
-    }
-    void loadOlder();
-  }, [
-    pendingJump,
-    conversationId,
-    loadingTimeline,
     loadingOlderContent,
-    historicalSegments,
-    timelineHasMore,
-    loadOlder,
+    onJumpHandled,
+    revealAround,
   ]);
 
   const sendQueue = useSendQueue(conversationId);
@@ -362,7 +369,7 @@ export function Chat({
   userInjectedRef.current = outbound.handleUserInjected;
 
   const { messagesContainerRef } = useChatScroll(
-    [msgs, loadingHistory, streamingForView, historicalSegments],
+    [msgs, loadingHistory, streamingForView, displayHistorical],
     stickToBottomRef,
   );
   const { notice: memoryNotice, dismissNotice: dismissMemoryNotice } =
@@ -406,11 +413,13 @@ export function Chat({
   useEffect(() => {
     const el = messagesContainerRef.current;
     if (!el || loadingOlderContent || loadingTimeline || !canLoadOlder) return;
+    if (jumpedSegment) return;
     if (el.scrollHeight > el.clientHeight + 8) return;
     if (autoFillAttemptsRef.current >= TIMELINE_AUTOFILL_MAX) return;
     autoFillAttemptsRef.current += 1;
     void loadOlderContent();
   }, [
+    jumpedSegment,
     historicalSegments,
     msgs,
     canLoadOlder,
@@ -910,7 +919,7 @@ export function Chat({
       )}
       <ConversationTranscriptPanel
         msgs={msgs}
-        historicalSegments={historicalSegments}
+        historicalSegments={displayHistorical}
         continuityIdleHours={continuityIdleHours}
         timelineHasMore={canLoadOlder}
         loadingOlder={loadingOlderContent}

@@ -115,14 +115,28 @@ async def list_conversation_events(
 
 @router.get("/conversations/{cid}")
 async def get_conversation(
-    cid: str, request: Request, tail: int | None = None
+    cid: str,
+    request: Request,
+    tail: int | None = None,
+    around_id: str | None = None,
+    radius: int | None = None,
 ):
+    """取会话。``around_id`` 优先：只返回锚点附近一小窗，避免搜索跳转拉全量。"""
     tail_n: int | None = None
     if tail is not None:
         tail_n = max(1, min(int(tail), 80))
+    around = (around_id or "").strip() or None
+    radius_n: int | None = None
+    if radius is not None:
+        radius_n = max(1, min(int(radius), 40))
     try:
-        return container(request).conversations.get(cid, tail=tail_n)
+        return container(request).conversations.get(
+            cid, tail=tail_n, around_id=around, radius=radius_n
+        )
     except KeyError as e:
+        detail = str(e).strip("'\"")
+        if detail == "消息不存在":
+            raise HTTPException(404, "消息不存在") from e
         raise HTTPException(404, "对话不存在") from e
 
 

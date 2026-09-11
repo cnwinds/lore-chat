@@ -209,4 +209,6 @@ export type Conversation = ConversationSummary & {
   } | null;
   /** 当前页之前还有多少条未加载消息（tail / 向前翻页） */
   older_message_count?: number;
+  /** 当前页之后还有多少条（around 窗口；tail 恒为 0） */
+  newer_message_count?: number;
 };

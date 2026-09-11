@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import {
+  SEARCH_JUMP_RADIUS,
   TIMELINE_FIRST_PAGE_SIZE,
   TIMELINE_PAGE_SIZE,
   useRoleTimeline,
@@ -380,5 +381,214 @@ describe("useRoleTimeline", () => {
     expect(result.current.historicalSegments).toEqual([
       expect.objectContaining({ conversationId: "d-old" }),
     ]);
+  });
+
+  it("revealAround inserts a jumped window instead of walking older segments", async () => {
+    vi.mocked(api.getRoleTimeline).mockResolvedValue({
+      role_id: "r1",
+      tip_conversation_id: "tip",
+      continuity_idle_hours: 6,
+      has_more: true,
+      segments: [
+        {
+          id: "tip",
+          title: "新对话",
+          created_at: "2026-01-02T00:00:00Z",
+          updated_at: "2026-01-02T00:00:00Z",
+          message_count: 0,
+          role_id: "r1",
+        },
+      ],
+    });
+    vi.mocked(api.getConversation).mockResolvedValue({
+      id: "ancient",
+      title: "很早以前",
+      created_at: "2025-01-01T00:00:00Z",
+      updated_at: "2025-01-01T00:00:00Z",
+      message_count: 200,
+      role_id: "r1",
+      summarized: false,
+      summary_path: null,
+      older_message_count: 80,
+      newer_message_count: 119,
+      messages: [
+        {
+          id: "hit",
+          role: "user",
+          text: "found",
+          ts: "2025-01-01T00:00:00Z",
+        },
+      ],
+    });
+    vi.mocked(api.getConversationMessages).mockResolvedValue({
+      older_message_count: 72,
+      messages: [
+        {
+          id: "earlier",
+          role: "user",
+          text: "before-hit",
+          ts: "2024-12-31T00:00:00Z",
+        },
+      ],
+    });
+
+    const { result } = renderHook(() =>
+      useRoleTimeline({
+        roleId: "r1",
+        tipConversationId: "tip",
+        messageLimit: 8,
+      }),
+    );
+    await waitFor(() => expect(result.current.hasMore).toBe(true));
+
+    await act(async () => {
+      await expect(result.current.revealAround("ancient", "hit")).resolves.toBe(
+        true,
+      );
+    });
+
+    expect(api.getConversation).toHaveBeenCalledWith("ancient", {
+      aroundId: "hit",
+      radius: SEARCH_JUMP_RADIUS,
+    });
+    expect(result.current.historicalSegments).toEqual([
+      expect.objectContaining({
+        conversationId: "ancient",
+        jumped: true,
+        olderMessageCount: 80,
+        newerMessageCount: 119,
+      }),
+    ]);
+
+    const timelineCalls = vi.mocked(api.getRoleTimeline).mock.calls.length;
+    await act(async () => {
+      await result.current.loadOlder();
+    });
+    expect(api.getConversationMessages).toHaveBeenCalledWith("ancient", {
+      beforeId: "hit",
+      limit: 8,
+    });
+    expect(vi.mocked(api.getRoleTimeline).mock.calls.length).toBe(timelineCalls);
+    expect(result.current.historicalSegments[0].messages.map((m) => m.id)).toEqual(
+      ["earlier", "hit"],
+    );
+  });
+
+  it("keeps a jumped window even when it belongs to the current tip", async () => {
+    vi.mocked(api.getRoleTimeline).mockResolvedValue({
+      role_id: "r1",
+      tip_conversation_id: "tip",
+      continuity_idle_hours: 6,
+      has_more: false,
+      segments: [
+        {
+          id: "tip",
+          title: "当前",
+          created_at: "2026-01-02T00:00:00Z",
+          updated_at: "2026-01-02T00:00:00Z",
+          message_count: 40,
+          role_id: "r1",
+        },
+      ],
+    });
+    vi.mocked(api.getConversation).mockResolvedValue({
+      id: "tip",
+      title: "当前",
+      created_at: "2026-01-02T00:00:00Z",
+      updated_at: "2026-01-02T00:00:00Z",
+      message_count: 40,
+      role_id: "r1",
+      summarized: false,
+      summary_path: null,
+      older_message_count: 20,
+      newer_message_count: 7,
+      messages: [
+        {
+          id: "old-hit",
+          role: "user",
+          text: "years-ago",
+          ts: "2026-01-01T00:00:00Z",
+        },
+      ],
+    });
+
+    const { result } = renderHook(() =>
+      useRoleTimeline({
+        roleId: "r1",
+        tipConversationId: "tip",
+        messageLimit: 8,
+      }),
+    );
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(async () => {
+      await result.current.revealAround("tip", "old-hit");
+    });
+
+    expect(result.current.historicalSegments).toEqual([
+      expect.objectContaining({
+        conversationId: "tip",
+        jumped: true,
+        messages: [expect.objectContaining({ id: "old-hit" })],
+      }),
+    ]);
+  });
+
+  it("does not fetch earlier timeline pages after a jump window is exhausted", async () => {
+    vi.mocked(api.getRoleTimeline).mockResolvedValue({
+      role_id: "r1",
+      tip_conversation_id: "tip",
+      continuity_idle_hours: 6,
+      has_more: true,
+      segments: [
+        {
+          id: "tip",
+          title: "新对话",
+          created_at: "2026-01-02T00:00:00Z",
+          updated_at: "2026-01-02T00:00:00Z",
+          message_count: 0,
+          role_id: "r1",
+        },
+      ],
+    });
+    vi.mocked(api.getConversation).mockResolvedValue({
+      id: "ancient",
+      title: "很早以前",
+      created_at: "2025-01-01T00:00:00Z",
+      updated_at: "2025-01-01T00:00:00Z",
+      message_count: 3,
+      role_id: "r1",
+      summarized: false,
+      summary_path: null,
+      older_message_count: 0,
+      newer_message_count: 0,
+      messages: [
+        {
+          id: "hit",
+          role: "user",
+          text: "found",
+          ts: "2025-01-01T00:00:00Z",
+        },
+      ],
+    });
+
+    const { result } = renderHook(() =>
+      useRoleTimeline({
+        roleId: "r1",
+        tipConversationId: "tip",
+        messageLimit: 8,
+      }),
+    );
+    await waitFor(() => expect(result.current.hasMore).toBe(true));
+    await act(async () => {
+      await result.current.revealAround("ancient", "hit");
+    });
+    const timelineCalls = vi.mocked(api.getRoleTimeline).mock.calls.length;
+
+    await act(async () => {
+      await expect(result.current.loadOlder()).resolves.toBe(false);
+    });
+    expect(api.getConversationMessages).not.toHaveBeenCalled();
+    expect(vi.mocked(api.getRoleTimeline).mock.calls.length).toBe(timelineCalls);
   });
 });

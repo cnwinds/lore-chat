@@ -520,6 +520,44 @@ def test_get_tail_keeps_recent_messages(tmp_path):
     assert remaining2 == 0
 
 
+def test_get_around_keeps_a_small_window(tmp_path):
+    store = _store(tmp_path)
+    cid = store.create()
+    for i in range(10):
+        store.append_exchange(
+            cid, f"u{i}", {"role": "assistant", "text": f"a{i}"}
+        )
+    full = store.get(cid)
+    assert len(full["messages"]) == 20
+    mid = next(m["id"] for m in full["messages"] if m["text"] == "u5")
+
+    page = store.get(cid, around_id=mid, radius=2)
+    assert [m["text"] for m in page["messages"]] == [
+        "u4",
+        "a4",
+        "u5",
+        "a5",
+        "u6",
+    ]
+    assert page["older_message_count"] == 8
+    assert page["newer_message_count"] == 7
+
+    huge = store.get(cid, around_id=mid, radius=10_000)
+    assert len(huge["messages"]) == 20
+    assert huge["older_message_count"] == 0
+    assert huge["newer_message_count"] == 0
+
+
+def test_get_around_unknown_message_raises(tmp_path):
+    store = _store(tmp_path)
+    cid = store.create()
+    store.append_exchange(cid, "u", {"role": "assistant", "text": "a"})
+    import pytest
+
+    with pytest.raises(KeyError, match="消息不存在"):
+        store.get(cid, around_id="missing", radius=2)
+
+
 def test_load_messages_before_unknown_anchor_is_empty(tmp_path):
     store = _store(tmp_path)
     cid = store.create()
