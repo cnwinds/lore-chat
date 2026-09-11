@@ -190,7 +190,7 @@ describe("GlobalSearchPalette", () => {
     );
     expect(searchConversations).toHaveBeenCalledTimes(1);
 
-    await user.type(input, "新");
+    await user.keyboard("新");
     expect(input).toHaveValue("新");
   });
 
