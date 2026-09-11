@@ -125,6 +125,22 @@ describe("RoleList", () => {
     expect(screen.getByRole("tab", { name: "消息" })).toBeInTheDocument();
   });
 
+  it("opens the search palette from the global Ctrl+K shortcut", async () => {
+    const user = userEvent.setup();
+    render(
+      <RoleList
+        activeRoleId="default"
+        onSelectRole={vi.fn()}
+        onNewRole={vi.fn()}
+      />,
+    );
+    await screen.findByText("通用");
+    await user.keyboard("{Control>}k{/Control}");
+    expect(
+      await screen.findByLabelText("搜索角色、消息和文件"),
+    ).toBeInTheDocument();
+  });
+
   it("lists recently active roles first", async () => {
     vi.mocked(listRoles).mockResolvedValueOnce({
       roles: [

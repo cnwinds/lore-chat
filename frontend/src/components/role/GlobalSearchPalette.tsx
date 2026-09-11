@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
 import {
   searchConversations,
@@ -7,6 +14,11 @@ import {
   type WorkspaceSearchScope,
 } from "../../api";
 import { formatSearchRelativeTime } from "../../utils/displayTime";
+import {
+  isWorkspaceSearchHotkey,
+  workspaceSearchHitKey,
+  workspaceSearchHotkeyLabel,
+} from "../../utils/workspaceSearch";
 import { RoleAvatar } from "./RoleAvatar";
 
 export type SearchTab = "all" | "messages" | "roles" | "files";
@@ -22,6 +34,7 @@ type Props = {
   open: boolean;
   roles: Role[];
   onClose: () => void;
+  onOpen?: () => void;
   onSelectRole: (roleId: string) => void;
   onSearchHit: (hit: ConversationSearchHit) => void;
   onSelectFile?: (path: string) => void;
@@ -51,6 +64,7 @@ export function GlobalSearchPalette({
   open,
   roles,
   onClose,
+  onOpen,
   onSelectRole,
   onSearchHit,
   onSelectFile,
@@ -59,30 +73,21 @@ export function GlobalSearchPalette({
   const [tab, setTab] = useState<SearchTab>("all");
   const [hits, setHits] = useState<ConversationSearchHit[]>([]);
   const [searching, setSearching] = useState(false);
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const resultsRef = useRef<HTMLDivElement>(null);
+  const scrollTopRef = useRef(0);
+  const restoreScrollRef = useRef(false);
   const searchGenRef = useRef(0);
+  const lastCompletedRef = useRef<{ q: string; tab: SearchTab } | null>(null);
+  const skipQueryResetRef = useRef(true);
+  const wasOpenRef = useRef(false);
+  const hotkeyLabel = workspaceSearchHotkeyLabel();
 
-  useEffect(() => {
-    if (!open) return;
-    setQuery("");
-    setTab("all");
-    setHits([]);
-    setSearching(false);
-    const t = window.setTimeout(() => inputRef.current?.focus(), 0);
-    return () => window.clearTimeout(t);
-  }, [open]);
-
-  useEffect(() => {
-    if (!open) return;
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") {
-        e.stopPropagation();
-        onClose();
-      }
-    }
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [open, onClose]);
+  if (open && !wasOpenRef.current) {
+    restoreScrollRef.current = true;
+  }
+  wasOpenRef.current = open;
 
   const q = query.trim();
   const browseRoles = useMemo(() => {
@@ -90,11 +95,86 @@ export function GlobalSearchPalette({
     if (tab !== "all" && tab !== "roles") return [];
     return roles.map(roleToHit);
   }, [q, tab, roles]);
+  const rows = q ? hits : browseRoles;
+
+  const persistScroll = useCallback(() => {
+    if (resultsRef.current) {
+      scrollTopRef.current = resultsRef.current.scrollTop;
+    }
+  }, []);
+
+  const closePalette = useCallback(() => {
+    persistScroll();
+    onClose();
+  }, [persistScroll, onClose]);
+
+  useEffect(() => {
+    if (skipQueryResetRef.current) {
+      skipQueryResetRef.current = false;
+      return;
+    }
+    scrollTopRef.current = 0;
+    setSelectedKey(null);
+  }, [q, tab]);
+
+  useEffect(() => {
+    if (!open) return;
+    const t = window.setTimeout(() => {
+      const el = inputRef.current;
+      if (!el) return;
+      el.focus();
+      el.select();
+    }, 0);
+    return () => window.clearTimeout(t);
+  }, [open]);
+
+  useLayoutEffect(() => {
+    if (!open || !restoreScrollRef.current) return;
+    const list = resultsRef.current;
+    if (!list) return;
+    if (searching && rows.length === 0) return;
+    list.scrollTop = scrollTopRef.current;
+    restoreScrollRef.current = false;
+  }, [open, searching, rows.length]);
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (isWorkspaceSearchHotkey(e)) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (open) {
+          persistScroll();
+          const el = inputRef.current;
+          el?.focus();
+          el?.select();
+          return;
+        }
+        onOpen?.();
+        return;
+      }
+      if (!open) return;
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        closePalette();
+      }
+    }
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [open, onOpen, closePalette, persistScroll]);
 
   useEffect(() => {
     if (!open) return;
     if (!q) {
       setHits([]);
+      setSearching(false);
+      lastCompletedRef.current = { q: "", tab };
+      return;
+    }
+    if (
+      lastCompletedRef.current?.q === q &&
+      lastCompletedRef.current?.tab === tab
+    ) {
+      searchGenRef.current += 1;
       setSearching(false);
       return;
     }
@@ -109,6 +189,7 @@ export function GlobalSearchPalette({
         .then((res) => {
           if (gen !== searchGenRef.current) return;
           setHits(res.hits);
+          lastCompletedRef.current = { q, tab };
         })
         .catch(() => {
           if (gen !== searchGenRef.current) return;
@@ -121,20 +202,9 @@ export function GlobalSearchPalette({
     return () => window.clearTimeout(t);
   }, [open, q, tab]);
 
-  if (!open) return null;
-
-  const rows = q ? hits : browseRoles;
-  const emptyHint = !q
-    ? tab === "messages" || tab === "files"
-      ? "输入关键词搜索"
-      : roles.length === 0
-        ? "暂无角色"
-        : ""
-    : searching
-      ? "搜索中…"
-      : "无匹配";
-
   function activate(hit: ConversationSearchHit) {
+    persistScroll();
+    setSelectedKey(workspaceSearchHitKey(hit));
     const kind = hit.kind || "message";
     if (kind === "role" && hit.role_id) {
       onSelectRole(hit.role_id);
@@ -146,11 +216,23 @@ export function GlobalSearchPalette({
     onClose();
   }
 
+  if (!open) return null;
+
+  const emptyHint = !q
+    ? tab === "messages" || tab === "files"
+      ? "输入关键词搜索"
+      : roles.length === 0
+        ? "暂无角色"
+        : ""
+    : searching
+      ? "搜索中…"
+      : "无匹配";
+
   return createPortal(
     <div
       className="workspace-search-backdrop"
       role="presentation"
-      onClick={onClose}
+      onClick={closePalette}
     >
       <div
         className="workspace-search-panel"
@@ -186,6 +268,9 @@ export function GlobalSearchPalette({
             onChange={(e) => setQuery(e.target.value)}
             aria-label="搜索角色、消息和文件"
           />
+          <kbd className="workspace-search-hotkey" aria-hidden>
+            {hotkeyLabel}
+          </kbd>
         </div>
         <div className="workspace-search-tabs" role="tablist">
           {TABS.map((item) => (
@@ -201,7 +286,11 @@ export function GlobalSearchPalette({
             </button>
           ))}
         </div>
-        <div className="workspace-search-results">
+        <div
+          ref={resultsRef}
+          className="workspace-search-results"
+          onScroll={persistScroll}
+        >
           {rows.length === 0 ? (
             <div className="workspace-search-empty">{emptyHint}</div>
           ) : (
@@ -212,11 +301,14 @@ export function GlobalSearchPalette({
                   ? hit.title
                   : hit.role_name || "对话";
               const seed = hit.role_id || hit.path || hit.conversation_id || String(index);
+              const key = workspaceSearchHitKey(hit);
+              const active = selectedKey === key;
               return (
                 <button
-                  key={`${kind}:${hit.conversation_id}:${hit.message_id || ""}:${hit.role_id || ""}:${hit.path || ""}:${index}`}
+                  key={`${key}:${index}`}
                   type="button"
-                  className="workspace-search-hit"
+                  className={`workspace-search-hit${active ? " is-active" : ""}`}
+                  aria-current={active ? "true" : undefined}
                   onClick={() => activate(hit)}
                 >
                   {kind === "file" ? (
