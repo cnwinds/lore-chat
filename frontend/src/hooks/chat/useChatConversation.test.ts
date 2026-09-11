@@ -273,18 +273,18 @@ describe("useChatConversation", () => {
     expect(result.current.olderMessageCount).toBe(12);
   });
 
-  it("loads the full conversation when jumping to a message", async () => {
+  it("keeps the tail window even when jumping to a message", async () => {
     vi.mocked(api.getConversation).mockResolvedValue({
       id: "cid-1",
       title: "t",
       created_at: "",
       updated_at: "",
-      message_count: 2,
+      message_count: 20,
       summarized: false,
       summary_path: null,
-      older_message_count: 0,
+      older_message_count: 12,
       messages: [
-        { id: "hit", role: "user", text: "found", ts: "2026-01-01T00:00:00.000Z" },
+        { id: "m-tail", role: "user", text: "recent", ts: "2026-01-01T00:00:00.000Z" },
       ],
     });
 
@@ -301,9 +301,9 @@ describe("useChatConversation", () => {
     );
 
     await waitFor(() => {
-      expect(api.getConversation).toHaveBeenCalledWith("cid-1");
+      expect(api.getConversation).toHaveBeenCalledWith("cid-1", { tail: 8 });
     });
-    expect(api.getConversation).not.toHaveBeenCalledWith("cid-1", { tail: 8 });
+    expect(api.getConversation).not.toHaveBeenCalledWith("cid-1");
   });
 
   it("does not paint a conversation that belongs to another role", async () => {

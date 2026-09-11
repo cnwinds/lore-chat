@@ -7,6 +7,30 @@ export type JumpTarget = {
   offsetVersion?: string;
 };
 
+export type SearchJumpPlan = "wait" | "scroll" | "reveal" | "settle";
+
+/** 搜索定位：已在内存里就滚；否则拉附近窗口，绝不一路翻页。 */
+export function planSearchJump(input: {
+  pendingJump: JumpTarget | null;
+  msgs: { id?: string }[];
+  historicalSegments: { messages: { id?: string }[] }[];
+  loading: boolean;
+  revealAttempted: boolean;
+}): SearchJumpPlan {
+  const target = input.pendingJump;
+  if (!target?.messageId) return "wait";
+  if (input.loading) return "wait";
+  const mid = target.messageId;
+  const present =
+    input.msgs.some((m) => m.id === mid) ||
+    input.historicalSegments.some((s) =>
+      s.messages.some((m) => m.id === mid),
+    );
+  if (present) return "scroll";
+  if (input.revealAttempted) return "settle";
+  return "reveal";
+}
+
 export type HighlightRangeDetail = {
   start: number;
   end: number;

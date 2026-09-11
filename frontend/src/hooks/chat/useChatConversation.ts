@@ -27,7 +27,7 @@ type Options = {
   onJumpHandled?: () => void;
   /** Called when loaded conversation has a server-side running turn. */
   onActiveTurn?: (conversationId: string, startedAt?: string | null) => void;
-  /** 首屏只取尾部 N 条；定位某条消息时仍拉全量 */
+  /** 首屏只取尾部 N 条；搜索定位走附近窗口，不在这里拉全量 */
   messageTail?: number;
   /** 已加载会话不属于当前角色 */
   onRoleMismatch?: (conversationId: string, roleId: string) => void;
@@ -70,7 +70,6 @@ export function useChatConversation({
   const [summarized, setSummarized] = useState(false);
   const [summaryPath, setSummaryPath] = useState<string | null>(null);
   const pendingJumpRef = useRef<JumpTarget | null>(null);
-  const jumpExpandKeyRef = useRef<string | null>(null);
   const onActiveTurnRef = useRef(onActiveTurn);
   const onJumpHandledRef = useRef(onJumpHandled);
   const messageTailRef = useRef(messageTail);
@@ -113,7 +112,6 @@ export function useChatConversation({
       setOlderMessageCount(0);
       return;
     }
-    jumpExpandKeyRef.current = null;
     let cancelled = false;
     const loadedFor = conversationId;
     // Drop foreign messages immediately so a fast send/resume cannot append onto
@@ -134,10 +132,7 @@ export function useChatConversation({
       apply();
     };
 
-    const jumpHere =
-      !!pendingJumpRef.current?.messageId &&
-      pendingJumpRef.current.conversationId === conversationId;
-    const tail = !jumpHere && messageTail ? messageTail : undefined;
+    const tail = messageTail ? messageTail : undefined;
 
     const req = tail
       ? getConversation(conversationId, { tail })
@@ -186,49 +181,6 @@ export function useChatConversation({
       cancelled = true;
     };
   }, [conversationId, roleId, skipLoadRef, streamOwnership, messageTail]);
-
-  // 定位消息不在已加载尾部时，补拉该会话全量
-  useEffect(() => {
-    const target = pendingJumpRef.current;
-    if (!target?.messageId || target.conversationId !== conversationId) return;
-    if (loadingHistory || msgs.length === 0) return;
-    if (msgs.some((m) => m.id === target.messageId)) return;
-    if (olderMessageCount <= 0) return;
-    const expandKey = `${conversationId}:${target.messageId}`;
-    if (jumpExpandKeyRef.current === expandKey) return;
-    jumpExpandKeyRef.current = expandKey;
-    let cancelled = false;
-    getConversation(conversationId)
-      .then((conv) => {
-        if (cancelled) return;
-        if (shouldProtectStreamingHistory(streamOwnership, conversationId)) {
-          return;
-        }
-        const expectedRole = roleIdRef.current;
-        const loadedRole = (conv.role_id || "default").trim() || "default";
-        if (expectedRole && loadedRole !== expectedRole) {
-          onRoleMismatchRef.current?.(conversationId, expectedRole);
-          return;
-        }
-        setMsgs(
-          toLoadedMessages(conv.messages, conv.active_turn?.status === "running"),
-        );
-        setOlderMessageCount(0);
-      })
-      .catch(() => {
-        /* keep tail */
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    conversationId,
-    loadingHistory,
-    msgs,
-    olderMessageCount,
-    pendingJump,
-    streamOwnership,
-  ]);
 
   useEffect(() => {
     const target = pendingJumpRef.current;

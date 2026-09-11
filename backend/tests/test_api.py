@@ -498,6 +498,24 @@ def test_conversation_tail_and_older_messages(client):
     )
     assert missing.status_code == 400
 
+    around_id = next(m["id"] for m in full["messages"] if m["text"] == "u2")
+    around = client.get(
+        f"/api/conversations/{cid}",
+        params={"around_id": around_id, "radius": 2},
+    )
+    assert around.status_code == 200
+    body = around.json()
+    assert [m["text"] for m in body["messages"]] == ["u1", "a1", "u2", "a2", "u3"]
+    assert body["older_message_count"] == 2
+    assert body["newer_message_count"] == 3
+
+    gone = client.get(
+        f"/api/conversations/{cid}",
+        params={"around_id": "missing", "radius": 2},
+    )
+    assert gone.status_code == 404
+    assert gone.json()["detail"] == "消息不存在"
+
 
 def test_delete_conversation_clears_fts_and_vector_indexes(client):
     container = client.app.state.container
