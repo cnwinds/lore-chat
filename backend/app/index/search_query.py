@@ -31,8 +31,10 @@ def compile_search_query(text: str, *, max_len: int = 300) -> CompiledSearchQuer
         text = text[:max_len]
 
     terms = _extract_terms(text)
-    signal = _signal_terms(terms)
-    match_terms = tuple(terms) if terms else signal
+    # 连续拉丁词在抽取时仍合成短语（与中文词 AND 时保持「Media Grant」原子）。
+    # 查询若整句都是拉丁词，则拆开按词匹配，否则「grok slack」会被当成必现邻接短语。
+    signal = _expand_single_latin_phrase(_signal_terms(terms))
+    match_terms = _expand_single_latin_phrase(tuple(terms) if terms else signal)
     like_terms = tuple(
         t for t in signal if _term_codepoints(t) >= 3 or " " in t
     )
@@ -75,8 +77,20 @@ def _is_low_signal(token: str) -> bool:
     return token.lower() in _LOW_SIGNAL_LATIN
 
 
+def _expand_single_latin_phrase(terms: tuple[str, ...]) -> tuple[str, ...]:
+    """仅一条连续拉丁短语时拆成词，供 AND / OR / LIKE / 证据使用。"""
+    if len(terms) != 1:
+        return terms
+    parts = terms[0].split()
+    if len(parts) < 2:
+        return terms
+    if not all(_is_latin_token(p) for p in parts):
+        return terms
+    return tuple(parts)
+
+
 def _extract_terms(text: str) -> list[str]:
-    """空白分词；连续拉丁词合并为短语。"""
+    """空白分词；连续拉丁词先合并为短语（与其它词并存时保持原子）。"""
     parts = text.split()
     terms: list[str] = []
     latin_buf: list[str] = []

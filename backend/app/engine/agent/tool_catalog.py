@@ -234,7 +234,7 @@ TOOL_DEFINITIONS: list[dict] = [
                 "properties": {
                     "query": {
                         "type": "string",
-                        "description": "检索问题或关键词；英文多词会合并短语，避免单独搜 url/http 等格式词",
+                        "description": "检索问题或关键词；连续英文词按词 AND/OR（不要求彼此紧挨）；url/http 等格式词会忽略",
                     },
                     "k": {"type": "integer", "description": "返回条数，默认 5", "default": 5},
                     "scope": {

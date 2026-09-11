@@ -36,6 +36,41 @@ def test_delete_conversation_removes_all_chunks(tmp_path):
     assert fts.query("ab", k=5) == []
 
 
+def test_latin_keywords_match_when_not_adjacent(tmp_path):
+    fts = ConversationFTS(tmp_path / "fts.db")
+    text = "Grok Bot 定时任务结果通知 Slack 集成 scheduled task"
+    fts.upsert_message_chunks(
+        conversation_id="c1",
+        message_id="m1",
+        role="assistant",
+        ts="t",
+        conversation_title="调研",
+        chunks=[MessageChunk(0, 0, len(text), text)],
+    )
+    assert fts.query("grok", k=5)
+    assert fts.query("slack", k=5)
+    out = fts.query_with_tier("grok slack", k=5)
+    assert out.hits
+    assert out.hits[0].message_id == "m1"
+    assert out.tier in ("strict", "relaxed", "like")
+
+
+def test_latin_keywords_or_when_only_one_word_present(tmp_path):
+    fts = ConversationFTS(tmp_path / "fts.db")
+    text = "Grok Bot 深度调研会话，没有提到另一个产品。"
+    fts.upsert_message_chunks(
+        conversation_id="c1",
+        message_id="m1",
+        role="assistant",
+        ts="t",
+        conversation_title="调研",
+        chunks=[MessageChunk(0, 0, len(text), text)],
+    )
+    out = fts.query_with_tier("grok slack", k=5)
+    assert out.hits
+    assert out.tier in ("relaxed", "like")
+
+
 def test_query_excludes_conversation(tmp_path):
     fts = ConversationFTS(tmp_path / "fts.db")
     fts.upsert_message_chunks(

@@ -89,6 +89,27 @@ def test_hit_has_query_evidence_requires_visible_term():
     assert not hit_has_query_evidence("先看这张图", "svg")
 
 
+def test_hit_has_query_evidence_latin_keywords_need_not_be_adjacent():
+    blob = "Grok Bot 定时任务结果通知 Slack 集成 scheduled task"
+    assert hit_has_query_evidence(blob, "grok slack")
+    assert hit_has_query_evidence("只提到了 Grok Bot 深度调研", "grok slack")
+    assert not hit_has_query_evidence("完全无关的内容", "grok slack")
+
+
+def test_match_roles_latin_keywords_need_not_be_adjacent():
+    roles = [
+        {
+            "id": "g",
+            "name": "Grok Bot",
+            "system_prompt": "把结果发到 Slack 频道",
+            "avatar": None,
+        },
+        {"id": "n", "name": "新闻助手", "system_prompt": "写快讯", "avatar": None},
+    ]
+    hits = match_roles(roles, "grok slack", k=10)
+    assert [h["role_id"] for h in hits] == ["g"]
+
+
 def test_snippet_centers_on_query():
     text = "前面垫很多无关的字。" * 8 + "这里出现 svg 画法。"
     snippet = _snippet(text, "svg")

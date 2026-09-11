@@ -41,6 +41,7 @@ def test_prepare_fts_query_ors_whitespace_keywords():
     assert prepare_fts_query("向量库 本地部署") == '"向量库" OR "本地部署"'
     # 多词时优先 ≥3 码点词（trigram）；过短词不进 MATCH
     assert prepare_fts_query("合作 教培机构 本地部署") == '"教培机构" OR "本地部署"'
+    assert prepare_fts_query("grok slack") == '"grok" OR "slack"'
 
 
 def test_multikeyword_chinese_query_hits(tmp_path):
@@ -55,7 +56,17 @@ def test_multikeyword_chinese_query_hits(tmp_path):
     assert any(h.source.endswith("教培机构合作会谈材料.md") for h in hits)
 
 
-def test_short_chinese_query_like_fallback(tmp_path):
+def test_latin_keywords_match_when_not_adjacent(tmp_path):
+    fi = FullTextIndex(tmp_path / "fts.db")
+    fi.add(
+        "a.md",
+        ["Grok Bot 定时任务结果通知 Slack 集成 scheduled task"],
+        source="a.md",
+    )
+    fi.add("b.md", ["番茄炒蛋食谱"], source="b.md")
+    hits = fi.query("grok slack", k=5)
+    assert any(h.doc_id == "a.md" for h in hits)
+    assert all(h.doc_id != "b.md" for h in hits)
     fi = FullTextIndex(tmp_path / "fts.db")
     fi.add("a.md", ["数据不能出校园，合作方最关心隐私。"], source="a.md")
     hits = fi.query("合作", k=5)

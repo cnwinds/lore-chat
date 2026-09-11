@@ -38,3 +38,20 @@ def test_low_signal_latin_dropped_when_alone():
 def test_vector_text_uses_signal_terms():
     c = compile_search_query("Media Grant 不透明")
     assert c.vector_text == "Media Grant 不透明"
+
+
+def test_latin_keyword_query_splits_for_and_or():
+    """整句英文关键词不能当成必现邻接短语，否则 grok slack 会搜空。"""
+    c = compile_search_query("grok slack")
+    assert c.signal_terms == ("grok", "slack")
+    assert c.match_terms == ("grok", "slack")
+    assert c.like_terms == ("grok", "slack")
+    assert c.strict_fts == '"grok" AND "slack"'
+    assert c.relaxed_fts == '"grok" OR "slack"'
+    assert c.vector_text == "grok slack"
+
+
+def test_mixed_query_keeps_latin_phrase_atomic():
+    c = compile_search_query("Media Grant 不透明")
+    assert c.signal_terms == ("Media Grant", "不透明")
+    assert '"Media Grant"' in (c.strict_fts or "")
