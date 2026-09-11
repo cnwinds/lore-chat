@@ -33,6 +33,7 @@ from app.engine.agent.tools import (
 from app.engine.agent.tool_progress import ToolProgressExecutor
 from app.engine.source_key import extend_sources
 from app.engine.usage.context import usage_context
+from app.engine.visible_text import VisibleTextStream, strip_protocol_markup
 from app.logging_config import get_logger
 from app.models.llm import ChatWithToolsResult, LLMClient, ToolCall
 
@@ -99,6 +100,8 @@ class AgentToolLoop:
             while tool_call_count < self.settings.agent_max_tool_calls:
                 llm_rounds += 1
                 result: ChatWithToolsResult | None = None
+                text_out = VisibleTextStream()
+                think_out = VisibleTextStream()
                 with usage_context(
                     conversation_id=conversation_id, turn_id=turn_id
                 ):
@@ -125,11 +128,23 @@ class AgentToolLoop:
                                 skipped=chunk.skipped,
                             )
                         if chunk.think_delta:
-                            yield think_delta(chunk.think_delta)
+                            for piece in think_out.push(chunk.think_delta):
+                                yield think_delta(piece)
                         if chunk.text_delta:
-                            yield text_delta(chunk.text_delta)
+                            for piece in text_out.push(chunk.text_delta):
+                                yield text_delta(piece)
                         if chunk.result is not None:
                             result = chunk.result
+                    for piece in think_out.flush():
+                        yield think_delta(piece)
+                    for piece in text_out.flush():
+                        yield text_delta(piece)
+                    if result is not None:
+                        cleaned = strip_protocol_markup(result.content or "")
+                        result = ChatWithToolsResult(
+                            content=cleaned or None,
+                            tool_calls=result.tool_calls,
+                        )
                 if result is None:
                     report.stop_reason = "llm_stream_incomplete"
                     report.detail = f"round={llm_rounds} no ChatWithToolsResult"

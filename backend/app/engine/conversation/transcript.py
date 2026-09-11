@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
+from app.engine.visible_text import strip_protocol_markup
+
 # 写入/改写知识库或会话附件的工具：其 sources/attachments 才算「本轮产出」
 _TURN_OUTPUT_TOOLS = frozenset(
     {
@@ -122,11 +124,11 @@ class ConversationTranscript:
     @staticmethod
     def assistant_content(msg: dict) -> str:
         if msg.get("text"):
-            return str(msg["text"]).strip()
+            return strip_protocol_markup(str(msg["text"]).strip())
         parts: list[str] = []
         for block in msg.get("timeline") or []:
             if block.get("type") == "text" and block.get("content"):
-                part = str(block["content"]).strip()
+                part = strip_protocol_markup(str(block["content"]).strip())
                 if part:
                     parts.append(part)
         return "\n\n".join(parts)

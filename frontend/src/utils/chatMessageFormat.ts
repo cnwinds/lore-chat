@@ -7,6 +7,7 @@ import type {
   SourceRef,
   TimelineBlock,
 } from "../types/chat";
+import { stripProtocolMarkup } from "./visibleText";
 
 export function normalizeDocContext(
   raw: DocContextItem[] | string[] | undefined,
@@ -28,11 +29,11 @@ export function getMessageCopyText(m: ChatMessage): string | null {
   if (m.timeline?.length) {
     const parts = m.timeline
       .filter((b): b is Extract<TimelineBlock, { type: "text" }> => b.type === "text")
-      .map((b) => b.content.trim())
+      .map((b) => stripProtocolMarkup(b.content).trim())
       .filter(Boolean);
     if (parts.length) return parts.join("\n\n");
   }
-  const text = m.text?.trim();
+  const text = stripProtocolMarkup(m.text ?? "").trim();
   return text || null;
 }
 /** 将毫秒格式化为可读耗时 */

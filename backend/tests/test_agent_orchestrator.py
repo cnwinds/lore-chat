@@ -268,6 +268,38 @@ async def test_orchestrator_parallel_generate_image(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_orchestrator_strips_leaked_function_protocol_markup(tmp_path):
+    orchestrator = _make_orchestrator(
+        tmp_path,
+        tool_responses=[
+            {
+                "content": "<old_function_results>\n",
+                "tool_calls": [
+                    ToolCall(id="1", name="search_kb", arguments={"query": "hi"}),
+                ],
+            },
+            {"content": "你好", "tool_calls": []},
+        ],
+    )
+    events = []
+    async for ev in orchestrator.run("hi", mode="no_write"):
+        events.append(ev)
+
+    deltas = []
+    for ev in events:
+        if ev.startswith("event: text_delta\n"):
+            deltas.append(json.loads(ev.split("data: ", 1)[1].strip())["delta"])
+    visible = "".join(deltas)
+    assert "old_function_results" not in visible
+    assert "你好" in visible
+
+    second = orchestrator.llm.calls[1]["messages"]
+    assistant = [m for m in second if m.get("role") == "assistant"]
+    assert assistant
+    assert "old_function_results" not in (assistant[0].get("content") or "")
+
+
+@pytest.mark.asyncio
 async def test_orchestrator_stream_does_not_block_event_loop(tmp_path):
     """同步 LLM 流式迭代不得堵死事件循环（否则聊天中 /api/doc 会一直加载中）。"""
     import asyncio

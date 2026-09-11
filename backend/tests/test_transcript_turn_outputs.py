@@ -119,6 +119,28 @@ def test_llm_history_ignores_non_write_tool_attachments():
     assert "本轮产出" not in history[1]["content"]
 
 
+def test_assistant_content_strips_function_protocol_markup():
+    msg = {"role": "assistant", "text": "<old_function_results>\n你好"}
+    assert ConversationTranscript.assistant_content(msg) == "你好"
+
+
+def test_llm_history_does_not_feed_back_protocol_markup():
+    conv = {
+        "messages": [
+            {"role": "user", "text": "hi"},
+            {
+                "role": "assistant",
+                "timeline": [
+                    {"type": "text", "content": "<old_function_results>"},
+                    {"type": "text", "content": "你好"},
+                ],
+            },
+        ]
+    }
+    history = ConversationTranscript.llm_history(conv)
+    assert history[1] == {"role": "assistant", "content": "你好"}
+
+
 def test_context_excerpt_omits_turn_output_footer():
     conv = {
         "messages": [
