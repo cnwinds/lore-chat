@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from app.engine.agent.events import done, error_event, timeline_state
-from app.engine.agent.prompts import MODE_DEFAULT
+from app.engine.agent.prompts import MODE_DEFAULT, build_role_identity_block
 from app.engine.agent.run_report import AgentRunReport
 from app.engine.chat.role_context_prefetch import (
     build_prefetch_system_message,
@@ -97,14 +97,17 @@ class TurnExecutionHub:
         try:
             rid = self.conversations.get_role_id(cid)
             role = self.roles.get(rid)
-            base_prompt = (role.get("system_prompt") or "").strip()
-            onboarding_status = role.get("onboarding_status", "none")
-            if onboarding_status == "active":
-                onboarding_layer = self._build_onboarding_layer(role.get("name", "角色"))
-                if base_prompt:
-                    return f"{onboarding_layer}\n\n{base_prompt}"
-                return onboarding_layer
-            return base_prompt
+            onboarding_layer = ""
+            if role.get("onboarding_status", "none") == "active":
+                onboarding_layer = self._build_onboarding_layer(
+                    role.get("name", "角色")
+                )
+            return build_role_identity_block(
+                name=role.get("name") or "角色",
+                system_prompt=role.get("system_prompt") or "",
+                avatar=role.get("avatar"),
+                onboarding_layer=onboarding_layer,
+            )
         except KeyError:
             return ""
         except Exception:

@@ -421,6 +421,86 @@ def test_role_system_prompt_in_build(tmp_path):
     assert "【当前角色】" in text
 
 
+def test_role_identity_block_name_without_persona():
+    """空人设仍须注入角色名与「你是谁」——否则模型会退回通用助手人格。"""
+    from app.engine.agent.prompts import (
+        build_role_identity_block,
+        build_system_prompt,
+    )
+
+    block = build_role_identity_block(name="svg大师", system_prompt="", avatar=None)
+    assert "svg大师" in block
+    assert "你当前就是这个角色" in block
+    assert "尚未设置" in block
+
+    text = build_system_prompt(role_system_prompt=block)
+    assert "【当前角色】" in text
+    assert "svg大师" in text
+    assert "对外身份" in text or "【当前角色】为准" in text
+
+
+def test_role_identity_block_with_persona_and_avatar():
+    from app.engine.agent.prompts import build_role_identity_block
+
+    block = build_role_identity_block(
+        name="股票研究员",
+        system_prompt="专注 A 股基本面",
+        avatar="媒体/生成/2026-09/avatar.png",
+    )
+    assert "股票研究员" in block
+    assert "专注 A 股基本面" in block
+    assert "媒体/生成/2026-09/avatar.png" in block
+    assert "尚未写人设" not in block
+
+
+def test_turn_hub_always_injects_role_identity(tmp_path):
+    """会话归属角色即使人设为空，也要向 Agent 注入身份卡。"""
+    from app.engine.agent.prompts import build_system_prompt
+    from app.engine.chat.turn_hub import TurnExecutionHub
+
+    roles = _roles(tmp_path)
+    conv = _conv(tmp_path)
+    rid = roles.create(name="svg大师", system_prompt="")["id"]
+    # 存量角色可能是 none（引导功能上线前）；与 active 一样须有身份卡
+    roles.update(rid, onboarding_status="none")
+    cid = conv.create(role_id=rid)
+
+    hub = TurnExecutionHub(_FakeAgentForRole(), conv, roles=roles)
+    block = hub._role_system_prompt_for(cid)
+    assert "svg大师" in block
+    assert "你当前就是这个角色" in block
+    assert "[角色引导]" not in block
+
+    assembled = build_system_prompt(role_system_prompt=block)
+    assert "【当前角色】" in assembled
+    assert "svg大师" in assembled
+    assert "对外身份以【当前角色】为准" in assembled
+
+
+def test_turn_hub_identity_includes_onboarding_layer(tmp_path):
+    from app.engine.chat.turn_hub import TurnExecutionHub
+
+    roles = _roles(tmp_path)
+    conv = _conv(tmp_path)
+    rid = roles.create(name="新人设", system_prompt="")["id"]
+    assert roles.get(rid)["onboarding_status"] == "active"
+    cid = conv.create(role_id=rid)
+
+    hub = TurnExecutionHub(_FakeAgentForRole(), conv, roles=roles)
+    block = hub._role_system_prompt_for(cid)
+    assert "[角色引导]" in block
+    assert "新人设" in block
+    assert "你当前就是这个角色" in block
+
+
+class _FakeAgentForRole:
+    tools = type("T", (), {"sandbox": None})()
+
+    async def run(self, *a, **k):
+        if False:
+            yield None
+
+
 def test_role_schedules_crud(tmp_path):
     store = _roles(tmp_path)
     rid = store.create(name="定时角色")["id"]

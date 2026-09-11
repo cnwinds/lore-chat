@@ -19,7 +19,7 @@ _WEEKDAY_ZH = "一二三四五六日"
 # - 工具 function 的 description / parameters：OpenAI 工具 schema，以 tool_catalog 为准。
 # ---------------------------------------------------------------------------
 
-SYSTEM_PROMPT = """你是 lorechat 知识库助手。用户只管聊天解决问题，你在后台按规约维护知识库。
+SYSTEM_PROMPT = """你是 lorechat 上的助手运行时。对外身份以【当前角色】为准；若上方无【当前角色】，则默认以知识库助手身份工作。用户只管聊天解决问题，你在后台按规约维护知识库。
 
 **规约来源**：上方已注入《心法》《戒律》（若存在），规定落库、归档、检索、目录规划、编辑等**行为**；本节只补充**事实铁律**、**工具必填参数**与**界面机制**，与之冲突时以《戒律》为准。
 
@@ -92,6 +92,44 @@ def _current_date_context() -> str:
     )
 
 
+def build_role_identity_block(
+    *,
+    name: str,
+    system_prompt: str = "",
+    avatar: str | None = None,
+    onboarding_layer: str = "",
+) -> str:
+    """组装角色身份卡正文（不含【当前角色】标题；由 build_system_prompt 包裹）。
+
+    名称与「你是谁」是运行时事实，须恒注入；system_prompt 只是可选的工作方式叠层。
+    空人设时仍注入名称，避免模型退回内置层的默认知识库助手人格。
+    """
+    role_name = (name or "").strip() or "角色"
+    prompt = (system_prompt or "").strip()
+    avatar_path = (avatar or "").strip()
+
+    lines = [
+        f"名称：{role_name}",
+        "你当前就是这个角色。用户说「你」「自己」「本助手」时均指本角色，而非其它角色。",
+    ]
+    if avatar_path:
+        lines.append(f"头像：已设置（{avatar_path}）。")
+    else:
+        lines.append("头像：尚未设置。")
+    if prompt:
+        lines.append(f"身份与工作方式：\n{prompt}")
+    else:
+        lines.append(
+            "本角色尚未写人设；仍须以角色名称自称与行事，不要冒充其它角色。"
+        )
+
+    body = "\n".join(lines)
+    layer = (onboarding_layer or "").strip()
+    if layer:
+        return f"{layer}\n\n{body}"
+    return body
+
+
 def build_system_prompt(
     mode: str = MODE_DEFAULT,
     system_layer_text: str = "",
@@ -103,8 +141,8 @@ def build_system_prompt(
 
     注入顺序（前 → 后，冲突时《戒律》优先于内置层）：
       1. 系统控制层：知识库 系统/心法.md + 系统/戒律.md（用户可编辑）
-      2. 角色 system_prompt（若有；叠加身份与工作方式）
-      3. SYSTEM_PROMPT：事实铁律 + 工具契约 + 产品机制（代码内置，不重复戒律）
+      2. 角色身份卡（名称恒注入；人设/引导层若有则叠加）
+      3. SYSTEM_PROMPT：事实铁律 + 工具契约 + 产品机制（代码内置，不重复戒律；人格以【当前角色】为准）
       4. user_memory（若有）
       5. 当前时间
       6. 本轮 mode / 联网开关后缀
@@ -139,8 +177,8 @@ def build_system_prompt(
     role_block = ""
     if role_system_prompt and role_system_prompt.strip():
         role_block = (
-            "【当前角色】以下为当前角色的身份与工作方式（叠加在心法/戒律之上；"
-            "与《戒律》冲突时以《戒律》为准）：\n"
+            "【当前角色】以下为当前角色的身份（名称与「你是谁」恒生效）及可选工作方式"
+            "（叠加在心法/戒律之上；与《戒律》冲突时以《戒律》为准）：\n"
             f"{role_system_prompt.strip()}\n\n"
         )
     bridge = ""
