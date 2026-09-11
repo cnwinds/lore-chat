@@ -133,7 +133,7 @@ HTTP `/api/roles*` 保留用于 UI shell（列表、ensure-active、可选右栏
 | PATCH/DELETE | `/api/roles/{id}/schedules/{sid}` | 改启停与定时规格 / 删除 |
 | POST | `/api/conversations` | body 可选 `{role_id, title}`；缺省绑默认角色 |
 | GET | `/api/conversations?role_id=` | 可选按角色过滤 |
-| GET | `/api/conversations/search` | 会话全文搜索，可选按角色过滤 |
+| GET | `/api/conversations/search` | 工作区搜索（会话 FTS+向量，可选角色名与知识库）；`scope=messages\|roles\|files\|all`，消息可按 `role_id` 过滤 |
 
 ### 3.4 Agent 注入
 
@@ -147,7 +147,7 @@ HTTP `/api/roles*` 保留用于 UI shell（列表、ensure-active、可选右栏
 | 模块 | 改动 |
 |------|------|
 | [`AppShell.tsx`](../frontend/src/components/app/AppShell.tsx) | 三栏布局容器：左（角色列表 + KB）、中（Chat）、右（RoleConfigPanel） |
-| [`RoleList.tsx`](../frontend/src/components/role/RoleList.tsx) | 角色列表：始终可见；角色内搜索定位；「新话题」 |
+| [`RoleList.tsx`](../frontend/src/components/role/RoleList.tsx) | 角色列表：始终可见；搜索图标打开工作区搜索面板；「＋」新建角色 |
 | [`RoleConfigPanel.tsx`](../frontend/src/components/role/RoleConfigPanel.tsx) | 右侧角色配置面板 |
 | [`ChatMessageList.tsx`](../frontend/src/components/chat/ChatMessageList.tsx) | 多段时间线 + 段间分隔 |
 | [`useRoleTimeline.ts`](../frontend/src/hooks/chat/useRoleTimeline.ts) | 加载角色 timeline |

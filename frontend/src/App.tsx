@@ -252,6 +252,9 @@ function AppMain() {
           onSearchHit: (hit) => {
             conversation.sidebarProps.onSearchHit?.(hit);
           },
+          onSelectFile: (path) => {
+            bridge.handleSelectFile(path);
+          },
           onDeleteRole: (r) => {
             void (async () => {
               await conversation.handleDeleteRole(r.id);

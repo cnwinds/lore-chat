@@ -351,6 +351,66 @@ def test_conversations_search_http(client):
     assert hit.status_code == 200
     data = hit.json()
     assert any(h["conversation_id"] == cid for h in data["hits"])
+    assert any(h.get("kind", "message") == "message" for h in data["hits"])
+
+
+def test_conversations_search_vector_without_fts(client):
+    from app.index.message_chunk import MessageChunk
+
+    cid = client.post("/api/conversations", json={}).json()["id"]
+    store = client.app.state.container.conversations
+    vec = client.app.state.container.conversation_vector
+    llm = client.app.state.container.llm
+    token = "向量独有词zxqv"
+    store.append_exchange(
+        cid,
+        token,
+        {"role": "assistant", "text": f"回复 {token}"},
+    )
+    conv = store.get(cid)
+    for m in conv["messages"]:
+        text = m.get("text") or ""
+        chunk = MessageChunk(0, 0, len(text), text)
+        vec.upsert_message_chunks(
+            conversation_id=cid,
+            message_id=m["id"],
+            role=m["role"],
+            ts=m.get("ts") or "",
+            conversation_title=conv["title"],
+            chunks=[chunk],
+            embeddings=llm.embed([text]),
+        )
+    hit = client.get("/api/conversations/search", params={"q": token, "k": 10})
+    assert hit.status_code == 200
+    assert any(h["conversation_id"] == cid for h in hit.json()["hits"])
+
+
+def test_conversations_search_roles_and_files(client):
+    created = client.post(
+        "/api/roles", json={"name": "新闻助手", "system_prompt": "写快讯"}
+    )
+    assert created.status_code == 200
+    roles = client.get(
+        "/api/conversations/search",
+        params={"q": "新闻", "scope": "roles", "k": 10},
+    )
+    assert roles.status_code == 200
+    assert any(
+        h["kind"] == "role" and h["title"] == "新闻助手" for h in roles.json()["hits"]
+    )
+
+    client.app.state.container.indexer.reindex_doc(
+        "笔记/浙江天气.md", "浙江杭州今天多云"
+    )
+    files = client.get(
+        "/api/conversations/search",
+        params={"q": "浙江杭州", "scope": "files", "k": 10},
+    )
+    assert files.status_code == 200
+    assert any(
+        h["kind"] == "file" and h.get("path") == "笔记/浙江天气.md"
+        for h in files.json()["hits"]
+    )
 
 
 def test_role_system_prompt_in_build(tmp_path):

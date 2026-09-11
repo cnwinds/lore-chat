@@ -1,8 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { createPortal } from "react-dom";
 import {
   listRoles,
-  searchConversations,
   type ConversationSearchHit,
   type Role,
 } from "../../api";
@@ -11,6 +10,7 @@ import {
   roleReplyPreview,
   sortRolesByRecentActivity,
 } from "../../utils/roleListPreview";
+import { GlobalSearchPalette } from "./GlobalSearchPalette";
 import { RoleAvatar } from "./RoleAvatar";
 
 type RoleMenu = {
@@ -25,6 +25,7 @@ type Props = {
   onNewRole: () => void;
   onDeleteRole?: (role: Role) => void | Promise<void>;
   onSearchHit?: (hit: ConversationSearchHit) => void;
+  onSelectFile?: (path: string) => void;
   busyRoleIds?: string[];
   refreshKey?: number;
 };
@@ -35,17 +36,15 @@ export function RoleList({
   onNewRole,
   onDeleteRole,
   onSearchHit,
+  onSelectFile,
   busyRoleIds = [],
   refreshKey = 0,
 }: Props) {
   const [roles, setRoles] = useState<Role[]>([]);
   const [loading, setLoading] = useState(true);
-  const [query, setQuery] = useState("");
-  const [hits, setHits] = useState<ConversationSearchHit[]>([]);
-  const [searching, setSearching] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const [menu, setMenu] = useState<RoleMenu | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-  const searchGenRef = useRef(0);
   const orderedRoles = useMemo(
     () => sortRolesByRecentActivity(roles, busyRoleIds),
     [roles, busyRoleIds],
@@ -68,30 +67,14 @@ export function RoleList({
   }, [refreshKey]);
 
   useEffect(() => {
-    const q = query.trim();
-    if (!q || !activeRoleId) {
-      setHits([]);
-      setSearching(false);
-      return;
+    function onKey(e: KeyboardEvent) {
+      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "k") return;
+      e.preventDefault();
+      setSearchOpen(true);
     }
-    const gen = ++searchGenRef.current;
-    setSearching(true);
-    const t = window.setTimeout(() => {
-      void searchConversations({ q, roleId: activeRoleId, k: 12 })
-        .then((res) => {
-          if (gen !== searchGenRef.current) return;
-          setHits(res.hits);
-        })
-        .catch(() => {
-          if (gen !== searchGenRef.current) return;
-          setHits([]);
-        })
-        .finally(() => {
-          if (gen === searchGenRef.current) setSearching(false);
-        });
-    }, 220);
-    return () => window.clearTimeout(t);
-  }, [query, activeRoleId]);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   useEffect(() => {
     if (!menu) return;
@@ -115,7 +98,7 @@ export function RoleList({
     };
   }, [menu]);
 
-  function openMenu(e: React.MouseEvent, role: Role) {
+  function openMenu(e: MouseEvent<HTMLButtonElement>, role: Role) {
     e.preventDefault();
     e.stopPropagation();
     const pad = 8;
@@ -147,6 +130,23 @@ export function RoleList({
       <div className="role-list-toolbar">
         <button
           type="button"
+          className="role-list-search-btn"
+          onClick={() => setSearchOpen(true)}
+          title="搜索"
+          aria-label="搜索"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+            <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
+            <path
+              d="M20 20l-3.5-3.5"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+            />
+          </svg>
+        </button>
+        <button
+          type="button"
           className="role-list-new-btn"
           onClick={onNewRole}
           title="新建角色"
@@ -162,59 +162,6 @@ export function RoleList({
           </svg>
         </button>
       </div>
-      <div className="role-list-search">
-        <svg
-          className="role-list-search-icon"
-          width="14"
-          height="14"
-          viewBox="0 0 24 24"
-          fill="none"
-          aria-hidden
-        >
-          <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
-          <path
-            d="M20 20l-3.5-3.5"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-          />
-        </svg>
-        <input
-          type="search"
-          className="role-list-search-input"
-          placeholder="搜索"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          disabled={!activeRoleId}
-          aria-label="搜索本角色会话"
-        />
-      </div>
-
-      {query.trim() && (
-        <div className="role-list-search-results">
-          {searching && hits.length === 0 ? (
-            <div className="role-list-loading">搜索中…</div>
-          ) : hits.length === 0 ? (
-            <div className="role-list-empty">无匹配</div>
-          ) : (
-            hits.map((hit) => (
-              <button
-                key={`${hit.conversation_id}:${hit.message_id || ""}:${hit.ts || ""}`}
-                type="button"
-                className="role-search-hit"
-                onClick={() => {
-                  onSearchHit?.(hit);
-                  setQuery("");
-                  setHits([]);
-                }}
-              >
-                <div className="role-search-hit-title">{hit.title}</div>
-                <div className="role-search-hit-snippet">{hit.snippet}</div>
-              </button>
-            ))
-          )}
-        </div>
-      )}
 
       <div className="role-list-scroll">
         {loading && roles.length === 0 ? (
@@ -262,6 +209,15 @@ export function RoleList({
           })
         )}
       </div>
+
+      <GlobalSearchPalette
+        open={searchOpen}
+        roles={roles}
+        onClose={() => setSearchOpen(false)}
+        onSelectRole={onSelectRole}
+        onSearchHit={(hit) => onSearchHit?.(hit)}
+        onSelectFile={onSelectFile}
+      />
 
       {menu &&
         createPortal(

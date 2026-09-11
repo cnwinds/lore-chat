@@ -103,8 +103,26 @@ describe("RoleList", () => {
     );
     expect(await screen.findByText("通用")).toBeInTheDocument();
     expect(screen.getByText("暂无对话")).toBeInTheDocument();
-    expect(screen.getByLabelText("搜索本角色会话")).toBeInTheDocument();
+    expect(screen.getByLabelText("搜索")).toBeInTheDocument();
     expect(screen.getByLabelText("新建角色")).toBeInTheDocument();
+    expect(screen.queryByLabelText("搜索本角色会话")).not.toBeInTheDocument();
+  });
+
+  it("opens the search palette from the toolbar icon", async () => {
+    const user = userEvent.setup();
+    render(
+      <RoleList
+        activeRoleId="default"
+        onSelectRole={vi.fn()}
+        onNewRole={vi.fn()}
+      />,
+    );
+    await screen.findByText("通用");
+    await user.click(screen.getByLabelText("搜索"));
+    expect(
+      await screen.findByLabelText("搜索角色、消息和文件"),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "消息" })).toBeInTheDocument();
   });
 
   it("lists recently active roles first", async () => {

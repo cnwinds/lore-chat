@@ -4,6 +4,7 @@ import {
   formatMessageTime,
   formatRoleListTime,
   formatRoutineRunTime,
+  formatSearchRelativeTime,
   formatSidebarConversationTime,
   parseStoredInstant,
   ymdInDisplayZone,
@@ -76,6 +77,22 @@ describe("formatRoleListTime", () => {
   it("uses year when crossing year boundary", () => {
     expect(formatRoleListTime("2025-12-31T10:00:00+08:00", now)).toBe(
       "2025/12/31",
+    );
+  });
+});
+
+describe("formatSearchRelativeTime", () => {
+  const now = new Date("2026-08-07T16:00:00+08:00");
+
+  it("uses just now / minutes / days", () => {
+    expect(formatSearchRelativeTime("2026-08-07T15:59:30+08:00", now)).toBe(
+      "刚刚",
+    );
+    expect(formatSearchRelativeTime("2026-08-07T15:48:00+08:00", now)).toBe(
+      "12分钟前",
+    );
+    expect(formatSearchRelativeTime("2026-07-26T16:00:00+08:00", now)).toBe(
+      "12天前",
     );
   });
 });
