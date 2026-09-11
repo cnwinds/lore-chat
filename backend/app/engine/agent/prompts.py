@@ -60,7 +60,7 @@ SYSTEM_PROMPT = """你是 lorechat 上的助手运行时。对外身份以【当
 
 ## 产品机制（非《戒律》条文）
 
-1. **用户口令 → 工具**（具体写法与禁忌见《戒律》一、二、八）：记录类文档 → write_doc；脚本/代码文件 → write_kb_file；归档类 → summarize_conversation；移动/重命名 → move_entry；明确禁写 → 勿调用 write_doc / write_kb_file / summarize_conversation；明确要求删除 → delete_kb；要求联网 → web_search（若本轮可用）；要跑 KB 里的脚本 → stage_to_sandbox 再 sandbox_run。
+1. **用户口令 → 工具**（具体写法与禁忌见《戒律》一、二、八）：记录类文档 → write_doc；脚本/代码文件 → write_kb_file；归档类 → summarize_conversation；移动/重命名 → move_entry；明确禁写 → 勿调用 write_doc / write_kb_file / summarize_conversation；明确要求删除 → delete_kb；要求联网 → web_search（以本轮工具列表与【联网】后缀为准；有工具就调用，禁止凭印象声称不可用）；要跑 KB 里的脚本 → stage_to_sandbox 再 sandbox_run。
 2. **工作托盘**：system 可能注入「用户当前工作托盘」——用户标明本轮主要针对这些文件或目录工作。
    - 未指定路径的改字/改段 → edit_doc(path=主文档)
    - 托盘中的**目录**：优先在该目录范围内检索/读写，勿擅自跑到无关路径
@@ -130,12 +130,35 @@ def build_role_identity_block(
     return body
 
 
+def _web_capability_suffix(*, web_enabled: bool, search_configured: bool) -> str:
+    """本轮联网能力：只陈述当前门控结果，不让模型自行猜测是否可用。"""
+    if not web_enabled:
+        return (
+            "\n\n【联网】本轮未开启联网搜索，你没有 web_search 工具。"
+            "可检索本地知识库、读取用户提供的链接（fetch_url）。"
+            "若本地知识库无相关依据，如实说明「本地未找到，可开启联网搜索后重试」，"
+            "禁止凭记忆补全或假装已联网。"
+        )
+    if not search_configured:
+        return (
+            "\n\n【联网】用户已打开联网搜索，但未配置搜索提供商，你没有 web_search 工具。"
+            "可检索本地知识库、读取用户提供的链接（fetch_url）。"
+            "不要假装已经联网搜索。"
+        )
+    return (
+        "\n\n【联网】本轮已开启联网搜索，工具列表含 web_search。"
+        "需要网上的事实、新闻、版本时直接调用；"
+        "不要把单次失败或没有结果说成搜索未开启或功能不可用。"
+    )
+
+
 def build_system_prompt(
     mode: str = MODE_DEFAULT,
     system_layer_text: str = "",
     web_enabled: bool = True,
     user_memory: str = "",
     role_system_prompt: str = "",
+    search_configured: bool = True,
 ) -> str:
     """构建 system prompt。
 
@@ -159,13 +182,10 @@ def build_system_prompt(
     else:
         suffix = ""
 
-    if not web_enabled:
-        suffix += (
-            "\n\n【联网】本轮未开启联网搜索，你没有 web_search 工具。"
-            "可检索本地知识库、读取用户提供的链接（fetch_url）。"
-            "若本地知识库无相关依据，如实说明「本地未找到，可开启联网搜索后重试」，"
-            "禁止凭记忆补全或假装已联网。"
-        )
+    suffix += _web_capability_suffix(
+        web_enabled=web_enabled,
+        search_configured=search_configured,
+    )
 
     prefix = ""
     if system_layer_text and system_layer_text.strip():

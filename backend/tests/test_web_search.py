@@ -5,6 +5,7 @@ import pytest
 
 from app.config import Settings
 from app.engine.web.search import SearchResult, TavilyProvider, WebSearch
+from app.engine.web.search_backends import WEB_SEARCH_TIMEOUT
 from app.engine.web.search_providers import (
     DuplicateSearchProviderError,
     migrate_search_providers,
@@ -17,6 +18,21 @@ from app.engine.web.search_router import (
     select_search_provider,
 )
 from app.models.cooldown import CooldownStore, ErrorClass
+
+
+@pytest.mark.asyncio
+async def test_tavily_provider_uses_explicit_timeout():
+    provider = TavilyProvider("test-key")
+    mock_data = {"results": []}
+    with patch("app.engine.web.search_backends.httpx.AsyncClient") as mock_cls:
+        mock_client = AsyncMock()
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = mock_data
+        mock_resp.raise_for_status = MagicMock()
+        mock_client.post = AsyncMock(return_value=mock_resp)
+        mock_cls.return_value.__aenter__.return_value = mock_client
+        await provider.search("test", k=3)
+    mock_cls.assert_called_with(timeout=WEB_SEARCH_TIMEOUT)
 
 
 @pytest.mark.asyncio
@@ -209,6 +225,52 @@ def test_clear_cooldown_restores_provider(tmp_path):
     store.reenable("tavily")
     assert store.is_available("tavily")
     assert select_search_provider(settings, store).entry.id == "tavily"
+
+
+@pytest.mark.asyncio
+async def test_search_retries_transient_before_cooldown(tmp_path):
+    settings = Settings(
+        kb_path=tmp_path,
+        search_providers=[
+            {"id": "tavily", "provider": "tavily", "api_key": "a"},
+        ],
+    )
+    store = CooldownStore(tmp_path / "cd.json")
+    ws = WebSearch(settings, cooldown=store)
+    calls = {"n": 0}
+
+    async def flaky(self, query: str, k: int = 5):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise httpx.ReadTimeout("timed out")
+        return [SearchResult(title="ok", url="https://x.com", snippet="s")]
+
+    with patch("app.engine.web.search_backends.TavilyProvider.search", flaky):
+        results, err = await ws.search("q")
+
+    assert err is None
+    assert len(results) == 1
+    assert calls["n"] == 2
+    assert store.is_available("tavily")
+    assert store.get("tavily").consecutive_failures == 0
+
+
+@pytest.mark.asyncio
+async def test_search_cooling_error_is_temporary(tmp_path):
+    settings = Settings(
+        kb_path=tmp_path,
+        search_providers=[
+            {"id": "tavily", "provider": "tavily", "api_key": "a"},
+        ],
+    )
+    store = CooldownStore(tmp_path / "cd.json")
+    store.record_failure("tavily", ErrorClass.TRANSIENT, error="timed out")
+    ws = WebSearch(settings, cooldown=store)
+    results, err = await ws.search("q")
+    assert results == []
+    assert err is not None
+    assert "暂时失败" in err
+    assert "均不可用" not in err
 
 
 @pytest.mark.asyncio

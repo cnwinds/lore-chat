@@ -172,6 +172,7 @@ def test_classify_error():
     assert classify_error("RateLimitError: …") == ErrorClass.RATE_LIMIT
     assert classify_error("Invalid API Key") == ErrorClass.AUTH
     assert classify_error("connection timeout") == ErrorClass.TRANSIENT
+    assert classify_error("All connection attempts failed") == ErrorClass.TRANSIENT
     assert classify_error("model does not support image") == ErrorClass.CAPABILITY
     assert classify_error("model_not_found") == ErrorClass.CONFIG
     assert classify_error("The model `foo` does not exist") == ErrorClass.CONFIG

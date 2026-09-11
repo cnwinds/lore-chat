@@ -330,7 +330,7 @@ TOOL_DEFINITIONS: list[dict] = [
         "type": "function",
         "function": {
             "name": "web_search",
-            "description": "联网搜索，获取网页摘要（需已配置搜索 API）",
+            "description": "联网搜索，获取网页摘要。本轮已下发即表示可用，直接查询。",
             "parameters": {
                 "type": "object",
                 "properties": {

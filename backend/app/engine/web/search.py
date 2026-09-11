@@ -13,7 +13,10 @@ from app.engine.web.search_router import (
     resolve_search_candidates,
     select_search_provider,
 )
-from app.models.cooldown import CooldownStore, classify_error, is_local_abort
+from app.models.cooldown import CooldownStore, ErrorClass, classify_error, is_local_abort
+
+# 瞬时超时/断连时同一提供商再试一次，避免单次抖动立刻冷却。
+_TRANSIENT_RETRIES = 1
 
 __all__ = [
     "BraveSearchProvider",
@@ -56,20 +59,31 @@ class WebSearch:
                 )
             except NoSearchProviderAvailable:
                 if last_exc is not None:
-                    return [], f"搜索失败：{last_exc}"
-                return [], "搜索提供商均不可用（冷却或已禁用），请稍后重试或在设置中调整"
+                    return [], f"搜索暂时失败：{last_exc}"
+                return [], "搜索暂时失败：提供商冷却中，请稍后重试"
 
             entry = sel.entry
-            try:
-                results = await sel.candidate.provider.search(query, k=k)
-            except BaseException as e:
-                if is_local_abort(e):
-                    raise
-                last_exc = e
-                self.cooldown.record_failure(
-                    entry.id, classify_error(e), error=str(e)
-                )
-                attempted.add(entry.id)
+            results: list[SearchResult] | None = None
+            for attempt in range(_TRANSIENT_RETRIES + 1):
+                try:
+                    results = await sel.candidate.provider.search(query, k=k)
+                    break
+                except BaseException as e:
+                    if is_local_abort(e):
+                        raise
+                    last_exc = e
+                    if (
+                        classify_error(e) == ErrorClass.TRANSIENT
+                        and attempt < _TRANSIENT_RETRIES
+                    ):
+                        continue
+                    self.cooldown.record_failure(
+                        entry.id, classify_error(e), error=str(e)
+                    )
+                    attempted.add(entry.id)
+                    results = None
+                    break
+            if results is None:
                 continue
 
             self.cooldown.record_success(entry.id)

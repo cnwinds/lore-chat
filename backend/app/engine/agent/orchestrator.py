@@ -84,11 +84,11 @@ class AgentOrchestrator:
             self.tools.image_tools.image_gen is not None
             and self.tools.image_tools.image_gen.configured
         )
-        web_search_enabled = web_enabled and search_configured
         messages = build_agent_messages(
             user_text,
             mode=mode,
-            web_enabled=web_search_enabled,
+            web_enabled=web_enabled,
+            search_configured=search_configured,
             system_layer_text=system_layer_text,
             user_memory=user_memory,
             history=history,

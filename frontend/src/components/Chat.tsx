@@ -524,6 +524,7 @@ export function Chat({
           primary_doc: ctx.primary ?? undefined,
         },
         ctx,
+        { webEnabled },
       );
       return;
     }
@@ -743,7 +744,9 @@ export function Chat({
         });
         if (!streamingForView) void outbound.flushQueue();
       } else {
-        void runAgentStream(result.continue_prompt, choiceLabel);
+        void runAgentStream(result.continue_prompt, choiceLabel, undefined, undefined, {
+          webEnabled,
+        });
       }
       return;
     }
