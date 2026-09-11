@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { SharePage } from "../pages/SharePage";
 import * as shareApi from "../api/share";
 
@@ -20,6 +20,7 @@ describe("SharePage", () => {
   });
 
   afterEach(() => {
+    cleanup();
     document.title = "";
     sessionStorage.clear();
   });
@@ -137,7 +138,7 @@ describe("SharePage", () => {
 
     await waitFor(() => {
       expect(screen.getByText("分享不可用")).toBeInTheDocument();
+      expect(screen.queryByPlaceholderText("访问密码")).not.toBeInTheDocument();
     });
-    expect(screen.queryByPlaceholderText("访问密码")).not.toBeInTheDocument();
   });
 });
