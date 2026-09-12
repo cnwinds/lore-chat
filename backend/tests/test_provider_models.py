@@ -5,14 +5,30 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 import httpx
+import pytest
 
 from app.config import Settings
-from app.models.catalog import catalog_hit_for_model_id
+from app.models.catalog import (
+    catalog_hit_for_model_id,
+    get_active_models_dev_store,
+    set_active_models_dev_store,
+)
 from app.models.provider_models import (
     list_provider_models,
     parse_models_list_payload,
 )
 from app.settings_store import resolve_api_key_from_settings
+
+
+@pytest.fixture(autouse=True)
+def _isolate_models_dev_store():
+    """本文件测补充 JSON / 远程列表，不能吃到其它用例留下的进程级目录。"""
+    prev = get_active_models_dev_store()
+    set_active_models_dev_store(None)
+    try:
+        yield
+    finally:
+        set_active_models_dev_store(prev)
 
 
 def test_parse_models_list_payload_openai_shape():
