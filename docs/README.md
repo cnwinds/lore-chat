@@ -6,6 +6,6 @@
 |------|------|
 | [adr/](adr/README.md) | 架构决策（已采纳，不删不改写原文） |
 | [product-multi-role.md](product-multi-role.md) | 多角色产品/界面设计（ADR 2026-09-09 配套） |
-| [product-external-chat-api.md](product-external-chat-api.md) | 对外聊天 API 草案（Key、独立会话页、只读 KB、专用沙箱） |
+| [product-external-chat-api.md](product-external-chat-api.md) | 对外聊天 API（隐藏角色 + 设置里的 Key 与历史，待确认） |
 | [role-scoped-sandbox.md](role-scoped-sandbox.md) | 每角色执行沙箱池（方案 C）摘要 |
 | [brand/](brand/logo.html) | Logo / 字标资源与生成脚本 |
