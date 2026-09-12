@@ -15,6 +15,20 @@ SEARCH_SCOPES = frozenset({"all", "messages", "roles", "files"})
 _SNIPPET_LIMIT = 160
 
 
+def _list_sidebar_roles(roles) -> list[dict[str, Any]]:
+    if not hasattr(roles, "list_all"):
+        return []
+    try:
+        listed = roles.list_all(visibility="sidebar")
+    except TypeError:
+        listed = roles.list_all()
+    return [
+        role
+        for role in listed
+        if (role.get("visibility") or "sidebar") != "hidden"
+    ]
+
+
 def _snippet(text: str, query: str = "", limit: int = _SNIPPET_LIMIT) -> str:
     cleaned = (text or "").strip().replace("\n", " ")
     if not cleaned:
@@ -165,12 +179,7 @@ def search_workspace(
     tiers: list[str] = []
 
     if kind in ("all", "roles"):
-        listed = (
-            roles.list_all(visibility="sidebar")
-            if hasattr(roles, "list_all")
-            else roles.list_all()
-        )
-        hits.extend(match_roles(listed, query, k=limit))
+        hits.extend(match_roles(_list_sidebar_roles(roles), query, k=limit))
         if hits:
             tiers.append("name")
 

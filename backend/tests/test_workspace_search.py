@@ -56,7 +56,9 @@ class _Page:
 def test_search_workspace_empty_and_scope():
     retriever = SimpleNamespace(search=lambda *a, **k: _Page([]))
     conversations = SimpleNamespace(list_all=lambda: [], get_role_id=lambda cid: "default")
-    roles = SimpleNamespace(list_all=lambda: [], get=lambda rid: {"name": "通用"})
+    roles = SimpleNamespace(
+        list_all=lambda **k: [], get=lambda rid: {"name": "通用"}
+    )
     assert search_workspace(
         retriever=retriever,
         conversations=conversations,
@@ -65,7 +67,7 @@ def test_search_workspace_empty_and_scope():
     ) == {"hits": [], "tier": "none"}
 
     roles = SimpleNamespace(
-        list_all=lambda: [
+        list_all=lambda **k: [
             {"id": "r1", "name": "新闻助手", "system_prompt": "", "avatar": None}
         ],
         get=lambda rid: {"name": "新闻助手", "avatar": None},
@@ -79,6 +81,41 @@ def test_search_workspace_empty_and_scope():
     )
     assert out["hits"][0]["kind"] == "role"
     assert out["tier"] == "name"
+
+
+def test_search_workspace_skips_hidden_api_roles():
+    retriever = SimpleNamespace(search=lambda *a, **k: _Page([]))
+    conversations = SimpleNamespace(list_all=lambda: [], get_role_id=lambda cid: "default")
+
+    def list_all(visibility=None):
+        items = [
+            {"id": "r1", "name": "新闻助手", "visibility": "sidebar"},
+            {
+                "id": "api_abcd",
+                "name": "新闻助手 · 脚本",
+                "visibility": "hidden",
+            },
+        ]
+        if visibility:
+            return [r for r in items if r["visibility"] == visibility]
+        return items
+
+    roles = SimpleNamespace(
+        list_all=list_all,
+        get=lambda rid: {
+            "id": rid,
+            "name": "新闻助手 · 脚本" if rid.startswith("api_") else "新闻助手",
+            "visibility": "hidden" if rid.startswith("api_") else "sidebar",
+        },
+    )
+    out = search_workspace(
+        retriever=retriever,
+        conversations=conversations,
+        roles=roles,
+        q="新闻",
+        scope="roles",
+    )
+    assert [h["role_id"] for h in out["hits"]] == ["r1"]
 
 
 def test_hit_has_query_evidence_requires_visible_term():
@@ -120,7 +157,7 @@ def test_snippet_centers_on_query():
 def test_search_workspace_drops_vector_neighbors_without_query():
     conversations = SimpleNamespace(get_role_id=lambda cid: "default")
     roles = SimpleNamespace(
-        list_all=lambda: [],
+        list_all=lambda **k: [],
         get=lambda rid: {"name": "通用", "avatar": None},
     )
 
