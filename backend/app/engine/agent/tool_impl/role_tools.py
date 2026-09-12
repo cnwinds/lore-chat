@@ -17,6 +17,113 @@ class RoleTools:
             return self.conversations.get_role_id(conversation_id)
         raise ValueError("未指定 role_id 且当前会话无关联角色")
 
+    def _current_role_id(self, conversation_id: str | None) -> str | None:
+        if not conversation_id or self.conversations is None:
+            return None
+        try:
+            return self.conversations.get_role_id(conversation_id)
+        except (KeyError, ValueError):
+            return None
+
+    def _role_payload(self, role: dict, current_role_id: str | None) -> dict:
+        rid = role["id"]
+        try:
+            schedule_count = len(self.roles.schedules.list_for_role(rid))
+        except (KeyError, ValueError, AttributeError):
+            schedule_count = 0
+        return {
+            "id": rid,
+            "name": role["name"],
+            "avatar": role.get("avatar"),
+            "system_prompt": role.get("system_prompt") or "",
+            "is_default": bool(role.get("is_default")),
+            "is_current": bool(current_role_id and rid == current_role_id),
+            "onboarding_status": role.get("onboarding_status") or "none",
+            "sort_order": int(role.get("sort_order") or 0),
+            "schedule_count": schedule_count,
+            "created_at": role.get("created_at"),
+            "updated_at": role.get("updated_at"),
+        }
+
+    @staticmethod
+    def _match_roles_by_name(roles: list[dict], name: str) -> list[dict]:
+        exact = [r for r in roles if r["name"] == name]
+        if exact:
+            return exact
+        lowered = name.casefold()
+        return [r for r in roles if str(r["name"]).casefold() == lowered]
+
+    @staticmethod
+    def _detail_summary(role: dict) -> str:
+        flags = []
+        if role.get("is_default"):
+            flags.append("默认")
+        if role.get("is_current"):
+            flags.append("当前会话")
+        suffix = f"（{'，'.join(flags)}）" if flags else ""
+        return f"角色「{role['name']}」{suffix} id={role['id']}"
+
+    def list_roles(self, args: dict, conversation_id: str | None = None) -> dict:
+        if self.roles is None:
+            return {
+                "summary": "角色系统不可用",
+                "sources": [],
+                "error": "roles unavailable",
+            }
+        current_role_id = self._current_role_id(conversation_id)
+        role_id = str(args.get("role_id") or "").strip()
+        name = str(args.get("name") or "").strip()
+
+        if role_id:
+            try:
+                role = self.roles.get(role_id)
+            except KeyError:
+                return {
+                    "summary": f"未找到 id 为 {role_id} 的角色",
+                    "sources": [],
+                    "error": "role not found",
+                    "roles": [],
+                }
+            payload = self._role_payload(role, current_role_id)
+            return {
+                "summary": self._detail_summary(payload),
+                "sources": [],
+                "role": payload,
+                "roles": [payload],
+            }
+
+        all_roles = self.roles.list_all()
+        if name:
+            matched = self._match_roles_by_name(all_roles, name)
+            if not matched:
+                return {
+                    "summary": f"未找到名为「{name}」的角色",
+                    "sources": [],
+                    "error": "role not found",
+                    "roles": [],
+                }
+            payloads = [self._role_payload(r, current_role_id) for r in matched]
+            if len(payloads) == 1:
+                return {
+                    "summary": self._detail_summary(payloads[0]),
+                    "sources": [],
+                    "role": payloads[0],
+                    "roles": payloads,
+                }
+            return {
+                "summary": f"找到 {len(payloads)} 个名为「{name}」的角色",
+                "sources": [],
+                "roles": payloads,
+            }
+
+        payloads = [self._role_payload(r, current_role_id) for r in all_roles]
+        names = "、".join(p["name"] for p in payloads)
+        return {
+            "summary": f"共 {len(payloads)} 个角色：{names}",
+            "sources": [],
+            "roles": payloads,
+        }
+
     def create_role(self, args: dict) -> dict:
         if self.roles is None:
             return {
