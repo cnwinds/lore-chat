@@ -357,9 +357,25 @@ class TurnExecutionHub:
                 )
             else:
                 # 新回合：须在 begin_turn 之前快照，避免 history 含本轮用户消息
-                hist = self.conversations.llm_history(
-                    conv, responding_role_id=responding
+                inbound_id = (
+                    getattr(stimulus, "inbound_message_id", None)
+                    if stimulus is not None
+                    else None
                 )
+                if inbound_id:
+                    prior = [
+                        m
+                        for m in (conv.get("messages") or [])
+                        if m.get("id") != inbound_id
+                    ]
+                    hist = self.conversations.llm_history(
+                        {**conv, "messages": prior},
+                        responding_role_id=responding,
+                    )
+                else:
+                    hist = self.conversations.llm_history(
+                        conv, responding_role_id=responding
+                    )
         turn = self.conversations.begin_turn(
             conversation_id,
             user_text=user_text,
