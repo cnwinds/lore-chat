@@ -247,9 +247,70 @@ class RoleTools:
                 to_role_id=args.get("to_role_id"),
                 to_role_name=args.get("to_role_name"),
                 room_id=args.get("room_id"),
+                mentions=args.get("mentions"),
                 expect_reply=bool(args.get("expect_reply", True)),
             )
             return result
+        except (ValueError, KeyError) as e:
+            return {"summary": str(e), "sources": [], "error": str(e)}
+
+    def list_rooms(self, args: dict, conversation_id: str | None = None) -> dict:
+        if self.delivery is None:
+            return {
+                "summary": "角色互通不可用",
+                "sources": [],
+                "error": "room delivery unavailable",
+            }
+        del args
+        try:
+            role_id = self._get_role_id({}, conversation_id)
+            rooms = self.delivery.list_rooms_for_role(role_id)
+            return {
+                "summary": f"当前角色参与 {len(rooms)} 个协作/群聊房间",
+                "sources": [],
+                "rooms": rooms,
+            }
+        except (ValueError, KeyError) as e:
+            return {"summary": str(e), "sources": [], "error": str(e)}
+
+    def create_room(self, args: dict, conversation_id: str | None = None) -> dict:
+        if self.delivery is None:
+            return {
+                "summary": "角色互通不可用",
+                "sources": [],
+                "error": "room delivery unavailable",
+            }
+        try:
+            current = self._get_role_id({}, conversation_id)
+            ids: list[str] = []
+            seen: set[str] = set()
+
+            def _add(rid: str) -> None:
+                if rid and rid not in seen:
+                    seen.add(rid)
+                    ids.append(rid)
+
+            _add(current)
+            for raw in args.get("role_ids") or []:
+                _add(str(raw or "").strip())
+            for raw in args.get("role_names") or []:
+                role = self.delivery.resolve_target(
+                    to_role_name=str(raw or ""), except_role_id=None
+                )
+                _add(role["id"])
+            room = self.delivery.create_group(
+                title=str(args.get("title") or ""),
+                role_ids=ids,
+            )
+            return {
+                "summary": (
+                    f"已建群「{room['title']}」，"
+                    f"conversation://{room['id']}"
+                ),
+                "sources": [],
+                "room_id": room["id"],
+                "room": room,
+            }
         except (ValueError, KeyError) as e:
             return {"summary": str(e), "sources": [], "error": str(e)}
 

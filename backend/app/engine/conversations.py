@@ -699,6 +699,21 @@ class ConversationStore:
         except (KeyError, IndexError):
             kind = "owner_dm"
         messages, older_count = self._load_message_page(cid, tail=tail)
+        part_rows = self.conn.execute(
+            """
+            SELECT actor_id FROM conversation_participants
+            WHERE conversation_id = ? AND actor_kind = 'role'
+            ORDER BY actor_id
+            """,
+            (cid,),
+        ).fetchall()
+        participants = [str(r["actor_id"]) for r in part_rows]
+        peer_role_id = None
+        if kind == "peer_dm":
+            peer_role_id = next(
+                (r for r in participants if r and r != role_id),
+                participants[0] if participants else None,
+            )
         return {
             "id": cid,
             "title": row["title"],
@@ -708,6 +723,8 @@ class ConversationStore:
             "origin": self._row_origin(row),
             "api_key_id": self._row_api_key_id(row),
             "kind": kind,
+            "participant_role_ids": participants,
+            "peer_role_id": peer_role_id,
             "active_turn_id": active_turn_id,
             "active_turn": active_turn,
             "messages": messages,

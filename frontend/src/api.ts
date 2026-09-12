@@ -11,6 +11,8 @@ import type {
   IngestResult,
   Question,
   RoleSummary,
+  RoomStatus,
+  RoomSummary,
 } from "./types/chat";
 import {
   apiBase,
@@ -463,6 +465,8 @@ export type {
   ConversationSummary,
   Conversation,
   RoleSummary,
+  RoomSummary,
+  RoomStatus,
 } from "./types/chat";
 export { KB_MUTATING_TOOLS } from "./types/chat";
 export {
@@ -500,6 +504,7 @@ export type ChatStreamOptions = {
   clientMessageId?: string;
   /** 原地重新回复：复用已有用户消息 id，不追加重复提问 */
   reuseUserMessageId?: string;
+  mentions?: string[];
   signal?: AbortSignal;
 };
 
@@ -517,6 +522,7 @@ export async function* chatStream(
     attachments = [],
     clientMessageId,
     reuseUserMessageId,
+    mentions,
     signal,
   } = options;
   const body: Record<string, unknown> = {
@@ -527,6 +533,7 @@ export async function* chatStream(
     primary_doc_path: primaryDocPath ?? undefined,
     web_enabled: webEnabled,
     attachments: attachments.length ? attachments : undefined,
+    mentions: mentions?.length ? mentions : undefined,
   };
   if (reuseUserMessageId) {
     body.reuse_user_message_id = reuseUserMessageId;
@@ -787,6 +794,48 @@ export async function createConversation(opts?: {
 
 export async function listRoles() {
   return apiFetch<{ roles: RoleSummary[] }>("/api/roles");
+}
+
+export async function listRooms(kind: "group" = "group") {
+  const params = new URLSearchParams();
+  if (kind) params.set("kind", kind);
+  return apiFetch<{ rooms: RoomSummary[] }>(`/api/rooms?${params.toString()}`);
+}
+
+export async function createRoom(body: { title: string; role_ids: string[] }) {
+  return apiFetch<RoomSummary>("/api/rooms", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export async function getRoom(id: string) {
+  return apiFetch<RoomSummary & { messages?: ChatMessage[] }>(
+    `/api/rooms/${encodeURIComponent(id)}`,
+  );
+}
+
+export async function getRoomStatus(id: string) {
+  return apiFetch<RoomStatus>(`/api/rooms/${encodeURIComponent(id)}/status`);
+}
+
+export async function postRoomMessage(
+  id: string,
+  body: { text: string; mentions?: string[]; client_message_id?: string },
+) {
+  return apiFetch<{
+    room_id: string;
+    message_id?: string;
+    wake_status: string;
+    turn_id?: string | null;
+    target_role_id?: string | null;
+    summary: string;
+  }>(`/api/rooms/${encodeURIComponent(id)}/messages`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
 }
 
 /** 与 RoleSummary 同义，供角色栏组件使用 */

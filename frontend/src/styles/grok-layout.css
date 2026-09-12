@@ -373,6 +373,153 @@
   padding: 4px;
 }
 
+.group-list {
+  flex: 0 0 auto;
+  max-height: 32%;
+  min-height: 72px;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border);
+  background: var(--bg-surface);
+}
+
+.group-list-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px 2px;
+  flex-shrink: 0;
+}
+
+.group-list-head h4 {
+  margin: 0;
+  font-size: var(--font-ui-sm);
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.group-list-scroll {
+  overflow-y: auto;
+  min-height: 0;
+  padding: 4px;
+}
+
+.app-shell-left--icons .group-list {
+  display: none;
+}
+
+.timeline-collab-card {
+  margin: 8px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-surface);
+}
+
+.timeline-collab-card--live {
+  border-color: color-mix(in srgb, var(--accent, #3d8bfd) 45%, var(--border));
+}
+
+.timeline-collab-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.timeline-collab-title {
+  font-size: var(--font-ui-sm);
+  font-weight: 600;
+}
+
+.timeline-collab-state {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.timeline-collab-preview {
+  margin-top: 6px;
+  font-size: var(--font-ui-sm);
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+
+.timeline-collab-actions {
+  margin-top: 8px;
+}
+
+.timeline-collab-pending {
+  margin-top: 8px;
+}
+
+.room-interject {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin: 8px 4px 12px;
+}
+
+.room-interject-input {
+  flex: 1;
+  min-width: 160px;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-app);
+  color: var(--text);
+}
+
+.room-interject-send {
+  height: 32px;
+  padding: 0 12px;
+}
+
+.room-interject-error {
+  width: 100%;
+  font-size: 12px;
+  color: var(--danger, #c44);
+}
+
+.create-group-roles {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.create-group-role {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--font-ui-sm);
+}
+
+.mention-picker {
+  margin: 0 16px 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-surface);
+  overflow: hidden;
+}
+
+.mention-picker-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 8px 12px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: var(--font-ui-sm);
+}
+
+.mention-picker-item:hover {
+  background: var(--bg-hover, color-mix(in srgb, var(--text) 6%, transparent));
+}
+
 .role-list-loading,
 .role-list-empty {
   padding: 20px;

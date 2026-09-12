@@ -189,13 +189,17 @@ def test_dialogue_turns_peer_not_owner(tmp_path):
 def test_select_tools_hides_send_without_messaging():
     names = {d["function"]["name"] for d in select_tools(MODE_DEFAULT, True)}
     assert "send_message" not in names
-    assert "list_roles" not in names
+    assert "list_rooms" not in names
+    assert "create_room" not in names
+    assert "list_roles" in names
     names2 = {
         d["function"]["name"]
         for d in select_tools(MODE_DEFAULT, True, role_messaging=True)
     }
     assert "send_message" in names2
     assert "list_roles" in names2
+    assert "list_rooms" in names2
+    assert "create_room" in names2
 
 
 def test_format_peer_message_wraps():
@@ -219,3 +223,164 @@ def test_peer_room_placeholder_not_in_list_all(tmp_path):
         "SELECT role_id FROM conversations WHERE id = ?", (peer,)
     ).fetchone()
     assert row["role_id"] == ROOM_ROLE_PLACEHOLDER
+
+
+def test_create_group_and_mention_wake(tmp_path):
+    store = _conv(tmp_path)
+    roles = _roles(tmp_path)
+    a = DEFAULT_ROLE_ID
+    b = roles.create(name="游戏开发助手")["id"]
+    c = roles.create(name="研究员")["id"]
+    started = []
+
+    def starter(**kwargs):
+        started.append(kwargs)
+        return {"turn_id": "tg1", "status": "running"}
+
+    delivery = RoomDelivery(store, roles)
+    delivery.bind_starter(starter)
+    group = delivery.create_group(title="三人组", role_ids=[a, b, c])["id"]
+    assert store.rooms.conversation_kind(group) == "group"
+    assert set(store.rooms.list_role_participants(group)) == {a, b, c}
+
+    posted = delivery.send_from_role(
+        from_role_id=a,
+        room_id=group,
+        text="大家看看这个方案",
+    )
+    assert posted["wake_status"] == "posted"
+    assert started == []
+
+    woke = delivery.send_from_role(
+        from_role_id=a,
+        room_id=group,
+        mentions=["游戏开发助手"],
+        text="请改登录页",
+    )
+    assert woke["wake_status"] == "started"
+    assert woke["target_role_id"] == b
+    assert started and started[0]["stimulus"].responding_role_id == b
+    assert started[0]["conversation_id"] == group
+
+
+def test_owner_interject_peer_wakes_last(tmp_path):
+    store = _conv(tmp_path)
+    roles = _roles(tmp_path)
+    other = roles.create(name="游戏开发助手")
+    started = []
+
+    def starter(**kwargs):
+        started.append(kwargs)
+        return {"turn_id": "to1", "status": "running"}
+
+    delivery = RoomDelivery(store, roles)
+    delivery.bind_starter(starter)
+    room = store.rooms.find_or_create_peer_dm(
+        DEFAULT_ROLE_ID, other["id"], title="协作"
+    )
+    store.append_room_inbound(
+        room,
+        text="先做一版",
+        speaker_kind="role",
+        speaker_id=other["id"],
+        speaker_name="游戏开发助手",
+        hop=1,
+    )
+    result = delivery.send_from_owner(room_id=room, text="补上错误提示")
+    assert result["wake_status"] == "started"
+    assert result["target_role_id"] == other["id"]
+    assert started[0]["stimulus"].is_owner()
+
+
+def test_owner_group_no_mention_no_wake(tmp_path):
+    store = _conv(tmp_path)
+    roles = _roles(tmp_path)
+    other = roles.create(name="研究员")
+    started = []
+    delivery = RoomDelivery(store, roles)
+    delivery.bind_starter(
+        lambda **kw: started.append(kw) or {"turn_id": "x", "status": "running"}
+    )
+    group = store.rooms.create_group(
+        title="群", role_ids=[DEFAULT_ROLE_ID, other["id"]]
+    )
+    result = delivery.send_from_owner(room_id=group, text="先记一笔")
+    assert result["wake_status"] == "posted"
+    assert started == []
+    named = delivery.send_from_owner(
+        room_id=group, text="@研究员 看一下这段"
+    )
+    assert named["wake_status"] == "started"
+    assert named["target_role_id"] == other["id"]
+    assert started and started[0]["stimulus"].responding_role_id == other["id"]
+    msgs = store.get(group)["messages"]
+    assert any(m.get("speaker_kind") == "user" and "先记一笔" in m["text"] for m in msgs)
+
+
+def test_collab_status_queued(tmp_path):
+    store = _conv(tmp_path)
+    roles = _roles(tmp_path)
+    other = roles.create(name="游戏开发助手")
+    started = []
+
+    def starter(**kwargs):
+        started.append(kwargs)
+        return {"turn_id": "t", "status": "running"}
+
+    delivery = RoomDelivery(store, roles)
+    delivery.bind_starter(starter)
+    owner = store.create()
+    store.begin_turn(owner, "去喊他", "c1")
+    first = delivery.send_from_role(
+        from_role_id=DEFAULT_ROLE_ID,
+        conversation_id=owner,
+        to_role_id=other["id"],
+        text="先做登录页",
+    )
+    room = first["room_id"]
+    store.begin_turn(room, "占住", "busy-b", stimulus=started[0]["stimulus"])
+    queued = delivery.send_from_role(
+        from_role_id=DEFAULT_ROLE_ID,
+        conversation_id=owner,
+        to_role_id=other["id"],
+        text="再改一版",
+    )
+    assert queued["wake_status"] == "queued"
+    status = delivery.collab_status(room)
+    assert status["state"] in {"queued", "working"}
+    assert status["queued_count"] >= 1
+
+
+def test_rooms_http_create_list_and_status(client):
+    roles = client.get("/api/roles").json()["roles"]
+    default_id = next(r["id"] for r in roles if r.get("is_default"))
+    created = client.post(
+        "/api/roles",
+        json={"name": "游戏开发助手", "system_prompt": "做游戏"},
+    )
+    assert created.status_code == 200
+    other_id = created.json()["id"]
+    room = client.post(
+        "/api/rooms",
+        json={"title": "登录页", "role_ids": [default_id, other_id]},
+    )
+    assert room.status_code == 200, room.text
+    rid = room.json()["id"]
+    listed = client.get("/api/rooms", params={"kind": "group"})
+    assert listed.status_code == 200
+    assert any(r["id"] == rid for r in listed.json()["rooms"])
+    status = client.get(f"/api/rooms/{rid}/status")
+    assert status.status_code == 200
+    assert status.json()["kind"] == "group"
+    posted = client.post(
+        f"/api/rooms/{rid}/messages",
+        json={"text": "先记一笔"},
+    )
+    assert posted.status_code == 200
+    assert posted.json()["wake_status"] == "posted"
+    woke = client.post(
+        f"/api/rooms/{rid}/messages",
+        json={"text": "@游戏开发助手 改登录页"},
+    )
+    assert woke.status_code == 200
+    assert woke.json()["wake_status"] in {"started", "queued"}

@@ -58,6 +58,24 @@ describe("TimelineBlockView default fold", () => {
     expect(document.querySelector(".timeline-tool-attachments")).not.toBeNull();
   });
 
+  it("renders send_message as a collaboration card", () => {
+    renderBlock({
+      type: "tool",
+      id: "sm1",
+      tool: "send_message",
+      label: "发给其他角色",
+      ts: "t",
+      status: "done",
+      summary: "已发送。协作房间 conversation://aaaaaaaaaaaa",
+      room_id: "aaaaaaaaaaaa",
+      target_role_name: "游戏开发助手",
+      wake_status: "queued",
+    });
+    expect(document.querySelector(".timeline-collab-card")).not.toBeNull();
+    expect(screen.getByText(/协作 · 游戏开发助手/)).toBeTruthy();
+    expect(screen.getByText("排队中")).toBeTruthy();
+  });
+
   it("collapses think blocks when the turn is no longer live", () => {
     renderBlock({
       type: "think",

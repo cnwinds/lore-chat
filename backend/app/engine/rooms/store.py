@@ -229,3 +229,178 @@ class RoomStore:
         if len(others) == 1:
             return others[0]
         return None
+
+    def last_responding_role_id(self, cid: str) -> str | None:
+        store = self._store
+        with store._lock:
+            row = store.conn.execute(
+                """
+                SELECT responding_role_id FROM turns
+                WHERE conversation_id = ?
+                  AND responding_role_id IS NOT NULL
+                  AND TRIM(responding_role_id) != ''
+                  AND responding_role_id != ?
+                ORDER BY started_at DESC
+                LIMIT 1
+                """,
+                (cid, ROOM_ROLE_PLACEHOLDER),
+            ).fetchone()
+            if row is not None:
+                rid = str(row["responding_role_id"] or "").strip()
+                if rid:
+                    return rid
+            row = store.conn.execute(
+                """
+                SELECT speaker_id FROM messages
+                WHERE conversation_id = ? AND speaker_kind = ?
+                  AND speaker_id IS NOT NULL AND TRIM(speaker_id) != ''
+                ORDER BY ts DESC
+                LIMIT 1
+                """,
+                (cid, ACTOR_ROLE),
+            ).fetchone()
+            if row is None:
+                return None
+            rid = str(row["speaker_id"] or "").strip()
+            return rid or None
+
+    def queued_count(self, room_id: str) -> int:
+        store = self._store
+        with store._lock:
+            row = store.conn.execute(
+                """
+                SELECT COUNT(*) AS n FROM role_inbound_queue
+                WHERE room_id = ? AND status = 'queued'
+                """,
+                (room_id,),
+            ).fetchone()
+            return int(row["n"] if row is not None else 0)
+
+    def create_group(self, *, title: str, role_ids: list[str]) -> str:
+        ids: list[str] = []
+        seen: set[str] = set()
+        for raw in role_ids:
+            rid = (raw or "").strip()
+            if not rid or rid == ROOM_ROLE_PLACEHOLDER or rid in seen:
+                continue
+            seen.add(rid)
+            ids.append(rid)
+        if len(ids) < 2:
+            raise ValueError("建群至少需要两个角色")
+        name = (title or "").strip() or "群聊"
+        store = self._store
+        cid = new_id()
+        stamp = now_iso()
+        with store._lock:
+            store.conn.execute(
+                """
+                INSERT INTO conversations(
+                    id, title, created_at, updated_at, active_turn_id,
+                    indexed_dirty, role_id, kind, peer_key
+                ) VALUES (?, ?, ?, ?, NULL, 0, ?, ?, NULL)
+                """,
+                (
+                    cid,
+                    name,
+                    stamp,
+                    stamp,
+                    ROOM_ROLE_PLACEHOLDER,
+                    KIND_GROUP,
+                ),
+            )
+            self._add_participant_unlocked(
+                cid, ACTOR_USER, OWNER_ACTOR_ID, membership="member"
+            )
+            for rid in ids:
+                self._add_participant_unlocked(
+                    cid, ACTOR_ROLE, rid, membership="member"
+                )
+            store.conn.commit()
+        return cid
+
+    def list_groups(self) -> list[dict]:
+        store = self._store
+        with store._lock:
+            rows = store.conn.execute(
+                """
+                SELECT id, title, created_at, updated_at
+                FROM conversations
+                WHERE kind = ?
+                ORDER BY updated_at DESC
+                """,
+                (KIND_GROUP,),
+            ).fetchall()
+            out: list[dict] = []
+            for row in rows:
+                cid = str(row["id"])
+                participants = [
+                    str(r["actor_id"])
+                    for r in store.conn.execute(
+                        """
+                        SELECT actor_id FROM conversation_participants
+                        WHERE conversation_id = ? AND actor_kind = ?
+                        ORDER BY actor_id
+                        """,
+                        (cid, ACTOR_ROLE),
+                    ).fetchall()
+                ]
+                out.append(
+                    {
+                        "id": cid,
+                        "title": row["title"],
+                        "created_at": row["created_at"],
+                        "updated_at": row["updated_at"],
+                        "kind": KIND_GROUP,
+                        "participant_role_ids": participants,
+                    }
+                )
+            return out
+
+    def list_rooms_for_role(self, role_id: str) -> list[dict]:
+        store = self._store
+        rid = (role_id or "").strip()
+        if not rid:
+            return []
+        with store._lock:
+            rows = store.conn.execute(
+                """
+                SELECT c.id, c.title, c.created_at, c.updated_at, c.kind
+                FROM conversations c
+                JOIN conversation_participants p ON p.conversation_id = c.id
+                WHERE p.actor_kind = ? AND p.actor_id = ?
+                  AND c.kind IN (?, ?)
+                ORDER BY c.updated_at DESC
+                """,
+                (ACTOR_ROLE, rid, KIND_PEER_DM, KIND_GROUP),
+            ).fetchall()
+            out: list[dict] = []
+            for row in rows:
+                cid = str(row["id"])
+                participants = [
+                    str(r["actor_id"])
+                    for r in store.conn.execute(
+                        """
+                        SELECT actor_id FROM conversation_participants
+                        WHERE conversation_id = ? AND actor_kind = ?
+                        ORDER BY actor_id
+                        """,
+                        (cid, ACTOR_ROLE),
+                    ).fetchall()
+                ]
+                kind = str(row["kind"] or KIND_PEER_DM)
+                out.append(
+                    {
+                        "id": cid,
+                        "title": row["title"],
+                        "created_at": row["created_at"],
+                        "updated_at": row["updated_at"],
+                        "kind": kind,
+                        "participant_role_ids": participants,
+                        "peer_role_id": next(
+                            (p for p in participants if p != rid), None
+                        )
+                        if kind == KIND_PEER_DM
+                        else None,
+                    }
+                )
+            return out

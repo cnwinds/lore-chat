@@ -143,7 +143,13 @@ export function useChatConversation({
         applyIfSafe(() => {
           const expectedRole = roleIdRef.current;
           const loadedRole = (conv.role_id || "default").trim() || "default";
-          if (expectedRole && loadedRole !== expectedRole) {
+          const kind = (conv as { kind?: string }).kind || "owner_dm";
+          if (
+            expectedRole &&
+            loadedRole !== expectedRole &&
+            kind !== "peer_dm" &&
+            kind !== "group"
+          ) {
             setMsgs([]);
             setSummarized(false);
             setSummaryPath(null);

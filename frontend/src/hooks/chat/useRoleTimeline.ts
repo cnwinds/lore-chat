@@ -86,6 +86,8 @@ type Options = {
   messageLimit?: number;
   /** 新话题等强制重置近端窗口 */
   refreshKey?: number;
+  /** 群聊主视图不拉角色时间线 */
+  enabled?: boolean;
 };
 
 /**
@@ -96,6 +98,7 @@ export function useRoleTimeline({
   tipConversationId,
   messageLimit = TIMELINE_MESSAGE_TAIL_DESKTOP,
   refreshKey = 0,
+  enabled = true,
 }: Options) {
   const [segments, setSegments] = useState<TimelineSegmentView[]>([]);
   const [hasMore, setHasMore] = useState(false);
@@ -139,7 +142,7 @@ export function useRoleTimeline({
     tipMetaRef.current = null;
     setSegments([]);
     setHasMore(false);
-    if (!roleId) {
+    if (!roleId || !enabled) {
       return;
     }
     const gen = ++genRef.current;
@@ -160,7 +163,7 @@ export function useRoleTimeline({
     } finally {
       if (gen === genRef.current) setLoading(false);
     }
-  }, [roleId]);
+  }, [roleId, enabled]);
 
   useEffect(() => {
     void resetAndLoadRecent();

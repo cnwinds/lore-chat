@@ -68,6 +68,7 @@ import {
 import { suggestArchivePath } from "../utils/suggestArchivePath";
 import { MobileChatHeader } from "./app/MobileChatHeader";
 import { ChatRoleHeading } from "./chat/ChatRoleHeading";
+import { mentionQueryAtCaret } from "../utils/roleMentions";
 
 type ComposerDocItem = DocTrayItem;
 
@@ -100,6 +101,9 @@ type Props = {
   onToggleRoleConfig?: () => void;
   /** 已加载会话不属于当前角色：父级应丢掉该会话 id，下次发送再新建 */
   onConversationRoleMismatch?: (conversationId: string, roleId: string) => void;
+  roomMode?: "role" | "group";
+  roomTitle?: string | null;
+  onRoomInterjectSent?: () => void;
 };
 
 export function Chat({
@@ -127,10 +131,14 @@ export function Chat({
   roleConfigCollapsed = false,
   onToggleRoleConfig,
   onConversationRoleMismatch,
+  roomMode = "role",
+  roomTitle = null,
+  onRoomInterjectSent,
 }: Props) {
   const { previewPath, openDoc, refreshKb } = useDocPreview();
 
   const [input, setInput] = useState("");
+  const [caret, setCaret] = useState(0);
   const [archiving, setArchiving] = useState(false);
   const [archiveModalOpen, setArchiveModalOpen] = useState(false);
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
@@ -195,6 +203,7 @@ export function Chat({
     tipConversationId: conversationId,
     messageLimit: messageTail,
     refreshKey: timelineRefreshKey,
+    enabled: roomMode !== "group",
   });
 
   const loadingOlderContent = loadingOlder || loadingOlderMessages;
@@ -881,14 +890,32 @@ export function Chat({
   );
 
   const activeRole = roles.find((r) => r.id === roleId) ?? null;
-  const activeRoleName =
-    activeRole?.name || mobileHeaderTitle || "对话";
+  const headerTitle =
+    roomMode === "group"
+      ? roomTitle || "群聊"
+      : activeRole?.name || mobileHeaderTitle || "对话";
+  const mention = mentionQueryAtCaret(input, caret);
+  const mentionHits = mention
+    ? roles
+        .filter(
+          (r) =>
+            r.name.includes(mention.query) || r.id.includes(mention.query),
+        )
+        .slice(0, 6)
+    : [];
+
+  function applyMention(role: RoleSummary) {
+    if (!mention) return;
+    const next = `${input.slice(0, mention.start)}@${role.name} ${input.slice(caret)}`;
+    setInput(next);
+    setCaret(mention.start + role.name.length + 2);
+  }
 
   return (
     <div className={`chat-panel${mobileLayout ? " chat-panel--mobile" : ""}`}>
       {mobileLayout && onOpenMobileNav && (
         <MobileChatHeader
-          title={activeRoleName}
+          title={headerTitle}
           onOpenNav={onOpenMobileNav}
           onShare={onShareConversation}
           roles={roles}
@@ -900,9 +927,9 @@ export function Chat({
         <header className="chat-desktop-header">
           <h1 className="chat-desktop-header-title">
             <ChatRoleHeading
-              name={activeRoleName}
-              roleId={activeRole?.id || roleId}
-              avatar={activeRole?.avatar}
+              name={headerTitle}
+              roleId={roomMode === "group" ? null : activeRole?.id || roleId}
+              avatar={roomMode === "group" ? null : activeRole?.avatar}
             />
           </h1>
           {roleConfigCollapsed && onToggleRoleConfig ? (
@@ -953,9 +980,28 @@ export function Chat({
         onQuestionResolved={handleQuestionResolved}
         onRetryReply={handleRetryAssistantReply}
         outlineLayout={mobileLayout ? "sheet" : "rail"}
+        roles={roles}
+        onRoomInterjectSent={onRoomInterjectSent}
         memoryNotice={memoryNotice}
         onDismissMemoryNotice={dismissMemoryNotice}
       />
+      {mentionHits.length > 0 ? (
+        <div className="mention-picker" role="listbox" aria-label="点名角色">
+          {mentionHits.map((role) => (
+            <button
+              key={role.id}
+              type="button"
+              className="mention-picker-item"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                applyMention(role);
+              }}
+            >
+              @{role.name}
+            </button>
+          ))}
+        </div>
+      ) : null}
       <ConversationComposerPanel
         sendQueueItems={sendQueue.items}
         sendQueuePaused={sendQueue.paused}
@@ -988,7 +1034,10 @@ export function Chat({
         onTrayRemove={onTrayRemove ?? (() => {})}
         onRemovePendingFile={removePendingFile}
         input={input}
-        onInputChange={setInput}
+        onInputChange={(value) => {
+          setInput(value);
+          setCaret(textareaRef.current?.selectionStart ?? value.length);
+        }}
         onInputKeyDown={onInputKeyDown}
         onInputPaste={onInputPaste}
         textareaRef={textareaRef}
