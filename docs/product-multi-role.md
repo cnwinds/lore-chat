@@ -98,6 +98,7 @@ HTTP `/api/roles*` 保留用于 UI shell（列表、ensure-active、可选右栏
 
 | 工具名 | 说明 |
 |------|------|
+| `list_roles` | 列出全部角色或按 id/名称查看资料 `{role_id?, name?}` |
 | `create_role` | 创建新角色 `{name, system_prompt?, avatar?}` |
 | `update_role` | 更新角色属性 `{role_id?, name?, avatar?, system_prompt?}`；默认当前会话角色 |
 | `list_role_schedules` | 列出角色定时任务 `{role_id?}` |

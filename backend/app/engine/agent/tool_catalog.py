@@ -11,6 +11,7 @@ READ_ONLY_TOOLS = frozenset({
     "search_kb", "read_doc", "read_doc_meta", "list_kb_structure", "read_conversation_context",
     "fetch_url", "web_search",
     "recall_memory",
+    "list_roles",
     "list_role_schedules",
     "sandbox_list_dir", "sandbox_read_file", "sandbox_job_status",
 })
@@ -113,6 +114,7 @@ TOOL_LABELS = {
     "summarize_conversation": "归档整段会话",
     "delete_kb": "删除知识库内容",
     "ask_user": "征询用户",
+    "list_roles": "列出角色",
     "create_role": "创建角色",
     "update_role": "更新角色",
     "list_role_schedules": "列出例行任务",
@@ -753,10 +755,38 @@ TOOL_DEFINITIONS: list[dict] = [
     {
         "type": "function",
         "function": {
+            "name": "list_roles",
+            "description": (
+                "列出当前实例中的角色目录，或按 id / 名称查看某一个角色的完整资料"
+                "（名称、人设、头像、是否默认、引导状态、例行任务数量）。"
+                "问「有哪些角色 / 叫什么 / 某人设或资料」时必须先调用本工具，"
+                "禁止凭印象编造角色名单或人设。"
+                "创建新角色前若不确定是否已有同名或同职责角色，先列出再决定。"
+                "省略参数则返回全部角色；传入 role_id 或 name 则只返回匹配项。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "role_id": {
+                        "type": "string",
+                        "description": "角色 ID（可选；提供则只返回该角色的完整资料）",
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "角色显示名称（可选；提供则按名称查找，先精确再忽略大小写）",
+                    },
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "create_role",
             "description": (
                 "创建一个新的对话角色（工作台）。用于用户明确要求「新建角色 / 开一个某某助手」时；"
                 "新角色共享知识库与主人记忆，拥有独立提示词与对话上下文。"
+                "创建前若不确定是否已有同名或同职责角色，先调用 list_roles。"
                 "创建后告知用户可在侧栏切换；不要替用户擅自大量建角色。"
             ),
             "parameters": {

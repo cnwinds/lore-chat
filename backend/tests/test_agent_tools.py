@@ -669,6 +669,27 @@ def test_kb_planning_tool_descriptions_match_precepts():
     assert "**to_filename** 可省略" in SYSTEM_PROMPT
 
 
+def test_list_roles_is_readonly_and_describes_catalog():
+    from app.engine.agent.prompts import SYSTEM_PROMPT
+    from app.engine.agent.tool_catalog import (
+        READ_ONLY_TOOLS,
+        TOOL_DEFINITIONS,
+        TOOL_LABELS,
+    )
+
+    defs = {d["function"]["name"]: d["function"] for d in TOOL_DEFINITIONS}
+    desc = defs["list_roles"]["description"]
+    assert "list_roles" in READ_ONLY_TOOLS
+    assert "列出角色" == TOOL_LABELS["list_roles"]
+    assert "禁止凭印象编造角色名单" in desc
+    assert "role_id" in defs["list_roles"]["parameters"]["properties"]
+    assert "name" in defs["list_roles"]["parameters"]["properties"]
+    assert "先调用 list_roles" in defs["create_role"]["description"]
+    assert "list_roles" in SYSTEM_PROMPT
+    names = _tool_names(select_tools(MODE_NO_WRITE, web_enabled=True))
+    assert "list_roles" in names
+
+
 def test_role_avatar_tool_accepts_kb_path_and_default_role_update():
     from app.engine.agent.tool_catalog import TOOL_DEFINITIONS
 

@@ -643,6 +643,73 @@ def test_create_role_tool(tmp_path):
     assert len(store.list_all()) == 2
 
 
+def test_list_roles_tool_lists_all_and_filters(tmp_path):
+    from app.engine.agent.tool_impl.role_tools import RoleTools
+
+    store = _roles(tmp_path)
+    created = store.create(name="股票研究员", system_prompt="专注股票")
+    store.schedules.create(
+        role_id=created["id"],
+        prompt="盘后复盘",
+        interval_hours=24,
+    )
+    conv = _conv(tmp_path)
+    cid = conv.create(role_id=created["id"])
+    tools = RoleTools(store, conversations=conv)
+
+    listed = tools.list_roles({}, conversation_id=cid)
+    assert "error" not in listed
+    names = [r["name"] for r in listed["roles"]]
+    assert names == [DEFAULT_ROLE_NAME, "股票研究员"]
+    assert "股票研究员" in listed["summary"]
+    researcher = next(r for r in listed["roles"] if r["id"] == created["id"])
+    assert researcher["system_prompt"] == "专注股票"
+    assert researcher["is_current"] is True
+    assert researcher["is_default"] is False
+    assert researcher["schedule_count"] == 1
+    default = next(r for r in listed["roles"] if r["is_default"])
+    assert default["is_current"] is False
+    assert default["schedule_count"] == 0
+
+    by_id = tools.list_roles({"role_id": created["id"]}, conversation_id=cid)
+    assert by_id["role"]["name"] == "股票研究员"
+    assert by_id["role"]["is_current"] is True
+    assert len(by_id["roles"]) == 1
+
+    by_name = tools.list_roles({"name": "股票研究员"})
+    assert by_name["role"]["id"] == created["id"]
+    assert by_name["role"]["system_prompt"] == "专注股票"
+
+    store.create(name="Researcher", system_prompt="EN")
+    by_name_ci = tools.list_roles({"name": "researcher"})
+    assert by_name_ci["role"]["name"] == "Researcher"
+
+    missing = tools.list_roles({"name": "不存在的角色"})
+    assert missing["error"] == "role not found"
+    assert missing["roles"] == []
+
+    missing_id = tools.list_roles({"role_id": "no-such-id"})
+    assert missing_id["error"] == "role not found"
+
+
+def test_list_roles_tool_hides_api_worker_roles(tmp_path):
+    from app.engine.agent.tool_impl.role_tools import RoleTools
+    from app.engine.roles import API_ROLE_PREFIX, VISIBILITY_HIDDEN
+
+    store = _roles(tmp_path)
+    hidden = store.create(
+        name="周报助手 · 脚本",
+        visibility=VISIBILITY_HIDDEN,
+        role_id=f"{API_ROLE_PREFIX}abcd",
+        onboarding_status="completed",
+    )
+    tools = RoleTools(store)
+    listed = tools.list_roles({})
+    assert hidden["id"] not in [r["id"] for r in listed["roles"]]
+    by_id = tools.list_roles({"role_id": hidden["id"]})
+    assert by_id["error"] == "role not found"
+
+
 def test_busy_role_ids_from_running_turn(tmp_path):
     roles = _roles(tmp_path)
     conv = _conv(tmp_path)
