@@ -140,6 +140,10 @@ export type ChatMessage = {
   /** Mid-turn inject (client_message_id starts with inject:) */
   injected?: boolean;
   client_message_id?: string;
+  speaker_kind?: "user" | "role" | "system" | string;
+  speaker_id?: string;
+  speaker_name?: string;
+  hop?: number;
 };
 
 export type CumulativeInfo = {
@@ -170,6 +174,9 @@ export type ConversationSummary = {
   updated_at: string;
   message_count: number;
   role_id?: string;
+  kind?: "owner_dm" | "peer_dm" | "group" | string;
+  peer_role_id?: string | null;
+  participant_role_ids?: string[];
   summarized?: boolean;
   summary_path?: string | null;
 };

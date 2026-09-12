@@ -107,6 +107,7 @@ class ChatSessionRunner:
         web_enabled: bool,
         reuse_user_message_id: str | None = None,
         mode: str = MODE_DEFAULT,
+        stimulus=None,
     ) -> dict:
         catalog = self.resolve_skill_catalog(skill_catalog)
         return self.turn_hub.begin_and_ensure(
@@ -122,6 +123,7 @@ class ChatSessionRunner:
             web_enabled=web_enabled,
             reuse_user_message_id=reuse_user_message_id,
             mode=mode or MODE_DEFAULT,
+            stimulus=stimulus,
         )
 
     async def stream_ephemeral(

@@ -34,10 +34,12 @@ class AgentSubgraph:
     chat_runner: ChatSessionRunner
     search_cooldown: CooldownStore
     image_cooldown: CooldownStore
+    room_delivery: object | None = None
 
     def publish(self, container) -> None:
         """将子图运行时指针同步到 Container / PendingResolver facade。"""
         container.chat_runner = self.chat_runner
+        container.room_delivery = self.room_delivery
         container.agent = self.agent
         container.organizer = self.organizer
         container.merge_workflow = self.organizer.merge
@@ -95,6 +97,9 @@ class AgentSubgraph:
             turn_hub=hub,
             roles=getattr(self.chat_runner, "roles", None),
         )
+        if self.room_delivery is not None:
+            self.room_delivery.settings = settings
+            self.room_delivery.bind_starter(self.chat_runner.begin_persisted_turn)
 
 
 def build_agent_subgraph(
@@ -184,6 +189,12 @@ def build_agent_subgraph(
     chat_runner = ChatSessionRunner(
         agent, conversations, enabled_skills=enabled_skills, roles=roles
     )
+    from app.engine.rooms.delivery import RoomDelivery
+
+    room_delivery = RoomDelivery(conversations, roles, settings=settings)
+    room_delivery.bind_starter(chat_runner.begin_persisted_turn)
+    tool_registry.roles_tools.delivery = room_delivery
+    conversations._after_turn_finalized = room_delivery.drain_role
     return AgentSubgraph(
         organizer=organizer,
         tools=tool_registry,
@@ -191,4 +202,5 @@ def build_agent_subgraph(
         chat_runner=chat_runner,
         search_cooldown=search_cooldown,
         image_cooldown=image_cooldown,
+        room_delivery=room_delivery,
     )

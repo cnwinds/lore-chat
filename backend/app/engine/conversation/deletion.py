@@ -78,6 +78,13 @@ class ConversationDeletionWorkflow:
                     "DELETE FROM conversation_summaries WHERE conversation_id = ?",
                     (cid,),
                 )
+            store.conn.execute(
+                "DELETE FROM role_inbound_queue WHERE room_id = ?", (cid,)
+            )
+            store.conn.execute(
+                "DELETE FROM conversation_participants WHERE conversation_id = ?",
+                (cid,),
+            )
             store.conn.execute("DELETE FROM messages WHERE conversation_id = ?", (cid,))
             store.conn.execute("DELETE FROM conversations WHERE id = ?", (cid,))
             store.conn.commit()

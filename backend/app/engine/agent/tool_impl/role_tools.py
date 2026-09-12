@@ -6,9 +6,10 @@ from app.engine.roles import VISIBILITY_HIDDEN, VISIBILITY_SIDEBAR
 
 
 class RoleTools:
-    def __init__(self, roles, conversations=None) -> None:
+    def __init__(self, roles, conversations=None, delivery=None) -> None:
         self.roles = roles
         self.conversations = conversations
+        self.delivery = delivery
 
     def _get_role_id(self, args: dict, conversation_id: str | None = None) -> str:
         """从 args 获取 role_id，未提供时使用当前会话角色 ID。"""
@@ -27,17 +28,35 @@ class RoleTools:
         except (KeyError, ValueError):
             return None
 
-    def _role_payload(self, role: dict, current_role_id: str | None) -> dict:
+    def _busy_ids(self) -> set[str]:
+        if self.conversations is None:
+            return set()
+        try:
+            return set(self.conversations.list_busy_role_ids())
+        except Exception:
+            return set()
+
+    def _role_payload(
+        self,
+        role: dict,
+        current_role_id: str | None,
+        *,
+        busy_ids: set[str] | None = None,
+    ) -> dict:
         rid = role["id"]
         try:
             schedule_count = len(self.roles.schedules.list_for_role(rid))
         except (KeyError, ValueError, AttributeError):
             schedule_count = 0
+        prompt = (role.get("system_prompt") or "").strip()
+        duty = prompt.splitlines()[0][:80] if prompt else ""
         return {
             "id": rid,
             "name": role["name"],
             "avatar": role.get("avatar"),
             "system_prompt": role.get("system_prompt") or "",
+            "duty": duty,
+            "busy": rid in (busy_ids or set()),
             "is_default": bool(role.get("is_default")),
             "is_current": bool(current_role_id and rid == current_role_id),
             "onboarding_status": role.get("onboarding_status") or "none",
@@ -86,6 +105,7 @@ class RoleTools:
                 "error": "roles unavailable",
             }
         current_role_id = self._current_role_id(conversation_id)
+        busy_ids = self._busy_ids()
         role_id = str(args.get("role_id") or "").strip()
         name = str(args.get("name") or "").strip()
 
@@ -106,7 +126,7 @@ class RoleTools:
                     "error": "role not found",
                     "roles": [],
                 }
-            payload = self._role_payload(role, current_role_id)
+            payload = self._role_payload(role, current_role_id, busy_ids=busy_ids)
             return {
                 "summary": self._detail_summary(payload),
                 "sources": [],
@@ -124,7 +144,10 @@ class RoleTools:
                     "error": "role not found",
                     "roles": [],
                 }
-            payloads = [self._role_payload(r, current_role_id) for r in matched]
+            payloads = [
+                self._role_payload(r, current_role_id, busy_ids=busy_ids)
+                for r in matched
+            ]
             if len(payloads) == 1:
                 return {
                     "summary": self._detail_summary(payloads[0]),
@@ -138,7 +161,10 @@ class RoleTools:
                 "roles": payloads,
             }
 
-        payloads = [self._role_payload(r, current_role_id) for r in all_roles]
+        payloads = [
+            self._role_payload(r, current_role_id, busy_ids=busy_ids)
+            for r in all_roles
+        ]
         names = "、".join(p["name"] for p in payloads)
         return {
             "summary": f"共 {len(payloads)} 个角色：{names}",
@@ -202,6 +228,28 @@ class RoleTools:
                 "sources": [],
                 "role": role,
             }
+        except (ValueError, KeyError) as e:
+            return {"summary": str(e), "sources": [], "error": str(e)}
+
+    def send_message(self, args: dict, conversation_id: str | None = None) -> dict:
+        if self.delivery is None:
+            return {
+                "summary": "角色互通不可用",
+                "sources": [],
+                "error": "room delivery unavailable",
+            }
+        try:
+            from_role_id = self._get_role_id({}, conversation_id)
+            result = self.delivery.send_from_role(
+                from_role_id=from_role_id,
+                conversation_id=conversation_id,
+                text=str(args.get("text") or ""),
+                to_role_id=args.get("to_role_id"),
+                to_role_name=args.get("to_role_name"),
+                room_id=args.get("room_id"),
+                expect_reply=bool(args.get("expect_reply", True)),
+            )
+            return result
         except (ValueError, KeyError) as e:
             return {"summary": str(e), "sources": [], "error": str(e)}
 

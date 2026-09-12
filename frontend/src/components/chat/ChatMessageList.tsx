@@ -200,8 +200,17 @@ export function ChatMessageList({
                 data-conversation-id={seg.conversationId}
                 data-jumped={seg.jumped ? "true" : undefined}
               >
-                {i > 0 && (
-                  <TimelineSeparator idleHours={continuityIdleHours} />
+                {(i > 0 || seg.kind === "peer_dm" || seg.kind === "group") && (
+                  <TimelineSeparator
+                    idleHours={continuityIdleHours}
+                    label={
+                      seg.kind === "peer_dm"
+                        ? "角色协作 · 与另一角色的共享房间"
+                        : seg.kind === "group"
+                          ? "群聊"
+                          : undefined
+                    }
+                  />
                 )}
                 {renderSegmentRows({
                   msgs: seg.messages,

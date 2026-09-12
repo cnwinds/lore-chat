@@ -329,15 +329,32 @@ export function ChatMessageRow({
   return (
     <div
       ref={rowRef}
-      className={`chat-row ${m.role === "user" ? "chat-row-user" : "chat-row-assistant"}`}
+      className={`chat-row ${
+        m.speaker_kind === "role" && m.role === "user"
+          ? "chat-row-peer"
+          : m.role === "user"
+            ? "chat-row-user"
+            : "chat-row-assistant"
+      }`}
       {...(m.id ? { "data-message-id": m.id } : {})}
     >
-      <div className={`chat-bubble chat-bubble-${m.role}`}>
+      <div
+        className={`chat-bubble ${
+          m.speaker_kind === "role" && m.role === "user"
+            ? "chat-bubble-peer"
+            : `chat-bubble-${m.role}`
+        }`}
+      >
         {m.role === "assistant" && m.model_failover ? (
           <div className="chat-failover-banner" role="status">
             高优先级模型暂不可用，已切换至 {m.model_name || "备胎模型"}
           </div>
         ) : null}
+        {m.role === "user" && m.speaker_kind === "role" && (
+          <div className="chat-peer-tag">
+            来自 {m.speaker_name || "其他角色"}
+          </div>
+        )}
         {m.role === "user" && isInjectedUserMessage(m) && (
             <div className="chat-inject-tag">已插入本轮</div>
           )}

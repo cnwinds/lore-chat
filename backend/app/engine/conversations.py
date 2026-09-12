@@ -154,7 +154,7 @@ class ConversationStore:
         self.dir.mkdir(parents=True, exist_ok=True)
 
         self.db_path = self.dir / "conversations.db"
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self.conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         with self._lock:
@@ -167,6 +167,9 @@ class ConversationStore:
             self._ensure_message_web_enabled_column()
             self._ensure_conversation_role_id_column()
             self._ensure_origin_columns()
+            from app.engine.rooms.schema import ensure_room_schema
+
+            ensure_room_schema(self.conn)
             self.conn.commit()
 
         if legacy_single.exists():
@@ -186,6 +189,13 @@ class ConversationStore:
         self.deletion = ConversationDeletionWorkflow(self)
         self.summaries = ConversationSummaryLedger(self)
         self.system_events = ConversationSystemEvents(self)
+        from app.engine.rooms.store import RoomStore
+
+        self.rooms = RoomStore(self)
+        with self._lock:
+            self.rooms.backfill_owner_dms()
+            self.conn.commit()
+        self._after_turn_finalized = None
 
     # ------------------------------------------------------------------
     # 内部辅助
@@ -387,9 +397,12 @@ class ConversationStore:
                     "SELECT id FROM conversations WHERE role_id = ?",
                     (role_id,),
                 ).fetchall()
+                ids = [r["id"] for r in rows]
             else:
                 rows = self.conn.execute("SELECT id FROM conversations").fetchall()
-            return [r["id"] for r in rows]
+                return [r["id"] for r in rows]
+        extra = self.rooms.list_participating_room_ids(role_id)
+        return list(dict.fromkeys(ids + extra))
 
     def list_user_messages_text(self, cid: str) -> list[str]:
         with self._lock:
@@ -397,6 +410,7 @@ class ConversationStore:
                 """
                 SELECT text FROM messages
                 WHERE conversation_id = ? AND role = 'user'
+                  AND (speaker_kind IS NULL OR speaker_kind = '' OR speaker_kind = 'user')
                 ORDER BY seq ASC
                 """,
                 (cid,),
@@ -404,11 +418,14 @@ class ConversationStore:
             return [(r["text"] or "") for r in rows]
 
     def list_dialogue_turns(self, cid: str) -> list[tuple[str, str]]:
-        """按序返回 (role, text)，仅 user/assistant，供会话级记忆抽取消歧。"""
+        """按序返回 (role, text)，仅 user/assistant，供会话级记忆抽取消歧。
+
+        同伴入站（speaker_kind != user）不得当成主人行。
+        """
         with self._lock:
             rows = self.conn.execute(
                 """
-                SELECT role, text FROM messages
+                SELECT role, text, speaker_kind FROM messages
                 WHERE conversation_id = ? AND role IN ('user', 'assistant')
                 ORDER BY seq ASC
                 """,
@@ -417,7 +434,15 @@ class ConversationStore:
             out: list[tuple[str, str]] = []
             for r in rows:
                 text = (r["text"] or "").strip()
-                if text:
+                if not text:
+                    continue
+                try:
+                    speaker = (r["speaker_kind"] or "").strip()
+                except (KeyError, IndexError):
+                    speaker = ""
+                if r["role"] == "user" and speaker and speaker != "user":
+                    out.append(("assistant", text))
+                else:
                     out.append((r["role"], text))
             return out
 
@@ -487,6 +512,33 @@ class ConversationStore:
             if row["web_enabled"] is not None:
                 msg["web_enabled"] = bool(row["web_enabled"])
         except (KeyError, IndexError):
+            pass
+        try:
+            speaker_kind = row["speaker_kind"]
+        except (KeyError, IndexError):
+            speaker_kind = None
+        if speaker_kind:
+            msg["speaker_kind"] = speaker_kind
+        try:
+            if row["speaker_id"]:
+                msg["speaker_id"] = row["speaker_id"]
+        except (KeyError, IndexError):
+            pass
+        try:
+            if row["speaker_name"]:
+                msg["speaker_name"] = row["speaker_name"]
+        except (KeyError, IndexError):
+            pass
+        try:
+            if row["causation_id"]:
+                msg["causation_id"] = row["causation_id"]
+        except (KeyError, IndexError):
+            pass
+        try:
+            hop = row["hop"]
+            if hop:
+                msg["hop"] = int(hop)
+        except (KeyError, IndexError, TypeError):
             pass
         return msg
 
@@ -642,6 +694,10 @@ class ConversationStore:
 
         raw_role = row["role_id"] if "role_id" in row.keys() else None
         role_id = (raw_role or DEFAULT_ROLE_ID).strip() or DEFAULT_ROLE_ID
+        try:
+            kind = (row["kind"] or "owner_dm").strip() or "owner_dm"
+        except (KeyError, IndexError):
+            kind = "owner_dm"
         messages, older_count = self._load_message_page(cid, tail=tail)
         return {
             "id": cid,
@@ -651,6 +707,7 @@ class ConversationStore:
             "role_id": role_id,
             "origin": self._row_origin(row),
             "api_key_id": self._row_api_key_id(row),
+            "kind": kind,
             "active_turn_id": active_turn_id,
             "active_turn": active_turn,
             "messages": messages,
@@ -712,25 +769,49 @@ class ConversationStore:
                 """
                 INSERT INTO conversations(
                     id, title, created_at, updated_at, active_turn_id,
-                    indexed_dirty, role_id, origin, api_key_id
+                    indexed_dirty, role_id, origin, api_key_id, kind
                 )
-                VALUES (?, ?, ?, ?, NULL, 0, ?, ?, ?)
+                VALUES (?, ?, ?, ?, NULL, 0, ?, ?, ?, 'owner_dm')
                 """,
                 (cid, title or "新对话", stamp, stamp, rid, orig, kid),
+            )
+            self.rooms._add_participant_unlocked(
+                cid, "user", "owner", membership="member"
+            )
+            self.rooms._add_participant_unlocked(
+                cid, "role", rid, membership="member"
             )
             self.conn.commit()
         return cid
 
     def get_role_id(self, cid: str) -> str:
+        """应者优先：running/active turn 的 responding_role_id，否则会话 role_id。"""
         from app.engine.roles import DEFAULT_ROLE_ID
+        from app.engine.rooms.schema import ROOM_ROLE_PLACEHOLDER
 
         with self._lock:
             row = self._conversation_row(cid)
+            active_turn_id = row["active_turn_id"]
+            if active_turn_id:
+                trow = self.conn.execute(
+                    "SELECT responding_role_id FROM turns WHERE id = ?",
+                    (active_turn_id,),
+                ).fetchone()
+                if trow is not None:
+                    try:
+                        rrid = (trow["responding_role_id"] or "").strip()
+                    except (KeyError, IndexError):
+                        rrid = ""
+                    if rrid and rrid != ROOM_ROLE_PLACEHOLDER:
+                        return rrid
             try:
                 rid = row["role_id"]
             except (KeyError, IndexError):
                 rid = None
-            return (rid or DEFAULT_ROLE_ID).strip() or DEFAULT_ROLE_ID
+            rid = (rid or DEFAULT_ROLE_ID).strip() or DEFAULT_ROLE_ID
+            if rid == ROOM_ROLE_PLACEHOLDER:
+                return DEFAULT_ROLE_ID
+            return rid
 
     def get(
         self,
@@ -886,6 +967,10 @@ class ConversationStore:
                     rid = row["role_id"]
                 except (KeyError, IndexError):
                     rid = DEFAULT_ROLE_ID
+                try:
+                    kind = (row["kind"] or "owner_dm").strip() or "owner_dm"
+                except (KeyError, IndexError):
+                    kind = "owner_dm"
                 items.append(
                     {
                         "id": cid,
@@ -895,6 +980,7 @@ class ConversationStore:
                         "role_id": rid or DEFAULT_ROLE_ID,
                         "origin": self._row_origin(row),
                         "api_key_id": self._row_api_key_id(row),
+                        "kind": kind,
                         "message_count": int(count),
                         "summarized": summarized,
                         "summary_path": summary_path,
@@ -964,6 +1050,51 @@ class ConversationStore:
             for c in self.list_all(role_id=role_id)
             if (c.get("role_id") or DEFAULT_ROLE_ID) == role_id
         ]
+        seen = {c["id"] for c in items}
+        for pid in self.rooms.list_participating_room_ids(role_id):
+            if pid in seen:
+                continue
+            try:
+                row = None
+                with self._lock:
+                    row = self.conn.execute(
+                        "SELECT * FROM conversations WHERE id = ?", (pid,)
+                    ).fetchone()
+                    if row is None:
+                        continue
+                    count = self.conn.execute(
+                        "SELECT COUNT(*) AS n FROM messages WHERE conversation_id = ?",
+                        (pid,),
+                    ).fetchone()["n"]
+                    summarized, summary_path, _ = self._summary_state(pid)
+                    try:
+                        kind = (row["kind"] or "peer_dm").strip() or "peer_dm"
+                    except (KeyError, IndexError):
+                        kind = "peer_dm"
+                    participants = self.rooms.list_role_participants(pid)
+                    items.append(
+                        {
+                            "id": pid,
+                            "title": row["title"],
+                            "created_at": row["created_at"],
+                            "updated_at": row["updated_at"],
+                            "role_id": role_id,
+                            "kind": kind,
+                            "peer_role_id": next(
+                                (r for r in participants if r != role_id), None
+                            ),
+                            "message_count": int(count),
+                            "summarized": summarized,
+                            "summary_path": summary_path,
+                            "last_user_message_at": row["last_user_message_at"]
+                            if "last_user_message_at" in row.keys()
+                            else None,
+                            "participant_role_ids": participants,
+                        }
+                    )
+                    seen.add(pid)
+            except KeyError:
+                continue
         items = sorted(
             items,
             key=lambda c: (c.get("created_at") or "", c.get("id") or ""),
@@ -1165,6 +1296,7 @@ class ConversationStore:
         attachments: list[str] | None = None,
         web_enabled: bool | None = None,
         reuse_user_message_id: str | None = None,
+        stimulus=None,
     ) -> dict:
         return self._turn_lifecycle.begin_turn(
             cid,
@@ -1177,10 +1309,132 @@ class ConversationStore:
             attachments=attachments,
             web_enabled=web_enabled,
             reuse_user_message_id=reuse_user_message_id,
+            stimulus=stimulus,
         )
 
     def finalize_turn(self, cid: str, turn_id: str, assistant: dict) -> dict | None:
-        return self._turn_lifecycle.finalize_turn(cid, turn_id, assistant)
+        role_id = None
+        try:
+            role_id = self.get_responding_role_id(cid, turn_id) or self.get_role_id(cid)
+        except KeyError:
+            role_id = None
+        result = self._turn_lifecycle.finalize_turn(cid, turn_id, assistant)
+        cb = self._after_turn_finalized
+        if cb and role_id:
+            try:
+                cb(role_id)
+            except Exception:
+                from app.logging_config import get_logger
+
+                get_logger("conversations").warning(
+                    "after_turn_finalized failed role=%s", role_id, exc_info=True
+                )
+        return result
+
+    def get_responding_role_id(self, cid: str, turn_id: str | None = None) -> str | None:
+        with self._lock:
+            tid = turn_id
+            if not tid:
+                row = self._conversation_row(cid)
+                tid = row["active_turn_id"]
+            if not tid:
+                return None
+            trow = self.conn.execute(
+                "SELECT responding_role_id FROM turns WHERE id = ? AND conversation_id = ?",
+                (tid, cid),
+            ).fetchone()
+            if trow is None:
+                return None
+            try:
+                rid = (trow["responding_role_id"] or "").strip()
+            except (KeyError, IndexError):
+                return None
+            return rid or None
+
+    def get_message(self, message_id: str) -> dict:
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT * FROM messages WHERE id = ?", (message_id,)
+            ).fetchone()
+            if row is None:
+                raise KeyError(message_id)
+            return self._message_row_to_dict(row)
+
+    def get_turn_inbound(self, turn_id: str) -> dict | None:
+        with self._lock:
+            trow = self.conn.execute(
+                "SELECT user_message_id FROM turns WHERE id = ?", (turn_id,)
+            ).fetchone()
+            if trow is None or not trow["user_message_id"]:
+                return None
+            row = self.conn.execute(
+                "SELECT * FROM messages WHERE id = ?",
+                (trow["user_message_id"],),
+            ).fetchone()
+            if row is None:
+                return None
+            return self._message_row_to_dict(row)
+
+    def append_room_inbound(
+        self,
+        cid: str,
+        *,
+        text: str,
+        speaker_kind: str,
+        speaker_id: str,
+        speaker_name: str | None = None,
+        causation_id: str | None = None,
+        hop: int = 0,
+        client_message_id: str | None = None,
+    ) -> dict:
+        """往房间贴一条入站消息，不开回合（随后 Wake 再 begin_turn）。"""
+        from app.engine.rooms.schema import KIND_OWNER_DM
+
+        with self._lock:
+            self._conversation_row(cid)
+            now = _now()
+            msg_id = _new_id()
+            seq = self._next_seq(cid)
+            self.conn.execute(
+                """
+                INSERT INTO messages(
+                    id, conversation_id, seq, role, text, ts, status,
+                    client_message_id, speaker_kind, speaker_id, speaker_name,
+                    causation_id, hop
+                ) VALUES (?, ?, ?, 'user', ?, ?, 'complete', ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    msg_id,
+                    cid,
+                    seq,
+                    text,
+                    now,
+                    client_message_id,
+                    speaker_kind,
+                    speaker_id,
+                    speaker_name,
+                    causation_id,
+                    int(hop or 0),
+                ),
+            )
+            kind = "owner_dm"
+            try:
+                row = self._conversation_row(cid)
+                kind = (row["kind"] or KIND_OWNER_DM).strip() or KIND_OWNER_DM
+            except (KeyError, IndexError):
+                pass
+            if kind == KIND_OWNER_DM and speaker_kind == "user":
+                self.memory_schedule.mark_dirty_unlocked(cid, at=now)
+            self._mark_dirty_and_stale(cid)
+            self.conn.execute(
+                "UPDATE conversations SET updated_at = ? WHERE id = ?",
+                (now, cid),
+            )
+            self.conn.commit()
+            row = self.conn.execute(
+                "SELECT * FROM messages WHERE id = ?", (msg_id,)
+            ).fetchone()
+            return self._message_row_to_dict(row)
 
     def list_running_turns(self) -> list[dict]:
         with self._lock:
@@ -1202,17 +1456,35 @@ class ConversationStore:
 
     def list_busy_role_ids(self) -> list[str]:
         """有 running turn 的角色 id（去重排序）。"""
+        from app.engine.rooms.schema import ROOM_ROLE_PLACEHOLDER
+
         turns = self.list_running_turns()
         role_ids: set[str] = set()
         for t in turns:
-            try:
-                role_ids.add(self.get_role_id(t["conversation_id"]))
-            except KeyError:
-                continue
+            rid = self.get_responding_role_id(
+                t["conversation_id"], t.get("turn_id")
+            )
+            if not rid:
+                try:
+                    rid = self.get_role_id(t["conversation_id"])
+                except KeyError:
+                    continue
+            if rid and rid != ROOM_ROLE_PLACEHOLDER:
+                role_ids.add(rid)
         return sorted(role_ids)
 
     def role_has_running_turn(self, role_id: str) -> bool:
         with self._lock:
+            row = self.conn.execute(
+                """
+                SELECT 1 FROM turns
+                WHERE status = 'running' AND responding_role_id = ?
+                LIMIT 1
+                """,
+                (role_id,),
+            ).fetchone()
+            if row is not None:
+                return True
             row = self.conn.execute(
                 """
                 SELECT 1
@@ -1616,9 +1888,13 @@ class ConversationStore:
         *,
         max_turns: int = 20,
         max_chars: int = 32000,
+        responding_role_id: str | None = None,
     ) -> list[dict]:
         return ConversationTranscript.llm_history(
-            conv, max_turns=max_turns, max_chars=max_chars
+            conv,
+            max_turns=max_turns,
+            max_chars=max_chars,
+            responding_role_id=responding_role_id,
         )
 
     @staticmethod

@@ -47,6 +47,8 @@ export type TimelineSegmentView = {
   newerMessageCount?: number;
   /** 搜索定位插入的附近窗口；可与当前 tip 同会话并存 */
   jumped?: boolean;
+  kind?: string;
+  peerRoleId?: string | null;
 };
 
 function toView(
@@ -61,8 +63,9 @@ function toView(
   const isTip = !!tipId && seg.id === tipId;
   if (!isTip && msgs.length === 0) return null;
   if (isTip) return null; // tip 消息由 useChatConversation 维护
+  const isRoom = seg.kind === "peer_dm" || seg.kind === "group";
   const segRole = seg.role_id || roleId;
-  if (segRole && segRole !== roleId) return null;
+  if (!isRoom && segRole && segRole !== roleId) return null;
   return {
     conversationId: seg.id,
     roleId: segRole,
@@ -71,6 +74,8 @@ function toView(
     messages: msgs,
     isTip: false,
     olderMessageCount: seg.older_message_count ?? 0,
+    kind: seg.kind,
+    peerRoleId: seg.peer_role_id,
   };
 }
 

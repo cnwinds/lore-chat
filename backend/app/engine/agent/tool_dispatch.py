@@ -81,6 +81,9 @@ def build_tool_dispatch(registry: ToolRegistry) -> dict[str, ToolHandler]:
         "update_role": lambda args, **kw: roles.update_role(
             args, conversation_id=kw.get("conversation_id")
         ),
+        "send_message": lambda args, **kw: roles.send_message(
+            args, conversation_id=kw.get("conversation_id")
+        ),
         "list_role_schedules": lambda args, **kw: roles.list_role_schedules(
             args, conversation_id=kw.get("conversation_id")
         ),

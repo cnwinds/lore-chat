@@ -12,6 +12,8 @@ export const TOOL_LABELS: Record<string, string> = {
   ask_user: "征询用户",
   list_roles: "列出角色",
   create_role: "创建角色",
+  list_roles: "列出角色",
+  send_message: "发给其他角色",
   edit_doc: "局部编辑文档",
   update_doc_meta: "更新文档元数据",
   move_entry: "移动或重命名路径",

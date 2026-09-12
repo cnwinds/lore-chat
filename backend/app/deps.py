@@ -90,6 +90,7 @@ class Container:
     _memory_subgraph: MemorySubgraph | None = field(default=None, repr=False)
     _agent_subgraph: AgentSubgraph | None = field(default=None, repr=False)
     _usage_store: UsageStore | None = field(default=None, repr=False)
+    room_delivery: object | None = None
 
 
 def build_container(settings: Settings, llm: LLMClient | None = None) -> Container:
@@ -222,6 +223,7 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
         pending_resolver=pending_resolver,
         agent=agent.agent,
         chat_runner=agent.chat_runner,
+        room_delivery=getattr(agent, "room_delivery", None),
         system_layer=system_layer,
         memory_service=memory.service,
         enabled_skills=enabled_skills,
