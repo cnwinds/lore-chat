@@ -2,204 +2,234 @@
 
 > 状态：**草案**（2026-09-12）。尚未落地代码。本文是实现对照规格；采纳后另写 ADR，不改写本文已拍板的决策段。
 >
-> 配套现状：[CONTEXT.md](../CONTEXT.md) 聊天持久化、[product-multi-role.md](product-multi-role.md) 角色时间线、[ADR 2026-09-10 timeline](adr/2026-09-10-role-timeline.md)。
+> 配套现状：[CONTEXT.md](../CONTEXT.md) 聊天持久化、[product-multi-role.md](product-multi-role.md) 角色时间线、[ADR 2026-09-10 timeline](adr/2026-09-10-role-timeline.md)、[ADR 2026-09-10 sandbox](adr/2026-09-10-role-scoped-sandbox.md)。
 
-## 0. 已采用的默认（沟通未回时的拍板）
+## 0. 已拍板
 
-主人原话要解决三件事：接口形态、会话是新建还是接续、API 历史怎么在产品里展示。下列默认按「自己的脚本/自动化为主，Key 也可以发给可信外部」来写；若之后改口径，只改本节与标了「可改」的段落。
+主人确认（2026-09-12）：
 
-| 问题 | 默认 |
+| 问题 | 决定 |
 |------|------|
-| 谁来调用 | 主人签发 API Key。自己的脚本、n8n、另一个 bot、把 Key 交给可信第三方都可以。不是多租户 OAuth，也不是把网页 Cookie 接口裸开。 |
-| 会话 | **两种都支持**。不传 ID 则每次新建并落库；传 `conversation_id` 或调用方 `thread_id` 则接续。 |
-| 历史展示 | 挂到 Key 绑定（或请求指定）的角色时间线，带 **API** 标记，可筛「全部 / 仅网页 / 仅 API」。**不**虚构「开放接口」角色。 |
-| 会不会抢走正在聊的 tip | **不会**。`origin=api` 的段不参与 `ensure-active` / 连续窗口 / 「新话题」。 |
-| 默认能力 | 对话 + 指定 Skill + 读知识库。写库 / 沙箱 / 联网须 Key 显式授权。 |
-| 首期响应 | 同步 JSON（脚本好接）。超时返回进行中，可轮询；SSE 与 OpenAI 兼容形态放后续。 |
+| 谁来调用 | **自己的脚本/自动化**。一般不给别人开，也没有很大并发。仍用 API Key（脚本不好走网页 Cookie），但按单操作者、低并发做，不做多租户、限流、OAuth。 |
+| 历史展示 | **独立入口**，不进现有角色时间线，不和日常聊天混在一起。 |
+| 知识库 / Skill | **不能改写**。可读、可按 catalog 跑 Skill，不能 `write_doc` / 改 Skill 文件 / 启用集 / 发布回库。 |
+| 沙箱 | **可以跑**。但不能和现有角色的执行沙箱抢同一把容器、同一张盘，也不能互相 interrupt。 |
+| 角色归属 | **待选**。见 §4：人设用谁、沙箱挂谁，是两件事。推荐方案 A。 |
+| 会话 | 默认每次调用新建一段并落库。脚本若要多轮，可带返回的 `conversation_id`（或 P1 的 `thread_id`）。只在 API 会话之间接续，绝不续网页 tip。 |
+| 首期响应 | 同步 JSON。超时 202 + 轮询。 |
 
 ## 1. 要解决的问题
 
 Lore Chat 已经是带角色、Skill、知识库、工具循环的聊天机器人。网页主入口是 Cookie 登录后的 `POST /api/chat`（SSE，会话挂在角色时间线上）。
 
-主人希望**对外**开一个聊天接口：例如做好一个 Skill，外部系统按 HTTP 调用，拿到工作回复。现有网页契约不适合外开：
+主人希望给**自己的脚本**开一个聊天接口：做好一个 Skill，外部 HTTP 调用，拿到工作回复；需要时在沙箱里跑命令。现有网页契约不适合：
 
-- 鉴权只有 `lorechat_session` Cookie，脚本和第三方接不了。
-- `/api/chat` 绑定托盘、观测通道、内部 timeline 事件，契约会随 UI 漂移。
-- 无 `conversation_id` 时走 `stream_ephemeral`，不落库，历史无法展示。
-- Skill 是全局启用集，无法按调用方收窄到「只跑这一个 Skill」。
+- 鉴权只有 `lorechat_session` Cookie。
+- `/api/chat` 绑定托盘、观测通道、内部 timeline 事件。
+- 无 `conversation_id` 时走 ephemeral，不落库。
+- 现网沙箱是**每角色一把容器 + 一张 PVC**（[ADR 2026-09-10](adr/2026-09-10-role-scoped-sandbox.md)）。API 若挂到某个已有角色上，会和该角色网页回合、定时任务抢 `/workspace`，一方 stop 会打断另一方。
+- 角色时间线若混入 API 段，日常聊天被刷屏，tip 算法也会被 `updated_at` 带跑。
 
 ## 2. 目标与非目标
 
 ### 目标
 
-1. 主人在设置里签发/吊销 API Key，外部用 `Authorization: Bearer` 调用。
-2. 一次调用就能跑指定 Skill（及该角色的人设、记忆、知识库检索），返回助手回复。
-3. 调用方可选择「每次新会话」或「接续同一段上下文」。
-4. API 产生的会话在产品里可见、可搜、可区分来源。
-5. 外部契约稳定、短；内部 Agent 执行仍走现有 `TurnExecutionHub` / `ChatSessionRunner`，HTTP 层不解析 Agent SSE。
+1. 设置里签发/吊销一把（或多把）API Key，脚本用 `Authorization: Bearer` 调用。
+2. 一次调用能跑指定 Skill，返回助手回复；允许沙箱执行。
+3. API 会话在产品里**单独**可见，不进角色时间线。
+4. 不改知识库、不改 Skill、不改角色/例行任务/记忆画像。
+5. API 沙箱与角色沙箱隔离：不同 slot、不同卷、中断互不影响。
+6. 内部仍走 `TurnExecutionHub` / `ChatSessionRunner`；HTTP 不解析 Agent SSE。
 
-### 非目标（明确不做）
+### 非目标
 
-- 多租户账号、OAuth 应用市场、按调用方计费。
-- 把 `/api/chat`、`/api/conversations`、管理/设置/知识库树原样对外。
-- API 调用走 ephemeral（不落库）。
-- 调用方在请求里上传整份 `SKILL.md`（Skill 必须已在「技能」目录并被 Key 允许）。
-- 首期做 OpenAI `/v1/chat/completions` 兼容（P2 再加适配层，不替代本契约）。
-- 虚拟「开放接口」角色，或把 API 会话与网页会话物理拆成另一套库。
+- 多租户、OAuth、按调用方计费、高并发限流。
+- 把 `/api/chat`、知识库树、设置原样对外。
+- API ephemeral（不落库）。
+- 调用方上传整份 `SKILL.md`。
+- 首期 OpenAI `/v1/chat/completions` 兼容（P2 适配层）。
+- API 会话出现在角色时间线，或虚构一个出现在左栏的「开放接口」聊天角色（方案 A 的系统角色**不进**左栏角色列表）。
+- API 借用任一现有角色的 sandbox slot。
 
 ## 3. 产品模型
 
 ```
-外部调用方 --Bearer Key--> /api/v1/chat
-                              │
-                              ├─ 解析 Key：角色、Skill 白名单、能力范围
-                              ├─ 解析会话：新建 / 续 conversation_id / 续 thread_id
-                              ├─ ChatSessionRunner.begin_persisted_turn
-                              └─ 同步等回合结束（或超时返回 running）
-                                      │
-网页主人 <── 同一 ConversationStore ──┘
-         角色时间线看到带 API 标记的段；tip 算法忽略这些段
+脚本 --Bearer Key--> /api/v1/chat
+                        │
+                        ├─ 只读工具集 + 沙箱工具（无写库 / 无改 Skill / 无回写 KB）
+                        ├─ 会话：新建或续 API 自己的 conversation
+                        ├─ 人设：按 §4 所选方案注入
+                        └─ 沙箱：只打 reserved API slot（§5）
+                                  │
+网页「开放接口」页 <── 同一 ConversationStore，origin=api
+角色时间线 / tip / 左栏最近活动  ──  完全不看这些行
+角色沙箱 slot                   ──  完全不碰
 ```
 
-一条对外聊天 = 一条普通 `conversation` 行，额外带上来源字段。角色、记忆抽取、知识库仍是全局那一套；**来源只影响鉴权范围、tip 算法和 UI 标记**。
+Key 只能碰它自己创建的 `origin=api` 会话。网页 Cookie 不能当 v1 凭证，Bearer 不能调设置/KB 树。
 
-Key 是能力凭证，不是第二个主人账号。Key 只能读写**它自己创建的** API 会话，不能列出或续写主人的网页会话。
+## 4. 角色：人设与沙箱要拆开
 
-## 4. 会话模型
+现网「角色」同时决定三件事：人设（`system_prompt`）、会话挂在哪条时间线、沙箱 slot（`RoleSandboxPool.get(role_id)`）。API 不能原样复用，否则：
 
-这是本需求的核心。三种入口，语义正交。
+- 挂到「通用」上 → 时间线混在一起，且和通用角色抢沙箱；
+- 随便指定一个角色 → 该角色正在聊或跑定时任务时，API `sandbox_run` / stop 会踩同一张盘、打断同一进程。
 
-### 4.1 每次新绘画（默认）
+所以先拆：
 
-请求不带 `conversation_id`、不带 `thread_id`：
+| 维度 | 含义 | API 侧约束 |
+|------|------|------------|
+| 人设 | 心法/戒律之外，还要不要叠某个人设 | 见下面三套方案 |
+| 会话归属 | 历史显示在哪 | **固定**：只进「开放接口」页，`origin=api`，不进任何角色时间线 |
+| 沙箱 slot | 哪把容器、哪张 PVC | **固定**：专用 API slot，见 §5。不随人设走 |
 
-1. `conversations.create(title=…, role_id=…)`，写入 `origin=api` 等来源字段。
-2. 本轮作为该段第一条用户消息，跑 Agent。
-3. 响应带回 `conversation_id`。调用方若要接着聊，下次带上即可。
+跨方案不变：会话独立展示；沙箱永不 `get(某个现有聊天角色)`。
 
-适合：一次 Skill 作业、一条工单处理、无状态 webhook。
+### 方案 A — 隐藏系统角色（推荐）
 
-### 4.2 按 Lore 会话 ID 接续
+系统内置一个不出现在左栏的角色，id 建议 `__api__`（名称「开放接口」，不可删）。
 
-请求带 `conversation_id`：
+- 人设：可在「开放接口」页编辑（可空）。空则只靠心法/戒律 + Skill。
+- 会话：`role_id=__api__` + `origin=api`；角色时间线查询直接排除 `__api__`。
+- 沙箱：slot 就是 `__api__`，和现有角色天然不是同一把。
 
-- 会话必须存在、`origin=api`、且 `api_key_id` 等于当前 Key。
-- `role_id` 若传入必须与会话一致，否则 409 `role_mismatch`（与现网 `/api/chat` 相同）。
-- 同一会话仍遵守「同时只有一个 running turn」；冲突 409 `turn_in_progress`。
+适合：脚本只是「跑某个 Skill 拿回复」，不需要对外假装成某个聊天角色。实现最小，和独立展示一致。
 
-适合：调用方愿意保存我们返回的 ID，做多轮工作流或角色向聊天。
+代价：API 默认没有「分析师」「老师」那种人设，除非你在开放接口页写一份，或把风格写进 Skill。
 
-### 4.3 按调用方 thread_id 接续
+### 方案 B — 人设借用现有角色，沙箱仍走 API slot
 
-请求带 `thread_id`（调用方自己的稳定字符串，例如 `crm:ticket:1234`、`slack:Cxxx:txxx`）：
+创建 Key（或每次请求）指定一个已有 `role_id`，只把该角色的 `system_prompt` / 名称注入 Agent。
 
-- 在 `(api_key_id, thread_id)` 上查找映射。
-- 已有则续该 `conversation_id`。
-- 没有则新建会话并写入映射。
-- `thread_id` 与 `conversation_id` 同时传入时：以 `conversation_id` 为准，并校验映射一致，否则 409 `thread_mismatch`。
+- 会话：仍然 `origin=api`，**不**出现在该角色时间线。
+- 沙箱：**仍然只打 API slot**。禁止 `pool.get(被借人设的 role_id)`。
+- 存储：`persona_role_id`（人设）与 `role_id`/`sandbox_slot`（执行）分开。
 
-适合：外部系统已有线程概念，不想管理 Lore 的 ID。这是「有点像角色聊天、固定一段上下文」的主要用法。
+适合：已经给某个角色写好了人设，希望脚本里的口气和它一致，但执行环境必须分开。
 
-### 4.4 不采用的做法
+代价：两套 id，实现和心智都多一截；该角色改人设会马上影响 API。
 
-- **每次都 ephemeral**：历史无法展示，也没法接续。
-- **一个 Key 永远只有一条会话**：多个工单会串上下文。
-- **网页 tip 被 API 续写**：外部一调用，主人正在打的字就被接走。API 会话与 tip 隔离，见 §7.2。
-- **跨 Key 共享 conversation_id**：Key 泄露不应看到别人（另一把 Key）的线程。
+### 方案 C — 每次请求自己选人设角色
 
-## 5. 鉴权与 Key
+和 B 一样拆人设/沙箱，但 `role_id` 由当次请求传入（须是已有角色，或省略则用 Key 默认 / 空人设）。
 
-### 5.1 形态
+适合：同一把 Key，有的脚本要角色甲的口气，有的要角色乙。
+
+代价：脚本要知道角色 id；一般自己用、低并发，用不上这么灵活。
+
+### 方案 D — 无人设（不推荐作唯一方案）
+
+不引入系统角色，也不借人设。只注入心法/戒律 + Skill + 只读检索。沙箱仍是 API slot。
+
+太瘦：主人已经问「用什么角色跑」，说明需要一个明确归属；没有系统角色时，会话行的 `role_id` 还是得找个不进时间线的值，最后会滑回 A。
+
+### 不采用
+
+- **API 直接跑在「通用」或任一现有角色上**（人设、时间线、沙箱绑在一起）：和「独立展示」「沙箱不冲突」都矛盾。
+- **左栏再摆一个可切换的聊天角色叫「开放接口」**：又和日常聊天混在同一套中栏里。
+- **每个 thread / 每把 Key 一把沙箱**：低并发不需要，会占满 `sandbox_max_roles`。
+
+### 推荐
+
+**先做 A**。开放接口页可以写人设；真要借用某个角色口气，再加 B（Key 上一个可选 `persona_role_id`），沙箱契约不变。
+
+## 5. 沙箱隔离（已定）
+
+现网：`opensandbox-server` ×1；每个**已激活角色**一把 agent 容器 + 一张 PVC；`interrupt` 只打该角色；满员（默认 4）且不能回收时空错 `sandbox_pool_full`，**永不借用**他人 slot。同角色多会话靠 `/workspace/conversations/{cid}` 分目录。
+
+API 必须能 `sandbox_run`，但：
+
+1. **专用 slot** `api`（方案 A 下即 `__api__`）。卷名例如 `lorechat-sandbox-ws-api`，不复用 `lorechat-sandbox-workspace`（那是默认角色的盘）。
+2. **解析路径**：`origin=api` 时 `SandboxTools` / stop / pending 只认 API slot。即使方案 B 填了 `persona_role_id`，也不得 `get(persona_role_id)`。
+3. **中断**：停 API 回合只 interrupt API slot；停某个聊天角色不影响 API。禁止对 API 走跨角色 `interrupt_all`。
+4. **cwd**：`/workspace/conversations/{conversation_id}`，约定与现网交互回合相同，只是盘不同。
+5. **池容量（推荐）**：API slot **不占** `sandbox_max_roles` 那 4 个角色名额。角色并行上限保持原义；API 另有 1 个活容器。空闲 TTL 同样可收回 API 容器、留卷。低并发下同时最多「4 个角色 + 1 个 API」。
+6. **满员**：四个聊天角色都占着时，API 仍能跑（因为预留）。不要让 API 和第五个新角色去抢；也不要在满员时借用角色盘。
+7. **高风险确认**：脚本自动化等不了网页点批准。`origin=api` **跳过** `SandboxCommandGate` 网页确认，直接执行。风险靠「只有自己持有 Key + 不能 publish 回 KB」收住。不在首期做 `auto_approve` 开关。
+8. **不能回写知识库**：保留 `sandbox_run` / `stage_to_sandbox` / 读文件 / 列目录 / stop / job_status；**去掉** `publish_from_sandbox`。沙箱里的产物停在 API 自己的卷上，不进 KB、不改 Skill。
+
+现成 `select_tools(mode=no_write)` 已去掉 `write_doc` / `write_kb_file` / `update_doc_meta` / `manage_memory` / `publish_from_sandbox`。API 还要再去掉 `edit_doc`、`summarize_conversation`、`move_entry`、`delete_kb`、以及全部角色 CRUD / 例行任务工具。建议新增 `mode=api`（或等价 allowlist），不要在提示词里堆黑名单。
+
+## 6. 会话模型
+
+### 6.1 默认：每次新开一段
+
+不传 `conversation_id` / `thread_id`：`create` 一条 `origin=api` 会话，跑一轮，返回 `conversation_id`。适合一次 Skill 作业。
+
+### 6.2 可选接续
+
+带上次返回的 `conversation_id`（须 `origin=api` 且属于这把 Key）：在同一段上追加，Agent history 含前轮。同一会话仍只能一个 running turn。
+
+P1：`thread_id`（脚本自己的键，如 `cron:weekly`）映射到上述会话，免记 Lore id。
+
+### 6.3 不采用
+
+- ephemeral；一个 Key 永远一条会话；续网页会话；跨 Key 共享 id。
+
+## 7. 历史如何展示（独立，已定）
+
+不进 `GET /api/roles/{id}/timeline`，不进左栏角色「最近活动」，不进中栏筛选。
+
+设置（或左栏知识库下方一个**非角色**入口）→ **开放接口**：
+
+1. Key：创建（显示一次）、吊销、上次使用。
+2. 人设：方案 A 下编辑系统角色人设；方案 B 下选择借用哪个角色。
+3. 会话列表：标题、时间、状态；点开只读 transcript（可看工具/沙箱日志，与网页历史段同类渲染）。
+4. 调用示例：`POST {public_base_url}/api/v1/chat`。
+
+标题：请求 `title`，否则首条用户消息截断。
+
+工作区搜索（Ctrl+K）默认**不含** `origin=api`；需要时加 scope「开放接口」。避免脚本垃圾进日常检索。
+
+tip / `ensure_active` / `open_new_topic` / 角色最近开聊：**只看 `origin=web`**。API 更新 `updated_at` 也不许把主人 tip 抢走。这是隔离的第二道，即使有人误把 API 行写成某个 `role_id` 也不进 tip。
+
+网页「继续此段」做成日常聊天：**不做**。要接着聊走 API 再带 `conversation_id`。
+
+`ask_user`：API 返回 `needs_input`；开放接口页也可回答。不要把征询混进主人正在聊的中栏。沙箱已跳过确认，这类 pending 会少很多。
+
+## 8. 鉴权与 Key
 
 ```
 Authorization: Bearer lc_live_<secret>
 ```
 
-- 明文只在创建时显示一次。
-- 落盘只存 SHA-256（或等价单向哈希）与 `key_prefix`（前 8 位，便于辨认）。
-- 存储：`{kb}/.kb/api_keys.json`（与分享链接、启用 Skill 一样走 KB 侧配置，不进 git 知识正文）。
-- 设置页新页签「开放接口」：创建、命名、吊销、看上次使用时间。不把完整 Key 再读出来。
+明文只在创建时显示一次；落盘哈希 + `key_prefix`。`{kb}/.kb/api_keys.json`。
 
-### 5.2 Key 字段
+字段从简（自己用、低并发）：
 
 | 字段 | 含义 |
 |------|------|
-| `id` | 稳定内部 id（`api_key_id`） |
-| `name` | 主人起的名字，时间线徽章上显示 |
-| `role_id` | 默认角色；请求可覆盖为同一把 Key 允许的角色（首期只允许这一个） |
-| `skills` | 允许的 Skill 根路径；空 = 使用当前全局启用集与其交集（见 §6） |
-| `capabilities` | 默认 `["chat"]`；可选 `kb_read`（默认开）、`kb_write`、`sandbox`、`web` |
-| `exp` | 可选过期 |
-| `revoked` | 吊销后立即 401 |
+| `id` / `name` | 内部 id、显示名 |
+| `skills` | 可选白名单；空 = 当前全局启用集 |
+| `persona_role_id` | 仅方案 B/C |
+| `revoked` | 吊销即 401 |
 
-中间件：仅 `/api/v1/*` 接受 Bearer。现有 Cookie 路由不变。一把 Key **不能**调用 `/api/settings`、`/api/kb/*`、管理接口。
+不设 `kb_write` / `sandbox` 勾选：写库永远关，沙箱永远开（实例开了沙箱的前提下）。不配 CORS、不配速率限制。
 
-`GET /api/health` 仍公开，不带 Key。
+中间件：仅 `/api/v1/*` 认 Bearer。Key 不能打 `/api/settings`、`/api/kb/*`。`GET /api/health` 仍公开。
 
-### 5.3 CORS 与入口
+## 9. Skill
 
-依赖已有 `public_base_url`。设置里可配 `api_cors_origins`（默认空 = 非浏览器脚本，不开放任意网站跨域）。浏览器插件/网页调用须主人显式加源。
+- 包必须在「技能」目录，有合格 YAML 头。
+- catalog = `（Key.skills 或全局启用集） ∩ 请求.skills（若传）`。
+- 交集为空 → 400，不退化成无 Skill 闲聊。
+- 只 `read_doc` Skill 正文，不能改文件、不能 `PUT /api/enabled-skills`。
+- 不按 Skill 名做关键词黑名单。
 
-## 6. Skill
+## 10. 对外 HTTP 契约
 
-「做好一个 Skill 再对外调用」是本需求的主场景。
+前缀 `/api/v1`。错误 `{"code","message"}`。
 
-- Skill 包仍必须落在「技能」目录，有合格 YAML 头（现网硬约束不变）。
-- 每轮 catalog = `（Key.skills 若非空，否则全局启用集） ∩ 请求.skills（若传入）`。
-- 交集为空则 400，而不是悄悄跑成「无 Skill 的通用聊天」。
-- 调用方**不**传 Skill 正文；命中后仍由 Agent `read_doc` 拉取，与网页相同。
-- 禁止按 Skill 名做关键词黑名单；收窄只通过 Key 白名单与当次 `skills`。
-
-请求示例：只跑一个包时传 `"skills": ["技能/周报助手"]`。
-
-## 7. 历史如何展示
-
-### 7.1 时间线
-
-API 会话是该 `role_id` 下的普通段，出现在 `GET /api/roles/{id}/timeline`：
-
-- 段上有徽章 **API**，副文案为 Key 的 `name`（没有则「开放接口」）。
-- 标题：请求 `title` → 否则首条用户消息截断（沿用 `title_from_text`）。
-- 段间分隔与现网一致；不把多段合并成一行。
-- 工作区搜索（会话 FTS/向量）包含 API 段，结果可带来源以免和网页聊天分不清。
-
-中栏筛选（角色时间线顶或搜索旁）：**全部 / 仅网页 / 仅 API**。默认「全部」，避免主人不知道外部刚跑过什么。
-
-### 7.2 绝不能抢走 tip（硬约束）
-
-现网 `ensure_active_conversation` / `find_active_conversation_id` / `open_new_topic` 按「该角色最新会话 + 连续窗口」决定可写 tip。若 API 新建或更新一段，`updated_at` 会变成最新，主人再打开角色就会落到 API 段上，或把网页连续窗口打断。
-
-因此：
-
-1. `conversations` 增加 `origin`（`web` \| `api`，缺省 `web`）。
-2. tip 算法、空段复用、「新话题」、角色「最近活动」若表示「主人上次亲口聊」，**只看 `origin=web`**。
-3. API 段出现在时间线里，但是只读段（与今天的历史段一样）。
-4. 主人要在网页里接着某段 API 聊：P1 提供「继续此段」（显式把该段设为当前 tip；`origin` 仍为 `api`）。首期不做自动提升。
-5. Agent 若 `ask_user` 或沙箱确认：走现有 Pending / `/api/questions`，主人在网页待办里回答。同时 API 响应 `status=needs_input`（§9）。
-
-角色列表副标题：默认仍优先网页最近回复；若该角色只有 API 活动，可以显示「API · …」以免看起来像没聊过。实现时二选一写进 ADR，不在 tip 算法里混用。
-
-### 7.3 不采用单独入口的理由
-
-单独做「开放接口」角色或独立页面，会让 Skill 的人格和主人选的会话角色脱节，也会再维护一套列表。来源标记 + 筛选 + tip 隔离已经能把「日常聊天」和「外部作业」分开。
-
-若日后 API 量极大、时间线被刷屏，再加「默认隐藏 API 段、筛选才显示」，不改数据模型。
-
-## 8. 对外 HTTP 契约
-
-前缀：`/api/v1`。DTO 用稳定英文字段。错误体：`{"code": "…", "message": "…"}`。
-
-### 8.1 `POST /api/v1/chat`
+### 10.1 `POST /api/v1/chat`
 
 ```json
 {
   "message": "用周报助手把下面材料整理成周报：…",
   "conversation_id": null,
-  "thread_id": "weekly:2026-W37",
-  "role_id": null,
+  "thread_id": null,
   "skills": ["技能/周报助手"],
   "title": "2026-W37 周报",
-  "stream": false,
+  "role_id": null,
   "wait": true,
   "timeout_sec": 120
 }
@@ -207,77 +237,42 @@ API 会话是该 `role_id` 下的普通段，出现在 `GET /api/roles/{id}/time
 
 | 字段 | 说明 |
 |------|------|
-| `message` | 必填，用户文本。首期不做附件/托盘（外部把材料放进 message 或先由主人写入 KB）。 |
-| `conversation_id` | 续指定会话，见 §4.2。 |
-| `thread_id` | 调用方线程键，见 §4.3。 |
-| `role_id` | 可选；缺省用 Key 绑定角色。 |
-| `skills` | 可选，当次再收窄。 |
-| `title` | 仅新建会话时采用。 |
-| `stream` | 默认 `false`。`true` 为 P1 精简 SSE。 |
-| `wait` | 默认 `true`：等回合结束或超时。 |
-| `timeout_sec` | 默认 120，上限 600。超时不取消回合。 |
+| `message` | 必填。首期无附件；材料放进正文或主人事先写入 KB 再让 Skill 去读。 |
+| `conversation_id` | 续 API 会话。 |
+| `thread_id` | P1。 |
+| `skills` | 当次收窄。 |
+| `title` | 仅新建。 |
+| `role_id` | 仅方案 C；A/B 忽略或校验后 400。 |
+| `wait` / `timeout_sec` | 默认等 120s，上限 600；超时不取消回合。 |
 
-同步完成：
+完成：
 
 ```json
 {
   "conversation_id": "a1b2c3d4e5f6",
-  "thread_id": "weekly:2026-W37",
   "turn_id": "…",
   "status": "completed",
-  "message": {
-    "id": "…",
-    "role": "assistant",
-    "content": "本周纪要：…"
-  },
+  "message": { "id": "…", "role": "assistant", "content": "…" },
   "usage": { "input_tokens": 0, "output_tokens": 0 }
 }
 ```
 
-`status`：`completed` \| `running` \| `needs_input` \| `failed` \| `stopped`。
+`status`：`completed` \| `running` \| `needs_input` \| `failed` \| `stopped`。超时 202 + `running`。
 
-超时且 `wait=true`：HTTP 202，body 仍是同一形状，`status=running`，`message` 为已有部分或 `null`。调用方 `GET /api/v1/conversations/{id}` 或 `GET .../turns/{turn_id}`。
-
-`needs_input`：`message.content` 可为截止提问前的文本；另给 `pending`：
-
-```json
-{
-  "pending": {
-    "id": "…",
-    "kind": "ask_user",
-    "prompt": "周报里要不要写未完成项？",
-    "choices": ["要", "不要"]
-  }
-}
-```
-
-调用方 `POST /api/v1/questions/{id}/resolve`（P1）；首期也可由主人在网页点选，调用方轮询会话直到 `completed`。
-
-### 8.2 只读与控制
+### 10.2 其它
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | `/api/v1/conversations` | 仅本 Key 的会话；可选 `thread_id` |
-| GET | `/api/v1/conversations/{id}` | 消息列表（可 `tail`） |
+| GET | `/api/v1/conversations` | 本 Key 的 API 会话 |
+| GET | `/api/v1/conversations/{id}` | 消息；可 `tail` |
 | GET | `/api/v1/conversations/{id}/turns/{turn_id}` | 回合状态 |
-| POST | `/api/v1/conversations/{id}/stop` | 停当前回合 |
-| GET | `/api/v1/skills` | 本 Key 当前可用 catalog（name/description/root） |
-| POST | `/api/v1/questions/{id}/resolve` | P1：回答征询 |
+| POST | `/api/v1/conversations/{id}/stop` | 只停该会话，interrupt API slot |
+| GET | `/api/v1/skills` | 可用 catalog |
+| POST | `/api/v1/questions/{id}/resolve` | P1 |
 
-列出/读取越权（别人的网页会话、另一把 Key 的会话）→ 404，不泄露存在性。
+越权 → 404。网页用 Cookie 调 `/api/open-api/*`（名称可再定）列全部 API 会话，不走 v1。
 
-### 8.3 流式（P1）
-
-`stream=true` 时 `text/event-stream`，**公开事件只有**：
-
-- `delta`：`{ "text": "…" }`
-- `status`：`{ "status": "running|needs_input|completed|failed" }`
-- `done`：与同步响应同形的最终对象
-- `error`：`{ "code", "message" }`
-
-不对外暴露内部 `timeline_state` / tool 卡片 / keepalive 细节。实现上仍 `observe_turn`，在 **PublicChat 服务**里投影，路由只挂 `StreamingResponse`。
-
-### 8.4 调用示例
+### 10.3 示例
 
 ```bash
 curl -sS "$LORECHAT/api/v1/chat" \
@@ -286,133 +281,84 @@ curl -sS "$LORECHAT/api/v1/chat" \
   -d '{"message":"把这段会议记录写成纪要：…","skills":["技能/会议纪要"]}'
 ```
 
-接续同一工单：
+## 11. 记忆
 
-```bash
-curl -sS "$LORECHAT/api/v1/chat" \
-  -H "Authorization: Bearer lc_live_…" \
-  -H "Content-Type: application/json" \
-  -d '{"thread_id":"ticket:8848","message":"补充：客户改约到周五。"}'
-```
+API 会话**不**跑 `SessionMemoryObserve` / 记忆抽取，也不提供 `manage_memory`。脚本内容和 Skill 作业不是主人画像；这也属于「不具备修改能力」。
 
-## 9. 能力、工具与人机确认
+`recall_memory` 可以保留：只读已有画像，帮助 Skill 说话，但不写回。
 
-Agent 工具循环与网页同一套。Key 的 `capabilities` 在组 catalog / 跑工具前裁剪：
-
-| 能力 | 缺省 | 没有时 |
-|------|------|--------|
-| `chat` | 有 | Key 无效 |
-| `kb_read` | 有 | 不注入检索、禁用 `read_doc` / `search_kb`（Skill 正文仍允许按包读取，否则 Skill 无法工作） |
-| `kb_write` | 无 | 禁用 `write_doc` / 归档 / 导入 |
-| `sandbox` | 无 | 禁用沙箱工具 |
-| `web` | 无 | `web_enabled` 强制 false |
-
-`kb_read` 与「读 Skill 包」要分开：即使关掉通用 KB 检索，仍须能 `read_doc` 已允许的 Skill 根。实现时在工具层按路径白名单，而不是提示词里写个案。
-
-沙箱在网页有 `SandboxCommandGate`。API 默认**不**自动批准。未授 `sandbox` 则工具不可见；授了但仍触发确认时 → `needs_input` + 网页待办。P2 才考虑 Key 级 `auto_approve_sandbox`（默认关，文案写清风险）。
-
-## 10. 记忆
-
-API 会话走同一套 outbox / `SessionMemoryObserve`。关段、空闲抽取规则不变。
-
-抽取提示词仍是关于主人 / 耐久性 / 语境保全三道门槛：外部工单、Skill 作业步骤、调用方业务数据**默认不是主人画像**。不在本文另写抽取黑名单。
-
-API 段不自动当 tip，因此「关段抽取」不会因为 API 刷屏而把主人网页 tip 误关；API 段自身的空闲抽取仍可跑。
-
-## 11. 存储与实现 seam
-
-### 11.1 会话列（`ALTER`，缺省兼容旧行）
+## 12. 存储与 seam
 
 `conversations` 增加：
 
 - `origin TEXT NOT NULL DEFAULT 'web'`
 - `api_key_id TEXT`
-- `external_thread_id TEXT`
-- 索引：`(origin, role_id, updated_at)`；`(api_key_id, updated_at)`
+- `external_thread_id TEXT`（P1）
+- `persona_role_id TEXT`（仅方案 B/C）
+- 索引 `(origin, updated_at)`、`(api_key_id, updated_at)`
 
-映射表（可放 `conversations.db` 或 `{kb}/.kb/api_threads.json`；推荐 SQLite）：
+方案 A：`role_id='__api__'`。时间线 / tip / 角色列表均排除该 id 与 `origin=api`（两道过滤）。
 
-- `api_key_id, thread_id, conversation_id`，主键 `(api_key_id, thread_id)`，`conversation_id` 唯一。
-
-### 11.2 模块边界
+`RoleSandboxPool`：slot 键允许非左栏角色（`__api__`）。`max_roles` 统计**不含** API slot；API `get` 走独立预留。`SandboxTools` 对 `origin=api` 固定 API slot。
 
 | 层 | 职责 |
 |----|------|
-| `AuthMiddleware` | `/api/v1/*` 校验 Bearer，把 `api_key` 挂到 request；其它路由仍只认 Cookie |
-| HTTP `v1_routes` | DTO、状态码、StreamingResponse；**不**解析 Agent SSE |
-| `PublicChatService` | 解析会话/线程、裁剪 Skill/工具、`begin_persisted_turn`、等到 `finalize`、投影公开响应 |
-| `ChatSessionRunner` / `TurnExecutionHub` | 不分来源；多一个 origin/catalog 入参即可 |
-| `ConversationStore` | tip 查询加 `origin='web'`；create 接受来源字段 |
-| 设置 UI | Key CRUD；时间线徽章与筛选 |
+| `AuthMiddleware` | `/api/v1/*` Bearer |
+| HTTP `v1_routes` | DTO / 状态码 / 可选 SSE；不解析内部事件 |
+| `PublicChatService` | 会话、catalog、`select_tools(mode=api)`、等回合结束、投影 |
+| `ChatSessionRunner` / Hub | 不分来源；多 origin / skill_catalog / tool mode |
+| `ConversationStore` | tip/timeline 排除 api；create 带来源字段 |
+| 设置「开放接口」 | Key、人设、会话列表与只读 transcript |
 
-禁止：在 `chat_routes.py` 里加 `if api_key`；在路由里 `async for` 解析内部 SSE 拼最终回复；为 API 再写一套 Agent 循环。
-
-`create` 与 tip 复用必须分开：API **永远** `create` 新行或续已有 API 行，不调用 `ensure_active_conversation`。
-
-## 12. 前端
-
-1. 设置 → **开放接口**：创建 Key（角色、Skill 多选、能力勾选）、复制一次、列表、吊销；展示 `POST {public_base_url}/api/v1/chat` 示例。
-2. 角色时间线段分隔处：`origin=api` 显示 API 徽章 + Key 名。
-3. 筛选：全部 / 仅网页 / 仅 API。
-4. 待办（已有 questions）继续承接 API 回合的征询，无需新入口。
-5. P1：「继续此段」出现在 API 段操作里。
-
-不在 `Chat.tsx` 再堆一套来源状态机；筛选与徽章跟时间线数据走。
+禁止：在 `chat_routes.py` 加 `if api_key`；API `ensure_active_conversation`；为 API 另写 Agent 循环；`origin=api` 时 `pool.get(普通角色)`。
 
 ## 13. 分期
 
-**P0（可对外真用）**
+**P0**
 
-- Key 签发/吊销 + Bearer
-- `POST /api/v1/chat` 同步（新建或 `conversation_id` 续）+ 超时 202
-- `GET` 会话/回合、`POST` stop
-- `GET /api/v1/skills`
-- 落库 `origin=api`；tip 算法排除 API 段
-- 时间线徽章 + 筛选
-- 能力默认：chat + 读 KB/Skill；写库/沙箱/联网默认关
+- Key + `POST /api/v1/chat` 同步（新建或 `conversation_id` 续）+ 202
+- GET 会话/回合、stop、GET skills
+- `origin=api` 落库；角色时间线/tip/搜索默认不可见
+- 设置「开放接口」：Key + 会话列表 + 只读 transcript
+- `select_tools(mode=api)`：只读 KB + Skill 读取 + 沙箱，无写库/无回写/无改角色
+- 专用 API 沙箱 slot，不占 4 角色名额，跳过网页沙箱确认
+- 方案 A 系统角色（若采用 A）
 
 **P1**
 
-- `thread_id` 映射
-- `stream=true` 精简 SSE
-- `POST /api/v1/questions/{id}/resolve`
-- 网页「继续此段」
-- 简单每 Key 速率限制
+- `thread_id`
+- 精简 SSE
+- 开放接口页回答 `needs_input`
+- 方案 B 的可选 `persona_role_id`（若先做 A）
 
 **P2**
 
-- OpenAI 兼容适配（`messages[]` → 本契约；方便现成客户端）
-- Key 用量（对接现有 usage）
-- CORS UI、Key 过期、`auto_approve_sandbox`
-- 附件（先导入 KB 再带路径，或受限上传）
+- OpenAI 兼容适配
+- 用量展示
+- 附件
 
 ## 14. 验收意图
 
-不写孤例补丁，只验根因同类：
-
-1. **无 Key / 坏 Key** → 401；Cookie 登录不能当 v1 凭证，Bearer 不能当网页凭证。
-2. **不传会话 ID** → 新段、`origin=api`、时间线可见、主人 tip 不变。
-3. **再带返回的 conversation_id** → 同一段接续；Agent history 含上一轮。
-4. **另一把 Key 带该 conversation_id** → 404。
-5. **指定 skills** → catalog 只有交集；交集空 → 400。
-6. **未授 sandbox 的 Key** → 工具不可见，不会冒出沙箱确认。
-7. **网页连续窗口内**外部连打多轮 API → 主人再进该角色，tip 仍是原来的网页段。
-8. **筛选「仅网页」** → API 段消失；「仅 API」反之。
+1. 无 Key / 坏 Key → 401；Cookie ≠ v1，Bearer ≠ 网页管理接口。
+2. 不传会话 ID → 新 `origin=api` 行；角色时间线、tip、左栏最近活动都不变。
+3. 开放接口页能看到该段全文；角色时间线看不到。
+4. 带返回的 `conversation_id` → 同段接续。
+5. 指定 skills 交集空 → 400。
+6. 模型即使想 `write_doc` / `publish_from_sandbox` / `delete_kb` → 工具不存在。
+7. API `sandbox_run` 打在 API 卷；同时网页某角色 `sandbox_run` 打在该角色卷；一方 stop 不影响另一方。
+8. 四个聊天角色沙箱都占着时，API 仍能启动自己的容器。
+9. 方案 A：左栏角色列表没有「开放接口」。方案 B：借用人设时该角色时间线仍无 API 段，且 `pool.get` 不是该角色。
 
 ## 15. 明确不采用
 
-- 复用 `/api/chat` 加一个 header 冒充对外开放
-- API 默认 ephemeral 或默认自动批准沙箱
-- 用关键词禁止某些 Skill 名
-- 为 API 单独做记忆抽取提示词
-- 时间线物理合并 API 与网页消息
-- 首期只做 OpenAI 兼容、不做自己的稳定契约
+- 复用 `/api/chat` 加 header
+- API 默认 ephemeral
+- API 挂到通用/任一现有角色并共用其沙箱
+- 时间线混布 + 筛选权当「独立」
+- 用提示词禁止写库，而工具仍挂着
+- 为 API 另写记忆抽取提示词（直接不抽取）
+- 首期只做 OpenAI 兼容
 
-## 16. 若之后改口径
+## 16. 待你选的一口
 
-| 若主人改口 | 怎么改（不动 P0 骨架） |
-|------------|------------------------|
-| 只要自己用、不要给别人 Key | 仍然用 Key；只是不把 Key 发出去。契约不用变。 |
-| 和日常聊天完全分开 | 加筛选默认「仅网页」+ 设置里「API 会话列表」；或后期专用角色。数据仍是 `origin=api`。 |
-| 外部默认可写库、跑沙箱 | 创建 Key 时默认勾选对应 capabilities，不要去掉授权模型。 |
-| 必须对接现成 OpenAI 客户端 | P2 适配层，映射到同一 `PublicChatService`。 |
+角色方案选 **A / B / C**（推荐 A）。沙箱隔离与独立展示、只读知识库/Skill 不再改口径，除非你明确推翻。
