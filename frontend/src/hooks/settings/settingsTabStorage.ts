@@ -5,7 +5,8 @@ export type SettingsTab =
   | "kb"
   | "usage"
   | "account"
-  | "share";
+  | "share"
+  | "openapi";
 
 export const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
   { id: "model", label: "模型" },
@@ -13,6 +14,7 @@ export const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
   { id: "agent", label: "Agent" },
   { id: "kb", label: "知识库" },
   { id: "share", label: "分享" },
+  { id: "openapi", label: "开放接口" },
   { id: "usage", label: "用量" },
   { id: "account", label: "账户" },
 ];

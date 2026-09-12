@@ -3717,6 +3717,7 @@ button.memory-fact-statement--jump:focus-visible {
   text-decoration: underline;
 }
 
+.settings-field textarea,
 .settings-field input[type="text"],
 .settings-field input[type="password"],
 .settings-field input[type="number"],
@@ -3747,13 +3748,21 @@ button.memory-fact-statement--jump:focus-visible {
   padding-right: 28px;
 }
 
+.settings-field textarea {
+  resize: vertical;
+  min-height: 72px;
+  line-height: 1.45;
+}
+
 .settings-field select:disabled,
+.settings-field textarea:disabled,
 .settings-field input:disabled {
   opacity: 0.55;
   cursor: not-allowed;
 }
 
 .settings-field input:focus,
+.settings-field textarea:focus,
 .settings-field select:focus {
   outline: none;
   border-color: var(--accent);
@@ -3967,6 +3976,84 @@ button.memory-fact-statement--jump:focus-visible {
 .settings-btn:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+.open-api-settings {
+  gap: 12px;
+}
+
+.open-api-settings .settings-group-title + .settings-group-hint {
+  margin-top: -4px;
+}
+
+.settings-callout {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--accent-border, var(--border));
+  border-radius: var(--radius-md);
+  background: var(--bg-muted, var(--bg-surface));
+}
+
+.open-api-token {
+  display: block;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font-size: var(--text-xs);
+  word-break: break-all;
+}
+
+.open-api-token-actions,
+.open-api-actions,
+.open-api-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.open-api-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.open-api-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+}
+
+.open-api-row-main,
+.open-api-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1 1 180px;
+}
+
+.open-api-transcript {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 4px;
+}
+
+.open-api-transcript section {
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
 }
 
 .settings-divider {

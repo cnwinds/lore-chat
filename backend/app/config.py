@@ -167,6 +167,8 @@ class Settings(BaseSettings):
     sandbox_mirror_region: str = "cn"
     # 角色沙箱池：同时占用执行容器的角色数上限（已绑定角色可继续 get）
     sandbox_max_roles: int = 4
+    # 隐藏 API 工作角色的活容器上限；不占 sandbox_max_roles
+    sandbox_max_api_roles: int = 8
     # 空闲 TTL（秒）：无活跃执行且超过该时长则 destroy 容器、保留 PVC；0=不回收
     sandbox_idle_ttl_sec: float = 3600
     # 删除角色时是否忘记并尝试丢弃该角色卷；默认只停容器、留 PVC

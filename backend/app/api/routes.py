@@ -10,8 +10,10 @@ from app.api import (
     kb_routes,
     memory_routes,
     merge_routes,
+    open_api_routes,
     role_routes,
     share_routes,
+    v1_routes,
 )
 
 router = APIRouter(prefix="/api")
@@ -21,8 +23,9 @@ router.include_router(merge_routes.router)
 router.include_router(conversation_routes.router)
 router.include_router(role_routes.router)
 router.include_router(memory_routes.router)
-router.include_router(role_routes.router)
 router.include_router(share_routes.router)
+router.include_router(open_api_routes.router)
+router.include_router(v1_routes.router)
 
 # 兼容旧测试从 routes 导入的符号
 from app.api.http_deps import (  # noqa: E402

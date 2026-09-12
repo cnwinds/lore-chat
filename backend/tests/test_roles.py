@@ -692,6 +692,24 @@ def test_list_roles_tool_lists_all_and_filters(tmp_path):
     assert missing_id["error"] == "role not found"
 
 
+def test_list_roles_tool_hides_api_worker_roles(tmp_path):
+    from app.engine.agent.tool_impl.role_tools import RoleTools
+    from app.engine.roles import API_ROLE_PREFIX, VISIBILITY_HIDDEN
+
+    store = _roles(tmp_path)
+    hidden = store.create(
+        name="周报助手 · 脚本",
+        visibility=VISIBILITY_HIDDEN,
+        role_id=f"{API_ROLE_PREFIX}abcd",
+        onboarding_status="completed",
+    )
+    tools = RoleTools(store)
+    listed = tools.list_roles({})
+    assert hidden["id"] not in [r["id"] for r in listed["roles"]]
+    by_id = tools.list_roles({"role_id": hidden["id"]})
+    assert by_id["error"] == "role not found"
+
+
 def test_busy_role_ids_from_running_turn(tmp_path):
     roles = _roles(tmp_path)
     conv = _conv(tmp_path)

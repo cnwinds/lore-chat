@@ -120,8 +120,14 @@ class TurnLifecycle:
             kickoff = is_onboarding_kickoff_id(client_message_id)
             if not reuse_user_message_id and not kickoff:
                 store._enqueue_index_jobs(msg_id, turn_id)
-            # 会话级空闲抽取：只打 dirty（已持锁，用 unlocked 变体）
-            store.memory_schedule.mark_dirty_unlocked(cid, at=started_at)
+            origin = "web"
+            try:
+                origin = (conv_row["origin"] or "web").strip() or "web"
+            except (KeyError, IndexError):
+                origin = "web"
+            if origin != "api":
+                # 会话级空闲抽取：只打 dirty（已持锁，用 unlocked 变体）
+                store.memory_schedule.mark_dirty_unlocked(cid, at=started_at)
             store._mark_dirty_and_stale(cid)
 
             title = conv_row["title"]

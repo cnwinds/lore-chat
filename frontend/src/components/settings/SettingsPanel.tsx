@@ -3,6 +3,7 @@ import { AccountSettingsTab } from "./AccountSettingsTab";
 import { AgentSettingsTab } from "./AgentSettingsTab";
 import { KbBackupSettingsTab } from "./KbBackupSettingsTab";
 import { ModelSettingsTab } from "./ModelSettingsTab";
+import { OpenApiSettingsTab } from "./OpenApiSettingsTab";
 import { ShareSettingsTab } from "./ShareSettingsTab";
 import { SearchSettingsTab } from "./SearchSettingsTab";
 import { UsageSettingsTab } from "./UsageSettingsTab";
@@ -295,6 +296,17 @@ export function SettingsPanel({
                   aria-labelledby="settings-tab-share"
                 >
                   <ShareSettingsTab />
+                </div>
+              ) : null}
+
+              {session.activeTab === "openapi" ? (
+                <div
+                  className="settings-tab-panel"
+                  role="tabpanel"
+                  id="settings-panel-openapi"
+                  aria-labelledby="settings-tab-openapi"
+                >
+                  <OpenApiSettingsTab />
                 </div>
               ) : null}
 

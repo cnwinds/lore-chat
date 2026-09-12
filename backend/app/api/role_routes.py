@@ -9,8 +9,23 @@ from pydantic import BaseModel, Field, model_validator
 
 from app.api.http_deps import container
 from app.engine.role_onboarding import maybe_kickoff_role_onboarding
+from app.engine.roles import VISIBILITY_HIDDEN
 
 router = APIRouter()
+
+
+def _role_or_404(c, role_id: str) -> dict:
+    try:
+        return c.roles.get(role_id)
+    except KeyError as e:
+        raise HTTPException(404, "角色不存在") from e
+
+
+def _sidebar_role_or_404(c, role_id: str) -> dict:
+    role = _role_or_404(c, role_id)
+    if role.get("visibility") == VISIBILITY_HIDDEN:
+        raise HTTPException(404, "角色不存在")
+    return role
 
 
 class CreateRoleBody(BaseModel):
@@ -83,7 +98,7 @@ async def list_roles(request: Request):
     return {
         "roles": [
             _attach_role_list_fields(role, activity, replies)
-            for role in c.roles.list_all()
+            for role in c.roles.list_all(visibility="sidebar")
         ]
     }
 
@@ -106,17 +121,22 @@ async def create_role(body: CreateRoleBody, request: Request):
 
 @router.get("/roles/busy")
 async def list_busy_roles(request: Request):
-    """有 running turn 的角色 id 列表。"""
-    return {"role_ids": container(request).conversations.list_busy_role_ids()}
+    """有 running turn 的左栏角色 id 列表。"""
+    c = container(request)
+    sidebar = {role["id"] for role in c.roles.list_all(visibility="sidebar")}
+    return {
+        "role_ids": [
+            rid
+            for rid in c.conversations.list_busy_role_ids()
+            if rid in sidebar
+        ]
+    }
 
 
 @router.get("/roles/{role_id}")
 async def get_role(role_id: str, request: Request):
     c = container(request)
-    try:
-        role = c.roles.get(role_id)
-    except KeyError as e:
-        raise HTTPException(404, "角色不存在") from e
+    role = _sidebar_role_or_404(c, role_id)
     return _attach_role_list_fields(
         role,
         c.conversations.last_active_at_by_role(),
@@ -127,6 +147,7 @@ async def get_role(role_id: str, request: Request):
 @router.patch("/roles/{role_id}")
 async def update_role(role_id: str, body: UpdateRoleBody, request: Request):
     c = container(request)
+    _sidebar_role_or_404(c, role_id)
     try:
         return c.roles.update(
             role_id,
@@ -143,10 +164,7 @@ async def update_role(role_id: str, body: UpdateRoleBody, request: Request):
 @router.delete("/roles/{role_id}")
 async def delete_role(role_id: str, request: Request):
     c = container(request)
-    try:
-        c.roles.get(role_id)
-    except KeyError as e:
-        raise HTTPException(404, "角色不存在") from e
+    _sidebar_role_or_404(c, role_id)
     try:
         default_id = c.roles.default_id()
         if role_id == default_id:
@@ -180,10 +198,7 @@ async def delete_role(role_id: str, request: Request):
 @router.post("/roles/{role_id}/ensure-active")
 async def ensure_active_conversation(role_id: str, request: Request):
     c = container(request)
-    try:
-        c.roles.get(role_id)
-    except KeyError as e:
-        raise HTTPException(404, "角色不存在") from e
+    _sidebar_role_or_404(c, role_id)
     cid, created = c.conversations.ensure_active_conversation(
         role_id,
         idle_hours=float(c.settings.continuity_idle_hours),
@@ -213,13 +228,13 @@ async def get_role_timeline(
     ``message_limit`` 为每段尾部消息数；``0`` 表示该段全量。
     """
     c = container(request)
-    try:
-        c.roles.get(role_id)
-    except KeyError as e:
-        raise HTTPException(404, "角色不存在") from e
+    _role_or_404(c, role_id)
     tip_id: str | None
     created = False
-    if before_created_at:
+    hidden = (c.roles.get(role_id).get("visibility") == "hidden")
+    if hidden:
+        tip_id = c.conversations._latest_conversation_id(role_id)
+    elif before_created_at:
         # 续载只读：禁止 ensure（否则窗口外会新建 tip / 关段抽取）
         tip_id = c.conversations.find_active_conversation_id(
             role_id,
@@ -264,10 +279,7 @@ async def get_role_timeline(
 async def open_role_new_topic(role_id: str, request: Request):
     """强制新话题：关上一 tip（记忆抽取）并新建空段。"""
     c = container(request)
-    try:
-        c.roles.get(role_id)
-    except KeyError as e:
-        raise HTTPException(404, "角色不存在") from e
+    _sidebar_role_or_404(c, role_id)
     cid = c.conversations.open_new_topic(role_id)
     return {"conversation_id": cid, "role_id": role_id}
 
@@ -275,20 +287,14 @@ async def open_role_new_topic(role_id: str, request: Request):
 @router.get("/roles/{role_id}/schedules")
 async def list_schedules(role_id: str, request: Request):
     c = container(request)
-    try:
-        c.roles.get(role_id)
-    except KeyError as e:
-        raise HTTPException(404, "角色不存在") from e
+    _sidebar_role_or_404(c, role_id)
     return {"schedules": c.roles.schedules.list_for_role(role_id)}
 
 
 @router.post("/roles/{role_id}/schedules")
 async def create_schedule(role_id: str, body: CreateScheduleBody, request: Request):
     c = container(request)
-    try:
-        c.roles.get(role_id)
-    except KeyError as e:
-        raise HTTPException(404, "角色不存在") from e
+    _sidebar_role_or_404(c, role_id)
     try:
         return c.roles.schedules.create(
             role_id,
@@ -307,7 +313,7 @@ async def update_schedule(
 ):
     c = container(request)
     try:
-        c.roles.get(role_id)
+        _sidebar_role_or_404(c, role_id)
         owned = {
             s["id"]: s for s in c.roles.schedules.list_for_role(role_id)
         }
@@ -330,7 +336,7 @@ async def update_schedule(
 async def list_schedule_runs(role_id: str, schedule_id: str, request: Request):
     c = container(request)
     try:
-        c.roles.get(role_id)
+        _sidebar_role_or_404(c, role_id)
         owned = {s["id"] for s in c.roles.schedules.list_for_role(role_id)}
         if schedule_id not in owned:
             raise KeyError(schedule_id)
@@ -345,7 +351,7 @@ async def list_schedule_runs(role_id: str, schedule_id: str, request: Request):
 async def delete_schedule(role_id: str, schedule_id: str, request: Request):
     c = container(request)
     try:
-        c.roles.get(role_id)
+        _sidebar_role_or_404(c, role_id)
         items = c.roles.schedules.list_for_role(role_id)
         if not any(s["id"] == schedule_id for s in items):
             raise KeyError(schedule_id)

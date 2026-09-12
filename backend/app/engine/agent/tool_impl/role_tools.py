@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from app.engine.roles import VISIBILITY_HIDDEN, VISIBILITY_SIDEBAR
+
 
 class RoleTools:
     def __init__(self, roles, conversations=None) -> None:
@@ -63,6 +65,19 @@ class RoleTools:
         suffix = f"（{'，'.join(flags)}）" if flags else ""
         return f"角色「{role['name']}」{suffix} id={role['id']}"
 
+    def _sidebar_roles(self) -> list[dict]:
+        try:
+            return self.roles.list_all(visibility=VISIBILITY_SIDEBAR)
+        except TypeError:
+            return [
+                role
+                for role in self.roles.list_all()
+                if (role.get("visibility") or VISIBILITY_SIDEBAR) != VISIBILITY_HIDDEN
+            ]
+
+    def _is_hidden(self, role: dict) -> bool:
+        return (role.get("visibility") or VISIBILITY_SIDEBAR) == VISIBILITY_HIDDEN
+
     def list_roles(self, args: dict, conversation_id: str | None = None) -> dict:
         if self.roles is None:
             return {
@@ -84,6 +99,13 @@ class RoleTools:
                     "error": "role not found",
                     "roles": [],
                 }
+            if self._is_hidden(role):
+                return {
+                    "summary": f"未找到 id 为 {role_id} 的角色",
+                    "sources": [],
+                    "error": "role not found",
+                    "roles": [],
+                }
             payload = self._role_payload(role, current_role_id)
             return {
                 "summary": self._detail_summary(payload),
@@ -92,7 +114,7 @@ class RoleTools:
                 "roles": [payload],
             }
 
-        all_roles = self.roles.list_all()
+        all_roles = self._sidebar_roles()
         if name:
             matched = self._match_roles_by_name(all_roles, name)
             if not matched:
