@@ -1,11 +1,16 @@
-from app.engine.agent.prompts import MODE_DEFAULT
+from app.engine.agent.prompts import MODE_API, MODE_DEFAULT
 from app.engine.agent.tool_catalog import select_tools
 from app.engine.conversation.transcript import ConversationTranscript
 from app.engine.conversations import ConversationStore
 from app.engine.rooms.delivery import RoomDelivery
 from app.engine.rooms.schema import KIND_OWNER_DM, KIND_PEER_DM, ROOM_ROLE_PLACEHOLDER
 from app.engine.rooms.types import format_peer_message
-from app.engine.roles import DEFAULT_ROLE_ID, RoleStore
+from app.engine.roles import (
+    DEFAULT_ROLE_ID,
+    VISIBILITY_HIDDEN,
+    RoleStore,
+    list_sidebar_roles,
+)
 
 
 def _conv(tmp_path):
@@ -384,3 +389,166 @@ def test_rooms_http_create_list_and_status(client):
     )
     assert woke.status_code == 200
     assert woke.json()["wake_status"] in {"started", "queued"}
+
+
+def test_hidden_role_not_in_messaging(tmp_path):
+    store = _conv(tmp_path)
+    roles = _roles(tmp_path)
+    hidden = roles.create(
+        name="API工人",
+        visibility=VISIBILITY_HIDDEN,
+        role_id="api_hidden1",
+        onboarding_status="completed",
+    )
+    assert all(r["id"] != hidden["id"] for r in list_sidebar_roles(roles))
+    delivery = RoomDelivery(store, roles)
+    delivery.bind_starter(lambda **kw: {"turn_id": "t", "status": "running"})
+    owner = store.create()
+    store.begin_turn(owner, "喊隐藏角色", "c1")
+    try:
+        delivery.send_from_role(
+            from_role_id=DEFAULT_ROLE_ID,
+            conversation_id=owner,
+            to_role_id=hidden["id"],
+            text="去做X",
+        )
+        raise AssertionError("hidden role should not be resolvable")
+    except ValueError as e:
+        assert "找不到" in str(e)
+    try:
+        delivery.send_from_role(
+            from_role_id=DEFAULT_ROLE_ID,
+            conversation_id=owner,
+            to_role_name="API工人",
+            text="去做X",
+        )
+        raise AssertionError("hidden name should not resolve")
+    except ValueError as e:
+        assert "找不到" in str(e)
+    try:
+        delivery.create_group(
+            title="不该建",
+            role_ids=[DEFAULT_ROLE_ID, hidden["id"]],
+        )
+        raise AssertionError("hidden role should not join a group")
+    except ValueError as e:
+        assert "找不到" in str(e)
+
+
+def test_peer_receipt_wakes_owner_tip_followup_stays_in_peer(tmp_path):
+    store = _conv(tmp_path)
+    roles = _roles(tmp_path)
+    other = roles.create(name="游戏开发助手")
+    started = []
+
+    def starter(**kwargs):
+        started.append(kwargs)
+        return {"turn_id": f"t{len(started)}", "status": "running"}
+
+    delivery = RoomDelivery(store, roles)
+    delivery.bind_starter(starter)
+    owner = store.create()
+    store.begin_turn(owner, "去喊他", "u1")
+    first = delivery.send_from_role(
+        from_role_id=DEFAULT_ROLE_ID,
+        conversation_id=owner,
+        to_role_id=other["id"],
+        text="请改登录页",
+    )
+    room = first["room_id"]
+    assert started[0]["conversation_id"] == room
+    assert started[0]["stimulus"].responding_role_id == other["id"]
+    store.finalize_turn(
+        owner,
+        turn_id=store.get(owner)["active_turn_id"],
+        assistant={"role": "assistant", "text": "已派给同学"},
+    )
+
+    receipt = delivery.send_from_role(
+        from_role_id=other["id"],
+        conversation_id=room,
+        to_role_id=DEFAULT_ROLE_ID,
+        text="登录页已接上真实接口",
+    )
+    assert receipt["wake_status"] == "started"
+    assert started[1]["conversation_id"] == owner
+    assert started[1]["stimulus"].responding_role_id == DEFAULT_ROLE_ID
+
+    follow = delivery.send_from_role(
+        from_role_id=DEFAULT_ROLE_ID,
+        conversation_id=owner,
+        to_role_id=other["id"],
+        text="再补错误提示",
+    )
+    assert follow["wake_status"] == "started"
+    assert started[2]["conversation_id"] == room
+    assert started[2]["stimulus"].responding_role_id == other["id"]
+
+
+def test_get_role_id_peer_uses_last_responder(tmp_path):
+    store = _conv(tmp_path)
+    roles = _roles(tmp_path)
+    other = roles.create(name="游戏开发助手")
+    room = store.rooms.find_or_create_peer_dm(
+        DEFAULT_ROLE_ID, other["id"], title="协作"
+    )
+    from app.engine.rooms.types import InboundStimulus, Actor
+    from app.engine.rooms.schema import ACTOR_ROLE
+
+    stimulus = InboundStimulus(
+        text="去做X",
+        speaker=Actor(kind=ACTOR_ROLE, id=DEFAULT_ROLE_ID),
+        responding_role_id=other["id"],
+        hop=1,
+    )
+    store.begin_turn(room, "去做X", "busy-b", stimulus=stimulus)
+    store.finalize_turn(
+        room,
+        turn_id=store.get(room)["active_turn_id"],
+        assistant={"role": "assistant", "text": "好"},
+    )
+    assert store.get_role_id(room) == other["id"]
+
+
+def test_room_lock_queues_second_speaker(tmp_path):
+    store = _conv(tmp_path)
+    roles = _roles(tmp_path)
+    b = roles.create(name="游戏开发助手")["id"]
+    c = roles.create(name="研究员")["id"]
+    started = []
+
+    def starter(**kwargs):
+        started.append(kwargs)
+        return {"turn_id": f"t{len(started)}", "status": "running"}
+
+    delivery = RoomDelivery(store, roles)
+    delivery.bind_starter(starter)
+    group = delivery.create_group(title="三人组", role_ids=[DEFAULT_ROLE_ID, b, c])["id"]
+    first = delivery.send_from_role(
+        from_role_id=DEFAULT_ROLE_ID,
+        room_id=group,
+        mentions=["游戏开发助手"],
+        text="@游戏开发助手 先改登录页",
+    )
+    assert first["wake_status"] == "started"
+    store.begin_turn(group, "占住", "busy-b", stimulus=started[0]["stimulus"])
+    second = delivery.send_from_role(
+        from_role_id=DEFAULT_ROLE_ID,
+        room_id=group,
+        mentions=["研究员"],
+        text="@研究员 写文档",
+    )
+    assert second["wake_status"] == "queued"
+
+
+def test_select_tools_api_mode_hides_messaging():
+    names = {
+        d["function"]["name"]
+        for d in select_tools(
+            MODE_API, True, role_messaging=True, sandbox_enabled=True
+        )
+    }
+    assert "send_message" not in names
+    assert "list_rooms" not in names
+    assert "create_room" not in names
+    assert "list_roles" in names

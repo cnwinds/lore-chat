@@ -85,7 +85,9 @@ class AgentOrchestrator:
         role_list: list[dict] = []
         if roles_store is not None:
             try:
-                role_list = list(roles_store.list_all())
+                from app.engine.roles import list_sidebar_roles
+
+                role_list = list_sidebar_roles(roles_store)
                 role_messaging = len(role_list) >= 2
             except Exception:
                 role_messaging = False

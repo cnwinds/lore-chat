@@ -254,6 +254,9 @@ def test_select_tools_api_mode_drops_writes():
     assert "publish_from_sandbox" not in names
     assert "create_role" not in names
     assert "manage_memory" not in names
+    assert "send_message" not in names
+    assert "list_rooms" not in names
+    assert "create_room" not in names
     assert "sandbox_run" in names
     assert "search_kb" in names
 

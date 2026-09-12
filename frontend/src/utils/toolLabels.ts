@@ -12,7 +12,6 @@ export const TOOL_LABELS: Record<string, string> = {
   ask_user: "征询用户",
   list_roles: "列出角色",
   create_role: "创建角色",
-  list_roles: "列出角色",
   send_message: "发给其他角色",
   list_rooms: "列出协作房间",
   create_room: "创建群聊",

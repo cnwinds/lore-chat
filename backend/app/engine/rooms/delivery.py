@@ -16,6 +16,7 @@ from app.engine.rooms.schema import (
     MAX_HOP,
 )
 from app.engine.rooms.types import OWNER, Actor, InboundStimulus
+from app.engine.roles import is_hidden_role, list_sidebar_roles
 
 log = logging.getLogger("uvicorn.error")
 
@@ -47,6 +48,11 @@ class RoomDelivery:
         except Exception:
             return role_id
 
+    def _require_sidebar_role(self, role: dict) -> dict:
+        if is_hidden_role(role):
+            raise ValueError("找不到该角色")
+        return role
+
     def resolve_target(
         self,
         *,
@@ -56,14 +62,18 @@ class RoomDelivery:
     ) -> dict:
         rid = (to_role_id or "").strip()
         if rid:
-            role = self.roles.get(rid)
+            try:
+                role = self.roles.get(rid)
+            except KeyError as e:
+                raise ValueError("找不到该角色") from e
+            self._require_sidebar_role(role)
             if except_role_id and role["id"] == except_role_id:
                 raise ValueError("不能发给自己")
             return role
         name = (to_role_name or "").strip()
         if not name:
             raise ValueError("请指定 to_role_id 或 to_role_name")
-        roles = [r for r in self.roles.list_all() if r["id"] != except_role_id]
+        roles = [r for r in list_sidebar_roles(self.roles) if r["id"] != except_role_id]
         exact = [r for r in roles if (r.get("name") or "") == name]
         if len(exact) == 1:
             return exact[0]
@@ -202,7 +212,7 @@ class RoomDelivery:
                     if target["id"] not in others and others:
                         raise ValueError(f"目标角色「{target['name']}」不在该房间")
             elif kind == KIND_PEER_DM and len(others) == 1:
-                mentioned = [self.roles.get(others[0])]
+                mentioned = [self._require_sidebar_role(self.roles.get(others[0]))]
             elif kind == KIND_GROUP:
                 mentioned = []
             else:
@@ -241,12 +251,7 @@ class RoomDelivery:
         )
 
         kind = self.conversations.rooms.conversation_kind(room)
-        if kind == KIND_GROUP:
-            wake_in = "room"
-        elif next_hop == 1 and kind == KIND_PEER_DM:
-            wake_in = "peer_dm"
-        else:
-            wake_in = "owner_dm"
+        wake_in = self._wake_in_for(room_kind=kind, conversation_id=conversation_id)
         return self._wake_and_result(
             mentioned,
             stimulus_message=msg,
@@ -284,7 +289,7 @@ class RoomDelivery:
             last = self.conversations.rooms.last_responding_role_id(room)
             pick = last if last in members else (members[0] if members else None)
             if pick:
-                mentioned = [self.roles.get(pick)]
+                mentioned = [self._require_sidebar_role(self.roles.get(pick))]
 
         msg = self.post_message(
             room,
@@ -306,11 +311,34 @@ class RoomDelivery:
             posted_only_summary="已发到房间。群聊未点名则无人自动应。",
         )
 
+    def _wake_in_for(self, *, room_kind: str, conversation_id: str | None) -> str:
+        """群里始终在本房间应；peer 从主人 tip 派工在 peer 干活，从 peer 回执回发起方 tip。"""
+        if room_kind == KIND_GROUP:
+            return "room"
+        if room_kind != KIND_PEER_DM:
+            return "owner_dm"
+        source = KIND_OWNER_DM
+        if conversation_id:
+            try:
+                source = self.conversations.rooms.conversation_kind(conversation_id)
+            except Exception:
+                source = KIND_OWNER_DM
+        if source == KIND_PEER_DM:
+            return "owner_dm"
+        return "peer_dm"
+
     def create_group(self, *, title: str, role_ids: list[str]) -> dict:
         ids: list[str] = []
         names: list[str] = []
         for raw in role_ids:
-            role = self.roles.get((raw or "").strip())
+            rid = (raw or "").strip()
+            if not rid:
+                continue
+            try:
+                role = self.roles.get(rid)
+            except KeyError as e:
+                raise ValueError("找不到该角色") from e
+            self._require_sidebar_role(role)
             ids.append(role["id"])
             names.append(str(role.get("name") or role["id"]))
         room = self.conversations.rooms.create_group(title=title, role_ids=ids)
@@ -474,6 +502,17 @@ class RoomDelivery:
         expect_reply: bool,
     ) -> str:
         if self.conversations.role_has_running_turn(role_id):
+            self.enqueue(
+                role_id,
+                room_id=room_id,
+                message_id=stimulus_message["id"],
+                wake_in=wake_in,
+                expect_reply=expect_reply,
+            )
+            return "queued"
+        if wake_in in ("room", "peer_dm") and self.conversations.room_has_running_turn(
+            room_id
+        ):
             self.enqueue(
                 role_id,
                 room_id=room_id,

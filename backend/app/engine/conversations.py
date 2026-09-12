@@ -827,6 +827,12 @@ class ConversationStore:
                 rid = None
             rid = (rid or DEFAULT_ROLE_ID).strip() or DEFAULT_ROLE_ID
             if rid == ROOM_ROLE_PLACEHOLDER:
+                last = self.rooms.last_responding_role_id(cid)
+                if last:
+                    return last
+                for pid in self.rooms.list_role_participants(cid):
+                    if pid:
+                        return pid
                 return DEFAULT_ROLE_ID
             return rid
 
@@ -1014,11 +1020,7 @@ class ConversationStore:
         """解析角色活跃线：仅复用「最新」空会话，否则窗口内最近有消息会话。"""
         from datetime import datetime, timedelta, timezone
 
-        items = [
-            c
-            for c in self.list_all(role_id=role_id)
-            if (c.get("origin") or "web") != "api"
-        ]
+        items = self._owner_dm_web_items(role_id)
         if not items:
             return None
         top = items[0]
@@ -1175,8 +1177,16 @@ class ConversationStore:
             )
         return out, has_more
 
+    def _owner_dm_web_items(self, role_id: str) -> list[dict]:
+        return [
+            c
+            for c in self.list_all(role_id=role_id)
+            if (c.get("origin") or "web") != "api"
+            and (c.get("kind") or "owner_dm") == "owner_dm"
+        ]
+
     def _latest_conversation_id(self, role_id: str) -> str | None:
-        items = self.list_all(role_id=role_id)
+        items = self._owner_dm_web_items(role_id)
         return items[0]["id"] if items else None
 
     def _maybe_close_segment_for_memory(self, cid: str | None) -> None:
@@ -1222,7 +1232,7 @@ class ConversationStore:
         prev_tip = self._latest_conversation_id(role_id)
         # 若 tip 已是空段，直接复用，避免堆叠空会话
         if prev_tip:
-            items = self.list_all(role_id=role_id)
+            items = self._owner_dm_web_items(role_id)
             tip = items[0] if items else None
             if tip and int(tip.get("message_count") or 0) == 0:
                 return tip["id"]
@@ -1489,6 +1499,18 @@ class ConversationStore:
             if rid and rid != ROOM_ROLE_PLACEHOLDER:
                 role_ids.add(rid)
         return sorted(role_ids)
+
+    def room_has_running_turn(self, cid: str) -> bool:
+        with self._lock:
+            row = self.conn.execute(
+                """
+                SELECT 1 FROM turns
+                WHERE conversation_id = ? AND status = 'running'
+                LIMIT 1
+                """,
+                (cid,),
+            ).fetchone()
+            return row is not None
 
     def role_has_running_turn(self, role_id: str) -> bool:
         with self._lock:
