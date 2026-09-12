@@ -16,7 +16,7 @@ from app.engine.roles import DEFAULT_ROLE_ID, RoleStore
 from app.engine.sandbox import state as sandbox_state
 from app.engine.sandbox.fake_runtime import FakeSandboxRuntime
 from app.engine.sandbox.naming import volume_name_for_role, volume_slug
-from app.engine.sandbox.role_pool import RoleSandboxPool
+from app.engine.sandbox.role_pool import RoleSandboxPool, SandboxPoolFullError
 from app.engine.sandbox.workspace_cwd import default_sandbox_cwd, resolve_sandbox_cwd
 from app.engine.web.fetcher import WebFetcher
 from app.engine.web.search import WebSearch
@@ -351,7 +351,28 @@ async def test_reclaim_idle_without_new_get(tmp_path):
 def test_pool_snapshot_counts(tmp_path):
     pool = _pool(tmp_path, max_roles=4)
     snap = pool.pool_snapshot()
-    assert snap == {"max": 4, "active": 0, "busy_roles": []}
+    assert snap["max"] == 4
+    assert snap["active"] == 0
+    assert snap["busy_roles"] == []
+    assert snap["api_max"] == 8
+    assert snap["api_active"] == 0
+
+
+@pytest.mark.asyncio
+async def test_api_roles_do_not_consume_sidebar_cap(tmp_path):
+    pool = _pool(tmp_path, max_roles=1, max_api_roles=2)
+    sidebar = await pool.get("researcher")
+    api_a = await pool.get("api_aaa111")
+    api_b = await pool.get("api_bbb222")
+    assert sidebar is not api_a
+    assert api_a is not api_b
+    snap = pool.pool_snapshot()
+    assert snap["active"] == 1
+    assert snap["api_active"] == 2
+    with pytest.raises(SandboxPoolFullError):
+        await pool.get("another-sidebar")
+    with pytest.raises(SandboxPoolFullError):
+        await pool.get("api_ccc333")
 
 
 @pytest.mark.asyncio

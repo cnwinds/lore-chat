@@ -1224,6 +1224,27 @@ TOOL_DEFINITIONS: list[dict] = [
 ]
 
 _MODE_NO_WRITE = "no_write"
+_MODE_API = "api"
+_API_EXCLUDED_TOOLS = frozenset(
+    {
+        "write_doc",
+        "edit_doc",
+        "write_kb_file",
+        "update_doc_meta",
+        "summarize_conversation",
+        "move_entry",
+        "delete_kb",
+        "publish_from_sandbox",
+        "manage_memory",
+        "generate_image",
+        "create_role",
+        "update_role",
+        "create_role_schedule",
+        "update_role_schedule",
+        "delete_role_schedule",
+        "finalize_role_onboarding",
+    }
+)
 
 
 def select_tools(
@@ -1258,6 +1279,8 @@ def select_tools(
         excluded.add("manage_memory")
         excluded.add("publish_from_sandbox")
         excluded.add("generate_image")
+    if mode == _MODE_API:
+        excluded |= _API_EXCLUDED_TOOLS
     if not sandbox_enabled:
         excluded |= SANDBOX_TOOLS
     windows = disclosure_windows or DisclosureWindows()

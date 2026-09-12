@@ -166,6 +166,7 @@ class ConversationStore:
             self._ensure_message_model_columns()
             self._ensure_message_web_enabled_column()
             self._ensure_conversation_role_id_column()
+            self._ensure_origin_columns()
             self.conn.commit()
 
         if legacy_single.exists():
@@ -275,6 +276,24 @@ class ConversationStore:
             "UPDATE conversations SET role_id = ? "
             "WHERE role_id IS NULL OR TRIM(role_id) = ''",
             (DEFAULT_ROLE_ID,),
+        )
+
+    def _ensure_origin_columns(self) -> None:
+        cols = {
+            r[1]
+            for r in self.conn.execute("PRAGMA table_info(conversations)").fetchall()
+        }
+        if "origin" not in cols:
+            self.conn.execute(
+                "ALTER TABLE conversations ADD COLUMN origin TEXT NOT NULL DEFAULT 'web'"
+            )
+        if "api_key_id" not in cols:
+            self.conn.execute("ALTER TABLE conversations ADD COLUMN api_key_id TEXT")
+        self.conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_conversations_origin_updated
+            ON conversations(origin, updated_at)
+            """
         )
 
     def _json_shards_migrated(self) -> bool:
@@ -630,6 +649,8 @@ class ConversationStore:
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
             "role_id": role_id,
+            "origin": self._row_origin(row),
+            "api_key_id": self._row_api_key_id(row),
             "active_turn_id": active_turn_id,
             "active_turn": active_turn,
             "messages": messages,
@@ -648,28 +669,54 @@ class ConversationStore:
         )
         self.summaries.mark_stale_unlocked(cid)
 
+    def _row_origin(self, row: sqlite3.Row) -> str:
+        try:
+            return (row["origin"] or "web").strip() or "web"
+        except (KeyError, IndexError):
+            return "web"
+
+    def _row_api_key_id(self, row: sqlite3.Row) -> str | None:
+        try:
+            raw = row["api_key_id"]
+        except (KeyError, IndexError):
+            return None
+        return (raw or "").strip() or None
+
+    def get_origin(self, cid: str) -> str:
+        with self._lock:
+            return self._row_origin(self._conversation_row(cid))
+
     # ------------------------------------------------------------------
     # CRUD
     # ------------------------------------------------------------------
 
     def create(
-        self, title: str | None = None, *, role_id: str | None = None
+        self,
+        title: str | None = None,
+        *,
+        role_id: str | None = None,
+        origin: str = "web",
+        api_key_id: str | None = None,
     ) -> str:
         from app.engine.roles import DEFAULT_ROLE_ID
 
         cid = uuid.uuid4().hex[:12]
         stamp = _now()
         rid = (role_id or DEFAULT_ROLE_ID).strip() or DEFAULT_ROLE_ID
+        orig = (origin or "web").strip() or "web"
+        if orig not in ("web", "api"):
+            orig = "web"
+        kid = (api_key_id or "").strip() or None
         with self._lock:
             self.conn.execute(
                 """
                 INSERT INTO conversations(
                     id, title, created_at, updated_at, active_turn_id,
-                    indexed_dirty, role_id
+                    indexed_dirty, role_id, origin, api_key_id
                 )
-                VALUES (?, ?, ?, ?, NULL, 0, ?)
+                VALUES (?, ?, ?, ?, NULL, 0, ?, ?, ?)
                 """,
-                (cid, title or "新对话", stamp, stamp, rid),
+                (cid, title or "新对话", stamp, stamp, rid, orig, kid),
             )
             self.conn.commit()
         return cid
@@ -846,6 +893,8 @@ class ConversationStore:
                         "created_at": row["created_at"],
                         "updated_at": row["updated_at"],
                         "role_id": rid or DEFAULT_ROLE_ID,
+                        "origin": self._row_origin(row),
+                        "api_key_id": self._row_api_key_id(row),
                         "message_count": int(count),
                         "summarized": summarized,
                         "summary_path": summary_path,
@@ -862,7 +911,11 @@ class ConversationStore:
         """解析角色活跃线：仅复用「最新」空会话，否则窗口内最近有消息会话。"""
         from datetime import datetime, timedelta, timezone
 
-        items = self.list_all(role_id=role_id)
+        items = [
+            c
+            for c in self.list_all(role_id=role_id)
+            if (c.get("origin") or "web") != "api"
+        ]
         if not items:
             return None
         top = items[0]
@@ -1218,6 +1271,7 @@ class ConversationStore:
                        MAX(t.started_at) AS last_active_at
                 FROM turns t
                 JOIN conversations c ON c.id = t.conversation_id
+                WHERE COALESCE(c.origin, 'web') != 'api'
                 GROUP BY COALESCE(NULLIF(c.role_id, ''), ?)
                 """,
                 (DEFAULT_ROLE_ID, DEFAULT_ROLE_ID),

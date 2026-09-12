@@ -43,6 +43,8 @@ from app.engine.memory.service import MemoryService
 from app.engine.memory.store import MemoryStore
 from app.engine.workspace import ensure_workspace_id
 from app.engine.enabled_skills import EnabledSkillsStore
+from app.engine.api_keys import ApiKeyStore
+from app.engine.open_api import OpenApiService
 
 from app.deps_index import IndexSubgraph, build_index_subgraph
 from app.deps_memory import MemorySubgraph, build_memory_subgraph
@@ -82,6 +84,8 @@ class Container:
     system_layer: SystemLayer
     memory_service: MemoryService
     enabled_skills: EnabledSkillsStore
+    api_keys: ApiKeyStore
+    open_api: OpenApiService
     _index_subgraph: IndexSubgraph | None = field(default=None, repr=False)
     _memory_subgraph: MemorySubgraph | None = field(default=None, repr=False)
     _agent_subgraph: AgentSubgraph | None = field(default=None, repr=False)
@@ -146,6 +150,7 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
         settings.kb_path / ".kb" / "conversations"
     )
     roles = RoleStore(settings.kb_path / ".kb" / "roles")
+    api_keys = ApiKeyStore(settings.kb_path)
 
     memory = build_memory_subgraph(
         settings, repo, llm, conversations, memory_service=memory_service
@@ -220,6 +225,13 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
         system_layer=system_layer,
         memory_service=memory.service,
         enabled_skills=enabled_skills,
+        api_keys=api_keys,
+        open_api=OpenApiService(
+            roles=roles,
+            api_keys=api_keys,
+            conversations=conversations,
+            chat_runner=agent.chat_runner,
+        ),
         _index_subgraph=index,
         _memory_subgraph=memory,
         _agent_subgraph=agent,

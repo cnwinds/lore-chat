@@ -56,6 +56,7 @@ class TurnRunSpec:
     web_enabled: bool
     skill_catalog: list[dict[str, str]] | None = None
     attachments: list[str] | None = None
+    mode: str = MODE_DEFAULT
 
 
 @dataclass
@@ -97,15 +98,27 @@ class TurnExecutionHub:
         try:
             rid = self.conversations.get_role_id(cid)
             role = self.roles.get(rid)
+            name = role.get("name") or "角色"
+            prompt = role.get("system_prompt") or ""
+            avatar = role.get("avatar")
+            persona_id = role.get("persona_id")
+            if persona_id and hasattr(self.roles, "get_persona"):
+                try:
+                    persona = self.roles.get_persona(persona_id)
+                    name = persona.get("name") or name
+                    prompt = persona.get("system_prompt") or ""
+                    avatar = persona.get("avatar") or avatar
+                except KeyError:
+                    pass
             onboarding_layer = ""
             if role.get("onboarding_status", "none") == "active":
                 onboarding_layer = self._build_onboarding_layer(
                     role.get("name", "角色")
                 )
             return build_role_identity_block(
-                name=role.get("name") or "角色",
-                system_prompt=role.get("system_prompt") or "",
-                avatar=role.get("avatar"),
+                name=name,
+                system_prompt=prompt,
+                avatar=avatar,
                 onboarding_layer=onboarding_layer,
             )
         except KeyError:
@@ -303,6 +316,7 @@ class TurnExecutionHub:
         web_enabled: bool,
         history: list[dict] | None = None,
         reuse_user_message_id: str | None = None,
+        mode: str = MODE_DEFAULT,
     ) -> dict:
         """回合生命周期：begin_turn +（若 running）启动 Task。观测另走 subscribe。"""
         hist = history
@@ -342,6 +356,7 @@ class TurnExecutionHub:
                     primary_doc=primary_doc,
                     web_enabled=web_enabled,
                     attachments=list(attachments) if attachments else None,
+                    mode=mode or MODE_DEFAULT,
                 ),
             )
         return turn
@@ -478,7 +493,7 @@ class TurnExecutionHub:
             prefetch = self._prefetch_context_for(cid, spec.text, spec.history)
             async for ev in self.agent.run(
                 spec.text,
-                mode=MODE_DEFAULT,
+                mode=spec.mode or MODE_DEFAULT,
                 active_doc_path=spec.primary_doc,
                 active_doc_paths=spec.doc_paths,
                 primary_doc_path=spec.primary_doc,

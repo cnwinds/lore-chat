@@ -7,6 +7,7 @@ MODE_DEFAULT = "default"
 MODE_FORCE_WRITE = "force_write"
 # 供 POST /api/ask 使用（测试/脚本 API，非产品 UI）
 MODE_NO_WRITE = "no_write"
+MODE_API = "api"
 
 _WEEKDAY_ZH = "一二三四五六日"
 

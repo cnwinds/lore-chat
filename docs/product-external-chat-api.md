@@ -1,6 +1,6 @@
-# 对外聊天 API（待确认）
+# 对外聊天 API
 
-> 状态：**待你确认**（2026-09-12）。人设可共享；**每把 API Key = 一个独立隐藏角色**（独立沙箱、独立会话）。尚未落地代码。确认后另写 ADR。
+> 状态：**已确认 / 实现中**（2026-09-12）。人设可共享；**每把 API Key = 一个独立隐藏角色**（独立沙箱、独立会话）。
 >
 > 配套：[CONTEXT.md](../CONTEXT.md)、[product-multi-role.md](product-multi-role.md)、[ADR 2026-09-10 timeline](adr/2026-09-10-role-timeline.md)、[ADR 2026-09-10 sandbox](adr/2026-09-10-role-scoped-sandbox.md)。
 

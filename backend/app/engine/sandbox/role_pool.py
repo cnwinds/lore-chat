@@ -12,7 +12,7 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
-from app.engine.roles import DEFAULT_ROLE_ID
+from app.engine.roles import DEFAULT_ROLE_ID, is_api_role_id
 from app.engine.sandbox import state as sandbox_state
 from app.engine.sandbox.naming import DEFAULT_WORKSPACE_VOLUME
 from app.engine.sandbox.protocol import SandboxRuntime
@@ -59,6 +59,7 @@ class RoleSandboxPool:
         default_volume: str = DEFAULT_WORKSPACE_VOLUME,
         mirror_region: str = "cn",
         max_roles: int | None = 4,
+        max_api_roles: int | None = 8,
         idle_ttl_sec: float = 3600,
         destroy_volume_on_role_delete: bool = False,
     ) -> None:
@@ -67,6 +68,7 @@ class RoleSandboxPool:
         self.default_volume = default_volume
         self.mirror_region = mirror_region
         self.max_roles = max_roles
+        self.max_api_roles = max_api_roles
         self.idle_ttl_sec = idle_ttl_sec
         self.destroy_volume_on_role_delete = destroy_volume_on_role_delete
         self._runtimes: dict[str, SandboxRuntime] = {}
@@ -79,11 +81,15 @@ class RoleSandboxPool:
         rid = (role_id or "").strip()
         return rid or DEFAULT_ROLE_ID
 
-    def _effective_max(self) -> int | None:
-        if self.max_roles is None:
+    def _effective_max(self, *, api: bool = False) -> int | None:
+        raw = self.max_api_roles if api else self.max_roles
+        if raw is None:
             return None
-        n = int(self.max_roles)
+        n = int(raw)
         return n if n > 0 else None
+
+    def _live_count(self, *, api: bool) -> int:
+        return sum(1 for rid in self._runtimes if is_api_role_id(rid) == api)
 
     def _touch(self, role_id: str, *, now: float | None = None) -> None:
         self._last_used[role_id] = time.monotonic() if now is None else now
@@ -109,6 +115,7 @@ class RoleSandboxPool:
         *,
         mirror_region: str | None = None,
         max_roles: int | None = None,
+        max_api_roles: int | None = None,
         idle_ttl_sec: float | None = None,
         destroy_volume_on_role_delete: bool | None = None,
         sandbox_env_update: dict[str, str] | None = None,
@@ -121,6 +128,8 @@ class RoleSandboxPool:
             self.mirror_region = normalize_mirror_region(mirror_region)
         if max_roles is not None:
             self.max_roles = max_roles
+        if max_api_roles is not None:
+            self.max_api_roles = max_api_roles
         if idle_ttl_sec is not None:
             self.idle_ttl_sec = idle_ttl_sec
         if destroy_volume_on_role_delete is not None:
@@ -155,11 +164,15 @@ class RoleSandboxPool:
             for rid, rt in self._runtimes.items()
             if runtime_has_active_executions(rt)
         ]
-        cap = self._effective_max()
+        cap = self._effective_max(api=False)
+        api_cap = self._effective_max(api=True)
+        sidebar_busy = [rid for rid in busy if not is_api_role_id(rid)]
         return {
             "max": cap if cap is not None else 0,
-            "active": len(self._runtimes),
-            "busy_roles": sorted(busy),
+            "active": self._live_count(api=False),
+            "busy_roles": sorted(sidebar_busy),
+            "api_max": api_cap if api_cap is not None else 0,
+            "api_active": self._live_count(api=True),
         }
 
     async def _destroy_live(
@@ -238,8 +251,10 @@ class RoleSandboxPool:
                     await existing.ensure_ready()
                     return existing
                 await self._reclaim_idle_unlocked(exclude=rid, now=time.monotonic())
-                cap = self._effective_max()
-                if cap is not None and rid not in self._runtimes and len(self._runtimes) >= cap:
+                api = is_api_role_id(rid)
+                cap = self._effective_max(api=api)
+                used = self._live_count(api=api)
+                if cap is not None and rid not in self._runtimes and used >= cap:
                     raise SandboxPoolFullError(cap)
                 slot = sandbox_state.ensure_slot(
                     self.kb_path,

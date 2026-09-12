@@ -200,17 +200,24 @@ class SandboxTools:
             return {"summary": "缺少 command", "sources": [], "error": "missing command"}
 
         if not execution_id:
-            gate = self.command_gate.maybe_confirm(
-                args,
-                command or "",
-                role_id=role_id,
-                role_name=self._role_name(role_id),
-                conversation_id=cid,
-                schedule_id=sid,
-                cwd=cwd,
-            )
-            if gate is not None:
-                return gate
+            skip_gate = False
+            if cid and self.conversations is not None:
+                try:
+                    skip_gate = self.conversations.get_origin(cid) == "api"
+                except KeyError:
+                    skip_gate = False
+            if not skip_gate:
+                gate = self.command_gate.maybe_confirm(
+                    args,
+                    command or "",
+                    role_id=role_id,
+                    role_name=self._role_name(role_id),
+                    conversation_id=cid,
+                    schedule_id=sid,
+                    cwd=cwd,
+                )
+                if gate is not None:
+                    return gate
             command = prepare_streaming_command(command or "")
 
         rt = await self._runtime_for(args, conversation_id=cid, role_id=role_id)

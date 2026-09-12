@@ -165,7 +165,12 @@ def search_workspace(
     tiers: list[str] = []
 
     if kind in ("all", "roles"):
-        hits.extend(match_roles(roles.list_all(), query, k=limit))
+        listed = (
+            roles.list_all(visibility="sidebar")
+            if hasattr(roles, "list_all")
+            else roles.list_all()
+        )
+        hits.extend(match_roles(listed, query, k=limit))
         if hits:
             tiers.append("name")
 
@@ -182,6 +187,13 @@ def search_workspace(
                 continue
             if role_id and mapped["role_id"] != role_id:
                 continue
+            mapped_role = mapped.get("role_id")
+            if mapped_role and hasattr(roles, "get"):
+                try:
+                    if roles.get(mapped_role).get("visibility") == "hidden":
+                        continue
+                except KeyError:
+                    pass
             if not hit_has_query_evidence(_evidence_blob(mapped, raw.chunk), query):
                 continue
             hits.append(mapped)
