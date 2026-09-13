@@ -6,6 +6,9 @@ $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $Runtime = Join-Path $Root ".lorechat"
 $ModeFile = Join-Path $Runtime "run-mode"
+$AutoupdateFile = Join-Path $Runtime "autoupdate"
+$WatchtowerName = "lorechat-watchtower"
+$WatchtowerImage = "containrrr/watchtower:1.7.1"
 $DefaultSandboxImage = "ghcr.io/cnwinds/lore-chat-sandbox-agent:latest"
 $OpensandboxServerImage = "opensandbox/server:latest"
 $OpensandboxExecdImage = "opensandbox/execd:v1.0.18"
@@ -19,9 +22,14 @@ Commands:
   start [--chat|--work]   Start (chat or Work mode)
   stop                    Stop
   update [--chat|--work]  Pull images and start
+  autoupdate on [sec]     Enable Watchtower auto-update from GHCR
+  autoupdate off          Disable auto-update
+  autoupdate status       Show auto-update status
   prepare                 Write compose/config only
   log                     Tail logs
   help                    Help
+
+Keep LORECHAT_IMAGE_TAG=latest in .env to follow master pushes.
 "@
 }
 
@@ -186,7 +194,11 @@ WEB_PORT=8080
 # EMBED_MODEL=
 
 # GHCR 镜像标签：latest（默认）或发行版如 0.1.0（不要加 v；git tag 才是 v0.1.0）
+# 跟随主干自动更新时请保持 latest，并执行：./lorechat.sh autoupdate on
 LORECHAT_IMAGE_TAG=latest
+
+# 自动更新轮询间隔（秒）；仅 ./lorechat.sh autoupdate on 时生效
+# LORECHAT_AUTO_UPDATE_INTERVAL=300
 
 # 需要换完整镜像名时再取消注释
 # LORECHAT_BACKEND_IMAGE=ghcr.io/cnwinds/lore-chat-backend:0.1.0
@@ -311,34 +323,134 @@ function Get-WebPort {
   return "8080"
 }
 
+function Get-EnvValue([string]$Key) {
+  $envPath = Join-Path $Root ".env"
+  if (-not (Test-Path $envPath)) { return $null }
+  $line = Get-Content $envPath | Where-Object { $_ -match "^$Key=" } | Select-Object -Last 1
+  if (-not $line) { return $null }
+  return ($line -split "=", 2)[1].Trim()
+}
+
+function Get-AutoupdateInterval([string]$Override) {
+  if ($Override -match '^[0-9]+$' -and [int]$Override -ge 60) { return $Override }
+  if (Test-Path $AutoupdateFile) {
+    $fromFile = ((Get-Content $AutoupdateFile -Raw).Trim())
+    if ($fromFile -match '^[0-9]+$' -and [int]$fromFile -ge 60) { return $fromFile }
+  }
+  $fromEnv = Get-EnvValue "LORECHAT_AUTO_UPDATE_INTERVAL"
+  if ($fromEnv -match '^[0-9]+$' -and [int]$fromEnv -ge 60) { return $fromEnv }
+  return "300"
+}
+
+function Stop-Watchtower {
+  docker container inspect $WatchtowerName 2>$null | Out-Null
+  if ($LASTEXITCODE -eq 0) {
+    docker rm -f $WatchtowerName 2>$null | Out-Null
+    Write-Host "[Lore Chat] Stopped auto-update ($WatchtowerName)"
+  }
+}
+
+function Warn-AutoupdateTag {
+  $tag = Get-EnvValue "LORECHAT_IMAGE_TAG"
+  if (-not $tag) { $tag = "latest" }
+  if ($tag -ne "latest") {
+    Write-Host "[Lore Chat] Note: LORECHAT_IMAGE_TAG=$tag; use latest to follow master."
+  }
+}
+
+function Ensure-Watchtower {
+  if (-not (Test-Path $AutoupdateFile)) { return }
+  $interval = Get-AutoupdateInterval ""
+  New-Item -ItemType Directory -Force -Path $Runtime | Out-Null
+  Set-Content -Path $AutoupdateFile -Value $interval -NoNewline
+  Warn-AutoupdateTag
+  docker rm -f $WatchtowerName 2>$null | Out-Null
+  docker run -d `
+    --name $WatchtowerName `
+    --restart unless-stopped `
+    -v /var/run/docker.sock:/var/run/docker.sock `
+    $WatchtowerImage `
+    --cleanup `
+    --interval $interval `
+    lorechat-backend lorechat-web | Out-Null
+  if ($LASTEXITCODE -ne 0) { throw "failed to start watchtower" }
+  Write-Host "[Lore Chat] Auto-update on: every ${interval}s for lorechat-backend / lorechat-web"
+}
+
+function Invoke-Autoupdate([string]$Sub, [string]$IntervalArg) {
+  Materialize-Bundle
+  switch -Regex ($Sub) {
+    "^(on|enable|start)$" {
+      if ($IntervalArg -and (-not ($IntervalArg -match '^[0-9]+$' -and [int]$IntervalArg -ge 60))) {
+        throw "Interval must be an integer >= 60 seconds"
+      }
+      $interval = Get-AutoupdateInterval $IntervalArg
+      New-Item -ItemType Directory -Force -Path $Runtime | Out-Null
+      Set-Content -Path $AutoupdateFile -Value $interval -NoNewline
+      Ensure-Watchtower
+    }
+    "^(off|disable|stop)$" {
+      Remove-Item -Force $AutoupdateFile -ErrorAction SilentlyContinue
+      Stop-Watchtower
+      Write-Host "[Lore Chat] Auto-update disabled"
+    }
+    "^(status)?$" {
+      if (Test-Path $AutoupdateFile) {
+        $interval = Get-AutoupdateInterval ""
+        docker container inspect $WatchtowerName 2>$null | Out-Null
+        $running = if ($LASTEXITCODE -eq 0) { "yes" } else { "no" }
+        Write-Host "[Lore Chat] Auto-update: on (interval ${interval}s; container running: $running)"
+        Warn-AutoupdateTag
+      } else {
+        Write-Host "[Lore Chat] Auto-update: off"
+      }
+    }
+    default { throw "Usage: .\lorechat.ps1 autoupdate on|off|status [interval]" }
+  }
+}
+
 function Start-Lore([string]$Flag) {
   Materialize-Bundle
   $mode = Resolve-Mode $Flag
   if ($mode -eq "work") { Warn-WorkImages }
   Write-Host "[Lore Chat] Starting (mode: $mode)..."
   Teardown-All
-  Invoke-Compose $mode @("pull")
+  try {
+    Invoke-Compose $mode @("pull")
+  } catch {
+    Write-Host "[Lore Chat] Image pull failed; trying local images."
+    Write-Host "[Lore Chat] For GHCR updates: make packages Public or docker login ghcr.io"
+  }
   Invoke-Compose $mode @("up", "-d")
   Save-Mode $mode
+  Ensure-Watchtower
   $port = Get-WebPort
   Write-Host "[Lore Chat] Ready -> http://localhost:$port"
   Write-Host "[Lore Chat] Mode -> $mode; logs -> .\lorechat.ps1 log"
+  if (Test-Path $AutoupdateFile) {
+    Write-Host "[Lore Chat] Auto-update -> on (.\lorechat.ps1 autoupdate status)"
+  } else {
+    Write-Host "[Lore Chat] To follow GHCR latest: .\lorechat.ps1 autoupdate on"
+  }
   Write-Host "[Lore Chat] If API Key is missing, the web UI will guide you."
 }
 
 $cmd = if ($args.Count -ge 1) { $args[0] } else { "help" }
 $opt = if ($args.Count -ge 2) { $args[1] } else { "" }
+$opt2 = if ($args.Count -ge 3) { $args[2] } else { "" }
 
 switch ($cmd) {
   "start" { Start-Lore $opt }
   "stop" {
     Materialize-Bundle
+    Stop-Watchtower
     Teardown-All
     Write-Host "[Lore Chat] Stopped"
   }
   "update" {
     if ($opt) { Start-Lore $opt } else { Start-Lore (Read-SavedMode) }
   }
+  "autoupdate" { Invoke-Autoupdate $opt $opt2 }
   "prepare" {
     Materialize-Bundle
     Write-Host "[Lore Chat] Wrote compose / sandbox / opensandbox/config.toml / .env.example"

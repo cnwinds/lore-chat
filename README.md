@@ -92,6 +92,16 @@ irm https://raw.githubusercontent.com/cnwinds/lore-chat/master/deploy/get-lorech
 LORECHAT_IMAGE_TAG=0.1.0
 ```
 
+跟随 GitHub `master` 自动更新（CI 推送 GHCR `latest` 后由本机 Watchtower 拉取并重启）：
+
+```bash
+# .env 保持 LORECHAT_IMAGE_TAG=latest
+./lorechat.sh autoupdate on          # 默认每 300 秒检查一次
+./lorechat.sh autoupdate on 120      # 自定义间隔（秒，≥60）
+./lorechat.sh autoupdate status
+./lorechat.sh autoupdate off
+```
+
 也可直接拉取对应标签的镜像，例如 `ghcr.io/cnwinds/lore-chat-backend:0.1.0`（还有 `lore-chat-web`、`lore-chat-sandbox-agent`）。Git 标签是 `v0.1.0`，**镜像标签不带 `v`**。版本说明见 [CHANGELOG.md](CHANGELOG.md) 与 [GitHub Releases](https://github.com/cnwinds/lore-chat/releases)。
 
 ## 本地开发

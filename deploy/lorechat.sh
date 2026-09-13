@@ -8,6 +8,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RUNTIME="${ROOT}/.lorechat"
 MODE_FILE="${RUNTIME}/run-mode"
+AUTOUPDATE_FILE="${RUNTIME}/autoupdate"
+WATCHTOWER_NAME="lorechat-watchtower"
+WATCHTOWER_IMAGE="containrrr/watchtower:1.7.1"
 DEFAULT_SANDBOX_IMAGE="ghcr.io/cnwinds/lore-chat-sandbox-agent:latest"
 OPENSANDBOX_SERVER_IMAGE="opensandbox/server:latest"
 OPENSANDBOX_EXECD_IMAGE="opensandbox/execd:v1.0.18"
@@ -21,6 +24,9 @@ Commands:
   start [--chat|--work]   启动（可每次选择聊天 / Work 模式）
   stop                    停止
   update [--chat|--work]  拉取最新镜像并启动
+  autoupdate on [秒]      启用 Watchtower：GHCR 有新镜像时自动拉取并重启
+  autoupdate off          关闭自动更新
+  autoupdate status       查看自动更新状态
   prepare                 仅写出 compose / 配置（不启动）
   log|logs                查看日志
   help                    帮助
@@ -28,6 +34,10 @@ Commands:
 Modes:
   --chat   仅对话与知识库
   --work   带 OpenSandbox（首次镜像较大时会提示）
+
+自动更新：
+  保持 .env 中 LORECHAT_IMAGE_TAG=latest（跟随 master 推送的 GHCR latest）。
+  启用后只监视 lorechat-backend / lorechat-web；沙箱 agent 镜像在手动 update 时一并刷新。
 EOF
 }
 
@@ -195,7 +205,11 @@ WEB_PORT=8080
 # EMBED_MODEL=
 
 # GHCR 镜像标签：latest（默认）或发行版如 0.1.0（不要加 v；git tag 才是 v0.1.0）
+# 跟随主干自动更新时请保持 latest，并执行：./lorechat.sh autoupdate on
 LORECHAT_IMAGE_TAG=latest
+
+# 自动更新轮询间隔（秒）；仅 ./lorechat.sh autoupdate on 时生效
+# LORECHAT_AUTO_UPDATE_INTERVAL=300
 
 # 需要换完整镜像名时再取消注释
 # LORECHAT_BACKEND_IMAGE=ghcr.io/cnwinds/lore-chat-backend:0.1.0
@@ -321,6 +335,109 @@ web_port() {
   echo "${port:-8080}"
 }
 
+env_get() {
+  local key="$1"
+  [[ -f "${ROOT}/.env" ]] || return 0
+  local line
+  line="$(grep -E "^${key}=" "${ROOT}/.env" 2>/dev/null | tail -n1 || true)"
+  [[ -n "${line}" ]] || return 0
+  printf '%s' "${line#*=}" | tr -d '\r'
+}
+
+autoupdate_interval() {
+  local from_file="" from_env=""
+  if [[ -f "${AUTOUPDATE_FILE}" ]]; then
+    from_file="$(tr -d '[:space:]' <"${AUTOUPDATE_FILE}" || true)"
+  fi
+  from_env="$(env_get LORECHAT_AUTO_UPDATE_INTERVAL)"
+  if [[ "${1:-}" =~ ^[0-9]+$ ]] && [[ "${1}" -ge 60 ]]; then
+    echo "$1"
+  elif [[ "${from_file}" =~ ^[0-9]+$ ]] && [[ "${from_file}" -ge 60 ]]; then
+    echo "${from_file}"
+  elif [[ "${from_env}" =~ ^[0-9]+$ ]] && [[ "${from_env}" -ge 60 ]]; then
+    echo "${from_env}"
+  else
+    echo "300"
+  fi
+}
+
+stop_watchtower() {
+  if docker container inspect "${WATCHTOWER_NAME}" >/dev/null 2>&1; then
+    docker rm -f "${WATCHTOWER_NAME}" >/dev/null 2>&1 || true
+    echo "[Lore Chat] 已停止自动更新（${WATCHTOWER_NAME}）"
+  fi
+}
+
+warn_autoupdate_tag() {
+  local tag
+  tag="$(env_get LORECHAT_IMAGE_TAG)"
+  tag="${tag:-latest}"
+  if [[ "${tag}" != "latest" ]]; then
+    echo "[Lore Chat] 提示：当前 LORECHAT_IMAGE_TAG=${tag}；跟随 master 请改为 latest。"
+  fi
+}
+
+ensure_watchtower() {
+  [[ -f "${AUTOUPDATE_FILE}" ]] || return 0
+  need_cmd docker
+  local interval
+  interval="$(autoupdate_interval)"
+  printf '%s\n' "${interval}" >"${AUTOUPDATE_FILE}"
+  warn_autoupdate_tag
+  docker rm -f "${WATCHTOWER_NAME}" >/dev/null 2>&1 || true
+  docker run -d \
+    --name "${WATCHTOWER_NAME}" \
+    --restart unless-stopped \
+    -v /var/run/docker.sock:/var/run/docker.sock \
+    "${WATCHTOWER_IMAGE}" \
+    --cleanup \
+    --interval "${interval}" \
+    lorechat-backend lorechat-web >/dev/null
+  echo "[Lore Chat] 自动更新已启用：每 ${interval}s 检查 lorechat-backend / lorechat-web"
+}
+
+do_autoupdate() {
+  materialize_bundle
+  local sub="${1:-status}"
+  case "${sub}" in
+    on|enable|start)
+      local interval
+      if [[ -n "${2:-}" ]]; then
+        if ! [[ "${2}" =~ ^[0-9]+$ ]] || [[ "${2}" -lt 60 ]]; then
+          echo "[Lore Chat] 间隔须为 ≥60 的秒数" >&2
+          exit 1
+        fi
+      fi
+      interval="$(autoupdate_interval "${2:-}")"
+      mkdir -p "${RUNTIME}"
+      printf '%s\n' "${interval}" >"${AUTOUPDATE_FILE}"
+      ensure_watchtower
+      ;;
+    off|disable|stop)
+      rm -f "${AUTOUPDATE_FILE}"
+      stop_watchtower
+      echo "[Lore Chat] 自动更新已关闭"
+      ;;
+    status|"" )
+      if [[ -f "${AUTOUPDATE_FILE}" ]]; then
+        local interval running="no"
+        interval="$(autoupdate_interval)"
+        if docker container inspect "${WATCHTOWER_NAME}" >/dev/null 2>&1; then
+          running="yes"
+        fi
+        echo "[Lore Chat] 自动更新：on（间隔 ${interval}s；容器运行中: ${running}）"
+        warn_autoupdate_tag
+      else
+        echo "[Lore Chat] 自动更新：off"
+      fi
+      ;;
+    *)
+      echo "[Lore Chat] 用法: ./lorechat.sh autoupdate on|off|status [间隔秒]" >&2
+      exit 1
+      ;;
+  esac
+}
+
 do_start() {
   materialize_bundle
   local mode
@@ -330,16 +447,26 @@ do_start() {
   fi
   echo "[Lore Chat] 正在启动（模式: ${mode}）..."
   teardown_all
-  run_compose "${mode}" pull
+  if ! run_compose "${mode}" pull; then
+    echo "[Lore Chat] 拉取镜像失败，将尝试使用本机已有镜像。" >&2
+    echo "[Lore Chat] 若需跟随 GHCR：确认包为 Public，或 docker login ghcr.io" >&2
+  fi
   run_compose "${mode}" up -d
   save_mode "${mode}"
+  ensure_watchtower
   echo "[Lore Chat] 就绪 → http://localhost:$(web_port)"
   echo "[Lore Chat] 模式 → ${mode}；日志 → ./lorechat.sh log"
+  if [[ -f "${AUTOUPDATE_FILE}" ]]; then
+    echo "[Lore Chat] 自动更新 → on（./lorechat.sh autoupdate status）"
+  else
+    echo "[Lore Chat] 跟随 GHCR latest 可执行：./lorechat.sh autoupdate on"
+  fi
   echo "[Lore Chat] 若尚未配置 API Key，打开页面后会引导填写。"
 }
 
 do_stop() {
   materialize_bundle
+  stop_watchtower
   teardown_all
   echo "[Lore Chat] 已停止"
 }
@@ -371,6 +498,7 @@ case "${cmd}" in
   start) do_start "${1:-}" ;;
   stop) do_stop ;;
   update) do_update "${1:-}" ;;
+  autoupdate) do_autoupdate "${1:-}" "${2:-}" ;;
   prepare) do_prepare ;;
   log|logs) do_log ;;
   help|-h|--help) usage ;;

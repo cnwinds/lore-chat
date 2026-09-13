@@ -6,6 +6,7 @@
 
 ### Added
 
+- 预构建启动器支持 `./lorechat.sh autoupdate on|off|status`：用 Watchtower 跟随 GHCR `latest` 自动拉取并重启（适合 master 推送后自更新）
 - 对外聊天 API：设置 → 开放接口签发 Key。人设可多把 Key 共用；每把 Key 是独立隐藏角色（独立沙箱与会话，不进左栏）。脚本用 Bearer 调 `POST /api/v1/chat`
 - Agent 可调用 `list_roles` 查看当前有哪些角色、叫什么，以及人设等详细资料；也可按 id 或名字只看某一个
 - 角色互通 P1/P2：协作卡显示排队/工作中/等你确认，可跳到共享房间并插话；左栏独立群聊入口，建群后 `@` 点名才唤醒（[ADR 2026-09-12](docs/adr/2026-09-12-role-rooms.md)）
