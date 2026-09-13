@@ -494,9 +494,12 @@
 .timeline-collab-card {
   margin: 8px 0;
   padding: 10px 12px;
+  max-width: 100%;
+  min-width: 0;
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--bg-surface);
+  overflow: hidden;
 }
 
 .timeline-collab-card--live {
@@ -511,8 +514,10 @@
 }
 
 .timeline-collab-title {
+  min-width: 0;
   font-size: var(--font-ui-sm);
   font-weight: 600;
+  overflow-wrap: anywhere;
 }
 
 .timeline-collab-state {
@@ -526,6 +531,8 @@
   font-size: var(--font-ui-sm);
   color: var(--text-secondary);
   line-height: 1.45;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .timeline-collab-actions {

@@ -41,6 +41,15 @@ export function isOwnerSpeaker(message: ChatMessage): boolean {
   return message.role === "user" && message.speaker_kind !== "role";
 }
 
+/** 协作卡预览不展示 conversation:// 房间 id，避免窄屏撑破边框。 */
+export function sanitizeCollabPreview(text: string): string {
+  return (text || "")
+    .replace(/conversation:\/\/[a-f0-9-]+/gi, "")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 export function resolveGroupSpeaker(
   message: ChatMessage,
   roles: RoleSummary[],

@@ -47,6 +47,13 @@ describe("ChatMessageRow group layout", () => {
     expect(screen.getByText("登录页改好了")).toBeTruthy();
     expect(screen.queryByText(/来自/)).toBeNull();
     expect(document.querySelector(".chat-row-group-role")).toBeTruthy();
+    const row = document.querySelector(".chat-row-group-role");
+    expect(row?.firstElementChild?.classList.contains("role-avatar")).toBe(
+      true,
+    );
+    expect(row?.querySelector(".chat-row-group-name")?.textContent).toBe(
+      "游戏开发助手",
+    );
   });
 
   it("keeps the owner on the right", () => {
