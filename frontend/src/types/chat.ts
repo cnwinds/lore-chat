@@ -224,6 +224,7 @@ export type ActiveTurnStatus = {
   started_at: string | null;
   last_seq: number | null;
   observable: boolean;
+  responding_role_id?: string | null;
 };
 
 export type RoomSummary = {

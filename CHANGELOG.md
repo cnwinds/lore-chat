@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- 群里角色点名把活交给别人之后，本回合会结束，不再自己接着做刚派出去的工作；工具也不再把「你还在说」说成「对方正忙」（[ADR 2026-09-13 handoff](docs/adr/2026-09-13-group-handoff-ends-turn.md)）
+
 ### Changed
 
 - 左栏不再单独列出「群聊」：群和角色按最近活动排在同一列表。群头像用圆角方和左上角「群」字区分，右下角留给在线/忙碌。加号改为「新角色 / 发起群聊」，建群先圈选成员（[ADR 2026-09-13 inbox](docs/adr/2026-09-13-group-inbox-mix.md)、[group-avatar-mark](docs/adr/2026-09-13-group-avatar-mark.md)）

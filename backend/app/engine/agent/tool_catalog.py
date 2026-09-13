@@ -868,8 +868,9 @@ TOOL_DEFINITIONS: list[dict] = [
             "description": (
                 "向其他角色投递消息。对方会在协作/群房间收到入站消息并自动开回合；"
                 "做完后对方应再 send_message 回执。这是投递，不是你变成对方。"
+                "点名成功且 expect_reply 时本回合结束，由对方接着说；不要再做刚派出去的工作。"
                 "一对一须指定 to_role_id / to_role_name；群聊必须用 mentions 或 to_role_* 点名，"
-                "未点名则只发消息、不唤醒任何人。"
+                "未点名则只发消息、不唤醒任何人。当前就在群里时可省略 room_id。"
             ),
             "parameters": {
                 "type": "object",
