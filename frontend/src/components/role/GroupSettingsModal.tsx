@@ -43,6 +43,7 @@ export function GroupSettingsModal({
   }, [open, room]);
 
   if (!open || !room) return null;
+  const editing = room;
 
   function toggle(id: string) {
     setPicked((prev) =>
@@ -69,7 +70,7 @@ export function GroupSettingsModal({
   }
 
   async function handleDelete() {
-    if (!window.confirm(`确定删除群「${room.title || "群聊"}」？此操作不可撤销。`)) {
+    if (!window.confirm(`确定删除群「${editing.title || "群聊"}」？此操作不可撤销。`)) {
       return;
     }
     setSaving(true);
