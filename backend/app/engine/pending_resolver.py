@@ -53,13 +53,11 @@ class PendingResolver:
         except KeyError as e:
             raise KeyError(body.qid) from e
 
-        conversation_context = ""
         if body.conversation_id:
             try:
-                conv = self.conversations.get(body.conversation_id)
+                self.conversations.get(body.conversation_id)
             except KeyError as e:
                 raise ValueError("对话不存在") from e
-            conversation_context = self.conversations.context_excerpt(conv)
 
         chosen_ids = body.choices or ([body.choice] if body.choice else [])
         chosen_labels = [
@@ -88,15 +86,11 @@ class PendingResolver:
         elif body.choices:
             if not self._is_agent_question(q):
                 raise ValueError("该问题不支持多选")
-            result = self.organizer.resolve_agent_choices(
-                body.qid, body.choices, conversation_context=conversation_context
-            )
+            result = self.organizer.resolve_agent_choices(body.qid, body.choices)
         elif body.choice:
             if not self._is_agent_question(q):
                 raise ValueError("该问题类型已废弃，请重新发起写入")
-            result = self.organizer.resolve_agent_choices(
-                body.qid, [body.choice], conversation_context=conversation_context
-            )
+            result = self.organizer.resolve_agent_choices(body.qid, [body.choice])
         else:
             raise ValueError("请提供 choice 或 choices")
 

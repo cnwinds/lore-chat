@@ -141,6 +141,34 @@ def test_llm_history_does_not_feed_back_protocol_markup():
     assert history[1] == {"role": "assistant", "content": "你好"}
 
 
+def test_llm_history_projects_ask_user_when_assistant_has_no_text():
+    conv = {
+        "messages": [
+            {"role": "user", "text": "帮我定方案"},
+            {
+                "role": "assistant",
+                "timeline": [
+                    {
+                        "type": "tool",
+                        "tool": "ask_user",
+                        "question": "先做哪一块？",
+                        "options": [
+                            {"id": "a", "label": "检索"},
+                            {"id": "b", "label": "落库"},
+                        ],
+                    }
+                ],
+            },
+        ]
+    }
+    history = ConversationTranscript.llm_history(conv)
+    assert history[0] == {"role": "user", "content": "帮我定方案"}
+    assert history[1]["role"] == "assistant"
+    assert "【征询】先做哪一块？" in history[1]["content"]
+    assert "检索" in history[1]["content"]
+    assert "落库" in history[1]["content"]
+
+
 def test_context_excerpt_omits_turn_output_footer():
     conv = {
         "messages": [

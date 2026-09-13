@@ -1,4 +1,7 @@
-"""Agent / 录入征询选项 → IngestResult（continue_prompt 拼装）。"""
+"""Agent / 录入征询选项 → IngestResult。
+
+续聊时 continue_prompt 只带所选选项文案；对话历史由同一会话的 llm_history 提供。
+"""
 
 from __future__ import annotations
 
@@ -35,8 +38,6 @@ class AgentChoiceResolution:
         self,
         qid: str,
         choice_ids: list[str],
-        *,
-        conversation_context: str = "",
     ) -> ChoiceResult:
         q = self.pending.get(qid)
         payload = q.get("payload", {})
@@ -58,6 +59,7 @@ class AgentChoiceResolution:
             )
         context = payload.get("context", "")
         self.pending.resolve_many(qid, choice_ids)
+        choice_text = "、".join(labels)
 
         if payload.get("kind") == "agent":
             if choice_ids == ["done"]:
@@ -77,20 +79,12 @@ class AgentChoiceResolution:
                     question_id=None,
                     message="好的，已确认。",
                 )
-            parts = [f"用户确认选择：{'、'.join(labels)}"]
-            if conversation_context.strip():
-                parts.append(f"\n对话上下文：\n{conversation_context.strip()}")
-            if context:
-                parts.append(f"\n背景：{context}")
-            parts.append(
-                "\n请结合以上对话与选择，继续完成知识库整理（必要时先 list_kb_structure，再 write_doc）。"
-            )
             return ChoiceResult(
                 status="continue",
                 rel_path=None,
                 question_id=None,
                 message="正在根据你的选择继续处理…",
-                continue_prompt="\n".join(parts),
+                continue_prompt=choice_text,
             )
 
         if not payload.get("kind"):
@@ -98,25 +92,13 @@ class AgentChoiceResolution:
                 status="saved",
                 rel_path=None,
                 question_id=None,
-                message=f"已确认：{'、'.join(labels)}",
+                message=f"已确认：{choice_text}",
             )
 
-        parts = [
-            "用户通过选项确认了要记录的内容：",
-            "\n".join(f"- {label}" for label in labels),
-        ]
-        if conversation_context.strip():
-            parts.append(f"\n对话上下文：\n{conversation_context.strip()}")
-        if context:
-            parts.append(f"\n背景：{context}")
-        parts.append(
-            "\n请先调用 list_kb_structure 查看目录，再调用 write_doc（必填 directory、filename、text）写入；"
-            "禁止无路径自动落库。"
-        )
         return ChoiceResult(
             status="continue",
             rel_path=None,
             question_id=None,
             message="请按目录规划写入知识库。",
-            continue_prompt="\n".join(parts),
+            continue_prompt=choice_text,
         )

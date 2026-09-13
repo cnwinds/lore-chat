@@ -186,13 +186,56 @@ class ConversationTranscript:
         return f"【本轮产出】\n{lines}"
 
     @classmethod
+    def solicitation_for_history(cls, msg: dict) -> str:
+        """ask_user / 沙箱确认投影进下一轮 history；正文可能为空，不能丢征询。"""
+        notes: list[str] = []
+
+        def walk(blocks: object) -> None:
+            if not isinstance(blocks, list):
+                return
+            for block in blocks:
+                if not isinstance(block, dict):
+                    continue
+                if block.get("type") == "parallel":
+                    walk(block.get("children"))
+                    continue
+                if block.get("type") != "tool":
+                    continue
+                tool = block.get("tool")
+                is_ask = tool == "ask_user"
+                is_sandbox_q = tool == "sandbox_run" and (
+                    block.get("question") or block.get("question_id")
+                )
+                if not (is_ask or is_sandbox_q):
+                    continue
+                question = str(block.get("question") or "").strip()
+                if not question:
+                    continue
+                lines = [f"【征询】{question}"]
+                labels: list[str] = []
+                for option in block.get("options") or []:
+                    if isinstance(option, dict):
+                        label = str(option.get("label") or "").strip()
+                        if label:
+                            labels.append(label)
+                if labels:
+                    lines.append("选项：" + "；".join(labels))
+                chosen = str(block.get("choice_resolved") or "").strip()
+                if chosen:
+                    lines.append(f"已选择：{chosen}")
+                notes.append("\n".join(lines))
+
+        walk(msg.get("timeline"))
+        return "\n\n".join(notes)
+
+    @classmethod
     def llm_assistant_content(cls, msg: dict) -> str:
-        """喂给下一轮 LLM 的助手内容：正文 + 确定性本轮产出路径。"""
+        """喂给下一轮 LLM 的助手内容：正文 + 征询 + 确定性本轮产出路径。"""
         text = cls.assistant_content(msg)
+        ask = cls.solicitation_for_history(msg)
         footer = cls.format_turn_outputs(cls.turn_output_paths(msg))
-        if text and footer:
-            return f"{text}\n\n{footer}"
-        return text or footer
+        parts = [p for p in (text, ask, footer) if p]
+        return "\n\n".join(parts)
 
     @classmethod
     def llm_history(

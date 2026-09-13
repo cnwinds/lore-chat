@@ -227,12 +227,8 @@ class Organizer:
         self,
         qid: str,
         choice_ids: list[str],
-        *,
-        conversation_context: str = "",
     ) -> IngestResult:
-        r = self.choices.resolve(
-            qid, choice_ids, conversation_context=conversation_context
-        )
+        r = self.choices.resolve(qid, choice_ids)
         return IngestResult(
             status=r.status,
             rel_path=r.rel_path,

@@ -90,13 +90,12 @@ def test_resolve_agent_choices_returns_continue(tmp_path):
         {"kind": "agent", "context": "lorechat 项目启动"},
         multi_select=True,
     )
-    result = org.resolve_agent_choices(
-        qid, ["basic", "progress"], conversation_context="用户：开始开发 lorechat"
-    )
+    result = org.resolve_agent_choices(qid, ["basic", "progress"])
     assert result.status == "continue"
-    assert result.continue_prompt
-    assert "基本信息" in result.continue_prompt
-    assert "开始开发 lorechat" in result.continue_prompt
+    assert result.continue_prompt == "基本信息、今日进展"
+    assert "对话上下文" not in result.continue_prompt
+    assert "lorechat 项目启动" not in result.continue_prompt
+    assert "知识库整理" not in result.continue_prompt
     assert pending.get(qid)["status"] == "resolved"
 
 
