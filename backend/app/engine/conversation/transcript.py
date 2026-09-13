@@ -201,19 +201,44 @@ class ConversationTranscript:
         *,
         max_turns: int = 20,
         max_chars: int = 32000,
+        responding_role_id: str | None = None,
     ) -> list[dict]:
-        """将已保存的对话转为 LLM 多轮 messages（不含本轮尚未保存的用户消息）。"""
+        """将已保存的对话转为 LLM 多轮 messages（不含本轮尚未保存的用户消息）。
+
+        按应者重映射：同伴入站包成 user；应者自己的 assistant 仍是 assistant。
+        """
+        from app.engine.rooms.types import format_peer_message
+
+        responding = (responding_role_id or conv.get("responding_role_id") or "").strip()
         candidates: list[dict] = []
         for msg in conv.get("messages", []):
             role = msg.get("role")
-            if role == "user":
-                text = (msg.get("text") or "").strip()
-                if text:
-                    candidates.append({"role": "user", "content": text})
-            elif role == "assistant":
+            speaker_kind = (msg.get("speaker_kind") or "").strip()
+            speaker_id = (msg.get("speaker_id") or "").strip()
+            if role == "assistant":
                 text = cls.llm_assistant_content(msg)
                 if text:
                     candidates.append({"role": "assistant", "content": text})
+            elif role == "user":
+                text = (msg.get("text") or "").strip()
+                if not text:
+                    continue
+                if speaker_kind == "role":
+                    if responding and speaker_id == responding:
+                        candidates.append({"role": "assistant", "content": text})
+                    else:
+                        candidates.append(
+                            {
+                                "role": "user",
+                                "content": format_peer_message(
+                                    from_name=msg.get("speaker_name") or speaker_id,
+                                    from_role_id=speaker_id,
+                                    text=text,
+                                ),
+                            }
+                        )
+                else:
+                    candidates.append({"role": "user", "content": text})
 
         user_indices = [i for i, m in enumerate(candidates) if m["role"] == "user"]
         if len(user_indices) > max_turns:

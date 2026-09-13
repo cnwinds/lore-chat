@@ -210,6 +210,10 @@ HTTP `/api/roles*` 保留用于 UI shell（列表、ensure-active、可选右栏
 - 忙碌角标（该角色有 running turn）。
 - 本角色会话历史抽屉。
 
+## 8. 后续：角色互通 / 群聊
+
+多角色并行之后，角色之间可以互相投递消息（「你去喊游戏开发助手做 X」），并长出群聊。见 [product-role-rooms.md](product-role-rooms.md) 与 [ADR 2026-09-12](adr/2026-09-12-role-rooms.md)：底层是房间 + 演员 + 投递 + 唤醒，而不是点对点特判。
+
 ## 参考
 
 - Grok Bot UI 截图：`/workspace/lore-ui/grok-bot-reference.png`

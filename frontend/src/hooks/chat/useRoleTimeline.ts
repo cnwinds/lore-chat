@@ -47,6 +47,8 @@ export type TimelineSegmentView = {
   newerMessageCount?: number;
   /** 搜索定位插入的附近窗口；可与当前 tip 同会话并存 */
   jumped?: boolean;
+  kind?: string;
+  peerRoleId?: string | null;
 };
 
 function toView(
@@ -61,8 +63,9 @@ function toView(
   const isTip = !!tipId && seg.id === tipId;
   if (!isTip && msgs.length === 0) return null;
   if (isTip) return null; // tip 消息由 useChatConversation 维护
+  const isRoom = seg.kind === "peer_dm" || seg.kind === "group";
   const segRole = seg.role_id || roleId;
-  if (segRole && segRole !== roleId) return null;
+  if (!isRoom && segRole && segRole !== roleId) return null;
   return {
     conversationId: seg.id,
     roleId: segRole,
@@ -71,6 +74,8 @@ function toView(
     messages: msgs,
     isTip: false,
     olderMessageCount: seg.older_message_count ?? 0,
+    kind: seg.kind,
+    peerRoleId: seg.peer_role_id,
   };
 }
 
@@ -81,6 +86,8 @@ type Options = {
   messageLimit?: number;
   /** 新话题等强制重置近端窗口 */
   refreshKey?: number;
+  /** 群聊主视图不拉角色时间线 */
+  enabled?: boolean;
 };
 
 /**
@@ -91,6 +98,7 @@ export function useRoleTimeline({
   tipConversationId,
   messageLimit = TIMELINE_MESSAGE_TAIL_DESKTOP,
   refreshKey = 0,
+  enabled = true,
 }: Options) {
   const [segments, setSegments] = useState<TimelineSegmentView[]>([]);
   const [hasMore, setHasMore] = useState(false);
@@ -134,7 +142,7 @@ export function useRoleTimeline({
     tipMetaRef.current = null;
     setSegments([]);
     setHasMore(false);
-    if (!roleId) {
+    if (!roleId || !enabled) {
       return;
     }
     const gen = ++genRef.current;
@@ -155,7 +163,7 @@ export function useRoleTimeline({
     } finally {
       if (gen === genRef.current) setLoading(false);
     }
-  }, [roleId]);
+  }, [roleId, enabled]);
 
   useEffect(() => {
     void resetAndLoadRecent();
@@ -268,10 +276,17 @@ export function useRoleTimeline({
           radius: SEARCH_JUMP_RADIUS,
         });
         if (gen !== genRef.current || roleRef.current !== roleId) return false;
-        if (conv.role_id && conv.role_id !== roleId) return false;
+        const kind = conv.kind || "owner_dm";
+        const isRoom = kind === "peer_dm" || kind === "group";
+        const parts = conv.participant_role_ids || [];
+        if (isRoom) {
+          if (parts.length > 0 && !parts.includes(roleId)) return false;
+        } else if (conv.role_id && conv.role_id !== roleId) {
+          return false;
+        }
         const segment: TimelineSegmentView = {
           conversationId,
-          roleId: conv.role_id || roleId,
+          roleId,
           title: conv.title,
           createdAt: conv.created_at,
           messages: normalizeSegmentMessages(conv.messages, false),
@@ -279,6 +294,11 @@ export function useRoleTimeline({
           olderMessageCount: conv.older_message_count ?? 0,
           newerMessageCount: conv.newer_message_count ?? 0,
           jumped: true,
+          kind,
+          peerRoleId:
+            conv.peer_role_id && conv.peer_role_id !== roleId
+              ? conv.peer_role_id
+              : parts.find((r) => r && r !== roleId) || null,
         };
         setSegments([segment]);
         return segment.messages.some((m) => m.id === messageId);

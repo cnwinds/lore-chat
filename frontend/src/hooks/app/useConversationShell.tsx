@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   createRole,
+  createRoom,
   deleteRole,
   ensureRoleActive,
   getConversation,
@@ -13,6 +14,7 @@ import {
 import { Sidebar } from "../../components/Sidebar";
 import { RoleSettingsModal } from "../../components/RoleSettingsModal";
 import { CreateRoleModal } from "../../components/role/CreateRoleModal";
+import { CreateGroupModal } from "../../components/role/CreateGroupModal";
 import type { ComponentProps, ReactNode } from "react";
 import type { useDocPreviewLayout } from "./useDocPreviewLayout";
 import type { JumpTarget } from "../chat/useConversationJump";
@@ -81,6 +83,10 @@ export function useConversationShell({
   const [settingsRoleId, setSettingsRoleId] = useState<string | null>(null);
   const [busyRoleIds, setBusyRoleIds] = useState<string[]>([]);
   const [timelineRefreshKey, setTimelineRefreshKey] = useState(0);
+  const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
+  const [groupRefreshKey, setGroupRefreshKey] = useState(0);
+  const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
+  const [activeGroupTitle, setActiveGroupTitle] = useState<string | null>(null);
   const sidebarLocateKbPathRef = useRef<((path: string) => void) | null>(null);
   const bootstrappedRef = useRef(false);
   const roleSwitchGenRef = useRef(0);
@@ -135,6 +141,8 @@ export function useConversationShell({
       if (tipSeg?.role_id && tipSeg.role_id !== roleId) {
         throw new Error("角色时间线与所选角色不一致");
       }
+      setActiveGroupId(null);
+      setActiveGroupTitle(null);
       setActiveRoleId(roleId);
       try {
         localStorage.setItem(ACTIVE_ROLE_KEY, roleId);
@@ -150,6 +158,8 @@ export function useConversationShell({
       try {
         const { conversation_id } = await ensureRoleActive(roleId);
         if (gen !== roleSwitchGenRef.current) return;
+        setActiveGroupId(null);
+        setActiveGroupTitle(null);
         setActiveRoleId(roleId);
         try {
           localStorage.setItem(ACTIVE_ROLE_KEY, roleId);
@@ -289,8 +299,19 @@ export function useConversationShell({
     try {
       const conv = await getConversation(id);
       if (gen !== roleSwitchGenRef.current) return;
+      const kind = conv.kind || "owner_dm";
+      if (kind === "group") {
+        setActiveGroupId(id);
+        setActiveGroupTitle(conv.title || "群聊");
+        setActiveConversationId(id);
+        setTimelineRefreshKey((k) => k + 1);
+        if (!opts?.keepPreviews) doc.closeAllPreviews();
+        return;
+      }
+      setActiveGroupId(null);
+      setActiveGroupTitle(null);
       const rid = conv.role_id;
-      if (rid) {
+      if (rid && rid !== "_room") {
         setActiveRoleId(rid);
         try {
           localStorage.setItem(ACTIVE_ROLE_KEY, rid);
@@ -312,6 +333,23 @@ export function useConversationShell({
       await activateRole(roleId);
     } catch {
       /* ensure 失败时 activateRole 已回滚角色 */
+    }
+  }
+
+  async function selectGroup(id: string, title?: string) {
+    const gen = ++roleSwitchGenRef.current;
+    setActiveGroupId(id);
+    setActiveGroupTitle(title || "群聊");
+    setActiveConversationId(id);
+    setTimelineRefreshKey((k) => k + 1);
+    doc.closeAllPreviews();
+    if (gen !== roleSwitchGenRef.current) return;
+    try {
+      const conv = await getConversation(id);
+      if (gen !== roleSwitchGenRef.current) return;
+      if (conv.title) setActiveGroupTitle(conv.title);
+    } catch {
+      /* 仍停留在群 id */
     }
   }
 
@@ -534,6 +572,23 @@ export function useConversationShell({
         onClose={() => setShowCreateRoleModal(false)}
         onConfirm={handleCreateRole}
       />
+      <CreateGroupModal
+        open={showCreateGroupModal}
+        roles={roles}
+        onClose={() => setShowCreateGroupModal(false)}
+        onConfirm={(title, roleIds) => {
+          setShowCreateGroupModal(false);
+          void (async () => {
+            try {
+              const room = await createRoom({ title, role_ids: roleIds });
+              setGroupRefreshKey((k) => k + 1);
+              await selectGroup(room.id, room.title);
+            } catch (e) {
+              window.alert(e instanceof Error ? e.message : "建群失败");
+            }
+          })();
+        }}
+      />
     </>
   );
 
@@ -557,5 +612,14 @@ export function useConversationShell({
     timelineRefreshKey,
     handleDeleteRole,
     selectRole,
+    activeGroupId,
+    activeGroupTitle,
+    groupRefreshKey,
+    selectGroup,
+    openCreateGroupModal: () => setShowCreateGroupModal(true),
+    bumpTimeline: () => {
+      setTimelineRefreshKey((k) => k + 1);
+      setGroupRefreshKey((k) => k + 1);
+    },
   };
 }

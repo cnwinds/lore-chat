@@ -7,7 +7,7 @@ class InteractionTools:
     def __init__(self, pending: PendingStore) -> None:
         self.pending = pending
 
-    def ask_user(self, args: dict) -> dict:
+    def ask_user(self, args: dict, conversation_id: str | None = None) -> dict:
         question = args["question"]
         options = args["options"]
         multi_select = bool(args.get("multi_select", False))
@@ -16,6 +16,9 @@ class InteractionTools:
             "context": args.get("context", ""),
             **(args.get("payload") or {}),
         }
+        cid = (conversation_id or "").strip()
+        if cid:
+            payload["conversation_id"] = cid
         qid = self.pending.create(
             question, options, payload, multi_select=multi_select
         )

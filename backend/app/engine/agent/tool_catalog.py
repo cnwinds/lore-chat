@@ -12,6 +12,7 @@ READ_ONLY_TOOLS = frozenset({
     "fetch_url", "web_search",
     "recall_memory",
     "list_roles",
+    "list_rooms",
     "list_role_schedules",
     "sandbox_list_dir", "sandbox_read_file", "sandbox_job_status",
 })
@@ -22,6 +23,8 @@ WRITE_TOOLS = frozenset({
     "generate_image",
     "create_role",
     "update_role",
+    "send_message",
+    "create_room",
     "create_role_schedule",
     "update_role_schedule",
     "delete_role_schedule",
@@ -118,6 +121,9 @@ TOOL_LABELS = {
     "create_role": "创建角色",
     "update_role": "更新角色",
     "list_role_schedules": "列出例行任务",
+    "send_message": "发送给其他角色",
+    "list_rooms": "列出协作房间",
+    "create_room": "创建群聊",
     "create_role_schedule": "创建例行任务",
     "update_role_schedule": "更新例行任务",
     "delete_role_schedule": "删除例行任务",
@@ -758,10 +764,10 @@ TOOL_DEFINITIONS: list[dict] = [
             "name": "list_roles",
             "description": (
                 "列出当前实例中的角色目录，或按 id / 名称查看某一个角色的完整资料"
-                "（名称、人设、头像、是否默认、引导状态、例行任务数量）。"
+                "（名称、人设、头像、是否默认、引导状态、例行任务数量、是否忙碌）。"
                 "问「有哪些角色 / 叫什么 / 某人设或资料」时必须先调用本工具，"
                 "禁止凭印象编造角色名单或人设。"
-                "创建新角色前若不确定是否已有同名或同职责角色，先列出再决定。"
+                "创建新角色或 send_message 委托前，若不确定是否已有同名或同职责角色，先列出再决定。"
                 "省略参数则返回全部角色；传入 role_id 或 name 则只返回匹配项。"
             ),
             "parameters": {
@@ -842,6 +848,87 @@ TOOL_DEFINITIONS: list[dict] = [
                     "system_prompt": {
                         "type": "string",
                         "description": "新的人设/职责提示词（可选）",
+                    },
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "send_message",
+            "description": (
+                "向其他角色投递消息。对方会在协作/群房间收到入站消息并自动开回合；"
+                "做完后对方应再 send_message 回执。这是投递，不是你变成对方。"
+                "一对一须指定 to_role_id / to_role_name；群聊必须用 mentions 或 to_role_* 点名，"
+                "未点名则只发消息、不唤醒任何人。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "to_role_id": {
+                        "type": "string",
+                        "description": "目标角色 id（优先）",
+                    },
+                    "to_role_name": {
+                        "type": "string",
+                        "description": "目标角色显示名（与 id 二选一）",
+                    },
+                    "text": {
+                        "type": "string",
+                        "description": "要送达的完整委托或回执正文",
+                    },
+                    "expect_reply": {
+                        "type": "boolean",
+                        "description": "是否期待对方回执，默认 true",
+                        "default": True,
+                    },
+                    "room_id": {
+                        "type": "string",
+                        "description": "已有协作/群房间 id；省略则按双方自动复用/创建",
+                    },
+                    "mentions": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "要点名唤醒的角色 id 或名称。群聊未点名则无人自动应。",
+                    },
+                },
+                "required": ["text"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_rooms",
+            "description": "列出当前角色参与的协作房间与群聊（id、标题、参与者）。",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_room",
+            "description": (
+                "创建一间群聊（标题 + 角色列表）。主人自动是成员；"
+                "当前角色也会加入。至少还要再圈一名其他角色。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {
+                        "type": "string",
+                        "description": "群聊标题",
+                    },
+                    "role_ids": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "要拉进群的角色 id",
+                    },
+                    "role_names": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "要拉进群的角色显示名（可与 id 混用）",
                     },
                 },
             },
@@ -1273,6 +1360,9 @@ _API_EXCLUDED_TOOLS = frozenset(
         "update_role_schedule",
         "delete_role_schedule",
         "finalize_role_onboarding",
+        "send_message",
+        "list_rooms",
+        "create_room",
     }
 )
 
@@ -1285,6 +1375,7 @@ def select_tools(
     imagegen_configured: bool = True,
     sandbox_enabled: bool = False,
     disclosure_windows: DisclosureWindows | None = None,
+    role_messaging: bool = False,
 ) -> list[dict]:
     """按 mode / 联网 / 沙箱能力硬门过滤下发给模型的工具集。
 
@@ -1313,6 +1404,10 @@ def select_tools(
         excluded |= _API_EXCLUDED_TOOLS
     if not sandbox_enabled:
         excluded |= SANDBOX_TOOLS
+    if not role_messaging:
+        excluded.add("send_message")
+        excluded.add("list_rooms")
+        excluded.add("create_room")
     windows = disclosure_windows or DisclosureWindows()
     selected: list[dict] = []
     for d in TOOL_DEFINITIONS:

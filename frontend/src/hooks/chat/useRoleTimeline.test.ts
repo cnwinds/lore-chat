@@ -474,6 +474,72 @@ describe("useRoleTimeline", () => {
     );
   });
 
+  it("revealAround keeps a peer room jump for the viewing role", async () => {
+    vi.mocked(api.getRoleTimeline).mockResolvedValue({
+      role_id: "r1",
+      tip_conversation_id: "tip",
+      continuity_idle_hours: 6,
+      has_more: false,
+      segments: [
+        {
+          id: "tip",
+          title: "新对话",
+          created_at: "2026-01-02T00:00:00Z",
+          updated_at: "2026-01-02T00:00:00Z",
+          message_count: 0,
+          role_id: "r1",
+        },
+      ],
+    });
+    vi.mocked(api.getConversation).mockResolvedValue({
+      id: "peer",
+      title: "与「游戏开发助手」协作",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+      message_count: 4,
+      role_id: "_room",
+      kind: "peer_dm",
+      participant_role_ids: ["r1", "game"],
+      peer_role_id: "game",
+      summarized: false,
+      summary_path: null,
+      older_message_count: 0,
+      newer_message_count: 0,
+      messages: [
+        {
+          id: "hit",
+          role: "assistant",
+          text: "登录页改好了",
+          ts: "2026-01-01T00:00:00Z",
+        },
+      ],
+    });
+
+    const { result } = renderHook(() =>
+      useRoleTimeline({
+        roleId: "r1",
+        tipConversationId: "tip",
+        messageLimit: 8,
+      }),
+    );
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(async () => {
+      await expect(result.current.revealAround("peer", "hit")).resolves.toBe(
+        true,
+      );
+    });
+    expect(result.current.historicalSegments).toEqual([
+      expect.objectContaining({
+        conversationId: "peer",
+        roleId: "r1",
+        kind: "peer_dm",
+        peerRoleId: "game",
+        jumped: true,
+      }),
+    ]);
+  });
+
   it("keeps a jumped window even when it belongs to the current tip", async () => {
     vi.mocked(api.getRoleTimeline).mockResolvedValue({
       role_id: "r1",

@@ -73,12 +73,23 @@ def build_tool_dispatch(registry: ToolRegistry) -> dict[str, ToolHandler]:
         "summarize_conversation": _summarize,
         "delete_kb": lambda args, **kw: asyncio.to_thread(kb_mutate.delete_kb, args),
         "move_entry": lambda args, **kw: asyncio.to_thread(kb_mutate.move_entry, args),
-        "ask_user": lambda args, **kw: interaction.ask_user(args),
+        "ask_user": lambda args, **kw: interaction.ask_user(
+            args, conversation_id=kw.get("conversation_id")
+        ),
         "list_roles": lambda args, **kw: roles.list_roles(
             args, conversation_id=kw.get("conversation_id")
         ),
         "create_role": lambda args, **kw: roles.create_role(args),
         "update_role": lambda args, **kw: roles.update_role(
+            args, conversation_id=kw.get("conversation_id")
+        ),
+        "send_message": lambda args, **kw: roles.send_message(
+            args, conversation_id=kw.get("conversation_id")
+        ),
+        "list_rooms": lambda args, **kw: roles.list_rooms(
+            args, conversation_id=kw.get("conversation_id")
+        ),
+        "create_room": lambda args, **kw: roles.create_room(
             args, conversation_id=kw.get("conversation_id")
         ),
         "list_role_schedules": lambda args, **kw: roles.list_role_schedules(

@@ -64,6 +64,8 @@ class AgentOrchestrator:
         attachments: list[str] | None = None,
         role_system_prompt: str = "",
         prefetch_context: str | None = None,
+        current_role_id: str | None = None,
+        extra_system: list[dict] | None = None,
     ) -> AsyncIterator[str]:
         system_layer_text = (
             self.system_layer.compose_rules() if self.system_layer else ""
@@ -74,8 +76,41 @@ class AgentOrchestrator:
         catalog = list(skill_catalog) if skill_catalog else []
         skill_msgs = build_skill_catalog_system_messages(catalog)
         extra = list(skill_msgs) if skill_msgs else []
+        if extra_system:
+            extra.extend(extra_system)
         if prefetch_context and prefetch_context.strip():
             extra.append({"role": "system", "content": prefetch_context.strip()})
+        role_messaging = False
+        roles_store = getattr(getattr(self.tools, "roles_tools", None), "roles", None)
+        role_list: list[dict] = []
+        if roles_store is not None:
+            try:
+                from app.engine.roles import list_sidebar_roles
+
+                role_list = list_sidebar_roles(roles_store)
+                role_messaging = len(role_list) >= 2
+            except Exception:
+                role_messaging = False
+        if role_messaging:
+            from app.engine.agent.prompts import build_role_collab_block
+
+            busy: set[str] = set()
+            convs = getattr(self.tools, "conversations", None)
+            if convs is not None:
+                try:
+                    busy = set(convs.list_busy_role_ids())
+                except Exception:
+                    busy = set()
+            extra.append(
+                {
+                    "role": "system",
+                    "content": build_role_collab_block(
+                        role_list,
+                        current_role_id=current_role_id,
+                        busy_ids=busy,
+                    ),
+                }
+            )
         search_configured = (
             self.tools.web_search is not None
             and self.tools.web_search.provider is not None
@@ -113,6 +148,7 @@ class AgentOrchestrator:
                 )
             ),
             disclosure_windows=self.tools.disclosure_windows,
+            role_messaging=role_messaging,
         )
         primary = primary_doc_path or active_doc_path
         start = time.monotonic()

@@ -18,6 +18,7 @@ from app.engine.chat.session_runner import consume_agent_ask, consume_agent_inge
 from app.engine.chat.sse_keepalive import with_sse_keepalive
 from app.engine.chat.turn_inject import PendingInject
 from app.engine.conversation.shared import TurnInProgress
+from app.engine.rooms.schema import KIND_GROUP, KIND_PEER_DM, ROOM_ROLE_PLACEHOLDER
 
 router = APIRouter()
 
@@ -69,9 +70,14 @@ async def chat(body: ChatBody, request: Request):
         except KeyError as e:
             raise HTTPException(404, "对话不存在") from e
         want_role = (body.role_id or "").strip()
-        if want_role:
+        kind = (conv.get("kind") or "owner_dm").strip() or "owner_dm"
+        if want_role and kind == "owner_dm":
             actual = (conv.get("role_id") or "").strip()
-            if actual and actual != want_role:
+            if (
+                actual
+                and actual != want_role
+                and actual != ROOM_ROLE_PLACEHOLDER
+            ):
                 raise HTTPException(
                     409,
                     detail={
@@ -97,6 +103,51 @@ async def chat(body: ChatBody, request: Request):
 
     cid = body.conversation_id
     client_message_id = body.client_message_id or uuid.uuid4().hex
+    conv_kind = "owner_dm"
+    if cid:
+        try:
+            conv_kind = (c.conversations.get(cid).get("kind") or "owner_dm").strip()
+        except KeyError:
+            conv_kind = "owner_dm"
+    if conv_kind in (KIND_PEER_DM, KIND_GROUP):
+        delivery = getattr(c, "room_delivery", None)
+        if delivery is None:
+            raise HTTPException(503, "角色互通不可用")
+        try:
+            posted = delivery.send_from_owner(
+                room_id=cid,
+                text=body.text,
+                mentions=list(body.mentions or []),
+                client_message_id=client_message_id,
+            )
+        except ValueError as e:
+            raise HTTPException(400, str(e)) from e
+        except TurnInProgress as e:
+            raise HTTPException(
+                409,
+                detail={"code": "turn_in_progress", "retry_after_ms": e.retry_after_ms},
+            ) from e
+        turn_id = posted.get("turn_id")
+        if posted.get("wake_status") == "started" and turn_id:
+            headers = {**_SSE_HEADERS, "X-Turn-Id": turn_id}
+            return StreamingResponse(
+                with_sse_keepalive(
+                    c.chat_runner.observe_turn(cid, turn_id, after_seq=0)
+                ),
+                media_type="text/event-stream",
+                headers=headers,
+            )
+        from app.engine.agent.events import done
+
+        async def _posted_only():
+            yield done([], 0)
+
+        return StreamingResponse(
+            with_sse_keepalive(_posted_only()),
+            media_type="text/event-stream",
+            headers=_SSE_HEADERS,
+        )
+
     try:
         turn = c.chat_runner.begin_persisted_turn(
             conversation_id=cid,

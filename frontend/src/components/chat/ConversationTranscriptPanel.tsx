@@ -38,6 +38,8 @@ type Props = {
   outlineLayout?: TranscriptOutlineLayout;
   memoryNotice?: MemoryEventNotice | null;
   onDismissMemoryNotice?: () => void;
+  roles?: { id: string; name: string }[];
+  onRoomInterjectSent?: () => void;
 };
 
 /** 会话消息区：列表 + 可选记忆提示。 */
@@ -66,6 +68,8 @@ export function ConversationTranscriptPanel({
   outlineLayout = "rail",
   memoryNotice,
   onDismissMemoryNotice,
+  roles,
+  onRoomInterjectSent,
 }: Props) {
   return (
     <>
@@ -105,6 +109,8 @@ export function ConversationTranscriptPanel({
         onQuestionResolved={onQuestionResolved}
         onRetryReply={onRetryReply}
         outlineLayout={outlineLayout}
+        roles={roles}
+        onRoomInterjectSent={onRoomInterjectSent}
       />
     </>
   );

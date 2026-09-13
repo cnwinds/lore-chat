@@ -132,7 +132,20 @@ function AppMain() {
       ) {
         try {
           const conv = await getConversation(target.conversationId);
-          if (conv.role_id === conversation.activeRoleId) {
+          const kind = conv.kind || "owner_dm";
+          const parts = conv.participant_role_ids || [];
+          if (
+            kind !== "group" &&
+            (conv.role_id === conversation.activeRoleId ||
+              (conversation.activeRoleId &&
+                parts.includes(conversation.activeRoleId)))
+          ) {
+            conversation.requestJump(target);
+            doc.closeAllPreviews();
+            return;
+          }
+          if (kind === "group") {
+            conversation.selectGroup(target.conversationId, conv.title);
             conversation.requestJump(target);
             doc.closeAllPreviews();
             return;
@@ -239,7 +252,9 @@ function AppMain() {
         settingsAttention={displayAttention.any}
         onOpenSettings={() => setSettingsOpen(true)}
         roleListProps={{
-          activeRoleId: conversation.activeRoleId || role.activeRoleId,
+          activeRoleId: conversation.activeGroupId
+            ? null
+            : conversation.activeRoleId || role.activeRoleId,
           onSelectRole: (id) => {
             role.setActiveRoleId(id);
             void conversation.sidebarProps.onSelectRole?.(id);
@@ -264,6 +279,13 @@ function AppMain() {
           },
           busyRoleIds: conversation.sidebarProps.busyRoleIds,
           refreshKey: role.roleRefreshKey + sidebarRefreshKey,
+        }}
+        groupListProps={{
+          activeGroupId: conversation.activeGroupId,
+          onSelectGroup: (id) => conversation.selectGroup(id),
+          onNewGroup: conversation.openCreateGroupModal,
+          refreshKey: conversation.groupRefreshKey + sidebarRefreshKey,
+          visible: conversation.roles.length >= 2,
         }}
         kbSidebarProps={{
           refreshKey: sidebarRefreshKey,
@@ -296,6 +318,9 @@ function AppMain() {
             onSelectRole={(id) => {
               void conversation.sidebarProps.onSelectRole?.(id);
             }}
+            roomMode={conversation.activeGroupId ? "group" : "role"}
+            roomTitle={conversation.activeGroupTitle}
+            onRoomInterjectSent={conversation.bumpTimeline}
             mobileLayout={mobileLayout}
             mobileHeaderTitle={mobileHeaderTitle}
             onOpenMobileNav={openMobileNav}

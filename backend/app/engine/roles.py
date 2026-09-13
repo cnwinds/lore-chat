@@ -21,6 +21,23 @@ def is_api_role_id(role_id: str | None) -> bool:
     return (role_id or "").startswith(API_ROLE_PREFIX)
 
 
+def role_visibility(role: dict | None) -> str:
+    raw = (role or {}).get("visibility") or VISIBILITY_SIDEBAR
+    return str(raw).strip() or VISIBILITY_SIDEBAR
+
+
+def is_hidden_role(role: dict | None) -> bool:
+    return role_visibility(role) == VISIBILITY_HIDDEN
+
+
+def list_sidebar_roles(roles) -> list[dict]:
+    """左栏可见角色。隐藏的 API 工作角色不进名录 / 派工。"""
+    try:
+        return list(roles.list_all(visibility=VISIBILITY_SIDEBAR))
+    except TypeError:
+        return [r for r in roles.list_all() if not is_hidden_role(r)]
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 

@@ -1,11 +1,13 @@
 import type { ComponentProps, CSSProperties, ReactNode } from "react";
 import { RoleList } from "../role/RoleList";
+import { GroupList } from "../role/GroupList";
 import { KbSidebar } from "../KbSidebar";
 import { RoleConfigPanel } from "../role/RoleConfigPanel";
 import { LeftSidebarFooter } from "./LeftSidebarFooter";
 import { useLeftSidebarWidth } from "../../hooks/useLeftSidebarWidth";
 
 type RoleListProps = ComponentProps<typeof RoleList>;
+type GroupListProps = ComponentProps<typeof GroupList>;
 type KbSidebarProps = ComponentProps<typeof KbSidebar>;
 type RoleConfigPanelProps = ComponentProps<typeof RoleConfigPanel>;
 
@@ -15,6 +17,7 @@ type Props = {
   hasMergeReview: boolean;
   mainFloatWide: boolean;
   roleListProps: RoleListProps;
+  groupListProps?: GroupListProps;
   kbSidebarProps: KbSidebarProps;
   roleConfigPanelProps: RoleConfigPanelProps;
   chat: ReactNode;
@@ -34,6 +37,7 @@ export function AppShell({
   hasMergeReview,
   mainFloatWide,
   roleListProps,
+  groupListProps,
   kbSidebarProps,
   roleConfigPanelProps,
   chat,
@@ -85,6 +89,7 @@ export function AppShell({
       >
         <div className="app-shell-left-split" ref={leftSidebar.splitRef}>
           <RoleList {...roleListProps} />
+          {groupListProps ? <GroupList {...groupListProps} /> : null}
           {!mobileLayout && (
             <div
               className="app-shell-left-v-resizer"

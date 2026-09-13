@@ -37,6 +37,9 @@ export function toolBlockDefaultOpen(
   if (isPendingAskTool(block) || hasPreviewableImageAttachments(block)) {
     return true;
   }
+  if (block.tool === "send_message") {
+    return true;
+  }
   if (!opts.isLive) {
     return false;
   }

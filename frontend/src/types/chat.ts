@@ -83,6 +83,16 @@ export type TimelineBlock =
       choice_resolved?: string;
       role_id?: string;
       role_name?: string;
+      room_id?: string;
+      message_id?: string;
+      target_role_id?: string;
+      target_role_name?: string;
+      targets?: { id: string; name: string }[];
+      wake_status?: string;
+      expect_reply?: boolean;
+      hop?: number;
+      error?: string;
+      turn_id?: string;
       /** edit_doc 修改点上下文预览 */
       preview?: string;
       reindex_mode?: string;
@@ -140,6 +150,10 @@ export type ChatMessage = {
   /** Mid-turn inject (client_message_id starts with inject:) */
   injected?: boolean;
   client_message_id?: string;
+  speaker_kind?: "user" | "role" | "system" | string;
+  speaker_id?: string;
+  speaker_name?: string;
+  hop?: number;
 };
 
 export type CumulativeInfo = {
@@ -170,6 +184,9 @@ export type ConversationSummary = {
   updated_at: string;
   message_count: number;
   role_id?: string;
+  kind?: "owner_dm" | "peer_dm" | "group" | string;
+  peer_role_id?: string | null;
+  participant_role_ids?: string[];
   summarized?: boolean;
   summary_path?: string | null;
 };
@@ -196,6 +213,33 @@ export type ActiveTurnStatus = {
   started_at: string | null;
   last_seq: number | null;
   observable: boolean;
+};
+
+export type RoomSummary = {
+  id: string;
+  title: string;
+  kind: "peer_dm" | "group" | string;
+  created_at?: string;
+  updated_at?: string;
+  participant_role_ids: string[];
+  participant_names?: string[];
+  peer_role_id?: string | null;
+};
+
+export type RoomStatus = {
+  id: string;
+  kind: string;
+  title?: string;
+  state: "queued" | "working" | "awaiting_user" | "done" | "idle" | "failed" | string;
+  preview?: string;
+  queued_count: number;
+  pending_questions: Question[];
+  active_turn?: { turn_id: string; status: string; started_at?: string } | null;
+  participant_role_ids: string[];
+  participant_names?: string[];
+  peer_role_id?: string | null;
+  updated_at?: string;
+  last_message_at?: string | null;
 };
 
 export type Conversation = ConversationSummary & {

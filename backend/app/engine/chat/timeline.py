@@ -86,6 +86,18 @@ class TimelineAccumulator:
                     "multi_select",
                     "awaiting_user",
                     "awaiting_confirm",
+                    "role_id",
+                    "role_name",
+                    "room_id",
+                    "message_id",
+                    "target_role_id",
+                    "target_role_name",
+                    "targets",
+                    "wake_status",
+                    "expect_reply",
+                    "hop",
+                    "error",
+                    "turn_id",
                 ):
                     if data.get(key) is not None:
                         block[key] = data[key]

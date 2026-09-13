@@ -8,6 +8,7 @@ import uuid
 from typing import Any
 
 from app.engine.conversation.shared import TurnInProgress
+from app.engine.rooms.delivery import drain_due_inbound
 
 log = logging.getLogger("uvicorn.error")
 
@@ -82,3 +83,10 @@ def drain_due_role_schedules(container: Any, loop: asyncio.AbstractEventLoop) ->
             log.exception(
                 "role schedule drain failed id=%s", schedule.get("id")
             )
+    async def _drain_inbound() -> None:
+        drain_due_inbound(container)
+
+    try:
+        asyncio.run_coroutine_threadsafe(_drain_inbound(), loop).result(timeout=30)
+    except Exception:
+        log.exception("role inbound drain failed")

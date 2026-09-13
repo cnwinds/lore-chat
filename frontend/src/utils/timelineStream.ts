@@ -144,6 +144,24 @@ export function updateTimeline(
         ...(typeof data.role_name === "string" && data.role_name
           ? { role_name: data.role_name }
           : {}),
+        ...(typeof data.room_id === "string" && data.room_id
+          ? { room_id: data.room_id }
+          : {}),
+        ...(typeof data.target_role_id === "string" && data.target_role_id
+          ? { target_role_id: data.target_role_id }
+          : {}),
+        ...(typeof data.target_role_name === "string" && data.target_role_name
+          ? { target_role_name: data.target_role_name }
+          : {}),
+        ...(typeof data.wake_status === "string" && data.wake_status
+          ? { wake_status: data.wake_status }
+          : {}),
+        ...(typeof data.turn_id === "string" && data.turn_id
+          ? { turn_id: data.turn_id }
+          : {}),
+        ...(Array.isArray(data.targets)
+          ? { targets: data.targets as { id: string; name: string }[] }
+          : {}),
         ...(typeof data.preview === "string" && data.preview
           ? { preview: data.preview as string }
           : {}),

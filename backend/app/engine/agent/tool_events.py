@@ -13,6 +13,19 @@ _ASK_KEYS = (
     "awaiting_confirm",
 )
 
+_COLLAB_KEYS = (
+    "room_id",
+    "message_id",
+    "target_role_id",
+    "target_role_name",
+    "targets",
+    "wake_status",
+    "expect_reply",
+    "hop",
+    "error",
+    "turn_id",
+)
+
 
 def tool_result_content(tool: str, out: dict) -> str | None:
     if tool == "fetch_url":
@@ -57,6 +70,8 @@ def emit_tool_result_sse(tc: ToolCall, out: dict, duration_ms: int) -> str:
         extra.update(_copy_keys(out, ("attachments", "rel_path")))
     elif tc.name == "write_kb_file":
         extra.update(_copy_keys(out, ("attachments", "rel_path")))
+    elif tc.name in ("send_message", "create_room", "list_rooms"):
+        extra.update(_copy_keys(out, _COLLAB_KEYS))
     return tool_result(
         tc.id,
         tc.name,

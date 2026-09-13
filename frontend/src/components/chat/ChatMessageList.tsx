@@ -12,6 +12,7 @@ import { LoreLogo } from "../LoreLogo";
 import { ChatMessageRow, messageHasBody } from "./ChatMessageRow";
 import { ConversationOutline } from "./ConversationOutline";
 import { TimelineSeparator } from "./TimelineSeparator";
+import { RoomInterjectBar } from "./RoomInterjectBar";
 
 const EMPTY_HISTORICAL: TimelineSegmentView[] = [];
 
@@ -47,6 +48,8 @@ export type ChatMessageListProps = {
   showOutline?: boolean;
   /** 提问导航布局：rail 桌面浮条；sheet 手机底部抽屉 */
   outlineLayout?: "rail" | "sheet";
+  roles?: { id: string; name: string }[];
+  onRoomInterjectSent?: () => void;
 };
 
 function renderSegmentRows(opts: {
@@ -149,6 +152,8 @@ export function ChatMessageList({
   readOnly = false,
   showOutline = false,
   outlineLayout = "rail",
+  roles = [],
+  onRoomInterjectSent,
 }: ChatMessageListProps) {
   const hasHistory = historicalSegments.some((s) => s.messages.length > 0);
   const tipHasBody = expandMessagesForDisplay(msgs).some((row) =>
@@ -200,8 +205,17 @@ export function ChatMessageList({
                 data-conversation-id={seg.conversationId}
                 data-jumped={seg.jumped ? "true" : undefined}
               >
-                {i > 0 && (
-                  <TimelineSeparator idleHours={continuityIdleHours} />
+                {(i > 0 || seg.kind === "peer_dm" || seg.kind === "group") && (
+                  <TimelineSeparator
+                    idleHours={continuityIdleHours}
+                    label={
+                      seg.kind === "peer_dm"
+                        ? "角色协作 · 共享房间"
+                        : seg.kind === "group"
+                          ? "群聊"
+                          : undefined
+                    }
+                  />
                 )}
                 {renderSegmentRows({
                   msgs: seg.messages,
@@ -216,6 +230,15 @@ export function ChatMessageList({
                   onOpenConversation,
                   onQuestionResolved,
                 })}
+                {(seg.kind === "peer_dm" || seg.kind === "group") &&
+                roles.length > 0 ? (
+                  <RoomInterjectBar
+                    roomId={seg.conversationId}
+                    roles={roles}
+                    kind={seg.kind}
+                    onSent={onRoomInterjectSent}
+                  />
+                ) : null}
               </div>
             ))}
             {(showTipSeparator || tipHasBody || streaming) && (

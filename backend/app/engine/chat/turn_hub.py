@@ -57,6 +57,8 @@ class TurnRunSpec:
     skill_catalog: list[dict[str, str]] | None = None
     attachments: list[str] | None = None
     mode: str = MODE_DEFAULT
+    responding_role_id: str | None = None
+    extra_system: list[dict] | None = None
 
 
 @dataclass
@@ -92,11 +94,21 @@ class TurnExecutionHub:
         self._by_turn: dict[str, ActiveTurn] = {}
         self._cid_to_turn: dict[str, str] = {}
 
-    def _role_system_prompt_for(self, cid: str) -> str:
+    def _safe_role_id(self, cid: str) -> str | None:
+        try:
+            return self.conversations.get_role_id(cid)
+        except KeyError:
+            return None
+
+    def _role_system_prompt_for(
+        self, cid: str, responding_role_id: str | None = None
+    ) -> str:
         if self.roles is None:
             return ""
         try:
-            rid = self.conversations.get_role_id(cid)
+            rid = (responding_role_id or "").strip() or self.conversations.get_role_id(
+                cid
+            )
             role = self.roles.get(rid)
             name = role.get("name") or "角色"
             prompt = role.get("system_prompt") or ""
@@ -317,8 +329,18 @@ class TurnExecutionHub:
         history: list[dict] | None = None,
         reuse_user_message_id: str | None = None,
         mode: str = MODE_DEFAULT,
+        stimulus=None,
     ) -> dict:
         """回合生命周期：begin_turn +（若 running）启动 Task。观测另走 subscribe。"""
+        responding = None
+        extra_system = None
+        run_text = user_text
+        if stimulus is not None:
+            responding = getattr(stimulus, "responding_role_id", None)
+            extra = getattr(stimulus, "extra_system", None)
+            if extra:
+                extra_system = [{"role": "system", "content": extra}]
+            run_text = stimulus.llm_user_text()
         hist = history
         if hist is None:
             conv = self.conversations.get(conversation_id)
@@ -329,10 +351,31 @@ class TurnExecutionHub:
                     if m.get("id") == reuse_user_message_id:
                         break
                     prior.append(m)
-                hist = self.conversations.llm_history({**conv, "messages": prior})
+                hist = self.conversations.llm_history(
+                    {**conv, "messages": prior},
+                    responding_role_id=responding,
+                )
             else:
                 # 新回合：须在 begin_turn 之前快照，避免 history 含本轮用户消息
-                hist = self.conversations.llm_history(conv)
+                inbound_id = (
+                    getattr(stimulus, "inbound_message_id", None)
+                    if stimulus is not None
+                    else None
+                )
+                if inbound_id:
+                    prior = [
+                        m
+                        for m in (conv.get("messages") or [])
+                        if m.get("id") != inbound_id
+                    ]
+                    hist = self.conversations.llm_history(
+                        {**conv, "messages": prior},
+                        responding_role_id=responding,
+                    )
+                else:
+                    hist = self.conversations.llm_history(
+                        conv, responding_role_id=responding
+                    )
         turn = self.conversations.begin_turn(
             conversation_id,
             user_text=user_text,
@@ -343,13 +386,14 @@ class TurnExecutionHub:
             attachments=attachments,
             web_enabled=web_enabled,
             reuse_user_message_id=reuse_user_message_id,
+            stimulus=stimulus,
         )
         if turn.get("status", "running") == "running":
             self.ensure_running(
                 conversation_id,
                 turn,
                 TurnRunSpec(
-                    text=user_text,
+                    text=run_text,
                     history=hist,
                     doc_paths=doc_paths,
                     skill_catalog=skill_catalog,
@@ -357,6 +401,8 @@ class TurnExecutionHub:
                     web_enabled=web_enabled,
                     attachments=list(attachments) if attachments else None,
                     mode=mode or MODE_DEFAULT,
+                    responding_role_id=responding,
+                    extra_system=extra_system,
                 ),
             )
         return turn
@@ -506,8 +552,13 @@ class TurnExecutionHub:
                 inject_broker=self.inject_broker,
                 on_inject_applied=_on_inject_applied,
                 attachments=spec.attachments,
-                role_system_prompt=self._role_system_prompt_for(cid),
+                role_system_prompt=self._role_system_prompt_for(
+                    cid, spec.responding_role_id
+                ),
                 prefetch_context=prefetch,
+                current_role_id=spec.responding_role_id
+                or self._safe_role_id(cid),
+                extra_system=spec.extra_system,
             ):
                 parsed = parse_agent_sse_event(ev)
                 if parsed:

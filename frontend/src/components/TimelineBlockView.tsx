@@ -20,6 +20,7 @@ import { toolDisplayDurationMs } from "../utils/toolDuration";
 import type { ConversationLinkTarget } from "../utils/conversationLinks";
 import { toolBlockDefaultOpen } from "../utils/toolFold";
 import { stripProtocolMarkup } from "../utils/visibleText";
+import { CollabCard } from "./chat/CollabCard";
 
 type Props = {
   block: TimelineBlock;
@@ -140,6 +141,17 @@ function ToolBlockView({
 
   function toggleOpen() {
     setOverride(!open);
+  }
+
+  if (block.tool === "send_message") {
+    return (
+      <CollabCard
+        block={block}
+        conversationId={conversationId}
+        onOpenConversation={onOpenConversation}
+        onQuestionResolved={onQuestionResolved}
+      />
+    );
   }
 
   const oneLiner = toolOneLiner(block);

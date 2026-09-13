@@ -5183,6 +5183,22 @@ button.memory-fact-statement--jump:focus-visible {
   justify-content: flex-start;
 }
 
+.chat-row-peer {
+  justify-content: flex-start;
+}
+
+.chat-bubble-peer {
+  background: var(--bg-muted);
+  border: 1px solid var(--border);
+  border-bottom-left-radius: 3px;
+}
+
+.chat-peer-tag {
+  margin: 0 0 6px;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+}
+
 .chat-failover-banner {
   margin: 0 0 8px;
   padding: 6px 10px;
