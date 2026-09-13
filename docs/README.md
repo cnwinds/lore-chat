@@ -7,6 +7,6 @@
 | [adr/](adr/README.md) | 架构决策（已采纳，不删不改写原文） |
 | [product-multi-role.md](product-multi-role.md) | 多角色产品/界面设计（ADR 2026-09-09 配套） |
 | [product-external-chat-api.md](product-external-chat-api.md) | 对外聊天 API（人设可共享，每 Key 独立隐藏角色） |
-| [product-role-rooms.md](product-role-rooms.md) | 角色互通与群聊（已拍板：房间 + 投递 + 唤醒） |
+| [product-role-rooms.md](product-role-rooms.md) | 角色互通与群聊（房间 + 投递 + 唤醒；群是独立现场） |
 | [role-scoped-sandbox.md](role-scoped-sandbox.md) | 每角色执行沙箱池（方案 C）摘要 |
 | [brand/](brand/logo.html) | Logo / 字标资源与生成脚本 |

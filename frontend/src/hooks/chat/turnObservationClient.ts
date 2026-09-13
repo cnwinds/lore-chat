@@ -39,6 +39,7 @@ import {
   shouldPaintStreamPatch,
   type StreamOwnership,
 } from "./streamOwnership";
+import { buildResumeAssistantPatch } from "./resumeAssistantShell";
 
 export type { StreamOwnership } from "./streamOwnership";
 export { createStreamOwnership } from "./streamOwnership";
@@ -180,6 +181,8 @@ export class TurnObservationEngine {
       webEnabled?: boolean;
       reuseUserMessageId?: string;
       replaceAssistantIndex?: number;
+      mentions?: string[];
+      assistantSpeaker?: { id: string; name: string };
     },
   ): Promise<boolean> {
     if (this.ownership.streamingRef.current) return false;
@@ -196,11 +199,19 @@ export class TurnObservationEngine {
     const priorMsgsCid = this.ownership.msgsConversationIdRef.current;
     this.beginObservation(ctx.conversationId);
 
+    const assistantSpeaker = opts?.assistantSpeaker;
     const assistantMsg: ChatMessage = {
       role: "assistant",
       ts: nowIsoDisplay(),
       timeline: [],
       sources: [],
+      ...(assistantSpeaker
+        ? {
+            speaker_kind: "role",
+            speaker_id: assistantSpeaker.id,
+            speaker_name: assistantSpeaker.name,
+          }
+        : {}),
     };
     this.callbacks.patchMsgs((m) => {
       const sameChat =
@@ -228,6 +239,9 @@ export class TurnObservationEngine {
           text: display,
           ts: nowIsoDisplay(),
           web_enabled: useWeb,
+          ...(assistantSpeaker || opts?.mentions
+            ? { speaker_kind: "user", speaker_name: "主人" }
+            : {}),
           ...(userMeta?.attachments?.length
             ? { attachments: userMeta.attachments }
             : {}),
@@ -267,6 +281,7 @@ export class TurnObservationEngine {
             attachments: userMeta?.attachments ?? [],
             clientMessageId: newId(),
             reuseUserMessageId,
+            mentions: opts?.mentions,
             signal: this.abortController!.signal,
           }),
           conversationId,
@@ -313,7 +328,11 @@ export class TurnObservationEngine {
     return true;
   }
 
-  async resumeActiveTurn(cid: string, startedAt?: string | null): Promise<boolean> {
+  async resumeActiveTurn(
+    cid: string,
+    startedAt?: string | null,
+    speakerId?: string | null,
+  ): Promise<boolean> {
     if (this.ownership.streamingRef.current) return false;
 
     this.refs.stickToBottomRef.current = true;
@@ -331,21 +350,9 @@ export class TurnObservationEngine {
 
     this.callbacks.patchMsgs((m) => {
       const base = priorMsgsCid === cid ? m : [];
-      const last = base[base.length - 1];
-      if (last?.role === "assistant") {
-        this.refs.streamingAssistantIdxRef.current = base.length - 1;
-        return base;
-      }
-      this.refs.streamingAssistantIdxRef.current = base.length;
-      return [
-        ...base,
-        {
-          role: "assistant",
-          ts: nowIsoDisplay(),
-          timeline: [],
-          sources: [],
-        },
-      ];
+      const next = buildResumeAssistantPatch(base, speakerId);
+      this.refs.streamingAssistantIdxRef.current = next.streamingIndex;
+      return next.messages;
     });
 
     let serverStreamError = false;
@@ -533,6 +540,7 @@ export class TurnObservationEngine {
       const resumed = await this.resumeActiveTurn(
         streamCid,
         turnStatus.started_at,
+        turnStatus.responding_role_id,
       );
       if (resumed) return { outcome: "resumed" };
       // resume 的 finally 已跑过 finishObservation（可能已 emit）。

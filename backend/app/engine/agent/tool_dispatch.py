@@ -89,7 +89,19 @@ def build_tool_dispatch(registry: ToolRegistry) -> dict[str, ToolHandler]:
         "list_rooms": lambda args, **kw: roles.list_rooms(
             args, conversation_id=kw.get("conversation_id")
         ),
+        "list_groups": lambda args, **kw: roles.list_groups(
+            args, conversation_id=kw.get("conversation_id")
+        ),
         "create_room": lambda args, **kw: roles.create_room(
+            args, conversation_id=kw.get("conversation_id")
+        ),
+        "create_group": lambda args, **kw: roles.create_group(
+            args, conversation_id=kw.get("conversation_id")
+        ),
+        "update_group": lambda args, **kw: roles.update_group(
+            args, conversation_id=kw.get("conversation_id")
+        ),
+        "delete_group": lambda args, **kw: roles.delete_group(
             args, conversation_id=kw.get("conversation_id")
         ),
         "list_role_schedules": lambda args, **kw: roles.list_role_schedules(

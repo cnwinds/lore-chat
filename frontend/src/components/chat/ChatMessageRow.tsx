@@ -6,8 +6,11 @@ import {
   normalizeDocContext,
   type ChatMessage,
   type IngestResult,
+  type RoleSummary,
   type SourceRef,
 } from "../../api";
+import { RoleAvatar } from "../role/RoleAvatar";
+import { resolveGroupSpeaker } from "../../utils/groupChatDisplay";
 import { DocChip } from "../ComposerTray";
 import { formatMessageTs, isInjectedUserMessage, canRetryAssistantReply } from "../../utils/chatMessage";
 import { MarkdownContent } from "../MarkdownContent";
@@ -45,6 +48,10 @@ export type ChatMessageRowProps = {
   onRetryReply?: () => void;
   retryDisabled?: boolean;
   readOnly?: boolean;
+  /** 群现场按说话人画；一对一仍用默认气泡 */
+  layout?: "dm" | "group";
+  roles?: RoleSummary[];
+  respondingRoleId?: string | null;
 };
 
 function basename(path: string): string {
@@ -300,6 +307,9 @@ export function ChatMessageRow({
   onRetryReply,
   retryDisabled,
   readOnly = false,
+  layout = "dm",
+  roles = [],
+  respondingRoleId = null,
 }: ChatMessageRowProps) {
   const rowRef = useRef<HTMLDivElement>(null);
   const [highlightRange, setHighlightRange] = useState<{
@@ -325,32 +335,45 @@ export function ChatMessageRow({
   const timelineImagePaths = [...timelineToolAttachmentPaths(m)];
   const showRetry =
     !readOnly && !isLiveStreaming && !!onRetryReply && canRetryAssistantReply(m);
-
-  return (
-    <div
-      ref={rowRef}
-      className={`chat-row ${
-        m.speaker_kind === "role" && m.role === "user"
-          ? "chat-row-peer"
-          : m.role === "user"
-            ? "chat-row-user"
-            : "chat-row-assistant"
-      }`}
-      {...(m.id ? { "data-message-id": m.id } : {})}
-    >
-      <div
-        className={`chat-bubble ${
+  const groupSpeaker =
+    layout === "group"
+      ? resolveGroupSpeaker(m, roles, respondingRoleId)
+      : null;
+  const rowClass =
+    layout === "group"
+      ? `chat-row chat-row-group ${
+          groupSpeaker?.kind === "owner"
+            ? "chat-row-group-owner"
+            : "chat-row-group-role"
+        }`
+      : `chat-row ${
+          m.speaker_kind === "role" && m.role === "user"
+            ? "chat-row-peer"
+            : m.role === "user"
+              ? "chat-row-user"
+              : "chat-row-assistant"
+        }`;
+  const bubbleClass =
+    layout === "group"
+      ? `chat-bubble ${
+          groupSpeaker?.kind === "owner"
+            ? "chat-bubble-user"
+            : "chat-bubble-assistant"
+        }`
+      : `chat-bubble ${
           m.speaker_kind === "role" && m.role === "user"
             ? "chat-bubble-peer"
             : `chat-bubble-${m.role}`
-        }`}
-      >
+        }`;
+
+  const bubble = (
+      <div className={bubbleClass}>
         {m.role === "assistant" && m.model_failover ? (
           <div className="chat-failover-banner" role="status">
             高优先级模型暂不可用，已切换至 {m.model_name || "备胎模型"}
           </div>
         ) : null}
-        {m.role === "user" && m.speaker_kind === "role" && (
+        {layout !== "group" && m.role === "user" && m.speaker_kind === "role" && (
           <div className="chat-peer-tag">
             来自 {m.speaker_name || "其他角色"}
           </div>
@@ -400,6 +423,33 @@ export function ChatMessageRow({
           retryDisabled,
         )}
       </div>
+  );
+
+  return (
+    <div
+      ref={rowRef}
+      className={rowClass}
+      {...(m.id ? { "data-message-id": m.id } : {})}
+      data-speaker-kind={groupSpeaker?.kind || m.speaker_kind || m.role}
+      data-speaker-id={groupSpeaker?.id || m.speaker_id || undefined}
+    >
+      {layout === "group" && groupSpeaker?.kind === "role" ? (
+        <>
+          <RoleAvatar
+            name={groupSpeaker.name}
+            seed={groupSpeaker.id || groupSpeaker.name}
+            avatar={groupSpeaker.role?.avatar}
+            size={32}
+            className="chat-row-group-avatar"
+          />
+          <div className="chat-row-group-col">
+            <div className="chat-row-group-name">{groupSpeaker.name}</div>
+            {bubble}
+          </div>
+        </>
+      ) : (
+        bubble
+      )}
     </div>
   );
 }

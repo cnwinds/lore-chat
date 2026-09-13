@@ -276,7 +276,16 @@ class RoomStore:
             ).fetchone()
             return int(row["n"] if row is not None else 0)
 
-    def create_group(self, *, title: str, role_ids: list[str]) -> str:
+    def _row_avatar(self, row) -> str | None:
+        try:
+            raw = row["avatar"]
+        except (KeyError, IndexError):
+            return None
+        return (str(raw).strip() or None) if raw is not None else None
+
+    def create_group(
+        self, *, title: str, role_ids: list[str], avatar: str | None = None
+    ) -> str:
         ids: list[str] = []
         seen: set[str] = set()
         for raw in role_ids:
@@ -288,6 +297,7 @@ class RoomStore:
         if len(ids) < 2:
             raise ValueError("建群至少需要两个角色")
         name = (title or "").strip() or "群聊"
+        pic = (avatar or "").strip() or None
         store = self._store
         cid = new_id()
         stamp = now_iso()
@@ -296,8 +306,8 @@ class RoomStore:
                 """
                 INSERT INTO conversations(
                     id, title, created_at, updated_at, active_turn_id,
-                    indexed_dirty, role_id, kind, peer_key
-                ) VALUES (?, ?, ?, ?, NULL, 0, ?, ?, NULL)
+                    indexed_dirty, role_id, kind, peer_key, avatar
+                ) VALUES (?, ?, ?, ?, NULL, 0, ?, ?, NULL, ?)
                 """,
                 (
                     cid,
@@ -306,6 +316,7 @@ class RoomStore:
                     stamp,
                     ROOM_ROLE_PLACEHOLDER,
                     KIND_GROUP,
+                    pic,
                 ),
             )
             self._add_participant_unlocked(
@@ -318,43 +329,221 @@ class RoomStore:
             store.conn.commit()
         return cid
 
+    def _require_group_unlocked(self, cid: str):
+        store = self._store
+        row = store._conversation_row(cid)
+        try:
+            kind = (row["kind"] or "").strip()
+        except (KeyError, IndexError):
+            kind = ""
+        if kind != KIND_GROUP:
+            raise ValueError("不是群聊")
+        return row
+
+    def update_group(
+        self,
+        cid: str,
+        *,
+        title: str | None = None,
+        avatar: str | None | object = ...,
+        role_ids: list[str] | None = None,
+    ) -> dict:
+        store = self._store
+        stamp = now_iso()
+        with store._lock:
+            row = self._require_group_unlocked(cid)
+            new_title = row["title"]
+            if title is not None:
+                new_title = (title or "").strip() or "群聊"
+            new_avatar = self._row_avatar(row)
+            if avatar is not ...:
+                new_avatar = (str(avatar).strip() or None) if avatar else None
+            store.conn.execute(
+                """
+                UPDATE conversations
+                SET title = ?, avatar = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (new_title, new_avatar, stamp, cid),
+            )
+            if role_ids is not None:
+                ids: list[str] = []
+                seen: set[str] = set()
+                for raw in role_ids:
+                    rid = (raw or "").strip()
+                    if not rid or rid == ROOM_ROLE_PLACEHOLDER or rid in seen:
+                        continue
+                    seen.add(rid)
+                    ids.append(rid)
+                if len(ids) < 2:
+                    raise ValueError("群至少需要两个角色")
+                store.conn.execute(
+                    """
+                    DELETE FROM conversation_participants
+                    WHERE conversation_id = ? AND actor_kind = ?
+                    """,
+                    (cid, ACTOR_ROLE),
+                )
+                for rid in ids:
+                    self._add_participant_unlocked(
+                        cid, ACTOR_ROLE, rid, membership="member"
+                    )
+            store.conn.commit()
+        return self.get_group(cid)
+
+    def delete_group(self, cid: str) -> None:
+        store = self._store
+        with store._lock:
+            self._require_group_unlocked(cid)
+        store.delete(cid)
+
+    def get_group(self, cid: str) -> dict:
+        store = self._store
+        with store._lock:
+            row = self._require_group_unlocked(cid)
+            return self._group_row_to_dict(row)
+
+    def _group_row_to_dict(self, row) -> dict:
+        cid = str(row["id"])
+        participants = [
+            str(r["actor_id"])
+            for r in self._store.conn.execute(
+                """
+                SELECT actor_id FROM conversation_participants
+                WHERE conversation_id = ? AND actor_kind = ?
+                ORDER BY actor_id
+                """,
+                (cid, ACTOR_ROLE),
+            ).fetchall()
+        ]
+        return {
+            "id": cid,
+            "title": row["title"],
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+            "kind": KIND_GROUP,
+            "avatar": self._row_avatar(row),
+            "participant_role_ids": participants,
+        }
+
+    def group_card_for_role(self, cid: str, role_id: str) -> dict | None:
+        """角色时间线用：该角色在此群的最近一次应声，不是群全文。"""
+        store = self._store
+        rid = (role_id or "").strip()
+        if not rid:
+            return None
+        with store._lock:
+            row = store.conn.execute(
+                "SELECT * FROM conversations WHERE id = ?", (cid,)
+            ).fetchone()
+            if row is None:
+                return None
+            try:
+                kind = (row["kind"] or "").strip()
+            except (KeyError, IndexError):
+                kind = ""
+            if kind != KIND_GROUP:
+                return None
+            last = store.conn.execute(
+                """
+                SELECT text, ts FROM messages
+                WHERE conversation_id = ? AND role = 'assistant'
+                  AND speaker_id = ?
+                ORDER BY seq DESC
+                LIMIT 1
+                """,
+                (cid, rid),
+            ).fetchone()
+            active = store.conn.execute(
+                """
+                SELECT t.id FROM turns t
+                JOIN conversations c ON c.active_turn_id = t.id
+                WHERE c.id = ? AND t.status = 'running'
+                  AND t.responding_role_id = ?
+                """,
+                (cid, rid),
+            ).fetchone()
+            excerpt = (last["text"] or "").strip()[:160] if last else ""
+            if not excerpt and active is None:
+                return None
+            created = last["ts"] if last else row["created_at"]
+            participants = [
+                str(r["actor_id"])
+                for r in store.conn.execute(
+                    """
+                    SELECT actor_id FROM conversation_participants
+                    WHERE conversation_id = ? AND actor_kind = ?
+                    ORDER BY actor_id
+                    """,
+                    (cid, ACTOR_ROLE),
+                ).fetchall()
+            ]
+            return {
+                "id": cid,
+                "title": row["title"],
+                "created_at": created,
+                "updated_at": row["updated_at"],
+                "role_id": rid,
+                "kind": "group_card",
+                "room_id": cid,
+                "avatar": self._row_avatar(row),
+                "excerpt": excerpt,
+                "card_status": "working" if active is not None else "done",
+                "message_count": 1,
+                "participant_role_ids": participants,
+            }
+
+    def last_activity_for_ids(
+        self, ids: list[str], *, max_chars: int = 80
+    ) -> dict[str, dict[str, str]]:
+        """每个群最近一条消息的时间与单行预览，供左栏与角色混排。"""
+        cleaned = [str(i).strip() for i in ids if str(i or "").strip()]
+        if not cleaned:
+            return {}
+        placeholders = ",".join("?" * len(cleaned))
+        with self._store._lock:
+            rows = self._store.conn.execute(
+                f"""
+                SELECT m.conversation_id, m.text, m.ts
+                FROM messages m
+                INNER JOIN (
+                    SELECT conversation_id, MAX(seq) AS max_seq
+                    FROM messages
+                    WHERE conversation_id IN ({placeholders})
+                    GROUP BY conversation_id
+                ) latest
+                  ON latest.conversation_id = m.conversation_id
+                 AND latest.max_seq = m.seq
+                """,
+                cleaned,
+            ).fetchall()
+        limit = max(16, min(int(max_chars or 80), 200))
+        out: dict[str, dict[str, str]] = {}
+        for row in rows:
+            cid = str(row["conversation_id"])
+            collapsed = " ".join((row["text"] or "").split())
+            if len(collapsed) > limit:
+                collapsed = collapsed[:limit].rstrip() + "…"
+            stamp = str(row["ts"] or "").strip()
+            out[cid] = {
+                "last_active_at": stamp,
+                "preview": collapsed,
+            }
+        return out
+
     def list_groups(self) -> list[dict]:
         store = self._store
         with store._lock:
             rows = store.conn.execute(
                 """
-                SELECT id, title, created_at, updated_at
+                SELECT id, title, created_at, updated_at, avatar
                 FROM conversations
                 WHERE kind = ?
                 ORDER BY updated_at DESC
                 """,
                 (KIND_GROUP,),
             ).fetchall()
-            out: list[dict] = []
-            for row in rows:
-                cid = str(row["id"])
-                participants = [
-                    str(r["actor_id"])
-                    for r in store.conn.execute(
-                        """
-                        SELECT actor_id FROM conversation_participants
-                        WHERE conversation_id = ? AND actor_kind = ?
-                        ORDER BY actor_id
-                        """,
-                        (cid, ACTOR_ROLE),
-                    ).fetchall()
-                ]
-                out.append(
-                    {
-                        "id": cid,
-                        "title": row["title"],
-                        "created_at": row["created_at"],
-                        "updated_at": row["updated_at"],
-                        "kind": KIND_GROUP,
-                        "participant_role_ids": participants,
-                    }
-                )
-            return out
+            return [self._group_row_to_dict(row) for row in rows]
 
     def list_rooms_for_role(self, role_id: str) -> list[dict]:
         store = self._store
@@ -364,7 +553,7 @@ class RoomStore:
         with store._lock:
             rows = store.conn.execute(
                 """
-                SELECT c.id, c.title, c.created_at, c.updated_at, c.kind
+                SELECT c.id, c.title, c.created_at, c.updated_at, c.kind, c.avatar
                 FROM conversations c
                 JOIN conversation_participants p ON p.conversation_id = c.id
                 WHERE p.actor_kind = ? AND p.actor_id = ?
@@ -395,6 +584,7 @@ class RoomStore:
                         "created_at": row["created_at"],
                         "updated_at": row["updated_at"],
                         "kind": kind,
+                        "avatar": self._row_avatar(row),
                         "participant_role_ids": participants,
                         "peer_role_id": next(
                             (p for p in participants if p != rid), None

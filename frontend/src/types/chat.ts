@@ -177,6 +177,12 @@ export const KB_MUTATING_TOOLS = [
   "generate_image",
 ] as const;
 
+export type RoomParticipant = {
+  id: string;
+  name: string;
+  avatar?: string | null;
+};
+
 export type ConversationSummary = {
   id: string;
   title: string;
@@ -184,9 +190,14 @@ export type ConversationSummary = {
   updated_at: string;
   message_count: number;
   role_id?: string;
-  kind?: "owner_dm" | "peer_dm" | "group" | string;
+  kind?: "owner_dm" | "peer_dm" | "group" | "group_card" | string;
   peer_role_id?: string | null;
   participant_role_ids?: string[];
+  participants?: RoomParticipant[];
+  avatar?: string | null;
+  excerpt?: string;
+  card_status?: string;
+  room_id?: string;
   summarized?: boolean;
   summary_path?: string | null;
 };
@@ -213,6 +224,7 @@ export type ActiveTurnStatus = {
   started_at: string | null;
   last_seq: number | null;
   observable: boolean;
+  responding_role_id?: string | null;
 };
 
 export type RoomSummary = {
@@ -221,9 +233,13 @@ export type RoomSummary = {
   kind: "peer_dm" | "group" | string;
   created_at?: string;
   updated_at?: string;
+  avatar?: string | null;
   participant_role_ids: string[];
   participant_names?: string[];
+  participants?: RoomParticipant[];
   peer_role_id?: string | null;
+  last_active_at?: string | null;
+  last_reply_preview?: string | null;
 };
 
 export type RoomStatus = {
@@ -250,6 +266,7 @@ export type Conversation = ConversationSummary & {
     turn_id: string;
     status: string;
     started_at?: string;
+    responding_role_id?: string | null;
   } | null;
   /** 当前页之前还有多少条未加载消息（tail / 向前翻页） */
   older_message_count?: number;

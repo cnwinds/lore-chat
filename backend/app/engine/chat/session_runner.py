@@ -69,6 +69,7 @@ class ChatSessionRunner:
                 "started_at": None,
                 "last_seq": None,
                 "observable": False,
+                "responding_role_id": None,
             }
         active = self.turn_hub.get_active(conversation_id)
         observable = (
@@ -90,6 +91,7 @@ class ChatSessionRunner:
             "started_at": meta.get("started_at"),
             "last_seq": last_seq,
             "observable": observable,
+            "responding_role_id": meta.get("responding_role_id"),
         }
 
     def begin_persisted_turn(

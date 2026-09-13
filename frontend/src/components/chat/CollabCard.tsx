@@ -8,6 +8,7 @@ import {
 import type { ConversationLinkTarget } from "../../utils/conversationLinks";
 import { CONVERSATION_CID_RE } from "../../utils/conversationLinks";
 import { PendingQuestion } from "../PendingQuestion";
+import { sanitizeCollabPreview } from "../../utils/groupChatDisplay";
 
 const STATE_LABEL: Record<string, string> = {
   queued: "排队中",
@@ -58,7 +59,9 @@ export function CollabCard({
 }: Props) {
   const roomId = roomIdFromCollabBlock(block);
   const [state, setState] = useState(initialState(block));
-  const [preview, setPreview] = useState(block.summary || "");
+  const [preview, setPreview] = useState(
+    sanitizeCollabPreview(block.summary || ""),
+  );
   const [pending, setPending] = useState<Question[]>([]);
 
   useEffect(() => {
@@ -69,7 +72,7 @@ export function CollabCard({
         const st = await getRoomStatus(roomId!);
         if (cancelled) return;
         setState(st.state || initialState(block));
-        if (st.preview) setPreview(st.preview);
+        if (st.preview) setPreview(sanitizeCollabPreview(st.preview));
         setPending(st.pending_questions || []);
       } catch {
         /* 房间尚未可读时保持工具结果 */

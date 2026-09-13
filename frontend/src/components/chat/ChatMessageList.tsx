@@ -13,6 +13,9 @@ import { ChatMessageRow, messageHasBody } from "./ChatMessageRow";
 import { ConversationOutline } from "./ConversationOutline";
 import { TimelineSeparator } from "./TimelineSeparator";
 import { RoomInterjectBar } from "./RoomInterjectBar";
+import { GroupParticipationCard } from "./GroupParticipationCard";
+import { membersFromRoleIds } from "../../utils/groupChatDisplay";
+import type { RoleSummary } from "../../api";
 
 const EMPTY_HISTORICAL: TimelineSegmentView[] = [];
 
@@ -48,8 +51,11 @@ export type ChatMessageListProps = {
   showOutline?: boolean;
   /** 提问导航布局：rail 桌面浮条；sheet 手机底部抽屉 */
   outlineLayout?: "rail" | "sheet";
-  roles?: { id: string; name: string }[];
+  roles?: RoleSummary[];
   onRoomInterjectSent?: () => void;
+  onOpenGroup?: (roomId: string) => void;
+  roomMode?: "role" | "group";
+  respondingRoleId?: string | null;
 };
 
 function renderSegmentRows(opts: {
@@ -66,6 +72,9 @@ function renderSegmentRows(opts: {
   onOpenConversation?: (target: ConversationLinkTarget) => void;
   onQuestionResolved: ChatMessageListProps["onQuestionResolved"];
   onRetryReply?: (assistantSourceIndex: number) => void;
+  roomMode?: "role" | "group";
+  roles?: RoleSummary[];
+  respondingRoleId?: string | null;
 }) {
   const {
     msgs,
@@ -81,6 +90,9 @@ function renderSegmentRows(opts: {
     onOpenConversation,
     onQuestionResolved,
     onRetryReply,
+    roomMode = "role",
+    roles = [],
+    respondingRoleId = null,
   } = opts;
   const rows = expandMessagesForDisplay(msgs);
   return rows.map((row) => {
@@ -122,6 +134,9 @@ function renderSegmentRows(opts: {
           canRetry ? () => onRetryReply!(row.sourceIndex) : undefined
         }
         retryDisabled={streaming}
+        layout={roomMode === "group" ? "group" : "dm"}
+        roles={roles}
+        respondingRoleId={respondingRoleId}
       />
     );
   });
@@ -154,8 +169,13 @@ export function ChatMessageList({
   outlineLayout = "rail",
   roles = [],
   onRoomInterjectSent,
+  onOpenGroup,
+  roomMode = "role",
+  respondingRoleId = null,
 }: ChatMessageListProps) {
-  const hasHistory = historicalSegments.some((s) => s.messages.length > 0);
+  const hasHistory = historicalSegments.some(
+    (s) => s.messages.length > 0 || s.kind === "group_card",
+  );
   const tipHasBody = expandMessagesForDisplay(msgs).some((row) =>
     messageHasBody(row.message, false),
   );
@@ -205,33 +225,53 @@ export function ChatMessageList({
                 data-conversation-id={seg.conversationId}
                 data-jumped={seg.jumped ? "true" : undefined}
               >
-                {(i > 0 || seg.kind === "peer_dm" || seg.kind === "group") && (
+                {(i > 0 ||
+                  seg.kind === "peer_dm" ||
+                  seg.kind === "group_card") && (
                   <TimelineSeparator
                     idleHours={continuityIdleHours}
                     label={
                       seg.kind === "peer_dm"
                         ? "角色协作 · 共享房间"
-                        : seg.kind === "group"
+                        : seg.kind === "group_card"
                           ? "群聊"
                           : undefined
                     }
                   />
                 )}
-                {renderSegmentRows({
-                  msgs: seg.messages,
-                  conversationId: seg.conversationId,
-                  isTip: false,
-                  streaming: false,
-                  readOnly: true,
-                  liveElapsedMs: 0,
-                  streamingAssistantIdxRef,
-                  previewPath,
-                  onOpenSource,
-                  onOpenConversation,
-                  onQuestionResolved,
-                })}
-                {(seg.kind === "peer_dm" || seg.kind === "group") &&
-                roles.length > 0 ? (
+                {seg.kind === "group_card" ? (
+                  <GroupParticipationCard
+                    roomId={seg.roomId || seg.conversationId}
+                    title={seg.title || "群聊"}
+                    excerpt={seg.excerpt}
+                    status={seg.cardStatus}
+                    avatar={seg.avatar}
+                    members={membersFromRoleIds(
+                      seg.participantRoleIds,
+                      roles,
+                      seg.participants,
+                    )}
+                    onOpen={onOpenGroup}
+                  />
+                ) : (
+                  renderSegmentRows({
+                    msgs: seg.messages,
+                    conversationId: seg.conversationId,
+                    isTip: false,
+                    streaming: false,
+                    readOnly: true,
+                    liveElapsedMs: 0,
+                    streamingAssistantIdxRef,
+                    previewPath,
+                    onOpenSource,
+                    onOpenConversation,
+                    onQuestionResolved,
+                    roomMode,
+                    roles,
+                    respondingRoleId,
+                  })
+                )}
+                {seg.kind === "peer_dm" && roles.length > 0 ? (
                   <RoomInterjectBar
                     roomId={seg.conversationId}
                     roles={roles}
@@ -270,6 +310,9 @@ export function ChatMessageList({
                   onOpenConversation,
                   onQuestionResolved,
                   onRetryReply,
+                  roomMode,
+                  roles,
+                  respondingRoleId,
                 })}
               </div>
             )}

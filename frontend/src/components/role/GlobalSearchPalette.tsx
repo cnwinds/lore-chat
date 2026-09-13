@@ -11,14 +11,17 @@ import {
   searchConversations,
   type ConversationSearchHit,
   type Role,
+  type RoomSummary,
   type WorkspaceSearchScope,
 } from "../../api";
 import { formatSearchRelativeTime } from "../../utils/displayTime";
+import { groupReplyPreview } from "../../utils/roleListPreview";
 import {
   isWorkspaceSearchHotkey,
   workspaceSearchHitKey,
   workspaceSearchHotkeyLabel,
 } from "../../utils/workspaceSearch";
+import { GroupAvatar } from "./GroupAvatar";
 import { RoleAvatar } from "./RoleAvatar";
 
 export type SearchTab = "all" | "messages" | "roles" | "files";
@@ -33,15 +36,18 @@ const TABS: { id: SearchTab; label: string }[] = [
 type Props = {
   open: boolean;
   roles: Role[];
+  groups?: RoomSummary[];
   onClose: () => void;
   onOpen?: () => void;
   onSelectRole: (roleId: string) => void;
+  onSelectGroup?: (id: string, room?: RoomSummary) => void;
   onSearchHit: (hit: ConversationSearchHit) => void;
   onSelectFile?: (path: string) => void;
 };
 
 function badgeFor(kind: ConversationSearchHit["kind"]): string {
   if (kind === "role") return "角色";
+  if (kind === "group") return "群聊";
   if (kind === "file") return "文件";
   return "消息";
 }
@@ -60,12 +66,39 @@ function roleToHit(role: Role): ConversationSearchHit {
   };
 }
 
+function groupToHit(room: RoomSummary): ConversationSearchHit {
+  return {
+    kind: "group",
+    conversation_id: room.id,
+    message_id: null,
+    role_id: "",
+    title: room.title || "群聊",
+    snippet: groupReplyPreview(room) || "群聊",
+    ts: room.last_active_at || room.updated_at,
+    role_avatar: room.avatar,
+  };
+}
+
+function groupMatches(room: RoomSummary, q: string): boolean {
+  const hay = [
+    room.title,
+    ...(room.participant_names || []),
+    ...(room.participants || []).map((p) => p.name),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  return hay.includes(q);
+}
+
 export function GlobalSearchPalette({
   open,
   roles,
+  groups = [],
   onClose,
   onOpen,
   onSelectRole,
+  onSelectGroup,
   onSearchHit,
   onSelectFile,
 }: Props) {
@@ -90,12 +123,17 @@ export function GlobalSearchPalette({
   wasOpenRef.current = open;
 
   const q = query.trim();
-  const browseRoles = useMemo(() => {
+  const browseHits = useMemo(() => {
     if (q) return [];
     if (tab !== "all" && tab !== "roles") return [];
-    return roles.map(roleToHit);
-  }, [q, tab, roles]);
-  const rows = q ? hits : browseRoles;
+    return [...roles.map(roleToHit), ...groups.map(groupToHit)];
+  }, [q, tab, roles, groups]);
+  const localGroupHits = useMemo(() => {
+    if (!q || (tab !== "all" && tab !== "roles")) return [];
+    const needle = q.toLowerCase();
+    return groups.filter((room) => groupMatches(room, needle)).map(groupToHit);
+  }, [q, tab, groups]);
+  const rows = q ? [...localGroupHits, ...hits] : browseHits;
 
   const persistScroll = useCallback(() => {
     if (resultsRef.current) {
@@ -208,6 +246,9 @@ export function GlobalSearchPalette({
     const kind = hit.kind || "message";
     if (kind === "role" && hit.role_id) {
       onSelectRole(hit.role_id);
+    } else if (kind === "group" && hit.conversation_id) {
+      const room = groups.find((g) => g.id === hit.conversation_id);
+      onSelectGroup?.(hit.conversation_id, room);
     } else if (kind === "file" && hit.path) {
       onSelectFile?.(hit.path);
     } else {
@@ -297,10 +338,13 @@ export function GlobalSearchPalette({
             rows.map((hit, index) => {
               const kind = hit.kind || "message";
               const name =
-                kind === "role"
+                kind === "role" || kind === "group"
                   ? hit.title
                   : hit.role_name || "对话";
               const seed = hit.role_id || hit.path || hit.conversation_id || String(index);
+              const group = kind === "group"
+                ? groups.find((g) => g.id === hit.conversation_id)
+                : undefined;
               const key = workspaceSearchHitKey(hit);
               const active = selectedKey === key;
               return (
@@ -322,6 +366,14 @@ export function GlobalSearchPalette({
                         <path d="M14 3v5h5" stroke="currentColor" strokeWidth="1.8" />
                       </svg>
                     </div>
+                  ) : kind === "group" ? (
+                    <GroupAvatar
+                      name={name}
+                      seed={seed}
+                      avatar={hit.role_avatar}
+                      members={group?.participants}
+                      size={32}
+                    />
                   ) : (
                     <RoleAvatar
                       name={name}
@@ -332,9 +384,9 @@ export function GlobalSearchPalette({
                   )}
                   <div className="workspace-search-hit-body">
                     <div className="workspace-search-hit-title">
-                      {kind === "role" ? hit.title : hit.snippet || hit.title}
+                      {kind === "role" || kind === "group" ? hit.title : hit.snippet || hit.title}
                     </div>
-                    {kind !== "role" && hit.title && hit.snippet !== hit.title ? (
+                    {kind !== "role" && kind !== "group" && hit.title && hit.snippet !== hit.title ? (
                       <div className="workspace-search-hit-sub">{hit.title}</div>
                     ) : null}
                   </div>

@@ -255,15 +255,20 @@ function AppMain() {
           activeRoleId: conversation.activeGroupId
             ? null
             : conversation.activeRoleId || role.activeRoleId,
+          activeGroupId: conversation.activeGroupId,
           onSelectRole: (id) => {
             role.setActiveRoleId(id);
             void conversation.sidebarProps.onSelectRole?.(id);
           },
+          onSelectGroup: (id, room) => conversation.selectGroup(id, room),
           onNewRole: () => {
             void conversation.sidebarProps.onAddRole?.();
             role.refreshRoles();
             refreshSidebar();
           },
+          onNewGroup: conversation.openCreateGroupModal,
+          onEditGroup: (room) => conversation.openGroupSettings(room),
+          onDeleteGroup: (room) => conversation.deleteGroup(room),
           onSearchHit: (hit) => {
             conversation.sidebarProps.onSearchHit?.(hit);
           },
@@ -278,14 +283,10 @@ function AppMain() {
             })();
           },
           busyRoleIds: conversation.sidebarProps.busyRoleIds,
-          refreshKey: role.roleRefreshKey + sidebarRefreshKey,
-        }}
-        groupListProps={{
-          activeGroupId: conversation.activeGroupId,
-          onSelectGroup: (id) => conversation.selectGroup(id),
-          onNewGroup: conversation.openCreateGroupModal,
-          refreshKey: conversation.groupRefreshKey + sidebarRefreshKey,
-          visible: conversation.roles.length >= 2,
+          refreshKey:
+            role.roleRefreshKey +
+            sidebarRefreshKey +
+            conversation.groupRefreshKey,
         }}
         kbSidebarProps={{
           refreshKey: sidebarRefreshKey,
@@ -303,7 +304,9 @@ function AppMain() {
         }}
         roleConfigPanelProps={{
           roleId: conversation.activeRoleId || role.activeRoleId,
-          collapsed: role.configPanelCollapsed,
+          collapsed: conversation.activeGroupId
+            ? true
+            : role.configPanelCollapsed,
           onToggleCollapsed: role.toggleConfigPanel,
           onRoleUpdated: role.refreshRoles,
         }}
@@ -320,7 +323,11 @@ function AppMain() {
             }}
             roomMode={conversation.activeGroupId ? "group" : "role"}
             roomTitle={conversation.activeGroupTitle}
+            roomAvatar={conversation.activeGroupAvatar}
+            roomParticipants={conversation.activeGroupParticipants}
             onRoomInterjectSent={conversation.bumpTimeline}
+            onOpenGroup={(id) => conversation.selectGroup(id)}
+            onOpenGroupSettings={() => conversation.openGroupSettings()}
             mobileLayout={mobileLayout}
             mobileHeaderTitle={mobileHeaderTitle}
             onOpenMobileNav={openMobileNav}

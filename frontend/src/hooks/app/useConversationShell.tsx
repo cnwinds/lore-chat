@@ -3,18 +3,24 @@ import {
   createRole,
   createRoom,
   deleteRole,
+  deleteRoom,
   ensureRoleActive,
   getConversation,
+  getRoom,
   getRoleTimeline,
   listBusyRoles,
   listRoles,
   openRoleNewTopic,
+  updateRoom,
   type RoleSummary,
+  type RoomSummary,
 } from "../../api";
 import { Sidebar } from "../../components/Sidebar";
 import { RoleSettingsModal } from "../../components/RoleSettingsModal";
 import { CreateRoleModal } from "../../components/role/CreateRoleModal";
 import { CreateGroupModal } from "../../components/role/CreateGroupModal";
+import { GroupSettingsModal } from "../../components/role/GroupSettingsModal";
+import type { RoomParticipant } from "../../types/chat";
 import type { ComponentProps, ReactNode } from "react";
 import type { useDocPreviewLayout } from "./useDocPreviewLayout";
 import type { JumpTarget } from "../chat/useConversationJump";
@@ -87,6 +93,11 @@ export function useConversationShell({
   const [groupRefreshKey, setGroupRefreshKey] = useState(0);
   const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
   const [activeGroupTitle, setActiveGroupTitle] = useState<string | null>(null);
+  const [activeGroupAvatar, setActiveGroupAvatar] = useState<string | null>(null);
+  const [activeGroupParticipants, setActiveGroupParticipants] = useState<
+    RoomParticipant[]
+  >([]);
+  const [settingsGroup, setSettingsGroup] = useState<RoomSummary | null>(null);
   const sidebarLocateKbPathRef = useRef<((path: string) => void) | null>(null);
   const bootstrappedRef = useRef(false);
   const roleSwitchGenRef = useRef(0);
@@ -143,6 +154,8 @@ export function useConversationShell({
       }
       setActiveGroupId(null);
       setActiveGroupTitle(null);
+      setActiveGroupAvatar(null);
+      setActiveGroupParticipants([]);
       setActiveRoleId(roleId);
       try {
         localStorage.setItem(ACTIVE_ROLE_KEY, roleId);
@@ -160,6 +173,8 @@ export function useConversationShell({
         if (gen !== roleSwitchGenRef.current) return;
         setActiveGroupId(null);
         setActiveGroupTitle(null);
+        setActiveGroupAvatar(null);
+        setActiveGroupParticipants([]);
         setActiveRoleId(roleId);
         try {
           localStorage.setItem(ACTIVE_ROLE_KEY, roleId);
@@ -301,15 +316,21 @@ export function useConversationShell({
       if (gen !== roleSwitchGenRef.current) return;
       const kind = conv.kind || "owner_dm";
       if (kind === "group") {
-        setActiveGroupId(id);
-        setActiveGroupTitle(conv.title || "群聊");
+        applyGroupSelection(id, {
+          title: conv.title,
+          avatar: conv.avatar,
+          participants: conv.participants,
+        });
         setActiveConversationId(id);
         setTimelineRefreshKey((k) => k + 1);
         if (!opts?.keepPreviews) doc.closeAllPreviews();
+        void hydrateGroup(id, gen);
         return;
       }
       setActiveGroupId(null);
       setActiveGroupTitle(null);
+      setActiveGroupAvatar(null);
+      setActiveGroupParticipants([]);
       const rid = conv.role_id;
       if (rid && rid !== "_room") {
         setActiveRoleId(rid);
@@ -336,20 +357,80 @@ export function useConversationShell({
     }
   }
 
-  async function selectGroup(id: string, title?: string) {
-    const gen = ++roleSwitchGenRef.current;
+  function applyGroupSelection(
+    id: string,
+    meta?: {
+      title?: string | null;
+      avatar?: string | null;
+      participants?: RoomParticipant[];
+    },
+  ) {
     setActiveGroupId(id);
-    setActiveGroupTitle(title || "群聊");
+    setActiveGroupTitle(meta?.title || "群聊");
+    setActiveGroupAvatar(meta?.avatar ?? null);
+    setActiveGroupParticipants(meta?.participants ?? []);
+  }
+
+  async function hydrateGroup(id: string, gen: number) {
+    try {
+      const room = await getRoom(id);
+      if (gen !== roleSwitchGenRef.current) return;
+      applyGroupSelection(id, room);
+    } catch {
+      /* 仍停留在群 id */
+    }
+  }
+
+  async function selectGroup(
+    id: string,
+    titleOrRoom?: string | RoomSummary,
+    room?: RoomSummary,
+  ) {
+    const meta =
+      typeof titleOrRoom === "object" && titleOrRoom
+        ? titleOrRoom
+        : room || { title: titleOrRoom };
+    const gen = ++roleSwitchGenRef.current;
+    applyGroupSelection(id, meta);
     setActiveConversationId(id);
     setTimelineRefreshKey((k) => k + 1);
     doc.closeAllPreviews();
     if (gen !== roleSwitchGenRef.current) return;
-    try {
-      const conv = await getConversation(id);
-      if (gen !== roleSwitchGenRef.current) return;
-      if (conv.title) setActiveGroupTitle(conv.title);
-    } catch {
-      /* 仍停留在群 id */
+    await hydrateGroup(id, gen);
+  }
+
+  async function saveGroup(patch: {
+    title: string;
+    avatar: string | null;
+    role_ids: string[];
+  }) {
+    if (!settingsGroup) return;
+    const updated = await updateRoom(settingsGroup.id, patch);
+    setGroupRefreshKey((k) => k + 1);
+    if (activeGroupId === updated.id) {
+      applyGroupSelection(updated.id, updated);
+    }
+  }
+
+  async function removeGroup(id: string) {
+    await deleteRoom(id);
+    setSettingsGroup(null);
+    setGroupRefreshKey((k) => k + 1);
+    if (activeGroupId === id) {
+      const fallback =
+        activeRoleIdRef.current ||
+        rolesRef.current.find((r) => r.is_default)?.id ||
+        rolesRef.current[0]?.id ||
+        null;
+      if (fallback) {
+        await activateRole(fallback);
+      } else {
+        setActiveGroupId(null);
+        setActiveGroupTitle(null);
+        setActiveGroupAvatar(null);
+        setActiveGroupParticipants([]);
+        setActiveConversationId(null);
+      }
     }
   }
 
@@ -576,17 +657,32 @@ export function useConversationShell({
         open={showCreateGroupModal}
         roles={roles}
         onClose={() => setShowCreateGroupModal(false)}
-        onConfirm={(title, roleIds) => {
+        onConfirm={(title, roleIds, avatar) => {
           setShowCreateGroupModal(false);
           void (async () => {
             try {
-              const room = await createRoom({ title, role_ids: roleIds });
+              const room = await createRoom({
+                title,
+                role_ids: roleIds,
+                avatar: avatarStorageRef(avatar),
+              });
               setGroupRefreshKey((k) => k + 1);
-              await selectGroup(room.id, room.title);
+              await selectGroup(room.id, room);
             } catch (e) {
               window.alert(e instanceof Error ? e.message : "建群失败");
             }
           })();
+        }}
+      />
+      <GroupSettingsModal
+        open={!!settingsGroup}
+        room={settingsGroup}
+        roles={roles}
+        onClose={() => setSettingsGroup(null)}
+        onSave={saveGroup}
+        onDelete={async () => {
+          if (!settingsGroup) return;
+          await removeGroup(settingsGroup.id);
         }}
       />
     </>
@@ -614,9 +710,27 @@ export function useConversationShell({
     selectRole,
     activeGroupId,
     activeGroupTitle,
+    activeGroupAvatar,
+    activeGroupParticipants,
     groupRefreshKey,
     selectGroup,
     openCreateGroupModal: () => setShowCreateGroupModal(true),
+    openGroupSettings: (room?: RoomSummary) => {
+      if (room) {
+        setSettingsGroup(room);
+        return;
+      }
+      if (!activeGroupId) return;
+      setSettingsGroup({
+        id: activeGroupId,
+        title: activeGroupTitle || "群聊",
+        kind: "group",
+        avatar: activeGroupAvatar,
+        participant_role_ids: activeGroupParticipants.map((p) => p.id),
+        participants: activeGroupParticipants,
+      });
+    },
+    deleteGroup: (room: RoomSummary) => removeGroup(room.id),
     bumpTimeline: () => {
       setTimelineRefreshKey((k) => k + 1);
       setGroupRefreshKey((k) => k + 1);

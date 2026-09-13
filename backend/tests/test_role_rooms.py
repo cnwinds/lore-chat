@@ -116,6 +116,7 @@ def test_send_message_starts_and_queues(tmp_path):
     )
     assert result.get("error") is None
     assert result["wake_status"] == "started"
+    assert result["end_turn"] is True
     assert result["target_role_id"] == other["id"]
     assert started and started[0]["stimulus"].responding_role_id == other["id"]
     room = result["room_id"]
@@ -196,6 +197,10 @@ def test_select_tools_hides_send_without_messaging():
     assert "send_message" not in names
     assert "list_rooms" not in names
     assert "create_room" not in names
+    assert "list_groups" not in names
+    assert "create_group" not in names
+    assert "update_group" not in names
+    assert "delete_group" not in names
     assert "list_roles" in names
     names2 = {
         d["function"]["name"]
@@ -205,6 +210,10 @@ def test_select_tools_hides_send_without_messaging():
     assert "list_roles" in names2
     assert "list_rooms" in names2
     assert "create_room" in names2
+    assert "list_groups" in names2
+    assert "create_group" in names2
+    assert "update_group" in names2
+    assert "delete_group" in names2
 
 
 def test_format_peer_message_wraps():
@@ -263,9 +272,62 @@ def test_create_group_and_mention_wake(tmp_path):
         text="请改登录页",
     )
     assert woke["wake_status"] == "started"
+    assert woke["end_turn"] is True
+    assert posted.get("end_turn") is not True
     assert woke["target_role_id"] == b
     assert started and started[0]["stimulus"].responding_role_id == b
     assert started[0]["conversation_id"] == group
+
+
+def test_group_handoff_queues_self_lock_and_ends_turn(tmp_path):
+    from app.engine.rooms.schema import ACTOR_USER
+    from app.engine.rooms.types import Actor, InboundStimulus
+
+    store = _conv(tmp_path)
+    roles = _roles(tmp_path)
+    b = roles.create(name="游戏开发助手")["id"]
+    started = []
+
+    def starter(**kwargs):
+        started.append(kwargs)
+        return {"turn_id": f"t{len(started)}", "status": "running"}
+
+    delivery = RoomDelivery(store, roles)
+    delivery.bind_starter(starter)
+    group = delivery.create_group(title="三角洲", role_ids=[DEFAULT_ROLE_ID, b])["id"]
+    store.begin_turn(
+        group,
+        "@通用助手组织大家做一个小游戏",
+        "owner-1",
+        stimulus=InboundStimulus(
+            text="@通用助手组织大家做一个小游戏",
+            speaker=Actor(kind=ACTOR_USER, id="owner"),
+            responding_role_id=DEFAULT_ROLE_ID,
+        ),
+    )
+    result = delivery.send_from_role(
+        from_role_id=DEFAULT_ROLE_ID,
+        conversation_id=group,
+        mentions=["游戏开发助手"],
+        text="@游戏开发助手 请主持澄清",
+    )
+    assert result["room_id"] == group
+    assert result["wake_status"] == "queued"
+    assert result["end_turn"] is True
+    assert "对方将在你说完后开始" in result["summary"]
+    assert "对方正忙" not in result["summary"]
+    assert "本回合到此结束" in result["summary"]
+    assert started == []
+
+
+def test_collab_prompt_forbids_doing_handed_off_work():
+    from app.engine.agent.prompts import build_role_collab_block
+
+    text = build_role_collab_block(
+        [{"id": "a", "name": "通用助手", "system_prompt": "统筹"}],
+        current_role_id="a",
+    )
+    assert "不再是你的执行项" in text
 
 
 def test_owner_interject_peer_wakes_last(tmp_path):
@@ -374,6 +436,8 @@ def test_rooms_http_create_list_and_status(client):
     listed = client.get("/api/rooms", params={"kind": "group"})
     assert listed.status_code == 200
     assert any(r["id"] == rid for r in listed.json()["rooms"])
+    empty = next(r for r in listed.json()["rooms"] if r["id"] == rid)
+    assert empty.get("last_reply_preview") in (None, "")
     status = client.get(f"/api/rooms/{rid}/status")
     assert status.status_code == 200
     assert status.json()["kind"] == "group"
@@ -383,6 +447,10 @@ def test_rooms_http_create_list_and_status(client):
     )
     assert posted.status_code == 200
     assert posted.json()["wake_status"] == "posted"
+    listed_after = client.get("/api/rooms", params={"kind": "group"})
+    row = next(r for r in listed_after.json()["rooms"] if r["id"] == rid)
+    assert row.get("last_reply_preview") == "先记一笔"
+    assert row.get("last_active_at")
     woke = client.post(
         f"/api/rooms/{rid}/messages",
         json={"text": "@游戏开发助手 改登录页"},
@@ -591,4 +659,117 @@ def test_select_tools_api_mode_hides_messaging():
     assert "send_message" not in names
     assert "list_rooms" not in names
     assert "create_room" not in names
+    assert "list_groups" not in names
+    assert "create_group" not in names
     assert "list_roles" in names
+
+
+def test_group_crud_avatar_and_members(tmp_path):
+    store = _conv(tmp_path)
+    roles = _roles(tmp_path)
+    other = roles.create(name="游戏开发助手")
+    third = roles.create(name="研究员")
+    delivery = RoomDelivery(store, roles)
+    room = delivery.create_group(
+        title="登录页",
+        role_ids=[DEFAULT_ROLE_ID, other["id"]],
+        avatar="媒体/group.png",
+    )
+    assert room["avatar"] == "媒体/group.png"
+    assert room["title"] == "登录页"
+    assert {p["id"] for p in room["participants"]} == {
+        DEFAULT_ROLE_ID,
+        other["id"],
+    }
+
+    updated = delivery.update_group(
+        room["id"],
+        title="登录页协作",
+        role_ids=[DEFAULT_ROLE_ID, other["id"], third["id"]],
+    )
+    assert updated["title"] == "登录页协作"
+    assert set(updated["participant_role_ids"]) == {
+        DEFAULT_ROLE_ID,
+        other["id"],
+        third["id"],
+    }
+
+    delivery.delete_group(room["id"])
+    try:
+        store.get(room["id"])
+        raise AssertionError("group should be gone")
+    except KeyError:
+        pass
+
+
+def test_list_timeline_group_is_card_not_transcript(tmp_path):
+    store = _conv(tmp_path)
+    roles = _roles(tmp_path)
+    other = roles.create(name="游戏开发助手")
+    owner = store.create()
+    store.append_exchange(owner, "建个群", {"role": "assistant", "text": "好"})
+    group = store.rooms.create_group(
+        title="三人组", role_ids=[DEFAULT_ROLE_ID, other["id"]]
+    )
+    store.append_room_inbound(
+        group,
+        text="@游戏开发助手 改登录页",
+        speaker_kind="user",
+        speaker_id="owner",
+        speaker_name="主人",
+        hop=0,
+    )
+    store.append_exchange(
+        group,
+        "占位",
+        {"role": "assistant", "text": "登录页已接上真实接口"},
+    )
+    # append_exchange 的 assistant speaker 可能是占位；写成该角色应声
+    with store._lock:
+        store.conn.execute(
+            """
+            UPDATE messages SET speaker_kind = 'role', speaker_id = ?
+            WHERE conversation_id = ? AND role = 'assistant'
+            """,
+            (other["id"], group),
+        )
+        store.conn.commit()
+
+    segs_a, _ = store.list_timeline(DEFAULT_ROLE_ID, tip_id=owner)
+    assert not any(s["id"] == group and s.get("kind") == "group" for s in segs_a)
+    assert not any(s.get("kind") == "group_card" for s in segs_a)
+
+    segs_b, _ = store.list_timeline(other["id"])
+    cards = [s for s in segs_b if s.get("kind") == "group_card"]
+    assert len(cards) == 1
+    assert cards[0]["room_id"] == group
+    assert "登录页已接上" in (cards[0].get("excerpt") or "")
+    assert cards[0].get("messages") == []
+
+
+def test_group_tools_list_update(tmp_path):
+    from app.engine.agent.tool_impl.role_tools import RoleTools
+
+    store = _conv(tmp_path)
+    roles = _roles(tmp_path)
+    other = roles.create(name="游戏开发助手")
+    delivery = RoomDelivery(store, roles)
+    tools = RoleTools(roles, conversations=store, delivery=delivery)
+    owner = store.create()
+    created = tools.create_group(
+        {"title": "协作群", "role_names": ["游戏开发助手"]},
+        conversation_id=owner,
+    )
+    assert created.get("error") is None
+    gid = created["room_id"]
+    listed = tools.list_groups({}, conversation_id=owner)
+    assert any(g["id"] == gid for g in listed["groups"])
+    got = tools.list_groups({"group_id": gid}, conversation_id=owner)
+    assert got["group"]["id"] == gid
+    updated = tools.update_group(
+        {"group_id": gid, "title": "改名群"},
+        conversation_id=owner,
+    )
+    assert updated["group"]["title"] == "改名群"
+    deleted = tools.delete_group({"group_id": gid}, conversation_id=owner)
+    assert deleted.get("error") is None

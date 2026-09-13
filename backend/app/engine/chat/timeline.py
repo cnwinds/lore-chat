@@ -95,6 +95,7 @@ class TimelineAccumulator:
                     "targets",
                     "wake_status",
                     "expect_reply",
+                    "end_turn",
                     "hop",
                     "error",
                     "turn_id",

@@ -23,6 +23,8 @@ def ensure_room_schema(conn) -> None:
         )
     if "peer_key" not in conv_cols:
         conn.execute("ALTER TABLE conversations ADD COLUMN peer_key TEXT")
+    if "avatar" not in conv_cols:
+        conn.execute("ALTER TABLE conversations ADD COLUMN avatar TEXT")
     conn.execute(
         """
         CREATE UNIQUE INDEX IF NOT EXISTS ux_conversations_peer_key

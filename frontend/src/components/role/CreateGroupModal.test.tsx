@@ -38,10 +38,14 @@ describe("CreateGroupModal", () => {
     render(
       <CreateGroupModal open roles={roles} onClose={vi.fn()} onConfirm={onConfirm} />,
     );
-    expect(screen.getByRole("button", { name: "创建" })).toBeDisabled();
-    await user.click(screen.getByText("通用助手大师"));
-    await user.click(screen.getByText("游戏开发助手"));
-    await user.click(screen.getByRole("button", { name: "创建" }));
-    expect(onConfirm).toHaveBeenCalledWith("群聊", ["default", "game"]);
+    expect(screen.getByRole("button", { name: "发起群聊" })).toBeDisabled();
+    await user.click(screen.getByRole("option", { name: /通用助手大师/ }));
+    await user.click(screen.getByRole("option", { name: /游戏开发助手/ }));
+    await user.click(screen.getByRole("button", { name: "发起群聊" }));
+    expect(onConfirm).toHaveBeenCalledWith(
+      "通用助手大师、游戏开发助手",
+      ["default", "game"],
+      "",
+    );
   });
 });

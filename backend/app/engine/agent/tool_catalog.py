@@ -13,6 +13,7 @@ READ_ONLY_TOOLS = frozenset({
     "recall_memory",
     "list_roles",
     "list_rooms",
+    "list_groups",
     "list_role_schedules",
     "sandbox_list_dir", "sandbox_read_file", "sandbox_job_status",
 })
@@ -25,6 +26,9 @@ WRITE_TOOLS = frozenset({
     "update_role",
     "send_message",
     "create_room",
+    "create_group",
+    "update_group",
+    "delete_group",
     "create_role_schedule",
     "update_role_schedule",
     "delete_role_schedule",
@@ -123,7 +127,11 @@ TOOL_LABELS = {
     "list_role_schedules": "列出例行任务",
     "send_message": "发送给其他角色",
     "list_rooms": "列出协作房间",
+    "list_groups": "列出群聊",
     "create_room": "创建群聊",
+    "create_group": "创建群聊",
+    "update_group": "更新群聊",
+    "delete_group": "删除群聊",
     "create_role_schedule": "创建例行任务",
     "update_role_schedule": "更新例行任务",
     "delete_role_schedule": "删除例行任务",
@@ -860,8 +868,9 @@ TOOL_DEFINITIONS: list[dict] = [
             "description": (
                 "向其他角色投递消息。对方会在协作/群房间收到入站消息并自动开回合；"
                 "做完后对方应再 send_message 回执。这是投递，不是你变成对方。"
+                "点名成功且 expect_reply 时本回合结束，由对方接着说；不要再做刚派出去的工作。"
                 "一对一须指定 to_role_id / to_role_name；群聊必须用 mentions 或 to_role_* 点名，"
-                "未点名则只发消息、不唤醒任何人。"
+                "未点名则只发消息、不唤醒任何人。当前就在群里时可省略 room_id。"
             ),
             "parameters": {
                 "type": "object",
@@ -930,7 +939,112 @@ TOOL_DEFINITIONS: list[dict] = [
                         "items": {"type": "string"},
                         "description": "要拉进群的角色显示名（可与 id 混用）",
                     },
+                    "avatar": {
+                        "type": "string",
+                        "description": (
+                            "群头像（可选）：知识库相对路径或 http(s)/data URL"
+                        ),
+                    },
                 },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_groups",
+            "description": (
+                "列出全部群聊，或按 group_id / title 获取某一个（标题、头像、成员）。"
+                "与 list_roles 用法相同。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "group_id": {
+                        "type": "string",
+                        "description": "群 id（可选，提供则只返回这一间）",
+                    },
+                    "title": {
+                        "type": "string",
+                        "description": "群标题（可选，按名称查找）",
+                    },
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_group",
+            "description": (
+                "创建一间群聊（标题 + 头像 + 角色列表）。主人自动是成员；"
+                "当前角色也会加入。至少还要再圈一名其他角色。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string", "description": "群聊标题"},
+                    "avatar": {
+                        "type": "string",
+                        "description": "群头像（可选）：知识库相对路径或 URL",
+                    },
+                    "role_ids": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "要拉进群的角色 id",
+                    },
+                    "role_names": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "要拉进群的角色显示名",
+                    },
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "update_group",
+            "description": "更新群聊的标题、头像或成员列表。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "group_id": {
+                        "type": "string",
+                        "description": "群 id",
+                    },
+                    "title": {"type": "string", "description": "新标题（可选）"},
+                    "avatar": {
+                        "type": "string",
+                        "description": "新头像（可选）：知识库相对路径或 URL",
+                    },
+                    "role_ids": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "新的完整成员角色 id 列表（至少两人）",
+                    },
+                    "role_names": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "新的完整成员角色名（可与 id 混用）",
+                    },
+                },
+                "required": ["group_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "delete_group",
+            "description": "删除一间群聊及其消息。不可恢复。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "group_id": {"type": "string", "description": "群 id"},
+                },
+                "required": ["group_id"],
             },
         },
     },
@@ -1362,7 +1476,11 @@ _API_EXCLUDED_TOOLS = frozenset(
         "finalize_role_onboarding",
         "send_message",
         "list_rooms",
+        "list_groups",
         "create_room",
+        "create_group",
+        "update_group",
+        "delete_group",
     }
 )
 
@@ -1407,7 +1525,11 @@ def select_tools(
     if not role_messaging:
         excluded.add("send_message")
         excluded.add("list_rooms")
+        excluded.add("list_groups")
         excluded.add("create_room")
+        excluded.add("create_group")
+        excluded.add("update_group")
+        excluded.add("delete_group")
     windows = disclosure_windows or DisclosureWindows()
     selected: list[dict] = []
     for d in TOOL_DEFINITIONS:

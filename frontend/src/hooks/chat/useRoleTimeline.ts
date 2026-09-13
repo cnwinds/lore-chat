@@ -10,6 +10,7 @@ import {
   isInjectedUserMessage,
   normalizeLoadedMessage,
 } from "../../utils/chatMessage";
+import type { RoomParticipant } from "../../types/chat";
 
 /** 首屏不拉历史段（只要 tip）；上滚每次续 1 段 */
 export const TIMELINE_FIRST_PAGE_SIZE = 0;
@@ -49,6 +50,12 @@ export type TimelineSegmentView = {
   jumped?: boolean;
   kind?: string;
   peerRoleId?: string | null;
+  excerpt?: string;
+  cardStatus?: string;
+  avatar?: string | null;
+  participants?: RoomParticipant[];
+  participantRoleIds?: string[];
+  roomId?: string;
 };
 
 function toView(
@@ -61,9 +68,9 @@ function toView(
     seg.active_turn?.status === "running",
   );
   const isTip = !!tipId && seg.id === tipId;
-  if (!isTip && msgs.length === 0) return null;
+  if (!isTip && msgs.length === 0 && seg.kind !== "group_card") return null;
   if (isTip) return null; // tip 消息由 useChatConversation 维护
-  const isRoom = seg.kind === "peer_dm" || seg.kind === "group";
+  const isRoom = seg.kind === "peer_dm" || seg.kind === "group_card";
   const segRole = seg.role_id || roleId;
   if (!isRoom && segRole && segRole !== roleId) return null;
   return {
@@ -76,6 +83,12 @@ function toView(
     olderMessageCount: seg.older_message_count ?? 0,
     kind: seg.kind,
     peerRoleId: seg.peer_role_id,
+    excerpt: seg.excerpt,
+    cardStatus: seg.card_status,
+    avatar: seg.avatar,
+    participants: seg.participants,
+    participantRoleIds: seg.participant_role_ids,
+    roomId: seg.room_id || (seg.kind === "group_card" ? seg.id : undefined),
   };
 }
 
@@ -277,7 +290,8 @@ export function useRoleTimeline({
         });
         if (gen !== genRef.current || roleRef.current !== roleId) return false;
         const kind = conv.kind || "owner_dm";
-        const isRoom = kind === "peer_dm" || kind === "group";
+        if (kind === "group") return false;
+        const isRoom = kind === "peer_dm";
         const parts = conv.participant_role_ids || [];
         if (isRoom) {
           if (parts.length > 0 && !parts.includes(roleId)) return false;

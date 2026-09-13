@@ -26,7 +26,11 @@ type Options = {
   pendingJump?: JumpTarget | null;
   onJumpHandled?: () => void;
   /** Called when loaded conversation has a server-side running turn. */
-  onActiveTurn?: (conversationId: string, startedAt?: string | null) => void;
+  onActiveTurn?: (
+    conversationId: string,
+    startedAt?: string | null,
+    respondingRoleId?: string | null,
+  ) => void;
   /** 首屏只取尾部 N 条；搜索定位走附近窗口，不在这里拉全量 */
   messageTail?: number;
   /** 已加载会话不属于当前角色 */
@@ -69,6 +73,7 @@ export function useChatConversation({
   const [olderMessageCount, setOlderMessageCount] = useState(0);
   const [summarized, setSummarized] = useState(false);
   const [summaryPath, setSummaryPath] = useState<string | null>(null);
+  const [respondingRoleId, setRespondingRoleId] = useState<string | null>(null);
   const pendingJumpRef = useRef<JumpTarget | null>(null);
   const onActiveTurnRef = useRef(onActiveTurn);
   const onJumpHandledRef = useRef(onJumpHandled);
@@ -103,6 +108,7 @@ export function useChatConversation({
       setSummarized(false);
       setSummaryPath(null);
       setOlderMessageCount(0);
+      setRespondingRoleId(null);
       return;
     }
     // Only skip reload for the conversation we just created / own optimistically.
@@ -163,10 +169,12 @@ export function useChatConversation({
           setSummarized(!!conv.summarized);
           setSummaryPath(conv.summary_path ?? null);
           setOlderMessageCount(conv.older_message_count ?? 0);
+          setRespondingRoleId(conv.active_turn?.responding_role_id ?? null);
           if (conv.active_turn?.status === "running") {
             onActiveTurnRef.current?.(
               loadedFor,
               conv.active_turn.started_at,
+              conv.active_turn.responding_role_id,
             );
           }
         });
@@ -264,6 +272,7 @@ export function useChatConversation({
     setSummarized,
     summaryPath,
     setSummaryPath,
+    respondingRoleId,
   };
 }
 

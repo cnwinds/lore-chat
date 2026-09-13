@@ -257,6 +257,10 @@ def test_select_tools_api_mode_drops_writes():
     assert "send_message" not in names
     assert "list_rooms" not in names
     assert "create_room" not in names
+    assert "list_groups" not in names
+    assert "create_group" not in names
+    assert "update_group" not in names
+    assert "delete_group" not in names
     assert "sandbox_run" in names
     assert "search_kb" in names
 

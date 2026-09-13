@@ -1,4 +1,29 @@
-export type MentionRole = { id: string; name: string };
+export type MentionRole = { id: string; name: string; avatar?: string | null };
+
+export type MentionCandidate = MentionRole;
+
+function normalizeMentionQuery(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+/** 群里只列成员；空查询列出全部，否则按名字 / id 过滤。 */
+export function filterMentionRoles<T extends MentionRole>(
+  roles: T[],
+  query: string,
+  memberIds?: string[] | null,
+): T[] {
+  const pool =
+    memberIds && memberIds.length
+      ? roles.filter((role) => memberIds.includes(role.id))
+      : roles;
+  const needle = normalizeMentionQuery(query);
+  if (!needle) return pool;
+  return pool.filter((role) => {
+    const name = role.name.toLowerCase();
+    const id = role.id.toLowerCase();
+    return name.includes(needle) || id.includes(needle);
+  });
+}
 
 /** 从正文抽出 @token（不含 @）。 */
 export function parseMentionTokens(text: string): string[] {

@@ -186,6 +186,15 @@ class RoomDelivery:
             raise ValueError("缺少发送方角色")
 
         target_room = (room_id or "").strip() or None
+        if not target_room and conversation_id:
+            try:
+                if (
+                    self.conversations.rooms.conversation_kind(conversation_id)
+                    == KIND_GROUP
+                ):
+                    target_room = conversation_id
+            except KeyError:
+                pass
         mentioned = self.resolve_mention_roles(
             mentions, except_role_id=from_id, text=body
         )
@@ -327,45 +336,102 @@ class RoomDelivery:
             return "owner_dm"
         return "peer_dm"
 
-    def create_group(self, *, title: str, role_ids: list[str]) -> dict:
+    def _role_brief(self, rid: str) -> dict:
+        try:
+            role = self.roles.get(rid)
+            return {
+                "id": rid,
+                "name": str(role.get("name") or rid),
+                "avatar": role.get("avatar"),
+            }
+        except Exception:
+            return {"id": rid, "name": self._role_name(rid), "avatar": None}
+
+    def _resolve_member_ids(self, role_ids: list[str] | None) -> list[str]:
         ids: list[str] = []
-        names: list[str] = []
-        for raw in role_ids:
+        seen: set[str] = set()
+        for raw in role_ids or []:
             rid = (raw or "").strip()
-            if not rid:
+            if not rid or rid in seen:
                 continue
             try:
                 role = self.roles.get(rid)
             except KeyError as e:
                 raise ValueError("找不到该角色") from e
             self._require_sidebar_role(role)
+            seen.add(role["id"])
             ids.append(role["id"])
-            names.append(str(role.get("name") or role["id"]))
-        room = self.conversations.rooms.create_group(title=title, role_ids=ids)
-        return {
-            "id": room,
-            "title": (title or "").strip() or "群聊",
-            "kind": KIND_GROUP,
-            "participant_role_ids": self.conversations.rooms.list_role_participants(
-                room
-            ),
-            "participant_names": names,
-        }
+        return ids
+
+    def create_group(
+        self,
+        *,
+        title: str,
+        role_ids: list[str],
+        avatar: str | None = None,
+    ) -> dict:
+        ids = self._resolve_member_ids(role_ids)
+        room = self.conversations.rooms.create_group(
+            title=title, role_ids=ids, avatar=avatar
+        )
+        return self.decorate_room(self.conversations.rooms.get_group(room))
+
+    def update_group(
+        self,
+        cid: str,
+        *,
+        title: str | None = None,
+        avatar: str | None | object = ...,
+        role_ids: list[str] | None = None,
+    ) -> dict:
+        members = self._resolve_member_ids(role_ids) if role_ids is not None else None
+        updated = self.conversations.rooms.update_group(
+            cid, title=title, avatar=avatar, role_ids=members
+        )
+        return self.decorate_room(updated)
+
+    def delete_group(self, cid: str) -> None:
+        self.conversations.rooms.delete_group(cid)
+
+    def get_group(self, cid: str) -> dict:
+        return self.decorate_room(self.conversations.rooms.get_group(cid))
 
     def decorate_room(self, row: dict) -> dict:
         participants = list(row.get("participant_role_ids") or [])
-        names: list[str] = []
-        for rid in participants:
-            names.append(self._role_name(rid))
+        briefs = [self._role_brief(rid) for rid in participants]
         out = dict(row)
-        out["participant_names"] = names
+        out["participant_names"] = [b["name"] for b in briefs]
+        out["participants"] = briefs
+        if "avatar" not in out:
+            out["avatar"] = None
+        if "last_active_at" not in out:
+            info = self.conversations.rooms.last_activity_for_ids([out["id"]]).get(
+                out["id"]
+            ) or {}
+            out["last_active_at"] = info.get("last_active_at") or None
+            out["last_reply_preview"] = info.get("preview") or ""
+        else:
+            out.setdefault("last_reply_preview", "")
         return out
 
     def list_groups(self) -> list[dict]:
-        return [
-            self.decorate_room(row)
-            for row in self.conversations.rooms.list_groups()
-        ]
+        rows = self.conversations.rooms.list_groups()
+        activity = self.conversations.rooms.last_activity_for_ids(
+            [str(r.get("id") or "") for r in rows]
+        )
+        out: list[dict] = []
+        for row in rows:
+            info = activity.get(str(row.get("id") or "")) or {}
+            out.append(
+                self.decorate_room(
+                    {
+                        **row,
+                        "last_active_at": info.get("last_active_at") or None,
+                        "last_reply_preview": info.get("preview") or "",
+                    }
+                )
+            )
+        return out
 
     def list_rooms_for_role(self, role_id: str) -> list[dict]:
         return [
@@ -436,6 +502,7 @@ class RoomDelivery:
     ) -> dict:
         started: list[dict] = []
         queued: list[dict] = []
+        queue_reasons: list[str] = []
         turn_id = None
         for target in targets:
             status = self.wake_role(
@@ -454,6 +521,7 @@ class RoomDelivery:
                     turn_id = turn.get("turn_id")
             else:
                 queued.append(target)
+                queue_reasons.append(status)
         first = targets[0] if targets else None
         if not targets:
             status = "posted"
@@ -467,13 +535,30 @@ class RoomDelivery:
         elif queued and not started:
             status = "queued"
             names = "、".join(f"「{t['name']}」" for t in queued)
-            summary = f"已发送给{names}：已排队（对方正忙）。协作房间 conversation://{room_id}"
+            if queue_reasons and all(r == "queued_self" for r in queue_reasons):
+                summary = (
+                    f"已发送给{names}：已点名，对方将在你说完后开始。"
+                    f"协作房间 conversation://{room_id}"
+                )
+            elif queue_reasons and all(r == "queued_role" for r in queue_reasons):
+                summary = (
+                    f"已发送给{names}：已排队（对方正忙）。"
+                    f"协作房间 conversation://{room_id}"
+                )
+            else:
+                summary = (
+                    f"已发送给{names}：已排队（房间里有人在说）。"
+                    f"协作房间 conversation://{room_id}"
+                )
         else:
             status = "mixed"
             summary = (
                 f"已发送：{len(started)} 人开始工作，{len(queued)} 人排队。"
                 f"协作房间 conversation://{room_id}"
             )
+        handed_off = bool(expect_reply and (started or queued))
+        if handed_off:
+            summary = f"{summary} 本回合到此结束，不要再做刚派出去的工作。"
         return {
             "summary": summary,
             "sources": [],
@@ -486,6 +571,7 @@ class RoomDelivery:
             ],
             "wake_status": status,
             "expect_reply": bool(expect_reply),
+            "end_turn": handed_off,
             "hop": hop,
             "turn_id": turn_id,
             "wake_conversation_id": room_id,
@@ -509,7 +595,7 @@ class RoomDelivery:
                 wake_in=wake_in,
                 expect_reply=expect_reply,
             )
-            return "queued"
+            return "queued_role"
         if wake_in in ("room", "peer_dm") and self.conversations.room_has_running_turn(
             room_id
         ):
@@ -520,7 +606,10 @@ class RoomDelivery:
                 wake_in=wake_in,
                 expect_reply=expect_reply,
             )
-            return "queued"
+            speaker = self.conversations.get_responding_role_id(room_id)
+            if speaker == from_role_id:
+                return "queued_self"
+            return "queued_room"
         return self._start_wake(
             role_id,
             stimulus_message=stimulus_message,

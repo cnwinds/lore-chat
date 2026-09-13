@@ -170,6 +170,8 @@ export function useAgentStream({
           webEnabled?: boolean;
           reuseUserMessageId?: string;
           replaceAssistantIndex?: number;
+          mentions?: string[];
+          assistantSpeaker?: { id: string; name: string };
         },
       ): Promise<boolean> =>
         engine.runAgentStream(
@@ -189,8 +191,9 @@ export function useAgentStream({
   );
 
   const resumeActiveTurn = useMemo(
-    () => (cid: string, startedAt?: string | null) =>
-      engine.resumeActiveTurn(cid, startedAt),
+    () =>
+      (cid: string, startedAt?: string | null, speakerId?: string | null) =>
+        engine.resumeActiveTurn(cid, startedAt, speakerId),
     [engine],
   );
 

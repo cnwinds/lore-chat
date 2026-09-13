@@ -118,4 +118,46 @@ describe("ChatMessageList loading chrome", () => {
       screen.getByRole("button", { name: /会话导航（3 条提问）/ }),
     ).toBeInTheDocument();
   });
+
+  it("renders a group participation card instead of group transcript", () => {
+    render(
+      <ChatMessageList
+        msgs={[
+          {
+            id: "tip-1",
+            role: "user",
+            text: "刚才",
+            ts: "2026-09-01T00:00:00.000Z",
+          },
+        ]}
+        historicalSegments={[
+          {
+            conversationId: "g1",
+            title: "登录页协作",
+            createdAt: "2026-01-01T00:00:00.000Z",
+            messages: [],
+            isTip: false,
+            olderMessageCount: 0,
+            kind: "group_card",
+            excerpt: "登录页已接上真实接口",
+            cardStatus: "done",
+          },
+        ]}
+        loadingHistory={false}
+        streaming={false}
+        liveElapsedMs={0}
+        streamingAssistantIdxRef={emptyRefs.streamingAssistantIdxRef}
+        messagesContainerRef={emptyRefs.messagesContainerRef}
+        messagesEndRef={emptyRefs.messagesEndRef}
+        conversationId="tip"
+        onOpenSource={() => {}}
+        onQuestionResolved={() => {}}
+      />,
+    );
+
+    expect(screen.getByText("登录页协作")).toBeInTheDocument();
+    expect(screen.getByText("登录页已接上真实接口")).toBeInTheDocument();
+    expect(screen.queryByText("群全文")).toBeNull();
+    expect(document.querySelector(".room-interject")).toBeNull();
+  });
 });
