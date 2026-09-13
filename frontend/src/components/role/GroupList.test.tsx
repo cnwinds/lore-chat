@@ -63,7 +63,7 @@ describe("RoleList inbox", () => {
     expect(await screen.findByText("登录页")).toBeTruthy();
     expect(screen.getByText("先改登录页")).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "群聊" })).toBeNull();
-    expect(document.querySelector(".group-avatar-mark")).toBeTruthy();
+    expect(document.querySelector(".group-avatar-mark")).toHaveTextContent("群");
     expect(document.querySelector(".group-avatar--2")).toBeTruthy();
     const names = (await screen.findAllByText(/登录页|通用助手大师/)).map(
       (el) => el.textContent,
