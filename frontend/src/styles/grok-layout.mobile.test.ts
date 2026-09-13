@@ -39,3 +39,18 @@ describe("mobile three-pane grid", () => {
     );
   });
 });
+
+describe("group avatar mark", () => {
+  it("keeps the group type chip at top-left and the busy dot at bottom-right", () => {
+    expect(css).toMatch(
+      /\.group-avatar-mark\s*\{[^}]*\bleft:\s*-3px;[^}]*\btop:\s*-3px;/,
+    );
+    expect(css).not.toMatch(
+      /\.group-avatar-mark\s*\{[^}]*\b(?:right|bottom):/,
+    );
+    expect(css).toMatch(
+      /\.role-item-busy\s*\{[^}]*\bright:\s*-1px;[^}]*\bbottom:\s*-1px;/,
+    );
+    expect(css).toMatch(/\.group-avatar-host\s*\{[^}]*border-radius:\s*30%;/);
+  });
+});

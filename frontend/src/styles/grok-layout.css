@@ -376,18 +376,29 @@
 .group-avatar-host {
   position: relative;
   flex-shrink: 0;
+  border-radius: 30%;
+}
+
+.group-avatar-host > .role-avatar,
+.group-avatar-host > .role-avatar img {
+  border-radius: inherit;
 }
 
 .group-avatar-mark {
   position: absolute;
-  right: -2px;
-  bottom: -2px;
+  left: -3px;
+  top: -3px;
+  z-index: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 50%;
+  height: 1.15em;
+  padding: 0 3px;
+  border-radius: 4px;
   background: var(--accent);
   color: #fff;
+  font-weight: 700;
+  line-height: 1;
   box-shadow: 0 0 0 2px var(--bg-surface);
   pointer-events: none;
 }
@@ -531,7 +542,7 @@
 .group-avatar {
   display: grid;
   overflow: hidden;
-  border-radius: 50%;
+  border-radius: inherit;
   flex-shrink: 0;
   background: var(--border);
   gap: 1px;
