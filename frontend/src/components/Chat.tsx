@@ -190,7 +190,11 @@ export function Chat({
   const conversationIdRef = useRef(conversationId);
   const stickToBottomRef = useRef(true);
   const resumeActiveTurnRef = useRef<
-    (cid: string, startedAt?: string | null) => Promise<boolean>
+    (
+      cid: string,
+      startedAt?: string | null,
+      speakerId?: string | null,
+    ) => Promise<boolean>
   >(async () => false);
 
   const messageTail = mobileLayout
@@ -217,8 +221,8 @@ export function Chat({
     pendingJump,
     onJumpHandled,
     messageTail,
-    onActiveTurn: (cid, startedAt) => {
-      void resumeActiveTurnRef.current(cid, startedAt);
+    onActiveTurn: (cid, startedAt, respondingRoleId) => {
+      void resumeActiveTurnRef.current(cid, startedAt, respondingRoleId);
     },
     onRoleMismatch: onConversationRoleMismatch,
   });

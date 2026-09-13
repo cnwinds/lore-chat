@@ -39,6 +39,7 @@ import {
   shouldPaintStreamPatch,
   type StreamOwnership,
 } from "./streamOwnership";
+import { buildResumeAssistantPatch } from "./resumeAssistantShell";
 
 export type { StreamOwnership } from "./streamOwnership";
 export { createStreamOwnership } from "./streamOwnership";
@@ -327,7 +328,11 @@ export class TurnObservationEngine {
     return true;
   }
 
-  async resumeActiveTurn(cid: string, startedAt?: string | null): Promise<boolean> {
+  async resumeActiveTurn(
+    cid: string,
+    startedAt?: string | null,
+    speakerId?: string | null,
+  ): Promise<boolean> {
     if (this.ownership.streamingRef.current) return false;
 
     this.refs.stickToBottomRef.current = true;
@@ -345,21 +350,9 @@ export class TurnObservationEngine {
 
     this.callbacks.patchMsgs((m) => {
       const base = priorMsgsCid === cid ? m : [];
-      const last = base[base.length - 1];
-      if (last?.role === "assistant") {
-        this.refs.streamingAssistantIdxRef.current = base.length - 1;
-        return base;
-      }
-      this.refs.streamingAssistantIdxRef.current = base.length;
-      return [
-        ...base,
-        {
-          role: "assistant",
-          ts: nowIsoDisplay(),
-          timeline: [],
-          sources: [],
-        },
-      ];
+      const next = buildResumeAssistantPatch(base, speakerId);
+      this.refs.streamingAssistantIdxRef.current = next.streamingIndex;
+      return next.messages;
     });
 
     let serverStreamError = false;
@@ -547,6 +540,7 @@ export class TurnObservationEngine {
       const resumed = await this.resumeActiveTurn(
         streamCid,
         turnStatus.started_at,
+        turnStatus.responding_role_id,
       );
       if (resumed) return { outcome: "resumed" };
       // resume 的 finally 已跑过 finishObservation（可能已 emit）。

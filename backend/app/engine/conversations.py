@@ -954,9 +954,10 @@ class ConversationStore:
                     "turn_id": None,
                     "status": None,
                     "started_at": None,
+                    "responding_role_id": None,
                 }
             trow = self.conn.execute(
-                "SELECT id, status, started_at FROM turns WHERE id = ?",
+                "SELECT id, status, started_at, responding_role_id FROM turns WHERE id = ?",
                 (active_turn_id,),
             ).fetchone()
             if trow is None:
@@ -965,12 +966,18 @@ class ConversationStore:
                     "turn_id": active_turn_id,
                     "status": None,
                     "started_at": None,
+                    "responding_role_id": None,
                 }
+            try:
+                responding = (trow["responding_role_id"] or "").strip() or None
+            except (KeyError, IndexError):
+                responding = None
             return {
                 "conversation_id": cid,
                 "turn_id": trow["id"],
                 "status": trow["status"],
                 "started_at": trow["started_at"],
+                "responding_role_id": responding,
             }
 
     def list_all(self, *, role_id: str | None = None) -> list[dict]:

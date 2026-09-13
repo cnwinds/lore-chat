@@ -26,7 +26,11 @@ type Options = {
   pendingJump?: JumpTarget | null;
   onJumpHandled?: () => void;
   /** Called when loaded conversation has a server-side running turn. */
-  onActiveTurn?: (conversationId: string, startedAt?: string | null) => void;
+  onActiveTurn?: (
+    conversationId: string,
+    startedAt?: string | null,
+    respondingRoleId?: string | null,
+  ) => void;
   /** 首屏只取尾部 N 条；搜索定位走附近窗口，不在这里拉全量 */
   messageTail?: number;
   /** 已加载会话不属于当前角色 */
@@ -170,6 +174,7 @@ export function useChatConversation({
             onActiveTurnRef.current?.(
               loadedFor,
               conv.active_turn.started_at,
+              conv.active_turn.responding_role_id,
             );
           }
         });

@@ -186,6 +186,15 @@ class RoomDelivery:
             raise ValueError("缺少发送方角色")
 
         target_room = (room_id or "").strip() or None
+        if not target_room and conversation_id:
+            try:
+                if (
+                    self.conversations.rooms.conversation_kind(conversation_id)
+                    == KIND_GROUP
+                ):
+                    target_room = conversation_id
+            except KeyError:
+                pass
         mentioned = self.resolve_mention_roles(
             mentions, except_role_id=from_id, text=body
         )
@@ -493,6 +502,7 @@ class RoomDelivery:
     ) -> dict:
         started: list[dict] = []
         queued: list[dict] = []
+        queue_reasons: list[str] = []
         turn_id = None
         for target in targets:
             status = self.wake_role(
@@ -511,6 +521,7 @@ class RoomDelivery:
                     turn_id = turn.get("turn_id")
             else:
                 queued.append(target)
+                queue_reasons.append(status)
         first = targets[0] if targets else None
         if not targets:
             status = "posted"
@@ -524,13 +535,30 @@ class RoomDelivery:
         elif queued and not started:
             status = "queued"
             names = "、".join(f"「{t['name']}」" for t in queued)
-            summary = f"已发送给{names}：已排队（对方正忙）。协作房间 conversation://{room_id}"
+            if queue_reasons and all(r == "queued_self" for r in queue_reasons):
+                summary = (
+                    f"已发送给{names}：已点名，对方将在你说完后开始。"
+                    f"协作房间 conversation://{room_id}"
+                )
+            elif queue_reasons and all(r == "queued_role" for r in queue_reasons):
+                summary = (
+                    f"已发送给{names}：已排队（对方正忙）。"
+                    f"协作房间 conversation://{room_id}"
+                )
+            else:
+                summary = (
+                    f"已发送给{names}：已排队（房间里有人在说）。"
+                    f"协作房间 conversation://{room_id}"
+                )
         else:
             status = "mixed"
             summary = (
                 f"已发送：{len(started)} 人开始工作，{len(queued)} 人排队。"
                 f"协作房间 conversation://{room_id}"
             )
+        handed_off = bool(expect_reply and (started or queued))
+        if handed_off:
+            summary = f"{summary} 本回合到此结束，不要再做刚派出去的工作。"
         return {
             "summary": summary,
             "sources": [],
@@ -543,6 +571,7 @@ class RoomDelivery:
             ],
             "wake_status": status,
             "expect_reply": bool(expect_reply),
+            "end_turn": handed_off,
             "hop": hop,
             "turn_id": turn_id,
             "wake_conversation_id": room_id,
@@ -566,7 +595,7 @@ class RoomDelivery:
                 wake_in=wake_in,
                 expect_reply=expect_reply,
             )
-            return "queued"
+            return "queued_role"
         if wake_in in ("room", "peer_dm") and self.conversations.room_has_running_turn(
             room_id
         ):
@@ -577,7 +606,10 @@ class RoomDelivery:
                 wake_in=wake_in,
                 expect_reply=expect_reply,
             )
-            return "queued"
+            speaker = self.conversations.get_responding_role_id(room_id)
+            if speaker == from_role_id:
+                return "queued_self"
+            return "queued_room"
         return self._start_wake(
             role_id,
             stimulus_message=stimulus_message,

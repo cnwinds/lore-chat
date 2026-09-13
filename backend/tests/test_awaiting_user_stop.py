@@ -6,7 +6,7 @@ import pytest
 
 from app.config import Settings
 from app.models.cooldown import CooldownStore
-from app.engine.agent.tool_loop import AgentToolLoop, tool_awaits_user
+from app.engine.agent.tool_loop import AgentToolLoop, tool_awaits_user, tool_stops_loop
 from app.engine.agent.tools import ToolRegistry
 from app.engine.organizer import Organizer
 from app.engine.pending import PendingStore
@@ -29,6 +29,12 @@ def test_tool_awaits_user_detects_confirm_shapes():
     ) is True
     assert tool_awaits_user({"question_id": "q1", "options": []}) is False
     assert tool_awaits_user({"summary": "ok"}) is False
+
+
+def test_tool_stops_loop_handoff_and_awaiting_user():
+    assert tool_stops_loop({"end_turn": True}) == "handoff"
+    assert tool_stops_loop({"awaiting_user": True}) == "awaiting_user"
+    assert tool_stops_loop({"summary": "ok"}) is None
 
 
 def _build_loop(tmp_path, llm: FakeLLMClient) -> AgentToolLoop:

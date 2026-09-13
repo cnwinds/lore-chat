@@ -191,8 +191,9 @@ export function useAgentStream({
   );
 
   const resumeActiveTurn = useMemo(
-    () => (cid: string, startedAt?: string | null) =>
-      engine.resumeActiveTurn(cid, startedAt),
+    () =>
+      (cid: string, startedAt?: string | null, speakerId?: string | null) =>
+        engine.resumeActiveTurn(cid, startedAt, speakerId),
     [engine],
   );
 

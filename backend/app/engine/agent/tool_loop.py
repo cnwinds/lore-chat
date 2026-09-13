@@ -52,6 +52,15 @@ def tool_awaits_user(out: dict) -> bool:
     return bool(qid) and isinstance(options, list) and len(options) > 0
 
 
+def tool_stops_loop(out: dict) -> str | None:
+    """工具结果是否结束本轮循环；返回 stop_reason，否则 None。"""
+    if tool_awaits_user(out):
+        return "awaiting_user"
+    if out.get("end_turn"):
+        return "handoff"
+    return None
+
+
 class AgentToolLoop:
     """LLM 多轮工具循环与 SSE 事件生成（deep module）；Orchestrator 只做会话上下文 adapter。"""
 
@@ -159,7 +168,7 @@ class AgentToolLoop:
                 if result.tool_calls:
                     report.last_tool_names = [tc.name for tc in result.tool_calls]
                     turn_outputs: list[tuple[ToolCall, dict, int]] = []
-                    awaiting_user = False
+                    stop_reason = None
                     batches = self._split_batches(result.tool_calls)
                     for batch in batches:
                         names = [tc.name for tc in batch]
@@ -181,8 +190,12 @@ class AgentToolLoop:
                                     extend_sources(
                                         all_sources, entry[1].get("sources", [])
                                     )
-                            if any(tool_awaits_user(out) for _, out, _ in batch_outputs):
-                                awaiting_user = True
+                            for _, out, _ in batch_outputs:
+                                reason = tool_stops_loop(out)
+                                if reason:
+                                    stop_reason = reason
+                                    break
+                            if stop_reason:
                                 break
                         else:
                             for tc in batch:
@@ -216,16 +229,17 @@ class AgentToolLoop:
                                 yield emit_tool_result_sse(tc, out, duration_ms)
                                 turn_outputs.append((tc, out, duration_ms))
                                 extend_sources(all_sources, out.get("sources", []))
-                                if tool_awaits_user(out):
-                                    awaiting_user = True
+                                reason = tool_stops_loop(out)
+                                if reason:
+                                    stop_reason = reason
                                     break
-                        if awaiting_user:
+                        if stop_reason:
                             break
 
                     self._append_tool_turn(messages, result, turn_outputs)
                     tool_call_count += len(turn_outputs)
-                    if awaiting_user:
-                        report.stop_reason = "awaiting_user"
+                    if stop_reason:
+                        report.stop_reason = stop_reason
                         break
                     async for ev in self._drain_injects(
                         messages,
