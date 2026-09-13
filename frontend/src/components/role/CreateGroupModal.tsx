@@ -1,6 +1,8 @@
 import { useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import type { RoleSummary } from "../../api";
+import { defaultGroupTitle } from "../../utils/groupChatDisplay";
+import { RoleMemberPicker } from "./RoleMemberPicker";
 
 type Props = {
   open: boolean;
@@ -11,12 +13,11 @@ type Props = {
 
 export function CreateGroupModal({ open, roles, onClose, onConfirm }: Props) {
   const [title, setTitle] = useState("");
-  const [avatar, setAvatar] = useState("");
   const [picked, setPicked] = useState<string[]>([]);
 
-  const selectable = useMemo(
-    () => roles.filter((r) => !r.is_default || roles.length <= 8),
-    [roles],
+  const placeholder = useMemo(
+    () => defaultGroupTitle(roles, picked),
+    [roles, picked],
   );
 
   if (!open) return null;
@@ -27,27 +28,27 @@ export function CreateGroupModal({ open, roles, onClose, onConfirm }: Props) {
     );
   }
 
+  function reset() {
+    setTitle("");
+    setPicked([]);
+  }
+
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const name = title.trim() || "群聊";
     if (picked.length < 2) return;
-    onConfirm(name, picked, avatar.trim());
-    setTitle("");
-    setAvatar("");
-    setPicked([]);
+    onConfirm(title.trim() || placeholder, picked, "");
+    reset();
   }
 
   function handleCancel() {
     onClose();
-    setTitle("");
-    setAvatar("");
-    setPicked([]);
+    reset();
   }
 
   return createPortal(
     <div className="modal-backdrop" role="presentation" onClick={handleCancel}>
       <form
-        className="modal-panel role-settings-modal"
+        className="modal-panel role-settings-modal create-group-modal"
         role="dialog"
         aria-modal="true"
         aria-labelledby="create-group-title"
@@ -55,7 +56,7 @@ export function CreateGroupModal({ open, roles, onClose, onConfirm }: Props) {
         onSubmit={handleSubmit}
       >
         <div className="role-settings-head">
-          <h3 id="create-group-title">创建群聊</h3>
+          <h3 id="create-group-title">发起群聊</h3>
           <button
             type="button"
             className="role-settings-close"
@@ -66,40 +67,32 @@ export function CreateGroupModal({ open, roles, onClose, onConfirm }: Props) {
           </button>
         </div>
         <div className="role-settings-body">
-          <label className="settings-field">
-            <span>群名称</span>
-            <input
-              type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="例如：登录页协作"
-              autoFocus
-            />
-          </label>
-          <label className="settings-field">
-            <span>头像（可选）</span>
-            <input
-              type="text"
-              value={avatar}
-              onChange={(e) => setAvatar(e.target.value)}
-              placeholder="媒体/…png 或 https://…"
-            />
-          </label>
-          <div className="settings-field">
-            <span>圈选角色（至少两人）</span>
-            <div className="create-group-roles">
-              {selectable.map((role) => (
-                <label key={role.id} className="create-group-role">
-                  <input
-                    type="checkbox"
-                    checked={picked.includes(role.id)}
-                    onChange={() => toggle(role.id)}
-                  />
-                  {role.name}
-                </label>
-              ))}
-            </div>
-          </div>
+          {roles.length < 2 ? (
+            <p className="settings-group-hint">
+              至少需要两个角色才能建群。先创建一个新角色，再把它和现有角色圈在一起。
+            </p>
+          ) : (
+            <>
+              <label className="settings-field">
+                <span>群名称</span>
+                <input
+                  type="text"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder={placeholder}
+                  autoFocus
+                />
+              </label>
+              <div className="settings-field">
+                <span>选择成员（至少两人）</span>
+                <RoleMemberPicker
+                  roles={roles}
+                  picked={picked}
+                  onToggle={toggle}
+                />
+              </div>
+            </>
+          )}
         </div>
         <div className="role-settings-foot">
           <button type="button" onClick={handleCancel}>
@@ -110,7 +103,7 @@ export function CreateGroupModal({ open, roles, onClose, onConfirm }: Props) {
             className="btn-primary"
             disabled={picked.length < 2}
           >
-            创建
+            发起群聊
           </button>
         </div>
       </form>

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildInboxItems,
+  groupReplyPreview,
   roleReplyPreview,
   sortRolesByRecentActivity,
 } from "./roleListPreview";
@@ -70,5 +72,56 @@ describe("sortRolesByRecentActivity", () => {
       ["busy"],
     );
     expect(sorted.map((r) => r.id)).toEqual(["busy", "idle"]);
+  });
+});
+
+describe("buildInboxItems", () => {
+  it("mixes a recent group above an older role", () => {
+    const items = buildInboxItems(
+      [
+        {
+          id: "default",
+          name: "通用",
+          avatar: null,
+          system_prompt: "",
+          is_default: true,
+          sort_order: 0,
+          created_at: "",
+          updated_at: "",
+          last_active_at: "2026-08-01T10:00:00+08:00",
+        },
+      ],
+      [
+        {
+          id: "g1",
+          title: "登录页",
+          kind: "group",
+          participant_role_ids: ["default", "game"],
+          last_active_at: "2026-08-08T12:00:00+08:00",
+        },
+      ],
+    );
+    expect(items.map((item) => item.id)).toEqual(["g1", "default"]);
+    expect(items[0]?.kind).toBe("group");
+  });
+});
+
+describe("groupReplyPreview", () => {
+  it("prefers the last message over member names", () => {
+    expect(
+      groupReplyPreview({
+        last_reply_preview: "先改登录页",
+        participant_names: ["通用", "游戏"],
+      }),
+    ).toBe("先改登录页");
+  });
+
+  it("falls back to member names", () => {
+    expect(
+      groupReplyPreview({
+        last_reply_preview: "",
+        participant_names: ["通用", "游戏"],
+      }),
+    ).toBe("通用、游戏");
   });
 });

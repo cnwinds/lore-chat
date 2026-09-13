@@ -1061,7 +1061,7 @@ export async function listRoleScheduleRuns(roleId: string, scheduleId: string) {
 }
 
 export type ConversationSearchHit = {
-  kind?: "message" | "role" | "file";
+  kind?: "message" | "role" | "file" | "group";
   conversation_id: string;
   message_id: string | null;
   role_id: string;

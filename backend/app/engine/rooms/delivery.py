@@ -395,13 +395,34 @@ class RoomDelivery:
         out["participants"] = briefs
         if "avatar" not in out:
             out["avatar"] = None
+        if "last_active_at" not in out:
+            info = self.conversations.rooms.last_activity_for_ids([out["id"]]).get(
+                out["id"]
+            ) or {}
+            out["last_active_at"] = info.get("last_active_at") or None
+            out["last_reply_preview"] = info.get("preview") or ""
+        else:
+            out.setdefault("last_reply_preview", "")
         return out
 
     def list_groups(self) -> list[dict]:
-        return [
-            self.decorate_room(row)
-            for row in self.conversations.rooms.list_groups()
-        ]
+        rows = self.conversations.rooms.list_groups()
+        activity = self.conversations.rooms.last_activity_for_ids(
+            [str(r.get("id") or "") for r in rows]
+        )
+        out: list[dict] = []
+        for row in rows:
+            info = activity.get(str(row.get("id") or "")) or {}
+            out.append(
+                self.decorate_room(
+                    {
+                        **row,
+                        "last_active_at": info.get("last_active_at") or None,
+                        "last_reply_preview": info.get("preview") or "",
+                    }
+                )
+            )
+        return out
 
     def list_rooms_for_role(self, role_id: str) -> list[dict]:
         return [

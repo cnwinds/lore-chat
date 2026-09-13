@@ -34,6 +34,7 @@ vi.mock("../../api", async (importOriginal) => {
         } satisfies Role,
       ],
     })),
+    listRooms: vi.fn(async () => ({ rooms: [] })),
     searchConversations: vi.fn(async () => ({ hits: [] })),
     getRole: vi.fn(async (id: string) => ({
       id,
@@ -104,7 +105,7 @@ describe("RoleList", () => {
     expect(await screen.findByText("通用")).toBeInTheDocument();
     expect(screen.getByText("暂无对话")).toBeInTheDocument();
     expect(screen.getByLabelText("搜索")).toBeInTheDocument();
-    expect(screen.getByLabelText("新建角色")).toBeInTheDocument();
+    expect(screen.getByLabelText("新建")).toBeInTheDocument();
     expect(screen.queryByLabelText("搜索本角色会话")).not.toBeInTheDocument();
   });
 

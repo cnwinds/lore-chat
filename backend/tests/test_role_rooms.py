@@ -382,6 +382,8 @@ def test_rooms_http_create_list_and_status(client):
     listed = client.get("/api/rooms", params={"kind": "group"})
     assert listed.status_code == 200
     assert any(r["id"] == rid for r in listed.json()["rooms"])
+    empty = next(r for r in listed.json()["rooms"] if r["id"] == rid)
+    assert empty.get("last_reply_preview") in (None, "")
     status = client.get(f"/api/rooms/{rid}/status")
     assert status.status_code == 200
     assert status.json()["kind"] == "group"
@@ -391,6 +393,10 @@ def test_rooms_http_create_list_and_status(client):
     )
     assert posted.status_code == 200
     assert posted.json()["wake_status"] == "posted"
+    listed_after = client.get("/api/rooms", params={"kind": "group"})
+    row = next(r for r in listed_after.json()["rooms"] if r["id"] == rid)
+    assert row.get("last_reply_preview") == "先记一笔"
+    assert row.get("last_active_at")
     woke = client.post(
         f"/api/rooms/{rid}/messages",
         json={"text": "@游戏开发助手 改登录页"},

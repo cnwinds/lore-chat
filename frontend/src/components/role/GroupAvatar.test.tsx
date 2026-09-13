@@ -28,5 +28,16 @@ describe("GroupAvatar", () => {
       (el) => el.textContent,
     );
     expect(letters).toEqual(["通", "游"]);
+    expect(document.querySelector(".group-avatar-mark")).toBeTruthy();
+  });
+
+  it("marks a custom group avatar as a group", () => {
+    render(
+      <GroupAvatar name="登录页" seed="g1" avatar="媒体/g.png" />,
+    );
+    expect(document.querySelector(".group-avatar-mark")).toHaveAttribute(
+      "title",
+      "群聊",
+    );
   });
 });

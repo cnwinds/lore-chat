@@ -24,6 +24,18 @@ export function mentionCandidatesForRoom(opts: {
   }));
 }
 
+export function defaultGroupTitle(
+  roles: Array<{ id: string; name: string }>,
+  roleIds: string[],
+): string {
+  const names = roleIds
+    .map((id) => roles.find((r) => r.id === id)?.name?.trim())
+    .filter((name): name is string => Boolean(name));
+  if (names.length === 0) return "群聊";
+  if (names.length <= 3) return names.join("、");
+  return `${names.slice(0, 3).join("、")} 等`;
+}
+
 export function membersFromRoleIds(
   ids: string[] | undefined,
   roles: RoleSummary[],
