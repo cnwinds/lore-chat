@@ -38,12 +38,6 @@ export function MentionPicker({
     activeRef.current?.scrollIntoView?.({ block: "nearest" });
   }, [selectedIndex, roles]);
 
-  const hint = query.trim()
-    ? `筛选 · ${query}`
-    : roles.length
-      ? "↑↓ 选择 · Enter 点名"
-      : "没有可点名的成员";
-
   return (
     <div
       id={MENTION_PICKER_ID}
@@ -51,10 +45,6 @@ export function MentionPicker({
       role="listbox"
       aria-label="点名成员"
     >
-      <div className="mention-picker-head">
-        <span>成员</span>
-        <span className="mention-picker-hint">{hint}</span>
-      </div>
       {roles.length === 0 ? (
         <div className="mention-picker-empty">没有叫这个名字的成员</div>
       ) : (
@@ -84,9 +74,6 @@ export function MentionPicker({
                 />
                 <span className="mention-picker-item-name">
                   {highlightQuery(role.name, query)}
-                </span>
-                <span className="mention-picker-item-insert" aria-hidden>
-                  @{role.name}
                 </span>
               </button>
             );
