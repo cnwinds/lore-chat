@@ -254,6 +254,135 @@ class RoleTools:
         except (ValueError, KeyError) as e:
             return {"summary": str(e), "sources": [], "error": str(e)}
 
+    def _resolve_group_members(self, args: dict, current: str | None) -> list[str]:
+        ids: list[str] = []
+        seen: set[str] = set()
+
+        def _add(rid: str) -> None:
+            if rid and rid not in seen:
+                seen.add(rid)
+                ids.append(rid)
+
+        if current:
+            _add(current)
+        for raw in args.get("role_ids") or []:
+            _add(str(raw or "").strip())
+        for raw in args.get("role_names") or []:
+            if self.delivery is None:
+                continue
+            role = self.delivery.resolve_target(
+                to_role_name=str(raw or ""), except_role_id=None
+            )
+            _add(role["id"])
+        return ids
+
+    def list_groups(self, args: dict, conversation_id: str | None = None) -> dict:
+        if self.delivery is None:
+            return {
+                "summary": "角色互通不可用",
+                "sources": [],
+                "error": "room delivery unavailable",
+            }
+        del conversation_id
+        try:
+            group_id = str(args.get("group_id") or args.get("room_id") or "").strip()
+            title = str(args.get("title") or "").strip()
+            if group_id:
+                room = self.delivery.get_group(group_id)
+                return {
+                    "summary": f"群「{room.get('title') or '群聊'}」id={room['id']}",
+                    "sources": [],
+                    "group": room,
+                    "groups": [room],
+                }
+            rooms = self.delivery.list_groups()
+            if title:
+                rooms = [
+                    r
+                    for r in rooms
+                    if str(r.get("title") or "") == title
+                    or str(r.get("title") or "").casefold() == title.casefold()
+                ]
+                if not rooms:
+                    return {
+                        "summary": f"未找到名为「{title}」的群",
+                        "sources": [],
+                        "error": "group not found",
+                        "groups": [],
+                    }
+            names = "、".join(str(r.get("title") or "群聊") for r in rooms)
+            return {
+                "summary": f"共 {len(rooms)} 个群聊：{names}" if rooms else "还没有群聊",
+                "sources": [],
+                "groups": rooms,
+            }
+        except (ValueError, KeyError) as e:
+            return {"summary": str(e), "sources": [], "error": str(e)}
+
+    def update_group(self, args: dict, conversation_id: str | None = None) -> dict:
+        if self.delivery is None:
+            return {
+                "summary": "角色互通不可用",
+                "sources": [],
+                "error": "room delivery unavailable",
+            }
+        del conversation_id
+        try:
+            group_id = str(args.get("group_id") or args.get("room_id") or "").strip()
+            if not group_id:
+                raise ValueError("缺少 group_id")
+            title = args.get("title")
+            if title is not None:
+                title = str(title)
+            avatar = args.get("avatar")
+            if avatar is not None:
+                avatar = str(avatar).strip() or None
+            role_ids = None
+            if args.get("role_ids") is not None or args.get("role_names") is not None:
+                role_ids = self._resolve_group_members(
+                    {
+                        "role_ids": args.get("role_ids") or [],
+                        "role_names": args.get("role_names") or [],
+                    },
+                    current=None,
+                )
+            kwargs: dict = {"title": title}
+            if "avatar" in args:
+                kwargs["avatar"] = avatar
+            if role_ids is not None:
+                kwargs["role_ids"] = role_ids
+            room = self.delivery.update_group(group_id, **kwargs)
+            return {
+                "summary": f"已更新群「{room.get('title') or '群聊'}」",
+                "sources": [],
+                "group": room,
+                "room": room,
+            }
+        except (ValueError, KeyError) as e:
+            return {"summary": str(e), "sources": [], "error": str(e)}
+
+    def delete_group(self, args: dict, conversation_id: str | None = None) -> dict:
+        if self.delivery is None:
+            return {
+                "summary": "角色互通不可用",
+                "sources": [],
+                "error": "room delivery unavailable",
+            }
+        del conversation_id
+        try:
+            group_id = str(args.get("group_id") or args.get("room_id") or "").strip()
+            if not group_id:
+                raise ValueError("缺少 group_id")
+            room = self.delivery.get_group(group_id)
+            self.delivery.delete_group(group_id)
+            return {
+                "summary": f"已删除群「{room.get('title') or '群聊'}」",
+                "sources": [],
+                "group_id": group_id,
+            }
+        except (ValueError, KeyError) as e:
+            return {"summary": str(e), "sources": [], "error": str(e)}
+
     def list_rooms(self, args: dict, conversation_id: str | None = None) -> dict:
         if self.delivery is None:
             return {
@@ -282,25 +411,14 @@ class RoleTools:
             }
         try:
             current = self._get_role_id({}, conversation_id)
-            ids: list[str] = []
-            seen: set[str] = set()
-
-            def _add(rid: str) -> None:
-                if rid and rid not in seen:
-                    seen.add(rid)
-                    ids.append(rid)
-
-            _add(current)
-            for raw in args.get("role_ids") or []:
-                _add(str(raw or "").strip())
-            for raw in args.get("role_names") or []:
-                role = self.delivery.resolve_target(
-                    to_role_name=str(raw or ""), except_role_id=None
-                )
-                _add(role["id"])
+            ids = self._resolve_group_members(args, current)
+            avatar = args.get("avatar")
+            if avatar is not None:
+                avatar = str(avatar).strip() or None
             room = self.delivery.create_group(
                 title=str(args.get("title") or ""),
                 role_ids=ids,
+                avatar=avatar,
             )
             return {
                 "summary": (
@@ -309,10 +427,14 @@ class RoleTools:
                 ),
                 "sources": [],
                 "room_id": room["id"],
+                "group": room,
                 "room": room,
             }
         except (ValueError, KeyError) as e:
             return {"summary": str(e), "sources": [], "error": str(e)}
+
+    def create_group(self, args: dict, conversation_id: str | None = None) -> dict:
+        return self.create_room(args, conversation_id=conversation_id)
 
     def list_role_schedules(self, args: dict, conversation_id: str | None = None) -> dict:
         if self.roles is None:

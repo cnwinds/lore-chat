@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import type { RoleSummary } from "../../api";
+import type { RoleSummary, RoomParticipant } from "../../api";
 import { ChatRoleHeading } from "../chat/ChatRoleHeading";
+import { GroupAvatar } from "../role/GroupAvatar";
 
 type Props = {
   title: string;
@@ -9,6 +10,9 @@ type Props = {
   roles?: RoleSummary[];
   activeRoleId?: string | null;
   onSelectRole?: (id: string) => void;
+  roomMode?: "role" | "group";
+  roomAvatar?: string | null;
+  roomParticipants?: RoomParticipant[];
 };
 
 export function MobileChatHeader({
@@ -18,12 +22,35 @@ export function MobileChatHeader({
   roles = [],
   activeRoleId = null,
   onSelectRole,
+  roomMode = "role",
+  roomAvatar = null,
+  roomParticipants = [],
 }: Props) {
   const [sheetOpen, setSheetOpen] = useState(false);
   const sheetRef = useRef<HTMLDivElement>(null);
-  const multiRole = roles.length > 1 && !!onSelectRole;
+  const multiRole = roomMode !== "group" && roles.length > 1 && !!onSelectRole;
   const activeRole = roles.find((r) => r.id === activeRoleId) ?? null;
-  const headingName = activeRole?.name || title;
+  const headingName = roomMode === "group" ? title : activeRole?.name || title;
+  const heading = (
+    roomMode === "group" ? (
+      <span className="chat-role-heading">
+        <GroupAvatar
+          name={headingName}
+          seed={headingName}
+          avatar={roomAvatar}
+          members={roomParticipants}
+          size={22}
+        />
+        <span className="chat-role-heading-name">{headingName}</span>
+      </span>
+    ) : (
+      <ChatRoleHeading
+        name={headingName}
+        roleId={activeRole?.id || activeRoleId}
+        avatar={activeRole?.avatar}
+      />
+    )
+  );
 
   useEffect(() => {
     if (!sheetOpen) return;
@@ -59,22 +86,14 @@ export function MobileChatHeader({
           aria-haspopup="dialog"
           aria-expanded={sheetOpen}
         >
-          <ChatRoleHeading
-            name={headingName}
-            roleId={activeRole?.id || activeRoleId}
-            avatar={activeRole?.avatar}
-          />
+          {heading}
           <span className="mobile-chat-header-caret" aria-hidden>
             ▾
           </span>
         </button>
       ) : (
         <h1 className="mobile-chat-header-title">
-          <ChatRoleHeading
-            name={headingName}
-            roleId={activeRole?.id || activeRoleId}
-            avatar={activeRole?.avatar}
-          />
+          {heading}
         </h1>
       )}
       <div className="mobile-chat-header-actions">

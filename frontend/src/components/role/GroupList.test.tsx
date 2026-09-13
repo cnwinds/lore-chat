@@ -11,6 +11,10 @@ vi.mock("../../api", () => ({
         kind: "group",
         participant_role_ids: ["a", "b"],
         participant_names: ["通用助手大师", "游戏开发助手"],
+        participants: [
+          { id: "a", name: "通用助手大师" },
+          { id: "b", name: "游戏开发助手" },
+        ],
       },
     ],
   })),
@@ -32,7 +36,11 @@ describe("GroupList", () => {
     );
     expect(await screen.findByText("登录页")).toBeTruthy();
     expect(screen.getByText("通用助手大师、游戏开发助手")).toBeTruthy();
+    expect(document.querySelector(".group-avatar--2")).toBeTruthy();
     screen.getByText("登录页").click();
-    expect(onSelect).toHaveBeenCalledWith("bbbbbbbbbbbb");
+    expect(onSelect).toHaveBeenCalledWith(
+      "bbbbbbbbbbbb",
+      expect.objectContaining({ id: "bbbbbbbbbbbb", title: "登录页" }),
+    );
   });
 });

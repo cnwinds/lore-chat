@@ -70,7 +70,15 @@ def emit_tool_result_sse(tc: ToolCall, out: dict, duration_ms: int) -> str:
         extra.update(_copy_keys(out, ("attachments", "rel_path")))
     elif tc.name == "write_kb_file":
         extra.update(_copy_keys(out, ("attachments", "rel_path")))
-    elif tc.name in ("send_message", "create_room", "list_rooms"):
+    elif tc.name in (
+        "send_message",
+        "create_room",
+        "create_group",
+        "update_group",
+        "delete_group",
+        "list_rooms",
+        "list_groups",
+    ):
         extra.update(_copy_keys(out, _COLLAB_KEYS))
     return tool_result(
         tc.id,

@@ -170,6 +170,8 @@ export function useAgentStream({
           webEnabled?: boolean;
           reuseUserMessageId?: string;
           replaceAssistantIndex?: number;
+          mentions?: string[];
+          assistantSpeaker?: { id: string; name: string };
         },
       ): Promise<boolean> =>
         engine.runAgentStream(

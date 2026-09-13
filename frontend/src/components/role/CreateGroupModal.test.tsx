@@ -42,6 +42,6 @@ describe("CreateGroupModal", () => {
     await user.click(screen.getByText("通用助手大师"));
     await user.click(screen.getByText("游戏开发助手"));
     await user.click(screen.getByRole("button", { name: "创建" }));
-    expect(onConfirm).toHaveBeenCalledWith("群聊", ["default", "game"]);
+    expect(onConfirm).toHaveBeenCalledWith("群聊", ["default", "game"], "");
   });
 });

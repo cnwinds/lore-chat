@@ -681,14 +681,19 @@ class ConversationStore:
         active_turn = None
         if active_turn_id:
             trow = self.conn.execute(
-                "SELECT id, status, started_at FROM turns WHERE id = ?",
+                "SELECT id, status, started_at, responding_role_id FROM turns WHERE id = ?",
                 (active_turn_id,),
             ).fetchone()
             if trow is not None:
+                try:
+                    responding = (trow["responding_role_id"] or "").strip() or None
+                except (KeyError, IndexError):
+                    responding = None
                 active_turn = {
                     "turn_id": trow["id"],
                     "status": trow["status"],
                     "started_at": trow["started_at"],
+                    "responding_role_id": responding,
                 }
         from app.engine.roles import DEFAULT_ROLE_ID
 
@@ -723,6 +728,7 @@ class ConversationStore:
             "origin": self._row_origin(row),
             "api_key_id": self._row_api_key_id(row),
             "kind": kind,
+            "avatar": self._row_avatar(row),
             "participant_role_ids": participants,
             "peer_role_id": peer_role_id,
             "active_turn_id": active_turn_id,
@@ -742,6 +748,13 @@ class ConversationStore:
             "UPDATE conversations SET indexed_dirty = 1 WHERE id = ?", (cid,)
         )
         self.summaries.mark_stale_unlocked(cid)
+
+    def _row_avatar(self, row: sqlite3.Row) -> str | None:
+        try:
+            raw = row["avatar"]
+        except (KeyError, IndexError):
+            return None
+        return (str(raw).strip() or None) if raw is not None else None
 
     def _row_origin(self, row: sqlite3.Row) -> str:
         try:
@@ -1090,6 +1103,12 @@ class ConversationStore:
                         kind = (row["kind"] or "peer_dm").strip() or "peer_dm"
                     except (KeyError, IndexError):
                         kind = "peer_dm"
+                    if kind == "group":
+                        card = self.rooms.group_card_for_role(pid, role_id)
+                        if card:
+                            items.append(card)
+                            seen.add(pid)
+                        continue
                     participants = self.rooms.list_role_participants(pid)
                     items.append(
                         {
@@ -1160,6 +1179,16 @@ class ConversationStore:
 
         out: list[dict] = []
         for item in items:
+            if (item.get("kind") or "") == "group_card":
+                out.append(
+                    {
+                        **item,
+                        "messages": [],
+                        "active_turn": None,
+                        "older_message_count": 0,
+                    }
+                )
+                continue
             cid = item["id"]
             try:
                 full = self.get(cid, tail=message_limit)

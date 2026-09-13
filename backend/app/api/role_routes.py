@@ -264,6 +264,14 @@ async def get_role_timeline(
         only_with_messages=True,
         message_limit=msg_tail,
     )
+    delivery = getattr(c, "room_delivery", None)
+    if delivery is not None:
+        segments = [
+            delivery.decorate_room(s)
+            if (s.get("kind") or "") == "group_card"
+            else s
+            for s in segments
+        ]
     return {
         "role_id": role_id,
         "tip_conversation_id": tip_id,
