@@ -1,4 +1,28 @@
 import type { ChatMessage, RoleSummary, RoomParticipant } from "../types/chat";
+import type { MentionCandidate } from "./roleMentions";
+
+export function mentionCandidatesForRoom(opts: {
+  roomMode: "role" | "group";
+  roles: RoleSummary[];
+  participants: RoomParticipant[];
+}): MentionCandidate[] {
+  const { roomMode, roles, participants } = opts;
+  if (roomMode === "group") {
+    return participants.map((p) => {
+      const role = roles.find((r) => r.id === p.id);
+      return {
+        id: p.id,
+        name: role?.name || p.name,
+        avatar: role?.avatar ?? p.avatar ?? null,
+      };
+    });
+  }
+  return roles.map((r) => ({
+    id: r.id,
+    name: r.name,
+    avatar: r.avatar,
+  }));
+}
 
 export function membersFromRoleIds(
   ids: string[] | undefined,

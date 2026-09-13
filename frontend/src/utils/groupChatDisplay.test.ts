@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   isOwnerSpeaker,
   membersFromRoleIds,
+  mentionCandidatesForRoom,
   resolveGroupSpeaker,
 } from "./groupChatDisplay";
 
@@ -40,5 +41,27 @@ describe("groupChatDisplay", () => {
       { id: "a", name: "通用助手大师", avatar: null },
       { id: "b", name: "游戏开发助手", avatar: null },
     ]);
+  });
+
+  it("lists group members for @, not the whole role roster", () => {
+    const roles = [
+      { id: "a", name: "通用助手大师", avatar: "a.png" } as never,
+      { id: "b", name: "游戏开发助手", avatar: null } as never,
+      { id: "c", name: "闲人", avatar: null } as never,
+    ];
+    expect(
+      mentionCandidatesForRoom({
+        roomMode: "group",
+        roles,
+        participants: [{ id: "b", name: "游戏开发助手", avatar: null }],
+      }),
+    ).toEqual([{ id: "b", name: "游戏开发助手", avatar: null }]);
+    expect(
+      mentionCandidatesForRoom({
+        roomMode: "role",
+        roles,
+        participants: [],
+      }).map((r) => r.id),
+    ).toEqual(["a", "b", "c"]);
   });
 });

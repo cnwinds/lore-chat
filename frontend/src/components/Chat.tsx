@@ -71,7 +71,11 @@ import { suggestArchivePath } from "../utils/suggestArchivePath";
 import { MobileChatHeader } from "./app/MobileChatHeader";
 import { ChatRoleHeading } from "./chat/ChatRoleHeading";
 import { GroupAvatar } from "./role/GroupAvatar";
-import { mentionQueryAtCaret, resolveMentionRoleIds } from "../utils/roleMentions";
+import { mentionCandidatesForRoom } from "../utils/groupChatDisplay";
+import { resolveMentionRoleIds } from "../utils/roleMentions";
+import { MentionPicker } from "./chat/MentionPicker";
+import { MENTION_PICKER_ID } from "./chat/mentionPickerIds";
+import { useMentionPicker } from "../hooks/chat/useMentionPicker";
 
 type ComposerDocItem = DocTrayItem;
 
@@ -162,6 +166,23 @@ export function Chat({
   } = useChatChainMediaCaps();
   const [webEnabled, setWebEnabled] = useState(() => readWebSearchEnabled());
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const mentionCandidates = useMemo(
+    () =>
+      mentionCandidatesForRoom({
+        roomMode,
+        roles,
+        participants: roomParticipants,
+      }),
+    [roomMode, roles, roomParticipants],
+  );
+  const mentionPicker = useMentionPicker({
+    input,
+    caret,
+    setInput,
+    setCaret,
+    textareaRef,
+    candidates: mentionCandidates,
+  });
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const skipLoadRef = useRef<string | null>(null);
@@ -887,6 +908,7 @@ export function Chat({
   }
 
   function onInputKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (mentionPicker.handleKeyDown(e)) return;
     if (e.key !== "Enter") return;
     if (e.shiftKey) return;
     if (e.nativeEvent.isComposing) return;
@@ -955,23 +977,6 @@ export function Chat({
     roomMode === "group"
       ? roomTitle || "群聊"
       : activeRole?.name || mobileHeaderTitle || "对话";
-  const mention = mentionQueryAtCaret(input, caret);
-  const mentionHits = mention
-    ? roles
-        .filter(
-          (r) =>
-            r.name.includes(mention.query) || r.id.includes(mention.query),
-        )
-        .slice(0, 6)
-    : [];
-
-  function applyMention(role: RoleSummary) {
-    if (!mention) return;
-    const next = `${input.slice(0, mention.start)}@${role.name} ${input.slice(caret)}`;
-    setInput(next);
-    setCaret(mention.start + role.name.length + 2);
-  }
-
   return (
     <div className={`chat-panel${mobileLayout ? " chat-panel--mobile" : ""}`}>
       {mobileLayout && onOpenMobileNav && (
@@ -1085,23 +1090,6 @@ export function Chat({
         memoryNotice={memoryNotice}
         onDismissMemoryNotice={dismissMemoryNotice}
       />
-      {mentionHits.length > 0 ? (
-        <div className="mention-picker" role="listbox" aria-label="点名角色">
-          {mentionHits.map((role) => (
-            <button
-              key={role.id}
-              type="button"
-              className="mention-picker-item"
-              onMouseDown={(e) => {
-                e.preventDefault();
-                applyMention(role);
-              }}
-            >
-              @{role.name}
-            </button>
-          ))}
-        </div>
-      ) : null}
       <ConversationComposerPanel
         sendQueueItems={sendQueue.items}
         sendQueuePaused={sendQueue.paused}
@@ -1138,6 +1126,23 @@ export function Chat({
           setInput(value);
           setCaret(textareaRef.current?.selectionStart ?? value.length);
         }}
+        onCaretSync={() => {
+          setCaret(textareaRef.current?.selectionStart ?? input.length);
+        }}
+        mentionSlot={
+          mentionPicker.open ? (
+            <MentionPicker
+              roles={mentionPicker.hits}
+              query={mentionPicker.mention?.query || ""}
+              selectedIndex={mentionPicker.selectedIndex}
+              onHover={mentionPicker.setSelectedIndex}
+              onPick={mentionPicker.apply}
+            />
+          ) : null
+        }
+        mentionOpen={mentionPicker.open}
+        mentionListId={MENTION_PICKER_ID}
+        mentionActiveId={mentionPicker.activeOptionId}
         onInputKeyDown={onInputKeyDown}
         onInputPaste={onInputPaste}
         textareaRef={textareaRef}

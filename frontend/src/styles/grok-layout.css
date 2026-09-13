@@ -580,27 +580,116 @@
   font-size: var(--font-ui-sm);
 }
 
+.composer-card-stack {
+  position: relative;
+}
+
 .mention-picker {
-  margin: 0 16px 6px;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 8px);
+  z-index: 24;
+  display: flex;
+  flex-direction: column;
+  max-height: min(280px, 42vh);
+  padding: 6px;
   border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg-surface);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--bg-surface) 88%, transparent);
+  box-shadow: var(--shadow-md);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   overflow: hidden;
 }
 
-.mention-picker-item {
-  display: block;
-  width: 100%;
-  text-align: left;
-  padding: 8px 12px;
-  border: none;
-  background: transparent;
-  color: var(--text);
-  font-size: var(--font-ui-sm);
+.mention-picker-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 10px 6px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
 }
 
-.mention-picker-item:hover {
-  background: var(--bg-hover, color-mix(in srgb, var(--text) 6%, transparent));
+.mention-picker-hint {
+  letter-spacing: 0.02em;
+  text-transform: none;
+  font-size: 12px;
+}
+
+.mention-picker-list {
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mention-picker-empty {
+  padding: 18px 12px;
+  text-align: center;
+  font-size: var(--font-ui-sm);
+  color: var(--text-muted);
+}
+
+.mention-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 8px;
+  border: none;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.mention-picker-item:hover,
+.mention-picker-item.is-active {
+  background: var(--accent-soft);
+}
+
+.mention-picker-item.is-active {
+  box-shadow: inset 0 0 0 1px var(--accent-border);
+}
+
+.mention-picker-item-name {
+  min-width: 0;
+  flex: 1;
+  font-size: var(--font-ui-sm);
+  font-weight: 600;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mention-picker-item-name mark {
+  background: transparent;
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.mention-picker-item-insert {
+  flex-shrink: 0;
+  max-width: 42%;
+  font-size: 12px;
+  color: var(--text-muted);
+  opacity: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mention-picker-item.is-active .mention-picker-item-insert {
+  opacity: 1;
+  color: var(--accent);
 }
 
 .role-list-loading,
