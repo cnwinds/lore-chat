@@ -28,10 +28,12 @@ import {
   getConversation,
   isMarkdownPath,
   normalizeDocContext,
+  postRoomMessage,
   summarizeConversation,
   type DocContextItem,
   type IngestResult,
   type RoleSummary,
+  type RoomParticipant,
   type SourceRef,
 } from "../api";
 import { useDocPreview } from "../contexts/DocPreviewContext";
@@ -68,7 +70,8 @@ import {
 import { suggestArchivePath } from "../utils/suggestArchivePath";
 import { MobileChatHeader } from "./app/MobileChatHeader";
 import { ChatRoleHeading } from "./chat/ChatRoleHeading";
-import { mentionQueryAtCaret } from "../utils/roleMentions";
+import { GroupAvatar } from "./role/GroupAvatar";
+import { mentionQueryAtCaret, resolveMentionRoleIds } from "../utils/roleMentions";
 
 type ComposerDocItem = DocTrayItem;
 
@@ -103,7 +106,11 @@ type Props = {
   onConversationRoleMismatch?: (conversationId: string, roleId: string) => void;
   roomMode?: "role" | "group";
   roomTitle?: string | null;
+  roomAvatar?: string | null;
+  roomParticipants?: RoomParticipant[];
   onRoomInterjectSent?: () => void;
+  onOpenGroup?: (roomId: string) => void;
+  onOpenGroupSettings?: () => void;
 };
 
 export function Chat({
@@ -133,7 +140,11 @@ export function Chat({
   onConversationRoleMismatch,
   roomMode = "role",
   roomTitle = null,
+  roomAvatar = null,
+  roomParticipants = [],
   onRoomInterjectSent,
+  onOpenGroup,
+  onOpenGroupSettings,
 }: Props) {
   const { previewPath, openDoc, refreshKb } = useDocPreview();
 
@@ -176,6 +187,7 @@ export function Chat({
     setSummarized,
     summaryPath,
     setSummaryPath,
+    respondingRoleId,
   } = useChatConversation({
     conversationId,
     roleId,
@@ -361,10 +373,24 @@ export function Chat({
           webEnabled: first.webEnabled,
           reuseUserMessageId: first.reuseUserMessageId,
           replaceAssistantIndex: first.replaceAssistantIndex,
+          mentions:
+            roomMode === "group"
+              ? resolveMentionRoleIds(text, roles)
+              : undefined,
+          assistantSpeaker:
+            roomMode === "group"
+              ? (() => {
+                  const id = resolveMentionRoleIds(text, roles)[0];
+                  const role = id ? roles.find((r) => r.id === id) : undefined;
+                  return role
+                    ? { id: role.id, name: role.name }
+                    : undefined;
+                })()
+              : undefined,
         },
       );
     },
-    [runAgentStream],
+    [runAgentStream, roomMode, roles],
   );
 
   const outbound = useOutboundOrchestrator({
@@ -510,6 +536,35 @@ export function Chat({
       }
     }
 
+    const mentions =
+      roomMode === "group" ? resolveMentionRoleIds(text, roles) : [];
+    const mentionedRole = mentions[0]
+      ? roles.find((r) => r.id === mentions[0])
+      : undefined;
+
+    if (roomMode === "group" && conversationId && mentions.length === 0) {
+      try {
+        await postRoomMessage(conversationId, { text, mentions: [] });
+        const conv = await getConversation(conversationId);
+        setMsgs(
+          (conv.messages || []).map((m) =>
+            normalizeLoadedMessage(m, {
+              activeTurnRunning: conv.active_turn?.status === "running",
+            }),
+          ),
+        );
+        onRoomInterjectSent?.();
+      } catch (err) {
+        setInput(text);
+        const msg = err instanceof Error ? err.message : "发送失败";
+        setMsgs((m) => [
+          ...m,
+          { role: "assistant", text: `错误：${msg}`, ts: nowIsoDisplay() },
+        ]);
+      }
+      return;
+    }
+
     const ctx = resolveDocContext();
     if (
       ctx.docContext.length === 0 &&
@@ -533,7 +588,13 @@ export function Chat({
           primary_doc: ctx.primary ?? undefined,
         },
         ctx,
-        { webEnabled },
+        {
+          webEnabled,
+          mentions: mentions.length ? mentions : undefined,
+          assistantSpeaker: mentionedRole
+            ? { id: mentionedRole.id, name: mentionedRole.name }
+            : undefined,
+        },
       );
       return;
     }
@@ -920,19 +981,55 @@ export function Chat({
           onShare={onShareConversation}
           roles={roles}
           activeRoleId={roleId}
-          onSelectRole={onSelectRole}
+          onSelectRole={roomMode === "group" ? undefined : onSelectRole}
+          roomMode={roomMode}
+          roomAvatar={roomAvatar}
+          roomParticipants={roomParticipants}
         />
       )}
       {!mobileLayout && (
         <header className="chat-desktop-header">
           <h1 className="chat-desktop-header-title">
-            <ChatRoleHeading
-              name={headerTitle}
-              roleId={roomMode === "group" ? null : activeRole?.id || roleId}
-              avatar={roomMode === "group" ? null : activeRole?.avatar}
-            />
+            {roomMode === "group" ? (
+              <span className="chat-role-heading">
+                <GroupAvatar
+                  name={headerTitle}
+                  seed={conversationId || headerTitle}
+                  avatar={roomAvatar}
+                  members={roomParticipants}
+                  size={22}
+                />
+                <span className="chat-role-heading-name">{headerTitle}</span>
+              </span>
+            ) : (
+              <ChatRoleHeading
+                name={headerTitle}
+                roleId={activeRole?.id || roleId}
+                avatar={activeRole?.avatar}
+              />
+            )}
           </h1>
-          {roleConfigCollapsed && onToggleRoleConfig ? (
+          {roomMode === "group" && onOpenGroupSettings ? (
+            <div className="chat-desktop-header-actions">
+              <button
+                type="button"
+                className="chat-desktop-header-btn"
+                onClick={onOpenGroupSettings}
+                title="群设置"
+                aria-label="群设置"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
+                  <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.8" />
+                  <path
+                    d="M12 4v2M12 18v2M4 12h2M18 12h2M6.3 6.3l1.4 1.4M16.3 16.3l1.4 1.4M6.3 17.7l1.4-1.4M16.3 7.7l1.4-1.4"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                  />
+                </svg>
+              </button>
+            </div>
+          ) : roleConfigCollapsed && onToggleRoleConfig ? (
             <div className="chat-desktop-header-actions">
               <button
                 type="button"
@@ -982,6 +1079,9 @@ export function Chat({
         outlineLayout={mobileLayout ? "sheet" : "rail"}
         roles={roles}
         onRoomInterjectSent={onRoomInterjectSent}
+        onOpenGroup={onOpenGroup}
+        roomMode={roomMode}
+        respondingRoleId={respondingRoleId}
         memoryNotice={memoryNotice}
         onDismissMemoryNotice={dismissMemoryNotice}
       />

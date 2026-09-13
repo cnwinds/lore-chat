@@ -5479,6 +5479,40 @@ button.memory-fact-statement--jump:focus-visible {
   font-size: var(--text-xs);
 }
 
+.chat-row-group {
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.chat-row-group-owner {
+  justify-content: flex-end;
+}
+
+.chat-row-group-role {
+  justify-content: flex-start;
+}
+
+.chat-row-group-col {
+  display: flex;
+  flex-direction: column;
+  max-width: min(680px, calc(90% - 44px));
+}
+
+.chat-row-group-col .chat-bubble {
+  max-width: 100%;
+}
+
+.chat-row-group-name {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin: 0 0 4px 4px;
+}
+
+.chat-row-group-avatar {
+  flex-shrink: 0;
+  margin-bottom: 2px;
+}
+
 .chat-failover-banner {
   margin: 0 0 8px;
   padding: 6px 10px;

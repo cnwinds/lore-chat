@@ -466,6 +466,7 @@ export type {
   Conversation,
   RoleSummary,
   RoomSummary,
+  RoomParticipant,
   RoomStatus,
 } from "./types/chat";
 export { KB_MUTATING_TOOLS } from "./types/chat";
@@ -802,11 +803,32 @@ export async function listRooms(kind: "group" = "group") {
   return apiFetch<{ rooms: RoomSummary[] }>(`/api/rooms?${params.toString()}`);
 }
 
-export async function createRoom(body: { title: string; role_ids: string[] }) {
+export async function createRoom(body: {
+  title: string;
+  role_ids: string[];
+  avatar?: string | null;
+}) {
   return apiFetch<RoomSummary>("/api/rooms", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
+  });
+}
+
+export async function updateRoom(
+  id: string,
+  body: { title?: string; role_ids?: string[]; avatar?: string | null },
+) {
+  return apiFetch<RoomSummary>(`/api/rooms/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export async function deleteRoom(id: string) {
+  return apiFetch<{ ok: boolean }>(`/api/rooms/${encodeURIComponent(id)}`, {
+    method: "DELETE",
   });
 }
 

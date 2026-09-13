@@ -69,6 +69,7 @@ export function useChatConversation({
   const [olderMessageCount, setOlderMessageCount] = useState(0);
   const [summarized, setSummarized] = useState(false);
   const [summaryPath, setSummaryPath] = useState<string | null>(null);
+  const [respondingRoleId, setRespondingRoleId] = useState<string | null>(null);
   const pendingJumpRef = useRef<JumpTarget | null>(null);
   const onActiveTurnRef = useRef(onActiveTurn);
   const onJumpHandledRef = useRef(onJumpHandled);
@@ -103,6 +104,7 @@ export function useChatConversation({
       setSummarized(false);
       setSummaryPath(null);
       setOlderMessageCount(0);
+      setRespondingRoleId(null);
       return;
     }
     // Only skip reload for the conversation we just created / own optimistically.
@@ -163,6 +165,7 @@ export function useChatConversation({
           setSummarized(!!conv.summarized);
           setSummaryPath(conv.summary_path ?? null);
           setOlderMessageCount(conv.older_message_count ?? 0);
+          setRespondingRoleId(conv.active_turn?.responding_role_id ?? null);
           if (conv.active_turn?.status === "running") {
             onActiveTurnRef.current?.(
               loadedFor,
@@ -264,6 +267,7 @@ export function useChatConversation({
     setSummarized,
     summaryPath,
     setSummaryPath,
+    respondingRoleId,
   };
 }
 

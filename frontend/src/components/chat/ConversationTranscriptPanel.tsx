@@ -1,5 +1,5 @@
 import { type MutableRefObject, type RefObject } from "react";
-import type { ChatMessage, IngestResult, SourceRef } from "../../api";
+import type { ChatMessage, IngestResult, RoleSummary, SourceRef } from "../../api";
 import type { MemoryEventNotice } from "../../hooks/chat/useConversationMemoryEvents";
 import type { TimelineSegmentView } from "../../hooks/chat/useRoleTimeline";
 import { ChatMessageList } from "./ChatMessageList";
@@ -38,8 +38,11 @@ type Props = {
   outlineLayout?: TranscriptOutlineLayout;
   memoryNotice?: MemoryEventNotice | null;
   onDismissMemoryNotice?: () => void;
-  roles?: { id: string; name: string }[];
+  roles?: RoleSummary[];
   onRoomInterjectSent?: () => void;
+  onOpenGroup?: (roomId: string) => void;
+  roomMode?: "role" | "group";
+  respondingRoleId?: string | null;
 };
 
 /** 会话消息区：列表 + 可选记忆提示。 */
@@ -70,6 +73,9 @@ export function ConversationTranscriptPanel({
   onDismissMemoryNotice,
   roles,
   onRoomInterjectSent,
+  onOpenGroup,
+  roomMode,
+  respondingRoleId,
 }: Props) {
   return (
     <>
@@ -111,6 +117,9 @@ export function ConversationTranscriptPanel({
         outlineLayout={outlineLayout}
         roles={roles}
         onRoomInterjectSent={onRoomInterjectSent}
+        onOpenGroup={onOpenGroup}
+        roomMode={roomMode}
+        respondingRoleId={respondingRoleId}
       />
     </>
   );

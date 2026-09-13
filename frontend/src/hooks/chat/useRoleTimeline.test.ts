@@ -657,4 +657,118 @@ describe("useRoleTimeline", () => {
     expect(api.getConversationMessages).not.toHaveBeenCalled();
     expect(vi.mocked(api.getRoleTimeline).mock.calls.length).toBe(timelineCalls);
   });
+
+  it("keeps a group_card with no messages", async () => {
+    vi.mocked(api.getRoleTimeline)
+      .mockResolvedValueOnce({
+        role_id: "r1",
+        tip_conversation_id: "tip",
+        continuity_idle_hours: 6,
+        has_more: true,
+        segments: [
+          {
+            id: "tip",
+            title: "新对话",
+            created_at: "2026-01-02T00:00:00Z",
+            updated_at: "2026-01-02T00:00:00Z",
+            message_count: 0,
+            role_id: "r1",
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        role_id: "r1",
+        tip_conversation_id: "tip",
+        continuity_idle_hours: 6,
+        has_more: false,
+        segments: [
+          {
+            id: "g1",
+            title: "登录页协作",
+            created_at: "2026-01-01T00:00:00Z",
+            updated_at: "2026-01-01T00:00:00Z",
+            message_count: 1,
+            role_id: "r1",
+            kind: "group_card",
+            excerpt: "登录页已接上",
+            card_status: "done",
+            messages: [],
+          },
+        ],
+      });
+
+    const { result } = renderHook(() =>
+      useRoleTimeline({
+        roleId: "r1",
+        tipConversationId: "tip",
+        messageLimit: 8,
+      }),
+    );
+    await waitFor(() => expect(result.current.hasMore).toBe(true));
+    await act(async () => {
+      await result.current.loadOlder();
+    });
+    expect(result.current.historicalSegments).toEqual([
+      expect.objectContaining({
+        conversationId: "g1",
+        kind: "group_card",
+        excerpt: "登录页已接上",
+        messages: [],
+      }),
+    ]);
+  });
+
+  it("revealAround does not insert a full group transcript", async () => {
+    vi.mocked(api.getRoleTimeline).mockResolvedValue({
+      role_id: "r1",
+      tip_conversation_id: "tip",
+      continuity_idle_hours: 6,
+      has_more: false,
+      segments: [
+        {
+          id: "tip",
+          title: "新对话",
+          created_at: "2026-01-02T00:00:00Z",
+          updated_at: "2026-01-02T00:00:00Z",
+          message_count: 0,
+          role_id: "r1",
+        },
+      ],
+    });
+    vi.mocked(api.getConversation).mockResolvedValue({
+      id: "g1",
+      title: "登录页协作",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+      message_count: 8,
+      role_id: "_room",
+      kind: "group",
+      participant_role_ids: ["r1", "game"],
+      summarized: false,
+      summary_path: null,
+      messages: [
+        {
+          id: "hit",
+          role: "assistant",
+          text: "群全文不该出现在角色时间线",
+          ts: "2026-01-01T00:00:00Z",
+        },
+      ],
+    });
+
+    const { result } = renderHook(() =>
+      useRoleTimeline({
+        roleId: "r1",
+        tipConversationId: "tip",
+        messageLimit: 8,
+      }),
+    );
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    await act(async () => {
+      await expect(result.current.revealAround("g1", "hit")).resolves.toBe(
+        false,
+      );
+    });
+    expect(result.current.historicalSegments).toEqual([]);
+  });
 });

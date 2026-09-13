@@ -196,6 +196,10 @@ def test_select_tools_hides_send_without_messaging():
     assert "send_message" not in names
     assert "list_rooms" not in names
     assert "create_room" not in names
+    assert "list_groups" not in names
+    assert "create_group" not in names
+    assert "update_group" not in names
+    assert "delete_group" not in names
     assert "list_roles" in names
     names2 = {
         d["function"]["name"]
@@ -205,6 +209,10 @@ def test_select_tools_hides_send_without_messaging():
     assert "list_roles" in names2
     assert "list_rooms" in names2
     assert "create_room" in names2
+    assert "list_groups" in names2
+    assert "create_group" in names2
+    assert "update_group" in names2
+    assert "delete_group" in names2
 
 
 def test_format_peer_message_wraps():
@@ -591,4 +599,117 @@ def test_select_tools_api_mode_hides_messaging():
     assert "send_message" not in names
     assert "list_rooms" not in names
     assert "create_room" not in names
+    assert "list_groups" not in names
+    assert "create_group" not in names
     assert "list_roles" in names
+
+
+def test_group_crud_avatar_and_members(tmp_path):
+    store = _conv(tmp_path)
+    roles = _roles(tmp_path)
+    other = roles.create(name="游戏开发助手")
+    third = roles.create(name="研究员")
+    delivery = RoomDelivery(store, roles)
+    room = delivery.create_group(
+        title="登录页",
+        role_ids=[DEFAULT_ROLE_ID, other["id"]],
+        avatar="媒体/group.png",
+    )
+    assert room["avatar"] == "媒体/group.png"
+    assert room["title"] == "登录页"
+    assert {p["id"] for p in room["participants"]} == {
+        DEFAULT_ROLE_ID,
+        other["id"],
+    }
+
+    updated = delivery.update_group(
+        room["id"],
+        title="登录页协作",
+        role_ids=[DEFAULT_ROLE_ID, other["id"], third["id"]],
+    )
+    assert updated["title"] == "登录页协作"
+    assert set(updated["participant_role_ids"]) == {
+        DEFAULT_ROLE_ID,
+        other["id"],
+        third["id"],
+    }
+
+    delivery.delete_group(room["id"])
+    try:
+        store.get(room["id"])
+        raise AssertionError("group should be gone")
+    except KeyError:
+        pass
+
+
+def test_list_timeline_group_is_card_not_transcript(tmp_path):
+    store = _conv(tmp_path)
+    roles = _roles(tmp_path)
+    other = roles.create(name="游戏开发助手")
+    owner = store.create()
+    store.append_exchange(owner, "建个群", {"role": "assistant", "text": "好"})
+    group = store.rooms.create_group(
+        title="三人组", role_ids=[DEFAULT_ROLE_ID, other["id"]]
+    )
+    store.append_room_inbound(
+        group,
+        text="@游戏开发助手 改登录页",
+        speaker_kind="user",
+        speaker_id="owner",
+        speaker_name="主人",
+        hop=0,
+    )
+    store.append_exchange(
+        group,
+        "占位",
+        {"role": "assistant", "text": "登录页已接上真实接口"},
+    )
+    # append_exchange 的 assistant speaker 可能是占位；写成该角色应声
+    with store._lock:
+        store.conn.execute(
+            """
+            UPDATE messages SET speaker_kind = 'role', speaker_id = ?
+            WHERE conversation_id = ? AND role = 'assistant'
+            """,
+            (other["id"], group),
+        )
+        store.conn.commit()
+
+    segs_a, _ = store.list_timeline(DEFAULT_ROLE_ID, tip_id=owner)
+    assert not any(s["id"] == group and s.get("kind") == "group" for s in segs_a)
+    assert not any(s.get("kind") == "group_card" for s in segs_a)
+
+    segs_b, _ = store.list_timeline(other["id"])
+    cards = [s for s in segs_b if s.get("kind") == "group_card"]
+    assert len(cards) == 1
+    assert cards[0]["room_id"] == group
+    assert "登录页已接上" in (cards[0].get("excerpt") or "")
+    assert cards[0].get("messages") == []
+
+
+def test_group_tools_list_update(tmp_path):
+    from app.engine.agent.tool_impl.role_tools import RoleTools
+
+    store = _conv(tmp_path)
+    roles = _roles(tmp_path)
+    other = roles.create(name="游戏开发助手")
+    delivery = RoomDelivery(store, roles)
+    tools = RoleTools(roles, conversations=store, delivery=delivery)
+    owner = store.create()
+    created = tools.create_group(
+        {"title": "协作群", "role_names": ["游戏开发助手"]},
+        conversation_id=owner,
+    )
+    assert created.get("error") is None
+    gid = created["room_id"]
+    listed = tools.list_groups({}, conversation_id=owner)
+    assert any(g["id"] == gid for g in listed["groups"])
+    got = tools.list_groups({"group_id": gid}, conversation_id=owner)
+    assert got["group"]["id"] == gid
+    updated = tools.update_group(
+        {"group_id": gid, "title": "改名群"},
+        conversation_id=owner,
+    )
+    assert updated["group"]["title"] == "改名群"
+    deleted = tools.delete_group({"group_id": gid}, conversation_id=owner)
+    assert deleted.get("error") is None

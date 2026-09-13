@@ -1,25 +1,48 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import type { RoleSummary } from "../../api";
+import type { RoomSummary } from "../../types/chat";
+import { avatarStorageRef } from "../../utils/kbImageUrls";
 
 type Props = {
   open: boolean;
+  room: RoomSummary | null;
   roles: RoleSummary[];
   onClose: () => void;
-  onConfirm: (title: string, roleIds: string[], avatar: string) => void;
+  onSave: (patch: {
+    title: string;
+    avatar: string | null;
+    role_ids: string[];
+  }) => Promise<void> | void;
+  onDelete: () => Promise<void> | void;
 };
 
-export function CreateGroupModal({ open, roles, onClose, onConfirm }: Props) {
+export function GroupSettingsModal({
+  open,
+  room,
+  roles,
+  onClose,
+  onSave,
+  onDelete,
+}: Props) {
   const [title, setTitle] = useState("");
   const [avatar, setAvatar] = useState("");
   const [picked, setPicked] = useState<string[]>([]);
+  const [saving, setSaving] = useState(false);
 
   const selectable = useMemo(
     () => roles.filter((r) => !r.is_default || roles.length <= 8),
     [roles],
   );
 
-  if (!open) return null;
+  useEffect(() => {
+    if (!open || !room) return;
+    setTitle(room.title || "");
+    setAvatar(room.avatar || "");
+    setPicked(room.participant_role_ids || []);
+  }, [open, room]);
+
+  if (!open || !room) return null;
 
   function toggle(id: string) {
     setPicked((prev) =>
@@ -27,39 +50,55 @@ export function CreateGroupModal({ open, roles, onClose, onConfirm }: Props) {
     );
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const name = title.trim() || "群聊";
     if (picked.length < 2) return;
-    onConfirm(name, picked, avatar.trim());
-    setTitle("");
-    setAvatar("");
-    setPicked([]);
+    setSaving(true);
+    try {
+      await onSave({
+        title: title.trim() || "群聊",
+        avatar: avatarStorageRef(avatar),
+        role_ids: picked,
+      });
+      onClose();
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "保存失败");
+    } finally {
+      setSaving(false);
+    }
   }
 
-  function handleCancel() {
-    onClose();
-    setTitle("");
-    setAvatar("");
-    setPicked([]);
+  async function handleDelete() {
+    if (!window.confirm(`确定删除群「${room.title || "群聊"}」？此操作不可撤销。`)) {
+      return;
+    }
+    setSaving(true);
+    try {
+      await onDelete();
+      onClose();
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "删除失败");
+    } finally {
+      setSaving(false);
+    }
   }
 
   return createPortal(
-    <div className="modal-backdrop" role="presentation" onClick={handleCancel}>
+    <div className="modal-backdrop" role="presentation" onClick={onClose}>
       <form
         className="modal-panel role-settings-modal"
         role="dialog"
         aria-modal="true"
-        aria-labelledby="create-group-title"
+        aria-labelledby="group-settings-title"
         onClick={(e) => e.stopPropagation()}
-        onSubmit={handleSubmit}
+        onSubmit={(e) => void handleSubmit(e)}
       >
         <div className="role-settings-head">
-          <h3 id="create-group-title">创建群聊</h3>
+          <h3 id="group-settings-title">群设置</h3>
           <button
             type="button"
             className="role-settings-close"
-            onClick={handleCancel}
+            onClick={onClose}
             aria-label="关闭"
           >
             ×
@@ -72,8 +111,6 @@ export function CreateGroupModal({ open, roles, onClose, onConfirm }: Props) {
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="例如：登录页协作"
-              autoFocus
             />
           </label>
           <label className="settings-field">
@@ -86,7 +123,7 @@ export function CreateGroupModal({ open, roles, onClose, onConfirm }: Props) {
             />
           </label>
           <div className="settings-field">
-            <span>圈选角色（至少两人）</span>
+            <span>成员（至少两人）</span>
             <div className="create-group-roles">
               {selectable.map((role) => (
                 <label key={role.id} className="create-group-role">
@@ -102,15 +139,23 @@ export function CreateGroupModal({ open, roles, onClose, onConfirm }: Props) {
           </div>
         </div>
         <div className="role-settings-foot">
-          <button type="button" onClick={handleCancel}>
+          <button
+            type="button"
+            className="role-list-context-menu--danger"
+            onClick={() => void handleDelete()}
+            disabled={saving}
+          >
+            删除
+          </button>
+          <button type="button" onClick={onClose}>
             取消
           </button>
           <button
             type="submit"
             className="btn-primary"
-            disabled={picked.length < 2}
+            disabled={saving || picked.length < 2}
           >
-            创建
+            保存
           </button>
         </div>
       </form>

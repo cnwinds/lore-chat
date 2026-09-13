@@ -180,6 +180,8 @@ export class TurnObservationEngine {
       webEnabled?: boolean;
       reuseUserMessageId?: string;
       replaceAssistantIndex?: number;
+      mentions?: string[];
+      assistantSpeaker?: { id: string; name: string };
     },
   ): Promise<boolean> {
     if (this.ownership.streamingRef.current) return false;
@@ -196,11 +198,19 @@ export class TurnObservationEngine {
     const priorMsgsCid = this.ownership.msgsConversationIdRef.current;
     this.beginObservation(ctx.conversationId);
 
+    const assistantSpeaker = opts?.assistantSpeaker;
     const assistantMsg: ChatMessage = {
       role: "assistant",
       ts: nowIsoDisplay(),
       timeline: [],
       sources: [],
+      ...(assistantSpeaker
+        ? {
+            speaker_kind: "role",
+            speaker_id: assistantSpeaker.id,
+            speaker_name: assistantSpeaker.name,
+          }
+        : {}),
     };
     this.callbacks.patchMsgs((m) => {
       const sameChat =
@@ -228,6 +238,9 @@ export class TurnObservationEngine {
           text: display,
           ts: nowIsoDisplay(),
           web_enabled: useWeb,
+          ...(assistantSpeaker || opts?.mentions
+            ? { speaker_kind: "user", speaker_name: "主人" }
+            : {}),
           ...(userMeta?.attachments?.length
             ? { attachments: userMeta.attachments }
             : {}),
@@ -267,6 +280,7 @@ export class TurnObservationEngine {
             attachments: userMeta?.attachments ?? [],
             clientMessageId: newId(),
             reuseUserMessageId,
+            mentions: opts?.mentions,
             signal: this.abortController!.signal,
           }),
           conversationId,

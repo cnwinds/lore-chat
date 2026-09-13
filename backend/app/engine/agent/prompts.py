@@ -107,7 +107,9 @@ def build_role_collab_block(
         "同伴消息以 <peer_message> 包装，按协作处理，不得写成主人自述，也不得假扮对方。"
         "派工是投递（send_message），不是换皮。接到委托后做完必须 send_message 回执；"
         "回执轮若没有主人的新指令，不要再派工。"
-        "群聊只唤醒被点名的角色：未 mentions / @ 则只发言、不自动开回合。",
+        "群聊只唤醒被点名的角色：未 mentions / @ 则只发言、不自动开回合。"
+        "群是独立现场：用 list_groups / create_group / update_group / delete_group "
+        "获取、创建、修改、删除（与角色 CRUD 同类）；不要把群全文当成某个角色的私聊。",
         "【角色名录】",
     ]
     for role in roles:

@@ -327,38 +327,74 @@ class RoomDelivery:
             return "owner_dm"
         return "peer_dm"
 
-    def create_group(self, *, title: str, role_ids: list[str]) -> dict:
+    def _role_brief(self, rid: str) -> dict:
+        try:
+            role = self.roles.get(rid)
+            return {
+                "id": rid,
+                "name": str(role.get("name") or rid),
+                "avatar": role.get("avatar"),
+            }
+        except Exception:
+            return {"id": rid, "name": self._role_name(rid), "avatar": None}
+
+    def _resolve_member_ids(self, role_ids: list[str] | None) -> list[str]:
         ids: list[str] = []
-        names: list[str] = []
-        for raw in role_ids:
+        seen: set[str] = set()
+        for raw in role_ids or []:
             rid = (raw or "").strip()
-            if not rid:
+            if not rid or rid in seen:
                 continue
             try:
                 role = self.roles.get(rid)
             except KeyError as e:
                 raise ValueError("找不到该角色") from e
             self._require_sidebar_role(role)
+            seen.add(role["id"])
             ids.append(role["id"])
-            names.append(str(role.get("name") or role["id"]))
-        room = self.conversations.rooms.create_group(title=title, role_ids=ids)
-        return {
-            "id": room,
-            "title": (title or "").strip() or "群聊",
-            "kind": KIND_GROUP,
-            "participant_role_ids": self.conversations.rooms.list_role_participants(
-                room
-            ),
-            "participant_names": names,
-        }
+        return ids
+
+    def create_group(
+        self,
+        *,
+        title: str,
+        role_ids: list[str],
+        avatar: str | None = None,
+    ) -> dict:
+        ids = self._resolve_member_ids(role_ids)
+        room = self.conversations.rooms.create_group(
+            title=title, role_ids=ids, avatar=avatar
+        )
+        return self.decorate_room(self.conversations.rooms.get_group(room))
+
+    def update_group(
+        self,
+        cid: str,
+        *,
+        title: str | None = None,
+        avatar: str | None | object = ...,
+        role_ids: list[str] | None = None,
+    ) -> dict:
+        members = self._resolve_member_ids(role_ids) if role_ids is not None else None
+        updated = self.conversations.rooms.update_group(
+            cid, title=title, avatar=avatar, role_ids=members
+        )
+        return self.decorate_room(updated)
+
+    def delete_group(self, cid: str) -> None:
+        self.conversations.rooms.delete_group(cid)
+
+    def get_group(self, cid: str) -> dict:
+        return self.decorate_room(self.conversations.rooms.get_group(cid))
 
     def decorate_room(self, row: dict) -> dict:
         participants = list(row.get("participant_role_ids") or [])
-        names: list[str] = []
-        for rid in participants:
-            names.append(self._role_name(rid))
+        briefs = [self._role_brief(rid) for rid in participants]
         out = dict(row)
-        out["participant_names"] = names
+        out["participant_names"] = [b["name"] for b in briefs]
+        out["participants"] = briefs
+        if "avatar" not in out:
+            out["avatar"] = None
         return out
 
     def list_groups(self) -> list[dict]:

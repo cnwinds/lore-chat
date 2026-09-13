@@ -14,8 +14,8 @@
 2. **说话人 ≠ LLM 线角色。** `messages.speaker_kind/id` 是事实；`messages.role` 仍服务现有 transcript。禁止再扩「假用户」而不记 speaker。
 3. **Turn = 一条刺激 → 一个应者。** `turns.responding_role_id`；房间锁一人在说，角色锁沿用现有 `role_has_running_turn` + 每角色沙箱。忙则入站排队，不打断、不借槽。
 4. **委托自动开干。** 高风险沙箱与 `ask_user` 仍只问主人。hop 上限 4，回执轮不无指令再派工。
-5. **协作房间上双方时间线。** tip / 新话题 / 连续窗口只看 `owner_dm`。`peer_dm`/`group` 经参与者并入时间线，不劫持 tip。
-6. **群聊左栏独立入口**（P2 做 UI）。群不属于某一个角色。P0 只把 `kind=group` 与 `@` 唤醒策略留在 Delivery 里。
+5. **协作房间上双方时间线。** tip / 新话题 / 连续窗口只看 `owner_dm`。`peer_dm` 经参与者并入时间线，不劫持 tip。群的投影见 [ADR 2026-09-13](2026-09-13-group-as-stage.md)：角色时间线只出参与卡片，不灌群全文。
+6. **群聊左栏独立入口。** 群不属于某一个角色。群是独立现场（头像、说话人气泡、CRUD 工具），见 ADR 2026-09-13。
 7. **Agent 工具是派工主接口。** `list_roles` / `send_message`。HTTP 只做 shell。单角色不暴露 `send_message`。
 8. **记忆。** 抽取不得把 `speaker_kind!=user` 写成主人行。纯同伴房间不打 dirty。
 

@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- 群聊改成独立现场：群有头像；中栏按说话人画气泡；角色时间线只留自己的参与卡片，不再灌完整群聊。Agent 可用 `list_groups` / `create_group` / `update_group` / `delete_group` 管理群（[ADR 2026-09-13](docs/adr/2026-09-13-group-as-stage.md)）
+
 ### Added
 
 - 预构建启动器支持 `./lorechat.sh autoupdate on|off|status`：用 Watchtower 跟随 GHCR `latest` 自动拉取并重启（适合 master 推送后自更新）
