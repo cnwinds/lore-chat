@@ -1,4 +1,4 @@
-import { type RefObject } from "react";
+import { type ReactNode, type RefObject } from "react";
 import type { DocTrayItem, PendingFile } from "../../types/composer";
 import type { SendQueueItem } from "../../utils/sendQueue";
 import { ComposerSendQueue } from "../ComposerSendQueue";
@@ -33,7 +33,12 @@ type Props = {
   onInputChange: (value: string) => void;
   onInputKeyDown: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
   onInputPaste: (e: React.ClipboardEvent<HTMLTextAreaElement>) => void;
+  onCaretSync?: () => void;
   textareaRef: RefObject<HTMLTextAreaElement | null>;
+  mentionSlot?: ReactNode;
+  mentionOpen?: boolean;
+  mentionListId?: string;
+  mentionActiveId?: string;
   webEnabled: boolean;
   onToggleWeb: () => void;
   streaming: boolean;
@@ -79,7 +84,12 @@ export function ConversationComposerPanel({
   onInputChange,
   onInputKeyDown,
   onInputPaste,
+  onCaretSync,
   textareaRef,
+  mentionSlot = null,
+  mentionOpen = false,
+  mentionListId,
+  mentionActiveId,
   webEnabled,
   onToggleWeb,
   streaming,
@@ -115,52 +125,62 @@ export function ConversationComposerPanel({
         onSetAllMerge={onSetAllQueueMerge}
         onClear={onClearQueue}
       />
-      <div className="composer-card">
-        <ComposerTray
-          items={docTrayItems}
-          primaryPath={primaryDocPath}
-          pendingFiles={pendingFiles}
-          mediaCapabilityHints={composerMediaHints}
-          onSetPrimary={onTraySetPrimary}
-          onRemoveDoc={onTrayRemove}
-          onRemoveFile={onRemovePendingFile}
-        />
-        <div className="composer-body">
-          <div className="composer-input">
-            <textarea
-              ref={textareaRef}
-              value={input}
-              onChange={(e) => onInputChange(e.target.value)}
-              onKeyDown={onInputKeyDown}
-              onPaste={onInputPaste}
-              rows={1}
-              placeholder={streaming ? "输入消息加入队列…" : "输入消息…"}
-              title="Enter 发送，Shift+Enter 换行；可粘贴本地文件或图片到托盘"
-              style={{
-                minHeight: INPUT_MIN_HEIGHT,
-                maxHeight: INPUT_MAX_HEIGHT,
-              }}
+      <div className="composer-card-stack">
+        {mentionSlot}
+        <div className="composer-card">
+          <ComposerTray
+            items={docTrayItems}
+            primaryPath={primaryDocPath}
+            pendingFiles={pendingFiles}
+            mediaCapabilityHints={composerMediaHints}
+            onSetPrimary={onTraySetPrimary}
+            onRemoveDoc={onTrayRemove}
+            onRemoveFile={onRemovePendingFile}
+          />
+          <div className="composer-body">
+            <div className="composer-input">
+              <textarea
+                ref={textareaRef}
+                value={input}
+                onChange={(e) => onInputChange(e.target.value)}
+                onKeyDown={onInputKeyDown}
+                onPaste={onInputPaste}
+                onSelect={onCaretSync}
+                onClick={onCaretSync}
+                onKeyUp={onCaretSync}
+                rows={1}
+                placeholder={streaming ? "输入消息加入队列…" : "输入消息…"}
+                title="Enter 发送，Shift+Enter 换行；可粘贴本地文件或图片到托盘"
+                aria-expanded={mentionOpen}
+                aria-controls={mentionOpen ? mentionListId : undefined}
+                aria-activedescendant={mentionOpen ? mentionActiveId : undefined}
+                aria-autocomplete="list"
+                style={{
+                  minHeight: INPUT_MIN_HEIGHT,
+                  maxHeight: INPUT_MAX_HEIGHT,
+                }}
+              />
+            </div>
+            <ComposerToolbar
+              webEnabled={webEnabled}
+              onToggleWeb={onToggleWeb}
+              streaming={streaming}
+              canSend={canSend}
+              archiving={archiving}
+              conversationId={conversationId}
+              summarized={summarized}
+              summaryPath={summaryPath}
+              canArchive={canArchive}
+              onArchive={onArchive}
+              onOpenSummary={onOpenSummary}
+              onAttachClick={onAttachClick}
+              onSend={onSend}
+              onStop={onStop}
+              fileInputRef={fileInputRef}
+              onFileChange={onFileChange}
+              onShare={onShare}
             />
           </div>
-          <ComposerToolbar
-            webEnabled={webEnabled}
-            onToggleWeb={onToggleWeb}
-            streaming={streaming}
-            canSend={canSend}
-            archiving={archiving}
-            conversationId={conversationId}
-            summarized={summarized}
-            summaryPath={summaryPath}
-            canArchive={canArchive}
-            onArchive={onArchive}
-            onOpenSummary={onOpenSummary}
-            onAttachClick={onAttachClick}
-            onSend={onSend}
-            onStop={onStop}
-            fileInputRef={fileInputRef}
-            onFileChange={onFileChange}
-            onShare={onShare}
-          />
         </div>
       </div>
     </div>

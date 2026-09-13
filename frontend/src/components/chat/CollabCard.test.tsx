@@ -39,6 +39,8 @@ describe("CollabCard", () => {
       />,
     );
     expect(screen.getByText(/协作 · 游戏开发助手/)).toBeTruthy();
+    expect(screen.queryByText(/conversation:\/\//)).toBeNull();
+    expect(screen.getByText(/已发送/)).toBeTruthy();
     const jump = screen.getByRole("button", { name: "查看协作" });
     jump.click();
     expect(onOpen).toHaveBeenCalledWith({ conversationId: "aaaaaaaaaaaa" });

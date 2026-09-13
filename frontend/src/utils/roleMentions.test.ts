@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  filterMentionRoles,
   mentionQueryAtCaret,
   parseMentionTokens,
   resolveMentionRoleIds,
@@ -28,5 +29,13 @@ describe("roleMentions", () => {
   it("detects an in-progress @ query at the caret", () => {
     expect(mentionQueryAtCaret("你好 @游", 5)).toEqual({ start: 3, query: "游" });
     expect(mentionQueryAtCaret("你好 游戏", 5)).toBeNull();
+  });
+
+  it("filters mention candidates by name, id, and member roster", () => {
+    expect(filterMentionRoles(roles, "")).toEqual(roles);
+    expect(filterMentionRoles(roles, "游戏")).toEqual([roles[1]]);
+    expect(filterMentionRoles(roles, "DEFAULT")).toEqual([roles[0]]);
+    expect(filterMentionRoles(roles, "", ["game"])).toEqual([roles[1]]);
+    expect(filterMentionRoles(roles, "通", ["game"])).toEqual([]);
   });
 });

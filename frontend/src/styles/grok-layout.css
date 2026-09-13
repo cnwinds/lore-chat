@@ -494,9 +494,12 @@
 .timeline-collab-card {
   margin: 8px 0;
   padding: 10px 12px;
+  max-width: 100%;
+  min-width: 0;
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--bg-surface);
+  overflow: hidden;
 }
 
 .timeline-collab-card--live {
@@ -511,8 +514,10 @@
 }
 
 .timeline-collab-title {
+  min-width: 0;
   font-size: var(--font-ui-sm);
   font-weight: 600;
+  overflow-wrap: anywhere;
 }
 
 .timeline-collab-state {
@@ -526,6 +531,8 @@
   font-size: var(--font-ui-sm);
   color: var(--text-secondary);
   line-height: 1.45;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .timeline-collab-actions {
@@ -580,27 +587,83 @@
   font-size: var(--font-ui-sm);
 }
 
+.composer-card-stack {
+  position: relative;
+}
+
 .mention-picker {
-  margin: 0 16px 6px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  position: absolute;
+  left: 10px;
+  right: auto;
+  bottom: calc(100% + 6px);
+  z-index: 24;
+  display: flex;
+  flex-direction: column;
+  width: min(280px, calc(100% - 20px));
+  max-height: min(260px, 42vh);
+  padding: 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
   background: var(--bg-surface);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--text) 5%, transparent),
+    0 12px 32px color-mix(in srgb, #000 16%, transparent);
   overflow: hidden;
 }
 
+.mention-picker-list {
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.mention-picker-empty {
+  padding: 14px 12px;
+  text-align: center;
+  font-size: var(--font-ui-sm);
+  color: var(--text-muted);
+}
+
 .mention-picker-item {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 10px;
   width: 100%;
-  text-align: left;
-  padding: 8px 12px;
+  padding: 6px 8px;
   border: none;
+  border-radius: 10px;
   background: transparent;
   color: var(--text);
-  font-size: var(--font-ui-sm);
+  text-align: left;
+  cursor: pointer;
 }
 
 .mention-picker-item:hover {
-  background: var(--bg-hover, color-mix(in srgb, var(--text) 6%, transparent));
+  background: var(--bg-hover);
+}
+
+.mention-picker-item.is-active {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent-border);
+}
+
+.mention-picker-item-name {
+  min-width: 0;
+  flex: 1;
+  font-size: var(--font-ui-sm);
+  font-weight: 600;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mention-picker-item-name mark {
+  background: transparent;
+  color: var(--accent);
+  font-weight: 700;
 }
 
 .role-list-loading,
