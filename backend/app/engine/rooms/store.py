@@ -493,6 +493,44 @@ class RoomStore:
                 "participant_role_ids": participants,
             }
 
+    def last_activity_for_ids(
+        self, ids: list[str], *, max_chars: int = 80
+    ) -> dict[str, dict[str, str]]:
+        """每个群最近一条消息的时间与单行预览，供左栏与角色混排。"""
+        cleaned = [str(i).strip() for i in ids if str(i or "").strip()]
+        if not cleaned:
+            return {}
+        placeholders = ",".join("?" * len(cleaned))
+        with self._store._lock:
+            rows = self._store.conn.execute(
+                f"""
+                SELECT m.conversation_id, m.text, m.ts
+                FROM messages m
+                INNER JOIN (
+                    SELECT conversation_id, MAX(seq) AS max_seq
+                    FROM messages
+                    WHERE conversation_id IN ({placeholders})
+                    GROUP BY conversation_id
+                ) latest
+                  ON latest.conversation_id = m.conversation_id
+                 AND latest.max_seq = m.seq
+                """,
+                cleaned,
+            ).fetchall()
+        limit = max(16, min(int(max_chars or 80), 200))
+        out: dict[str, dict[str, str]] = {}
+        for row in rows:
+            cid = str(row["conversation_id"])
+            collapsed = " ".join((row["text"] or "").split())
+            if len(collapsed) > limit:
+                collapsed = collapsed[:limit].rstrip() + "…"
+            stamp = str(row["ts"] or "").strip()
+            out[cid] = {
+                "last_active_at": stamp,
+                "preview": collapsed,
+            }
+        return out
+
     def list_groups(self) -> list[dict]:
         store = self._store
         with store._lock:

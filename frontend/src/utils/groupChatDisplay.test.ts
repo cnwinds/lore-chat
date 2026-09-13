@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  defaultGroupTitle,
   isOwnerSpeaker,
   membersFromRoleIds,
   mentionCandidatesForRoom,
@@ -64,6 +65,31 @@ describe("groupChatDisplay", () => {
         participants: [],
       }).map((r) => r.id),
     ).toEqual(["a", "b", "c"]);
+  });
+
+  it("names a new group after the first members", () => {
+    expect(
+      defaultGroupTitle(
+        [
+          { id: "a", name: "通用助手大师" },
+          { id: "b", name: "游戏开发助手" },
+          { id: "c", name: "股票研究员" },
+          { id: "d", name: "闲人" },
+        ],
+        ["a", "b"],
+      ),
+    ).toBe("通用助手大师、游戏开发助手");
+    expect(
+      defaultGroupTitle(
+        [
+          { id: "a", name: "通用助手大师" },
+          { id: "b", name: "游戏开发助手" },
+          { id: "c", name: "股票研究员" },
+          { id: "d", name: "闲人" },
+        ],
+        ["a", "b", "c", "d"],
+      ),
+    ).toBe("通用助手大师、游戏开发助手、股票研究员 等");
   });
 
   it("strips conversation:// ids from collaboration previews", () => {

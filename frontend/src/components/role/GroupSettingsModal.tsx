@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import type { RoleSummary } from "../../api";
 import type { RoomSummary } from "../../types/chat";
 import { avatarStorageRef } from "../../utils/kbImageUrls";
+import { RoleMemberPicker } from "./RoleMemberPicker";
 
 type Props = {
   open: boolean;
@@ -29,11 +30,6 @@ export function GroupSettingsModal({
   const [avatar, setAvatar] = useState("");
   const [picked, setPicked] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
-
-  const selectable = useMemo(
-    () => roles.filter((r) => !r.is_default || roles.length <= 8),
-    [roles],
-  );
 
   useEffect(() => {
     if (!open || !room) return;
@@ -125,18 +121,11 @@ export function GroupSettingsModal({
           </label>
           <div className="settings-field">
             <span>成员（至少两人）</span>
-            <div className="create-group-roles">
-              {selectable.map((role) => (
-                <label key={role.id} className="create-group-role">
-                  <input
-                    type="checkbox"
-                    checked={picked.includes(role.id)}
-                    onChange={() => toggle(role.id)}
-                  />
-                  {role.name}
-                </label>
-              ))}
-            </div>
+            <RoleMemberPicker
+              roles={roles}
+              picked={picked}
+              onToggle={toggle}
+            />
           </div>
         </div>
         <div className="role-settings-foot">

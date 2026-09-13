@@ -237,6 +237,8 @@ export type RoomSummary = {
   participant_names?: string[];
   participants?: RoomParticipant[];
   peer_role_id?: string | null;
+  last_active_at?: string | null;
+  last_reply_preview?: string | null;
 };
 
 export type RoomStatus = {

@@ -41,7 +41,7 @@
 1. **左栏（固定）**
    - **上半部分**：角色列表（始终可见）
      - 本角色会话搜索（命中滚动定位）
-     - ＋新建角色
+     - ＋新建（角色或群聊）
      - 角色卡片列表（头像、名称、人设预览；右侧为最近会话活动：当天时刻 / 昨天 / 周几 / 日期）
      - 活跃角色高亮显示
    - **下半部分**：知识库树
@@ -148,7 +148,7 @@ HTTP `/api/roles*` 保留用于 UI shell（列表、ensure-active、可选右栏
 | 模块 | 改动 |
 |------|------|
 | [`AppShell.tsx`](../frontend/src/components/app/AppShell.tsx) | 三栏布局容器：左（角色列表 + KB）、中（Chat）、右（RoleConfigPanel） |
-| [`RoleList.tsx`](../frontend/src/components/role/RoleList.tsx) | 角色列表：始终可见；搜索图标打开工作区搜索面板；「＋」新建角色 |
+| [`RoleList.tsx`](../frontend/src/components/role/RoleList.tsx) | 对话列表：角色与群混排；搜索图标打开工作区搜索面板；「＋」新建角色或发起群聊 |
 | [`RoleConfigPanel.tsx`](../frontend/src/components/role/RoleConfigPanel.tsx) | 右侧角色配置面板 |
 | [`ChatMessageList.tsx`](../frontend/src/components/chat/ChatMessageList.tsx) | 多段时间线 + 段间分隔 |
 | [`useRoleTimeline.ts`](../frontend/src/hooks/chat/useRoleTimeline.ts) | 加载角色 timeline |

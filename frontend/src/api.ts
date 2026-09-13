@@ -860,6 +860,8 @@ export async function postRoomMessage(
   });
 }
 
+export type { RoleSummary, RoomSummary } from "./types/chat";
+
 /** 与 RoleSummary 同义，供角色栏组件使用 */
 export type Role = RoleSummary;
 
@@ -1061,7 +1063,7 @@ export async function listRoleScheduleRuns(roleId: string, scheduleId: string) {
 }
 
 export type ConversationSearchHit = {
-  kind?: "message" | "role" | "file";
+  kind?: "message" | "role" | "file" | "group";
   conversation_id: string;
   message_id: string | null;
   role_id: string;

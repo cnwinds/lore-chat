@@ -255,15 +255,20 @@ function AppMain() {
           activeRoleId: conversation.activeGroupId
             ? null
             : conversation.activeRoleId || role.activeRoleId,
+          activeGroupId: conversation.activeGroupId,
           onSelectRole: (id) => {
             role.setActiveRoleId(id);
             void conversation.sidebarProps.onSelectRole?.(id);
           },
+          onSelectGroup: (id, room) => conversation.selectGroup(id, room),
           onNewRole: () => {
             void conversation.sidebarProps.onAddRole?.();
             role.refreshRoles();
             refreshSidebar();
           },
+          onNewGroup: conversation.openCreateGroupModal,
+          onEditGroup: (room) => conversation.openGroupSettings(room),
+          onDeleteGroup: (room) => conversation.deleteGroup(room),
           onSearchHit: (hit) => {
             conversation.sidebarProps.onSearchHit?.(hit);
           },
@@ -278,16 +283,10 @@ function AppMain() {
             })();
           },
           busyRoleIds: conversation.sidebarProps.busyRoleIds,
-          refreshKey: role.roleRefreshKey + sidebarRefreshKey,
-        }}
-        groupListProps={{
-          activeGroupId: conversation.activeGroupId,
-          onSelectGroup: (id, room) => conversation.selectGroup(id, room),
-          onNewGroup: conversation.openCreateGroupModal,
-          onEditGroup: (room) => conversation.openGroupSettings(room),
-          onDeleteGroup: (room) => conversation.deleteGroup(room),
-          refreshKey: conversation.groupRefreshKey + sidebarRefreshKey,
-          visible: conversation.roles.length >= 2,
+          refreshKey:
+            role.roleRefreshKey +
+            sidebarRefreshKey +
+            conversation.groupRefreshKey,
         }}
         kbSidebarProps={{
           refreshKey: sidebarRefreshKey,
