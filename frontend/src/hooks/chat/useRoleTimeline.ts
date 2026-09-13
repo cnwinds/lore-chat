@@ -276,10 +276,17 @@ export function useRoleTimeline({
           radius: SEARCH_JUMP_RADIUS,
         });
         if (gen !== genRef.current || roleRef.current !== roleId) return false;
-        if (conv.role_id && conv.role_id !== roleId) return false;
+        const kind = conv.kind || "owner_dm";
+        const isRoom = kind === "peer_dm" || kind === "group";
+        const parts = conv.participant_role_ids || [];
+        if (isRoom) {
+          if (parts.length > 0 && !parts.includes(roleId)) return false;
+        } else if (conv.role_id && conv.role_id !== roleId) {
+          return false;
+        }
         const segment: TimelineSegmentView = {
           conversationId,
-          roleId: conv.role_id || roleId,
+          roleId,
           title: conv.title,
           createdAt: conv.created_at,
           messages: normalizeSegmentMessages(conv.messages, false),
@@ -287,6 +294,11 @@ export function useRoleTimeline({
           olderMessageCount: conv.older_message_count ?? 0,
           newerMessageCount: conv.newer_message_count ?? 0,
           jumped: true,
+          kind,
+          peerRoleId:
+            conv.peer_role_id && conv.peer_role_id !== roleId
+              ? conv.peer_role_id
+              : parts.find((r) => r && r !== roleId) || null,
         };
         setSegments([segment]);
         return segment.messages.some((m) => m.id === messageId);

@@ -1349,7 +1349,10 @@ class ConversationStore:
         cb = self._after_turn_finalized
         if cb and role_id:
             try:
-                cb(role_id)
+                try:
+                    cb(role_id, conversation_id=cid)
+                except TypeError:
+                    cb(role_id)
             except Exception:
                 from app.logging_config import get_logger
 

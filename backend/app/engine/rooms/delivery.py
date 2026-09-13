@@ -562,7 +562,13 @@ class RoomDelivery:
             store.conn.commit()
         return qid
 
-    def drain_role(self, role_id: str) -> int:
+    def drain_role(self, role_id: str, conversation_id: str | None = None) -> int:
+        n = self._drain_queued_for_role(role_id)
+        if conversation_id:
+            n += self._drain_queued_in_room(conversation_id)
+        return n
+
+    def _drain_queued_for_role(self, role_id: str) -> int:
         if self.conversations.role_has_running_turn(role_id):
             return 0
         store = self.conversations
@@ -614,6 +620,26 @@ class RoomDelivery:
                 )
                 store.conn.commit()
             return 0
+
+    def _drain_queued_in_room(self, room_id: str) -> int:
+        if self.conversations.room_has_running_turn(room_id):
+            return 0
+        store = self.conversations
+        with store._lock:
+            rows = store.conn.execute(
+                """
+                SELECT DISTINCT role_id FROM role_inbound_queue
+                WHERE room_id = ? AND status = 'queued'
+                ORDER BY created_at ASC
+                """,
+                (room_id,),
+            ).fetchall()
+        n = 0
+        for row in rows:
+            n += self._drain_queued_for_role(str(row["role_id"]))
+            if self.conversations.room_has_running_turn(room_id):
+                break
+        return n
 
     def drain_all(self, *, limit: int = 10) -> int:
         store = self.conversations

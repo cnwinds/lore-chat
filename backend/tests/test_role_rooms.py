@@ -541,6 +541,46 @@ def test_room_lock_queues_second_speaker(tmp_path):
     assert second["wake_status"] == "queued"
 
 
+def test_finalize_drains_other_role_queued_in_same_room(tmp_path):
+    store = _conv(tmp_path)
+    roles = _roles(tmp_path)
+    b = roles.create(name="游戏开发助手")["id"]
+    c = roles.create(name="研究员")["id"]
+    started = []
+
+    def starter(**kwargs):
+        started.append(kwargs)
+        return {"turn_id": f"t{len(started)}", "status": "running"}
+
+    delivery = RoomDelivery(store, roles)
+    delivery.bind_starter(starter)
+    store._after_turn_finalized = delivery.drain_role
+    group = delivery.create_group(title="三人组", role_ids=[DEFAULT_ROLE_ID, b, c])["id"]
+    first = delivery.send_from_role(
+        from_role_id=DEFAULT_ROLE_ID,
+        room_id=group,
+        mentions=["游戏开发助手"],
+        text="@游戏开发助手 先改登录页",
+    )
+    assert first["wake_status"] == "started"
+    turn = store.begin_turn(group, "占住", "busy-b", stimulus=started[0]["stimulus"])
+    second = delivery.send_from_role(
+        from_role_id=DEFAULT_ROLE_ID,
+        room_id=group,
+        mentions=["研究员"],
+        text="@研究员 写文档",
+    )
+    assert second["wake_status"] == "queued"
+    assert len(started) == 1
+    store.finalize_turn(
+        group,
+        turn_id=turn["turn_id"],
+        assistant={"role": "assistant", "text": "登录页好了"},
+    )
+    assert len(started) == 2
+    assert started[1]["stimulus"].responding_role_id == c
+
+
 def test_select_tools_api_mode_hides_messaging():
     names = {
         d["function"]["name"]
