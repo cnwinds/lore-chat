@@ -164,6 +164,14 @@ async def delete_persona(persona_id: str, request: Request):
     return {"ok": True}
 
 
+@router.get("/instances/{instance_id}/credential")
+async def instance_credential(instance_id: str, request: Request):
+    try:
+        return container(request).open_api.instance_credential(instance_id)
+    except KeyError as e:
+        raise HTTPException(404, "通道不存在") from e
+
+
 @router.get("/instances/{instance_id}/logs")
 async def instance_logs(
     instance_id: str,

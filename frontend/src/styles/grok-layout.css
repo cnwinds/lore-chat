@@ -3,15 +3,17 @@
    ======================================== */
 
 /* Three-pane shell layout
-   Tracks: left | chat | pinned-doc | role-config
-   Unused right tracks collapse to 0 so pinning a doc never wraps to an
+   Tracks: left | channel-panel | chat | pinned-doc | role-config
+   Unused tracks collapse to 0 so pinning a doc never wraps to an
    implicit row or overlaps the chat. */
 .app-shell--three-pane {
   --app-config-col: 300px;
   --app-doc-col: 0px;
+  --app-channel-col: 0px;
   display: grid;
   grid-template-columns:
     var(--app-left-width, 272px)
+    var(--app-channel-col)
     minmax(0, 1fr)
     var(--app-doc-col)
     var(--app-config-col);
@@ -21,6 +23,10 @@
   gap: 0;
   min-width: 0;
   transition: grid-template-columns 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.app-shell--three-pane.app-shell--channel-open {
+  --app-channel-col: min(420px, 42vw);
 }
 
 .app-shell--three-pane.app-shell--left-resizing,
@@ -97,8 +103,15 @@
   height: 8px;
 }
 
-.app-shell--three-pane .main-panel {
+.app-shell--three-pane .channel-panel {
   grid-column: 2;
+  grid-row: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.app-shell--three-pane .main-panel {
+  grid-column: 3;
   grid-row: 1;
   min-width: 0;
   min-height: 0;
@@ -106,7 +119,7 @@
 }
 
 .app-shell--three-pane .doc-panel {
-  grid-column: 3;
+  grid-column: 4;
   grid-row: 1;
   min-width: 0;
   min-height: 0;
@@ -114,8 +127,8 @@
 }
 
 .app-shell--three-pane.app-shell--doc-focus .doc-panel {
-  /* main-panel is display:none; occupy its track so the doc fills the center */
-  grid-column: 2 / 4;
+  /* main-panel is display:none; occupy chat+doc tracks so the doc fills the center */
+  grid-column: 3 / 5;
 }
 
 /* ========================================
@@ -1064,7 +1077,7 @@
    ======================================== */
 
 .role-config-panel {
-  grid-column: 4;
+  grid-column: 5;
   grid-row: 1;
   min-width: 0;
   min-height: 0;
@@ -1742,7 +1755,8 @@ select.role-config-input {
   flex-direction: column;
 }
 
-.app-shell-left--icons .sidebar-settings-btn {
+.app-shell-left--icons .sidebar-settings-btn,
+.app-shell-left--icons .sidebar-dock-btn + .sidebar-dock-btn {
   border-left: none;
   border-top: 1px solid var(--border);
 }
@@ -1774,6 +1788,7 @@ select.role-config-input {
   /* 桌面中栏是 grid-column:2。手机只剩 1 列时若不改回第 1 列，
      会多出一条 implicit 列：空会话时中栏按内容缩成窄条贴在右侧。 */
   .app-shell--mobile.app-shell--three-pane .app-shell-left,
+  .app-shell--mobile.app-shell--three-pane .channel-panel,
   .app-shell--mobile.app-shell--three-pane .main-panel,
   .app-shell--mobile.app-shell--three-pane .role-config-panel,
   .app-shell--mobile.app-shell--three-pane .doc-panel {
@@ -1805,5 +1820,31 @@ select.role-config-input {
 
   .app-shell--mobile .role-config-panel {
     display: none;
+  }
+
+  .app-shell--mobile.app-shell--channel-open {
+    --app-channel-col: 0px;
+  }
+
+  .app-shell--mobile .channel-panel:not([hidden]) {
+    position: fixed;
+    inset: 0;
+    z-index: 120;
+    display: flex;
+    flex-direction: row;
+    background: transparent;
+  }
+
+  .app-shell--mobile .channel-panel-mobile-backdrop {
+    display: block;
+    flex: 1;
+    border: none;
+    background: rgba(15, 23, 42, 0.28);
+  }
+
+  .app-shell--mobile .channel-panel-sheet {
+    width: min(400px, 92vw);
+    height: 100%;
+    box-shadow: var(--shadow-md);
   }
 }

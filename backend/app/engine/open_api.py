@@ -325,6 +325,55 @@ class OpenApiService:
             self.channel_runtime.sync_instance(instance_id)
         return self._enrich_instance(updated)
 
+    def instance_credential(self, instance_id: str) -> dict:
+        """主人 Cookie 会话取出可复制凭证。列表接口不带明文。"""
+        internal = self.channel_instances.get_internal(instance_id)
+        public = self._enrich_instance(self.channel_instances.get(instance_id))
+        type_id = str(internal.get("type_id") or SCRIPT_API_TYPE_ID)
+        secrets = dict(internal.get("secrets") or {})
+        config = dict(public.get("config") or {})
+        if type_id == SCRIPT_API_TYPE_ID:
+            token = str(secrets.get("key_plaintext") or "").strip()
+            prefix = str(config.get("key_prefix") or "").strip()
+            display = token[:18] + "…" if len(token) > 18 else (token or prefix)
+            return {
+                "kind": "token",
+                "token": token or None,
+                "prefix": prefix,
+                "display": display or "KEY",
+                "copy_text": token,
+                "can_copy_full": bool(token),
+            }
+        copy_parts: list[str] = []
+        for key in (
+            "app_id",
+            "corp_id",
+            "agent_id",
+            "app_key",
+            "robot_code",
+            "webhook_url",
+            "request_url",
+            "callback_url",
+        ):
+            value = str(config.get(key) or "").strip()
+            if value:
+                copy_parts.append(f"{key}: {value}")
+        for key, raw in secrets.items():
+            if key in {"key_hash", "key_plaintext"}:
+                continue
+            value = str(raw or "").strip()
+            if value:
+                copy_parts.append(f"{key}: {value}")
+        copy_text = "\n".join(copy_parts)
+        return {
+            "kind": "secrets",
+            "token": None,
+            "prefix": "",
+            "display": "凭证已保存",
+            "copy_text": copy_text,
+            "can_copy_full": bool(copy_text),
+        }
+
     def instance_logs(self, instance_id: str, *, limit: int = 50, offset: int = 0) -> dict:
         self.channel_instances.get(instance_id)
         if self.runtime_store is None:

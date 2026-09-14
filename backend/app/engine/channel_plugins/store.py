@@ -201,7 +201,11 @@ class ChannelInstanceStore:
             "persona_id": persona_id,
             "role_id": role_id,
             "config": {"key_prefix": raw[:12]},
-            "secrets": {"key_hash": hash_api_key(raw)},
+            "secrets": {
+                "key_hash": hash_api_key(raw),
+                # 主人侧随时复制；列表接口不回传。旧实例若无此字段则无法还原明文。
+                "key_plaintext": raw,
+            },
             "status": STATUS_ENABLED,
             "status_detail": None,
             "created_at": stamp,

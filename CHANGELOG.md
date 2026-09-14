@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- 聊天通道从设置弹窗挪到左栏底栏：点「聊天通道」在侧栏右侧打开浅色面板，聊天区保持可见；设置里不再有该页签。每张通道卡片常驻名称、类型、启用开关、可随时复制的 Key/凭证和角色选择；详情与共用角色默认收起，详情内用切页查看接入说明、会话、日志和吊销/删除
+
 ### Added
 
 - 聊天通道 P2：Slack Socket Mode、企业微信回调、钉钉 Stream；群/频道仅 @ 或引用才开回合，回复进 thread；群默认关沙箱直到发送者白名单；富媒体走现有附件；`ask_user` 在 IM 降级为纯文本；企微缺公网根可保存、启用则报错。微信公众号仅灰显（[product-channel-plugins.md](docs/product-channel-plugins.md)）
