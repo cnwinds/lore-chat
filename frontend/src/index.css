@@ -4097,6 +4097,105 @@ button.memory-fact-statement--jump:focus-visible {
   gap: 8px;
 }
 
+.openapi-card-identity {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.openapi-type-icon {
+  flex-shrink: 0;
+  display: inline-flex;
+  width: 22px;
+  height: 22px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg-muted));
+  color: var(--accent);
+}
+
+.openapi-status {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 999px;
+}
+
+.openapi-status--enabled {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg-muted));
+}
+
+.openapi-status--disabled {
+  color: var(--text-muted);
+  background: var(--bg-muted);
+}
+
+.openapi-status--error {
+  color: var(--danger, #c0392b);
+  background: color-mix(in srgb, var(--danger, #c0392b) 12%, var(--bg-muted));
+}
+
+.openapi-card-badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.openapi-type-name {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.openapi-type-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.openapi-type-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-surface);
+  cursor: pointer;
+  text-align: left;
+}
+
+.openapi-type-card:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
+}
+
+.openapi-type-card strong {
+  font-size: var(--text-sm);
+}
+
+.openapi-type-card span:last-child {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.openapi-type-card--soon,
+.openapi-type-card:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .openapi-card-title {
   margin: 0;
   font-size: var(--text-sm);
