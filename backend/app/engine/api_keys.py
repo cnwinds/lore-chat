@@ -61,6 +61,24 @@ class ApiKeyStore:
             encoding="utf-8",
         )
 
+    def list_records(self) -> list[dict[str, Any]]:
+        return [dict(item) for item in self._load()]
+
+    def put_record(self, record: dict[str, Any]) -> None:
+        kid = (record.get("id") or "").strip()
+        if not kid:
+            raise ValueError("密钥 id 不能为空")
+        keys = self._load()
+        payload = dict(record)
+        payload["id"] = kid
+        for index, item in enumerate(keys):
+            if item.get("id") == kid:
+                keys[index] = payload
+                self._save(keys)
+                return
+        keys.append(payload)
+        self._save(keys)
+
     def list_all(self) -> list[dict[str, Any]]:
         return [self._public(k) for k in self._load()]
 

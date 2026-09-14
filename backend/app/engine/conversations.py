@@ -299,6 +299,10 @@ class ConversationStore:
             )
         if "api_key_id" not in cols:
             self.conn.execute("ALTER TABLE conversations ADD COLUMN api_key_id TEXT")
+        if "channel_instance_id" not in cols:
+            self.conn.execute(
+                "ALTER TABLE conversations ADD COLUMN channel_instance_id TEXT"
+            )
         self.conn.execute(
             """
             CREATE INDEX IF NOT EXISTS idx_conversations_origin_updated
@@ -727,6 +731,7 @@ class ConversationStore:
             "role_id": role_id,
             "origin": self._row_origin(row),
             "api_key_id": self._row_api_key_id(row),
+            "channel_instance_id": self._row_channel_instance_id(row),
             "kind": kind,
             "avatar": self._row_avatar(row),
             "participant_role_ids": participants,
@@ -769,6 +774,13 @@ class ConversationStore:
             return None
         return (raw or "").strip() or None
 
+    def _row_channel_instance_id(self, row: sqlite3.Row) -> str | None:
+        try:
+            raw = row["channel_instance_id"]
+        except (KeyError, IndexError):
+            return None
+        return (raw or "").strip() or None
+
     def get_origin(self, cid: str) -> str:
         with self._lock:
             return self._row_origin(self._conversation_row(cid))
@@ -784,26 +796,30 @@ class ConversationStore:
         role_id: str | None = None,
         origin: str = "web",
         api_key_id: str | None = None,
+        channel_instance_id: str | None = None,
     ) -> str:
+        from app.engine.channel_plugins.types import is_allowed_conversation_origin
         from app.engine.roles import DEFAULT_ROLE_ID
 
         cid = uuid.uuid4().hex[:12]
         stamp = _now()
         rid = (role_id or DEFAULT_ROLE_ID).strip() or DEFAULT_ROLE_ID
         orig = (origin or "web").strip() or "web"
-        if orig not in ("web", "api"):
+        if not is_allowed_conversation_origin(orig):
             orig = "web"
         kid = (api_key_id or "").strip() or None
+        chid = (channel_instance_id or kid or "").strip() or None
         with self._lock:
             self.conn.execute(
                 """
                 INSERT INTO conversations(
                     id, title, created_at, updated_at, active_turn_id,
-                    indexed_dirty, role_id, origin, api_key_id, kind
+                    indexed_dirty, role_id, origin, api_key_id,
+                    channel_instance_id, kind
                 )
-                VALUES (?, ?, ?, ?, NULL, 0, ?, ?, ?, 'owner_dm')
+                VALUES (?, ?, ?, ?, NULL, 0, ?, ?, ?, ?, 'owner_dm')
                 """,
-                (cid, title or "新对话", stamp, stamp, rid, orig, kid),
+                (cid, title or "新对话", stamp, stamp, rid, orig, kid, chid),
             )
             self.rooms._add_participant_unlocked(
                 cid, "user", "owner", membership="member"
@@ -1023,6 +1039,7 @@ class ConversationStore:
                         "role_id": rid or DEFAULT_ROLE_ID,
                         "origin": self._row_origin(row),
                         "api_key_id": self._row_api_key_id(row),
+                        "channel_instance_id": self._row_channel_instance_id(row),
                         "kind": kind,
                         "message_count": int(count),
                         "summarized": summarized,
@@ -1214,10 +1231,12 @@ class ConversationStore:
         return out, has_more
 
     def _owner_dm_web_items(self, role_id: str) -> list[dict]:
+        from app.engine.channel_plugins.types import is_channel_origin
+
         return [
             c
             for c in self.list_all(role_id=role_id)
-            if (c.get("origin") or "web") != "api"
+            if not is_channel_origin(c.get("origin"))
             and (c.get("kind") or "owner_dm") == "owner_dm"
         ]
 
@@ -1612,16 +1631,17 @@ class ConversationStore:
         不用会话 ``updated_at``：ensure-active 空会话或改人设都会抬高它，
         不能当成「最近聊天」。
         """
+        from app.engine.channel_plugins.types import sql_exclude_channel_origins
         from app.engine.roles import DEFAULT_ROLE_ID
 
         with self._lock:
             rows = self.conn.execute(
-                """
+                f"""
                 SELECT COALESCE(NULLIF(c.role_id, ''), ?) AS role_id,
                        MAX(t.started_at) AS last_active_at
                 FROM turns t
                 JOIN conversations c ON c.id = t.conversation_id
-                WHERE COALESCE(c.origin, 'web') != 'api'
+                WHERE {sql_exclude_channel_origins()}
                 GROUP BY COALESCE(NULLIF(c.role_id, ''), ?)
                 """,
                 (DEFAULT_ROLE_ID, DEFAULT_ROLE_ID),
@@ -1634,16 +1654,18 @@ class ConversationStore:
 
     def last_reply_preview_by_role(self, *, max_chars: int = 80) -> dict[str, str]:
         """每个角色最近一条非空助手回复的单行预览。"""
+        from app.engine.channel_plugins.types import sql_exclude_channel_origins
         from app.engine.roles import DEFAULT_ROLE_ID
 
         with self._lock:
             rows = self.conn.execute(
-                """
+                f"""
                 SELECT COALESCE(NULLIF(c.role_id, ''), ?) AS role_id,
                        m.text AS assistant_text
                 FROM messages m
                 JOIN conversations c ON c.id = m.conversation_id
                 WHERE m.role = 'assistant' AND TRIM(m.text) != ''
+                  AND {sql_exclude_channel_origins()}
                 ORDER BY m.ts DESC, m.seq DESC
                 """,
                 (DEFAULT_ROLE_ID,),

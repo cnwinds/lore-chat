@@ -13,12 +13,18 @@ from app.engine.role_schedules import RoleScheduleStore
 DEFAULT_ROLE_ID = "default"
 DEFAULT_ROLE_NAME = "通用"
 API_ROLE_PREFIX = "api_"
+EXT_ROLE_PREFIX = "ext_"
 VISIBILITY_SIDEBAR = "sidebar"
 VISIBILITY_HIDDEN = "hidden"
 
 
 def is_api_role_id(role_id: str | None) -> bool:
-    return (role_id or "").startswith(API_ROLE_PREFIX)
+    """Hidden 通道工作角色：script_api 的 api_ 与其它类型的 ext_。"""
+    rid = role_id or ""
+    return rid.startswith(API_ROLE_PREFIX) or rid.startswith(EXT_ROLE_PREFIX)
+
+
+is_channel_role_id = is_api_role_id
 
 
 def role_visibility(role: dict | None) -> str:
@@ -31,7 +37,7 @@ def is_hidden_role(role: dict | None) -> bool:
 
 
 def list_sidebar_roles(roles) -> list[dict]:
-    """左栏可见角色。隐藏的 API 工作角色不进名录 / 派工。"""
+    """左栏可见角色。隐藏的通道工作角色不进名录 / 派工。"""
     try:
         return list(roles.list_all(visibility=VISIBILITY_SIDEBAR))
     except TypeError:
@@ -310,6 +316,26 @@ class RoleStore:
                 WHERE id = ?
                 """,
                 (new_name, new_prompt or "", new_avatar, new_onboarding, stamp, role_id),
+            )
+            self.conn.commit()
+            updated = self.conn.execute(
+                "SELECT * FROM roles WHERE id = ?", (role_id,)
+            ).fetchone()
+            assert updated is not None
+            return self._row_to_dict(updated)
+
+    def set_persona_id(self, role_id: str, persona_id: str) -> dict:
+        pid = (persona_id or "").strip() or None
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT id FROM roles WHERE id = ?", (role_id,)
+            ).fetchone()
+            if row is None:
+                raise KeyError(role_id)
+            stamp = _now()
+            self.conn.execute(
+                "UPDATE roles SET persona_id = ?, updated_at = ? WHERE id = ?",
+                (pid, stamp, role_id),
             )
             self.conn.commit()
             updated = self.conn.execute(

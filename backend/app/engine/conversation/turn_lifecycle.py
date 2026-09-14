@@ -183,9 +183,11 @@ class TurnLifecycle:
                 origin = (conv_row["origin"] or "web").strip() or "web"
             except (KeyError, IndexError):
                 origin = "web"
-            # API 会话、同伴房间不抽主人画像；主人 tip 仍打 dirty
+            # 通道会话、同伴房间不抽主人画像；主人 tip 仍打 dirty
+            from app.engine.channel_plugins.types import is_channel_origin
+
             if (
-                origin != "api"
+                not is_channel_origin(origin)
                 and conv_kind == KIND_OWNER_DM
                 and speaker_kind == "user"
                 and not kickoff
