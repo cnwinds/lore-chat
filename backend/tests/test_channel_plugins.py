@@ -44,7 +44,7 @@ def test_registry_lists_script_and_upcoming_types():
     types = {item["type_id"]: item for item in ChannelPluginRegistry.builtin().list_types()}
     assert types[SCRIPT_API_TYPE_ID]["available"] is True
     assert types[SCRIPT_API_TYPE_ID]["display_name"] == "脚本 / HTTP"
-    assert types["feishu"]["available"] is False
+    assert types["feishu"]["available"] is True
     assert types["slack"]["available"] is False
 
 
@@ -155,7 +155,7 @@ def test_list_instances_includes_projected_keys(tmp_path):
         assert any(item["id"] == kid for item in keys.json()["keys"])
         types = client.get("/api/channel-plugins/types").json()["types"]
         assert any(item["type_id"] == SCRIPT_API_TYPE_ID and item["available"] for item in types)
-        assert any(item["type_id"] == "feishu" and not item["available"] for item in types)
+        assert any(item["type_id"] == "feishu" and item["available"] for item in types)
     finally:
         _close(client)
 
@@ -193,9 +193,20 @@ def test_v1_chat_still_works_after_projection(tmp_path):
 
         coming = client.post(
             "/api/channel-plugins/instances",
-            json={"type_id": "feishu", "name": "飞书甲"},
+            json={
+                "type_id": "feishu",
+                "name": "飞书甲",
+                "config": {"app_id": "cli_test"},
+                "secrets": {"app_secret": "secret-value"},
+            },
         )
-        assert coming.status_code == 400
+        assert coming.status_code == 200, coming.text
+        feishu = coming.json()
+        assert feishu["type_id"] == "feishu"
+        assert feishu["role_id"].startswith(EXT_ROLE_PREFIX)
+        assert feishu["enabled"] is True
+        assert feishu["secrets"]["app_secret"] != "secret-value"
+        assert "secret-value" not in coming.text
     finally:
         _close(client)
 

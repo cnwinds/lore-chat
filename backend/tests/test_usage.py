@@ -231,3 +231,49 @@ def test_bucket_week_monday(tmp_path):
         timezone_name="Asia/Shanghai",
     )
     assert summary["by_bucket"][0]["bucket"] == "2026-W32"
+
+
+def test_usage_store_filters_by_channel_instance(tmp_path):
+    store = UsageStore(tmp_path / "usage.db")
+    rec = UsageRecorder(store)
+    rec.record(
+        model="m",
+        kind="chat",
+        status="ok",
+        tokens_known=True,
+        total_tokens=10,
+        conversation_id="c-feishu",
+        channel_instance_id="feishu1",
+    )
+    rec.record(
+        model="m",
+        kind="chat",
+        status="ok",
+        tokens_known=True,
+        total_tokens=99,
+        conversation_id="c-script",
+        channel_instance_id="script1",
+    )
+    start = "2000-01-01T00:00:00+00:00"
+    end = "2100-01-01T00:00:00+00:00"
+    scoped = store.summarize(
+        granularity="month",
+        start=start,
+        end=end,
+        channel_instance_id="feishu1",
+    )
+    assert scoped["totals"]["calls"] == 1
+    assert scoped["totals"]["total_tokens"] == 10
+    events = store.list_events(channel_instance_id="feishu1")
+    assert len(events) == 1
+    assert events[0]["channel_instance_id"] == "feishu1"
+    fallback = store.summarize(
+        granularity="month",
+        start=start,
+        end=end,
+        channel_instance_id="feishu1",
+        conversation_ids=["c-script"],
+    )
+    assert fallback["totals"]["calls"] == 2
+    store.close()
+

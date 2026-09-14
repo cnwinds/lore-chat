@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   EMPTY_CREATE_DRAFT,
   buildCreateKeyRequest,
+  buildFeishuConfig,
   canSubmitCreateKey,
   chatCurlExample,
   formatOpenApiWhen,
@@ -68,6 +69,34 @@ describe("canSubmitCreateKey", () => {
       }),
     ).toBe(true);
   });
+
+  it("needs Feishu app credentials", () => {
+    expect(
+      canSubmitCreateKey({ ...EMPTY_CREATE_DRAFT, name: "飞书" }, "feishu"),
+    ).toBe(false);
+    expect(
+      canSubmitCreateKey(
+        {
+          ...EMPTY_CREATE_DRAFT,
+          name: "飞书",
+          appId: "cli_x",
+          appSecret: "s",
+        },
+        "feishu",
+      ),
+    ).toBe(true);
+    expect(
+      canSubmitCreateKey(
+        {
+          ...EMPTY_CREATE_DRAFT,
+          name: "飞书",
+          voice: "existing",
+          personaId: "p1",
+        },
+        "feishu",
+      ),
+    ).toBe(false);
+  });
 });
 
 describe("buildCreateKeyRequest", () => {
@@ -101,6 +130,22 @@ describe("buildCreateKeyRequest", () => {
       name: "脚本",
       persona_name: "周报助手",
       persona_prompt: "写周报",
+    });
+  });
+});
+
+describe("buildFeishuConfig", () => {
+  it("omits empty optional secrets", () => {
+    expect(
+      buildFeishuConfig({
+        ...EMPTY_CREATE_DRAFT,
+        appId: "cli_x",
+        appSecret: "s",
+        ingress: "websocket",
+      }),
+    ).toEqual({
+      config: { app_id: "cli_x", ingress: "websocket" },
+      secrets: { app_secret: "s" },
     });
   });
 });
