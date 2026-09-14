@@ -450,7 +450,7 @@ def test_instance_logs_and_usage_endpoints(tmp_path):
     try:
         inst = _create_feishu(client)
         other = _create_feishu(client, name="另一路")
-        rec = app.state.container.llm.usage_recorder
+        rec = getattr(app.state.container.llm, "usage_recorder", None)
         if rec is None:
             from app.engine.usage.recorder import UsageRecorder
 
