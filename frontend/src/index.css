@@ -3236,6 +3236,19 @@ button.memory-fact-statement--jump:focus-visible {
   gap: 10px;
 }
 
+.usage-hero-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.usage-channel-filter {
+  min-width: 140px;
+  max-width: 220px;
+  font-size: 12px;
+}
+
 .usage-hero-copy {
   min-width: 0;
   display: flex;
@@ -4116,6 +4129,73 @@ button.memory-fact-statement--jump:focus-visible {
   font-weight: 700;
   background: color-mix(in srgb, var(--accent) 12%, var(--bg-muted));
   color: var(--accent);
+}
+
+.openapi-type-icon--feishu {
+  background: color-mix(in srgb, #3370ff 16%, var(--bg-muted));
+  color: #3370ff;
+}
+
+.openapi-card-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.openapi-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+.openapi-switch input {
+  margin: 0;
+}
+
+.openapi-instance-logs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.openapi-instance-log {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-muted);
+}
+
+.openapi-instance-log span,
+.openapi-instance-log em {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.openapi-instance-log strong {
+  display: inline-block;
+  margin-left: 8px;
+  font-size: 12px;
+}
+
+.openapi-instance-log p {
+  margin: 4px 0 0;
+  font-size: 13px;
+}
+
+.openapi-instance-log--error {
+  border-color: color-mix(in srgb, var(--danger, #c0392b) 35%, var(--border));
+}
+
+.openapi-instance-log--warn {
+  border-color: color-mix(in srgb, #c9892b 35%, var(--border));
 }
 
 .openapi-status {

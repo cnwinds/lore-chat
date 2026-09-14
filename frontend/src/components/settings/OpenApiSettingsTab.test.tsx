@@ -22,8 +22,11 @@ vi.mock("../../api/channelPlugins", () => ({
   listChannelTypes: vi.fn(),
   listChannelInstances: vi.fn(),
   createChannelInstance: vi.fn(),
+  patchChannelInstance: vi.fn(),
   revokeChannelInstance: vi.fn(),
   getChannelTimeline: vi.fn(),
+  getChannelLogs: vi.fn(),
+  getChannelUsage: vi.fn(),
 }));
 
 vi.mock("../../utils/toast", () => ({
@@ -35,7 +38,10 @@ const listApiPersonas = vi.mocked(openApi.listApiPersonas);
 const listChannelTypes = vi.mocked(channelPlugins.listChannelTypes);
 const listChannelInstances = vi.mocked(channelPlugins.listChannelInstances);
 const createChannelInstance = vi.mocked(channelPlugins.createChannelInstance);
+const patchChannelInstance = vi.mocked(channelPlugins.patchChannelInstance);
 const getChannelTimeline = vi.mocked(channelPlugins.getChannelTimeline);
+const getChannelLogs = vi.mocked(channelPlugins.getChannelLogs);
+const getChannelUsage = vi.mocked(channelPlugins.getChannelUsage);
 
 const sampleTypes = [
   {
@@ -50,6 +56,13 @@ const sampleTypes = [
     display_name: "飞书",
     ingress: "websocket",
     needs_public_url: false,
+    available: true,
+  },
+  {
+    type_id: "slack",
+    display_name: "Slack",
+    ingress: "websocket",
+    needs_public_url: false,
     available: false,
   },
 ];
@@ -59,6 +72,9 @@ function seedEmpty() {
   listChannelInstances.mockResolvedValue({ instances: [] });
   listChannelTypes.mockResolvedValue({ types: sampleTypes });
   listRoles.mockResolvedValue({ roles: [] });
+  getChannelLogs.mockResolvedValue({ items: [] });
+  getChannelUsage.mockResolvedValue({ totals: {} });
+  patchChannelInstance.mockResolvedValue(sampleInstance);
 }
 
 const sampleInstance = {
@@ -139,6 +155,8 @@ describe("OpenApiSettingsTab", () => {
     expect(document.querySelector(".openapi-voice")).toHaveTextContent("通用助手");
     expect(screen.getByText("已启用")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "查看会话" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "日志" })).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "停用通道" })).toBeChecked();
     expect(screen.queryByText("还没有聊天通道")).toBeNull();
     expect(screen.queryByPlaceholderText("例如：周报脚本")).toBeNull();
     expect(screen.queryByPlaceholderText("例如：周报助手")).toBeNull();
@@ -195,11 +213,89 @@ describe("OpenApiSettingsTab", () => {
     expect(screen.queryByText("写一份周报")).toBeNull();
   });
 
-  it("greys out upcoming types in the add wizard", async () => {
+  it("lets the user add a Feishu channel while greying out later types", async () => {
     const user = userEvent.setup();
     render(<OpenApiSettingsTab />);
     await user.click(await screen.findByRole("button", { name: "添加通道" }));
-    expect(screen.getByRole("button", { name: /飞书/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /飞书/ })).toBeEnabled();
+    expect(screen.getByRole("button", { name: /Slack/ })).toBeDisabled();
     expect(screen.getByText("即将支持")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /飞书/ }));
+    expect(
+      screen.getByText("填名称和飞书应用凭证。默认走长连接，不需要公网地址。"),
+    ).toBeInTheDocument();
+    createChannelInstance.mockResolvedValue({
+      id: "f1",
+      type_id: "feishu",
+      name: "飞书助手",
+      enabled: true,
+      status: "enabled",
+      role_id: "ext_f1",
+      created_at: "2026-09-14T00:00:00Z",
+      config: { app_id: "cli_x", ingress: "websocket" },
+      secrets: { app_secret: "pl***cret" },
+      persona: sampleInstance.persona,
+    });
+    await user.type(screen.getByPlaceholderText("例如：飞书助手"), "飞书助手");
+    await user.type(screen.getByLabelText("App ID"), "cli_x");
+    await user.type(screen.getByLabelText("App Secret"), "secret-value");
+    await user.click(screen.getByRole("button", { name: "创建并启用" }));
+    await waitFor(() => {
+      expect(createChannelInstance).toHaveBeenCalledWith({
+        type_id: "feishu",
+        name: "飞书助手",
+        config: { app_id: "cli_x", ingress: "websocket" },
+        secrets: { app_secret: "secret-value" },
+      });
+    });
+    expect(
+      await screen.findByText(/请在飞书开放平台开启「长连接」/),
+    ).toBeInTheDocument();
+  });
+
+  it("opens per-instance logs from the shared card", async () => {
+    const user = userEvent.setup();
+    listApiPersonas.mockResolvedValue({
+      personas: [sampleInstance.persona!],
+    });
+    listChannelInstances.mockResolvedValue({ instances: [sampleInstance] });
+    getChannelLogs.mockResolvedValue({
+      items: [
+        {
+          id: "l1",
+          ts: "2026-09-14T00:00:00Z",
+          level: "info",
+          kind: "turn_done",
+          message: "回合完成",
+          duration_ms: 12,
+        },
+      ],
+    });
+    getChannelUsage.mockResolvedValue({
+      totals: { calls: 2, total_tokens: 40 },
+    });
+    render(<OpenApiSettingsTab />);
+    await user.click(await screen.findByRole("button", { name: "日志" }));
+    expect(await screen.findByText("周报脚本 · 日志")).toBeInTheDocument();
+    expect(screen.getByText("回合完成")).toBeInTheDocument();
+    expect(screen.getByText("调用 2 次 · 40 tokens")).toBeInTheDocument();
+  });
+
+  it("toggles a channel instance without leaving the list", async () => {
+    const user = userEvent.setup();
+    listApiPersonas.mockResolvedValue({
+      personas: [sampleInstance.persona!],
+    });
+    listChannelInstances.mockResolvedValue({ instances: [sampleInstance] });
+    patchChannelInstance.mockResolvedValue({
+      ...sampleInstance,
+      enabled: false,
+      status: "disabled",
+    });
+    render(<OpenApiSettingsTab />);
+    await user.click(await screen.findByRole("checkbox", { name: "停用通道" }));
+    await waitFor(() => {
+      expect(patchChannelInstance).toHaveBeenCalledWith("k1", { enabled: false });
+    });
   });
 });

@@ -48,7 +48,8 @@ CREATE TABLE IF NOT EXISTS usage_events (
     error TEXT,
     duration_ms INTEGER,
     conversation_id TEXT,
-    turn_id TEXT
+    turn_id TEXT,
+    channel_instance_id TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_usage_events_ts ON usage_events(ts);
@@ -219,6 +220,16 @@ class UsageStore:
             """
         )
 
+        event_cols = self._table_cols("usage_events")
+        if "channel_instance_id" not in event_cols:
+            self.conn.execute(
+                "ALTER TABLE usage_events ADD COLUMN channel_instance_id TEXT"
+            )
+        self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_usage_events_channel "
+            "ON usage_events(channel_instance_id)"
+        )
+
         self.conn.commit()
 
     def _ensure_meta(self, key: str, value: str) -> None:
@@ -355,8 +366,8 @@ class UsageStore:
                     prompt_tokens, completion_tokens, total_tokens, cache_tokens, tokens_known,
                     prompt_price_per_1m, completion_price_per_1m, cache_input_price_per_1m,
                     embed_price_per_1m, cost,
-                    status, error, duration_ms, conversation_id, turn_id
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    status, error, duration_ms, conversation_id, turn_id, channel_instance_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     eid,
@@ -379,6 +390,7 @@ class UsageStore:
                     event.get("duration_ms"),
                     event.get("conversation_id"),
                     event.get("turn_id"),
+                    event.get("channel_instance_id"),
                 ),
             )
             self.conn.commit()
@@ -411,6 +423,8 @@ class UsageStore:
         start: str | None = None,
         end: str | None = None,
         model: str | None = None,
+        channel_instance_id: str | None = None,
+        conversation_ids: list[str] | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> list[dict[str, Any]]:
@@ -425,6 +439,7 @@ class UsageStore:
         if model:
             clauses.append("model = ?")
             args.append(model)
+        _append_channel_filter(clauses, args, channel_instance_id, conversation_ids)
         where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
         sql = (
             f"SELECT * FROM usage_events{where} ORDER BY ts DESC LIMIT ? OFFSET ?"
@@ -441,14 +456,20 @@ class UsageStore:
         start: str,
         end: str,
         timezone_name: str | None = None,
+        channel_instance_id: str | None = None,
+        conversation_ids: list[str] | None = None,
     ) -> dict[str, Any]:
         """按桶 + 模型聚合。start/end 为 UTC ISO。"""
         tz_name = timezone_name or self.get_meta("timezone", _DEFAULT_TZ)
         tz = ZoneInfo(tz_name)
+        clauses = ["ts >= ?", "ts < ?"]
+        args: list[Any] = [start, end]
+        _append_channel_filter(clauses, args, channel_instance_id, conversation_ids)
+        where = " WHERE " + " AND ".join(clauses)
         with self._lock:
             rows = self.conn.execute(
-                "SELECT * FROM usage_events WHERE ts >= ? AND ts < ? ORDER BY ts",
-                (start, end),
+                f"SELECT * FROM usage_events{where} ORDER BY ts",
+                args,
             ).fetchall()
 
         buckets: dict[str, dict[str, Any]] = {}
@@ -476,6 +497,28 @@ class UsageStore:
             "by_bucket": bucket_list,
             "by_model": model_list,
         }
+
+
+def _append_channel_filter(
+    clauses: list[str],
+    args: list[Any],
+    channel_instance_id: str | None,
+    conversation_ids: list[str] | None,
+) -> None:
+    chid = (channel_instance_id or "").strip()
+    if not chid:
+        return
+    ids = [str(x) for x in (conversation_ids or []) if str(x).strip()]
+    if ids:
+        placeholders = ", ".join("?" for _ in ids)
+        clauses.append(
+            f"(channel_instance_id = ? OR conversation_id IN ({placeholders}))"
+        )
+        args.append(chid)
+        args.extend(ids)
+        return
+    clauses.append("channel_instance_id = ?")
+    args.append(chid)
 
 
 def _parse_kinds(raw: Any) -> list[str]:

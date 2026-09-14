@@ -12,6 +12,7 @@ import {
   type UsagePrice,
   type UsageSummary,
 } from "../../api";
+import { listChannelInstances, type ChannelInstance } from "../../api/channelPlugins";
 import { priceRowNeedsSetup } from "./settingsAttention";
 import { SettingsAttentionDot } from "./SettingsAttentionDot";
 
@@ -257,15 +258,21 @@ export function UsageSettingsTab({
   const [eventsOpen, setEventsOpen] = useState(false);
   const [prefsOpen, setPrefsOpen] = useState(false);
   const [pricesOpen, setPricesOpen] = useState(false);
+  const [channelInstanceId, setChannelInstanceId] = useState("");
+  const [channelInstances, setChannelInstances] = useState<ChannelInstance[]>([]);
 
   const reload = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [s, p, pr] = await Promise.all([
-        getUsageSummary({ granularity }),
+      const [s, p, pr, channels] = await Promise.all([
+        getUsageSummary({
+          granularity,
+          channel_instance_id: channelInstanceId || undefined,
+        }),
         getUsagePrices(),
         getUsagePrefs(),
+        listChannelInstances().catch(() => ({ instances: [] as ChannelInstance[] })),
       ]);
       setSummary(s);
       setPrices(p.items);
@@ -273,6 +280,7 @@ export function UsageSettingsTab({
         Object.fromEntries(p.items.map((row) => [row.model, priceKey(row)])),
       );
       setPrefs(pr);
+      setChannelInstances(channels.instances);
       onIncompletePriceCountChange?.(
         p.items.filter(priceRowNeedsSetup).length,
       );
@@ -281,13 +289,16 @@ export function UsageSettingsTab({
     } finally {
       setLoading(false);
     }
-  }, [granularity, onIncompletePriceCountChange]);
+  }, [granularity, channelInstanceId, onIncompletePriceCountChange]);
 
   const loadEvents = useCallback(async () => {
     setEventsLoading(true);
     setError(null);
     try {
-      const e = await getUsageEvents({ limit: 40 });
+      const e = await getUsageEvents({
+        limit: 40,
+        channel_instance_id: channelInstanceId || undefined,
+      });
       setEvents(e.items);
       setEventsLoaded(true);
     } catch (err) {
@@ -295,7 +306,7 @@ export function UsageSettingsTab({
     } finally {
       setEventsLoading(false);
     }
-  }, []);
+  }, [channelInstanceId]);
 
   useEffect(() => {
     void reload();
@@ -424,14 +435,31 @@ export function UsageSettingsTab({
               {prefs?.timezone ?? "Asia/Shanghai"}
             </p>
           </div>
-          <button
-            type="button"
-            className="settings-btn settings-btn--secondary settings-btn--compact"
-            onClick={() => void handleRefresh()}
-            disabled={loading || eventsLoading}
-          >
-            {loading || eventsLoading ? "刷新中" : "刷新"}
-          </button>
+          <div className="usage-hero-actions">
+            {channelInstances.length > 0 ? (
+              <select
+                className="usage-channel-filter"
+                aria-label="按聊天通道筛选"
+                value={channelInstanceId}
+                onChange={(e) => setChannelInstanceId(e.target.value)}
+              >
+                <option value="">全部通道</option>
+                {channelInstances.map((inst) => (
+                  <option key={inst.id} value={inst.id}>
+                    {inst.name}
+                  </option>
+                ))}
+              </select>
+            ) : null}
+            <button
+              type="button"
+              className="settings-btn settings-btn--secondary settings-btn--compact"
+              onClick={() => void handleRefresh()}
+              disabled={loading || eventsLoading}
+            >
+              {loading || eventsLoading ? "刷新中" : "刷新"}
+            </button>
+          </div>
         </div>
 
         {totals ? (

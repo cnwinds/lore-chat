@@ -288,11 +288,15 @@ export function getUsageSummary(params?: {
   granularity?: string;
   start?: string;
   end?: string;
+  channel_instance_id?: string;
 }) {
   const q = new URLSearchParams();
   if (params?.granularity) q.set("granularity", params.granularity);
   if (params?.start) q.set("start", params.start);
   if (params?.end) q.set("end", params.end);
+  if (params?.channel_instance_id) {
+    q.set("channel_instance_id", params.channel_instance_id);
+  }
   const qs = q.toString();
   return apiFetch<UsageSummary>(`/api/usage/summary${qs ? `?${qs}` : ""}`);
 }
@@ -303,6 +307,7 @@ export function getUsageEvents(params?: {
   model?: string;
   limit?: number;
   offset?: number;
+  channel_instance_id?: string;
 }) {
   const q = new URLSearchParams();
   if (params?.start) q.set("start", params.start);
@@ -310,6 +315,9 @@ export function getUsageEvents(params?: {
   if (params?.model) q.set("model", params.model);
   if (params?.limit != null) q.set("limit", String(params.limit));
   if (params?.offset != null) q.set("offset", String(params.offset));
+  if (params?.channel_instance_id) {
+    q.set("channel_instance_id", params.channel_instance_id);
+  }
   const qs = q.toString();
   return apiFetch<{ items: UsageEvent[]; limit: number; offset: number }>(
     `/api/usage/events${qs ? `?${qs}` : ""}`,

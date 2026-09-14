@@ -2,6 +2,8 @@
 
 from app.engine.channel_plugins.errors import ChannelError
 from app.engine.channel_plugins.registry import ChannelPluginRegistry
+from app.engine.channel_plugins.runtime import ChannelRuntime
+from app.engine.channel_plugins.runtime_store import ChannelRuntimeStore
 from app.engine.channel_plugins.store import ChannelInstanceStore
 from app.engine.channel_plugins.turn_service import ChannelTurnService
 from app.engine.channel_plugins.types import (
@@ -16,6 +18,8 @@ __all__ = [
     "ChannelError",
     "ChannelInstanceStore",
     "ChannelPluginRegistry",
+    "ChannelRuntime",
+    "ChannelRuntimeStore",
     "ChannelTurnService",
     "is_channel_origin",
 ]

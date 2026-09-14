@@ -3,11 +3,15 @@ import { listRoles } from "../../api";
 import type { ChatMessage, RoleSummary } from "../../types/chat";
 import {
   createChannelInstance,
+  getChannelLogs,
   getChannelTimeline,
+  getChannelUsage,
   listChannelInstances,
   listChannelTypes,
+  patchChannelInstance,
   revokeChannelInstance,
   type ChannelInstance,
+  type ChannelLogItem,
   type ChannelType,
 } from "../../api/channelPlugins";
 import {
@@ -21,14 +25,16 @@ import { showToast } from "../../utils/toast";
 import {
   EMPTY_CREATE_DRAFT,
   buildCreateKeyRequest,
+  buildFeishuConfig,
   canSubmitCreateKey,
   chatCurlExample,
+  feishuNextSteps,
   formatOpenApiWhen,
   type CreateKeyDraft,
   type VoiceMode,
 } from "./openApiSettingsModel";
 
-type Screen = "home" | "pick-type" | "create" | "logs";
+type Screen = "home" | "pick-type" | "create" | "logs" | "instance-logs";
 
 type TranscriptSeg = { title: string; messages: ChatMessage[] };
 
@@ -73,8 +79,15 @@ export function OpenApiSettingsTab() {
   const [draft, setDraft] = useState<CreateKeyDraft>(EMPTY_CREATE_DRAFT);
   const [createType, setCreateType] = useState("script_api");
   const [newToken, setNewToken] = useState<string | null>(null);
+  const [feishuHint, setFeishuHint] = useState<string | null>(null);
   const [viewing, setViewing] = useState<ChannelInstance | null>(null);
   const [transcript, setTranscript] = useState<TranscriptSeg[]>([]);
+  const [instanceLogs, setInstanceLogs] = useState<ChannelLogItem[]>([]);
+  const [instanceUsage, setInstanceUsage] = useState<{
+    calls?: number;
+    total_tokens?: number;
+    cost?: number;
+  } | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [editPrompt, setEditPrompt] = useState("");
@@ -141,11 +154,13 @@ export function OpenApiSettingsTab() {
   };
 
   const handleCreate = async () => {
-    if (!canSubmitCreateKey(draft)) return;
+    if (!canSubmitCreateKey(draft, createType)) return;
     setBusy(true);
     setError(null);
     try {
       const request = buildCreateKeyRequest(draft);
+      const extra =
+        createType === "feishu" ? buildFeishuConfig(draft) : {};
       let created;
       if (draft.voice === "copy") {
         const copied = await createApiPersona({
@@ -156,14 +171,17 @@ export function OpenApiSettingsTab() {
           type_id: createType,
           name: draft.name.trim(),
           persona_id: copied.id,
+          ...extra,
         });
       } else {
         created = await createChannelInstance({
           type_id: createType,
           ...request,
+          ...extra,
         });
       }
       setNewToken(created.token || null);
+      setFeishuHint(createType === "feishu" ? feishuNextSteps() : null);
       setDraft(EMPTY_CREATE_DRAFT);
       setScreen("home");
       showToast(created.token ? "通道已创建，请立刻复制密钥" : "通道已创建");
@@ -176,7 +194,7 @@ export function OpenApiSettingsTab() {
   };
 
   const handleRevoke = async (id: string) => {
-    if (!window.confirm("停用后脚本将无法再调用。历史仍可查看。")) return;
+    if (!window.confirm("停用后外部将无法再发来消息。历史仍可查看。")) return;
     setBusy(true);
     try {
       await revokeChannelInstance(id);
@@ -188,6 +206,20 @@ export function OpenApiSettingsTab() {
       await reload();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "停用失败");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleToggle = async (inst: ChannelInstance) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await patchChannelInstance(inst.id, { enabled: !inst.enabled });
+      showToast(inst.enabled ? "已停用" : "已启用");
+      await reload();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "更新失败");
     } finally {
       setBusy(false);
     }
@@ -209,6 +241,25 @@ export function OpenApiSettingsTab() {
       setScreen("logs");
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "加载会话失败");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleInstanceLogs = async (inst: ChannelInstance) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const [logs, usage] = await Promise.all([
+        getChannelLogs(inst.id),
+        getChannelUsage(inst.id).catch(() => null),
+      ]);
+      setViewing(inst);
+      setInstanceLogs(logs.items || []);
+      setInstanceUsage(usage?.totals || null);
+      setScreen("instance-logs");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "加载日志失败");
     } finally {
       setBusy(false);
     }
@@ -280,6 +331,7 @@ export function OpenApiSettingsTab() {
         roles={roles}
         busy={busy}
         error={error}
+        typeId={createType}
         typeLabel={typeLabel(createType, types)}
         onChange={setDraft}
         onBack={() => {
@@ -300,6 +352,24 @@ export function OpenApiSettingsTab() {
         onBack={() => {
           setViewing(null);
           setTranscript([]);
+          setError(null);
+          setScreen("home");
+        }}
+      />
+    );
+  }
+
+  if (screen === "instance-logs" && viewing) {
+    return (
+      <InstanceLogsScreen
+        instance={viewing}
+        logs={instanceLogs}
+        usage={instanceUsage}
+        error={error}
+        onBack={() => {
+          setViewing(null);
+          setInstanceLogs([]);
+          setInstanceUsage(null);
           setError(null);
           setScreen("home");
         }}
@@ -337,6 +407,21 @@ export function OpenApiSettingsTab() {
         />
       ) : null}
 
+      {feishuHint ? (
+        <div className="openapi-token" role="status">
+          <p className="openapi-token-warn">{feishuHint}</p>
+          <div className="openapi-token-actions">
+            <button
+              type="button"
+              className="openapi-btn"
+              onClick={() => setFeishuHint(null)}
+            >
+              知道了
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       {instances.length === 0 ? (
         <div className="openapi-empty">
           <span className="openapi-empty-icon" aria-hidden />
@@ -358,6 +443,7 @@ export function OpenApiSettingsTab() {
           {instances.map((inst) => {
             const status = statusLabel(inst);
             const prefix = inst.config?.key_prefix;
+            const ingress = inst.config?.ingress;
             return (
               <li key={inst.id} className="openapi-card">
                 <div className="openapi-card-top">
@@ -370,9 +456,21 @@ export function OpenApiSettingsTab() {
                     </span>
                     <h4 className="openapi-card-title">{inst.name}</h4>
                   </div>
-                  <span className={`openapi-status openapi-status--${status.kind}`}>
-                    {status.text}
-                  </span>
+                  <div className="openapi-card-status">
+                    <label className="openapi-switch">
+                      <input
+                        type="checkbox"
+                        checked={inst.enabled}
+                        disabled={busy}
+                        aria-label={inst.enabled ? "停用通道" : "启用通道"}
+                        onChange={() => void handleToggle(inst)}
+                      />
+                      <span>启用</span>
+                    </label>
+                    <span className={`openapi-status openapi-status--${status.kind}`}>
+                      {status.text}
+                    </span>
+                  </div>
                 </div>
                 <div className="openapi-card-badges">
                   <span className="openapi-voice">
@@ -384,6 +482,7 @@ export function OpenApiSettingsTab() {
                 </div>
                 <p className="openapi-card-meta">
                   {prefix ? `${prefix}… · ` : ""}
+                  {ingress === "websocket" ? "长连接 · " : ""}
                   {formatOpenApiWhen(inst.last_event_at)}
                 </p>
                 <div className="openapi-card-actions">
@@ -395,7 +494,15 @@ export function OpenApiSettingsTab() {
                   >
                     查看会话
                   </button>
-                  {inst.enabled ? (
+                  <button
+                    type="button"
+                    className="openapi-btn"
+                    disabled={busy}
+                    onClick={() => void handleInstanceLogs(inst)}
+                  >
+                    日志
+                  </button>
+                  {inst.enabled && inst.type_id === "script_api" ? (
                     <button
                       type="button"
                       className="openapi-btn openapi-btn--danger"
@@ -420,6 +527,13 @@ export function OpenApiSettingsTab() {
             ，请求头 <code>Authorization: Bearer lc_live_…</code>
           </p>
           <pre className="openapi-curl">{chatCurlExample()}</pre>
+        </details>
+      ) : null}
+
+      {instances.some((item) => item.type_id === "feishu") ? (
+        <details className="openapi-more">
+          <summary>接入说明 · 飞书</summary>
+          <p className="openapi-more-hint">{feishuNextSteps()}</p>
         </details>
       ) : null}
 
@@ -626,6 +740,7 @@ function CreateKeyScreen({
   roles,
   busy,
   error,
+  typeId,
   typeLabel: selectedType,
   onChange,
   onBack,
@@ -636,6 +751,7 @@ function CreateKeyScreen({
   roles: RoleSummary[];
   busy: boolean;
   error: string | null;
+  typeId: string;
   typeLabel: string;
   onChange: (next: CreateKeyDraft) => void;
   onBack: () => void;
@@ -645,6 +761,7 @@ function CreateKeyScreen({
     draft.voice === "existing" && draft.personaId
       ? `persona:${draft.personaId}`
       : draft.voice;
+  const isFeishu = typeId === "feishu";
 
   const setVoice = (value: string) => {
     if (value.startsWith("persona:")) {
@@ -666,7 +783,11 @@ function CreateKeyScreen({
       <header className="openapi-header">
         <div>
           <h3 className="openapi-title">添加{selectedType}</h3>
-          <p className="openapi-lead">填个名字就行。说话方式可先不改。</p>
+          <p className="openapi-lead">
+            {isFeishu
+              ? "填名称和飞书应用凭证。默认走长连接，不需要公网地址。"
+              : "填个名字就行。说话方式可先不改。"}
+          </p>
         </div>
       </header>
       {error ? <p className="settings-panel-error">{error}</p> : null}
@@ -684,7 +805,7 @@ function CreateKeyScreen({
             value={draft.name}
             onChange={(e) => onChange({ ...draft, name: e.target.value })}
             disabled={busy}
-            placeholder="例如：周报脚本"
+            placeholder={isFeishu ? "例如：飞书助手" : "例如：周报脚本"}
             autoFocus
           />
         </label>
@@ -754,6 +875,73 @@ function CreateKeyScreen({
             </select>
           </label>
         ) : null}
+        {isFeishu ? (
+          <>
+            <label className="settings-field">
+              <span>App ID</span>
+              <input
+                type="text"
+                value={draft.appId}
+                onChange={(e) => onChange({ ...draft, appId: e.target.value })}
+                disabled={busy}
+                placeholder="cli_…"
+                autoComplete="off"
+              />
+            </label>
+            <label className="settings-field">
+              <span>App Secret</span>
+              <input
+                type="password"
+                value={draft.appSecret}
+                onChange={(e) =>
+                  onChange({ ...draft, appSecret: e.target.value })
+                }
+                disabled={busy}
+                autoComplete="new-password"
+              />
+            </label>
+            <label className="settings-field">
+              <span>Verification Token（可选）</span>
+              <input
+                type="password"
+                value={draft.verificationToken}
+                onChange={(e) =>
+                  onChange({ ...draft, verificationToken: e.target.value })
+                }
+                disabled={busy}
+                autoComplete="new-password"
+              />
+            </label>
+            <label className="settings-field">
+              <span>Encrypt Key（可选）</span>
+              <input
+                type="password"
+                value={draft.encryptKey}
+                onChange={(e) =>
+                  onChange({ ...draft, encryptKey: e.target.value })
+                }
+                disabled={busy}
+                autoComplete="new-password"
+              />
+            </label>
+            <label className="settings-field">
+              <span>接入方式</span>
+              <select
+                value={draft.ingress}
+                onChange={(e) =>
+                  onChange({
+                    ...draft,
+                    ingress: e.target.value as CreateKeyDraft["ingress"],
+                  })
+                }
+                disabled={busy}
+              >
+                <option value="websocket">长连接（推荐）</option>
+                <option value="http_webhook">HTTP 回调（当前版本未接入）</option>
+              </select>
+            </label>
+          </>
+        ) : null}
         <footer className="openapi-form-footer">
           <button
             type="button"
@@ -766,7 +954,7 @@ function CreateKeyScreen({
           <button
             type="submit"
             className="settings-btn settings-btn--compact settings-btn--primary"
-            disabled={busy || !canSubmitCreateKey(draft)}
+            disabled={busy || !canSubmitCreateKey(draft, typeId)}
           >
             {busy ? "创建中…" : "创建并启用"}
           </button>
@@ -821,6 +1009,60 @@ function LogsScreen({
             </section>
           ))}
         </div>
+      )}
+    </div>
+  );
+}
+
+function InstanceLogsScreen({
+  instance,
+  logs,
+  usage,
+  error,
+  onBack,
+}: {
+  instance: ChannelInstance;
+  logs: ChannelLogItem[];
+  usage: { calls?: number; total_tokens?: number; cost?: number } | null;
+  error: string | null;
+  onBack: () => void;
+}) {
+  return (
+    <div className="openapi">
+      <button type="button" className="openapi-back" onClick={onBack}>
+        ← 返回
+      </button>
+      <header className="openapi-header">
+        <div>
+          <h3 className="openapi-title">{instance.name} · 日志</h3>
+          <p className="openapi-lead">只看这一路通道的入站、出站和用量。</p>
+        </div>
+      </header>
+      {error ? <p className="settings-panel-error">{error}</p> : null}
+      {usage ? (
+        <p className="openapi-card-meta">
+          调用 {usage.calls ?? 0} 次
+          {usage.total_tokens != null ? ` · ${usage.total_tokens} tokens` : ""}
+        </p>
+      ) : null}
+      {logs.length === 0 ? (
+        <div className="openapi-empty">
+          <p className="openapi-empty-title">还没有日志</p>
+          <p className="openapi-empty-hint">连接、入站失败和出站重试会出现在这里。</p>
+        </div>
+      ) : (
+        <ul className="openapi-instance-logs">
+          {logs.map((item) => (
+            <li key={item.id} className={`openapi-instance-log openapi-instance-log--${item.level}`}>
+              <span>{formatOpenApiWhen(item.ts)}</span>
+              <strong>{item.kind}</strong>
+              <p>{item.message}</p>
+              {item.duration_ms != null ? (
+                <em>{item.duration_ms} ms</em>
+              ) : null}
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );

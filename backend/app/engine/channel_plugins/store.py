@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from app.engine.api_keys import ApiKeyStore, hash_api_key, mint_api_key, verify_api_key
+from app.engine.channel_plugins.secret_mask import merge_secrets, public_secrets
 from app.engine.channel_plugins.types import (
     SCRIPT_API_TYPE_ID,
     STATUS_DISABLED,
@@ -122,11 +123,23 @@ class ChannelInstanceStore:
             "persona_id": item.get("persona_id"),
             "role_id": item.get("role_id"),
             "config": dict(item.get("config") or {}),
+            "secrets": public_secrets(item.get("secrets")),
             "status": status,
             "status_detail": item.get("status_detail"),
             "created_at": item.get("created_at"),
             "last_event_at": item.get("last_event_at"),
         }
+
+    def get_internal(self, instance_id: str) -> dict[str, Any]:
+        self.project_legacy_keys()
+        for item in self._load():
+            if item.get("id") == instance_id:
+                return {
+                    **item,
+                    "config": dict(item.get("config") or {}),
+                    "secrets": dict(item.get("secrets") or {}),
+                }
+        raise KeyError(instance_id)
 
     def as_key(self, item: dict[str, Any]) -> dict[str, Any]:
         if "revoked" in item and "type_id" not in item:
@@ -201,6 +214,48 @@ class ChannelInstanceStore:
             self._dual_write_script(record)
         return raw, self._public(record)
 
+    def create(
+        self,
+        *,
+        type_id: str,
+        name: str,
+        persona_id: str,
+        role_id: str,
+        config: dict[str, Any] | None = None,
+        secrets: dict[str, Any] | None = None,
+        enabled: bool = True,
+        status: str | None = None,
+        status_detail: str | None = None,
+        instance_id: str | None = None,
+    ) -> dict[str, Any]:
+        name = (name or "").strip()
+        if not name:
+            raise ValueError("通道名称不能为空")
+        kid = (instance_id or _new_id()).strip()
+        stamp = _now()
+        enabled_flag = bool(enabled)
+        record = {
+            "id": kid,
+            "type_id": type_id,
+            "name": name,
+            "enabled": enabled_flag,
+            "persona_id": persona_id,
+            "role_id": role_id,
+            "config": dict(config or {}),
+            "secrets": dict(secrets or {}),
+            "status": status or (STATUS_ENABLED if enabled_flag else STATUS_DISABLED),
+            "status_detail": status_detail,
+            "created_at": stamp,
+            "last_event_at": None,
+        }
+        with self._lock:
+            items = self._load()
+            items.append(record)
+            self._save(items)
+            if type_id == SCRIPT_API_TYPE_ID:
+                self._dual_write_script(record)
+        return self._public(record)
+
     def update(
         self,
         instance_id: str,
@@ -210,6 +265,8 @@ class ChannelInstanceStore:
         enabled: bool | None = None,
         status: str | None = None,
         status_detail: str | None = None,
+        config: dict[str, Any] | None = None,
+        secrets: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         with self._lock:
             items = self._load()
@@ -236,6 +293,15 @@ class ChannelInstanceStore:
                 found["status"] = status
             if status_detail is not None or status is not None:
                 found["status_detail"] = status_detail
+            if config is not None:
+                merged = dict(found.get("config") or {})
+                for key, value in config.items():
+                    if value is None:
+                        continue
+                    merged[key] = value
+                found["config"] = merged
+            if secrets is not None:
+                found["secrets"] = merge_secrets(found.get("secrets") or {}, secrets)
             self._save(items)
             self._dual_write_script(found)
             return self._public(found)
@@ -279,5 +345,5 @@ class ChannelInstanceStore:
         return [
             str(item.get("id"))
             for item in self._load()
-            if item.get("persona_id") == persona_id and item.get("enabled")
+            if item.get("persona_id") == persona_id
         ]

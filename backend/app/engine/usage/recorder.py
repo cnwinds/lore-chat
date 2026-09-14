@@ -70,8 +70,9 @@ def compute_cost(
 
 
 class UsageRecorder:
-    def __init__(self, store: UsageStore):
+    def __init__(self, store: UsageStore, *, resolve_channel_instance=None):
         self.store = store
+        self.resolve_channel_instance = resolve_channel_instance
 
     def record(
         self,
@@ -89,8 +90,16 @@ class UsageRecorder:
         duration_ms: int | None = None,
         conversation_id: str | None = None,
         turn_id: str | None = None,
+        channel_instance_id: str | None = None,
     ) -> str:
         ctx = get_usage_context()
+        cid = conversation_id or ctx.conversation_id
+        chid = channel_instance_id or ctx.channel_instance_id
+        if not chid and cid and self.resolve_channel_instance is not None:
+            try:
+                chid = self.resolve_channel_instance(cid)
+            except Exception:
+                chid = None
         price = self.store.get_price(model) or {}
         prompt_p = price.get("prompt_per_1m")
         completion_p = price.get("completion_per_1m")
@@ -127,7 +136,8 @@ class UsageRecorder:
             "status": status,
             "error": error,
             "duration_ms": duration_ms,
-            "conversation_id": conversation_id or ctx.conversation_id,
+            "conversation_id": cid,
             "turn_id": turn_id or ctx.turn_id,
+            "channel_instance_id": chid,
         }
         return self.store.insert_event(event)

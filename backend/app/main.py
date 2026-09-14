@@ -79,6 +79,7 @@ def create_app(settings: Settings | None = None, llm: LLMClient | None = None) -
                 "请在网页「设置 → 模型」为对话/辅助候选填写 API Key"
             )
         app.state.container = build_container(effective, llm=_llm)
+        app.state.container.channel_runtime.attach_loop(app.state.loop)
         try:
             n = app.state.container.chat_runner.turn_hub.recover_orphan_turns()
             if n:
@@ -180,9 +181,14 @@ def create_app(settings: Settings | None = None, llm: LLMClient | None = None) -
             )
             schedule_thread.start()
 
+        app.state.container.channel_runtime.start_enabled()
+
         try:
             yield
         finally:
+            runtime = getattr(app.state.container, "channel_runtime", None)
+            if runtime is not None:
+                await runtime.ashutdown()
             stop_event.set()
             if catalog_thread is not None:
                 catalog_thread.join(timeout=2)

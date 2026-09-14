@@ -45,6 +45,19 @@ _LIMIT_MSG = "（已达工具调用上限，以上为目前能给出的结论。
 _NON_SERIALIZABLE_KEYS = frozenset({"hits", "ingest_result"})
 
 
+def _channel_instance_id(tools, conversation_id: str | None) -> str | None:
+    if not conversation_id:
+        return None
+    convs = getattr(tools, "conversations", None)
+    if convs is None:
+        return None
+    try:
+        row = convs.get(conversation_id)
+    except (KeyError, AttributeError, TypeError):
+        return None
+    return (row or {}).get("channel_instance_id") or (row or {}).get("api_key_id")
+
+
 def tool_awaits_user(out: dict) -> bool:
     """工具结果是否要求本轮停下来等用户（ask_user / sandbox_confirm）。"""
     if out.get("awaiting_user") or out.get("awaiting_confirm"):
@@ -114,7 +127,11 @@ class AgentToolLoop:
                 text_out = VisibleTextStream()
                 think_out = VisibleTextStream()
                 with usage_context(
-                    conversation_id=conversation_id, turn_id=turn_id
+                    conversation_id=conversation_id,
+                    turn_id=turn_id,
+                    channel_instance_id=_channel_instance_id(
+                        self.tools, conversation_id
+                    ),
                 ):
                     stream_iter = iter(
                         self.llm.stream_chat_with_tools(

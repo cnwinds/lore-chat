@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
@@ -18,12 +20,17 @@ class CreateInstanceBody(BaseModel):
     persona_name: str | None = None
     persona_prompt: str = ""
     persona_avatar: str | None = None
+    config: dict[str, Any] | None = None
+    secrets: dict[str, Any] | None = None
+    enabled: bool = True
 
 
 class PatchInstanceBody(BaseModel):
     name: str | None = None
     persona_id: str | None = None
     enabled: bool | None = None
+    config: dict[str, Any] | None = None
+    secrets: dict[str, Any] | None = None
 
 
 class PersonaBody(BaseModel):
@@ -66,6 +73,9 @@ async def create_instance(body: CreateInstanceBody, request: Request):
             persona_name=body.persona_name,
             persona_prompt=body.persona_prompt,
             persona_avatar=body.persona_avatar,
+            config=body.config,
+            secrets=body.secrets,
+            enabled=body.enabled,
         )
     except KeyError as e:
         raise HTTPException(404, "人设不存在") from e
@@ -85,6 +95,8 @@ async def update_instance(
             name=body.name,
             persona_id=body.persona_id,
             enabled=body.enabled,
+            config=body.config,
+            secrets=body.secrets,
         )
     except KeyError as e:
         raise HTTPException(404, "通道不存在") from e
@@ -150,3 +162,36 @@ async def delete_persona(persona_id: str, request: Request):
     except OpenApiError as e:
         _raise(e)
     return {"ok": True}
+
+
+@router.get("/instances/{instance_id}/logs")
+async def instance_logs(
+    instance_id: str,
+    request: Request,
+    limit: int = 50,
+    offset: int = 0,
+):
+    try:
+        return container(request).open_api.instance_logs(
+            instance_id, limit=limit, offset=offset
+        )
+    except KeyError as e:
+        raise HTTPException(404, "通道不存在") from e
+
+
+@router.get("/instances/{instance_id}/usage")
+async def instance_usage(
+    instance_id: str,
+    request: Request,
+    granularity: str = "day",
+    start: str | None = None,
+    end: str | None = None,
+):
+    try:
+        return container(request).open_api.instance_usage(
+            instance_id, granularity=granularity, start=start, end=end
+        )
+    except KeyError as e:
+        raise HTTPException(404, "通道不存在") from e
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e

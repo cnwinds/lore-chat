@@ -7,8 +7,8 @@ import uuid
 from app.engine.channel_plugins.errors import ChannelError
 from app.engine.channel_plugins.store import ChannelInstanceStore
 from app.engine.channel_plugins.turn_service import ChannelTurnService
-from app.engine.channel_plugins.types import SCRIPT_API_TYPE_ID
-from app.engine.roles import API_ROLE_PREFIX, VISIBILITY_HIDDEN, is_api_role_id
+from app.engine.channel_plugins.types import SCRIPT_API_TYPE_ID, STATUS_DISABLED, STATUS_ENABLED
+from app.engine.roles import API_ROLE_PREFIX, EXT_ROLE_PREFIX, VISIBILITY_HIDDEN, is_api_role_id
 
 OpenApiError = ChannelError
 
@@ -24,6 +24,10 @@ class OpenApiService:
         channel_instances: ChannelInstanceStore | None = None,
         channel_turns: ChannelTurnService | None = None,
         channel_registry=None,
+        channel_runtime=None,
+        settings=None,
+        usage=None,
+        runtime_store=None,
     ):
         self.roles = roles
         self.api_keys = api_keys
@@ -39,6 +43,10 @@ class OpenApiService:
             chat_runner=chat_runner,
         )
         self.channel_registry = channel_registry
+        self.channel_runtime = channel_runtime
+        self.settings = settings
+        self.usage = usage
+        self.runtime_store = runtime_store
 
     def list_types(self) -> list[dict]:
         if self.channel_registry is not None:
@@ -99,6 +107,14 @@ class OpenApiService:
     def _enrich_instance(self, inst: dict) -> dict:
         item = dict(inst)
         item["persona"] = self._persona_or_none(inst.get("persona_id"))
+        if item.get("type_id") == "feishu":
+            cfg = dict(item.get("config") or {})
+            if str(cfg.get("ingress") or "websocket") == "http_webhook":
+                base = (self._public_base_url() or "").rstrip("/")
+                cfg["webhook_url"] = (
+                    f"{base}/api/channels/{item.get('id')}/feishu" if base else ""
+                )
+            item["config"] = cfg
         return item
 
     def _persona_or_none(self, persona_id: str | None) -> dict | None:
@@ -140,12 +156,16 @@ class OpenApiService:
         persona_name: str | None = None,
         persona_prompt: str = "",
         persona_avatar: str | None = None,
+        config: dict | None = None,
+        secrets: dict | None = None,
+        enabled: bool = True,
     ) -> dict:
-        if type_id != SCRIPT_API_TYPE_ID:
-            if self.channel_registry is not None and not self.channel_registry.has_adapter(
-                type_id
-            ):
+        adapter = None
+        if self.channel_registry is not None:
+            if not self.channel_registry.has_adapter(type_id):
                 raise OpenApiError("该通道类型即将支持")
+            adapter = self.channel_registry.get(type_id)
+        elif type_id != SCRIPT_API_TYPE_ID:
             raise OpenApiError("该通道类型即将支持")
         if persona_id:
             persona = self.roles.get_persona(persona_id)
@@ -157,7 +177,8 @@ class OpenApiService:
                 avatar=persona_avatar,
             )
         key_id = uuid.uuid4().hex[:12]
-        role_id = f"{API_ROLE_PREFIX}{key_id}"
+        prefix = API_ROLE_PREFIX if type_id == SCRIPT_API_TYPE_ID else EXT_ROLE_PREFIX
+        role_id = f"{prefix}{key_id}"
         display = f"{persona['name']} · {name.strip()}"
         self.roles.create(
             name=display[:80],
@@ -168,13 +189,48 @@ class OpenApiService:
             persona_id=persona["id"],
             onboarding_status="completed",
         )
-        raw, record = self.channel_instances.create_script(
+        if type_id == SCRIPT_API_TYPE_ID:
+            raw, record = self.channel_instances.create_script(
+                name=name,
+                persona_id=persona["id"],
+                role_id=role_id,
+                instance_id=key_id,
+            )
+            return {**self._enrich_instance(record), "token": raw}
+
+        cfg = dict(config or {})
+        cfg.pop("webhook_url", None)
+        sec = dict(secrets or {})
+        status, detail = (STATUS_ENABLED, None)
+        if adapter is not None:
+            status, detail = adapter.validate_config(
+                cfg,
+                sec,
+                public_base_url=self._public_base_url(),
+                enabling=bool(enabled),
+            )
+        if not enabled:
+            status, detail = STATUS_DISABLED, None
+        record = self.channel_instances.create(
+            type_id=type_id,
             name=name,
             persona_id=persona["id"],
             role_id=role_id,
+            config=cfg,
+            secrets=sec,
+            enabled=bool(enabled),
+            status=status,
+            status_detail=detail,
             instance_id=key_id,
         )
-        return {**self._enrich_instance(record), "token": raw}
+        if enabled and status == STATUS_ENABLED and self.channel_runtime is not None:
+            self.channel_runtime.sync_instance(record["id"])
+        return self._enrich_instance(record)
+
+    def _public_base_url(self) -> str | None:
+        if self.settings is None:
+            return None
+        return (getattr(self.settings, "public_base_url", None) or "").strip() or None
 
     def revoke_key(self, key_id: str) -> dict:
         return self._enrich_key(
@@ -182,7 +238,12 @@ class OpenApiService:
         )
 
     def revoke_instance(self, instance_id: str) -> dict:
-        return self._enrich_instance(self.channel_instances.set_enabled(instance_id, False))
+        updated = self._enrich_instance(
+            self.channel_instances.set_enabled(instance_id, False)
+        )
+        if self.channel_runtime is not None:
+            self.channel_runtime.sync_instance(instance_id)
+        return updated
 
     def update_instance(
         self,
@@ -191,21 +252,80 @@ class OpenApiService:
         name: str | None = None,
         persona_id: str | None = None,
         enabled: bool | None = None,
+        config: dict | None = None,
+        secrets: dict | None = None,
     ) -> dict:
         if persona_id:
             self.roles.get_persona(persona_id)
+        if config is not None:
+            config = {k: v for k, v in config.items() if k != "webhook_url"}
+        internal = self.channel_instances.get_internal(instance_id)
+        type_id = internal.get("type_id") or SCRIPT_API_TYPE_ID
+        adapter = None
+        if self.channel_registry is not None and self.channel_registry.has_adapter(type_id):
+            adapter = self.channel_registry.get(type_id)
+        merged_config = dict(internal.get("config") or {})
+        if config:
+            merged_config.update({k: v for k, v in config.items() if v is not None})
+        merged_config.pop("webhook_url", None)
+        from app.engine.channel_plugins.secret_mask import merge_secrets
+
+        merged_secrets = merge_secrets(internal.get("secrets") or {}, secrets)
+        enabling = internal.get("enabled") if enabled is None else bool(enabled)
+        status = None
+        detail = None
+        if adapter is not None:
+            status, detail = adapter.validate_config(
+                merged_config,
+                merged_secrets,
+                public_base_url=self._public_base_url(),
+                enabling=bool(enabling),
+            )
+            if not enabling:
+                status, detail = STATUS_DISABLED, None
         updated = self.channel_instances.update(
             instance_id,
             name=name,
             persona_id=persona_id,
             enabled=enabled,
+            status=status,
+            status_detail=detail,
+            config=config,
+            secrets=secrets,
         )
         if persona_id and updated.get("role_id"):
             try:
                 self.roles.set_persona_id(updated["role_id"], persona_id)
             except KeyError:
                 pass
+        if self.channel_runtime is not None:
+            self.channel_runtime.sync_instance(instance_id)
         return self._enrich_instance(updated)
+
+    def instance_logs(self, instance_id: str, *, limit: int = 50, offset: int = 0) -> dict:
+        self.channel_instances.get(instance_id)
+        if self.runtime_store is None:
+            return {"items": [], "limit": limit, "offset": offset}
+        items = self.runtime_store.list_logs(instance_id, limit=limit, offset=offset)
+        return {"items": items, "limit": limit, "offset": offset}
+
+    def instance_usage(
+        self,
+        instance_id: str,
+        *,
+        granularity: str = "day",
+        start: str | None = None,
+        end: str | None = None,
+    ) -> dict:
+        self.channel_instances.get(instance_id)
+        if self.usage is None:
+            return {"totals": {}, "by_bucket": [], "by_model": []}
+        return self.usage.summary(
+            granularity=granularity,
+            start=start,
+            end=end,
+            channel_instance_id=instance_id,
+        )
 
     def resolve_bearer(self, raw: str) -> dict | None:
         rec = self.channel_instances.resolve_script_token(raw)
