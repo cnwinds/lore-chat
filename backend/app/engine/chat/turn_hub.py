@@ -60,6 +60,7 @@ class TurnRunSpec:
     mode: str = MODE_DEFAULT
     responding_role_id: str | None = None
     extra_system: list[dict] | None = None
+    sandbox_enabled: bool | None = None
 
 
 @dataclass
@@ -331,6 +332,7 @@ class TurnExecutionHub:
         reuse_user_message_id: str | None = None,
         mode: str = MODE_DEFAULT,
         stimulus=None,
+        sandbox_enabled: bool | None = None,
     ) -> dict:
         """回合生命周期：begin_turn +（若 running）启动 Task。观测另走 subscribe。"""
         responding = None
@@ -404,6 +406,7 @@ class TurnExecutionHub:
                     mode=mode or MODE_DEFAULT,
                     responding_role_id=responding,
                     extra_system=extra_system,
+                    sandbox_enabled=sandbox_enabled,
                 ),
             )
         return turn
@@ -560,6 +563,7 @@ class TurnExecutionHub:
                 current_role_id=spec.responding_role_id
                 or self._safe_role_id(cid),
                 extra_system=spec.extra_system,
+                sandbox_enabled=spec.sandbox_enabled,
             ):
                 parsed = parse_agent_sse_event(ev)
                 if parsed:

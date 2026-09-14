@@ -20,6 +20,9 @@ PUBLIC_PREFIXES = (
     ("GET", "/api/media/grant/"),
     ("GET", "/api/share/"),
     ("POST", "/api/share/"),
+    ("GET", "/api/channels/"),
+    ("POST", "/api/channels/"),
+    ("HEAD", "/api/channels/"),
 )
 
 V1_PREFIX = "/api/v1/"

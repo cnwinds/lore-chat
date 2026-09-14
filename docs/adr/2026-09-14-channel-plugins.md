@@ -2,7 +2,7 @@
 
 ## 状态
 
-**已确认 / P1 已落地**（2026-09-14）。产品口径已拍板，见 [product-channel-plugins.md](../product-channel-plugins.md) §12。P0 脚本通道与 P1 飞书长连接、按实例日志/用量已落地。本篇是架构摘要，不替代 product 文。
+**已确认 / P2 已落地**（2026-09-14）。产品口径已拍板，见 [product-channel-plugins.md](../product-channel-plugins.md) §12。P0 脚本通道、P1 飞书长连接与按实例日志/用量、P2 Slack/企微/钉钉与群规则已落地。本篇是架构摘要，不替代 product 文。
 
 ## 背景
 
@@ -56,7 +56,7 @@ webhook 缺 `public_base_url`：**允许保存**；启用校验失败 → `statu
 
 ### 7. 分期
 
-P0 公共模型 + Key 投影为第一种通道 + 同级列表 UI，行为不变。**P1 = 飞书长连接** + 按实例日志/用量。P2 其余类型、群/频道（按 §3 口径）、富媒体。
+P0 公共模型 + Key 投影为第一种通道 + 同级列表 UI，行为不变。**P1 = 飞书长连接** + 按实例日志/用量。**P2** 其余类型（Slack Socket Mode / 企微 webhook / 钉钉 Stream）、群/频道（按 §3 口径）、富媒体 attachments、`needs_input` 纯文本降级；`wechat_mp` 仅灰显。
 
 ## 后果
 

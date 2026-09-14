@@ -3,34 +3,21 @@
 from __future__ import annotations
 
 from app.engine.channel_plugins.adapter import ChannelAdapter
+from app.engine.channel_plugins.dingtalk import DingtalkAdapter
 from app.engine.channel_plugins.errors import ChannelError
 from app.engine.channel_plugins.feishu import FeishuAdapter
 from app.engine.channel_plugins.script_api import ScriptApiAdapter
+from app.engine.channel_plugins.slack import SlackAdapter
 from app.engine.channel_plugins.types import ChannelTypeSpec, SCRIPT_API_TYPE_ID
+from app.engine.channel_plugins.wecom import WecomAdapter
 
 # 仅元数据，供设置向导灰显「即将支持」。已落地的类型走 adapter。
 _UPCOMING_SPECS = (
     ChannelTypeSpec(
-        type_id="slack",
-        display_name="Slack",
-        ingress="websocket",
-        needs_public_url=False,
-        available=False,
-        capabilities=frozenset({"async_reply", "thread"}),
-    ),
-    ChannelTypeSpec(
-        type_id="wecom",
-        display_name="企业微信",
+        type_id="wechat_mp",
+        display_name="微信公众号",
         ingress="http_webhook",
         needs_public_url=True,
-        available=False,
-        capabilities=frozenset({"async_reply"}),
-    ),
-    ChannelTypeSpec(
-        type_id="dingtalk",
-        display_name="钉钉",
-        ingress="websocket",
-        needs_public_url=False,
         available=False,
         capabilities=frozenset({"async_reply"}),
     ),
@@ -76,6 +63,9 @@ class ChannelPluginRegistry:
         registry = cls()
         registry.register(ScriptApiAdapter())
         registry.register(FeishuAdapter())
+        registry.register(SlackAdapter())
+        registry.register(WecomAdapter())
+        registry.register(DingtalkAdapter())
         for spec in _UPCOMING_SPECS:
             registry.add_upcoming(spec)
         return registry

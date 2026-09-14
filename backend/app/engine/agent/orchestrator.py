@@ -66,6 +66,7 @@ class AgentOrchestrator:
         prefetch_context: str | None = None,
         current_role_id: str | None = None,
         extra_system: list[dict] | None = None,
+        sandbox_enabled: bool | None = None,
     ) -> AsyncIterator[str]:
         system_layer_text = (
             self.system_layer.compose_rules() if self.system_layer else ""
@@ -140,7 +141,8 @@ class AgentOrchestrator:
             search_configured=search_configured,
             imagegen_configured=imagegen_configured,
             sandbox_enabled=bool(
-                self.settings.sandbox_enabled
+                sandbox_enabled is not False
+                and self.settings.sandbox_enabled
                 and (
                     getattr(self.tools, "sandbox_pool", None) is not None
                     or self.tools.sandbox_runtime is not None

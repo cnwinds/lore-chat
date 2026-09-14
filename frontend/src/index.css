@@ -4136,6 +4136,26 @@ button.memory-fact-statement--jump:focus-visible {
   color: #3370ff;
 }
 
+.openapi-type-icon--slack {
+  background: color-mix(in srgb, #611f69 16%, var(--bg-muted));
+  color: #611f69;
+}
+
+.openapi-type-icon--wecom {
+  background: color-mix(in srgb, #2a75ed 16%, var(--bg-muted));
+  color: #2a75ed;
+}
+
+.openapi-type-icon--dingtalk {
+  background: color-mix(in srgb, #0089ff 16%, var(--bg-muted));
+  color: #0089ff;
+}
+
+.openapi-type-icon--wechat_mp {
+  background: color-mix(in srgb, var(--text-muted) 16%, var(--bg-muted));
+  color: var(--text-muted);
+}
+
 .openapi-card-status {
   display: flex;
   align-items: center;

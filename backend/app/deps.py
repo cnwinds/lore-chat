@@ -217,6 +217,7 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
         instances=channel_instances,
         registry=channel_registry,
         runtime_store=None,
+        kb_path=settings.kb_path,
     )
     runtime_store = ChannelRuntimeStore(settings.kb_path)
     channel_turns.runtime_store = runtime_store
