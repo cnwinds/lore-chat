@@ -15,10 +15,20 @@ describe("three-pane grid", () => {
       /\.app-shell--three-pane:has\(>\s*\.doc-panel\),\s*\n\s*\.app-shell--three-pane\.app-shell--doc-pinned\s*\{\s*\n\s*--app-doc-col:\s*auto;/,
     );
     expect(css).toMatch(
-      /\.app-shell--three-pane \.doc-panel\s*\{\s*\n\s*grid-column:\s*3;/,
+      /\.app-shell--three-pane \.doc-panel\s*\{\s*\n\s*grid-column:\s*4;/,
     );
     expect(css).toMatch(
-      /\.role-config-panel\s*\{\s*\n\s*grid-column:\s*4;/,
+      /\.role-config-panel\s*\{\s*\n\s*grid-column:\s*5;/,
+    );
+  });
+
+  it("docks the channel panel in its own track to the right of the left sidebar", () => {
+    expect(css).toMatch(/--app-channel-col:\s*0px;/);
+    expect(css).toMatch(
+      /\.app-shell--three-pane \.channel-panel\s*\{\s*\n\s*grid-column:\s*2;/,
+    );
+    expect(css).toMatch(
+      /\.app-shell--three-pane \.main-panel\s*\{\s*\n\s*grid-column:\s*3;/,
     );
   });
 

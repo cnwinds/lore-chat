@@ -104,6 +104,21 @@ export function getChannelLogs(id: string, limit = 50) {
   );
 }
 
+export type ChannelCredential = {
+  kind: "token" | "secrets" | string;
+  token?: string | null;
+  prefix?: string;
+  display: string;
+  copy_text: string;
+  can_copy_full: boolean;
+};
+
+export function getChannelCredential(id: string) {
+  return apiFetch<ChannelCredential>(
+    `/api/channel-plugins/instances/${encodeURIComponent(id)}/credential`,
+  );
+}
+
 export function getChannelUsage(id: string) {
   return apiFetch<{
     totals?: {

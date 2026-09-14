@@ -32,10 +32,14 @@ def merge_secrets(
     return out
 
 
+# 哈希与可复制明文都不进列表回包；明文只经 Cookie 鉴权的 credential 接口取出。
+_PRIVATE_SECRET_KEYS = {"key_hash", "key_plaintext"}
+
+
 def public_secrets(secrets: dict | None) -> dict[str, str]:
     out: dict[str, str] = {}
     for key, raw in (secrets or {}).items():
-        if key == "key_hash":
+        if key in _PRIVATE_SECRET_KEYS:
             continue
         if not isinstance(raw, str) or not raw:
             continue

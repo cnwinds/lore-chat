@@ -1,23 +1,46 @@
-import { ThemeToggle } from "../ThemeToggle";
 import { SettingsAttentionDot } from "../settings/SettingsAttentionDot";
 
 type Props = {
   settingsAttention?: boolean;
+  channelsOpen?: boolean;
   onOpenSettings?: () => void;
+  onToggleChannels?: () => void;
 };
 
 export function LeftSidebarFooter({
   settingsAttention = false,
+  channelsOpen = false,
   onOpenSettings,
+  onToggleChannels,
 }: Props) {
   return (
     <footer className="sidebar-footer">
       <div className="sidebar-footer-actions">
-        <ThemeToggle />
+        {onToggleChannels ? (
+          <button
+            type="button"
+            className={`sidebar-dock-btn${channelsOpen ? " sidebar-dock-btn--active" : ""}`}
+            onClick={onToggleChannels}
+            aria-pressed={channelsOpen}
+            title="聊天通道"
+          >
+            <span className="sidebar-dock-icon" aria-hidden>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                <path
+                  d="M5 7h14M5 12h14M5 17h9"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </span>
+            <span className="sidebar-settings-label">聊天通道</span>
+          </button>
+        ) : null}
         {onOpenSettings ? (
           <button
             type="button"
-            className="sidebar-settings-btn"
+            className="sidebar-dock-btn sidebar-settings-btn"
             onClick={onOpenSettings}
             title={
               settingsAttention

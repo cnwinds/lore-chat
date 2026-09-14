@@ -106,6 +106,14 @@ def test_store_projects_legacy_api_keys(tmp_path):
     assert rec is not None
     assert rec["id"] == kid
     assert rec["revoked"] is False
+    dumped = json.dumps(listed)
+    assert raw not in dumped
+    assert "key_plaintext" not in dumped
+    assert "key_hash" not in dumped
+    internal = store.get_internal(kid)
+    assert "key_plaintext" not in (internal.get("secrets") or {})
+    assert (internal.get("secrets") or {}).get("key_hash")
+    assert inst["config"]["key_prefix"] == raw[:12]
 
 
 def test_store_dual_writes_script_key(tmp_path):
@@ -122,6 +130,11 @@ def test_store_dual_writes_script_key(tmp_path):
     assert keys["keys"][0]["id"] == "new01"
     assert keys["keys"][0]["hash"] == hash_api_key(raw)
     assert inst["config"]["key_prefix"] == raw[:12]
+    dumped = json.dumps(inst)
+    assert raw not in dumped
+    assert "key_plaintext" not in dumped
+    internal = store.get_internal("new01")
+    assert internal["secrets"]["key_plaintext"] == raw
 
 
 def test_list_instances_includes_projected_keys(tmp_path):
@@ -229,5 +242,97 @@ def test_hidden_channel_role_stays_off_sidebar(tmp_path):
         roles = client.get("/api/roles").json()["roles"]
         assert all(item["id"] != role_id for item in roles)
         assert client.get(f"/api/roles/{role_id}").status_code == 404
+    finally:
+        _close(client)
+
+
+def test_script_credential_copyable_after_create(tmp_path):
+    _app, client = _setup(tmp_path)
+    try:
+        created = client.post(
+            "/api/channel-plugins/instances",
+            json={"type_id": "script_api", "name": "可复制"},
+        )
+        assert created.status_code == 200, created.text
+        body = created.json()
+        token = body["token"]
+        inst_id = body["id"]
+        listed = client.get("/api/channel-plugins/instances")
+        assert listed.status_code == 200
+        assert token not in listed.text
+        assert "key_plaintext" not in listed.text
+        cred = client.get(f"/api/channel-plugins/instances/{inst_id}/credential")
+        assert cred.status_code == 200, cred.text
+        payload = cred.json()
+        assert payload["kind"] == "token"
+        assert payload["can_copy_full"] is True
+        assert payload["copy_text"] == token
+        assert payload["token"] == token
+    finally:
+        _close(client)
+
+
+def test_legacy_script_credential_without_plaintext(tmp_path):
+    kb = tmp_path / "knowledge"
+    (kb / ".kb").mkdir(parents=True)
+    raw = mint_api_key()
+    kid = "oldcopy01"
+    (kb / ".kb" / "api_keys.json").write_text(
+        json.dumps(
+            {
+                "keys": [
+                    {
+                        "id": kid,
+                        "name": "旧密钥",
+                        "hash": hash_api_key(raw),
+                        "prefix": raw[:12],
+                        "persona_id": None,
+                        "role_id": f"{API_ROLE_PREFIX}{kid}",
+                        "revoked": False,
+                        "created_at": "2026-09-01T00:00:00+00:00",
+                        "last_used_at": None,
+                    }
+                ]
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    _app, client = _setup(tmp_path)
+    try:
+        cred = client.get(f"/api/channel-plugins/instances/{kid}/credential")
+        assert cred.status_code == 200, cred.text
+        payload = cred.json()
+        assert payload["can_copy_full"] is False
+        assert payload["copy_text"] == ""
+        assert payload["prefix"] == raw[:12]
+        assert raw not in cred.text
+    finally:
+        _close(client)
+
+
+def test_feishu_credential_copy_includes_app_id(tmp_path):
+    _app, client = _setup(tmp_path)
+    try:
+        created = client.post(
+            "/api/channel-plugins/instances",
+            json={
+                "type_id": "feishu",
+                "name": "飞书凭证",
+                "config": {"app_id": "cli_copy", "ingress": "websocket"},
+                "secrets": {"app_secret": "secret-value"},
+            },
+        )
+        assert created.status_code == 200, created.text
+        inst_id = created.json()["id"]
+        listed = client.get("/api/channel-plugins/instances")
+        assert "secret-value" not in listed.text
+        cred = client.get(f"/api/channel-plugins/instances/{inst_id}/credential")
+        assert cred.status_code == 200, cred.text
+        payload = cred.json()
+        assert payload["kind"] == "secrets"
+        assert payload["can_copy_full"] is True
+        assert "cli_copy" in payload["copy_text"]
+        assert "secret-value" in payload["copy_text"]
     finally:
         _close(client)

@@ -80,6 +80,7 @@ function AppMain() {
   const [liveAttention, setLiveAttention] = useState<SettingsAttention | null>(
     null,
   );
+  const [channelsOpen, setChannelsOpen] = useState(false);
   useEffect(() => {
     refreshAttention();
   }, [settingsOpen, refreshAttention]);
@@ -250,7 +251,15 @@ function AppMain() {
         mobileNavOpen={mobileNavOpen}
         onMobileNavClose={closeMobileNav}
         settingsAttention={displayAttention.any}
-        onOpenSettings={() => setSettingsOpen(true)}
+        onOpenSettings={() => {
+          setSettingsOpen(true);
+          closeMobileNav();
+        }}
+        channelsOpen={channelsOpen}
+        onToggleChannels={() => {
+          setChannelsOpen((open) => !open);
+          closeMobileNav();
+        }}
         roleListProps={{
           activeRoleId: conversation.activeGroupId
             ? null

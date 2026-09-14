@@ -3,6 +3,7 @@ import { RoleList } from "../role/RoleList";
 import { KbSidebar } from "../KbSidebar";
 import { RoleConfigPanel } from "../role/RoleConfigPanel";
 import { LeftSidebarFooter } from "./LeftSidebarFooter";
+import { ChannelPanel } from "../channels/ChannelPanel";
 import { useLeftSidebarWidth } from "../../hooks/useLeftSidebarWidth";
 
 type RoleListProps = ComponentProps<typeof RoleList>;
@@ -26,6 +27,8 @@ type Props = {
   onMobileNavClose?: () => void;
   settingsAttention?: boolean;
   onOpenSettings?: () => void;
+  channelsOpen?: boolean;
+  onToggleChannels?: () => void;
 };
 
 export function AppShell({
@@ -45,6 +48,8 @@ export function AppShell({
   onMobileNavClose,
   settingsAttention = false,
   onOpenSettings,
+  channelsOpen = false,
+  onToggleChannels,
 }: Props) {
   const leftSidebar = useLeftSidebarWidth();
   const shellClass = [
@@ -58,6 +63,7 @@ export function AppShell({
     mobileLayout && mobileNavOpen ? "app-shell--mobile-nav-open" : "",
     leftSidebar.dragging ? "app-shell--left-resizing" : "",
     leftSidebar.splitDragging ? "app-shell--left-split-resizing" : "",
+    channelsOpen ? "app-shell--channel-open" : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -102,6 +108,8 @@ export function AppShell({
         <LeftSidebarFooter
           settingsAttention={settingsAttention}
           onOpenSettings={onOpenSettings}
+          channelsOpen={channelsOpen}
+          onToggleChannels={onToggleChannels}
         />
         {!mobileLayout && (
           <div
@@ -116,6 +124,12 @@ export function AppShell({
           />
         )}
       </div>
+      <ChannelPanel
+        open={channelsOpen}
+        onRequestClose={() => {
+          if (channelsOpen) onToggleChannels?.();
+        }}
+      />
       <main
         className={`main-panel${mainFloatWide ? " main-panel--float-wide" : ""}`}
       >
