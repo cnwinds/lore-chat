@@ -12,6 +12,7 @@ from typing import Iterator
 class UsageCallContext:
     conversation_id: str | None = None
     turn_id: str | None = None
+    channel_instance_id: str | None = None
 
 
 _usage_ctx: ContextVar[UsageCallContext | None] = ContextVar(
@@ -28,9 +29,14 @@ def usage_context(
     *,
     conversation_id: str | None = None,
     turn_id: str | None = None,
+    channel_instance_id: str | None = None,
 ) -> Iterator[None]:
     token = _usage_ctx.set(
-        UsageCallContext(conversation_id=conversation_id, turn_id=turn_id)
+        UsageCallContext(
+            conversation_id=conversation_id,
+            turn_id=turn_id,
+            channel_instance_id=channel_instance_id,
+        )
     )
     try:
         yield

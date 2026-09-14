@@ -40,11 +40,17 @@ class UsageService:
         granularity: str = "day",
         start: str | None = None,
         end: str | None = None,
+        channel_instance_id: str | None = None,
+        conversation_ids: list[str] | None = None,
     ) -> dict[str, Any]:
         start_utc, end_utc = self._resolve_range(start, end)
         self.store.prune()
         return self.store.summarize(
-            granularity=granularity, start=start_utc, end=end_utc
+            granularity=granularity,
+            start=start_utc,
+            end=end_utc,
+            channel_instance_id=channel_instance_id,
+            conversation_ids=conversation_ids,
         )
 
     def events(
@@ -53,6 +59,8 @@ class UsageService:
         start: str | None = None,
         end: str | None = None,
         model: str | None = None,
+        channel_instance_id: str | None = None,
+        conversation_ids: list[str] | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> dict[str, Any]:
@@ -62,6 +70,8 @@ class UsageService:
             start=start_utc,
             end=end_utc,
             model=model,
+            channel_instance_id=channel_instance_id,
+            conversation_ids=conversation_ids,
             limit=limit,
             offset=offset,
         )

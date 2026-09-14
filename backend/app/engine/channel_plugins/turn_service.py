@@ -3,20 +3,51 @@
 from __future__ import annotations
 
 import asyncio
+import logging
+import threading
+import time
 import uuid
+from collections import deque
 from typing import Any
 
 from app.engine.agent.prompts import MODE_API
 from app.engine.channel_plugins.errors import ChannelError
-from app.engine.channel_plugins.types import origin_for_type
+from app.engine.channel_plugins.types import SCRIPT_API_TYPE_ID, origin_for_type
 from app.engine.conversation.shared import TurnInProgress
+
+_log = logging.getLogger(__name__)
+
+_FAIL_TEXT = "本轮处理失败，请稍后再试。"
 
 
 class ChannelTurnService:
-    def __init__(self, *, roles, conversations, chat_runner):
+    def __init__(
+        self,
+        *,
+        roles,
+        conversations,
+        chat_runner,
+        instances=None,
+        registry=None,
+        runtime_store=None,
+    ):
         self.roles = roles
         self.conversations = conversations
         self.chat_runner = chat_runner
+        self.instances = instances
+        self.registry = registry
+        self.runtime_store = runtime_store
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._queues: dict[str, deque[Any]] = {}
+        self._drain_tasks: dict[str, asyncio.Task] = {}
+        self._qlock = threading.Lock()
+
+    def attach_loop(self, loop: asyncio.AbstractEventLoop) -> None:
+        self._loop = loop
+        with self._qlock:
+            pending = [iid for iid, q in self._queues.items() if q]
+        for iid in pending:
+            self._schedule_drain(iid)
 
     def assert_instance_conversation(self, record: dict, cid: str) -> dict:
         try:
@@ -24,7 +55,9 @@ class ChannelTurnService:
         except KeyError as e:
             raise ChannelError("对话不存在", code="not_found", status=404) from e
         origin = conv.get("origin") or "web"
-        if origin != "api":
+        from app.engine.channel_plugins.types import is_channel_origin
+
+        if not is_channel_origin(origin):
             raise ChannelError("对话不存在", code="not_found", status=404)
         inst_id = record.get("id")
         owner = conv.get("channel_instance_id") or conv.get("api_key_id")
@@ -71,7 +104,7 @@ class ChannelTurnService:
         skills: list[str] | None = None,
         title: str | None = None,
         timeout_sec: float = 120,
-        type_id: str = "script_api",
+        type_id: str = SCRIPT_API_TYPE_ID,
     ) -> dict[str, Any]:
         text = (message or "").strip()
         if not text:
@@ -101,10 +134,194 @@ class ChannelTurnService:
                 channel_instance_id=inst_id,
             )
 
+        turn = self._begin(record, cid, text, skills=skills)
+        wait = min(max(float(timeout_sec or 120), 0.05), 600.0)
+        status = await self._wait_turn(turn, timeout_sec=wait)
+        return self._chat_payload(cid, turn["turn_id"], status=status)
+
+    def enqueue_now(self, event) -> dict[str, Any]:
+        """先处理入站（去重/排队），回合异步。不对平台 409。"""
+        instance_id = getattr(event, "instance_id", None) or ""
+        if not instance_id:
+            return {"status": "ignored", "reason": "no_instance"}
+        if getattr(event, "is_group", False):
+            self._log(
+                instance_id,
+                kind="inbound_ignored",
+                message="P1 忽略群聊消息",
+                extra={"event_id": event.event_id},
+            )
+            return {"status": "ignored", "reason": "group"}
+        text = (getattr(event, "text", None) or "").strip()
+        attachments = getattr(event, "attachments", None) or []
+        if not text and not attachments:
+            return {"status": "ignored", "reason": "empty"}
+        if self.instances is not None:
+            try:
+                inst = self.instances.get(instance_id)
+            except KeyError:
+                return {"status": "ignored", "reason": "missing"}
+            if not inst.get("enabled"):
+                return {"status": "ignored", "reason": "disabled"}
+        event_id = getattr(event, "event_id", None)
+        if event_id and self.runtime_store is not None:
+            if not self.runtime_store.mark_event(instance_id, event_id):
+                self._log(
+                    instance_id,
+                    kind="inbound_duplicate",
+                    message="重复事件已忽略",
+                    extra={"event_id": event_id},
+                )
+                return {"status": "duplicate"}
+        with self._qlock:
+            self._queues.setdefault(instance_id, deque()).append(event)
+        self._schedule_drain(instance_id)
+        return {"status": "accepted"}
+
+    def _schedule_drain(self, instance_id: str) -> None:
+        loop = self._loop
+        if loop is None:
+            try:
+                loop = asyncio.get_running_loop()
+                self._loop = loop
+            except RuntimeError:
+                return
+        try:
+            running = asyncio.get_running_loop()
+        except RuntimeError:
+            running = None
+        if running is loop:
+            self._ensure_drain(instance_id)
+            return
+        loop.call_soon_threadsafe(self._ensure_drain, instance_id)
+
+    def _ensure_drain(self, instance_id: str) -> None:
+        task = self._drain_tasks.get(instance_id)
+        if task is not None and not task.done():
+            return
+        loop = self._loop
+        if loop is None:
+            return
+        self._drain_tasks[instance_id] = loop.create_task(
+            self._drain(instance_id), name=f"channel-drain-{instance_id}"
+        )
+
+    async def _drain(self, instance_id: str) -> None:
+        while True:
+            with self._qlock:
+                queue = self._queues.get(instance_id)
+                event = queue.popleft() if queue else None
+            if event is None:
+                break
+            try:
+                await self._run_event(event)
+            except Exception:
+                _log.exception("channel drain failed instance=%s", instance_id)
+                self._log(
+                    instance_id,
+                    kind="turn_failed",
+                    level="error",
+                    message="回合执行失败",
+                    extra={"event_id": getattr(event, "event_id", None)},
+                )
+        with self._qlock:
+            leftover = bool(self._queues.get(instance_id))
+            current = asyncio.current_task()
+            if self._drain_tasks.get(instance_id) is current:
+                self._drain_tasks.pop(instance_id, None)
+        if leftover:
+            self._ensure_drain(instance_id)
+
+    async def _run_event(self, event) -> None:
+        if self.instances is None:
+            return
+        inst = self.instances.get_internal(event.instance_id)
+        role_id = inst.get("role_id") or ""
+        if not role_id:
+            raise ChannelError("通道未绑定角色", status=500)
+        try:
+            self.roles.get(role_id)
+        except KeyError as e:
+            raise ChannelError("通道角色已失效", status=500) from e
+        cid = self._map_conversation(inst, event)
+        if self.instances is not None:
+            self.instances.touch(event.instance_id)
+        started = time.monotonic()
+        try:
+            turn = self._begin(inst, cid, event.text)
+        except TurnInProgress:
+            with self._qlock:
+                self._queues.setdefault(event.instance_id, deque()).appendleft(event)
+            await asyncio.sleep(0.4)
+            return
+        status = await self._wait_until_done(turn)
+        duration_ms = int((time.monotonic() - started) * 1000)
+        payload = self._chat_payload(cid, turn["turn_id"], status=status)
+        reply = ((payload.get("message") or {}).get("content") or "").strip()
+        http_status = payload.get("status")
+        if http_status == "failed":
+            reply = reply or _FAIL_TEXT
+            self._log(
+                event.instance_id,
+                kind="turn_failed",
+                level="error",
+                message="回合失败",
+                duration_ms=duration_ms,
+            )
+        elif http_status in {"stopped"}:
+            self._log(
+                event.instance_id,
+                kind="turn_done",
+                message="回合已停止",
+                duration_ms=duration_ms,
+            )
+            reply = ""
+        else:
+            self._log(
+                event.instance_id,
+                kind="turn_done",
+                message="回合完成",
+                duration_ms=duration_ms,
+            )
+        if reply:
+            await self._send_outbound(inst, event, reply)
+
+    def _map_conversation(self, inst: dict, event) -> str:
+        type_id = inst.get("type_id") or SCRIPT_API_TYPE_ID
+        user_id = event.external_user_id or event.external_chat_id or "unknown"
+        key = f"{type_id}:{inst.get('id')}:dm:{user_id}"
+        cid = None
+        if self.runtime_store is not None:
+            cid = self.runtime_store.get_thread(inst["id"], key)
+        if cid:
+            try:
+                self.assert_instance_conversation(inst, cid)
+                return cid
+            except ChannelError:
+                cid = None
+        cid = self.conversations.create(
+            title=(event.display_name or "").strip() or "飞书私聊",
+            role_id=inst.get("role_id"),
+            origin=origin_for_type(type_id),
+            api_key_id=inst.get("id"),
+            channel_instance_id=inst.get("id"),
+        )
+        if self.runtime_store is not None:
+            self.runtime_store.put_thread(inst["id"], key, cid)
+        return cid
+
+    def _begin(
+        self,
+        record: dict,
+        cid: str,
+        text: str,
+        *,
+        skills: list[str] | None = None,
+    ) -> dict:
         catalog = self.catalog_for(skills)
         client_message_id = uuid.uuid4().hex
         try:
-            turn = self.chat_runner.begin_persisted_turn(
+            return self.chat_runner.begin_persisted_turn(
                 conversation_id=cid,
                 user_text=text,
                 client_message_id=client_message_id,
@@ -122,9 +339,53 @@ class ChannelTurnService:
         except ValueError as e:
             raise ChannelError(str(e)) from e
 
-        wait = min(max(float(timeout_sec or 120), 0.05), 600.0)
-        status = await self._wait_turn(turn, timeout_sec=wait)
-        return self._chat_payload(cid, turn["turn_id"], status=status)
+    async def _send_outbound(self, inst: dict, event, text: str) -> None:
+        if self.registry is None:
+            return
+        adapter = self.registry.get(inst["type_id"])
+        last_error: Exception | None = None
+        for attempt in range(3):
+            try:
+                await asyncio.to_thread(
+                    adapter.send_outbound,
+                    inst,
+                    text,
+                    chat_id=event.external_chat_id,
+                    external_chat_id=event.external_chat_id,
+                    open_id=event.external_user_id,
+                    external_user_id=event.external_user_id,
+                )
+                return
+            except Exception as e:
+                last_error = e
+                self._log(
+                    inst["id"],
+                    kind="outbound_retry" if attempt < 2 else "outbound_error",
+                    level="error" if attempt >= 2 else "warn",
+                    message=str(e),
+                    extra={"attempt": attempt + 1},
+                )
+                await asyncio.sleep(0.4 * (attempt + 1))
+        if last_error:
+            _log.warning(
+                "channel outbound failed instance=%s err=%s",
+                inst.get("id"),
+                last_error,
+            )
+
+    def _log(self, instance_id: str, **kwargs) -> None:
+        if self.runtime_store is None:
+            return
+        try:
+            self.runtime_store.add_log(instance_id, **kwargs)
+        except Exception:
+            _log.exception("channel log failed instance=%s", instance_id)
+
+    async def _wait_until_done(self, turn: dict) -> str:
+        while True:
+            status = await self._wait_turn(turn, timeout_sec=30)
+            if status != "running":
+                return status
 
     async def _wait_turn(self, turn: dict, *, timeout_sec: float) -> str:
         if turn.get("status", "running") != "running":

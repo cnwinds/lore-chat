@@ -4,19 +4,12 @@ from __future__ import annotations
 
 from app.engine.channel_plugins.adapter import ChannelAdapter
 from app.engine.channel_plugins.errors import ChannelError
+from app.engine.channel_plugins.feishu import FeishuAdapter
 from app.engine.channel_plugins.script_api import ScriptApiAdapter
 from app.engine.channel_plugins.types import ChannelTypeSpec, SCRIPT_API_TYPE_ID
 
-# 仅元数据，供设置向导灰显「即将支持」。P0 不注册 adapter、不写厂商路径。
+# 仅元数据，供设置向导灰显「即将支持」。已落地的类型走 adapter。
 _UPCOMING_SPECS = (
-    ChannelTypeSpec(
-        type_id="feishu",
-        display_name="飞书",
-        ingress="websocket",
-        needs_public_url=False,
-        available=False,
-        capabilities=frozenset({"async_reply"}),
-    ),
     ChannelTypeSpec(
         type_id="slack",
         display_name="Slack",
@@ -82,6 +75,7 @@ class ChannelPluginRegistry:
     def builtin(cls) -> ChannelPluginRegistry:
         registry = cls()
         registry.register(ScriptApiAdapter())
+        registry.register(FeishuAdapter())
         for spec in _UPCOMING_SPECS:
             registry.add_upcoming(spec)
         return registry

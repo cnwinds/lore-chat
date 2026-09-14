@@ -13,16 +13,32 @@ def _usage(request: Request):
     return request.app.state.container.usage
 
 
+def _channel_scope(request: Request, channel_instance_id: str | None):
+    chid = (channel_instance_id or "").strip() or None
+    ids = None
+    if chid:
+        convs = getattr(request.app.state.container, "conversations", None)
+        if convs is not None and hasattr(convs, "list_ids_for_channel_instance"):
+            ids = convs.list_ids_for_channel_instance(chid)
+    return chid, ids
+
+
 @router.get("/summary")
 def usage_summary(
     request: Request,
     granularity: str = "day",
     start: str | None = None,
     end: str | None = None,
+    channel_instance_id: str | None = None,
 ) -> dict[str, Any]:
+    chid, ids = _channel_scope(request, channel_instance_id)
     try:
         return _usage(request).summary(
-            granularity=granularity, start=start, end=end
+            granularity=granularity,
+            start=start,
+            end=end,
+            channel_instance_id=chid,
+            conversation_ids=ids,
         )
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
@@ -34,11 +50,19 @@ def usage_events(
     start: str | None = None,
     end: str | None = None,
     model: str | None = None,
+    channel_instance_id: str | None = None,
     limit: int = 50,
     offset: int = 0,
 ) -> dict[str, Any]:
+    chid, ids = _channel_scope(request, channel_instance_id)
     return _usage(request).events(
-        start=start, end=end, model=model, limit=limit, offset=offset
+        start=start,
+        end=end,
+        model=model,
+        channel_instance_id=chid,
+        conversation_ids=ids,
+        limit=limit,
+        offset=offset,
     )
 
 

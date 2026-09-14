@@ -47,6 +47,8 @@ from app.engine.api_keys import ApiKeyStore
 from app.engine.channel_plugins import (
     ChannelInstanceStore,
     ChannelPluginRegistry,
+    ChannelRuntime,
+    ChannelRuntimeStore,
     ChannelTurnService,
 )
 from app.engine.open_api import OpenApiService
@@ -93,11 +95,13 @@ class Container:
     channel_registry: ChannelPluginRegistry
     channel_instances: ChannelInstanceStore
     channel_turns: ChannelTurnService
+    channel_runtime: ChannelRuntime
     open_api: OpenApiService
     _index_subgraph: IndexSubgraph | None = field(default=None, repr=False)
     _memory_subgraph: MemorySubgraph | None = field(default=None, repr=False)
     _agent_subgraph: AgentSubgraph | None = field(default=None, repr=False)
     _usage_store: UsageStore | None = field(default=None, repr=False)
+    _runtime_store: ChannelRuntimeStore | None = field(default=None, repr=False)
     room_delivery: object | None = None
 
 
@@ -210,6 +214,30 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
         roles=roles,
         conversations=conversations,
         chat_runner=agent.chat_runner,
+        instances=channel_instances,
+        registry=channel_registry,
+        runtime_store=None,
+    )
+    runtime_store = ChannelRuntimeStore(settings.kb_path)
+    channel_turns.runtime_store = runtime_store
+
+    def _resolve_channel_instance(cid: str) -> str | None:
+        if not cid:
+            return None
+        try:
+            conv = conversations.get(cid)
+        except KeyError:
+            return None
+        return conv.get("channel_instance_id") or conv.get("api_key_id")
+
+    usage_recorder.resolve_channel_instance = _resolve_channel_instance
+
+    channel_runtime = ChannelRuntime(
+        registry=channel_registry,
+        instances=channel_instances,
+        turn_service=channel_turns,
+        runtime_store=runtime_store,
+        settings=settings,
     )
 
     return Container(
@@ -248,6 +276,7 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
         channel_registry=channel_registry,
         channel_instances=channel_instances,
         channel_turns=channel_turns,
+        channel_runtime=channel_runtime,
         open_api=OpenApiService(
             roles=roles,
             api_keys=api_keys,
@@ -256,11 +285,16 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
             channel_instances=channel_instances,
             channel_turns=channel_turns,
             channel_registry=channel_registry,
+            channel_runtime=channel_runtime,
+            settings=settings,
+            usage=usage,
+            runtime_store=runtime_store,
         ),
         _index_subgraph=index,
         _memory_subgraph=memory,
         _agent_subgraph=agent,
         _usage_store=usage_store,
+        _runtime_store=runtime_store,
     )
 
 
@@ -287,6 +321,12 @@ def dispose_container(container: Container | None) -> None:
     close_quietly(container.conversation_vector)
     if container._usage_store is not None:
         close_quietly(container._usage_store)
+    runtime = getattr(container, "channel_runtime", None)
+    if runtime is not None:
+        runtime.shutdown()
+    runtime_store = getattr(container, "_runtime_store", None)
+    if runtime_store is not None:
+        close_quietly(runtime_store)
     try:
         container.repo.repo.close()
     except Exception:
@@ -309,6 +349,10 @@ def remount_container(
     settings = app.state.settings_store.get()
     app.state.container = build_container(settings, llm=llm)
     set_active_models_dev_store(app.state.container.models_dev)
+    loop = getattr(app.state, "loop", None)
+    if loop is not None:
+        app.state.container.channel_runtime.attach_loop(loop)
+        app.state.container.channel_runtime.start_enabled()
     app.state.auth_store = AuthStore(kb_path)
     app.state.session_store = SessionStore(kb_path)
     app.state.session_store.insert_if_absent(keep_session_id)
@@ -318,9 +362,17 @@ def apply_settings(
     container: Container, settings: Settings, llm: LLMClient | None = None
 ) -> None:
     container.settings = settings
+    runtime = getattr(container, "channel_runtime", None)
+    if runtime is not None:
+        runtime.settings = settings
     recorder = None
     if container._usage_store is not None:
         recorder = UsageRecorder(container._usage_store)
+        old = getattr(container.llm, "usage_recorder", None)
+        if old is not None:
+            recorder.resolve_channel_instance = getattr(
+                old, "resolve_channel_instance", None
+            )
     cooldown = container.model_cooldown
     search_cooldown = container.search_cooldown
     image_cooldown = container.image_cooldown

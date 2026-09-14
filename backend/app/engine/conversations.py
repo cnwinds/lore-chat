@@ -1051,6 +1051,20 @@ class ConversationStore:
                 )
         return sorted(items, key=lambda c: c["updated_at"], reverse=True)
 
+    def list_ids_for_channel_instance(self, instance_id: str) -> list[str]:
+        iid = (instance_id or "").strip()
+        if not iid:
+            return []
+        with self._lock:
+            rows = self.conn.execute(
+                """
+                SELECT id FROM conversations
+                WHERE channel_instance_id = ? OR api_key_id = ?
+                """,
+                (iid, iid),
+            ).fetchall()
+        return [str(row["id"]) for row in rows]
+
     def find_active_conversation_id(
         self, role_id: str, *, idle_hours: float
     ) -> str | None:
