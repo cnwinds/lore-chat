@@ -1,4 +1,4 @@
-"""主人侧脚本通道别名（Cookie）：人设与 API Key。主资源见 /channel-plugins。"""
+"""主人侧聊天通道实例 CRUD（Cookie）。"""
 
 from __future__ import annotations
 
@@ -8,7 +8,22 @@ from pydantic import BaseModel
 from app.api.http_deps import container
 from app.engine.open_api import OpenApiError
 
-router = APIRouter(prefix="/open-api")
+router = APIRouter(prefix="/channel-plugins")
+
+
+class CreateInstanceBody(BaseModel):
+    type_id: str
+    name: str
+    persona_id: str | None = None
+    persona_name: str | None = None
+    persona_prompt: str = ""
+    persona_avatar: str | None = None
+
+
+class PatchInstanceBody(BaseModel):
+    name: str | None = None
+    persona_id: str | None = None
+    enabled: bool | None = None
 
 
 class PersonaBody(BaseModel):
@@ -24,19 +39,67 @@ class PersonaPatchBody(BaseModel):
     avatar: str | None = None
 
 
-class CreateKeyBody(BaseModel):
-    name: str
-    persona_id: str | None = None
-    persona_name: str | None = None
-    persona_prompt: str = ""
-    persona_avatar: str | None = None
-
-
 def _raise(err: OpenApiError) -> None:
     raise HTTPException(
         err.status,
         detail={"code": err.code, "message": str(err)},
     ) from err
+
+
+@router.get("/types")
+async def list_types(request: Request):
+    return {"types": container(request).open_api.list_types()}
+
+
+@router.get("/instances")
+async def list_instances(request: Request):
+    return {"instances": container(request).open_api.list_instances()}
+
+
+@router.post("/instances")
+async def create_instance(body: CreateInstanceBody, request: Request):
+    try:
+        return container(request).open_api.create_instance(
+            type_id=body.type_id,
+            name=body.name,
+            persona_id=body.persona_id,
+            persona_name=body.persona_name,
+            persona_prompt=body.persona_prompt,
+            persona_avatar=body.persona_avatar,
+        )
+    except KeyError as e:
+        raise HTTPException(404, "人设不存在") from e
+    except OpenApiError as e:
+        _raise(e)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@router.patch("/instances/{instance_id}")
+async def update_instance(
+    instance_id: str, body: PatchInstanceBody, request: Request
+):
+    try:
+        return container(request).open_api.update_instance(
+            instance_id,
+            name=body.name,
+            persona_id=body.persona_id,
+            enabled=body.enabled,
+        )
+    except KeyError as e:
+        raise HTTPException(404, "通道不存在") from e
+    except OpenApiError as e:
+        _raise(e)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@router.delete("/instances/{instance_id}")
+async def revoke_instance(instance_id: str, request: Request):
+    try:
+        return container(request).open_api.revoke_instance(instance_id)
+    except KeyError as e:
+        raise HTTPException(404, "通道不存在") from e
 
 
 @router.get("/personas")
@@ -87,34 +150,3 @@ async def delete_persona(persona_id: str, request: Request):
     except OpenApiError as e:
         _raise(e)
     return {"ok": True}
-
-
-@router.get("/keys")
-async def list_keys(request: Request):
-    return {"keys": container(request).open_api.list_keys()}
-
-
-@router.post("/keys")
-async def create_key(body: CreateKeyBody, request: Request):
-    try:
-        return container(request).open_api.create_key(
-            name=body.name,
-            persona_id=body.persona_id,
-            persona_name=body.persona_name,
-            persona_prompt=body.persona_prompt,
-            persona_avatar=body.persona_avatar,
-        )
-    except KeyError as e:
-        raise HTTPException(404, "人设不存在") from e
-    except OpenApiError as e:
-        _raise(e)
-    except ValueError as e:
-        raise HTTPException(400, str(e)) from e
-
-
-@router.delete("/keys/{key_id}")
-async def revoke_key(key_id: str, request: Request):
-    try:
-        return container(request).open_api.revoke_key(key_id)
-    except KeyError as e:
-        raise HTTPException(404, "密钥不存在") from e

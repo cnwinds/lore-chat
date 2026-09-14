@@ -2,7 +2,7 @@
 
 ## 状态
 
-**已确认 / 待实现**（2026-09-14）。产品口径已拍板，见 [product-channel-plugins.md](../product-channel-plugins.md) §12。代码尚未落地；实现以该文为准。本篇是架构摘要，不替代 product 文。
+**已确认 / 实现中**（2026-09-14）。产品口径已拍板，见 [product-channel-plugins.md](../product-channel-plugins.md) §12。P0 已落地；P1 飞书长连接待实现。本篇是架构摘要，不替代 product 文。
 
 ## 背景
 

@@ -44,6 +44,11 @@ from app.engine.memory.store import MemoryStore
 from app.engine.workspace import ensure_workspace_id
 from app.engine.enabled_skills import EnabledSkillsStore
 from app.engine.api_keys import ApiKeyStore
+from app.engine.channel_plugins import (
+    ChannelInstanceStore,
+    ChannelPluginRegistry,
+    ChannelTurnService,
+)
 from app.engine.open_api import OpenApiService
 
 from app.deps_index import IndexSubgraph, build_index_subgraph
@@ -85,6 +90,9 @@ class Container:
     memory_service: MemoryService
     enabled_skills: EnabledSkillsStore
     api_keys: ApiKeyStore
+    channel_registry: ChannelPluginRegistry
+    channel_instances: ChannelInstanceStore
+    channel_turns: ChannelTurnService
     open_api: OpenApiService
     _index_subgraph: IndexSubgraph | None = field(default=None, repr=False)
     _memory_subgraph: MemorySubgraph | None = field(default=None, repr=False)
@@ -152,6 +160,9 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
     )
     roles = RoleStore(settings.kb_path / ".kb" / "roles")
     api_keys = ApiKeyStore(settings.kb_path)
+    channel_registry = ChannelPluginRegistry.builtin()
+    channel_instances = ChannelInstanceStore(settings.kb_path, api_keys=api_keys)
+    channel_instances.project_legacy_keys()
 
     memory = build_memory_subgraph(
         settings, repo, llm, conversations, memory_service=memory_service
@@ -195,6 +206,12 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
         sandbox_tools=agent.tools.sandbox,
     )
 
+    channel_turns = ChannelTurnService(
+        roles=roles,
+        conversations=conversations,
+        chat_runner=agent.chat_runner,
+    )
+
     return Container(
         settings=settings,
         workspace_id=workspace_id,
@@ -228,11 +245,17 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
         memory_service=memory.service,
         enabled_skills=enabled_skills,
         api_keys=api_keys,
+        channel_registry=channel_registry,
+        channel_instances=channel_instances,
+        channel_turns=channel_turns,
         open_api=OpenApiService(
             roles=roles,
             api_keys=api_keys,
             conversations=conversations,
             chat_runner=agent.chat_runner,
+            channel_instances=channel_instances,
+            channel_turns=channel_turns,
+            channel_registry=channel_registry,
         ),
         _index_subgraph=index,
         _memory_subgraph=memory,

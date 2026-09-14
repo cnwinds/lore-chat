@@ -2,6 +2,8 @@
 
 > 状态：**已确认 / 实现中**（2026-09-12）。人设可共享；**每把 API Key = 一个独立隐藏角色**（独立沙箱、独立会话）。
 >
+> 已被 [聊天通道插件](product-channel-plugins.md) 作为第一种通道（`script_api`）包含。本文仍是脚本 Key / `POST /api/v1/chat` 的权威口径；P0 **不改**这些行为。设置入口现为「聊天通道」。
+>
 > 配套：[CONTEXT.md](../CONTEXT.md)、[product-multi-role.md](product-multi-role.md)、[ADR 2026-09-10 timeline](adr/2026-09-10-role-timeline.md)、[ADR 2026-09-10 sandbox](adr/2026-09-10-role-scoped-sandbox.md)。
 
 ## 0. 一句话
@@ -31,7 +33,7 @@
 | 点 | 决定 |
 |----|------|
 | 谁调用 | 自己的脚本/自动化。低并发。不做多租户、OAuth、全局限流。 |
-| 展示 | 不进左栏，不进日常角色时间线。入口在设置 → 开放接口。 |
+| 展示 | 不进左栏，不进日常角色时间线。入口在设置 → 聊天通道（脚本是第一种通道）。 |
 | KB / Skill | 可读、可跑 Skill；不能改 KB、不能改 Skill、不能沙箱回写。 |
 | 沙箱 | 能跑。每个工作角色一把容器/卷，与左栏角色互不 interrupt。 |
 | 会话 | 默认每次调用新建一段；可带该 Key 自己的 `conversation_id` 多轮。 |

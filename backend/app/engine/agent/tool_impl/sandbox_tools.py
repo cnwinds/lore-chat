@@ -203,7 +203,9 @@ class SandboxTools:
             skip_gate = False
             if cid and self.conversations is not None:
                 try:
-                    skip_gate = self.conversations.get_origin(cid) == "api"
+                    from app.engine.channel_plugins.types import is_channel_origin
+
+                    skip_gate = is_channel_origin(self.conversations.get_origin(cid))
                 except KeyError:
                     skip_gate = False
             if not skip_gate:

@@ -2,16 +2,20 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listRoles } from "../../api";
 import type { ChatMessage, RoleSummary } from "../../types/chat";
 import {
+  createChannelInstance,
+  getChannelTimeline,
+  listChannelInstances,
+  listChannelTypes,
+  revokeChannelInstance,
+  type ChannelInstance,
+  type ChannelType,
+} from "../../api/channelPlugins";
+import {
   createApiPersona,
-  createOpenApiKey,
   deleteApiPersona,
-  getOpenApiKeyTimeline,
   listApiPersonas,
-  listOpenApiKeys,
-  revokeOpenApiKey,
   updateApiPersona,
   type ApiPersona,
-  type OpenApiKey,
 } from "../../api/openApi";
 import { showToast } from "../../utils/toast";
 import {
@@ -24,9 +28,29 @@ import {
   type VoiceMode,
 } from "./openApiSettingsModel";
 
-type Screen = "keys" | "create" | "logs";
+type Screen = "home" | "pick-type" | "create" | "logs";
 
 type TranscriptSeg = { title: string; messages: ChatMessage[] };
+
+const TYPE_MARK: Record<string, string> = {
+  script_api: "脚",
+  feishu: "飞",
+  slack: "S",
+  wecom: "企",
+  dingtalk: "钉",
+};
+
+function typeLabel(typeId: string, types: ChannelType[]): string {
+  return types.find((item) => item.type_id === typeId)?.display_name || typeId;
+}
+
+function statusLabel(inst: ChannelInstance): { text: string; kind: string } {
+  if (inst.status === "error") {
+    return { text: inst.status_detail || "校验失败", kind: "error" };
+  }
+  if (inst.enabled) return { text: "已启用", kind: "enabled" };
+  return { text: "未启用", kind: "disabled" };
+}
 
 async function copyText(text: string): Promise<boolean> {
   try {
@@ -39,15 +63,17 @@ async function copyText(text: string): Promise<boolean> {
 
 export function OpenApiSettingsTab() {
   const [personas, setPersonas] = useState<ApiPersona[]>([]);
-  const [keys, setKeys] = useState<OpenApiKey[]>([]);
+  const [instances, setInstances] = useState<ChannelInstance[]>([]);
+  const [types, setTypes] = useState<ChannelType[]>([]);
   const [roles, setRoles] = useState<RoleSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [screen, setScreen] = useState<Screen>("keys");
+  const [screen, setScreen] = useState<Screen>("home");
   const [draft, setDraft] = useState<CreateKeyDraft>(EMPTY_CREATE_DRAFT);
+  const [createType, setCreateType] = useState("script_api");
   const [newToken, setNewToken] = useState<string | null>(null);
-  const [viewing, setViewing] = useState<OpenApiKey | null>(null);
+  const [viewing, setViewing] = useState<ChannelInstance | null>(null);
   const [transcript, setTranscript] = useState<TranscriptSeg[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
@@ -65,14 +91,16 @@ export function OpenApiSettingsTab() {
     setLoading(true);
     setError(null);
     try {
-      const [p, k, r] = await Promise.all([
+      const [p, inst, t, r] = await Promise.all([
         listApiPersonas(),
-        listOpenApiKeys(),
+        listChannelInstances(),
+        listChannelTypes().catch(() => ({ types: [] as ChannelType[] })),
         listRoles(),
       ]);
       if (!mountedRef.current) return;
       setPersonas(p.personas);
-      setKeys(k.keys.filter((item) => !item.revoked));
+      setInstances(inst.instances);
+      setTypes(t.types);
       setRoles(r.roles);
     } catch (e: unknown) {
       if (!mountedRef.current) return;
@@ -86,18 +114,25 @@ export function OpenApiSettingsTab() {
     void reload();
   }, [reload]);
 
-  const keyCountByPersona = useMemo(() => {
+  const channelCountByPersona = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const key of keys) {
-      const pid = key.persona_id || "";
+    for (const inst of instances) {
+      if (!inst.enabled) continue;
+      const pid = inst.persona_id || "";
       if (!pid) continue;
       counts.set(pid, (counts.get(pid) || 0) + 1);
     }
     return counts;
-  }, [keys]);
+  }, [instances]);
 
-  const openCreate = () => {
+  const openPicker = () => {
     setError(null);
+    setScreen("pick-type");
+  };
+
+  const openCreate = (typeId: string) => {
+    setError(null);
+    setCreateType(typeId);
     setDraft({
       ...EMPTY_CREATE_DRAFT,
       personaId: personas[0]?.id || "",
@@ -110,56 +145,61 @@ export function OpenApiSettingsTab() {
     setBusy(true);
     setError(null);
     try {
+      const request = buildCreateKeyRequest(draft);
       let created;
       if (draft.voice === "copy") {
         const copied = await createApiPersona({
           name: "从角色复制",
           from_role_id: draft.copyRoleId,
         });
-        created = await createOpenApiKey({
+        created = await createChannelInstance({
+          type_id: createType,
           name: draft.name.trim(),
           persona_id: copied.id,
         });
       } else {
-        created = await createOpenApiKey(buildCreateKeyRequest(draft));
+        created = await createChannelInstance({
+          type_id: createType,
+          ...request,
+        });
       }
       setNewToken(created.token || null);
       setDraft(EMPTY_CREATE_DRAFT);
-      setScreen("keys");
-      showToast("密钥已创建，请立刻复制");
+      setScreen("home");
+      showToast(created.token ? "通道已创建，请立刻复制密钥" : "通道已创建");
       await reload();
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "创建密钥失败");
+      setError(e instanceof Error ? e.message : "创建通道失败");
     } finally {
       setBusy(false);
     }
   };
 
   const handleRevoke = async (id: string) => {
-    if (!window.confirm("吊销后脚本将无法再调用。历史仍可查看。")) return;
+    if (!window.confirm("停用后脚本将无法再调用。历史仍可查看。")) return;
     setBusy(true);
     try {
-      await revokeOpenApiKey(id);
-      showToast("已吊销");
+      await revokeChannelInstance(id);
+      showToast("已停用");
       if (viewing?.id === id) {
         setViewing(null);
-        setScreen("keys");
+        setScreen("home");
       }
       await reload();
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "吊销失败");
+      setError(e instanceof Error ? e.message : "停用失败");
     } finally {
       setBusy(false);
     }
   };
 
-  const handleView = async (key: OpenApiKey) => {
-    if (!key.role_id) return;
+  const handleView = async (inst: ChannelInstance) => {
+    if (!inst.role_id) return;
     setBusy(true);
     setError(null);
     try {
-      const tl = await getOpenApiKeyTimeline(key.role_id);
-      setViewing(key);
+      const tl = await getChannelTimeline(inst.role_id);
+      setViewing(inst);
       setTranscript(
         (tl.segments || []).map((seg) => ({
           title: seg.title || "会话",
@@ -194,7 +234,7 @@ export function OpenApiSettingsTab() {
   };
 
   const handleDeletePersona = async (id: string) => {
-    if (!window.confirm("删除这套说话方式？仍被密钥使用时会失败。")) return;
+    if (!window.confirm("删除这套说话方式？仍被通道使用时会失败。")) return;
     setBusy(true);
     try {
       await deleteApiPersona(id);
@@ -217,6 +257,21 @@ export function OpenApiSettingsTab() {
     );
   }
 
+  if (screen === "pick-type") {
+    return (
+      <PickTypeScreen
+        types={types}
+        busy={busy}
+        error={error}
+        onBack={() => {
+          setError(null);
+          setScreen("home");
+        }}
+        onPick={(typeId) => openCreate(typeId)}
+      />
+    );
+  }
+
   if (screen === "create") {
     return (
       <CreateKeyScreen
@@ -225,10 +280,11 @@ export function OpenApiSettingsTab() {
         roles={roles}
         busy={busy}
         error={error}
+        typeLabel={typeLabel(createType, types)}
         onChange={setDraft}
         onBack={() => {
           setError(null);
-          setScreen("keys");
+          setScreen("pick-type");
         }}
         onSubmit={() => void handleCreate()}
       />
@@ -238,14 +294,14 @@ export function OpenApiSettingsTab() {
   if (screen === "logs" && viewing) {
     return (
       <LogsScreen
-        keyItem={viewing}
+        instance={viewing}
         transcript={transcript}
         error={error}
         onBack={() => {
           setViewing(null);
           setTranscript([]);
           setError(null);
-          setScreen("keys");
+          setScreen("home");
         }}
       />
     );
@@ -255,19 +311,19 @@ export function OpenApiSettingsTab() {
     <div className="openapi">
       <header className="openapi-header">
         <div>
-          <h3 className="openapi-title">开放接口</h3>
+          <h3 className="openapi-title">聊天通道</h3>
           <p className="openapi-lead">
-            给脚本签发密钥。每把密钥独立会话和沙箱。
+            脚本、微信、飞书、Slack 等，都是聊天通道。
           </p>
         </div>
-        {keys.length > 0 ? (
+        {instances.length > 0 ? (
           <button
             type="button"
             className="settings-btn settings-btn--compact settings-btn--primary"
             disabled={busy}
-            onClick={openCreate}
+            onClick={openPicker}
           >
-            创建密钥
+            添加通道
           </button>
         ) : null}
       </header>
@@ -281,61 +337,84 @@ export function OpenApiSettingsTab() {
         />
       ) : null}
 
-      {keys.length === 0 ? (
+      {instances.length === 0 ? (
         <div className="openapi-empty">
           <span className="openapi-empty-icon" aria-hidden />
-          <p className="openapi-empty-title">还没有密钥</p>
+          <p className="openapi-empty-title">还没有聊天通道</p>
           <p className="openapi-empty-hint">
-            创建一把，就能用脚本调用 Lore Chat。
+            添加后，脚本或外部聊天就能接到这里。
           </p>
           <button
             type="button"
             className="settings-btn settings-btn--compact settings-btn--primary"
             disabled={busy}
-            onClick={openCreate}
+            onClick={openPicker}
           >
-            创建密钥
+            添加通道
           </button>
         </div>
       ) : (
         <ul className="openapi-list">
-          {keys.map((key) => (
-            <li key={key.id} className="openapi-card">
-              <div className="openapi-card-top">
-                <h4 className="openapi-card-title">{key.name}</h4>
-                <span className="openapi-voice">
-                  {key.persona?.name || "默认"}
-                </span>
-              </div>
-              <p className="openapi-card-meta">
-                {key.prefix}… · {formatOpenApiWhen(key.last_used_at)}
-              </p>
-              <div className="openapi-card-actions">
-                <button
-                  type="button"
-                  className="openapi-btn"
-                  disabled={busy}
-                  onClick={() => void handleView(key)}
-                >
-                  查看会话
-                </button>
-                <button
-                  type="button"
-                  className="openapi-btn openapi-btn--danger"
-                  disabled={busy}
-                  onClick={() => void handleRevoke(key.id)}
-                >
-                  吊销
-                </button>
-              </div>
-            </li>
-          ))}
+          {instances.map((inst) => {
+            const status = statusLabel(inst);
+            const prefix = inst.config?.key_prefix;
+            return (
+              <li key={inst.id} className="openapi-card">
+                <div className="openapi-card-top">
+                  <div className="openapi-card-identity">
+                    <span
+                      className={`openapi-type-icon openapi-type-icon--${inst.type_id}`}
+                      aria-hidden
+                    >
+                      {TYPE_MARK[inst.type_id] || "·"}
+                    </span>
+                    <h4 className="openapi-card-title">{inst.name}</h4>
+                  </div>
+                  <span className={`openapi-status openapi-status--${status.kind}`}>
+                    {status.text}
+                  </span>
+                </div>
+                <div className="openapi-card-badges">
+                  <span className="openapi-voice">
+                    {inst.persona?.name || "默认"}
+                  </span>
+                  <span className="openapi-type-name">
+                    {typeLabel(inst.type_id, types)}
+                  </span>
+                </div>
+                <p className="openapi-card-meta">
+                  {prefix ? `${prefix}… · ` : ""}
+                  {formatOpenApiWhen(inst.last_event_at)}
+                </p>
+                <div className="openapi-card-actions">
+                  <button
+                    type="button"
+                    className="openapi-btn"
+                    disabled={busy}
+                    onClick={() => void handleView(inst)}
+                  >
+                    查看会话
+                  </button>
+                  {inst.enabled ? (
+                    <button
+                      type="button"
+                      className="openapi-btn openapi-btn--danger"
+                      disabled={busy}
+                      onClick={() => void handleRevoke(inst.id)}
+                    >
+                      吊销
+                    </button>
+                  ) : null}
+                </div>
+              </li>
+            );
+          })}
         </ul>
       )}
 
-      {keys.length > 0 ? (
+      {instances.some((item) => item.type_id === "script_api" && item.enabled) ? (
         <details className="openapi-more">
-          <summary>调用方式</summary>
+          <summary>接入说明 · 脚本 / HTTP</summary>
           <p className="openapi-more-hint">
             <code>POST /api/v1/chat</code>
             ，请求头 <code>Authorization: Bearer lc_live_…</code>
@@ -348,11 +427,11 @@ export function OpenApiSettingsTab() {
         <details className="openapi-more">
           <summary>说话方式 · {personas.length}</summary>
           <p className="openapi-more-hint">
-            多把密钥可以共用一套提示词。改完下一轮都生效。
+            多个通道可以共用一套提示词。改完下一轮都生效。
           </p>
           <ul className="openapi-persona-list">
             {personas.map((p) => {
-              const used = keyCountByPersona.get(p.id) || 0;
+              const used = channelCountByPersona.get(p.id) || 0;
               const editing = editingId === p.id;
               return (
                 <li key={p.id} className="openapi-persona">
@@ -400,7 +479,7 @@ export function OpenApiSettingsTab() {
                       <div className="openapi-persona-main">
                         <strong>{p.name}</strong>
                         <span>
-                          {used > 0 ? `${used} 把密钥在用` : "未被使用"}
+                          {used > 0 ? `${used} 个通道在用` : "未被使用"}
                         </span>
                       </div>
                       <div className="openapi-card-actions">
@@ -433,6 +512,68 @@ export function OpenApiSettingsTab() {
           </ul>
         </details>
       ) : null}
+    </div>
+  );
+}
+
+function PickTypeScreen({
+  types,
+  busy,
+  error,
+  onBack,
+  onPick,
+}: {
+  types: ChannelType[];
+  busy: boolean;
+  error: string | null;
+  onBack: () => void;
+  onPick: (typeId: string) => void;
+}) {
+  const cards =
+    types.length > 0
+      ? types
+      : [
+          {
+            type_id: "script_api",
+            display_name: "脚本 / HTTP",
+            available: true,
+            ingress: "http_bearer",
+            needs_public_url: false,
+          },
+        ];
+  return (
+    <div className="openapi">
+      <button type="button" className="openapi-back" onClick={onBack}>
+        ← 返回
+      </button>
+      <header className="openapi-header">
+        <div>
+          <h3 className="openapi-title">添加通道</h3>
+          <p className="openapi-lead">先选类型。未实现的会标明即将支持。</p>
+        </div>
+      </header>
+      {error ? <p className="settings-panel-error">{error}</p> : null}
+      <ul className="openapi-type-grid">
+        {cards.map((item) => (
+          <li key={item.type_id}>
+            <button
+              type="button"
+              className={`openapi-type-card${item.available ? "" : " openapi-type-card--soon"}`}
+              disabled={busy || !item.available}
+              onClick={() => onPick(item.type_id)}
+            >
+              <span
+                className={`openapi-type-icon openapi-type-icon--${item.type_id}`}
+                aria-hidden
+              >
+                {TYPE_MARK[item.type_id] || "·"}
+              </span>
+              <strong>{item.display_name}</strong>
+              <span>{item.available ? "现在可用" : "即将支持"}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -485,6 +626,7 @@ function CreateKeyScreen({
   roles,
   busy,
   error,
+  typeLabel: selectedType,
   onChange,
   onBack,
   onSubmit,
@@ -494,6 +636,7 @@ function CreateKeyScreen({
   roles: RoleSummary[];
   busy: boolean;
   error: string | null;
+  typeLabel: string;
   onChange: (next: CreateKeyDraft) => void;
   onBack: () => void;
   onSubmit: () => void;
@@ -522,7 +665,7 @@ function CreateKeyScreen({
       </button>
       <header className="openapi-header">
         <div>
-          <h3 className="openapi-title">创建密钥</h3>
+          <h3 className="openapi-title">添加{selectedType}</h3>
           <p className="openapi-lead">填个名字就行。说话方式可先不改。</p>
         </div>
       </header>
@@ -552,7 +695,7 @@ function CreateKeyScreen({
             onChange={(e) => setVoice(e.target.value)}
             disabled={busy}
           >
-            <option value="default">默认（和密钥同名）</option>
+            <option value="default">默认（和通道同名）</option>
             {personas.map((p) => (
               <option key={p.id} value={`persona:${p.id}`}>
                 {p.name}
@@ -625,7 +768,7 @@ function CreateKeyScreen({
             className="settings-btn settings-btn--compact settings-btn--primary"
             disabled={busy || !canSubmitCreateKey(draft)}
           >
-            {busy ? "创建中…" : "创建"}
+            {busy ? "创建中…" : "创建并启用"}
           </button>
         </footer>
       </form>
@@ -634,12 +777,12 @@ function CreateKeyScreen({
 }
 
 function LogsScreen({
-  keyItem,
+  instance,
   transcript,
   error,
   onBack,
 }: {
-  keyItem: OpenApiKey;
+  instance: ChannelInstance;
   transcript: TranscriptSeg[];
   error: string | null;
   onBack: () => void;
@@ -651,15 +794,15 @@ function LogsScreen({
       </button>
       <header className="openapi-header">
         <div>
-          <h3 className="openapi-title">{keyItem.name}</h3>
-          <p className="openapi-lead">只看这一把密钥的调用记录。</p>
+          <h3 className="openapi-title">{instance.name}</h3>
+          <p className="openapi-lead">只看这一路通道的聊天记录。</p>
         </div>
       </header>
       {error ? <p className="settings-panel-error">{error}</p> : null}
       {transcript.length === 0 ? (
         <div className="openapi-empty">
           <p className="openapi-empty-title">还没有调用</p>
-          <p className="openapi-empty-hint">脚本调过之后，记录会出现在这里。</p>
+          <p className="openapi-empty-hint">消息进来之后，记录会出现在这里。</p>
         </div>
       ) : (
         <div className="openapi-logs">
