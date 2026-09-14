@@ -4,10 +4,10 @@
 
 | 目录 | 用途 |
 |------|------|
-| [adr/](adr/README.md) | 架构决策（已采纳不删不改写原文；文首另列未采纳草案） |
+| [adr/](adr/README.md) | 架构决策（已采纳不删不改写原文；已确认待实现见文首） |
 | [product-multi-role.md](product-multi-role.md) | 多角色产品/界面设计（ADR 2026-09-09 配套） |
 | [product-external-chat-api.md](product-external-chat-api.md) | 对外聊天 API（人设可共享，每 Key 独立隐藏角色） |
-| [product-channel-plugins.md](product-channel-plugins.md) | 聊天通道插件（草案：脚本 HTTP 为第一种通道，与微信/钉钉/飞书/Slack 同级；待确认） |
+| [product-channel-plugins.md](product-channel-plugins.md) | 聊天通道插件（已确认 / 待实现：脚本 HTTP 为第一种通道，P1 飞书长连接） |
 | [product-role-rooms.md](product-role-rooms.md) | 角色互通与群聊（房间 + 投递 + 唤醒；群是独立现场） |
 | [role-scoped-sandbox.md](role-scoped-sandbox.md) | 每角色执行沙箱池（方案 C）摘要 |
 | [brand/](brand/logo.html) | Logo / 字标资源与生成脚本 |
