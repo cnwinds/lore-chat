@@ -110,12 +110,29 @@ class OpenApiService:
         if item.get("type_id") == "feishu":
             cfg = dict(item.get("config") or {})
             if str(cfg.get("ingress") or "websocket") == "http_webhook":
-                base = (self._public_base_url() or "").rstrip("/")
-                cfg["webhook_url"] = (
-                    f"{base}/api/channels/{item.get('id')}/feishu" if base else ""
-                )
+                cfg["webhook_url"] = self._callback_url(item.get("id"), "feishu")
+            item["config"] = cfg
+        elif item.get("type_id") == "slack":
+            cfg = dict(item.get("config") or {})
+            if str(cfg.get("ingress") or "websocket") == "http_webhook":
+                cfg["request_url"] = self._callback_url(item.get("id"), "slack")
+            item["config"] = cfg
+        elif item.get("type_id") == "wecom":
+            cfg = dict(item.get("config") or {})
+            cfg["callback_url"] = self._callback_url(item.get("id"), "wecom")
+            item["config"] = cfg
+        elif item.get("type_id") == "dingtalk":
+            cfg = dict(item.get("config") or {})
+            if str(cfg.get("ingress") or "websocket") == "http_webhook":
+                cfg["webhook_url"] = self._callback_url(item.get("id"), "dingtalk")
             item["config"] = cfg
         return item
+
+    def _callback_url(self, instance_id: str | None, type_id: str) -> str:
+        base = (self._public_base_url() or "").rstrip("/")
+        if not base or not instance_id:
+            return ""
+        return f"{base}/api/channels/{instance_id}/{type_id}"
 
     def _persona_or_none(self, persona_id: str | None) -> dict | None:
         if not persona_id:
@@ -199,7 +216,8 @@ class OpenApiService:
             return {**self._enrich_instance(record), "token": raw}
 
         cfg = dict(config or {})
-        cfg.pop("webhook_url", None)
+        for key in ("webhook_url", "request_url", "callback_url"):
+            cfg.pop(key, None)
         sec = dict(secrets or {})
         status, detail = (STATUS_ENABLED, None)
         if adapter is not None:
@@ -258,7 +276,11 @@ class OpenApiService:
         if persona_id:
             self.roles.get_persona(persona_id)
         if config is not None:
-            config = {k: v for k, v in config.items() if k != "webhook_url"}
+            config = {
+                k: v
+                for k, v in config.items()
+                if k not in {"webhook_url", "request_url", "callback_url"}
+            }
         internal = self.channel_instances.get_internal(instance_id)
         type_id = internal.get("type_id") or SCRIPT_API_TYPE_ID
         adapter = None
@@ -267,7 +289,8 @@ class OpenApiService:
         merged_config = dict(internal.get("config") or {})
         if config:
             merged_config.update({k: v for k, v in config.items() if v is not None})
-        merged_config.pop("webhook_url", None)
+        for key in ("webhook_url", "request_url", "callback_url"):
+            merged_config.pop(key, None)
         from app.engine.channel_plugins.secret_mask import merge_secrets
 
         merged_secrets = merge_secrets(internal.get("secrets") or {}, secrets)

@@ -25,10 +25,11 @@ import { showToast } from "../../utils/toast";
 import {
   EMPTY_CREATE_DRAFT,
   buildCreateKeyRequest,
-  buildFeishuConfig,
+  buildTypeConfig,
   canSubmitCreateKey,
+  channelNextSteps,
   chatCurlExample,
-  feishuNextSteps,
+  createLead,
   formatOpenApiWhen,
   type CreateKeyDraft,
   type VoiceMode,
@@ -44,6 +45,7 @@ const TYPE_MARK: Record<string, string> = {
   slack: "S",
   wecom: "企",
   dingtalk: "钉",
+  wechat_mp: "公",
 };
 
 function typeLabel(typeId: string, types: ChannelType[]): string {
@@ -79,7 +81,7 @@ export function OpenApiSettingsTab() {
   const [draft, setDraft] = useState<CreateKeyDraft>(EMPTY_CREATE_DRAFT);
   const [createType, setCreateType] = useState("script_api");
   const [newToken, setNewToken] = useState<string | null>(null);
-  const [feishuHint, setFeishuHint] = useState<string | null>(null);
+  const [imHint, setImHint] = useState<string | null>(null);
   const [viewing, setViewing] = useState<ChannelInstance | null>(null);
   const [transcript, setTranscript] = useState<TranscriptSeg[]>([]);
   const [instanceLogs, setInstanceLogs] = useState<ChannelLogItem[]>([]);
@@ -159,8 +161,7 @@ export function OpenApiSettingsTab() {
     setError(null);
     try {
       const request = buildCreateKeyRequest(draft);
-      const extra =
-        createType === "feishu" ? buildFeishuConfig(draft) : {};
+      const extra = buildTypeConfig(createType, draft);
       let created;
       if (draft.voice === "copy") {
         const copied = await createApiPersona({
@@ -181,7 +182,7 @@ export function OpenApiSettingsTab() {
         });
       }
       setNewToken(created.token || null);
-      setFeishuHint(createType === "feishu" ? feishuNextSteps() : null);
+      setImHint(channelNextSteps(createType));
       setDraft(EMPTY_CREATE_DRAFT);
       setScreen("home");
       showToast(created.token ? "通道已创建，请立刻复制密钥" : "通道已创建");
@@ -407,14 +408,14 @@ export function OpenApiSettingsTab() {
         />
       ) : null}
 
-      {feishuHint ? (
+      {imHint ? (
         <div className="openapi-token" role="status">
-          <p className="openapi-token-warn">{feishuHint}</p>
+          <p className="openapi-token-warn">{imHint}</p>
           <div className="openapi-token-actions">
             <button
               type="button"
               className="openapi-btn"
-              onClick={() => setFeishuHint(null)}
+              onClick={() => setImHint(null)}
             >
               知道了
             </button>
@@ -485,6 +486,16 @@ export function OpenApiSettingsTab() {
                   {ingress === "websocket" ? "长连接 · " : ""}
                   {formatOpenApiWhen(inst.last_event_at)}
                 </p>
+                {inst.config?.callback_url || inst.config?.request_url || inst.config?.webhook_url ? (
+                  <p className="openapi-card-meta">
+                    回调：
+                    <code>
+                      {inst.config.callback_url ||
+                        inst.config.request_url ||
+                        inst.config.webhook_url}
+                    </code>
+                  </p>
+                ) : null}
                 <div className="openapi-card-actions">
                   <button
                     type="button"
@@ -530,12 +541,14 @@ export function OpenApiSettingsTab() {
         </details>
       ) : null}
 
-      {instances.some((item) => item.type_id === "feishu") ? (
-        <details className="openapi-more">
-          <summary>接入说明 · 飞书</summary>
-          <p className="openapi-more-hint">{feishuNextSteps()}</p>
-        </details>
-      ) : null}
+      {["feishu", "slack", "wecom", "dingtalk"].map((typeId) =>
+        instances.some((item) => item.type_id === typeId) ? (
+          <details className="openapi-more" key={typeId}>
+            <summary>接入说明 · {typeLabel(typeId, types)}</summary>
+            <p className="openapi-more-hint">{channelNextSteps(typeId)}</p>
+          </details>
+        ) : null,
+      )}
 
       {personas.length > 0 ? (
         <details className="openapi-more">
@@ -734,6 +747,190 @@ function TokenBanner({
   );
 }
 
+function field(
+  label: string,
+  value: string,
+  onChange: (value: string) => void,
+  busy: boolean,
+  extra?: { password?: boolean; placeholder?: string },
+) {
+  return (
+    <label className="settings-field">
+      <span>{label}</span>
+      <input
+        type={extra?.password ? "password" : "text"}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={busy}
+        placeholder={extra?.placeholder}
+        autoComplete={extra?.password ? "new-password" : "off"}
+      />
+    </label>
+  );
+}
+
+function TypeFields({
+  typeId,
+  draft,
+  busy,
+  onChange,
+}: {
+  typeId: string;
+  draft: CreateKeyDraft;
+  busy: boolean;
+  onChange: (next: CreateKeyDraft) => void;
+}) {
+  if (typeId === "feishu") {
+    return (
+      <>
+        {field("App ID", draft.appId, (v) => onChange({ ...draft, appId: v }), busy, {
+          placeholder: "cli_…",
+        })}
+        {field(
+          "App Secret",
+          draft.appSecret,
+          (v) => onChange({ ...draft, appSecret: v }),
+          busy,
+          { password: true },
+        )}
+        {field(
+          "Verification Token（可选）",
+          draft.verificationToken,
+          (v) => onChange({ ...draft, verificationToken: v }),
+          busy,
+          { password: true },
+        )}
+        {field(
+          "Encrypt Key（可选）",
+          draft.encryptKey,
+          (v) => onChange({ ...draft, encryptKey: v }),
+          busy,
+          { password: true },
+        )}
+        <label className="settings-field">
+          <span>接入方式</span>
+          <select
+            value={draft.ingress}
+            onChange={(e) =>
+              onChange({
+                ...draft,
+                ingress: e.target.value as CreateKeyDraft["ingress"],
+              })
+            }
+            disabled={busy}
+          >
+            <option value="websocket">长连接（推荐）</option>
+            <option value="http_webhook">HTTP 回调（当前版本未接入）</option>
+          </select>
+        </label>
+      </>
+    );
+  }
+  if (typeId === "slack") {
+    return (
+      <>
+        {field(
+          "Bot Token",
+          draft.botToken,
+          (v) => onChange({ ...draft, botToken: v }),
+          busy,
+          { password: true, placeholder: "xoxb-…" },
+        )}
+        {field(
+          "App Token（Socket Mode）",
+          draft.appToken,
+          (v) => onChange({ ...draft, appToken: v }),
+          busy,
+          { password: true, placeholder: "xapp-…" },
+        )}
+        {field(
+          "Signing Secret（webhook 时必填）",
+          draft.signingSecret,
+          (v) => onChange({ ...draft, signingSecret: v }),
+          busy,
+          { password: true },
+        )}
+        <label className="settings-field">
+          <span>接入方式</span>
+          <select
+            value={draft.ingress}
+            onChange={(e) =>
+              onChange({
+                ...draft,
+                ingress: e.target.value as CreateKeyDraft["ingress"],
+              })
+            }
+            disabled={busy}
+          >
+            <option value="websocket">Socket Mode（推荐）</option>
+            <option value="http_webhook">Events API webhook</option>
+          </select>
+        </label>
+      </>
+    );
+  }
+  if (typeId === "wecom") {
+    return (
+      <>
+        {field("企业 ID", draft.corpId, (v) => onChange({ ...draft, corpId: v }), busy)}
+        {field(
+          "Agent ID",
+          draft.agentId,
+          (v) => onChange({ ...draft, agentId: v }),
+          busy,
+        )}
+        {field(
+          "Secret",
+          draft.corpSecret,
+          (v) => onChange({ ...draft, corpSecret: v }),
+          busy,
+          { password: true },
+        )}
+        {field(
+          "Token",
+          draft.wecomToken,
+          (v) => onChange({ ...draft, wecomToken: v }),
+          busy,
+          { password: true },
+        )}
+        {field(
+          "EncodingAESKey",
+          draft.encodingAesKey,
+          (v) => onChange({ ...draft, encodingAesKey: v }),
+          busy,
+          { password: true },
+        )}
+      </>
+    );
+  }
+  if (typeId === "dingtalk") {
+    return (
+      <>
+        {field(
+          "AppKey",
+          draft.appKey,
+          (v) => onChange({ ...draft, appKey: v }),
+          busy,
+        )}
+        {field(
+          "AppSecret",
+          draft.dingAppSecret,
+          (v) => onChange({ ...draft, dingAppSecret: v }),
+          busy,
+          { password: true },
+        )}
+        {field(
+          "RobotCode（可选）",
+          draft.robotCode,
+          (v) => onChange({ ...draft, robotCode: v }),
+          busy,
+        )}
+      </>
+    );
+  }
+  return null;
+}
+
 function CreateKeyScreen({
   draft,
   personas,
@@ -761,7 +958,7 @@ function CreateKeyScreen({
     draft.voice === "existing" && draft.personaId
       ? `persona:${draft.personaId}`
       : draft.voice;
-  const isFeishu = typeId === "feishu";
+  const isIm = ["feishu", "slack", "wecom", "dingtalk"].includes(typeId);
 
   const setVoice = (value: string) => {
     if (value.startsWith("persona:")) {
@@ -783,11 +980,7 @@ function CreateKeyScreen({
       <header className="openapi-header">
         <div>
           <h3 className="openapi-title">添加{selectedType}</h3>
-          <p className="openapi-lead">
-            {isFeishu
-              ? "填名称和飞书应用凭证。默认走长连接，不需要公网地址。"
-              : "填个名字就行。说话方式可先不改。"}
-          </p>
+          <p className="openapi-lead">{createLead(typeId)}</p>
         </div>
       </header>
       {error ? <p className="settings-panel-error">{error}</p> : null}
@@ -805,7 +998,9 @@ function CreateKeyScreen({
             value={draft.name}
             onChange={(e) => onChange({ ...draft, name: e.target.value })}
             disabled={busy}
-            placeholder={isFeishu ? "例如：飞书助手" : "例如：周报脚本"}
+            placeholder={
+              typeId === "script_api" ? "例如：周报脚本" : `例如：${selectedType}助手`
+            }
             autoFocus
           />
         </label>
@@ -875,72 +1070,25 @@ function CreateKeyScreen({
             </select>
           </label>
         ) : null}
-        {isFeishu ? (
-          <>
-            <label className="settings-field">
-              <span>App ID</span>
-              <input
-                type="text"
-                value={draft.appId}
-                onChange={(e) => onChange({ ...draft, appId: e.target.value })}
-                disabled={busy}
-                placeholder="cli_…"
-                autoComplete="off"
-              />
-            </label>
-            <label className="settings-field">
-              <span>App Secret</span>
-              <input
-                type="password"
-                value={draft.appSecret}
-                onChange={(e) =>
-                  onChange({ ...draft, appSecret: e.target.value })
-                }
-                disabled={busy}
-                autoComplete="new-password"
-              />
-            </label>
-            <label className="settings-field">
-              <span>Verification Token（可选）</span>
-              <input
-                type="password"
-                value={draft.verificationToken}
-                onChange={(e) =>
-                  onChange({ ...draft, verificationToken: e.target.value })
-                }
-                disabled={busy}
-                autoComplete="new-password"
-              />
-            </label>
-            <label className="settings-field">
-              <span>Encrypt Key（可选）</span>
-              <input
-                type="password"
-                value={draft.encryptKey}
-                onChange={(e) =>
-                  onChange({ ...draft, encryptKey: e.target.value })
-                }
-                disabled={busy}
-                autoComplete="new-password"
-              />
-            </label>
-            <label className="settings-field">
-              <span>接入方式</span>
-              <select
-                value={draft.ingress}
-                onChange={(e) =>
-                  onChange({
-                    ...draft,
-                    ingress: e.target.value as CreateKeyDraft["ingress"],
-                  })
-                }
-                disabled={busy}
-              >
-                <option value="websocket">长连接（推荐）</option>
-                <option value="http_webhook">HTTP 回调（当前版本未接入）</option>
-              </select>
-            </label>
-          </>
+        <TypeFields
+          typeId={typeId}
+          draft={draft}
+          busy={busy}
+          onChange={onChange}
+        />
+        {isIm ? (
+          <label className="settings-field">
+            <span>群聊沙箱白名单（可选）</span>
+            <input
+              type="text"
+              value={draft.sandboxAllowSenders}
+              onChange={(e) =>
+                onChange({ ...draft, sandboxAllowSenders: e.target.value })
+              }
+              disabled={busy}
+              placeholder="外部用户 id，逗号分隔。空则群聊关闭沙箱"
+            />
+          </label>
         ) : null}
         <footer className="openapi-form-footer">
           <button

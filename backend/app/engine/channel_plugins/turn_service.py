@@ -12,6 +12,13 @@ from typing import Any
 
 from app.engine.agent.prompts import MODE_API
 from app.engine.channel_plugins.errors import ChannelError
+from app.engine.channel_plugins.group_policy import (
+    compose_im_reply,
+    sandbox_allowed_for,
+    should_enqueue_group,
+    thread_external_key,
+)
+from app.engine.channel_plugins.media import materialize_media
 from app.engine.channel_plugins.types import SCRIPT_API_TYPE_ID, origin_for_type
 from app.engine.conversation.shared import TurnInProgress
 
@@ -30,6 +37,7 @@ class ChannelTurnService:
         instances=None,
         registry=None,
         runtime_store=None,
+        kb_path=None,
     ):
         self.roles = roles
         self.conversations = conversations
@@ -37,6 +45,7 @@ class ChannelTurnService:
         self.instances = instances
         self.registry = registry
         self.runtime_store = runtime_store
+        self.kb_path = kb_path
         self._loop: asyncio.AbstractEventLoop | None = None
         self._queues: dict[str, deque[Any]] = {}
         self._drain_tasks: dict[str, asyncio.Task] = {}
@@ -144,17 +153,10 @@ class ChannelTurnService:
         instance_id = getattr(event, "instance_id", None) or ""
         if not instance_id:
             return {"status": "ignored", "reason": "no_instance"}
-        if getattr(event, "is_group", False):
-            self._log(
-                instance_id,
-                kind="inbound_ignored",
-                message="P1 忽略群聊消息",
-                extra={"event_id": event.event_id},
-            )
-            return {"status": "ignored", "reason": "group"}
         text = (getattr(event, "text", None) or "").strip()
         attachments = getattr(event, "attachments", None) or []
-        if not text and not attachments:
+        media = getattr(event, "media", None) or []
+        if not text and not attachments and not media:
             return {"status": "ignored", "reason": "empty"}
         if self.instances is not None:
             try:
@@ -163,6 +165,26 @@ class ChannelTurnService:
                 return {"status": "ignored", "reason": "missing"}
             if not inst.get("enabled"):
                 return {"status": "ignored", "reason": "disabled"}
+        mapped = False
+        if getattr(event, "is_group", False) and self.runtime_store is not None:
+            try:
+                inst_row = (
+                    self.instances.get(instance_id) if self.instances is not None else {}
+                )
+            except KeyError:
+                inst_row = {}
+            type_id = (inst_row or {}).get("type_id") or "unknown"
+            key = thread_external_key(type_id, instance_id, event)
+            mapped = bool(self.runtime_store.get_thread(instance_id, key))
+        ok, reason = should_enqueue_group(event, has_mapped_thread=mapped)
+        if not ok:
+            self._log(
+                instance_id,
+                kind="inbound_ignored",
+                message="忽略未点名的群消息",
+                extra={"event_id": event.event_id, "reason": reason},
+            )
+            return {"status": "ignored", "reason": reason}
         event_id = getattr(event, "event_id", None)
         if event_id and self.runtime_store is not None:
             if not self.runtime_store.mark_event(instance_id, event_id):
@@ -246,9 +268,39 @@ class ChannelTurnService:
         cid = self._map_conversation(inst, event)
         if self.instances is not None:
             self.instances.touch(event.instance_id)
+        paths = list(getattr(event, "attachments", None) or [])
+        media = list(getattr(event, "media", None) or [])
+        if media and self.kb_path:
+            adapter = (
+                self.registry.get(inst["type_id"]) if self.registry is not None else None
+            )
+            downloader = None
+            if adapter is not None and hasattr(adapter, "download_media"):
+
+                def downloader(item, _adapter=adapter, _inst=inst, _event=event):
+                    return _adapter.download_media(_inst, item, event=_event)
+
+            paths.extend(
+                materialize_media(
+                    self.kb_path,
+                    event.instance_id,
+                    media,
+                    downloader=downloader,
+                )
+            )
+        user_text = (event.text or "").strip()
+        if not user_text and paths:
+            user_text = "（附件）"
+        allow_sandbox = sandbox_allowed_for(inst, event)
         started = time.monotonic()
         try:
-            turn = self._begin(inst, cid, event.text)
+            turn = self._begin(
+                inst,
+                cid,
+                user_text,
+                attachments=paths or None,
+                sandbox_enabled=allow_sandbox,
+            )
         except TurnInProgress:
             with self._qlock:
                 self._queues.setdefault(event.instance_id, deque()).appendleft(event)
@@ -257,7 +309,11 @@ class ChannelTurnService:
         status = await self._wait_until_done(turn)
         duration_ms = int((time.monotonic() - started) * 1000)
         payload = self._chat_payload(cid, turn["turn_id"], status=status)
-        reply = ((payload.get("message") or {}).get("content") or "").strip()
+        assistant = payload.get("assistant") or {}
+        reply = compose_im_reply(
+            assistant,
+            fallback=((payload.get("message") or {}).get("content") or ""),
+        )
         http_status = payload.get("status")
         if http_status == "failed":
             reply = reply or _FAIL_TEXT
@@ -288,8 +344,7 @@ class ChannelTurnService:
 
     def _map_conversation(self, inst: dict, event) -> str:
         type_id = inst.get("type_id") or SCRIPT_API_TYPE_ID
-        user_id = event.external_user_id or event.external_chat_id or "unknown"
-        key = f"{type_id}:{inst.get('id')}:dm:{user_id}"
+        key = thread_external_key(type_id, inst.get("id") or "", event)
         cid = None
         if self.runtime_store is not None:
             cid = self.runtime_store.get_thread(inst["id"], key)
@@ -299,8 +354,12 @@ class ChannelTurnService:
                 return cid
             except ChannelError:
                 cid = None
+        if event.is_group:
+            title = (event.display_name or "").strip() or f"{type_id} 群"
+        else:
+            title = (event.display_name or "").strip() or f"{type_id} 私聊"
         cid = self.conversations.create(
-            title=(event.display_name or "").strip() or "飞书私聊",
+            title=title,
             role_id=inst.get("role_id"),
             origin=origin_for_type(type_id),
             api_key_id=inst.get("id"),
@@ -317,6 +376,8 @@ class ChannelTurnService:
         text: str,
         *,
         skills: list[str] | None = None,
+        attachments: list[str] | None = None,
+        sandbox_enabled: bool = True,
     ) -> dict:
         catalog = self.catalog_for(skills)
         client_message_id = uuid.uuid4().hex
@@ -328,11 +389,12 @@ class ChannelTurnService:
                 observation_allowed=False,
                 doc_context=None,
                 primary_doc=None,
-                attachments=None,
-                doc_paths=[],
+                attachments=attachments,
+                doc_paths=list(attachments or []),
                 skill_catalog=catalog,
                 web_enabled=False,
                 mode=MODE_API,
+                sandbox_enabled=sandbox_enabled,
             )
         except TurnInProgress:
             raise
@@ -354,6 +416,14 @@ class ChannelTurnService:
                     external_chat_id=event.external_chat_id,
                     open_id=event.external_user_id,
                     external_user_id=event.external_user_id,
+                    thread_id=event.external_thread_id,
+                    external_thread_id=event.external_thread_id,
+                    reply_to_id=event.reply_to_id,
+                    is_group=event.is_group,
+                    extra=getattr(event, "extra", None) or {},
+                    session_webhook=(getattr(event, "extra", None) or {}).get(
+                        "session_webhook"
+                    ),
                 )
                 return
             except Exception as e:
@@ -420,6 +490,7 @@ class ChannelTurnService:
             "conversation_id": cid,
             "turn_id": turn_id,
             "status": http_status,
+            "assistant": assistant,
             "message": {
                 "id": (assistant or {}).get("id"),
                 "role": "assistant",

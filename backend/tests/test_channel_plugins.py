@@ -45,7 +45,10 @@ def test_registry_lists_script_and_upcoming_types():
     assert types[SCRIPT_API_TYPE_ID]["available"] is True
     assert types[SCRIPT_API_TYPE_ID]["display_name"] == "脚本 / HTTP"
     assert types["feishu"]["available"] is True
-    assert types["slack"]["available"] is False
+    assert types["slack"]["available"] is True
+    assert types["wecom"]["available"] is True
+    assert types["dingtalk"]["available"] is True
+    assert types["wechat_mp"]["available"] is False
 
 
 def test_is_api_role_id_covers_ext_prefix():
@@ -57,6 +60,9 @@ def test_is_api_role_id_covers_ext_prefix():
 def test_is_channel_origin_set():
     assert is_channel_origin("api")
     assert is_channel_origin("feishu")
+    assert is_channel_origin("slack")
+    assert is_channel_origin("wecom")
+    assert is_channel_origin("dingtalk")
     assert not is_channel_origin("web")
     assert not is_channel_origin(None)
 

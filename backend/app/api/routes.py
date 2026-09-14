@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from app.api import (
+    channel_ingress_routes,
     channel_plugins_routes,
     chat_routes,
     conversation_routes,
@@ -28,6 +29,7 @@ router.include_router(memory_routes.router)
 router.include_router(share_routes.router)
 router.include_router(open_api_routes.router)
 router.include_router(channel_plugins_routes.router)
+router.include_router(channel_ingress_routes.router)
 router.include_router(v1_routes.router)
 router.include_router(room_routes.router)
 

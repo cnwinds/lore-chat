@@ -63,6 +63,27 @@ const sampleTypes = [
     display_name: "Slack",
     ingress: "websocket",
     needs_public_url: false,
+    available: true,
+  },
+  {
+    type_id: "wecom",
+    display_name: "企业微信",
+    ingress: "http_webhook",
+    needs_public_url: true,
+    available: true,
+  },
+  {
+    type_id: "dingtalk",
+    display_name: "钉钉",
+    ingress: "websocket",
+    needs_public_url: false,
+    available: true,
+  },
+  {
+    type_id: "wechat_mp",
+    display_name: "微信公众号",
+    ingress: "http_webhook",
+    needs_public_url: true,
     available: false,
   },
 ];
@@ -218,7 +239,10 @@ describe("OpenApiSettingsTab", () => {
     render(<OpenApiSettingsTab />);
     await user.click(await screen.findByRole("button", { name: "添加通道" }));
     expect(screen.getByRole("button", { name: /飞书/ })).toBeEnabled();
-    expect(screen.getByRole("button", { name: /Slack/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Slack/ })).toBeEnabled();
+    expect(screen.getByRole("button", { name: /企业微信/ })).toBeEnabled();
+    expect(screen.getByRole("button", { name: /钉钉/ })).toBeEnabled();
+    expect(screen.getByRole("button", { name: /微信公众号/ })).toBeDisabled();
     expect(screen.getByText("即将支持")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /飞书/ }));
     expect(

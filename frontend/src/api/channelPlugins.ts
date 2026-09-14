@@ -25,6 +25,10 @@ export type ChannelInstance = {
     key_prefix?: string;
     app_id?: string;
     ingress?: string;
+    webhook_url?: string;
+    request_url?: string;
+    callback_url?: string;
+    sandbox_allow_senders?: string;
   };
   secrets?: Record<string, string>;
   persona?: ApiPersona | null;

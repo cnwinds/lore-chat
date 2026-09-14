@@ -6,6 +6,7 @@ import {
   canSubmitCreateKey,
   chatCurlExample,
   formatOpenApiWhen,
+  type CreateKeyDraft,
 } from "./openApiSettingsModel";
 
 describe("canSubmitCreateKey", () => {
@@ -147,6 +148,21 @@ describe("buildFeishuConfig", () => {
       config: { app_id: "cli_x", ingress: "websocket" },
       secrets: { app_secret: "s" },
     });
+  });
+});
+
+describe("canSubmitCreateKey Slack", () => {
+  it("requires bot token and app token for Socket Mode", () => {
+    const slackOk: CreateKeyDraft = {
+      ...EMPTY_CREATE_DRAFT,
+      name: "工单",
+      botToken: "xoxb-1",
+      signingSecret: "sig",
+      appToken: "xapp-1",
+    };
+    expect(canSubmitCreateKey(slackOk, "slack")).toBe(true);
+    expect(canSubmitCreateKey({ ...slackOk, botToken: "" }, "slack")).toBe(false);
+    expect(canSubmitCreateKey({ ...slackOk, appToken: "" }, "slack")).toBe(false);
   });
 });
 

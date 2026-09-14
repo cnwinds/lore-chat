@@ -67,6 +67,18 @@ class ChannelTypeSpec:
 
 
 @dataclass
+class InboundMedia:
+    """待物化为知识库 attachments 路径的入站文件。"""
+
+    filename: str
+    kind: str = "image"
+    mime: str | None = None
+    data: bytes | None = None
+    url: str | None = None
+    file_key: str | None = None
+
+
+@dataclass
 class InboundEvent:
     instance_id: str
     text: str
@@ -75,6 +87,10 @@ class InboundEvent:
     display_name: str | None = None
     external_chat_id: str | None = None
     external_thread_id: str | None = None
+    reply_to_id: str | None = None
     attachments: list[str] = field(default_factory=list)
+    media: list[InboundMedia] = field(default_factory=list)
     is_group: bool = False
     mentioned_bot: bool = False
+    quoted: bool = False
+    extra: dict[str, Any] = field(default_factory=dict)

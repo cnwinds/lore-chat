@@ -1,4 +1,5 @@
 export type VoiceMode = "default" | "existing" | "new" | "copy";
+export type ChannelIngress = "websocket" | "http_webhook";
 
 export type CreateKeyDraft = {
   name: string;
@@ -11,7 +12,19 @@ export type CreateKeyDraft = {
   appSecret: string;
   verificationToken: string;
   encryptKey: string;
-  ingress: "websocket" | "http_webhook";
+  ingress: ChannelIngress;
+  botToken: string;
+  signingSecret: string;
+  appToken: string;
+  corpId: string;
+  agentId: string;
+  corpSecret: string;
+  wecomToken: string;
+  encodingAesKey: string;
+  appKey: string;
+  dingAppSecret: string;
+  robotCode: string;
+  sandboxAllowSenders: string;
 };
 
 export type CreateKeyRequest = {
@@ -33,7 +46,24 @@ export const EMPTY_CREATE_DRAFT: CreateKeyDraft = {
   verificationToken: "",
   encryptKey: "",
   ingress: "websocket",
+  botToken: "",
+  signingSecret: "",
+  appToken: "",
+  corpId: "",
+  agentId: "",
+  corpSecret: "",
+  wecomToken: "",
+  encodingAesKey: "",
+  appKey: "",
+  dingAppSecret: "",
+  robotCode: "",
+  sandboxAllowSenders: "",
 };
+
+function withSandbox(config: Record<string, string>, draft: CreateKeyDraft) {
+  const senders = draft.sandboxAllowSenders.trim();
+  return senders ? { ...config, sandbox_allow_senders: senders } : config;
+}
 
 export function canSubmitCreateKey(
   draft: CreateKeyDraft,
@@ -45,6 +75,23 @@ export function canSubmitCreateKey(
   if (draft.voice === "copy" && !draft.copyRoleId) return false;
   if (typeId === "feishu") {
     return Boolean(draft.appId.trim() && draft.appSecret.trim());
+  }
+  if (typeId === "slack") {
+    if (!draft.botToken.trim()) return false;
+    if (draft.ingress === "http_webhook") return Boolean(draft.signingSecret.trim());
+    return Boolean(draft.appToken.trim());
+  }
+  if (typeId === "wecom") {
+    return Boolean(
+      draft.corpId.trim() &&
+        draft.agentId.trim() &&
+        draft.corpSecret.trim() &&
+        draft.wecomToken.trim() &&
+        draft.encodingAesKey.trim(),
+    );
+  }
+  if (typeId === "dingtalk") {
+    return Boolean(draft.appKey.trim() && draft.dingAppSecret.trim());
   }
   return true;
 }
@@ -66,10 +113,13 @@ export function buildCreateKeyRequest(draft: CreateKeyDraft): CreateKeyRequest {
 
 export function buildFeishuConfig(draft: CreateKeyDraft) {
   return {
-    config: {
-      app_id: draft.appId.trim(),
-      ingress: draft.ingress,
-    },
+    config: withSandbox(
+      {
+        app_id: draft.appId.trim(),
+        ingress: draft.ingress,
+      },
+      draft,
+    ),
     secrets: {
       app_secret: draft.appSecret.trim(),
       ...(draft.verificationToken.trim()
@@ -78,6 +128,60 @@ export function buildFeishuConfig(draft: CreateKeyDraft) {
       ...(draft.encryptKey.trim() ? { encrypt_key: draft.encryptKey.trim() } : {}),
     },
   };
+}
+
+export function buildSlackConfig(draft: CreateKeyDraft) {
+  return {
+    config: withSandbox({ ingress: draft.ingress }, draft),
+    secrets: {
+      bot_token: draft.botToken.trim(),
+      ...(draft.signingSecret.trim()
+        ? { signing_secret: draft.signingSecret.trim() }
+        : {}),
+      ...(draft.appToken.trim() ? { app_token: draft.appToken.trim() } : {}),
+    },
+  };
+}
+
+export function buildWecomConfig(draft: CreateKeyDraft) {
+  return {
+    config: withSandbox(
+      {
+        corp_id: draft.corpId.trim(),
+        agent_id: draft.agentId.trim(),
+      },
+      draft,
+    ),
+    secrets: {
+      corp_secret: draft.corpSecret.trim(),
+      token: draft.wecomToken.trim(),
+      encoding_aes_key: draft.encodingAesKey.trim(),
+    },
+  };
+}
+
+export function buildDingtalkConfig(draft: CreateKeyDraft) {
+  return {
+    config: withSandbox(
+      {
+        app_key: draft.appKey.trim(),
+        ingress: draft.ingress,
+        ...(draft.robotCode.trim() ? { robot_code: draft.robotCode.trim() } : {}),
+      },
+      draft,
+    ),
+    secrets: {
+      app_secret: draft.dingAppSecret.trim(),
+    },
+  };
+}
+
+export function buildTypeConfig(typeId: string, draft: CreateKeyDraft) {
+  if (typeId === "feishu") return buildFeishuConfig(draft);
+  if (typeId === "slack") return buildSlackConfig(draft);
+  if (typeId === "wecom") return buildWecomConfig(draft);
+  if (typeId === "dingtalk") return buildDingtalkConfig(draft);
+  return {};
 }
 
 export function chatCurlExample(token = "lc_live_…"): string {
@@ -89,8 +193,40 @@ export function chatCurlExample(token = "lc_live_…"): string {
   ].join("\n");
 }
 
+export function channelNextSteps(typeId: string): string | null {
+  if (typeId === "feishu") {
+    return "已按长连接接入。请在飞书开放平台开启「长连接」接收事件；无需公网回调地址。";
+  }
+  if (typeId === "slack") {
+    return "默认 Socket Mode。请在 Slack 应用开启 Socket Mode，并订阅 message / app_mention。群/频道仅 @ 或 thread 回复才会开回合。";
+  }
+  if (typeId === "wecom") {
+    return "请把卡片上的回调 URL 配到企业微信应用。启用前需要设置里的公网根地址。群聊仅被 @ 才回复，默认关沙箱。";
+  }
+  if (typeId === "dingtalk") {
+    return "已按 Stream 长连接接入。请在钉钉开放平台为机器人开启 Stream。群聊需 @ 机器人。";
+  }
+  return null;
+}
+
 export function feishuNextSteps(): string {
-  return "已按长连接接入。请在飞书开放平台开启「长连接」接收事件；无需公网回调地址。";
+  return channelNextSteps("feishu") || "";
+}
+
+export function createLead(typeId: string): string {
+  if (typeId === "feishu") {
+    return "填名称和飞书应用凭证。默认走长连接，不需要公网地址。";
+  }
+  if (typeId === "slack") {
+    return "填 Bot Token。默认 Socket Mode，需要 App Token；不需要公网地址。";
+  }
+  if (typeId === "wecom") {
+    return "填企业微信应用凭证。回调需要公网根地址；可先保存再启用。";
+  }
+  if (typeId === "dingtalk") {
+    return "填 AppKey / AppSecret。默认 Stream 长连接，不需要公网地址。";
+  }
+  return "填个名字就行。说话方式可先不改。";
 }
 
 export function formatOpenApiWhen(iso?: string | null): string {
