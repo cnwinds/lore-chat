@@ -110,3 +110,26 @@ def test_generate_image_clears_progress_log_on_result():
     )
     assert "progress_log" not in acc.timeline[0]
     assert acc.timeline[0]["attachments"] == ["generated/x.png"]
+
+
+def test_assistant_visible_set_replaces_trailing_text():
+    acc = TimelineAccumulator()
+    acc.accumulate("think_delta", {"delta": "thinking", "ts": "t0"})
+    acc.accumulate(
+        "text_delta",
+        {"delta": "前言\n\n【征询】选哪个？ 选项：A；B", "ts": "t1"},
+    )
+    assert acc.assistant_text.endswith("选项：A；B")
+    acc.accumulate("assistant_visible_set", {"text": "前言", "ts": "t2"})
+    assert acc.assistant_text == "前言"
+    types = [b["type"] for b in acc.timeline]
+    assert types == ["think", "text"]
+    assert acc.timeline[1]["content"] == "前言"
+
+
+def test_assistant_visible_set_drops_empty_text():
+    acc = TimelineAccumulator()
+    acc.accumulate("text_delta", {"delta": "【征询】选哪个？ 选项：A；B", "ts": "t0"})
+    acc.accumulate("assistant_visible_set", {"text": "", "ts": "t1"})
+    assert acc.assistant_text == ""
+    assert acc.timeline == []

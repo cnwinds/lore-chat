@@ -113,3 +113,46 @@ async def test_ask_user_stops_loop_without_extra_llm_round(tmp_path, caplog):
     assert "stop_reason=awaiting_user" in end_logs[-1]
     # ask_user 后不应再向 LLM 要第二轮
     assert llm._i == 1
+
+
+@pytest.mark.asyncio
+async def test_plaintext_solicitation_promotes_to_ask_user(tmp_path, caplog):
+    import logging
+
+    caplog.set_level(logging.INFO)
+    llm = FakeLLMClient(
+        tool_responses=[
+            {
+                "content": (
+                    "方向已锁定。\n\n"
+                    "【征询】核心机制选哪个？ 选项：推与序；光与折；连与通"
+                ),
+                "tool_calls": [],
+            },
+            {"content": "不该走到这里", "tool_calls": []},
+        ],
+        embed_dim=8,
+    )
+    loop = _build_loop(tmp_path, llm)
+    events: list[str] = []
+    async for ev in loop.stream(
+        [{"role": "user", "content": "开发一个解谜游戏"}],
+        tools_for_run=[],
+        conversation_id="cid",
+        active_doc_path=None,
+        turn_id="t1",
+        run_id="r1",
+    ):
+        events.append(ev)
+
+    joined = "".join(events)
+    assert "event: assistant_visible_set" in joined
+    assert "event: tool_start" in joined
+    assert '"tool": "ask_user"' in joined
+    assert "question_id" in joined
+    assert "推与序" in joined
+    assert "方向已锁定" in joined
+    end_logs = [r.message for r in caplog.records if "agent run end" in r.message]
+    assert end_logs
+    assert "stop_reason=awaiting_user" in end_logs[-1]
+    assert llm._i == 1

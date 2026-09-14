@@ -736,7 +736,14 @@ TOOL_DEFINITIONS: list[dict] = [
         "type": "function",
         "function": {
             "name": "ask_user",
-            "description": "向用户提出选择题，等待用户确认后再继续",
+            "description": (
+                "向用户提出选择题，等待用户确认后再继续。"
+                "界面会把本工具的结构化结果渲染成可点选的提问卡片。"
+                "需要用户在有限选项中做决定时必须调用本工具；"
+                "禁止把问题或选项写进正文（包括【征询】标记、编号/分号列表），"
+                "那不会出现卡片，用户也无法点选。"
+                "同轮只问一个问题；options 每项含稳定短 id 与给用户看的 label。"
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {

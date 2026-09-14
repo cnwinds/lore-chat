@@ -164,7 +164,8 @@ def test_llm_history_projects_ask_user_when_assistant_has_no_text():
     history = ConversationTranscript.llm_history(conv)
     assert history[0] == {"role": "user", "content": "帮我定方案"}
     assert history[1]["role"] == "assistant"
-    assert "【征询】先做哪一块？" in history[1]["content"]
+    assert "已通过 ask_user 向用户提问：先做哪一块？" in history[1]["content"]
+    assert "【征询】" not in history[1]["content"]
     assert "检索" in history[1]["content"]
     assert "落库" in history[1]["content"]
 

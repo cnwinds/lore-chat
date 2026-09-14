@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ChatMessage, TimelineBlock } from "../api";
-import { mergeServerTimeline } from "./timelineStream";
+import { mergeServerTimeline, updateTimeline } from "./timelineStream";
 
 describe("mergeServerTimeline", () => {
   afterEach(() => {
@@ -147,5 +147,29 @@ describe("mergeServerTimeline", () => {
         expect(tool.started_at_ms).toBe(Date.parse(iso));
       }
     }
+  });
+});
+
+describe("updateTimeline assistant_visible_set", () => {
+  it("keeps think and replaces trailing text", () => {
+    const timeline: TimelineBlock[] = [
+      { type: "think", ts: "t0", content: "thinking" },
+      { type: "text", ts: "t1", content: "前言\n\n【征询】选哪个？ 选项：A；B" },
+    ];
+    const next = updateTimeline(timeline, "assistant_visible_set", {
+      text: "前言",
+      ts: "t2",
+    });
+    expect(next).toHaveLength(2);
+    expect(next[0]).toMatchObject({ type: "think", content: "thinking" });
+    expect(next[1]).toMatchObject({ type: "text", content: "前言" });
+  });
+
+  it("drops text blocks when remainder is empty", () => {
+    const timeline: TimelineBlock[] = [
+      { type: "text", ts: "t0", content: "【征询】选哪个？ 选项：A；B" },
+    ];
+    const next = updateTimeline(timeline, "assistant_visible_set", { text: "" });
+    expect(next).toEqual([]);
   });
 });

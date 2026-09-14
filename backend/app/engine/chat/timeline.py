@@ -157,6 +157,11 @@ class TimelineAccumulator:
             else:
                 self._text_block["content"] += delta
 
+        elif event_type == "assistant_visible_set":
+            self._set_visible_assistant_text(
+                data.get("text") or "", ts=data.get("ts")
+            )
+
         elif event_type == "user_inject":
             self._text_block = None
             self._think_block = None
@@ -182,6 +187,13 @@ class TimelineAccumulator:
             extend_sources(self.all_sources, data.get("sources") or [])
             if data.get("total_duration_ms") is not None:
                 self.total_duration_ms = data["total_duration_ms"]
+
+    def _set_visible_assistant_text(self, text: str, *, ts: str | None = None) -> None:
+        text = text or ""
+        self.assistant_text = text
+        self.timeline, self._text_block = _replace_visible_text_blocks(
+            self.timeline, text, ts=ts
+        )
 
     def assistant_payload(self, status: str, *, error: str | None = None) -> dict:
         timeline = self.timeline
@@ -253,3 +265,31 @@ def _mark_running_tools_interrupted(timeline: list[dict]) -> list[dict]:
         return b
 
     return [patch(block) for block in timeline]
+
+
+def _replace_visible_text_blocks(
+    timeline: list[dict],
+    text: str,
+    *,
+    ts: str | None = None,
+) -> tuple[list[dict], dict | None]:
+    """Collapse top-level text blocks to a single remainder (or drop them)."""
+    out: list[dict] = []
+    placed = False
+    text_block: dict | None = None
+    for block in timeline:
+        if not isinstance(block, dict) or block.get("type") != "text":
+            out.append(block)
+            continue
+        if placed:
+            continue
+        placed = True
+        if text:
+            updated = dict(block)
+            updated["content"] = text
+            out.append(updated)
+            text_block = updated
+    if not placed and text:
+        text_block = {"type": "text", "ts": ts or "", "content": text}
+        out.append(text_block)
+    return out, text_block

@@ -693,6 +693,21 @@ def test_list_roles_is_readonly_and_describes_catalog():
     assert "list_roles" in names
 
 
+def test_ask_user_contract_requires_tool_not_prose():
+    from app.engine.agent.prompts import SYSTEM_PROMPT
+    from app.engine.agent.tool_catalog import TOOL_DEFINITIONS
+
+    defs = {d["function"]["name"]: d["function"] for d in TOOL_DEFINITIONS}
+    desc = defs["ask_user"]["description"]
+    assert "提问卡片" in desc
+    assert "必须调用" in desc
+    assert "禁止把问题或选项写进正文" in desc
+    assert "提问卡片" in SYSTEM_PROMPT
+    assert "必须调用 `ask_user`" in SYSTEM_PROMPT
+    names = _tool_names(select_tools(MODE_DEFAULT, web_enabled=True, role_messaging=True))
+    assert "ask_user" in names
+
+
 def test_role_avatar_tool_accepts_kb_path_and_default_role_update():
     from app.engine.agent.tool_catalog import TOOL_DEFINITIONS
 

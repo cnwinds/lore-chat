@@ -116,4 +116,36 @@ describe("reduceStreamEvent serverTimeline + deltas", () => {
       progress_log: ["step 1"],
     });
   });
+
+  it("rewrites visible text on ephemeral assistant_visible_set", () => {
+    const state = baseState();
+    let result = reduceStreamEvent(state, "text_delta", {
+      delta: "前言\n\n【征询】选哪个？ 选项：A；B",
+      ts: "2026-01-01T00:00:00Z",
+    });
+    result = reduceStreamEvent(result.state, "assistant_visible_set", {
+      text: "前言",
+      ts: "2026-01-01T00:00:01Z",
+    });
+    expect(result.state.assistant.text).toBe("前言");
+    const textBlock = (result.state.assistant.timeline ?? []).find(
+      (b) => b.type === "text",
+    );
+    expect(textBlock).toMatchObject({ type: "text", content: "前言" });
+  });
+
+  it("does not locally apply assistant_visible_set after timeline_state", () => {
+    const state = baseState();
+    let result = reduceStreamEvent(state, "timeline_state", {
+      timeline: [{ type: "text", ts: "t0", content: "前言" }],
+      assistant_text: "前言",
+    });
+    result = reduceStreamEvent(result.state, "assistant_visible_set", {
+      text: "should-not-apply",
+    });
+    expect(result.state.assistant.text).toBe("前言");
+    expect(result.state.assistant.timeline).toEqual([
+      { type: "text", ts: "t0", content: "前言" },
+    ]);
+  });
 });

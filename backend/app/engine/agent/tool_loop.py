@@ -10,6 +10,7 @@ from dataclasses import asdict, is_dataclass
 
 from app.config import Settings
 from app.engine.agent.events import (
+    assistant_visible_set,
     done,
     inject_deferred,
     model_selected,
@@ -21,6 +22,7 @@ from app.engine.agent.events import (
     tool_start,
     user_inject,
 )
+from app.engine.agent.solicitation import parse_plaintext_solicitation
 from app.engine.chat.turn_inject import PendingInject, TurnInjectBroker
 from app.engine.agent.run_report import AgentRunReport
 from app.engine.agent.tool_events import emit_tool_result_sse
@@ -165,6 +167,9 @@ class AgentToolLoop:
                         len(messages),
                         llm_rounds,
                     )
+                result, stripped = self._promote_plaintext_solicitation(result)
+                if stripped is not None:
+                    yield assistant_visible_set(stripped)
                 if result.tool_calls:
                     report.last_tool_names = [tc.name for tc in result.tool_calls]
                     turn_outputs: list[tuple[ToolCall, dict, int]] = []
@@ -299,6 +304,52 @@ class AgentToolLoop:
                 else logging.INFO
             )
             report.emit(_log, level=level)
+
+    @staticmethod
+    def _promote_plaintext_solicitation(
+        result: ChatWithToolsResult,
+    ) -> tuple[ChatWithToolsResult, str | None]:
+        """If the model wrote a 征询 into prose, turn it into ask_user.
+
+        Only when this round has no tool calls (or already called ask_user):
+        mixed tool rounds keep their text so a later round can still ask.
+        """
+        parsed = parse_plaintext_solicitation(result.content or "")
+        if parsed is None:
+            return result, None
+        has_ask = any(tc.name == "ask_user" for tc in result.tool_calls)
+        if result.tool_calls and not has_ask:
+            return result, None
+        stripped = parsed.remainder
+        if has_ask:
+            _log.info(
+                "stripped plaintext solicitation duplicated beside ask_user"
+            )
+            return (
+                ChatWithToolsResult(
+                    content=stripped or None,
+                    tool_calls=result.tool_calls,
+                ),
+                stripped,
+            )
+        synth = ToolCall(
+            id=f"ask-{uuid.uuid4().hex[:10]}",
+            name="ask_user",
+            arguments={
+                "question": parsed.question,
+                "options": parsed.options,
+                "multi_select": parsed.multi_select,
+            },
+        )
+        _log.info(
+            "promoted plaintext solicitation to ask_user question=%s options=%d",
+            parsed.question[:80],
+            len(parsed.options),
+        )
+        return (
+            ChatWithToolsResult(content=stripped or None, tool_calls=[synth]),
+            stripped,
+        )
 
     def _split_batches(self, tool_calls: list[ToolCall]) -> list[list[ToolCall]]:
         if not self.settings.agent_parallel_tools:
