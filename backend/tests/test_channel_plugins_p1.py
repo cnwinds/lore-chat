@@ -125,7 +125,7 @@ def test_feishu_adapter_ignores_group_and_non_text():
         }
     )
     assert group.is_group is True
-    empty_type = adapter.parse_inbound(
+    image = adapter.parse_inbound(
         {
             "instance_id": "i",
             "body": {
@@ -141,7 +141,8 @@ def test_feishu_adapter_ignores_group_and_non_text():
             },
         }
     )
-    assert empty_type.text == ""
+    assert image.text == "[图片]"
+    assert image.media
     missing_chat = adapter.parse_inbound(
         {
             "instance_id": "i",
