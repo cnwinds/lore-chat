@@ -242,6 +242,17 @@ export type RoomSummary = {
   last_reply_preview?: string | null;
 };
 
+export type GroupAssignmentStatus = {
+  id: string;
+  assigner_role_id?: string;
+  assigner_name?: string;
+  assignee_role_id?: string;
+  assignee_name?: string;
+  status: "open" | "working" | "done" | "overdue" | string;
+  due_at?: string | null;
+  brief?: string;
+};
+
 export type RoomStatus = {
   id: string;
   kind: string;
@@ -256,6 +267,7 @@ export type RoomStatus = {
   peer_role_id?: string | null;
   updated_at?: string;
   last_message_at?: string | null;
+  assignments?: GroupAssignmentStatus[];
 };
 
 export type Conversation = ConversationSummary & {

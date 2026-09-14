@@ -69,4 +69,20 @@ describe("ChatMessageRow group layout", () => {
     expect(document.querySelector(".chat-row-group-owner")).toBeTruthy();
     expect(screen.queryByText("主人")).toBeNull();
   });
+
+  it("centers a system notice instead of drawing it as the owner", () => {
+    const message: ChatMessage = {
+      id: "m3",
+      role: "user",
+      text: "「游戏开发助手」的任务已超过预期时间，尚未回执。请询问进度或改派。",
+      speaker_kind: "system",
+      speaker_name: "系统",
+      ts: "2026-01-01T00:00:00.000Z",
+    };
+    render(<ChatMessageRow message={message} {...baseProps} />);
+    expect(document.querySelector(".chat-row-group-system")).toBeTruthy();
+    expect(document.querySelector(".chat-row-group-owner")).toBeNull();
+    expect(document.querySelector(".chat-bubble-system")).toBeTruthy();
+    expect(screen.getByText(/超过预期/)).toBeTruthy();
+  });
 });

@@ -174,6 +174,9 @@ class Settings(BaseSettings):
     # 删除角色时是否忘记并尝试丢弃该角色卷；默认只停容器、留 PVC
     sandbox_destroy_volume_on_role_delete: bool = False
 
+    # 群内派工：工人真正开回合后，超过该分钟数未回执则叫醒协调者
+    group_assignment_due_minutes: int = 15
+
 
 EDITABLE_SETTING_KEYS: frozenset[str] = frozenset(
     name

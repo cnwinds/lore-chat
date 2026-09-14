@@ -70,6 +70,9 @@ def test_can_parallelize_read_only():
     assert can_parallelize(["generate_image", "generate_image"]) is True
     assert can_parallelize(["generate_image", "search_kb"]) is True
     assert can_parallelize(["generate_image", "write_doc"]) is False
+    assert can_parallelize(["send_message", "send_message"]) is True
+    assert can_parallelize(["send_message", "search_kb"]) is True
+    assert can_parallelize(["send_message", "write_doc"]) is False
 
 
 @pytest.mark.asyncio

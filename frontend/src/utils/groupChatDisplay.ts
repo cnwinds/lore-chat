@@ -49,6 +49,7 @@ export function membersFromRoleIds(
 }
 
 export function isOwnerSpeaker(message: ChatMessage): boolean {
+  if (message.speaker_kind === "system") return false;
   if (message.speaker_kind === "user") return true;
   return message.role === "user" && message.speaker_kind !== "role";
 }
@@ -66,7 +67,10 @@ export function resolveGroupSpeaker(
   message: ChatMessage,
   roles: RoleSummary[],
   respondingRoleId?: string | null,
-): { kind: "owner" | "role"; role?: RoleSummary; name: string; id?: string } {
+): { kind: "owner" | "role" | "system"; role?: RoleSummary; name: string; id?: string } {
+  if (message.speaker_kind === "system") {
+    return { kind: "system", name: message.speaker_name || "系统" };
+  }
   if (isOwnerSpeaker(message)) {
     return { kind: "owner", name: "主人" };
   }

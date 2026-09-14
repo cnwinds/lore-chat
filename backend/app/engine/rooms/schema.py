@@ -96,3 +96,34 @@ def ensure_room_schema(conn) -> None:
         ON role_inbound_queue(role_id, status, created_at)
         """
     )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS group_assignments (
+            id TEXT PRIMARY KEY,
+            room_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+            assigner_role_id TEXT NOT NULL,
+            assignee_role_id TEXT NOT NULL,
+            source_message_id TEXT,
+            receipt_message_id TEXT,
+            brief TEXT,
+            due_in_minutes INTEGER,
+            due_at TEXT,
+            status TEXT NOT NULL DEFAULT 'open',
+            inquired_at TEXT,
+            created_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_group_assignments_room_status
+        ON group_assignments(room_id, status, created_at)
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_group_assignments_due
+        ON group_assignments(due_at)
+        WHERE due_at IS NOT NULL AND status IN ('open', 'working')
+        """
+    )

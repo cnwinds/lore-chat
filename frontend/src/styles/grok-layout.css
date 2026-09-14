@@ -666,6 +666,22 @@
   word-break: break-word;
 }
 
+.timeline-collab-assignments {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.timeline-collab-assignment {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+
+.timeline-collab-assignment--overdue {
+  color: var(--danger, #c44);
+}
+
 .timeline-collab-actions {
   margin-top: 8px;
 }

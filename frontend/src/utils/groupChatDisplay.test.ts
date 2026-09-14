@@ -14,6 +14,9 @@ describe("groupChatDisplay", () => {
     expect(
       isOwnerSpeaker({ role: "user", text: "hi", speaker_kind: "role" }),
     ).toBe(false);
+    expect(
+      isOwnerSpeaker({ role: "user", text: "超时了", speaker_kind: "system" }),
+    ).toBe(false);
   });
 
   it("resolves a role speaker from the roster", () => {
@@ -31,6 +34,20 @@ describe("groupChatDisplay", () => {
       name: "游戏开发助手",
       id: "game",
     });
+  });
+
+  it("resolves a system notice, not the owner", () => {
+    expect(
+      resolveGroupSpeaker(
+        {
+          role: "user",
+          text: "任务已超过预期",
+          speaker_kind: "system",
+          speaker_name: "系统",
+        },
+        [],
+      ),
+    ).toMatchObject({ kind: "system", name: "系统" });
   });
 
   it("maps role ids to members when the card has no briefs", () => {

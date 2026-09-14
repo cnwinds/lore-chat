@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.engine.rooms.schema import ACTOR_ROLE, ACTOR_USER, OWNER_ACTOR_ID
+from app.engine.rooms.schema import (
+    ACTOR_ROLE,
+    ACTOR_SYSTEM,
+    ACTOR_USER,
+    OWNER_ACTOR_ID,
+)
 
 
 @dataclass(frozen=True)
@@ -12,6 +17,7 @@ class Actor:
 
 
 OWNER = Actor(kind=ACTOR_USER, id=OWNER_ACTOR_ID)
+SYSTEM = Actor(kind=ACTOR_SYSTEM, id="system")
 
 
 def format_peer_message(
@@ -48,6 +54,9 @@ class InboundStimulus:
         return self.speaker.kind == ACTOR_USER
 
     def llm_user_text(self) -> str:
+        if self.speaker.kind == ACTOR_SYSTEM:
+            body = (self.text or "").strip()
+            return f"[系统通知]\n{body}" if body else "[系统通知]"
         if self.speaker.kind != ACTOR_ROLE:
             return self.text
         return format_peer_message(

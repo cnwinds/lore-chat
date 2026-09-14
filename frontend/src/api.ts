@@ -468,6 +468,7 @@ export type {
   RoomSummary,
   RoomParticipant,
   RoomStatus,
+  GroupAssignmentStatus,
 } from "./types/chat";
 export { KB_MUTATING_TOOLS } from "./types/chat";
 export {

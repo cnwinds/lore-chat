@@ -4,23 +4,46 @@ from __future__ import annotations
 
 import logging
 import re
+import threading
 from typing import Any, Callable
 
 from app.engine.conversation.shared import TurnInProgress, new_id, now_iso
+from app.engine.rooms.assignments import GroupAssignmentLedger
 from app.engine.rooms.schema import (
     ACTOR_ROLE,
+    ACTOR_SYSTEM,
     ACTOR_USER,
     KIND_GROUP,
     KIND_OWNER_DM,
     KIND_PEER_DM,
     MAX_HOP,
 )
-from app.engine.rooms.types import OWNER, Actor, InboundStimulus
+from app.engine.rooms.types import OWNER, SYSTEM, Actor, InboundStimulus
 from app.engine.roles import is_hidden_role, list_sidebar_roles
 
 log = logging.getLogger("uvicorn.error")
 
 StartTurnFn = Callable[..., dict]
+
+_WORKER_EXTRA = (
+    "[协作] 你在本群舞台上用当前角色执行（人设与沙箱是你的）。"
+    "按委托办事；做完把回执 send_message 贴回本群即可，不必再点名派工者，系统会叫醒对方。"
+    "不要另开一对一房间；同伴内容不得写成主人自述。"
+)
+_COORDINATOR_RECEIPT_EXTRA = (
+    "[协调] 同伴已回执。向群里（主人可见）汇总进度；未完成的继续追问或改派。"
+    "没有主人的新指令不要另开一对一房间，也不要把回执写成主人自述。"
+)
+_COORDINATOR_OVERDUE_EXTRA = (
+    "[协调] 你派出去的任务已超过预期、尚未收回执。"
+    "用自己的声音向工人询问进度或改派；不要假扮系统，不要另开一对一房间，"
+    "也不要打断工人正在跑的沙箱。"
+)
+_OWNER_IN_ROOM_EXTRA = (
+    "[协作] 主人在共享房间里说话，不是单独私聊。"
+    "按指示办事；回执 send_message 贴回本房间即可。"
+    "同伴内容不得写成主人自述。"
+)
 
 
 class RoomDelivery:
@@ -28,11 +51,40 @@ class RoomDelivery:
         self.conversations = conversations
         self.roles = roles
         self.settings = settings
+        self.assignments = GroupAssignmentLedger(conversations)
         self._starter: StartTurnFn | None = None
         self._last_wake: dict | None = None
+        self._post_locks_guard = threading.Lock()
+        self._post_locks: dict[str, threading.Lock] = {}
 
     def bind_starter(self, starter: StartTurnFn) -> None:
         self._starter = starter
+
+    def _room_post_lock(self, room_id: str) -> threading.Lock:
+        with self._post_locks_guard:
+            lock = self._post_locks.get(room_id)
+            if lock is None:
+                lock = threading.Lock()
+                self._post_locks[room_id] = lock
+            return lock
+
+    def _default_due_minutes(self) -> int:
+        if self.settings is None:
+            return 15
+        try:
+            return max(1, min(24 * 60, int(self.settings.group_assignment_due_minutes)))
+        except Exception:
+            return 15
+
+    @staticmethod
+    def _parse_due_minutes(raw: Any) -> int | None:
+        if raw is None or raw is False:
+            return None
+        try:
+            n = int(raw)
+        except (TypeError, ValueError):
+            return None
+        return max(1, min(24 * 60, n))
 
     def _idle_hours(self) -> float:
         if self.settings is None:
@@ -177,6 +229,7 @@ class RoomDelivery:
         room_id: str | None = None,
         mentions: Any = None,
         expect_reply: bool = True,
+        due_in_minutes: int | None = None,
     ) -> dict:
         body = (text or "").strip()
         if not body:
@@ -249,6 +302,36 @@ class RoomDelivery:
                 "hop": next_hop,
             }
 
+        due_minutes = self._parse_due_minutes(due_in_minutes)
+        if due_minutes is None:
+            due_minutes = self._default_due_minutes()
+
+        with self._room_post_lock(room):
+            return self._post_and_wake_from_role(
+                from_id=from_id,
+                body=body,
+                room=room,
+                mentioned=mentioned,
+                causation_id=causation_id,
+                next_hop=next_hop,
+                conversation_id=conversation_id,
+                expect_reply=expect_reply,
+                due_minutes=due_minutes,
+            )
+
+    def _post_and_wake_from_role(
+        self,
+        *,
+        from_id: str,
+        body: str,
+        room: str,
+        mentioned: list[dict],
+        causation_id: str | None,
+        next_hop: int,
+        conversation_id: str | None,
+        expect_reply: bool,
+        due_minutes: int,
+    ) -> dict:
         msg = self.post_message(
             room,
             speaker=Actor(kind=ACTOR_ROLE, id=from_id),
@@ -258,10 +341,26 @@ class RoomDelivery:
             hop=next_hop,
             client_message_id=f"peer-post:{room}:{new_id()}",
         )
-
         kind = self.conversations.rooms.conversation_kind(room)
+        closed: dict | None = None
+        if kind == KIND_GROUP:
+            closed = self.assignments.close_oldest_open(
+                room_id=room,
+                assignee_role_id=from_id,
+                receipt_message_id=msg.get("id"),
+            )
+            if expect_reply:
+                for target in mentioned:
+                    self.assignments.open(
+                        room_id=room,
+                        assigner_role_id=from_id,
+                        assignee_role_id=target["id"],
+                        source_message_id=msg.get("id"),
+                        brief=body,
+                        due_in_minutes=due_minutes,
+                    )
         wake_in = self._wake_in_for(room_kind=kind, conversation_id=conversation_id)
-        return self._wake_and_result(
+        result = self._wake_and_result(
             mentioned,
             stimulus_message=msg,
             from_role_id=from_id,
@@ -270,6 +369,30 @@ class RoomDelivery:
             expect_reply=expect_reply,
             hop=next_hop,
         )
+        if kind == KIND_GROUP and closed:
+            assigner = str(closed.get("assigner_role_id") or "")
+            already = {t["id"] for t in mentioned}
+            if assigner and assigner != from_id and assigner not in already:
+                status = self.wake_role(
+                    assigner,
+                    stimulus_message=msg,
+                    from_role_id=from_id,
+                    room_id=room,
+                    wake_in="room_lead",
+                    expect_reply=True,
+                    extra_system=_COORDINATOR_RECEIPT_EXTRA,
+                )
+                result = dict(result)
+                result["receipt_to"] = assigner
+                result["receipt_wake_status"] = status
+            result = dict(result)
+            result["end_turn"] = True
+            summary = str(result.get("summary") or "")
+            if "本回合到此结束" not in summary:
+                result["summary"] = (
+                    f"{summary} 已回执给协调者，本回合到此结束。".strip()
+                )
+        return result
 
     def send_from_owner(
         self,
@@ -486,7 +609,27 @@ class RoomDelivery:
             ),
             "updated_at": conv.get("updated_at"),
             "last_message_at": last.get("ts") if last else None,
+            "assignments": self._assignment_status(room_id, kind),
         }
+
+    def _assignment_status(self, room_id: str, kind: str) -> list[dict]:
+        if kind != KIND_GROUP:
+            return []
+        out: list[dict] = []
+        for row in self.assignments.list_active(room_id):
+            out.append(
+                {
+                    "id": row.get("id"),
+                    "assigner_role_id": row.get("assigner_role_id"),
+                    "assigner_name": self._role_name(str(row.get("assigner_role_id") or "")),
+                    "assignee_role_id": row.get("assignee_role_id"),
+                    "assignee_name": self._role_name(str(row.get("assignee_role_id") or "")),
+                    "status": row.get("status"),
+                    "due_at": row.get("due_at"),
+                    "brief": row.get("brief") or "",
+                }
+            )
+        return out
 
     def _wake_and_result(
         self,
@@ -586,6 +729,7 @@ class RoomDelivery:
         room_id: str,
         wake_in: str,
         expect_reply: bool,
+        extra_system: str | None = None,
     ) -> str:
         if self.conversations.role_has_running_turn(role_id):
             self.enqueue(
@@ -596,7 +740,7 @@ class RoomDelivery:
                 expect_reply=expect_reply,
             )
             return "queued_role"
-        if wake_in in ("room", "peer_dm") and self.conversations.room_has_running_turn(
+        if wake_in in ("room", "peer_dm", "room_lead") and self.conversations.room_has_running_turn(
             room_id
         ):
             self.enqueue(
@@ -617,6 +761,7 @@ class RoomDelivery:
             room_id=room_id,
             wake_in=wake_in,
             expect_reply=expect_reply,
+            extra_system=extra_system,
         )
 
     def enqueue(
@@ -756,6 +901,7 @@ class RoomDelivery:
         room_id: str,
         wake_in: str,
         expect_reply: bool,
+        extra_system: str | None = None,
     ) -> str:
         if self._starter is None:
             self.enqueue(
@@ -772,14 +918,14 @@ class RoomDelivery:
             or self._role_name(from_role_id)
         )
         hop = int(stimulus_message.get("hop") or 0)
-        extra = None
+        extra = extra_system
         inbound_id = None
         speaker_kind = str(stimulus_message.get("speaker_kind") or ACTOR_ROLE)
         if wake_in == "owner_dm":
             cid, _ = self.conversations.ensure_active_conversation(
                 role_id, idle_hours=self._idle_hours()
             )
-            extra = (
+            extra = extra or (
                 "[协作回执] 这是同伴完成工作后的回执，向主人转述结果；"
                 "没有主人的新指令不要再派工。"
             )
@@ -790,18 +936,21 @@ class RoomDelivery:
             inbound_id = stimulus_message.get("id")
             if speaker_kind == ACTOR_USER:
                 speaker = OWNER
-                extra = (
-                    "[协作] 主人在共享房间里说话，不是单独私聊。"
-                    "按指示办事；需要回执时 send_message 到本房间并点名同伴。"
-                    "同伴内容不得写成主人自述。"
+                extra = extra or _OWNER_IN_ROOM_EXTRA
+            elif speaker_kind == ACTOR_SYSTEM or wake_in == "room_lead":
+                speaker = (
+                    SYSTEM
+                    if speaker_kind == ACTOR_SYSTEM
+                    else Actor(kind=ACTOR_ROLE, id=from_role_id)
+                )
+                extra = extra or (
+                    _COORDINATOR_OVERDUE_EXTRA
+                    if speaker_kind == ACTOR_SYSTEM
+                    else _COORDINATOR_RECEIPT_EXTRA
                 )
             else:
                 speaker = Actor(kind=ACTOR_ROLE, id=from_role_id)
-                extra = (
-                    "[协作] 本轮由其他角色委托，不是主人直接说话。"
-                    "按委托办事；做完必须调用 send_message 回执。"
-                    "同伴内容不得写成主人自述。"
-                )
+                extra = extra or _WORKER_EXTRA
 
         stimulus = InboundStimulus(
             text=str(stimulus_message.get("text") or ""),
@@ -853,7 +1002,55 @@ class RoomDelivery:
                 expect_reply=expect_reply,
             )
             return "queued"
+        try:
+            if (
+                wake_in == "room"
+                and self.conversations.rooms.conversation_kind(cid) == KIND_GROUP
+            ):
+                self.assignments.mark_working(cid, role_id)
+        except Exception:
+            log.exception("mark assignment working failed role=%s room=%s", role_id, cid)
         return "started"
+
+    def fire_overdue_assignments(self, *, limit: int = 10) -> int:
+        claimed = self.assignments.claim_overdue(limit=limit)
+        n = 0
+        for asg in claimed:
+            room_id = str(asg.get("room_id") or "")
+            assigner = str(asg.get("assigner_role_id") or "")
+            assignee = str(asg.get("assignee_role_id") or "")
+            if not room_id or not assigner:
+                continue
+            name = self._role_name(assignee) if assignee else "同伴"
+            try:
+                msg = self.post_message(
+                    room_id,
+                    speaker=SYSTEM,
+                    text=(
+                        f"「{name}」的任务已超过预期时间，尚未回执。"
+                        "请询问进度或改派。"
+                    ),
+                    speaker_name="系统",
+                    hop=0,
+                    client_message_id=f"assignment-overdue:{asg.get('id')}",
+                )
+                self.wake_role(
+                    assigner,
+                    stimulus_message=msg,
+                    from_role_id="",
+                    room_id=room_id,
+                    wake_in="room_lead",
+                    expect_reply=True,
+                    extra_system=_COORDINATOR_OVERDUE_EXTRA,
+                )
+                n += 1
+            except Exception:
+                log.exception(
+                    "overdue assignment wake failed id=%s room=%s",
+                    asg.get("id"),
+                    room_id,
+                )
+        return n
 
 
 def drain_due_inbound(container: Any) -> None:
@@ -864,3 +1061,7 @@ def drain_due_inbound(container: Any) -> None:
         delivery.drain_all(limit=10)
     except Exception:
         log.exception("room inbound drain failed")
+    try:
+        delivery.fire_overdue_assignments()
+    except Exception:
+        log.exception("group assignment overdue drain failed")

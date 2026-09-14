@@ -339,13 +339,15 @@ export function ChatMessageRow({
     layout === "group"
       ? resolveGroupSpeaker(m, roles, respondingRoleId)
       : null;
+  const groupRowKind =
+    groupSpeaker?.kind === "owner"
+      ? "owner"
+      : groupSpeaker?.kind === "system"
+        ? "system"
+        : "role";
   const rowClass =
     layout === "group"
-      ? `chat-row chat-row-group ${
-          groupSpeaker?.kind === "owner"
-            ? "chat-row-group-owner"
-            : "chat-row-group-role"
-        }`
+      ? `chat-row chat-row-group chat-row-group-${groupRowKind}`
       : `chat-row ${
           m.speaker_kind === "role" && m.role === "user"
             ? "chat-row-peer"
@@ -358,7 +360,9 @@ export function ChatMessageRow({
       ? `chat-bubble ${
           groupSpeaker?.kind === "owner"
             ? "chat-bubble-user"
-            : "chat-bubble-assistant"
+            : groupSpeaker?.kind === "system"
+              ? "chat-bubble-system"
+              : "chat-bubble-assistant"
         }`
       : `chat-bubble ${
           m.speaker_kind === "role" && m.role === "user"
@@ -378,7 +382,9 @@ export function ChatMessageRow({
             来自 {m.speaker_name || "其他角色"}
           </div>
         )}
-        {m.role === "user" && isInjectedUserMessage(m) && (
+        {m.role === "user" &&
+          groupSpeaker?.kind !== "system" &&
+          isInjectedUserMessage(m) && (
             <div className="chat-inject-tag">已插入本轮</div>
           )}
         {m.role === "assistant" && m.status === "interrupted" && !isLiveStreaming && (
@@ -386,7 +392,9 @@ export function ChatMessageRow({
             本轮因刷新或断线中断；未完成的步骤已标出，可继续发消息、回答待确认项，或重新回复。
           </div>
         )}
-        {m.role === "user" && <UserMessageChips m={m} />}
+        {m.role === "user" && groupSpeaker?.kind !== "system" && (
+          <UserMessageChips m={m} />
+        )}
         {renderMessageContent(
           m,
           isLiveStreaming,

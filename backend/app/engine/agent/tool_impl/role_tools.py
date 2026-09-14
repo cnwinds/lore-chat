@@ -249,6 +249,7 @@ class RoleTools:
                 room_id=args.get("room_id"),
                 mentions=args.get("mentions"),
                 expect_reply=bool(args.get("expect_reply", True)),
+                due_in_minutes=args.get("due_in_minutes"),
             )
             return result
         except (ValueError, KeyError) as e:

@@ -169,6 +169,24 @@ def test_llm_history_projects_ask_user_when_assistant_has_no_text():
     assert "落库" in history[1]["content"]
 
 
+def test_llm_history_wraps_system_notice():
+    conv = {
+        "messages": [
+            {
+                "role": "user",
+                "text": "「游戏开发助手」的任务已超过预期时间，尚未回执。请询问进度或改派。",
+                "speaker_kind": "system",
+                "speaker_id": "system",
+                "speaker_name": "系统",
+            }
+        ]
+    }
+    history = ConversationTranscript.llm_history(conv)
+    assert history[0]["role"] == "user"
+    assert history[0]["content"].startswith("[系统通知]")
+    assert "超过预期" in history[0]["content"]
+
+
 def test_context_excerpt_omits_turn_output_footer():
     conv = {
         "messages": [

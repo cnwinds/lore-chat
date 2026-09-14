@@ -35,9 +35,10 @@ WRITE_TOOLS = frozenset({
     "finalize_role_onboarding",
     "sandbox_run", "publish_from_sandbox", "stage_to_sandbox",
 })
-# 可读工具 + 生图：落盘路径互不冲突（chat_attachment 自动唯一名），可同批并行。
+# 可读工具 + 生图 + 同轮多条 send_message（群内拆任务）。
+# 生图落盘路径互不冲突；派工在 Delivery 内按房间串行贴消息。
 # 其余写工具仍串行，避免文档竞态。
-PARALLELIZABLE_TOOLS = READ_ONLY_TOOLS | frozenset({"generate_image"})
+PARALLELIZABLE_TOOLS = READ_ONLY_TOOLS | frozenset({"generate_image", "send_message"})
 
 # 兼容旧导入（默认窗数值）
 _DEFAULT_DISCLOSURE_CHARS = DisclosureWindows().spot
@@ -869,8 +870,10 @@ TOOL_DEFINITIONS: list[dict] = [
                 "向其他角色投递消息。对方会在协作/群房间收到入站消息并自动开回合；"
                 "做完后对方应再 send_message 回执。这是投递，不是你变成对方。"
                 "点名成功且 expect_reply 时本回合结束，由对方接着说；不要再做刚派出去的工作。"
-                "一对一须指定 to_role_id / to_role_name；群聊必须用 mentions 或 to_role_* 点名，"
-                "未点名则只发消息、不唤醒任何人。当前就在群里时可省略 room_id。"
+                "一对一须指定 to_role_id / to_role_name；群聊用 mentions 或 to_role_* 点名，"
+                "未点名则只发消息、不唤醒（工人回执除外：贴本群即可，系统会叫醒派工者）。"
+                "当前就在群里时可省略 room_id，回执与派工都留在本群，不要另开一对一。"
+                "群里拆给多人时同轮一次发出多条；派出去的活不再自己做。"
             ),
             "parameters": {
                 "type": "object",
@@ -894,12 +897,22 @@ TOOL_DEFINITIONS: list[dict] = [
                     },
                     "room_id": {
                         "type": "string",
-                        "description": "已有协作/群房间 id；省略则按双方自动复用/创建",
+                        "description": (
+                            "已有协作/群房间 id。当前就在群里时省略则留在本群；"
+                            "一对一省略则按双方复用或创建。"
+                        ),
                     },
                     "mentions": {
                         "type": "array",
                         "items": {"type": "string"},
                         "description": "要点名唤醒的角色 id 或名称。群聊未点名则无人自动应。",
+                    },
+                    "due_in_minutes": {
+                        "type": "integer",
+                        "description": (
+                            "群内派工可选：期望工人在开回合后多少分钟内回执；"
+                            "省略则用系统默认。超时只叫醒派工的协调者。"
+                        ),
                     },
                 },
                 "required": ["text"],

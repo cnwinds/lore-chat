@@ -277,6 +277,13 @@ def test_create_group_and_mention_wake(tmp_path):
     assert woke["target_role_id"] == b
     assert started and started[0]["stimulus"].responding_role_id == b
     assert started[0]["conversation_id"] == group
+    extra = started[0]["stimulus"].extra_system or ""
+    assert "本群" in extra
+    active = delivery.assignments.list_active(group)
+    assert len(active) == 1
+    assert active[0]["assignee_role_id"] == b
+    assert active[0]["status"] == "working"
+    assert active[0]["due_at"]
 
 
 def test_group_handoff_queues_self_lock_and_ends_turn(tmp_path):
@@ -328,6 +335,9 @@ def test_collab_prompt_forbids_doing_handed_off_work():
         current_role_id="a",
     )
     assert "不再是你的执行项" in text
+    assert "本群" in text
+    assert "叫醒" in text
+    assert "一对一" in text
 
 
 def test_owner_interject_peer_wakes_last(tmp_path):
@@ -441,6 +451,7 @@ def test_rooms_http_create_list_and_status(client):
     status = client.get(f"/api/rooms/{rid}/status")
     assert status.status_code == 200
     assert status.json()["kind"] == "group"
+    assert status.json().get("assignments") == []
     posted = client.post(
         f"/api/rooms/{rid}/messages",
         json={"text": "先记一笔"},
@@ -773,3 +784,276 @@ def test_group_tools_list_update(tmp_path):
     assert updated["group"]["title"] == "改名群"
     deleted = tools.delete_group({"group_id": gid}, conversation_id=owner)
     assert deleted.get("error") is None
+
+
+def test_group_fanout_stays_in_room_and_shares_hop(tmp_path):
+    from app.engine.rooms.schema import ACTOR_USER, KIND_PEER_DM
+    from app.engine.rooms.types import Actor, InboundStimulus
+
+    store = _conv(tmp_path)
+    roles = _roles(tmp_path)
+    a = DEFAULT_ROLE_ID
+    b = roles.create(name="游戏开发助手")["id"]
+    c = roles.create(name="研究员")["id"]
+    started = []
+
+    def starter(**kwargs):
+        started.append(kwargs)
+        return {"turn_id": f"t{len(started)}", "status": "running"}
+
+    delivery = RoomDelivery(store, roles)
+    delivery.bind_starter(starter)
+    group = delivery.create_group(title="三人组", role_ids=[a, b, c])["id"]
+    store.begin_turn(
+        group,
+        "@通用助手 拆给 B 和 C",
+        "owner-fanout",
+        stimulus=InboundStimulus(
+            text="@通用助手 拆给 B 和 C",
+            speaker=Actor(kind=ACTOR_USER, id="owner"),
+            responding_role_id=a,
+            hop=0,
+        ),
+    )
+    first = delivery.send_from_role(
+        from_role_id=a,
+        conversation_id=group,
+        mentions=["游戏开发助手"],
+        text="@游戏开发助手 改登录页",
+    )
+    second = delivery.send_from_role(
+        from_role_id=a,
+        conversation_id=group,
+        mentions=["研究员"],
+        text="@研究员 写文案",
+    )
+    assert first["room_id"] == second["room_id"] == group
+    assert first["hop"] == second["hop"] == 1
+    assert first["end_turn"] is True
+    assert second["end_turn"] is True
+    kinds = {
+        r["kind"]
+        for r in store.conn.execute("SELECT kind FROM conversations").fetchall()
+    }
+    assert KIND_PEER_DM not in kinds
+    active = delivery.assignments.list_active(group)
+    assert {row["assignee_role_id"] for row in active} == {b, c}
+    assert all(row["status"] == "open" for row in active)
+    assert all(row["due_at"] is None for row in active)
+    status = delivery.collab_status(group)
+    assert len(status["assignments"]) == 2
+    assert started == []
+
+
+def test_group_receipt_without_mention_wakes_assigner(tmp_path):
+    store = _conv(tmp_path)
+    roles = _roles(tmp_path)
+    a = DEFAULT_ROLE_ID
+    b = roles.create(name="游戏开发助手")["id"]
+    started = []
+
+    def starter(**kwargs):
+        started.append(kwargs)
+        return {"turn_id": f"t{len(started)}", "status": "running"}
+
+    delivery = RoomDelivery(store, roles)
+    delivery.bind_starter(starter)
+    group = delivery.create_group(title="两人组", role_ids=[a, b])["id"]
+    dispatched = delivery.send_from_role(
+        from_role_id=a,
+        room_id=group,
+        mentions=["游戏开发助手"],
+        text="@游戏开发助手 改登录页",
+    )
+    assert dispatched["wake_status"] == "started"
+    assert started[0]["stimulus"].responding_role_id == b
+    asg = delivery.assignments.list_active(group)[0]
+    assert asg["status"] == "working"
+    assert asg["due_at"]
+
+    receipt = delivery.send_from_role(
+        from_role_id=b,
+        room_id=group,
+        text="登录页改好了",
+    )
+    assert receipt["room_id"] == group
+    assert receipt["end_turn"] is True
+    assert receipt["receipt_to"] == a
+    assert receipt["receipt_wake_status"] == "started"
+    assert started[1]["conversation_id"] == group
+    assert started[1]["stimulus"].responding_role_id == a
+    extra = started[1]["stimulus"].extra_system or ""
+    assert "回执" in extra
+    assert "一对一" in extra
+    assert delivery.assignments.list_active(group) == []
+    kinds = {
+        r["kind"]
+        for r in store.conn.execute("SELECT kind FROM conversations").fetchall()
+    }
+    from app.engine.rooms.schema import KIND_PEER_DM
+
+    assert KIND_PEER_DM not in kinds
+
+
+def test_group_overdue_wakes_assigner_once_as_system(tmp_path):
+    from app.engine.rooms.delivery import drain_due_inbound
+    from app.engine.rooms.schema import ACTOR_SYSTEM
+    from types import SimpleNamespace
+
+    store = _conv(tmp_path)
+    roles = _roles(tmp_path)
+    a = DEFAULT_ROLE_ID
+    b = roles.create(name="游戏开发助手")["id"]
+    started = []
+
+    def starter(**kwargs):
+        started.append(kwargs)
+        return {"turn_id": f"t{len(started)}", "status": "running"}
+
+    delivery = RoomDelivery(store, roles)
+    delivery.bind_starter(starter)
+    group = delivery.create_group(title="两人组", role_ids=[a, b])["id"]
+    delivery.send_from_role(
+        from_role_id=a,
+        room_id=group,
+        mentions=["游戏开发助手"],
+        text="@游戏开发助手 改登录页",
+    )
+    asg = delivery.assignments.list_active(group)[0]
+    with store._lock:
+        store.conn.execute(
+            """
+            UPDATE group_assignments
+            SET due_at = ?, status = 'working'
+            WHERE id = ?
+            """,
+            ("2000-01-01T00:00:00+08:00", asg["id"]),
+        )
+        store.conn.commit()
+
+    started.clear()
+    drain_due_inbound(SimpleNamespace(room_delivery=delivery))
+    assert started
+    stim = started[0]["stimulus"]
+    assert stim.responding_role_id == a
+    assert stim.speaker.kind == ACTOR_SYSTEM
+    assert "[系统通知]" in started[0]["user_text"]
+    extra = stim.extra_system or ""
+    assert "假扮系统" in extra
+    msgs = store.get(group)["messages"]
+    assert any(
+        m.get("speaker_kind") == "system" and "超过预期" in (m.get("text") or "")
+        for m in msgs
+    )
+    overdue = delivery.assignments.list_active(group)
+    assert len(overdue) == 1
+    assert overdue[0]["status"] == "overdue"
+    assert overdue[0]["inquired_at"]
+
+    started.clear()
+    n = delivery.fire_overdue_assignments()
+    assert n == 0
+    assert started == []
+    sys_msgs = [
+        m for m in store.get(group)["messages"] if m.get("speaker_kind") == "system"
+    ]
+    assert len(sys_msgs) == 1
+
+
+def test_group_overdue_does_not_interrupt_running_worker(tmp_path):
+    from app.engine.rooms.schema import ACTOR_ROLE
+    from app.engine.rooms.types import Actor, InboundStimulus
+
+    store = _conv(tmp_path)
+    roles = _roles(tmp_path)
+    a = DEFAULT_ROLE_ID
+    b = roles.create(name="游戏开发助手")["id"]
+    started = []
+
+    def starter(**kwargs):
+        started.append(kwargs)
+        return {"turn_id": f"t{len(started)}", "status": "running"}
+
+    delivery = RoomDelivery(store, roles)
+    delivery.bind_starter(starter)
+    group = delivery.create_group(title="两人组", role_ids=[a, b])["id"]
+    delivery.send_from_role(
+        from_role_id=a,
+        room_id=group,
+        mentions=["游戏开发助手"],
+        text="@游戏开发助手 改登录页",
+    )
+    store.begin_turn(
+        group,
+        "改登录页",
+        "worker-busy",
+        stimulus=InboundStimulus(
+            text="改登录页",
+            speaker=Actor(kind=ACTOR_ROLE, id=a),
+            responding_role_id=b,
+        ),
+    )
+    asg = delivery.assignments.list_active(group)[0]
+    with store._lock:
+        store.conn.execute(
+            "UPDATE group_assignments SET due_at = ? WHERE id = ?",
+            ("2000-01-01T00:00:00+08:00", asg["id"]),
+        )
+        store.conn.commit()
+
+    started.clear()
+    n = delivery.fire_overdue_assignments()
+    assert n == 1
+    assert started == []
+    assert store.room_has_running_turn(group)
+    assert store.get_responding_role_id(group) == b
+    queued = store.conn.execute(
+        """
+        SELECT role_id, wake_in FROM role_inbound_queue
+        WHERE status = 'queued'
+        """
+    ).fetchall()
+    assert any(r["role_id"] == a and r["wake_in"] == "room_lead" for r in queued)
+
+
+def test_group_receipt_after_overdue_still_closes_and_wakes(tmp_path):
+    store = _conv(tmp_path)
+    roles = _roles(tmp_path)
+    a = DEFAULT_ROLE_ID
+    b = roles.create(name="游戏开发助手")["id"]
+    started = []
+
+    def starter(**kwargs):
+        started.append(kwargs)
+        return {"turn_id": f"t{len(started)}", "status": "running"}
+
+    delivery = RoomDelivery(store, roles)
+    delivery.bind_starter(starter)
+    group = delivery.create_group(title="两人组", role_ids=[a, b])["id"]
+    delivery.send_from_role(
+        from_role_id=a,
+        room_id=group,
+        mentions=["游戏开发助手"],
+        text="@游戏开发助手 改登录页",
+        due_in_minutes=7,
+    )
+    asg = delivery.assignments.list_active(group)[0]
+    assert asg["due_in_minutes"] == 7
+    assert asg["due_at"]
+    with store._lock:
+        store.conn.execute(
+            "UPDATE group_assignments SET due_at = ?, status = 'overdue' WHERE id = ?",
+            ("2000-01-01T00:00:00+08:00", asg["id"]),
+        )
+        store.conn.commit()
+    started.clear()
+    receipt = delivery.send_from_role(
+        from_role_id=b,
+        room_id=group,
+        text="登录页改好了",
+    )
+    assert receipt["end_turn"] is True
+    assert receipt["receipt_to"] == a
+    assert receipt["receipt_wake_status"] == "started"
+    assert started[0]["stimulus"].responding_role_id == a
+    assert delivery.assignments.list_active(group) == []

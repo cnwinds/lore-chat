@@ -5518,6 +5518,23 @@ button.memory-fact-statement--jump:focus-visible {
   flex-shrink: 0;
 }
 
+.chat-row-group-system {
+  justify-content: center;
+}
+
+.chat-row-group-system .chat-bubble-system {
+  max-width: min(520px, 92%);
+  margin: 4px auto;
+  padding: 6px 12px;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  line-height: 1.45;
+  text-align: center;
+}
+
 .chat-failover-banner {
   margin: 0 0 8px;
   padding: 6px 10px;
@@ -10316,6 +10333,10 @@ button.source-link--inline.conversation-md-link {
 
   .chat-panel--mobile .chat-row-group-col {
     max-width: calc(100% - 40px);
+  }
+
+  .chat-panel--mobile .chat-row-group-system .chat-bubble-system {
+    max-width: 100%;
   }
 
   /* 空态不要 margin-top:auto 贴底，否则加载文案缩在右下、中间留白 */

@@ -280,6 +280,10 @@ class ConversationTranscript:
                                 ),
                             }
                         )
+                elif speaker_kind == "system":
+                    candidates.append(
+                        {"role": "user", "content": f"[系统通知]\n{text}"}
+                    )
                 else:
                     candidates.append({"role": "user", "content": text})
 

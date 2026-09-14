@@ -1,6 +1,7 @@
 """角色互通：房间 / 投递 / 唤醒（ADR 2026-09-12）。"""
 
 from app.engine.rooms.delivery import RoomDelivery
+from app.engine.rooms.assignments import GroupAssignmentLedger
 from app.engine.rooms.schema import (
     KIND_GROUP,
     KIND_OWNER_DM,
@@ -15,6 +16,7 @@ from app.engine.rooms.types import Actor, InboundStimulus, format_peer_message
 
 __all__ = [
     "Actor",
+    "GroupAssignmentLedger",
     "InboundStimulus",
     "KIND_GROUP",
     "KIND_OWNER_DM",

@@ -66,6 +66,7 @@
 - 主人 `@游戏开发助手` 才叫醒对方。没点名就不自动全员抢麦。
 - 被点名的角色用人设、沙箱、工具思考；思考和工具卡挂在**他自己的气泡**上。群没有独立人格。
 - 角色也可以在群里再 `@` 别人。点名投递后本回合结束，由对方接着说，不要自己扮演对方。做完回执仍贴在这间群。
+- 被主人点名的角色当本轮**协调者**：拆任务、同轮多条 `send_message`、收回执、向主人汇总。工人用人设与自己的沙箱执行，上下文与回复都在本群；回执不必再 @，系统会叫醒协调者。超时只叫醒协调者，由他开口询问（[ADR 2026-09-14](adr/2026-09-14-group-orchestration.md)）。
 - 高风险沙箱、`ask_user` 仍只问主人。
 
 **不要**把整段群聊灌进某个角色的私聊时间线。切到该角色时，最多一张**参与卡片**（群头像、群名、自己上次说了什么），点卡片进群。一对一协作（`peer_dm`）仍上双方时间线。
@@ -188,7 +189,7 @@ WakePolicy.targets(room, message) -> [role_id...]
 | `owner_dm` | 主人 | 主场角色 |
 | `peer_dm` | 角色 A | 角色 B（若 hop 未超限） |
 | `peer_dm` | 主人插话 | 被 @ 的人；没 @ 则唤醒「上一轮应者」 |
-| `group` | 任何人 | **仅** `mentions`；没点名则不唤醒角色 |
+| `group` | 任何人 | **仅** `mentions`；没点名则不唤醒角色。**例外**：工人回执唤醒 assigner；逾期系统刺激唤醒协调者 |
 | 任意 | 自己 | 永不唤醒自己 |
 
 委托回执额外一步（不是第二条总线）：若 `causation` 来自某角色的 `owner_dm`，且 `expect_reply`，则在该 tip **再投一条刺激**（inject 或排队 `begin_turn`），让发起方转述给主人。刺激正文带同伴身份包装，不是主人原话。
@@ -228,7 +229,7 @@ WakePolicy.targets(room, message) -> [role_id...]
          通用助手向主人转述
 ```
 
-群聊把中间的 `peer_dm` 换成 `group`，把「唤醒另一方」换成「唤醒 mentions」。
+群聊把中间的 `peer_dm` 换成 `group`，把「唤醒另一方」换成「唤醒 mentions」。工人回执即使没 @ 也叫醒协调者；超时系统刺激只叫醒协调者（[ADR 2026-09-14](adr/2026-09-14-group-orchestration.md)）。
 
 ## 4. 对模型：像用户消息，但不是主人
 
@@ -267,7 +268,7 @@ WakePolicy.targets(room, message) -> [role_id...]
 | 工具 | 职责 |
 |------|------|
 | `list_roles` | 名称 / id / 职责摘要 / 是否忙碌。派工前用来对齐名字。 |
-| `send_message` | `to_role_id` 或 `to_role_name` 或 `room_id` + `text` + `expect_reply` + 可选 `mentions`。无 `room_id` 则 find_or_create `peer_dm`。 |
+| `send_message` | `to_role_id` 或 `to_role_name` 或 `room_id` + `text` + `expect_reply` + 可选 `mentions` / `due_in_minutes`。无 `room_id` 则 find_or_create `peer_dm`。群内点名且 `expect_reply` 会开 Assignment 账本。 |
 | `list_rooms` | 当前角色参与的协作 / 群（兼容）。 |
 | `create_room` | 建群（兼容，等同 `create_group`）。 |
 | `list_groups` | 列出或按 id/标题获取群（标题、头像、成员）。 |
@@ -283,7 +284,7 @@ HTTP 只保留 shell：房间列表、时间线包含协作段、群聊 CRUD、�
 
 ### 6.1 第一期（能用）
 
-- 协作卡：特殊渲染 `send_message` 工具块（状态可轮询或挂该房间 turn 的 SSE）。
+- 协作卡：特殊渲染 `send_message` 工具块（状态可轮询或挂该房间 turn 的 SSE）。群里可带一行进行中派工（谁在做、是否超时）。
 - 同伴气泡：`speaker_kind=role` 且不是「当前选中角色的应声」时，用对方头像 + 名字，不用主人气泡。
 - 「查看协作」：切到对方角色时间线并滚到该 `peer_dm` 段，或直接打开该 conversation。第一期跳转即可，不必做实时分屏。
 - 角色列表忙碌角标复用现有 `GET /api/roles/busy`；排队中的委托不算 running，卡上自己写排队。
