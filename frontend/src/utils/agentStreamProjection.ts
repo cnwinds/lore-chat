@@ -112,6 +112,9 @@ export function reduceStreamEvent(
   if (event !== "done" && (!state.serverTimeline || STREAM_LOCAL_DELTA_EVENTS.has(event))) {
     assistant.timeline = applyTimelineEvent(assistant.timeline ?? [], event, data);
   }
+  if (event === "assistant_visible_set" && !state.serverTimeline) {
+    assistant.text = typeof data.text === "string" ? data.text : "";
+  }
   // 持久回合不再随 token 推 assistant_text；仅在已切投影后累加，避免 ephemeral 双源。
   if (state.serverTimeline && event === "text_delta") {
     const delta = typeof data.delta === "string" ? data.delta : "";

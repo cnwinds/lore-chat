@@ -49,6 +49,11 @@ def parallel_batch_end(batch_id, duration_ms):
 def text_delta(delta):
     return sse_event("text_delta", {"delta": delta})
 
+
+def assistant_visible_set(text: str):
+    """Replace already-streamed assistant prose (e.g. after promoting a leaked 征询)."""
+    return sse_event("assistant_visible_set", {"text": text or ""})
+
 def think_delta(delta):
     return sse_event("think_delta", {"delta": delta})
 

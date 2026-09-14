@@ -491,6 +491,7 @@ def test_turn_hub_identity_includes_onboarding_layer(tmp_path):
     assert "[角色引导]" in block
     assert "新人设" in block
     assert "你当前就是这个角色" in block
+    assert "必须调用 ask_user" in block
 
 
 class _FakeAgentForRole:

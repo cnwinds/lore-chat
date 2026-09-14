@@ -211,7 +211,7 @@ class ConversationTranscript:
                 question = str(block.get("question") or "").strip()
                 if not question:
                     continue
-                lines = [f"【征询】{question}"]
+                lines = [f"已通过 ask_user 向用户提问：{question}"]
                 labels: list[str] = []
                 for option in block.get("options") or []:
                     if isinstance(option, dict):
@@ -219,7 +219,7 @@ class ConversationTranscript:
                         if label:
                             labels.append(label)
                 if labels:
-                    lines.append("选项：" + "；".join(labels))
+                    lines.append("可选：" + "；".join(labels))
                 chosen = str(block.get("choice_resolved") or "").strip()
                 if chosen:
                     lines.append(f"已选择：{chosen}")

@@ -265,7 +265,39 @@ export function updateTimeline(
     ];
   }
 
+  if (event === "assistant_visible_set") {
+    return setVisibleAssistantText(
+      timeline,
+      typeof data.text === "string" ? data.text : "",
+      typeof data.ts === "string" ? data.ts : undefined,
+    );
+  }
+
   return timeline;
+}
+
+function setVisibleAssistantText(
+  timeline: TimelineBlock[],
+  text: string,
+  ts?: string,
+): TimelineBlock[] {
+  const next: TimelineBlock[] = [];
+  let placed = false;
+  for (const block of timeline) {
+    if (block.type !== "text") {
+      next.push(block);
+      continue;
+    }
+    if (placed) continue;
+    placed = true;
+    if (text) {
+      next.push({ ...block, content: text });
+    }
+  }
+  if (!placed && text) {
+    next.push({ type: "text", ts: ts || "", content: text });
+  }
+  return next;
 }
 
 export function mergeServerTimeline(

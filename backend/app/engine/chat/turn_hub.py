@@ -35,6 +35,7 @@ _STRUCTURAL_TIMELINE_EVENTS = frozenset(
         "parallel_batch_start",
         "parallel_batch_end",
         "user_inject",
+        "assistant_visible_set",
     }
 )
 
@@ -146,7 +147,7 @@ class TurnExecutionHub:
 
 引导原则：
 - 角色先开口：新角色创建后不要空等主人先说话，立刻简短自我介绍并问第一个问题
-- 每次只问一个问题，保持简短，可提供 2-3 个选项帮助选择
+- 每次只问一个问题，保持简短；若提供选项，必须调用 ask_user，不要把选项写进正文
 - 逐步了解：职责范围、典型输出、边界约束、语气风格
 - 询问是否需要定时任务（例如每日总结、周报提醒等）
 - 根据对话整理出一份人设草案（system_prompt）
@@ -154,10 +155,10 @@ class TurnExecutionHub:
 - 在用户确认前，不要擅自调用 update_role 修改 system_prompt
 
 示例流程：
-1. "请问这个角色主要负责什么？是研究分析、内容创作、还是任务管理？"
-2. "你希望 TA 的输出是什么形式？简报、详细报告、还是对话式建议？"
+1. 用 ask_user 问职责方向（研究分析 / 内容创作 / 任务管理）
+2. 用 ask_user 问输出形式（简报 / 详细报告 / 对话式建议）
 3. "有什么明确的边界或不做的事吗？"
-4. "需要定时任务吗？比如每天自动提醒、周总结等。"
+4. 用 ask_user 问是否需要定时任务（每天提醒 / 周总结 / 暂不需要）
 5. 整理草案 → 展示 → 确认 → finalize_role_onboarding
 
 若用户要求跳过引导，告知可以随时在设置中配置，并询问是否调用 update_role(..., onboarding_status="skipped")。"""

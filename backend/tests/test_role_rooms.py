@@ -214,6 +214,7 @@ def test_select_tools_hides_send_without_messaging():
     assert "create_group" in names2
     assert "update_group" in names2
     assert "delete_group" in names2
+    assert "ask_user" in names2
 
 
 def test_format_peer_message_wraps():
