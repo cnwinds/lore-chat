@@ -66,6 +66,15 @@ describe("kb sidebar chrome", () => {
     );
   });
 
+  it("keeps the left dock footer from being pushed off-screen", () => {
+    expect(css).toMatch(
+      /\.app-shell--three-pane \.app-shell-left\s*\{[^}]*min-height:\s*0;/,
+    );
+    expect(css).toMatch(
+      /\.app-shell-left \.sidebar-footer\s*\{[^}]*flex-shrink:\s*0;/,
+    );
+  });
+
   it("keeps splitters as the same invisible hit target", () => {
     expect(css).toMatch(/--app-split-hit:\s*6px;/);
     expect(css).toMatch(

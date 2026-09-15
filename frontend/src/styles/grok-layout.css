@@ -50,7 +50,9 @@
   flex-direction: column;
   background: var(--bg-surface);
   border-right: 1px solid var(--border);
-  overflow: visible;
+  min-height: 0;
+  overflow-x: visible;
+  overflow-y: hidden;
 }
 
 .app-shell-left-resizer,
@@ -158,8 +160,8 @@
 }
 
 .app-shell-left-split .role-list {
-  flex: 0 0 calc(var(--app-left-role-share, 0.46) * 100%);
-  min-height: 120px;
+  flex: 0 1 calc(var(--app-left-role-share, 0.46) * 100%);
+  min-height: 0;
 }
 
 .role-list-toolbar {
@@ -1754,6 +1756,7 @@ select.role-config-input {
 }
 
 .app-shell-left .sidebar-footer {
+  flex-shrink: 0;
   background: transparent;
   border: none;
 }
