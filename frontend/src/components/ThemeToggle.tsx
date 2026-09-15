@@ -1,7 +1,12 @@
 import { useEffect, useState } from "react";
 import { getStoredTheme, setTheme, type Theme } from "../theme";
 
-export function ThemeToggle() {
+type Props = {
+  /** 侧栏底栏：图标 +「主题」，避免和「聊天通道 / 设置」抢字。 */
+  compact?: boolean;
+};
+
+export function ThemeToggle({ compact = false }: Props) {
   const [theme, setThemeState] = useState<Theme>(() => getStoredTheme());
 
   useEffect(() => {
@@ -20,19 +25,21 @@ export function ThemeToggle() {
     setThemeState(next);
   }
 
+  const action = theme === "light" ? "切换为暗色主题" : "切换为浅色主题";
+
   return (
     <button
       type="button"
-      className="theme-toggle"
+      className={`theme-toggle${compact ? " theme-toggle--dock" : ""}`}
       onClick={toggle}
-      title={theme === "light" ? "切换为暗色主题" : "切换为浅色主题"}
-      aria-label={theme === "light" ? "切换为暗色主题" : "切换为浅色主题"}
+      title={compact ? `主题 · ${action}` : action}
+      aria-label={compact ? `主题，${action}` : action}
     >
       <span className="theme-toggle-icon" aria-hidden>
         {theme === "light" ? "🌙" : "☀️"}
       </span>
       <span className="theme-toggle-label">
-        {theme === "light" ? "暗色" : "浅色"}
+        {compact ? "主题" : theme === "light" ? "暗色" : "浅色"}
       </span>
     </button>
   );

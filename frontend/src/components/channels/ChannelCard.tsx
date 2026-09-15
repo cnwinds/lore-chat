@@ -9,9 +9,9 @@ import {
   isExclusiveTo,
   personaOptionLabel,
   personasSelectableFor,
-  revokeTabLabel,
   statusLabel,
   typeLabel,
+  type DetailTab,
 } from "./channelUiModel";
 
 type Props = {
@@ -20,13 +20,13 @@ type Props = {
   personas: ApiPersona[];
   usage: Map<string, string[]>;
   busy: boolean;
-  detailsOpen: boolean;
+  activeTab: DetailTab | null;
   editingPrompt: boolean;
   editName: string;
   editPrompt: string;
   onToggle: (inst: ChannelInstance) => void;
   onCopy: (inst: ChannelInstance) => void;
-  onToggleDetails: (id: string) => void;
+  onToggleTab: (id: string, tab: DetailTab) => void;
   onSelectPersona: (inst: ChannelInstance, value: string) => void;
   onStartEditPrompt: (inst: ChannelInstance) => void;
   onEditName: (value: string) => void;
@@ -42,13 +42,13 @@ export function ChannelCard({
   personas,
   usage,
   busy,
-  detailsOpen,
+  activeTab,
   editingPrompt,
   editName,
   editPrompt,
   onToggle,
   onCopy,
-  onToggleDetails,
+  onToggleTab,
   onSelectPersona,
   onStartEditPrompt,
   onEditName,
@@ -64,8 +64,6 @@ export function ChannelCard({
     Boolean(inst.persona_id) &&
     isExclusiveTo(inst.persona_id || "", inst.id, usage);
   const typeName = typeLabel(inst.type_id, types);
-  const ingress = inst.config?.ingress;
-  const revokeLabel = revokeTabLabel(inst.type_id);
 
   return (
     <li className={`channel-card channel-card--${inst.type_id}`}>
@@ -78,7 +76,6 @@ export function ChannelCard({
             </span>
           </div>
           <label className="channel-switch">
-            <span className="channel-switch-label">启用</span>
             <input
               type="checkbox"
               checked={inst.enabled}
@@ -97,19 +94,21 @@ export function ChannelCard({
             {TYPE_MARK[inst.type_id] || "·"}
           </span>
           {typeName}
-          {ingress === "websocket" ? " · 长连接" : ""}
+          {inst.config?.ingress === "websocket" ? " · 长连接" : ""}
         </p>
 
         <div className="channel-cred">
           <div className="channel-cred-chip">
             {chip.kind === "token" ? (
               <span className="channel-cred-kicker">KEY</span>
-            ) : null}
+            ) : (
+              <span className="channel-cred-kicker">凭证</span>
+            )}
             <code className="channel-cred-text">{chip.text}</code>
             <span className="channel-cred-hint">
               {chip.kind === "token"
                 ? formatOpenApiWhen(inst.last_event_at)
-                : "—"}
+                : "已保存"}
             </span>
           </div>
           <button
@@ -195,24 +194,14 @@ export function ChannelCard({
           </div>
         ) : null}
 
-        <button
-          type="button"
-          className="channel-details-toggle"
-          aria-expanded={detailsOpen}
-          onClick={() => onToggleDetails(inst.id)}
-        >
-          <span>
-            详情
-            <em>
-              接入说明 · 会话 · 日志 · {revokeLabel}
-            </em>
-          </span>
-          <span aria-hidden>{detailsOpen ? "▾" : "›"}</span>
-        </button>
+        <ChannelDetails
+          inst={inst}
+          busy={busy}
+          activeTab={activeTab}
+          onToggleTab={(tab) => onToggleTab(inst.id, tab)}
+          onRevoke={onRevoke}
+        />
       </div>
-      {detailsOpen ? (
-        <ChannelDetails inst={inst} busy={busy} onRevoke={onRevoke} />
-      ) : null}
     </li>
   );
 }

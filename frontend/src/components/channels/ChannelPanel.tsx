@@ -31,7 +31,13 @@ import {
 import { ChannelCard } from "./ChannelCard";
 import { CreateKeyScreen, PickTypeScreen } from "./ChannelCreateScreens";
 import { ChannelPersonas } from "./ChannelPersonas";
-import { NEW_EXCLUSIVE_VALUE, isExclusiveTo, personaUsage, typeLabel } from "./channelUiModel";
+import {
+  NEW_EXCLUSIVE_VALUE,
+  isExclusiveTo,
+  personaUsage,
+  typeLabel,
+  type DetailTab,
+} from "./channelUiModel";
 
 type Screen = "home" | "pick-type" | "create";
 
@@ -52,7 +58,9 @@ export function ChannelPanel({ open, onRequestClose }: Props) {
   const [draft, setDraft] = useState<CreateKeyDraft>(EMPTY_CREATE_DRAFT);
   const [createType, setCreateType] = useState("script_api");
   const [imHint, setImHint] = useState<string | null>(null);
-  const [openDetails, setOpenDetails] = useState<Set<string>>(() => new Set());
+  const [openTabById, setOpenTabById] = useState<Record<string, DetailTab>>(
+    {},
+  );
   const [personasOpen, setPersonasOpen] = useState(false);
   const [editingPromptId, setEditingPromptId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
@@ -330,83 +338,112 @@ export function ChannelPanel({ open, onRequestClose }: Props) {
     }
   };
 
-  const toggleDetails = (id: string) => {
-    setOpenDetails((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
+  const toggleTab = (id: string, tab: DetailTab) => {
+    setOpenTabById((prev) => {
+      if (prev[id] === tab) {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      }
+      return { ...prev, [id]: tab };
     });
   };
 
+  useEffect(() => {
+    if (open) return;
+    setScreen("home");
+    setError(null);
+    setImHint(null);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    function onPointerDown(e: PointerEvent) {
+      const target = e.target;
+      if (!(target instanceof Element)) return;
+      if (target.closest("[data-channel-float]")) return;
+      if (target.closest("[data-channel-dock]")) return;
+      onRequestClose();
+    }
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [open, onRequestClose]);
+
+  if (!open) return null;
+
   return (
-    <aside
-      className="channel-panel"
-      hidden={!open}
-      aria-hidden={!open}
-      aria-label="聊天通道"
-    >
-      {open ? (
-        <button
-          type="button"
-          className="channel-panel-mobile-backdrop"
-          aria-label="关闭聊天通道"
-          onClick={onRequestClose}
-        />
-      ) : null}
-      <div className="channel-panel-sheet">
+    <div className="channel-float-layer">
+      <div className="channel-float-scrim" aria-hidden />
+      <div
+        className="channel-float"
+        data-channel-float=""
+        role="dialog"
+        aria-modal="false"
+        aria-label="聊天通道"
+      >
         {loading && screen === "home" ? (
           <div className="openapi openapi--loading">
+            <ChannelFloatClose onClick={onRequestClose} />
             <div className="openapi-skeleton" />
             <div className="openapi-skeleton openapi-skeleton--short" />
           </div>
         ) : screen === "pick-type" ? (
-          <PickTypeScreen
-            types={types}
-            busy={busy}
-            error={error}
-            onBack={() => {
-              setError(null);
-              setScreen("home");
-            }}
-            onPick={(typeId) => openCreate(typeId)}
-          />
+          <>
+            <ChannelFloatClose onClick={onRequestClose} />
+            <PickTypeScreen
+              types={types}
+              busy={busy}
+              error={error}
+              onBack={() => {
+                setError(null);
+                setScreen("home");
+              }}
+              onPick={(typeId) => openCreate(typeId)}
+            />
+          </>
         ) : screen === "create" ? (
-          <CreateKeyScreen
-            draft={draft}
-            personas={personas}
-            roles={roles}
-            busy={busy}
-            error={error}
-            typeId={createType}
-            typeLabel={typeLabel(createType, types)}
-            onChange={setDraft}
-            onBack={() => {
-              setError(null);
-              setScreen("pick-type");
-            }}
-            onSubmit={() => void handleCreate()}
-          />
+          <>
+            <ChannelFloatClose onClick={onRequestClose} />
+            <CreateKeyScreen
+              draft={draft}
+              personas={personas}
+              roles={roles}
+              busy={busy}
+              error={error}
+              typeId={createType}
+              typeLabel={typeLabel(createType, types)}
+              onChange={setDraft}
+              onBack={() => {
+                setError(null);
+                setScreen("pick-type");
+              }}
+              onSubmit={() => void handleCreate()}
+            />
+          </>
         ) : (
           <div className="channel-panel-home">
-            <header className="channel-panel-header">
+            <header className="channel-float-header">
               <div>
-                <p className="channel-panel-kicker">CHANNELS</p>
-                <h3 className="channel-panel-title">聊天通道</h3>
+                <h3 className="channel-panel-title">
+                  聊天通道
+                </h3>
                 <p className="channel-panel-lead">
-                  每张卡片一条通道。密钥常驻可复制；详情用切页，默认收起。
+                  悬浮窗 · 密钥可复制 · Tab 直接点开
                 </p>
               </div>
-              {instances.length > 0 ? (
-                <button
-                  type="button"
-                  className="settings-btn settings-btn--compact settings-btn--primary channel-add-btn"
-                  disabled={busy}
-                  onClick={openPicker}
-                >
-                  添加通道
-                </button>
-              ) : null}
+              <div className="channel-float-header-actions">
+                {instances.length > 0 ? (
+                  <button
+                    type="button"
+                    className="settings-btn settings-btn--compact settings-btn--primary channel-add-btn"
+                    disabled={busy}
+                    onClick={openPicker}
+                  >
+                    添加
+                  </button>
+                ) : null}
+                <ChannelFloatClose onClick={onRequestClose} />
+              </div>
             </header>
 
             {error ? <p className="settings-panel-error">{error}</p> : null}
@@ -452,13 +489,13 @@ export function ChannelPanel({ open, onRequestClose }: Props) {
                     personas={personas}
                     usage={usage}
                     busy={busy}
-                    detailsOpen={openDetails.has(inst.id)}
+                    activeTab={openTabById[inst.id] ?? null}
                     editingPrompt={editingPromptId === inst.id}
                     editName={editName}
                     editPrompt={editPrompt}
                     onToggle={(item) => void handleToggle(item)}
                     onCopy={(item) => void handleCopy(item)}
-                    onToggleDetails={toggleDetails}
+                    onToggleTab={toggleTab}
                     onSelectPersona={(item, value) =>
                       void handleSelectPersona(item, value)
                     }
@@ -482,7 +519,7 @@ export function ChannelPanel({ open, onRequestClose }: Props) {
               >
                 <span>
                   <strong>共用角色</strong>
-                  <em>可建多个，通道里任选，默认折叠</em>
+                  <em>默认折叠 · 可多个</em>
                 </span>
                 <span aria-hidden>{personasOpen ? "▾" : "›"}</span>
               </button>
@@ -522,6 +559,26 @@ export function ChannelPanel({ open, onRequestClose }: Props) {
           </div>
         )}
       </div>
-    </aside>
+    </div>
+  );
+}
+
+function ChannelFloatClose({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      className="channel-float-close"
+      aria-label="关闭聊天通道"
+      onClick={onClick}
+    >
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden>
+        <path
+          d="M6 6l12 12M18 6L6 18"
+          stroke="currentColor"
+          strokeWidth="2.2"
+          strokeLinecap="round"
+        />
+      </svg>
+    </button>
   );
 }
