@@ -180,11 +180,11 @@ describe("ChannelPanel", () => {
         name: "周报脚本",
       });
     });
-    expect(await screen.findByText("每张卡片一条通道。密钥常驻可复制；详情用切页，默认收起。")).toBeInTheDocument();
+    expect(await screen.findByText("悬浮窗 · 密钥可复制 · Tab 直接点开")).toBeInTheDocument();
     expect(screen.queryByText("只显示这一次，请立刻复制保存。")).toBeNull();
   });
 
-  it("lists cards with copyable credentials, a role picker, and collapsed details", async () => {
+  it("lists cards with copyable credentials, a role picker, and collapsed tabs", async () => {
     listApiPersonas.mockResolvedValue({
       personas: [sampleInstance.persona!],
     });
@@ -194,7 +194,10 @@ describe("ChannelPanel", () => {
     expect(screen.getByRole("button", { name: "复制" })).toBeInTheDocument();
     expect(screen.getByLabelText("周报脚本 角色")).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "停用通道" })).toBeChecked();
-    expect(screen.queryByRole("tab", { name: "接入说明" })).toBeNull();
+    expect(screen.getByRole("tab", { name: "接入说明" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "会话" })).toBeInTheDocument();
+    expect(screen.queryByText(/POST \/api\/v1\/chat/)).toBeNull();
+    expect(screen.queryByText("详情")).toBeNull();
     expect(screen.queryByText("新建共用角色")).toBeNull();
     expect(screen.queryByRole("button", { name: "查看会话" })).toBeNull();
   });
@@ -213,7 +216,7 @@ describe("ChannelPanel", () => {
     });
   });
 
-  it("opens details tabs instead of leaving the card", async () => {
+  it("opens a tab pane on the card and folds it when the same tab is clicked again", async () => {
     const user = userEvent.setup();
     listApiPersonas.mockResolvedValue({
       personas: [sampleInstance.persona!],
@@ -232,11 +235,10 @@ describe("ChannelPanel", () => {
       ],
     } as never);
     renderPanel();
-    await user.click(await screen.findByRole("button", { name: /详情/ }));
-    expect(await screen.findByRole("tab", { name: "接入说明" })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "会话" })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "日志" })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "吊销" })).toBeInTheDocument();
+    await user.click(await screen.findByRole("tab", { name: "接入说明" }));
+    expect(await screen.findByText(/POST \/api\/v1\/chat/)).toBeInTheDocument();
+    await user.click(screen.getByRole("tab", { name: "接入说明" }));
+    expect(screen.queryByText(/POST \/api\/v1\/chat/)).toBeNull();
     await user.click(screen.getByRole("tab", { name: "会话" }));
     expect(await screen.findByText("写一份周报")).toBeInTheDocument();
     expect(screen.getByText("好的")).toBeInTheDocument();
@@ -264,8 +266,7 @@ describe("ChannelPanel", () => {
       totals: { calls: 2, total_tokens: 40 },
     });
     renderPanel();
-    await user.click(await screen.findByRole("button", { name: /详情/ }));
-    await user.click(screen.getByRole("tab", { name: "日志" }));
+    await user.click(await screen.findByRole("tab", { name: "日志" }));
     expect(await screen.findByText("回合完成")).toBeInTheDocument();
     expect(screen.getByText("调用 2 次 · 40 tokens")).toBeInTheDocument();
   });
@@ -390,6 +391,28 @@ describe("ChannelPanel", () => {
       });
       expect(patchChannelInstance).toHaveBeenCalledWith("k1", { persona_id: "p2" });
     });
+  });
+
+  it("renders as a floating dialog and closes via X, Escape, or click-outside", async () => {
+    const user = userEvent.setup();
+    const onRequestClose = vi.fn();
+    render(
+      <div>
+        <button type="button">outside</button>
+        <ChannelPanel open onRequestClose={onRequestClose} />
+      </div>,
+    );
+    expect(await screen.findByRole("dialog", { name: "聊天通道" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "关闭聊天通道" }));
+    expect(onRequestClose).toHaveBeenCalledTimes(1);
+
+    onRequestClose.mockClear();
+    await user.keyboard("{Escape}");
+    expect(onRequestClose).toHaveBeenCalledTimes(1);
+
+    onRequestClose.mockClear();
+    await user.click(screen.getByRole("button", { name: "outside" }));
+    expect(onRequestClose).toHaveBeenCalledTimes(1);
   });
 
   it("keeps shared personas collapsed until opened", async () => {

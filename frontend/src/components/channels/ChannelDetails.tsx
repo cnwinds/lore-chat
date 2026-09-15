@@ -15,11 +15,18 @@ type TranscriptSeg = { title: string; messages: ChatMessage[] };
 type Props = {
   inst: ChannelInstance;
   busy: boolean;
+  activeTab: DetailTab | null;
+  onToggleTab: (tab: DetailTab) => void;
   onRevoke: (id: string) => void;
 };
 
-export function ChannelDetails({ inst, busy, onRevoke }: Props) {
-  const [tab, setTab] = useState<DetailTab>("guide");
+export function ChannelDetails({
+  inst,
+  busy,
+  activeTab,
+  onToggleTab,
+  onRevoke,
+}: Props) {
   const [transcript, setTranscript] = useState<TranscriptSeg[] | null>(null);
   const [logs, setLogs] = useState<ChannelLogItem[] | null>(null);
   const [usage, setUsage] = useState<{
@@ -30,7 +37,6 @@ export function ChannelDetails({ inst, busy, onRevoke }: Props) {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    setTab("guide");
     setTranscript(null);
     setLogs(null);
     setUsage(null);
@@ -38,12 +44,12 @@ export function ChannelDetails({ inst, busy, onRevoke }: Props) {
   }, [inst.id]);
 
   useEffect(() => {
-    if (tab !== "sessions" && tab !== "logs") return;
+    if (activeTab !== "sessions" && activeTab !== "logs") return;
     let cancelled = false;
     setLoading(true);
     setError(null);
     const run =
-      tab === "sessions"
+      activeTab === "sessions"
         ? async () => {
             if (!inst.role_id) {
               setTranscript([]);
@@ -77,7 +83,7 @@ export function ChannelDetails({ inst, busy, onRevoke }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [tab, inst.id, inst.role_id]);
+  }, [activeTab, inst.id, inst.role_id]);
 
   const guide = accessGuide(inst.type_id);
   const revokeLabel = revokeTabLabel(inst.type_id);
@@ -90,24 +96,34 @@ export function ChannelDetails({ inst, busy, onRevoke }: Props) {
 
   return (
     <div className="channel-details">
-      <div className="channel-seg" role="tablist" aria-label={`${inst.name} 详情`}>
-        {tabs.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            role="tab"
-            aria-selected={tab === item.id}
-            className={`channel-seg-btn${tab === item.id ? " channel-seg-btn--active" : ""}`}
-            onClick={() => setTab(item.id)}
-          >
-            {item.label}
-          </button>
-        ))}
+      <div
+        className="channel-seg"
+        role="tablist"
+        aria-label={`${inst.name} 通道页签`}
+      >
+        {tabs.map((item) => {
+          const pressed = activeTab === item.id;
+          return (
+            <button
+              key={item.id}
+              type="button"
+              role="tab"
+              aria-selected={pressed}
+              aria-pressed={pressed}
+              className={`channel-seg-btn${pressed ? " channel-seg-btn--active" : ""}`}
+              onClick={() => onToggleTab(item.id)}
+            >
+              {item.label}
+            </button>
+          );
+        })}
       </div>
 
-      {error ? <p className="settings-panel-error">{error}</p> : null}
+      {activeTab && error ? (
+        <p className="settings-panel-error">{error}</p>
+      ) : null}
 
-      {tab === "guide" ? (
+      {activeTab === "guide" ? (
         <div className="channel-details-body">
           <p className="channel-guide-lead">{guide.lead}</p>
           <ol className="channel-guide-steps">
@@ -131,7 +147,7 @@ export function ChannelDetails({ inst, busy, onRevoke }: Props) {
         </div>
       ) : null}
 
-      {tab === "sessions" ? (
+      {activeTab === "sessions" ? (
         <div className="channel-details-body">
           {loading && transcript == null ? (
             <p className="channel-panel-muted">加载会话…</p>
@@ -158,7 +174,7 @@ export function ChannelDetails({ inst, busy, onRevoke }: Props) {
         </div>
       ) : null}
 
-      {tab === "logs" ? (
+      {activeTab === "logs" ? (
         <div className="channel-details-body">
           {loading && logs == null ? (
             <p className="channel-panel-muted">加载日志…</p>
@@ -194,7 +210,7 @@ export function ChannelDetails({ inst, busy, onRevoke }: Props) {
         </div>
       ) : null}
 
-      {tab === "revoke" ? (
+      {activeTab === "revoke" ? (
         <div className="channel-details-body">
           <p className="channel-guide-lead">
             {inst.type_id === "script_api"

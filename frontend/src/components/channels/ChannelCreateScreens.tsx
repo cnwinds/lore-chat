@@ -41,7 +41,6 @@ export function PickTypeScreen({
       </button>
       <header className="channel-panel-header">
         <div>
-          <p className="channel-panel-kicker">CHANNELS</p>
           <h3 className="channel-panel-title">添加通道</h3>
           <p className="channel-panel-lead">先选类型。未实现的会标明即将支持。</p>
         </div>
@@ -304,7 +303,6 @@ export function CreateKeyScreen({
       </button>
       <header className="channel-panel-header">
         <div>
-          <p className="channel-panel-kicker">CHANNELS</p>
           <h3 className="channel-panel-title">添加{selectedType}</h3>
           <p className="channel-panel-lead">{createLead(typeId)}</p>
         </div>

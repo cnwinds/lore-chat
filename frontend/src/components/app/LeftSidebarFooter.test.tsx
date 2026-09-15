@@ -7,7 +7,7 @@ afterEach(() => {
 });
 
 describe("LeftSidebarFooter", () => {
-  it("keeps the light dock with 聊天通道 and 设置", () => {
+  it("keeps the light dock with 主题, 聊天通道 and 设置", () => {
     const onToggleChannels = vi.fn();
     const onOpenSettings = vi.fn();
     render(
@@ -17,11 +17,11 @@ describe("LeftSidebarFooter", () => {
         onOpenSettings={onOpenSettings}
       />,
     );
+    expect(screen.getByRole("button", { name: /主题/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "聊天通道" })).toHaveAttribute(
       "aria-pressed",
       "true",
     );
     expect(screen.getByRole("button", { name: "设置" })).toBeInTheDocument();
-    expect(screen.queryByLabelText(/切换为/)).toBeNull();
   });
 });

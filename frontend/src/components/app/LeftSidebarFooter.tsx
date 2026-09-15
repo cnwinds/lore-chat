@@ -1,4 +1,5 @@
 import { SettingsAttentionDot } from "../settings/SettingsAttentionDot";
+import { ThemeToggle } from "../ThemeToggle";
 
 type Props = {
   settingsAttention?: boolean;
@@ -16,12 +17,14 @@ export function LeftSidebarFooter({
   return (
     <footer className="sidebar-footer">
       <div className="sidebar-footer-actions">
+        <ThemeToggle compact />
         {onToggleChannels ? (
           <button
             type="button"
             className={`sidebar-dock-btn${channelsOpen ? " sidebar-dock-btn--active" : ""}`}
             onClick={onToggleChannels}
             aria-pressed={channelsOpen}
+            data-channel-dock=""
             title="聊天通道"
           >
             <span className="sidebar-dock-icon" aria-hidden>

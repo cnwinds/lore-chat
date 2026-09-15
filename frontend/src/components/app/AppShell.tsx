@@ -63,7 +63,6 @@ export function AppShell({
     mobileLayout && mobileNavOpen ? "app-shell--mobile-nav-open" : "",
     leftSidebar.dragging ? "app-shell--left-resizing" : "",
     leftSidebar.splitDragging ? "app-shell--left-split-resizing" : "",
-    channelsOpen ? "app-shell--channel-open" : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -124,12 +123,6 @@ export function AppShell({
           />
         )}
       </div>
-      <ChannelPanel
-        open={channelsOpen}
-        onRequestClose={() => {
-          if (channelsOpen) onToggleChannels?.();
-        }}
-      />
       <main
         className={`main-panel${mainFloatWide ? " main-panel--float-wide" : ""}`}
       >
@@ -138,6 +131,12 @@ export function AppShell({
       </main>
       <RoleConfigPanel {...roleConfigPanelProps} />
       {docPinned}
+      <ChannelPanel
+        open={channelsOpen}
+        onRequestClose={() => {
+          if (channelsOpen) onToggleChannels?.();
+        }}
+      />
       {modals}
     </div>
   );
