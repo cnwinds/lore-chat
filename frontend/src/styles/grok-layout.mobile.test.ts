@@ -66,12 +66,12 @@ describe("kb sidebar chrome", () => {
     );
   });
 
-  it("keeps the left dock footer from being pushed off-screen", () => {
+  it("keeps the left dock footer on its own grid row", () => {
     expect(css).toMatch(
-      /\.app-shell--three-pane \.app-shell-left\s*\{[^}]*min-height:\s*0;/,
+      /\.app-shell--three-pane \.app-shell-left\s*\{[^}]*grid-template-rows:\s*minmax\(0,\s*1fr\)\s+auto;/,
     );
     expect(css).toMatch(
-      /\.app-shell-left \.sidebar-footer\s*\{[^}]*flex-shrink:\s*0;/,
+      /\.app-shell-left \.sidebar-footer\s*\{[^}]*grid-row:\s*2;/,
     );
   });
 
