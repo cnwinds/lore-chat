@@ -132,6 +132,12 @@ export function reduceStreamEvent(
     if (data.total_duration_ms !== undefined) {
       assistant.total_duration_ms = data.total_duration_ms as number;
     }
+    if (data.prompt_tokens !== undefined) {
+      assistant.prompt_tokens = data.prompt_tokens as number;
+    }
+    if (data.completion_tokens !== undefined) {
+      assistant.completion_tokens = data.completion_tokens as number;
+    }
     assistant.ts = nowIsoDisplay();
     awaitingUser = timelineAwaitsUserAnswer(assistant.timeline);
   }

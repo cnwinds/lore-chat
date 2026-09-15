@@ -229,6 +229,10 @@ class UsageStore:
             "CREATE INDEX IF NOT EXISTS idx_usage_events_channel "
             "ON usage_events(channel_instance_id)"
         )
+        self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_usage_events_turn "
+            "ON usage_events(turn_id)"
+        )
 
         self.conn.commit()
 
@@ -396,6 +400,48 @@ class UsageStore:
             self.conn.commit()
         self.ensure_model_price_row(event["model"], kind=event.get("kind"))
         return eid
+
+    def sum_chat_tokens_for_turns(
+        self, turn_ids: list[str]
+    ) -> dict[str, dict[str, int]]:
+        """按 turn 汇总对话模型的输入/输出 token。
+
+        含 chat / chat_tools / stream_tools（Agent 主路径记 stream_tools）；
+        不含 embed、未知用量、失败调用。按 turn_id 过滤，不把记忆抽取等无回合用量算进来。
+        """
+        ids = [tid for tid in turn_ids if tid]
+        if not ids:
+            return {}
+        placeholders = ",".join("?" * len(ids))
+        kinds = ("chat", "chat_tools", "stream_tools")
+        kind_ph = ",".join("?" * len(kinds))
+        sql = f"""
+            SELECT turn_id,
+                   COALESCE(SUM(prompt_tokens), 0) AS prompt_tokens,
+                   COALESCE(SUM(completion_tokens), 0) AS completion_tokens
+            FROM usage_events
+            WHERE turn_id IN ({placeholders})
+              AND kind IN ({kind_ph})
+              AND tokens_known = 1
+              AND status = 'ok'
+            GROUP BY turn_id
+        """
+        with self._lock:
+            rows = self.conn.execute(sql, (*ids, *kinds)).fetchall()
+        return {
+            str(row["turn_id"]): {
+                "prompt_tokens": int(row["prompt_tokens"] or 0),
+                "completion_tokens": int(row["completion_tokens"] or 0),
+            }
+            for row in rows
+            if row["turn_id"]
+        }
+
+    def sum_chat_tokens_for_turn(self, turn_id: str) -> dict[str, int] | None:
+        if not turn_id:
+            return None
+        found = self.sum_chat_tokens_for_turns([turn_id])
+        return found.get(turn_id)
 
     def clear_all(self) -> int:
         with self._lock:

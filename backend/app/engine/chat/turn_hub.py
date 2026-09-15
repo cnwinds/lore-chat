@@ -10,7 +10,7 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any
 
-from app.engine.agent.events import done, error_event, timeline_state
+from app.engine.agent.events import error_event, sse_event, timeline_state
 from app.engine.agent.prompts import MODE_DEFAULT, build_role_identity_block
 from app.engine.agent.run_report import AgentRunReport
 from app.engine.chat.role_context_prefetch import (
@@ -88,10 +88,12 @@ class TurnExecutionHub:
         inject_broker: TurnInjectBroker | None = None,
         *,
         roles=None,
+        usage_store=None,
     ):
         self.agent = agent
         self.conversations = conversations
         self.roles = roles
+        self.usage_store = usage_store
         self.inject_broker = inject_broker or TurnInjectBroker()
         self._by_turn: dict[str, ActiveTurn] = {}
         self._cid_to_turn: dict[str, str] = {}
@@ -100,6 +102,20 @@ class TurnExecutionHub:
         try:
             return self.conversations.get_role_id(cid)
         except KeyError:
+            return None
+
+    def _chat_tokens(self, turn_id: str) -> dict[str, int] | None:
+        store = self.usage_store
+        if store is None:
+            rec = getattr(getattr(self.agent, "llm", None), "usage_recorder", None)
+            store = getattr(rec, "store", None)
+        lookup = getattr(store, "sum_chat_tokens_for_turn", None)
+        if lookup is None:
+            return None
+        try:
+            return lookup(turn_id)
+        except Exception:
+            _log.exception("sum chat tokens failed turn_id=%s", turn_id)
             return None
 
     def _role_system_prompt_for(
@@ -509,6 +525,11 @@ class TurnExecutionHub:
             nonlocal assistant_saved
             if assistant_saved:
                 return
+            if acc.prompt_tokens is None or acc.completion_tokens is None:
+                tokens = self._chat_tokens(turn_id)
+                if tokens:
+                    acc.prompt_tokens = tokens["prompt_tokens"]
+                    acc.completion_tokens = tokens["completion_tokens"]
             assistant = acc.assistant_payload(status, error=error)
             has_content = bool(
                 assistant.get("text")
@@ -567,14 +588,20 @@ class TurnExecutionHub:
             ):
                 parsed = parse_agent_sse_event(ev)
                 if parsed:
-                    acc.accumulate(*parsed)
-                    if parsed[0] == "done":
+                    event_type, data = parsed
+                    if event_type == "done":
+                        tokens = self._chat_tokens(turn_id)
+                        if tokens:
+                            data = {**data, **tokens}
+                            ev = sse_event(event_type, data)
+                    acc.accumulate(event_type, data)
+                    if event_type == "done":
                         done_seen = True
                         stop_reason = "turn_complete"
                         turn_status = "complete"
                         _finalize("complete")
                     # 结构变更推全量投影；think/text/progress 只发增量，避免 buffer O(n²)
-                    if parsed[0] in _STRUCTURAL_TIMELINE_EVENTS:
+                    if event_type in _STRUCTURAL_TIMELINE_EVENTS:
                         await self._publish(
                             at,
                             timeline_state(

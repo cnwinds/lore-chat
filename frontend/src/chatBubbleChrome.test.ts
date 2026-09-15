@@ -44,6 +44,12 @@ describe("chat bubble chrome", () => {
     expect(css).not.toMatch(/\.chat-meta-actions\s*\{[^}]*margin-left:\s*auto/);
     expect(css).not.toMatch(/\.chat-meta-info\s*\{/);
   });
+
+  it("hides assistant token usage on the mobile breakpoint", () => {
+    expect(css).toMatch(
+      /@media \(max-width: 768px\)\s*\{\s*\n\s*\.chat-meta-tokens\s*\{[^}]*display:\s*none;/,
+    );
+  });
 });
 
 describe("fixed overflow menu", () => {

@@ -163,7 +163,12 @@ class ChatSessionRunner:
                 yield think_delta(block["content"])
             elif block.get("type") == "text" and block.get("content"):
                 yield text_delta(block["content"])
-        yield done(assistant.get("sources") or [], assistant.get("total_duration_ms") or 0)
+        yield done(
+            assistant.get("sources") or [],
+            assistant.get("total_duration_ms") or 0,
+            prompt_tokens=assistant.get("prompt_tokens"),
+            completion_tokens=assistant.get("completion_tokens"),
+        )
 
     async def observe_turn(
         self,

@@ -14,6 +14,8 @@ class TimelineAccumulator:
         self.timeline: list[dict] = []
         self.all_sources: list[dict] = []
         self.total_duration_ms: int | None = None
+        self.prompt_tokens: int | None = None
+        self.completion_tokens: int | None = None
         self.assistant_text: str = ""
         self.model_name: str | None = None
         self.model_failover: bool = False
@@ -193,6 +195,10 @@ class TimelineAccumulator:
             extend_sources(self.all_sources, data.get("sources") or [])
             if data.get("total_duration_ms") is not None:
                 self.total_duration_ms = data["total_duration_ms"]
+            if data.get("prompt_tokens") is not None:
+                self.prompt_tokens = int(data["prompt_tokens"])
+            if data.get("completion_tokens") is not None:
+                self.completion_tokens = int(data["completion_tokens"])
 
     def _set_visible_assistant_text(self, text: str, *, ts: str | None = None) -> None:
         text = text or ""
@@ -233,6 +239,10 @@ class TimelineAccumulator:
             "total_duration_ms": self.total_duration_ms,
             "status": msg_status,
         }
+        if self.prompt_tokens is not None:
+            assistant["prompt_tokens"] = self.prompt_tokens
+        if self.completion_tokens is not None:
+            assistant["completion_tokens"] = self.completion_tokens
         atts = collect_timeline_attachments(timeline)
         if atts:
             assistant["attachments"] = atts

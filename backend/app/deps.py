@@ -162,6 +162,7 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
     conversations = ConversationStore(
         settings.kb_path / ".kb" / "conversations"
     )
+    conversations._usage_store = usage_store
     roles = RoleStore(settings.kb_path / ".kb" / "roles")
     api_keys = ApiKeyStore(settings.kb_path)
     channel_registry = ChannelPluginRegistry.builtin()
@@ -200,6 +201,7 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
         image_cooldown=image_cooldown,
         enabled_skills=enabled_skills,
     )
+    agent.chat_runner.turn_hub.usage_store = usage_store
 
     pending_resolver = PendingResolver(
         pending=pending,

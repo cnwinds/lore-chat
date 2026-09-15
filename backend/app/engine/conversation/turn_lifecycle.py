@@ -322,8 +322,9 @@ class TurnLifecycle:
                         id, conversation_id, seq, role, text, ts, status,
                         in_reply_to_message_id, timeline_json, sources_json,
                         total_duration_ms, model_name, model_failover,
-                        attachments_json, speaker_kind, speaker_id
-                    ) VALUES (?, ?, ?, 'assistant', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'role', ?)
+                        attachments_json, speaker_kind, speaker_id,
+                        prompt_tokens, completion_tokens
+                    ) VALUES (?, ?, ?, 'assistant', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'role', ?, ?, ?)
                     """,
                     (
                         assistant_msg_id,
@@ -342,6 +343,8 @@ class TurnLifecycle:
                         if assistant.get("attachments")
                         else None,
                         responding or None,
+                        assistant.get("prompt_tokens"),
+                        assistant.get("completion_tokens"),
                     ),
                 )
                 store._enqueue_index_jobs(assistant_msg_id, turn_id)

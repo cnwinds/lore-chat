@@ -146,5 +146,33 @@ describe("ChatMessageRow assistant meta", () => {
     expect(model?.nextElementSibling).toBe(
       meta?.querySelector(".chat-meta-actions"),
     );
+    expect(document.querySelector(".chat-meta-tokens")).toBeNull();
+  });
+
+  it("shows input/output tokens under the assistant meta on desktop", () => {
+    render(
+      <ChatMessageRow
+        message={{
+          id: "a2",
+          role: "assistant",
+          text: "故事主线是第一地球。",
+          ts: "2026-01-01T06:33:00.000Z",
+          model_name: "glm-5.3-flash - max",
+          total_duration_ms: 58200,
+          prompt_tokens: 12345,
+          completion_tokens: 678,
+        }}
+        isLiveStreaming={false}
+        liveElapsedMs={0}
+        previewPath={null}
+        conversationId="c1"
+        onOpenSource={() => {}}
+        onQuestionResolved={() => {}}
+      />,
+    );
+    const meta = document.querySelector(".chat-meta-assistant");
+    const tokens = document.querySelector(".chat-meta-tokens");
+    expect(tokens?.textContent).toBe("输入 12,345 · 输出 678");
+    expect(meta?.nextElementSibling).toBe(tokens);
   });
 });

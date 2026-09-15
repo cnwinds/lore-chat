@@ -130,6 +130,64 @@ def test_migrate_legacy_single_file(tmp_path):
     assert store2.get("abc123")["title"] == "旧会话"
 
 
+def test_finalize_turn_persists_assistant_tokens(tmp_path):
+    store = _store(tmp_path)
+    cid = store.create()
+    turn = store.begin_turn(
+        cid,
+        user_text="你好",
+        client_message_id="cli-tok",
+        observation_allowed=False,
+    )
+    store.finalize_turn(
+        cid,
+        turn_id=turn["turn_id"],
+        assistant={
+            "text": "你好呀",
+            "timeline": [{"type": "text", "content": "你好呀", "ts": "t"}],
+            "sources": [],
+            "status": "complete",
+            "prompt_tokens": 12345,
+            "completion_tokens": 678,
+        },
+    )
+    assistant = store.get(cid)["messages"][1]
+    assert assistant["prompt_tokens"] == 12345
+    assert assistant["completion_tokens"] == 678
+
+
+def test_load_messages_backfills_tokens_from_usage_store(tmp_path):
+    class _FakeUsage:
+        def sum_chat_tokens_for_turns(self, turn_ids):
+            return {
+                tid: {"prompt_tokens": 11, "completion_tokens": 3}
+                for tid in turn_ids
+            }
+
+    store = _store(tmp_path)
+    store._usage_store = _FakeUsage()
+    cid = store.create()
+    turn = store.begin_turn(
+        cid,
+        user_text="你好",
+        client_message_id="cli-backfill",
+        observation_allowed=False,
+    )
+    store.finalize_turn(
+        cid,
+        turn_id=turn["turn_id"],
+        assistant={
+            "text": "你好呀",
+            "timeline": [{"type": "text", "content": "你好呀", "ts": "t"}],
+            "sources": [],
+            "status": "complete",
+        },
+    )
+    assistant = store.get(cid)["messages"][1]
+    assert assistant["prompt_tokens"] == 11
+    assert assistant["completion_tokens"] == 3
+
+
 def test_begin_and_finalize_turn_assigns_message_ids(tmp_path):
     store = _store(tmp_path)
     cid = store.create()
