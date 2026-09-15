@@ -190,7 +190,7 @@ export function ChannelPanel({
       return;
     }
     const confirmText = isScript
-      ? "吊销后外部将无法再用这把 Key。历史仍可查看。"
+      ? "吊销后这把 Key 立刻失效，卡片上不再显示可复制密钥。打开开关可重新启用同一把 Key。"
       : "删除后该通道会从列表消失。外部无法再接入；历史仍可查看。";
     if (!window.confirm(confirmText)) return;
     setBusy(true);
@@ -220,6 +220,10 @@ export function ChannelPanel({
   };
 
   const handleCopy = async (inst: ChannelInstance) => {
+    if (inst.type_id === "script_api" && !inst.enabled) {
+      showToast("Key 已吊销，无法复制");
+      return;
+    }
     setBusy(true);
     try {
       const cred = await getChannelCredential(inst.id);
