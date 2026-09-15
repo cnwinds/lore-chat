@@ -46,6 +46,20 @@ describe("chat bubble chrome", () => {
   });
 });
 
+describe("fixed overflow menu", () => {
+  it("stacks above the mobile nav drawer and settings sheet", () => {
+    expect(css).toMatch(/\.doc-overflow-menu--fixed\s*\{[^}]*z-index:\s*1300;/);
+  });
+});
+
+describe("left dock chrome", () => {
+  it("gives 主题 / 聊天通道 / 设置 a taller hit target", () => {
+    expect(css).toMatch(/\.theme-toggle\s*\{[^}]*min-height:\s*40px;/);
+    expect(css).toMatch(/\.sidebar-dock-btn\s*\{[^}]*min-height:\s*40px;/);
+    expect(css).toMatch(/\.sidebar-settings-btn\s*\{[^}]*min-height:\s*40px;/);
+  });
+});
+
 describe("overlay scrollbars", () => {
   it("hides native scrollbars so they do not occupy layout", () => {
     expect(css).toMatch(/\*\s*\{[^}]*scrollbar-width:\s*none;/);
