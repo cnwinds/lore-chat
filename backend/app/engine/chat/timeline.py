@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import time
+
 from app.engine.chat.progress_log import append_progress_chunk
 from app.engine.chat.tool_query import clip_tool_query
 from app.engine.source_key import extend_sources
@@ -20,6 +22,7 @@ class TimelineAccumulator:
         self._active_parallel: str | None = None
         self._text_block: dict | None = None
         self._think_block: dict | None = None
+        self._think_started_mono: float | None = None
 
     def accumulate(self, event_type: str, data: dict) -> None:
         if event_type == "model_selected":
@@ -52,7 +55,7 @@ class TimelineAccumulator:
             else:
                 self.timeline.append(block)
             self._text_block = None
-            self._think_block = None
+            self._close_think()
 
         elif event_type == "tool_progress":
             block = self._tools.get(data["id"])
@@ -123,7 +126,7 @@ class TimelineAccumulator:
             self.timeline.append(block)
             self._active_parallel = data["batch_id"]
             self._text_block = None
-            self._think_block = None
+            self._close_think()
 
         elif event_type == "parallel_batch_end":
             block = self._parallel.get(data["batch_id"])
@@ -135,6 +138,7 @@ class TimelineAccumulator:
         elif event_type == "think_delta":
             delta = data.get("delta", "")
             if self._think_block is None:
+                self._think_started_mono = time.monotonic()
                 self._think_block = {
                     "type": "think",
                     "ts": data["ts"],
@@ -148,6 +152,7 @@ class TimelineAccumulator:
             delta = data.get("delta", "")
             self.assistant_text += delta
             if self._text_block is None:
+                self._close_think()
                 self._text_block = {
                     "type": "text",
                     "ts": data["ts"],
@@ -164,7 +169,7 @@ class TimelineAccumulator:
 
         elif event_type == "user_inject":
             self._text_block = None
-            self._think_block = None
+            self._close_think()
             block = {
                 "type": "user_inject",
                 "inject_id": data.get("inject_id"),
@@ -184,6 +189,7 @@ class TimelineAccumulator:
             self.timeline.append(block)
 
         elif event_type == "done":
+            self._close_think()
             extend_sources(self.all_sources, data.get("sources") or [])
             if data.get("total_duration_ms") is not None:
                 self.total_duration_ms = data["total_duration_ms"]
@@ -195,7 +201,20 @@ class TimelineAccumulator:
             self.timeline, text, ts=ts
         )
 
+    def _close_think(self) -> None:
+        """给当前思考块盖上墙钟，并结束该块，便于折叠行展示用时。"""
+        if self._think_block is None:
+            return
+        started = self._think_started_mono
+        self._think_started_mono = None
+        if started is not None:
+            self._think_block["duration_ms"] = max(
+                0, int((time.monotonic() - started) * 1000)
+            )
+        self._think_block = None
+
     def assistant_payload(self, status: str, *, error: str | None = None) -> dict:
+        self._close_think()
         timeline = self.timeline
         if status in ("interrupted", "error"):
             timeline = _mark_running_tools_interrupted(timeline)

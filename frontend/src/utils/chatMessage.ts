@@ -113,7 +113,8 @@ export function findPrecedingUserForRetry(
 }
 
 /** 刷新/重载后：非 active turn 把仍标 running 的工具收成 interrupted；
- *  active turn 则为缺锚点的 running 工具用服务端 ts 回填秒表（切会话再切回）。 */
+ *  active turn 则为缺锚点的 running 工具用服务端 ts 回填秒表（切会话再切回）。
+ *  旧思考块没有 duration_ms 时，用相邻可解析 ts 补时长。 */
 export function normalizeLoadedTimeline(
   timeline: TimelineBlock[] | undefined,
   opts?: { activeTurnRunning?: boolean },
@@ -132,26 +133,63 @@ export function normalizeLoadedTimeline(
       return block;
     });
 
+  let next: TimelineBlock[];
   if (opts?.activeTurnRunning) {
     let changed = false;
-    const stamped = mapTools(timeline, (block) => {
+    next = mapTools(timeline, (block) => {
       if (block.status !== "running" || block.started_at_ms != null) return block;
       const started = resolveToolStartedAtMs(block.ts);
       if (started == null) return block;
       changed = true;
       return { ...block, started_at_ms: started };
     });
-    return changed ? stamped : timeline;
+    if (!changed) next = timeline;
+  } else {
+    next = mapTools(timeline, (block) => {
+      if (block.status !== "running") return block;
+      return {
+        ...block,
+        status: "interrupted",
+        summary: block.summary || "连接中断，未完成",
+      };
+    });
   }
+  return stampThinkDurations(next, opts);
+}
 
-  return mapTools(timeline, (block) => {
-    if (block.status !== "running") return block;
-    return {
-      ...block,
-      status: "interrupted",
-      summary: block.summary || "连接中断，未完成",
-    };
+/** 历史思考块：有下一块且两端 ts 可解析时补 duration_ms；进行中则回填秒表锚点。 */
+export function stampThinkDurations(
+  timeline: TimelineBlock[],
+  opts?: { activeTurnRunning?: boolean },
+): TimelineBlock[] {
+  let changed = false;
+  const next = timeline.map((block, i) => {
+    if (block.type !== "think") return block;
+    if (block.duration_ms == null) {
+      const nextBlock = timeline[i + 1];
+      if (nextBlock) {
+        const start = Date.parse(block.ts);
+        const end = Date.parse(nextBlock.ts);
+        if (Number.isFinite(start) && Number.isFinite(end) && end >= start) {
+          changed = true;
+          return { ...block, duration_ms: end - start };
+        }
+      }
+    }
+    if (
+      opts?.activeTurnRunning &&
+      block.duration_ms == null &&
+      block.started_at_ms == null
+    ) {
+      const started = resolveToolStartedAtMs(block.ts);
+      if (started != null) {
+        changed = true;
+        return { ...block, started_at_ms: started };
+      }
+    }
+    return block;
   });
+  return changed ? next : timeline;
 }
 
 export function normalizeLoadedMessage(

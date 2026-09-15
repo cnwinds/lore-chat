@@ -148,4 +148,24 @@ describe("reduceStreamEvent serverTimeline + deltas", () => {
       { type: "text", ts: "t0", content: "前言" },
     ]);
   });
+
+  it("closes open think duration on done", () => {
+    let result = reduceStreamEvent(baseState(), "think_delta", {
+      delta: "hello",
+      ts: "2026-01-01T00:00:00.000Z",
+    });
+    const open = result.state.assistant.timeline?.[0];
+    expect(open?.type).toBe("think");
+    result = reduceStreamEvent(result.state, "done", {
+      sources: [],
+      total_duration_ms: 42,
+    });
+    const closed = result.state.assistant.timeline?.[0];
+    expect(closed?.type).toBe("think");
+    if (closed?.type === "think") {
+      expect(typeof closed.duration_ms).toBe("number");
+      expect(closed.duration_ms).toBeGreaterThanOrEqual(0);
+    }
+    expect(result.state.assistant.total_duration_ms).toBe(42);
+  });
 });

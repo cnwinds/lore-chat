@@ -27,6 +27,21 @@ function toolQueryFromInput(input: unknown): string | undefined {
   return undefined;
 }
 
+/** 给未盖章的思考块写下 duration_ms，后续 think_delta 会开新块。 */
+export function closeOpenThink(
+  timeline: TimelineBlock[],
+  endMs: number = Date.now(),
+): TimelineBlock[] {
+  const last = timeline[timeline.length - 1];
+  if (last?.type !== "think" || last.duration_ms != null) return timeline;
+  const started = last.started_at_ms ?? resolveToolStartedAtMs(last.ts);
+  if (started == null) return timeline;
+  return [
+    ...timeline.slice(0, -1),
+    { ...last, duration_ms: Math.max(0, endMs - started) },
+  ];
+}
+
 function findActiveParallelIndex(timeline: TimelineBlock[]): number {
   for (let i = timeline.length - 1; i >= 0; i--) {
     const block = timeline[i];
@@ -62,6 +77,7 @@ export function updateTimeline(
   data: Record<string, unknown>,
 ): TimelineBlock[] {
   if (event === "tool_start") {
+    timeline = closeOpenThink(timeline);
     const query = toolQueryFromInput(data.input);
     const toolBlock: TimelineBlock = {
       type: "tool",
@@ -184,6 +200,7 @@ export function updateTimeline(
   }
 
   if (event === "parallel_batch_start") {
+    timeline = closeOpenThink(timeline);
     const parallelBlock: TimelineBlock = {
       type: "parallel",
       batch_id: data.batch_id as string,
@@ -210,15 +227,27 @@ export function updateTimeline(
   if (event === "think_delta") {
     const delta = (data.delta as string) || "";
     const last = timeline[timeline.length - 1];
-    if (last?.type === "think") {
+    if (last?.type === "think" && last.duration_ms == null) {
       return [
         ...timeline.slice(0, -1),
-        { ...last, content: last.content + delta },
+        {
+          ...last,
+          content: last.content + delta,
+          started_at_ms:
+            last.started_at_ms ??
+            resolveToolStartedAtMs(last.ts) ??
+            Date.now(),
+        },
       ];
     }
     return [
       ...timeline,
-      { type: "think", ts: data.ts as string, content: delta },
+      {
+        type: "think",
+        ts: data.ts as string,
+        content: delta,
+        started_at_ms: resolveToolStartedAtMs(data.ts as string) ?? Date.now(),
+      },
     ];
   }
 
@@ -231,13 +260,15 @@ export function updateTimeline(
         { ...last, content: last.content + delta },
       ];
     }
+    const closed = closeOpenThink(timeline);
     return [
-      ...timeline,
+      ...closed,
       { type: "text", ts: data.ts as string, content: delta },
     ];
   }
 
   if (event === "user_inject") {
+    timeline = closeOpenThink(timeline);
     const injectId = (data.inject_id as string) || "";
     return [
       ...timeline,
@@ -300,6 +331,17 @@ function setVisibleAssistantText(
   return next;
 }
 
+function prevOpenThinkStartedAt(blocks: TimelineBlock[] | undefined): number | undefined {
+  if (!blocks?.length) return undefined;
+  for (let i = blocks.length - 1; i >= 0; i--) {
+    const b = blocks[i];
+    if (b.type === "think" && b.duration_ms == null && b.started_at_ms != null) {
+      return b.started_at_ms;
+    }
+  }
+  return undefined;
+}
+
 export function mergeServerTimeline(
   prev: ChatMessage,
   incoming: TimelineBlock[],
@@ -316,8 +358,9 @@ export function mergeServerTimeline(
     }
   };
   walk(prev.timeline ?? []);
+  const openThinkStarted = prevOpenThinkStartedAt(prev.timeline);
   const merge = (blocks: TimelineBlock[]): TimelineBlock[] =>
-    blocks.map((b) => {
+    blocks.map((b, i) => {
       if (b.type === "tool") {
         // 切会话后 prev 无本地锚点；用服务端 ts 回填。非法 ts 不打 Date.now()，避免秒表归零。
         const started = resolveToolStartedAtMs(
@@ -328,6 +371,14 @@ export function mergeServerTimeline(
       }
       if (b.type === "parallel") {
         return { ...b, children: merge(b.children) };
+      }
+      if (
+        b.type === "think" &&
+        b.duration_ms == null &&
+        openThinkStarted != null &&
+        !blocks.slice(i + 1).some((x) => x.type === "think" && x.duration_ms == null)
+      ) {
+        return { ...b, started_at_ms: openThinkStarted };
       }
       return b;
     });

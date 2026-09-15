@@ -295,6 +295,62 @@ describe("normalizeLoadedMessage", () => {
       expect(tool.status).toBe("running");
     }
   });
+
+  it("backfills think duration from adjacent parsable timestamps", () => {
+    const msg = normalizeLoadedMessage({
+      role: "assistant",
+      timeline: [
+        {
+          type: "think",
+          ts: "2026-01-01T00:00:00.000Z",
+          content: "thinking",
+        },
+        {
+          type: "text",
+          ts: "2026-01-01T00:00:02.500Z",
+          content: "answer",
+        },
+      ],
+    });
+    expect(msg.timeline?.[0]).toMatchObject({
+      type: "think",
+      duration_ms: 2500,
+    });
+  });
+
+  it("does not invent think duration from unparsable timestamps", () => {
+    const msg = normalizeLoadedMessage({
+      role: "assistant",
+      timeline: [
+        { type: "think", ts: "t0", content: "thinking" },
+        { type: "text", ts: "t1", content: "answer" },
+      ],
+    });
+    expect(msg.timeline?.[0]).toMatchObject({ type: "think", content: "thinking" });
+    expect(msg.timeline?.[0].type).toBe("think");
+    if (msg.timeline?.[0].type === "think") {
+      expect(msg.timeline[0].duration_ms).toBeUndefined();
+    }
+  });
+
+  it("stamps started_at_ms for an open think on an active turn", () => {
+    const iso = "2026-01-01T00:00:00.000Z";
+    const msg = normalizeLoadedMessage(
+      {
+        role: "assistant",
+        timeline: [{ type: "think", ts: iso, content: "thinking" }],
+      },
+      { activeTurnRunning: true },
+    );
+    expect(msg.timeline?.[0]).toMatchObject({
+      type: "think",
+      started_at_ms: Date.parse(iso),
+    });
+    expect(msg.timeline?.[0].type).toBe("think");
+    if (msg.timeline?.[0].type === "think") {
+      expect(msg.timeline[0].duration_ms).toBeUndefined();
+    }
+  });
 });
 
 describe("canRetryAssistantReply", () => {

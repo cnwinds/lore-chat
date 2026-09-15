@@ -11,9 +11,16 @@ describe("updateTimeline think_delta", () => {
       delta: "用户意图",
       ts: "t1",
     });
-    expect(timeline).toEqual([
-      { type: "think", ts: "t1", content: "先分析用户意图" },
-    ]);
+    expect(timeline).toHaveLength(1);
+    expect(timeline[0]).toMatchObject({
+      type: "think",
+      ts: "t1",
+      content: "先分析用户意图",
+    });
+    expect(timeline[0].type).toBe("think");
+    if (timeline[0].type === "think") {
+      expect(typeof timeline[0].started_at_ms).toBe("number");
+    }
   });
 
   it("keeps think separate from text blocks", () => {

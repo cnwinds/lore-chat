@@ -110,7 +110,13 @@ export type TimelineBlock =
       duration_ms?: number;
     }
   | { type: "text"; ts: string; content: string }
-  | { type: "think"; ts: string; content: string }
+  | {
+      type: "think";
+      ts: string;
+      content: string;
+      duration_ms?: number;
+      started_at_ms?: number;
+    }
   | {
       type: "user_inject";
       inject_id: string;

@@ -32,3 +32,20 @@ export function toolDisplayDurationMs(
   }
   return block.duration_ms;
 }
+
+/** 思考块展示用耗时：进行中按起点秒表，结束后用 duration_ms。 */
+export function thinkDisplayDurationMs(
+  block: {
+    duration_ms?: number;
+    started_at_ms?: number;
+    ts?: string;
+  },
+  opts: { nowMs?: number; isLive?: boolean } = {},
+): number | undefined {
+  if (block.duration_ms != null) return block.duration_ms;
+  if (!opts.isLive) return undefined;
+  const started = block.started_at_ms ?? resolveToolStartedAtMs(block.ts);
+  if (started == null) return undefined;
+  const now = opts.nowMs ?? Date.now();
+  return Math.max(0, now - started);
+}

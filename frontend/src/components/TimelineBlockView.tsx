@@ -17,7 +17,7 @@ import {
   isNoiseProgressLine,
   joinProgressChunks,
 } from "../utils/progressLog";
-import { toolDisplayDurationMs } from "../utils/toolDuration";
+import { toolDisplayDurationMs, thinkDisplayDurationMs } from "../utils/toolDuration";
 import type { ConversationLinkTarget } from "../utils/conversationLinks";
 import { toolBlockDefaultOpen } from "../utils/toolFold";
 import { stripProtocolMarkup } from "../utils/visibleText";
@@ -336,9 +336,13 @@ function ToolBlockView({
 
 function ThinkBlockView({
   block,
+  nowMs,
+  isLive,
   onOpenConversation,
 }: {
   block: Extract<TimelineBlock, { type: "think" }>;
+  nowMs?: number;
+  isLive?: boolean;
   onOpenConversation?: (target: ConversationLinkTarget) => void;
 }) {
   const [override, setOverride] = useState<boolean | null>(null);
@@ -347,6 +351,7 @@ function ThinkBlockView({
     block.content.length > 120
       ? `${block.content.slice(0, 120).trim()}…`
       : block.content.trim();
+  const displayMs = thinkDisplayDurationMs(block, { nowMs, isLive });
 
   return (
     <div className="timeline-think">
@@ -356,10 +361,15 @@ function ThinkBlockView({
         onClick={() => setOverride(!open)}
         aria-expanded={open}
       >
-        <span className="timeline-think-label">思考过程</span>
-        {!open && preview ? (
-          <span className="timeline-think-oneline">{preview}</span>
-        ) : null}
+        <span className="timeline-think-heading">
+          <span className="timeline-think-label">思考过程</span>
+          {!open && preview ? (
+            <span className="timeline-think-oneline">{preview}</span>
+          ) : null}
+        </span>
+        {displayMs !== undefined && (
+          <span className="timeline-duration">{formatDuration(displayMs)}</span>
+        )}
         <FoldChevron open={open} className="timeline-think-chevron" />
       </button>
       {open ? (
@@ -468,6 +478,8 @@ export function TimelineBlockView({
     return (
       <ThinkBlockView
         block={block}
+        nowMs={nowMs}
+        isLive={isLive}
         onOpenConversation={onOpenConversation}
       />
     );

@@ -1,6 +1,10 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
 import { updateTimeline } from "../api";
-import { resolveToolStartedAtMs, toolDisplayDurationMs } from "./toolDuration";
+import {
+  resolveToolStartedAtMs,
+  thinkDisplayDurationMs,
+  toolDisplayDurationMs,
+} from "./toolDuration";
 
 describe("resolveToolStartedAtMs", () => {
   it("prefers existing finite started_at_ms", () => {
@@ -34,6 +38,35 @@ describe("toolDisplayDurationMs", () => {
       { nowMs: 99999, liveElapsedMs: 60_000 },
     );
     expect(ms).toBe(1200);
+  });
+});
+
+describe("thinkDisplayDurationMs", () => {
+  it("uses duration_ms once the think block is closed", () => {
+    expect(
+      thinkDisplayDurationMs(
+        { duration_ms: 1500, started_at_ms: 1000 },
+        { isLive: true, nowMs: 99999 },
+      ),
+    ).toBe(1500);
+  });
+
+  it("uses the stopwatch while thinking is live", () => {
+    expect(
+      thinkDisplayDurationMs(
+        { started_at_ms: 1000 },
+        { isLive: true, nowMs: 2500 },
+      ),
+    ).toBe(1500);
+  });
+
+  it("hides duration on historical thinks without duration_ms", () => {
+    expect(
+      thinkDisplayDurationMs(
+        { started_at_ms: 1000, ts: "t" },
+        { isLive: false, nowMs: 2500 },
+      ),
+    ).toBeUndefined();
   });
 });
 

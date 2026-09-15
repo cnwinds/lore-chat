@@ -3,7 +3,11 @@
 import { KB_MUTATING_TOOLS, type ChatMessage, type SourceRef } from "../types/chat";
 import { kbPathFromToolResult, timelineAwaitsUserAnswer } from "./chatMessage";
 import { nowIsoDisplay } from "./displayTime";
-import { applyTimelineEvent, mergeServerTimeline } from "./timelineStream";
+import {
+  applyTimelineEvent,
+  closeOpenThink,
+  mergeServerTimeline,
+} from "./timelineStream";
 
 export type StreamReduceState = {
   streamFailed: boolean;
@@ -123,6 +127,7 @@ export function reduceStreamEvent(
     }
   }
   if (event === "done") {
+    assistant.timeline = closeOpenThink(assistant.timeline ?? []);
     assistant.sources = (data.sources as SourceRef[]) || [];
     if (data.total_duration_ms !== undefined) {
       assistant.total_duration_ms = data.total_duration_ms as number;

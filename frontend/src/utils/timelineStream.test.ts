@@ -173,3 +173,101 @@ describe("updateTimeline assistant_visible_set", () => {
     expect(next).toEqual([]);
   });
 });
+
+describe("updateTimeline think duration", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("stamps duration_ms when text follows think", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+    let timeline = updateTimeline([], "think_delta", {
+      delta: "thinking",
+      ts: "2026-01-01T00:00:00.000Z",
+    });
+    vi.setSystemTime(new Date("2026-01-01T00:00:01.500Z"));
+    timeline = updateTimeline(timeline, "text_delta", {
+      delta: "answer",
+      ts: "2026-01-01T00:00:01.500Z",
+    });
+    expect(timeline[0]).toMatchObject({
+      type: "think",
+      content: "thinking",
+      duration_ms: 1500,
+    });
+    expect(timeline[1]).toMatchObject({ type: "text", content: "answer" });
+  });
+
+  it("starts a new think block after the previous one was closed", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+    let timeline = updateTimeline([], "think_delta", {
+      delta: "first",
+      ts: "2026-01-01T00:00:00.000Z",
+    });
+    vi.setSystemTime(new Date("2026-01-01T00:00:01.000Z"));
+    timeline = updateTimeline(timeline, "tool_start", {
+      id: "1",
+      tool: "search_kb",
+      label: "检索",
+      ts: "2026-01-01T00:00:01.000Z",
+    });
+    timeline = updateTimeline(timeline, "think_delta", {
+      delta: "second",
+      ts: "2026-01-01T00:00:02.000Z",
+    });
+    expect(timeline.map((b) => b.type)).toEqual(["think", "tool", "think"]);
+    expect(timeline[0]).toMatchObject({ duration_ms: 1000, content: "first" });
+    expect(timeline[2]).toMatchObject({ content: "second" });
+    expect(timeline[2].type).toBe("think");
+    if (timeline[2].type === "think") {
+      expect(timeline[2].duration_ms).toBeUndefined();
+    }
+  });
+
+  it("does not invent duration_ms from unparsable ts without started_at_ms", () => {
+    const timeline = updateTimeline(
+      [{ type: "think", ts: "t0", content: "thinking" }],
+      "text_delta",
+      { delta: "answer", ts: "t1" },
+    );
+    expect(timeline[0]).toMatchObject({ type: "think", content: "thinking" });
+    expect(timeline[0].type).toBe("think");
+    if (timeline[0].type === "think") {
+      expect(timeline[0].duration_ms).toBeUndefined();
+    }
+  });
+});
+
+describe("mergeServerTimeline think stopwatch", () => {
+  it("preserves client started_at_ms on an open think block", () => {
+    const prev: ChatMessage = {
+      role: "assistant",
+      text: "",
+      ts: "t0",
+      timeline: [
+        {
+          type: "think",
+          ts: "2026-01-01T00:00:00.000Z",
+          content: "hello",
+          started_at_ms: 111,
+        },
+      ],
+    };
+    const incoming: TimelineBlock[] = [
+      {
+        type: "think",
+        ts: "2026-01-01T00:00:00.000Z",
+        content: "hello world",
+      },
+    ];
+    const next = mergeServerTimeline(prev, incoming);
+    const think = next.timeline?.[0];
+    expect(think).toMatchObject({
+      type: "think",
+      content: "hello world",
+      started_at_ms: 111,
+    });
+  });
+});

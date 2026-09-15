@@ -103,6 +103,35 @@ describe("TimelineBlockView default fold", () => {
     );
   });
 
+  it("shows duration on a collapsed think header", () => {
+    renderBlock({
+      type: "think",
+      ts: "t",
+      content: "先看链接再总结",
+      duration_ms: 1500,
+    });
+    expect(screen.getByText("1.5s")).toBeTruthy();
+  });
+
+  it("shows a live stopwatch while thinking", () => {
+    cleanup();
+    render(
+      <TimelineBlockView
+        block={{
+          type: "think",
+          ts: "t",
+          content: "hmm",
+          started_at_ms: 1000,
+        }}
+        cumulative={emptyCumulative}
+        isLive
+        nowMs={2500}
+        onOpenSource={() => {}}
+      />,
+    );
+    expect(screen.getByText("1.5s")).toBeTruthy();
+  });
+
   it("keeps unanswered asks expanded so choices stay visible", () => {
     renderBlock({
       type: "tool",

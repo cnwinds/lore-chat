@@ -133,3 +133,50 @@ def test_assistant_visible_set_drops_empty_text():
     acc.accumulate("assistant_visible_set", {"text": "", "ts": "t1"})
     assert acc.assistant_text == ""
     assert acc.timeline == []
+
+
+def test_think_closed_by_text_has_duration_ms(monkeypatch):
+    times = iter([100.0, 101.5])
+    monkeypatch.setattr("app.engine.chat.timeline.time.monotonic", lambda: next(times))
+    acc = TimelineAccumulator()
+    acc.accumulate("think_delta", {"delta": "thinking", "ts": "t0"})
+    acc.accumulate("text_delta", {"delta": "answer", "ts": "t1"})
+    think = acc.timeline[0]
+    assert think["type"] == "think"
+    assert think["duration_ms"] == 1500
+    assert acc.timeline[1]["type"] == "text"
+
+
+def test_think_closed_by_tool_has_duration_ms(monkeypatch):
+    times = iter([50.0, 51.0])
+    monkeypatch.setattr("app.engine.chat.timeline.time.monotonic", lambda: next(times))
+    acc = TimelineAccumulator()
+    acc.accumulate("think_delta", {"delta": "thinking", "ts": "t0"})
+    acc.accumulate(
+        "tool_start",
+        {"id": "1", "tool": "sandbox_run", "label": "run", "ts": "t1"},
+    )
+    assert acc.timeline[0]["type"] == "think"
+    assert acc.timeline[0]["duration_ms"] == 1000
+    assert acc.timeline[1]["type"] == "tool"
+
+
+def test_think_closed_on_done(monkeypatch):
+    times = iter([10.0, 12.0])
+    monkeypatch.setattr("app.engine.chat.timeline.time.monotonic", lambda: next(times))
+    acc = TimelineAccumulator()
+    acc.accumulate("think_delta", {"delta": "thinking", "ts": "t0"})
+    acc.accumulate("done", {"sources": [], "total_duration_ms": 12})
+    assert acc.timeline[0]["duration_ms"] == 2000
+
+
+def test_think_after_text_starts_new_block(monkeypatch):
+    times = iter([1.0, 2.0, 3.0])
+    monkeypatch.setattr("app.engine.chat.timeline.time.monotonic", lambda: next(times))
+    acc = TimelineAccumulator()
+    acc.accumulate("think_delta", {"delta": "a", "ts": "t0"})
+    acc.accumulate("text_delta", {"delta": "b", "ts": "t1"})
+    acc.accumulate("think_delta", {"delta": "c", "ts": "t2"})
+    assert [b["type"] for b in acc.timeline] == ["think", "text", "think"]
+    assert acc.timeline[0]["duration_ms"] == 1000
+    assert "duration_ms" not in acc.timeline[2]
