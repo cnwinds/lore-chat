@@ -1,0 +1,274 @@
+/* Lore 青瓷账册：在令牌之上收口各界面的气质。
+   记忆点只有一处——朱砂印；其余保持安静。 */
+
+:root {
+  --font-display: "Source Serif 4", "Noto Serif SC", "Songti SC", serif;
+}
+
+body {
+  background-color: var(--bg-app);
+  background-image:
+    radial-gradient(
+      1200px 640px at 0% -8%,
+      color-mix(in srgb, var(--glaze) 14%, transparent),
+      transparent 58%
+    );
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.font-display,
+.kb-float-title,
+.doc-viewer-title,
+.auth-gate-title,
+.settings-panel-header h2,
+.share-page-title,
+.share-page-error-title,
+.share-page-unlock-title,
+.chat-desktop-header-title,
+.chat-role-heading-name,
+.role-config-cover-letter,
+.role-config-cover-caption,
+.role-item-name,
+.mobile-chat-header-title {
+  font-family: var(--font-display);
+}
+
+.chat-desktop-header-title,
+.chat-role-heading-name,
+.role-item-name,
+.mobile-chat-header-title {
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+/* —— 登录 / 首次设密 —— */
+.auth-gate {
+  background-image:
+    radial-gradient(
+      900px 480px at 8% -12%,
+      color-mix(in srgb, var(--glaze) 22%, transparent),
+      transparent 56%
+    ),
+    radial-gradient(
+      700px 420px at 100% 110%,
+      color-mix(in srgb, var(--accent) 8%, transparent),
+      transparent 48%
+    );
+}
+
+.auth-gate-card {
+  position: relative;
+  padding: 32px 28px 28px 32px;
+  border-radius: 4px;
+  background: var(--bg-surface);
+  box-shadow:
+    0 1px 0 var(--seal-gold-soft),
+    var(--shadow-md);
+}
+
+.auth-gate-card::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 22px;
+  bottom: 22px;
+  width: 3px;
+  background: var(--accent);
+  border-radius: 0 2px 2px 0;
+}
+
+.auth-gate-title {
+  font-weight: 600;
+}
+
+.auth-gate-submit {
+  border-radius: 4px;
+  letter-spacing: 0.02em;
+}
+
+/* —— 设置抽屉 —— */
+.settings-panel {
+  background: var(--bg-surface);
+}
+
+.settings-panel-header {
+  background: color-mix(in srgb, var(--glaze-soft) 55%, var(--bg-surface));
+}
+
+.settings-panel-header h2 {
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}
+
+.settings-panel-body {
+  background:
+    radial-gradient(
+      120% 40% at 100% 0%,
+      color-mix(in srgb, var(--glaze-soft) 70%, transparent),
+      transparent 55%
+    ),
+    var(--bg-surface);
+}
+
+/* —— 中栏顶栏 / 欢迎 —— */
+.chat-desktop-header {
+  background: transparent;
+}
+
+.chat-welcome-logo {
+  color: var(--text);
+}
+
+.chat-bubble {
+  box-shadow: none;
+}
+
+.chat-bubble-user {
+  background: var(--user-bubble);
+}
+
+.composer-card {
+  border-radius: var(--radius-md);
+  border-color: var(--border);
+  background: var(--bg-surface);
+  box-shadow: none;
+}
+
+.composer-send-btn--ready {
+  background: var(--accent);
+  color: var(--text-on-accent);
+}
+
+/* —— 左栏 —— */
+.app-shell-left {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--glaze-soft) 35%, var(--bg-surface)) 0%,
+      var(--bg-surface) 120px
+    );
+}
+
+.app-shell-left .role-item--active {
+  background: color-mix(in srgb, var(--glaze) 12%, var(--bg-surface));
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.role-config-cover-letter {
+  font-size: 64px;
+  font-weight: 600;
+}
+
+.role-config-cover-caption {
+  font-size: 17px;
+  color: var(--text);
+}
+
+.role-config-panel {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--glaze-soft) 28%, var(--bg-app)) 0%,
+      var(--bg-app) 160px
+    );
+}
+
+.role-config-cover-art--group {
+  width: min(168px, 64%);
+  aspect-ratio: 1;
+  border-radius: 30%;
+  overflow: visible;
+  background: transparent;
+}
+
+.role-config-members {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px 18px 28px;
+}
+
+.role-config-member-list {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.role-config-member-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 6px;
+  color: var(--text);
+  font-size: var(--font-ui-sm);
+}
+
+.role-config-danger-btn {
+  margin-top: 8px;
+  border: 1px solid var(--danger-border);
+  background: var(--danger-bg);
+  color: var(--danger-text);
+  border-radius: var(--radius-md);
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 550;
+  cursor: pointer;
+}
+
+.role-config-danger-btn:hover:not(:disabled) {
+  border-color: var(--danger);
+}
+
+/* —— 分享页 —— */
+.share-page {
+  background: var(--bg-app);
+  background-image:
+    radial-gradient(
+      1000px 520px at 8% -10%,
+      color-mix(in srgb, var(--glaze) 16%, transparent),
+      transparent 55%
+    );
+}
+
+.share-page-title,
+.share-page-error-title,
+.share-page-unlock-title {
+  font-weight: 650;
+}
+
+.channel-card {
+  border-radius: var(--radius-md);
+}
+
+.kb-float-title {
+  font-weight: 650;
+}
+
+.app-mobile-config-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 118;
+  border: none;
+  padding: 0;
+  margin: 0;
+  background: var(--backdrop);
+  cursor: pointer;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-shell--three-pane,
+  .auth-gate-card,
+  .settings-panel,
+  .doc-float-panel,
+  .doc-panel {
+    transition: none;
+    animation: none;
+  }
+}

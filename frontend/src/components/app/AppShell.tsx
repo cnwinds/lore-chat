@@ -2,21 +2,25 @@ import type { ComponentProps, CSSProperties, ReactNode } from "react";
 import { RoleList } from "../role/RoleList";
 import { KbSidebar } from "../KbSidebar";
 import { RoleConfigPanel } from "../role/RoleConfigPanel";
+import { GroupConfigPanel } from "../role/GroupConfigPanel";
 import { LeftSidebarFooter } from "./LeftSidebarFooter";
 import { useLeftSidebarWidth } from "../../hooks/useLeftSidebarWidth";
 
 type RoleListProps = ComponentProps<typeof RoleList>;
 type KbSidebarProps = ComponentProps<typeof KbSidebar>;
 type RoleConfigPanelProps = ComponentProps<typeof RoleConfigPanel>;
+type GroupConfigPanelProps = ComponentProps<typeof GroupConfigPanel>;
 
 type Props = {
   panelFocus: boolean;
   floatFocus: boolean;
   hasMergeReview: boolean;
   mainFloatWide: boolean;
+  configMode?: "role" | "group";
   roleListProps: RoleListProps;
   kbSidebarProps: KbSidebarProps;
   roleConfigPanelProps: RoleConfigPanelProps;
+  groupConfigPanelProps?: GroupConfigPanelProps;
   chat: ReactNode;
   docFloat: ReactNode | null;
   docPinned: ReactNode | null;
@@ -35,9 +39,11 @@ export function AppShell({
   floatFocus,
   hasMergeReview,
   mainFloatWide,
+  configMode = "role",
   roleListProps,
   kbSidebarProps,
   roleConfigPanelProps,
+  groupConfigPanelProps,
   chat,
   docFloat,
   docPinned,
@@ -51,10 +57,18 @@ export function AppShell({
   onToggleChannels,
 }: Props) {
   const leftSidebar = useLeftSidebarWidth();
+  const configCollapsed =
+    configMode === "group"
+      ? Boolean(groupConfigPanelProps?.collapsed)
+      : Boolean(roleConfigPanelProps.collapsed);
+  const onToggleConfig =
+    configMode === "group"
+      ? groupConfigPanelProps?.onToggleCollapsed
+      : roleConfigPanelProps.onToggleCollapsed;
   const shellClass = [
     "app-shell",
     "app-shell--three-pane",
-    roleConfigPanelProps.collapsed ? "app-shell--config-collapsed" : "",
+    configCollapsed ? "app-shell--config-collapsed" : "",
     panelFocus ? "app-shell--doc-focus" : "",
     floatFocus ? "app-shell--doc-focus-float" : "",
     docPinned ? "app-shell--doc-pinned" : "",
@@ -82,6 +96,14 @@ export function AppShell({
           className="app-mobile-nav-backdrop"
           aria-label="关闭导航"
           onClick={onMobileNavClose}
+        />
+      )}
+      {mobileLayout && !configCollapsed && (
+        <button
+          type="button"
+          className="app-mobile-config-backdrop"
+          aria-label={configMode === "group" ? "关闭群设置" : "关闭角色设置"}
+          onClick={onToggleConfig}
         />
       )}
       <div
@@ -128,7 +150,11 @@ export function AppShell({
         {chat}
         {docFloat}
       </main>
-      <RoleConfigPanel {...roleConfigPanelProps} />
+      {configMode === "group" && groupConfigPanelProps ? (
+        <GroupConfigPanel {...groupConfigPanelProps} />
+      ) : (
+        <RoleConfigPanel {...roleConfigPanelProps} />
+      )}
       {docPinned}
       {modals}
     </div>

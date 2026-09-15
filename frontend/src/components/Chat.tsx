@@ -114,7 +114,6 @@ type Props = {
   roomParticipants?: RoomParticipant[];
   onRoomInterjectSent?: () => void;
   onOpenGroup?: (roomId: string) => void;
-  onOpenGroupSettings?: () => void;
 };
 
 export function Chat({
@@ -148,7 +147,6 @@ export function Chat({
   roomParticipants = [],
   onRoomInterjectSent,
   onOpenGroup,
-  onOpenGroupSettings,
 }: Props) {
   const { previewPath, openDoc, refreshKb } = useDocPreview();
 
@@ -994,6 +992,8 @@ export function Chat({
           roomMode={roomMode}
           roomAvatar={roomAvatar}
           roomParticipants={roomParticipants}
+          onToggleConfig={onToggleRoleConfig}
+          configCollapsed={roleConfigCollapsed}
         />
       )}
       {!mobileLayout && (
@@ -1018,34 +1018,14 @@ export function Chat({
               />
             )}
           </h1>
-          {roomMode === "group" && onOpenGroupSettings ? (
-            <div className="chat-desktop-header-actions">
-              <button
-                type="button"
-                className="chat-desktop-header-btn"
-                onClick={onOpenGroupSettings}
-                title="群设置"
-                aria-label="群设置"
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
-                  <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.8" />
-                  <path
-                    d="M12 4v2M12 18v2M4 12h2M18 12h2M6.3 6.3l1.4 1.4M16.3 16.3l1.4 1.4M6.3 17.7l1.4-1.4M16.3 7.7l1.4-1.4"
-                    stroke="currentColor"
-                    strokeWidth="1.8"
-                    strokeLinecap="round"
-                  />
-                </svg>
-              </button>
-            </div>
-          ) : roleConfigCollapsed && onToggleRoleConfig ? (
+          {roleConfigCollapsed && onToggleRoleConfig ? (
             <div className="chat-desktop-header-actions">
               <button
                 type="button"
                 className="chat-desktop-header-btn"
                 onClick={onToggleRoleConfig}
-                title="展开角色设置"
-                aria-label="展开角色设置"
+                title={roomMode === "group" ? "展开群设置" : "展开角色设置"}
+                aria-label={roomMode === "group" ? "展开群设置" : "展开角色设置"}
               >
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
                   <path

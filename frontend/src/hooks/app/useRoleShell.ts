@@ -87,17 +87,22 @@ export function useRoleShell() {
     [onRoleSwitch],
   );
 
-  const toggleConfigPanel = useCallback(() => {
-    setConfigPanelCollapsed((c) => {
-      const next = !c;
-      try {
-        localStorage.setItem(CONFIG_COLLAPSED_KEY, next ? "1" : "0");
-      } catch {
-        /* ignore */
-      }
-      return next;
-    });
+  const persistCollapsed = useCallback((next: boolean) => {
+    try {
+      localStorage.setItem(CONFIG_COLLAPSED_KEY, next ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+    return next;
   }, []);
+
+  const toggleConfigPanel = useCallback(() => {
+    setConfigPanelCollapsed((c) => persistCollapsed(!c));
+  }, [persistCollapsed]);
+
+  const expandConfigPanel = useCallback(() => {
+    setConfigPanelCollapsed((c) => (c ? persistCollapsed(false) : c));
+  }, [persistCollapsed]);
 
   const registerRoleSwitchHandler = useCallback(
     (handler: (roleId: string, conversationId: string) => void) => {
@@ -113,6 +118,7 @@ export function useRoleShell() {
     refreshRoles,
     configPanelCollapsed,
     toggleConfigPanel,
+    expandConfigPanel,
     handleNewRole,
     handleSelectRole,
     registerRoleSwitchHandler,

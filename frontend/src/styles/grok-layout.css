@@ -1805,6 +1805,20 @@ select.role-config-input {
   }
 
   .app-shell--mobile .role-config-panel {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 120;
+    width: min(380px, 100vw);
+    display: flex;
+    background: var(--bg-app);
+    border-left: 1px solid var(--border);
+    box-shadow: var(--shadow-panel);
+  }
+
+  .app-shell--mobile .role-config-panel--collapsed,
+  .app-shell--mobile .role-config-panel[hidden] {
     display: none;
   }
 }

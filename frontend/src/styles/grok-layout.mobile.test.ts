@@ -45,6 +45,15 @@ describe("mobile three-pane grid", () => {
       /\.app-shell--mobile\.app-shell--three-pane \.main-panel,\s*\n\s*\.app-shell--mobile\.app-shell--three-pane \.role-config-panel,\s*\n\s*\.app-shell--mobile\.app-shell--three-pane \.doc-panel\s*\{\s*\n\s*grid-column:\s*1;/,
     );
   });
+
+  it("opens role or group settings as a right-side sheet instead of hiding them", () => {
+    expect(css).toMatch(
+      /\.app-shell--mobile \.role-config-panel\s*\{\s*\n\s*position:\s*fixed;/,
+    );
+    expect(css).not.toMatch(
+      /\.app-shell--mobile \.role-config-panel\s*\{\s*\n\s*display:\s*none;/,
+    );
+  });
 });
 
 describe("group avatar mark", () => {

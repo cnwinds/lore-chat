@@ -11,7 +11,6 @@ import {
   listBusyRoles,
   listRoles,
   openRoleNewTopic,
-  updateRoom,
   type RoleSummary,
   type RoomSummary,
 } from "../../api";
@@ -19,7 +18,6 @@ import { Sidebar } from "../../components/Sidebar";
 import { RoleSettingsModal } from "../../components/RoleSettingsModal";
 import { CreateRoleModal } from "../../components/role/CreateRoleModal";
 import { CreateGroupModal } from "../../components/role/CreateGroupModal";
-import { GroupSettingsModal } from "../../components/role/GroupSettingsModal";
 import type { RoomParticipant } from "../../types/chat";
 import type { ComponentProps, ReactNode } from "react";
 import type { useDocPreviewLayout } from "./useDocPreviewLayout";
@@ -97,7 +95,6 @@ export function useConversationShell({
   const [activeGroupParticipants, setActiveGroupParticipants] = useState<
     RoomParticipant[]
   >([]);
-  const [settingsGroup, setSettingsGroup] = useState<RoomSummary | null>(null);
   const sidebarLocateKbPathRef = useRef<((path: string) => void) | null>(null);
   const bootstrappedRef = useRef(false);
   const roleSwitchGenRef = useRef(0);
@@ -399,22 +396,15 @@ export function useConversationShell({
     await hydrateGroup(id, gen);
   }
 
-  async function saveGroup(patch: {
-    title: string;
-    avatar: string | null;
-    role_ids: string[];
-  }) {
-    if (!settingsGroup) return;
-    const updated = await updateRoom(settingsGroup.id, patch);
+  function syncActiveGroup(room: RoomSummary) {
     setGroupRefreshKey((k) => k + 1);
-    if (activeGroupId === updated.id) {
-      applyGroupSelection(updated.id, updated);
+    if (activeGroupId === room.id) {
+      applyGroupSelection(room.id, room);
     }
   }
 
   async function removeGroup(id: string) {
     await deleteRoom(id);
-    setSettingsGroup(null);
     setGroupRefreshKey((k) => k + 1);
     if (activeGroupId === id) {
       const fallback =
@@ -674,17 +664,6 @@ export function useConversationShell({
           })();
         }}
       />
-      <GroupSettingsModal
-        open={!!settingsGroup}
-        room={settingsGroup}
-        roles={roles}
-        onClose={() => setSettingsGroup(null)}
-        onSave={saveGroup}
-        onDelete={async () => {
-          if (!settingsGroup) return;
-          await removeGroup(settingsGroup.id);
-        }}
-      />
     </>
   );
 
@@ -715,21 +694,7 @@ export function useConversationShell({
     groupRefreshKey,
     selectGroup,
     openCreateGroupModal: () => setShowCreateGroupModal(true),
-    openGroupSettings: (room?: RoomSummary) => {
-      if (room) {
-        setSettingsGroup(room);
-        return;
-      }
-      if (!activeGroupId) return;
-      setSettingsGroup({
-        id: activeGroupId,
-        title: activeGroupTitle || "群聊",
-        kind: "group",
-        avatar: activeGroupAvatar,
-        participant_role_ids: activeGroupParticipants.map((p) => p.id),
-        participants: activeGroupParticipants,
-      });
-    },
+    syncActiveGroup,
     deleteGroup: (room: RoomSummary) => removeGroup(room.id),
     bumpTimeline: () => {
       setTimelineRefreshKey((k) => k + 1);

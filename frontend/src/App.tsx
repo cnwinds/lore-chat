@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { getAuthStatus, getConversation, type SourceRef, type SettingsAttention } from "./api";
+import type { RoomSummary } from "./types/chat";
 import { LoginPage } from "./components/auth/LoginPage";
 import { SetupPage } from "./components/auth/SetupPage";
 import { Chat } from "./components/Chat";
@@ -89,6 +90,7 @@ function AppMain() {
     SourceRef,
     { type: "search" }
   > | null>(null);
+  const [groupEditKey, setGroupEditKey] = useState(0);
 
   const refreshSidebar = () => setSidebarRefreshKey((k) => k + 1);
   const doc = useDocPreviewLayout(refreshSidebar);
@@ -240,6 +242,13 @@ function AppMain() {
     composer.primaryPath,
   ].filter((p): p is string => Boolean(p));
 
+  function openGroupSettings(room?: RoomSummary) {
+    if (room) void conversation.selectGroup(room.id, room);
+    role.expandConfigPanel();
+    setGroupEditKey((k) => k + 1);
+    closeMobileNav();
+  }
+
   return (
     <DocPreviewProvider value={doc.contextValue}>
       <AppShell
@@ -247,6 +256,7 @@ function AppMain() {
         floatFocus={Boolean(doc.floatFocus)}
         hasMergeReview={false}
         mainFloatWide={doc.mainFloatWide}
+        configMode={conversation.activeGroupId ? "group" : "role"}
         mobileLayout={mobileLayout}
         mobileNavOpen={mobileNavOpen}
         onMobileNavClose={closeMobileNav}
@@ -276,7 +286,7 @@ function AppMain() {
             refreshSidebar();
           },
           onNewGroup: conversation.openCreateGroupModal,
-          onEditGroup: (room) => conversation.openGroupSettings(room),
+          onEditGroup: (room) => openGroupSettings(room),
           onDeleteGroup: (room) => conversation.deleteGroup(room),
           onSearchHit: (hit) => {
             conversation.sidebarProps.onSearchHit?.(hit);
@@ -313,11 +323,39 @@ function AppMain() {
         }}
         roleConfigPanelProps={{
           roleId: conversation.activeRoleId || role.activeRoleId,
-          collapsed: conversation.activeGroupId
-            ? true
-            : role.configPanelCollapsed,
+          collapsed: role.configPanelCollapsed,
           onToggleCollapsed: role.toggleConfigPanel,
           onRoleUpdated: role.refreshRoles,
+        }}
+        groupConfigPanelProps={{
+          roomId: conversation.activeGroupId,
+          roles: conversation.roles,
+          seed: conversation.activeGroupId
+            ? {
+                title: conversation.activeGroupTitle,
+                avatar: conversation.activeGroupAvatar,
+                participants: conversation.activeGroupParticipants,
+                participant_role_ids: conversation.activeGroupParticipants.map(
+                  (p) => p.id,
+                ),
+              }
+            : null,
+          collapsed: role.configPanelCollapsed,
+          onToggleCollapsed: role.toggleConfigPanel,
+          editRequestKey: groupEditKey,
+          onSaved: conversation.syncActiveGroup,
+          onDeleted: (id) => {
+            void conversation.deleteGroup({
+              id,
+              title: conversation.activeGroupTitle || "群聊",
+              kind: "group",
+              avatar: conversation.activeGroupAvatar,
+              participant_role_ids: conversation.activeGroupParticipants.map(
+                (p) => p.id,
+              ),
+              participants: conversation.activeGroupParticipants,
+            });
+          },
         }}
         chat={
           <Chat
@@ -336,7 +374,6 @@ function AppMain() {
             roomParticipants={conversation.activeGroupParticipants}
             onRoomInterjectSent={conversation.bumpTimeline}
             onOpenGroup={(id) => conversation.selectGroup(id)}
-            onOpenGroupSettings={() => conversation.openGroupSettings()}
             mobileLayout={mobileLayout}
             mobileHeaderTitle={mobileHeaderTitle}
             onOpenMobileNav={openMobileNav}

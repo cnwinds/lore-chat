@@ -238,7 +238,9 @@ describe("RoleConfigPanel", () => {
     expect(
       await screen.findByText("例行任务是这个角色按时间表定期运行的任务。"),
     ).toBeInTheDocument();
-    expect(screen.getByText("通用的屏幕")).toBeInTheDocument();
+    expect(
+      document.querySelector(".role-config-cover-caption")?.textContent,
+    ).toBe("通用");
     expect(screen.getByRole("button", { name: "创建例行任务" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "收起角色设置" })).toBeInTheDocument();
     expect(document.querySelector(".role-config-routines--empty")).toBeTruthy();
@@ -327,7 +329,9 @@ describe("RoleConfigPanel", () => {
     expect(
       await screen.findByRole("heading", { name: "例行任务" }),
     ).toBeInTheDocument();
-    expect(screen.getByText("通用的屏幕")).toBeInTheDocument();
+    expect(
+      document.querySelector(".role-config-cover-caption")?.textContent,
+    ).toBe("通用");
     expect(
       screen.queryByText("例行任务是这个角色按时间表定期运行的任务。"),
     ).not.toBeInTheDocument();

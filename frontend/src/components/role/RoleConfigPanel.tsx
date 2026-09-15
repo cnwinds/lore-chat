@@ -256,7 +256,7 @@ export function RoleConfigPanel({
                 )}
               </div>
               <div className="role-config-cover-caption">
-                {role?.name}的屏幕
+                {role?.name}
               </div>
             </button>
 
