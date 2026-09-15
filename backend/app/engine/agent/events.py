@@ -65,8 +65,13 @@ def model_selected(model: str, *, candidate_id: str | None = None, failover: boo
         payload["skipped"] = [{"id": i, "reason": r} for i, r in skipped]
     return sse_event("model_selected", payload)
 
-def done(sources, total_duration_ms):
-    return sse_event("done", {"sources": sources, "total_duration_ms": total_duration_ms})
+def done(sources, total_duration_ms, prompt_tokens=None, completion_tokens=None):
+    payload = {"sources": sources, "total_duration_ms": total_duration_ms}
+    if prompt_tokens is not None:
+        payload["prompt_tokens"] = prompt_tokens
+    if completion_tokens is not None:
+        payload["completion_tokens"] = completion_tokens
+    return sse_event("done", payload)
 
 def user_inject(
     inject_id: str,

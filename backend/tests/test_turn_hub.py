@@ -8,6 +8,7 @@ import time
 import pytest
 
 from app.engine.agent.events import done, text_delta, think_delta, tool_result, tool_start
+from app.engine.chat.sse import parse_agent_sse_event
 from app.engine.chat.turn_hub import (
     ActiveTurn,
     TurnExecutionHub,
@@ -137,6 +138,33 @@ async def test_second_subscribe_replays_buffer(tmp_path):
     second = [ev async for ev in hub.subscribe(cid, turn["turn_id"])]
     assert len(second) >= 2
     assert any("event: done" in ev for ev in second)
+    _cancel_purge(hub._by_turn.get(turn["turn_id"]))
+
+
+@pytest.mark.asyncio
+async def test_done_event_includes_chat_tokens_from_usage_store(tmp_path):
+    store = ConversationStore(tmp_path / "c")
+    cid = store.create()
+    turn = store.begin_turn(cid, "hi", "cli-tok", observation_allowed=False)
+
+    class _FakeUsage:
+        def sum_chat_tokens_for_turn(self, turn_id):
+            assert turn_id == turn["turn_id"]
+            return {"prompt_tokens": 12345, "completion_tokens": 678}
+
+    agent = _FakeAgent([text_delta("hello"), done([], 12)])
+    hub = TurnExecutionHub(agent, store, usage_store=_FakeUsage())
+    hub.ensure_running(cid, turn, TurnRunSpec("hi", [], [], None, False))
+    events = [ev async for ev in hub.subscribe(cid, turn["turn_id"])]
+    done_ev = next(ev for ev in events if "event: done" in ev)
+    parsed = parse_agent_sse_event(done_ev)
+    assert parsed is not None
+    _, data = parsed
+    assert data["prompt_tokens"] == 12345
+    assert data["completion_tokens"] == 678
+    assistant = store.get(cid)["messages"][-1]
+    assert assistant["prompt_tokens"] == 12345
+    assert assistant["completion_tokens"] == 678
     _cancel_purge(hub._by_turn.get(turn["turn_id"]))
 
 

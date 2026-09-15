@@ -155,6 +155,7 @@ class ConversationStore:
 
         self.db_path = self.dir / "conversations.db"
         self._lock = threading.RLock()
+        self._usage_store = None
         self.conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         with self._lock:
@@ -165,6 +166,7 @@ class ConversationStore:
             self._ensure_role_id_column()
             self._ensure_message_model_columns()
             self._ensure_message_web_enabled_column()
+            self._ensure_message_token_columns()
             self._ensure_conversation_role_id_column()
             self._ensure_origin_columns()
             from app.engine.rooms.schema import ensure_room_schema
@@ -268,6 +270,18 @@ class ConversationStore:
         }
         if "web_enabled" not in cols:
             self.conn.execute("ALTER TABLE messages ADD COLUMN web_enabled INTEGER")
+
+    def _ensure_message_token_columns(self) -> None:
+        cols = {
+            r[1]
+            for r in self.conn.execute("PRAGMA table_info(messages)").fetchall()
+        }
+        if "prompt_tokens" not in cols:
+            self.conn.execute("ALTER TABLE messages ADD COLUMN prompt_tokens INTEGER")
+        if "completion_tokens" not in cols:
+            self.conn.execute(
+                "ALTER TABLE messages ADD COLUMN completion_tokens INTEGER"
+            )
 
     def _ensure_conversation_role_id_column(self) -> None:
         """Add role_id column to conversations (multi-role support)."""
@@ -485,6 +499,16 @@ class ConversationStore:
             msg["sources"] = _loads(row["sources_json"], [])
         if row["total_duration_ms"] is not None:
             msg["total_duration_ms"] = row["total_duration_ms"]
+        try:
+            if row["prompt_tokens"] is not None:
+                msg["prompt_tokens"] = int(row["prompt_tokens"])
+        except (KeyError, IndexError):
+            pass
+        try:
+            if row["completion_tokens"] is not None:
+                msg["completion_tokens"] = int(row["completion_tokens"])
+        except (KeyError, IndexError):
+            pass
         if row["doc_context_json"] is not None:
             from app.engine.doc_context import normalize_doc_context_items
 
@@ -546,6 +570,61 @@ class ConversationStore:
             pass
         return msg
 
+    def _assistant_turn_ids(self, cid: str, message_ids: list[str]) -> dict[str, str]:
+        ids = [mid for mid in message_ids if mid]
+        if not ids:
+            return {}
+        placeholders = ",".join("?" * len(ids))
+        rows = self.conn.execute(
+            f"""
+            SELECT assistant_message_id, id FROM turns
+            WHERE conversation_id = ? AND assistant_message_id IN ({placeholders})
+            """,
+            (cid, *ids),
+        ).fetchall()
+        return {
+            str(row["assistant_message_id"]): str(row["id"])
+            for row in rows
+            if row["assistant_message_id"]
+        }
+
+    def _attach_usage_tokens(self, cid: str, messages: list[dict]) -> list[dict]:
+        store = self._usage_store
+        lookup = getattr(store, "sum_chat_tokens_for_turns", None)
+        if lookup is None or not messages:
+            return messages
+        missing_ids = [
+            m["id"]
+            for m in messages
+            if m.get("role") == "assistant"
+            and m.get("id")
+            and m.get("prompt_tokens") is None
+            and m.get("completion_tokens") is None
+        ]
+        if not missing_ids:
+            return messages
+        turn_map = self._assistant_turn_ids(cid, missing_ids)
+        if not turn_map:
+            return messages
+        try:
+            sums = lookup(list(dict.fromkeys(turn_map.values())))
+        except Exception:
+            return messages
+        if not sums:
+            return messages
+        for m in messages:
+            tid = turn_map.get(m.get("id") or "")
+            tok = sums.get(tid) if tid else None
+            if tok:
+                m["prompt_tokens"] = tok["prompt_tokens"]
+                m["completion_tokens"] = tok["completion_tokens"]
+        return messages
+
+    def _message_dicts(self, cid: str, rows) -> list[dict]:
+        return self._attach_usage_tokens(
+            cid, [self._message_row_to_dict(r) for r in rows]
+        )
+
     def _load_messages(self, cid: str) -> list[dict]:
         messages, _ = self._load_message_page(cid)
         return messages
@@ -592,7 +671,7 @@ class ConversationStore:
             ).fetchall()
             rows = list(reversed(rows))
             return (
-                [self._message_row_to_dict(r) for r in rows],
+                self._message_dicts(cid, rows),
                 max(0, older_total - len(rows)),
             )
 
@@ -601,7 +680,7 @@ class ConversationStore:
                 "SELECT * FROM messages WHERE conversation_id = ? ORDER BY seq ASC",
                 (cid,),
             ).fetchall()
-            return [self._message_row_to_dict(r) for r in rows], 0
+            return self._message_dicts(cid, rows), 0
 
         take = max(0, int(tail))
         total = int(
@@ -623,7 +702,7 @@ class ConversationStore:
         ).fetchall()
         rows = list(reversed(rows))
         return (
-            [self._message_row_to_dict(r) for r in rows],
+            self._message_dicts(cid, rows),
             max(0, total - len(rows)),
         )
 
@@ -664,7 +743,7 @@ class ConversationStore:
                 """,
                 (cid, seq - before_messages, seq + after_messages),
             ).fetchall()
-        return [self._message_row_to_dict(r) for r in rows]
+            return self._message_dicts(cid, rows)
 
     def _summary_state(self, cid: str) -> tuple[bool, str | None, str | None]:
         return self.summaries.summary_state(cid)
@@ -942,7 +1021,7 @@ class ConversationStore:
         )
         rows = list(reversed(before_rows)) + [anchor] + list(after_rows)
         return (
-            [self._message_row_to_dict(r) for r in rows],
+            self._message_dicts(cid, rows),
             older_count,
             newer_count,
         )

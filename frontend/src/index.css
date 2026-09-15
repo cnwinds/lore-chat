@@ -6695,6 +6695,20 @@ button.memory-fact-statement--jump:focus-visible {
   flex-shrink: 0;
 }
 
+.chat-meta-tokens {
+  margin-top: 2px;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+@media (max-width: 768px) {
+  .chat-meta-tokens {
+    display: none;
+  }
+}
+
 .chat-retry-btn {
   display: inline-flex;
   align-items: center;

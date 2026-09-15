@@ -134,6 +134,19 @@ describe("reduceStreamEvent serverTimeline + deltas", () => {
     expect(textBlock).toMatchObject({ type: "text", content: "前言" });
   });
 
+  it("copies prompt/completion tokens from done onto the assistant message", () => {
+    const state = baseState();
+    const result = reduceStreamEvent(state, "done", {
+      sources: [],
+      total_duration_ms: 1200,
+      prompt_tokens: 12345,
+      completion_tokens: 678,
+    });
+    expect(result.state.assistant.prompt_tokens).toBe(12345);
+    expect(result.state.assistant.completion_tokens).toBe(678);
+    expect(result.state.assistant.total_duration_ms).toBe(1200);
+  });
+
   it("does not locally apply assistant_visible_set after timeline_state", () => {
     const state = baseState();
     let result = reduceStreamEvent(state, "timeline_state", {

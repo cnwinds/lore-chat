@@ -161,6 +161,75 @@ def test_migrate_per_1k_to_per_1m(tmp_path):
     store.close()
 
 
+def test_sum_chat_tokens_for_turns_ignores_embed_and_unknown(tmp_path):
+    store = UsageStore(tmp_path / "usage.db")
+    rec = UsageRecorder(store)
+    rec.record(
+        model="m1",
+        kind="stream_tools",
+        prompt_tokens=100,
+        completion_tokens=20,
+        tokens_known=True,
+        status="ok",
+        turn_id="t1",
+    )
+    rec.record(
+        model="m1",
+        kind="chat",
+        prompt_tokens=10,
+        completion_tokens=2,
+        tokens_known=True,
+        status="ok",
+        turn_id="t1",
+    )
+    rec.record(
+        model="emb",
+        kind="embed",
+        prompt_tokens=999,
+        completion_tokens=0,
+        tokens_known=True,
+        status="ok",
+        turn_id="t1",
+    )
+    rec.record(
+        model="m1",
+        kind="stream_tools",
+        prompt_tokens=50,
+        completion_tokens=5,
+        tokens_known=False,
+        status="ok",
+        turn_id="t1",
+    )
+    rec.record(
+        model="m1",
+        kind="stream_tools",
+        prompt_tokens=50,
+        completion_tokens=5,
+        tokens_known=True,
+        status="error",
+        turn_id="t1",
+    )
+    rec.record(
+        model="m1",
+        kind="stream_tools",
+        prompt_tokens=7,
+        completion_tokens=1,
+        tokens_known=True,
+        status="ok",
+        turn_id="t2",
+    )
+    sums = store.sum_chat_tokens_for_turns(["t1", "t2", "missing"])
+    assert sums["t1"] == {"prompt_tokens": 110, "completion_tokens": 22}
+    assert sums["t2"] == {"prompt_tokens": 7, "completion_tokens": 1}
+    assert "missing" not in sums
+    assert store.sum_chat_tokens_for_turn("t1") == {
+        "prompt_tokens": 110,
+        "completion_tokens": 22,
+    }
+    assert store.sum_chat_tokens_for_turn("missing") is None
+    store.close()
+
+
 def test_usage_unknown_tokens_no_fake_cost(tmp_path):
     store = UsageStore(tmp_path / "usage.db")
     rec = UsageRecorder(store)

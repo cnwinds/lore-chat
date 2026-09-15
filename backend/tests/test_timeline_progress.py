@@ -80,6 +80,23 @@ def test_interrupted_payload_marks_running_tools():
     assert "连接中断" in payload["timeline"][0]["summary"]
 
 
+def test_done_tokens_land_in_assistant_payload():
+    acc = TimelineAccumulator()
+    acc.accumulate(
+        "done",
+        {
+            "sources": [],
+            "total_duration_ms": 1200,
+            "prompt_tokens": 12345,
+            "completion_tokens": 678,
+        },
+    )
+    payload = acc.assistant_payload("complete")
+    assert payload["prompt_tokens"] == 12345
+    assert payload["completion_tokens"] == 678
+    assert payload["total_duration_ms"] == 1200
+
+
 def test_error_payload_fills_text_and_status():
     acc = TimelineAccumulator()
     payload = acc.assistant_payload("interrupted", error="网关超时")

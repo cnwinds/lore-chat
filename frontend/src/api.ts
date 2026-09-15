@@ -483,6 +483,7 @@ export {
   normalizeDocContext,
   getMessageCopyText,
   formatDuration,
+  formatMessageTokens,
   computeCumulative,
   dedupeSources,
   titleFromText,

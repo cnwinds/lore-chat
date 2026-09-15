@@ -143,6 +143,10 @@ export type ChatMessage = {
   status?: "complete" | "interrupted" | "error" | string;
   /** 本轮回复总耗时（毫秒），来自 SSE done 事件 */
   total_duration_ms?: number;
+  /** 本轮对话模型输入 token（含缓存命中） */
+  prompt_tokens?: number;
+  /** 本轮对话模型输出 token */
+  completion_tokens?: number;
   /** 本轮实际使用的模型名 */
   model_name?: string;
   /** 是否因冷却/禁用/本轮失败排除而切换到更低优先级 */
