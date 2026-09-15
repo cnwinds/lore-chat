@@ -64,6 +64,16 @@ describe("kb sidebar chrome", () => {
       /\.app-shell--three-pane \.main-panel\s*\{[^}]*margin-left:\s*12px;/,
     );
   });
+
+  it("keeps the knowledge-base splitters on the same hit size", () => {
+    expect(css).toMatch(/--app-split-hit:\s*6px;/);
+    expect(css).toMatch(
+      /\.app-shell-left-resizer\s*\{[^}]*width:\s*var\(--app-split-hit\);/,
+    );
+    expect(css).toMatch(
+      /\.app-shell-left-v-resizer::after\s*\{[^}]*height:\s*var\(--app-split-hit\);/,
+    );
+  });
 });
 
 describe("group avatar collage", () => {

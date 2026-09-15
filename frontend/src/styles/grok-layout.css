@@ -9,6 +9,7 @@
 .app-shell--three-pane {
   --app-config-col: 300px;
   --app-doc-col: 0px;
+  --app-split-hit: 6px;
   position: relative;
   display: grid;
   grid-template-columns:
@@ -48,25 +49,53 @@
   flex-direction: column;
   background: var(--bg-surface);
   border-right: 1px solid var(--border);
-  overflow: hidden;
+  overflow: visible;
+}
+
+.app-shell-left-resizer,
+.app-shell-left-v-resizer {
+  z-index: 6;
+  touch-action: none;
 }
 
 .app-shell-left-resizer {
   position: absolute;
   top: 0;
-  right: -3px;
-  z-index: 6;
-  width: 6px;
+  right: calc(var(--app-split-hit) / -2);
+  width: var(--app-split-hit);
   height: 100%;
   cursor: col-resize;
-  touch-action: none;
+}
+
+.app-shell-left-v-resizer {
+  flex: 0 0 0;
+  position: relative;
+  width: 100%;
+  height: 0;
+  cursor: row-resize;
+}
+
+.app-shell-left-v-resizer::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 1px;
+  background: var(--border);
+}
+
+.app-shell-left-v-resizer::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(var(--app-split-hit) / -2);
+  height: var(--app-split-hit);
 }
 
 .app-shell-left-resizer:hover,
-.app-shell--left-resizing .app-shell-left-resizer {
-  background: color-mix(in srgb, var(--accent) 40%, transparent);
-}
-
+.app-shell--left-resizing .app-shell-left-resizer,
 .app-shell-left-v-resizer:hover::after,
 .app-shell--left-split-resizing .app-shell-left-v-resizer::after {
   background: color-mix(in srgb, var(--accent) 40%, transparent);
@@ -77,25 +106,7 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-}
-
-.app-shell-left-v-resizer {
-  flex: 0 0 0;
-  position: relative;
-  z-index: 3;
-  width: 100%;
-  height: 0;
-  cursor: row-resize;
-  touch-action: none;
-}
-
-.app-shell-left-v-resizer::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: -4px;
-  height: 8px;
+  overflow: hidden;
 }
 
 .app-shell--three-pane .main-panel {
