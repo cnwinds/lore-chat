@@ -9,7 +9,8 @@
 .app-shell--three-pane {
   --app-config-col: 300px;
   --app-doc-col: 0px;
-  --app-split-gap: 12px;
+  --app-chat-inset: 12px;
+  --app-split-hit: 6px;
   position: relative;
   display: grid;
   grid-template-columns:
@@ -56,30 +57,64 @@
 .app-shell-left-v-resizer {
   z-index: 6;
   touch-action: none;
-  background: var(--bg-app);
+  background: transparent;
 }
 
 .app-shell-left-resizer {
   position: absolute;
   top: 0;
-  right: calc(var(--app-split-gap) * -1);
-  width: var(--app-split-gap);
+  right: calc(var(--app-split-hit) / -2);
+  width: var(--app-split-hit);
   height: 100%;
   cursor: col-resize;
 }
 
 .app-shell-left-v-resizer {
-  flex: 0 0 var(--app-split-gap);
+  flex: 0 0 0;
+  position: relative;
   width: 100%;
-  height: var(--app-split-gap);
+  height: 0;
   cursor: row-resize;
 }
 
-.app-shell-left-resizer:hover,
-.app-shell--left-resizing .app-shell-left-resizer,
-.app-shell-left-v-resizer:hover,
-.app-shell--left-split-resizing .app-shell-left-v-resizer {
-  background: color-mix(in srgb, var(--accent) 22%, var(--bg-app));
+.app-shell-left-resizer::before,
+.app-shell-left-v-resizer::before {
+  content: "";
+  position: absolute;
+  background: transparent;
+  pointer-events: none;
+}
+
+.app-shell-left-resizer::before {
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  transform: translateX(-50%);
+}
+
+.app-shell-left-v-resizer::before {
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 1px;
+  transform: translateY(-50%);
+}
+
+.app-shell-left-v-resizer::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(var(--app-split-hit) / -2);
+  height: var(--app-split-hit);
+}
+
+.app-shell-left-resizer:hover::before,
+.app-shell--left-resizing .app-shell-left-resizer::before,
+.app-shell-left-v-resizer:hover::before,
+.app-shell--left-split-resizing .app-shell-left-v-resizer::before {
+  background: color-mix(in srgb, var(--accent) 50%, var(--border));
 }
 
 .app-shell-left-split {
@@ -95,7 +130,7 @@
   grid-row: 1;
   min-width: 0;
   min-height: 0;
-  margin-left: var(--app-split-gap);
+  margin-left: var(--app-chat-inset);
   background: var(--bg-app);
 }
 
@@ -125,7 +160,6 @@
 .app-shell-left-split .role-list {
   flex: 0 0 calc(var(--app-left-role-share, 0.46) * 100%);
   min-height: 120px;
-  border-bottom: 1px solid var(--border);
 }
 
 .role-list-toolbar {

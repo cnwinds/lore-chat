@@ -386,30 +386,17 @@
 
 * {
   box-sizing: border-box;
-  scrollbar-width: thin;
-  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+  scrollbar-width: none;
 }
 
 *::-webkit-scrollbar {
-  width: 7px;
-  height: 7px;
+  width: 0;
+  height: 0;
+  background: transparent;
 }
 
-*::-webkit-scrollbar-track {
-  background: var(--scrollbar-track);
-}
-
-*::-webkit-scrollbar-thumb {
-  background-color: var(--scrollbar-thumb);
-  border-radius: 999px;
-  border: 2px solid transparent;
-  background-clip: padding-box;
-}
-
-*::-webkit-scrollbar-thumb:hover {
-  background-color: var(--scrollbar-thumb-hover);
-}
-
+*::-webkit-scrollbar-track,
+*::-webkit-scrollbar-thumb,
 *::-webkit-scrollbar-corner {
   background: transparent;
 }
@@ -2461,7 +2448,6 @@ a:hover {
   flex-shrink: 0;
   background: var(--bg-muted);
   overflow-x: auto;
-  scrollbar-width: thin;
 }
 
 .settings-tab {

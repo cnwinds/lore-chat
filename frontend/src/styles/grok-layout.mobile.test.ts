@@ -57,25 +57,25 @@ describe("mobile three-pane grid", () => {
 });
 
 describe("kb sidebar chrome", () => {
-  it("insets the knowledge tree and leaves a canvas gutter before chat", () => {
+  it("insets the knowledge tree and leaves a quiet canvas before chat", () => {
     expect(css).toMatch(/\.kb-sidebar-head\s*\{[^}]*padding:\s*8px 12px 6px;/);
     expect(css).toMatch(/\.kb-sidebar-scroll\s*\{[^}]*padding:\s*4px 12px 12px;/);
-    expect(css).toMatch(/--app-split-gap:\s*12px;/);
+    expect(css).toMatch(/--app-chat-inset:\s*12px;/);
     expect(css).toMatch(
-      /\.app-shell--three-pane \.main-panel\s*\{[^}]*margin-left:\s*var\(--app-split-gap\);/,
+      /\.app-shell--three-pane \.main-panel\s*\{[^}]*margin-left:\s*var\(--app-chat-inset\);/,
     );
   });
 
-  it("keeps the knowledge-base splitters on the same canvas gap", () => {
+  it("keeps splitters as the same invisible hit target", () => {
+    expect(css).toMatch(/--app-split-hit:\s*6px;/);
     expect(css).toMatch(
-      /\.app-shell-left-resizer\s*\{[^}]*width:\s*var\(--app-split-gap\);/,
+      /\.app-shell-left-resizer\s*\{[^}]*width:\s*var\(--app-split-hit\);/,
     );
     expect(css).toMatch(
-      /\.app-shell-left-v-resizer\s*\{[^}]*flex:\s*0 0 var\(--app-split-gap\);/,
+      /\.app-shell-left-v-resizer::after\s*\{[^}]*height:\s*var\(--app-split-hit\);/,
     );
-    expect(css).toMatch(
-      /\.app-shell-left-v-resizer\s*\{[^}]*height:\s*var\(--app-split-gap\);/,
-    );
+    expect(css).toMatch(/\.app-shell-left-v-resizer\s*\{[^}]*flex:\s*0 0 0;/);
+    expect(css).not.toMatch(/--app-split-gap:/);
   });
 });
 

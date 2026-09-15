@@ -28,6 +28,14 @@ describe("chat bubble chrome", () => {
   });
 });
 
+describe("overlay scrollbars", () => {
+  it("hides native scrollbars so they do not occupy layout", () => {
+    expect(css).toMatch(/\*\s*\{[^}]*scrollbar-width:\s*none;/);
+    expect(css).toMatch(/\*::-webkit-scrollbar\s*\{[^}]*width:\s*0;/);
+    expect(css).not.toMatch(/\*\s*\{[^}]*scrollbar-width:\s*thin;/);
+  });
+});
+
 describe("fold chevron", () => {
   it("rotates a shared stroke chevron and respects reduced motion", () => {
     expect(css).toMatch(/\.fold-chevron\.is-open svg\s*\{[^}]*rotate\(90deg\)/);
