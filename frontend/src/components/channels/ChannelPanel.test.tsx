@@ -146,7 +146,7 @@ beforeEach(() => {
 });
 
 function renderPanel() {
-  return render(<ChannelPanel open onRequestClose={() => undefined} />);
+  return render(<ChannelPanel onClose={() => undefined} />);
 }
 
 async function goCreateScript(user: ReturnType<typeof userEvent.setup>) {
@@ -159,7 +159,7 @@ describe("ChannelPanel", () => {
     renderPanel();
     expect(await screen.findByText("还没有聊天通道")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "添加通道" })).toBeInTheDocument();
-    expect(screen.getByText("聊天通道")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "聊天通道" })).toBeInTheDocument();
     expect(screen.queryByText("开放接口")).toBeNull();
   });
 
@@ -180,7 +180,7 @@ describe("ChannelPanel", () => {
         name: "周报脚本",
       });
     });
-    expect(await screen.findByText("悬浮窗 · 密钥可复制 · Tab 直接点开")).toBeInTheDocument();
+    expect(await screen.findByText("密钥可复制 · Tab 直接点开")).toBeInTheDocument();
     expect(screen.queryByText("只显示这一次，请立刻复制保存。")).toBeNull();
   });
 
@@ -393,26 +393,20 @@ describe("ChannelPanel", () => {
     });
   });
 
-  it("renders as a floating dialog and closes via X, Escape, or click-outside", async () => {
+  it("uses the kb-float content chrome and closes via X or Escape", async () => {
     const user = userEvent.setup();
-    const onRequestClose = vi.fn();
-    render(
-      <div>
-        <button type="button">outside</button>
-        <ChannelPanel open onRequestClose={onRequestClose} />
-      </div>,
-    );
-    expect(await screen.findByRole("dialog", { name: "聊天通道" })).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "关闭聊天通道" }));
-    expect(onRequestClose).toHaveBeenCalledTimes(1);
+    const onClose = vi.fn();
+    const { container } = render(<ChannelPanel onClose={onClose} />);
+    expect(await screen.findByLabelText("聊天通道")).toBeInTheDocument();
+    expect(container.querySelector(".kb-float-panel")).not.toBeNull();
+    expect(container.querySelector(".kb-float-header")).not.toBeNull();
+    expect(container.querySelector(".channel-float")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "关闭" }));
+    expect(onClose).toHaveBeenCalledTimes(1);
 
-    onRequestClose.mockClear();
+    onClose.mockClear();
     await user.keyboard("{Escape}");
-    expect(onRequestClose).toHaveBeenCalledTimes(1);
-
-    onRequestClose.mockClear();
-    await user.click(screen.getByRole("button", { name: "outside" }));
-    expect(onRequestClose).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it("keeps shared personas collapsed until opened", async () => {

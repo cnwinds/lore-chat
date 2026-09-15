@@ -9,6 +9,7 @@ import { ShareLinkModal, type ShareLinkModalTarget } from "./components/share/Sh
 import { SharePage } from "./pages/SharePage";
 import { parseSharePathname } from "./api/share";
 import { AppShell } from "./components/app/AppShell";
+import { ChannelFloatLayer } from "./components/app/ChannelFloatLayer";
 import { DocFloatLayer } from "./components/app/DocFloatLayer";
 import { DocPinnedPanel } from "./components/app/DocPinnedPanel";
 import { DocPreviewProvider } from "./contexts/DocPreviewContext";
@@ -80,7 +81,6 @@ function AppMain() {
   const [liveAttention, setLiveAttention] = useState<SettingsAttention | null>(
     null,
   );
-  const [channelsOpen, setChannelsOpen] = useState(false);
   useEffect(() => {
     refreshAttention();
   }, [settingsOpen, refreshAttention]);
@@ -255,9 +255,9 @@ function AppMain() {
           setSettingsOpen(true);
           closeMobileNav();
         }}
-        channelsOpen={channelsOpen}
+        channelsOpen={doc.showChannelPanel}
         onToggleChannels={() => {
-          setChannelsOpen((open) => !open);
+          doc.openChannelPanel();
           closeMobileNav();
         }}
         roleListProps={{
@@ -412,6 +412,12 @@ function AppMain() {
               onRequestClose={doc.requestCloseFloatPreview}
               onPin={bridge.handlePinDoc}
               {...floatDocHandlers}
+            />
+          ) : doc.showChannelPanel ? (
+            <ChannelFloatLayer
+              docWidth={doc.floatWidth}
+              onClose={doc.closeChannelPanel}
+              onToggleWidth={doc.toggleFloatWidth}
             />
           ) : null
         }

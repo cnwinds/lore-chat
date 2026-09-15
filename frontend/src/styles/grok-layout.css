@@ -1807,20 +1807,4 @@ select.role-config-input {
   .app-shell--mobile .role-config-panel {
     display: none;
   }
-
-  .app-shell--mobile .channel-float-layer {
-    z-index: 130;
-  }
-
-  .app-shell--mobile .channel-float-scrim {
-    left: 0;
-  }
-
-  .app-shell--mobile .channel-float {
-    left: 12px;
-    right: 12px;
-    width: auto;
-    bottom: 12px;
-    max-height: min(720px, calc(100vh - 24px));
-  }
 }

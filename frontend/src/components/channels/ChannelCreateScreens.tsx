@@ -3,7 +3,6 @@ import type { ApiPersona } from "../../api/openApi";
 import type { ChannelType } from "../../api/channelPlugins";
 import {
   canSubmitCreateKey,
-  createLead,
   type CreateKeyDraft,
   type VoiceMode,
 } from "../settings/openApiSettingsModel";
@@ -12,13 +11,11 @@ import { TYPE_MARK } from "./channelUiModel";
 export function PickTypeScreen({
   types,
   busy,
-  error,
   onBack,
   onPick,
 }: {
   types: ChannelType[];
   busy: boolean;
-  error: string | null;
   onBack: () => void;
   onPick: (typeId: string) => void;
 }) {
@@ -39,13 +36,6 @@ export function PickTypeScreen({
       <button type="button" className="openapi-back" onClick={onBack}>
         ← 返回
       </button>
-      <header className="channel-panel-header">
-        <div>
-          <h3 className="channel-panel-title">添加通道</h3>
-          <p className="channel-panel-lead">先选类型。未实现的会标明即将支持。</p>
-        </div>
-      </header>
-      {error ? <p className="settings-panel-error">{error}</p> : null}
       <ul className="openapi-type-grid">
         {cards.map((item) => (
           <li key={item.type_id}>
@@ -260,7 +250,6 @@ export function CreateKeyScreen({
   personas,
   roles,
   busy,
-  error,
   typeId,
   typeLabel: selectedType,
   onChange,
@@ -271,7 +260,6 @@ export function CreateKeyScreen({
   personas: ApiPersona[];
   roles: RoleSummary[];
   busy: boolean;
-  error: string | null;
   typeId: string;
   typeLabel: string;
   onChange: (next: CreateKeyDraft) => void;
@@ -301,13 +289,6 @@ export function CreateKeyScreen({
       <button type="button" className="openapi-back" onClick={onBack}>
         ← 返回
       </button>
-      <header className="channel-panel-header">
-        <div>
-          <h3 className="channel-panel-title">添加{selectedType}</h3>
-          <p className="channel-panel-lead">{createLead(typeId)}</p>
-        </div>
-      </header>
-      {error ? <p className="settings-panel-error">{error}</p> : null}
       <form
         className="openapi-form"
         onSubmit={(e) => {

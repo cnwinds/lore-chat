@@ -97,7 +97,7 @@ export function ChannelDetails({
   return (
     <div className="channel-details">
       <div
-        className="channel-seg"
+        className="channel-details-tabs"
         role="tablist"
         aria-label={`${inst.name} 通道页签`}
       >
@@ -110,7 +110,7 @@ export function ChannelDetails({
               role="tab"
               aria-selected={pressed}
               aria-pressed={pressed}
-              className={`channel-seg-btn${pressed ? " channel-seg-btn--active" : ""}`}
+              className={`settings-tab${pressed ? " settings-tab--active" : ""}`}
               onClick={() => onToggleTab(item.id)}
             >
               {item.label}

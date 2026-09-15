@@ -1,5 +1,6 @@
 import { MediaGalleryPanel } from "../media/MediaGalleryPanel";
 import type { DocWidth } from "../../types/doc";
+import { KbFloatLayer } from "./KbFloatLayer";
 
 type Props = {
   directory: string;
@@ -20,26 +21,15 @@ export function MediaGalleryFloatLayer({
   onToggleWidth,
 }: Props) {
   return (
-    <>
-      <div
-        className="doc-float-backdrop"
-        aria-hidden
-        onClick={onClose}
+    <KbFloatLayer onClose={onClose}>
+      <MediaGalleryPanel
+        directory={directory}
+        refreshKey={refreshKey}
+        paths={paths}
+        docWidth={docWidth}
+        onClose={onClose}
+        onToggleWidth={onToggleWidth}
       />
-      <div
-        className="doc-float-panel"
-        onClick={(e) => e.stopPropagation()}
-        onMouseDown={(e) => e.stopPropagation()}
-      >
-        <MediaGalleryPanel
-          directory={directory}
-          refreshKey={refreshKey}
-          paths={paths}
-          docWidth={docWidth}
-          onClose={onClose}
-          onToggleWidth={onToggleWidth}
-        />
-      </div>
-    </>
+    </KbFloatLayer>
   );
 }

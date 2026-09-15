@@ -40,6 +40,7 @@ export function useDocPreviewLayout(refreshSidebar: () => void) {
   const [mediaFolderPath, setMediaFolderPath] = useState<string | null>(null);
   const [mediaRefreshKey, setMediaRefreshKey] = useState(0);
   const [memoryPanelOpen, setMemoryPanelOpen] = useState(false);
+  const [channelPanelOpen, setChannelPanelOpen] = useState(false);
   const floatCloseRef = useRef<(() => void) | null>(null);
   const pinnedCloseRef = useRef<(() => void) | null>(null);
 
@@ -74,6 +75,7 @@ export function useDocPreviewLayout(refreshSidebar: () => void) {
     setPinnedFocus(false);
     setMediaFolderPath(null);
     setMemoryPanelOpen(false);
+    setChannelPanelOpen(false);
     setSidebarCollapsed(false);
   }
 
@@ -83,6 +85,10 @@ export function useDocPreviewLayout(refreshSidebar: () => void) {
 
   function closeMemoryPanel() {
     setMemoryPanelOpen(false);
+  }
+
+  function closeChannelPanel() {
+    setChannelPanelOpen(false);
   }
 
   /** 打开媒体目录图库（聊天区左侧浮窗，与文档浮窗同槽；保留右侧 pinned）。 */
@@ -97,6 +103,7 @@ export function useDocPreviewLayout(refreshSidebar: () => void) {
     setFloatHighlight(undefined);
     setFloatFocus(false);
     setMemoryPanelOpen(false);
+    setChannelPanelOpen(false);
     setMediaFolderPath(norm);
     // 图库默认宽浮窗，便于瓦片排布（不持久化，避免覆盖文档浮窗偏好）
     setFloatWidth("wide");
@@ -112,7 +119,23 @@ export function useDocPreviewLayout(refreshSidebar: () => void) {
     setFloatHighlight(undefined);
     setFloatFocus(false);
     setMediaFolderPath(null);
+    setChannelPanelOpen(false);
     setMemoryPanelOpen(true);
+    setFloatWidth("wide");
+  }
+
+  /** 打开聊天通道浮窗（与媒体/记忆/文档浮窗同槽；保留右侧 pinned）。 */
+  function openChannelPanel() {
+    if (channelPanelOpen) {
+      closeChannelPanel();
+      return;
+    }
+    setFloatPath(null);
+    setFloatHighlight(undefined);
+    setFloatFocus(false);
+    setMediaFolderPath(null);
+    setMemoryPanelOpen(false);
+    setChannelPanelOpen(true);
     setFloatWidth("wide");
   }
 
@@ -155,6 +178,7 @@ export function useDocPreviewLayout(refreshSidebar: () => void) {
     if (wantPin) {
       setMediaFolderPath(null);
       setMemoryPanelOpen(false);
+      setChannelPanelOpen(false);
       setPinnedPath(path);
       setPinnedHighlight(excerpt);
       setPinnedWidth(getStoredPanelWidth());
@@ -168,6 +192,7 @@ export function useDocPreviewLayout(refreshSidebar: () => void) {
 
     setMediaFolderPath(null);
     setMemoryPanelOpen(false);
+    setChannelPanelOpen(false);
     setFloatPath(path);
     setFloatHighlight(excerpt);
     setFloatFocus(false);
@@ -178,6 +203,7 @@ export function useDocPreviewLayout(refreshSidebar: () => void) {
     if (!floatPath) return;
     setMediaFolderPath(null);
     setMemoryPanelOpen(false);
+    setChannelPanelOpen(false);
     setPinnedPath(floatPath);
     setPinnedHighlight(floatHighlight);
     setPinnedWidth(getStoredPanelWidth());
@@ -188,6 +214,7 @@ export function useDocPreviewLayout(refreshSidebar: () => void) {
     if (!pinnedPath) return;
     setMediaFolderPath(null);
     setMemoryPanelOpen(false);
+    setChannelPanelOpen(false);
     setFloatPath(pinnedPath);
     setFloatHighlight(pinnedHighlight);
     setFloatFocus(false);
@@ -269,10 +296,14 @@ export function useDocPreviewLayout(refreshSidebar: () => void) {
   const showPinned = Boolean(pinnedPath);
   const showMediaGallery = Boolean(mediaFolderPath);
   const showMemoryPanel = memoryPanelOpen;
+  const showChannelPanel = channelPanelOpen;
   const panelFocus = Boolean(pinnedFocus && pinnedPath);
   const floatFocusActive = Boolean(floatFocus && floatPath);
   const mainFloatWide = Boolean(
-    ((floatPath && !floatFocus) || mediaFolderPath || memoryPanelOpen) &&
+    ((floatPath && !floatFocus) ||
+      mediaFolderPath ||
+      memoryPanelOpen ||
+      channelPanelOpen) &&
       floatWidth === "wide",
   );
 
@@ -291,6 +322,7 @@ export function useDocPreviewLayout(refreshSidebar: () => void) {
     mediaFolderPath,
     mediaRefreshKey,
     memoryPanelOpen,
+    channelPanelOpen,
     /** 聊天来源高亮用右侧栏文档 */
     previewPath: pinnedPath,
     sidebarCollapsed,
@@ -303,12 +335,14 @@ export function useDocPreviewLayout(refreshSidebar: () => void) {
     closePinnedPreview,
     closeMediaFolder,
     closeMemoryPanel,
+    closeChannelPanel,
     closeAllPreviews,
     refreshKb,
     remapOpenPath,
     openDocPreview,
     openMediaFolder,
     openMemoryPanel,
+    openChannelPanel,
     pinDocPreview,
     unpinDocPreview,
     toggleFloatWidth,
@@ -323,6 +357,7 @@ export function useDocPreviewLayout(refreshSidebar: () => void) {
     showPinned,
     showMediaGallery,
     showMemoryPanel,
+    showChannelPanel,
     mainFloatWide,
     contextValue: {
       previewPath: pinnedPath,
