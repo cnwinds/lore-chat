@@ -1,4 +1,5 @@
-export const THEME_IDS = ["celadon", "ink", "iris", "beige"] as const;
+/** 菜单从上到下：由亮到暗。 */
+export const THEME_IDS = ["iris", "celadon", "beige", "ink", "violet"] as const;
 
 export type Theme = (typeof THEME_IDS)[number];
 export type ThemeTone = "light" | "dark";
@@ -11,10 +12,11 @@ export type ThemeMeta = {
 };
 
 export const THEME_CATALOG: Record<Theme, ThemeMeta> = {
-  celadon: { label: "青瓷", tone: "light", swatches: ["#e7eeea", "#c44536"] },
-  ink: { label: "墨砚", tone: "dark", swatches: ["#101614", "#e07064"] },
   iris: { label: "紫藤", tone: "light", swatches: ["#f3f4f6", "#5b5bd6"] },
+  celadon: { label: "青瓷", tone: "light", swatches: ["#e7eeea", "#c44536"] },
   beige: { label: "米色", tone: "light", swatches: ["#ede4d2", "#7a3e2b"] },
+  ink: { label: "墨砚", tone: "dark", swatches: ["#101614", "#e07064"] },
+  violet: { label: "夜紫", tone: "dark", swatches: ["#0f1117", "#7b7bf0"] },
 };
 
 export const STORAGE_KEY = "kb-theme";

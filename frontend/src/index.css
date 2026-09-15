@@ -317,6 +317,73 @@
   --editor-selection-block-border: rgba(122, 62, 43, 0.62);
 }
 
+/* 夜紫：近黑底、紫藤强调（改版前的暗色） */
+[data-theme="violet"] {
+  color-scheme: dark;
+  --bg-app: #0f1117;
+  --bg: var(--bg-app);
+  --bg-surface: #1a1d26;
+  --bg-muted: #151820;
+  --bg-hover: #22263a;
+  --bg-subtle: #1e222c;
+
+  --border: #2a2f3a;
+  --border-strong: #363c48;
+
+  --text: #e8eaed;
+  --text-secondary: #9aa3b0;
+  --text-muted: #6b7380;
+  --text-on-accent: #ffffff;
+
+  --glaze: #7b7bf0;
+  --glaze-soft: rgba(123, 123, 240, 0.16);
+  --seal-gold: #f59e0b;
+  --seal-gold-soft: rgba(245, 158, 11, 0.14);
+
+  --accent: #7b7bf0;
+  --accent-hover: #9292f5;
+  --accent-soft: rgba(123, 123, 240, 0.14);
+  --accent-border: rgba(123, 123, 240, 0.32);
+  --accent-focus: rgba(123, 123, 240, 0.18);
+
+  --user-bubble: rgba(123, 123, 240, 0.12);
+  --assistant-bubble: #1a1d26;
+
+  --code-bg: #12151c;
+  --code-border: #2a3040;
+  --code-text: #d4d8e0;
+  --code-inline-bg: #1c2028;
+  --code-comment: #6b7380;
+  --highlight-bg: rgba(123, 123, 240, 0.2);
+  --highlight-border: rgba(123, 123, 240, 0.4);
+  --highlight-code-bg: rgba(123, 123, 240, 0.16);
+
+  --danger: #f87171;
+  --danger-text: #fca5a5;
+  --danger-bg: rgba(220, 38, 38, 0.12);
+  --danger-border: rgba(220, 38, 38, 0.28);
+
+  --system-layer: #f59e0b;
+  --system-layer-soft: rgba(245, 158, 11, 0.14);
+  --kb-special-bg: rgba(148, 163, 184, 0.12);
+  --kb-special-bg-hover: rgba(148, 163, 184, 0.18);
+
+  --backdrop: rgba(0, 0, 0, 0.6);
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.24);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.4);
+  --shadow-panel: -2px 0 16px rgba(0, 0, 0, 0.28);
+
+  --scrollbar-track: transparent;
+  --scrollbar-thumb: rgba(154, 163, 176, 0.22);
+  --scrollbar-thumb-hover: rgba(123, 123, 240, 0.55);
+
+  --editor-caret: #f0f0ff;
+  --editor-selection-bg: rgba(123, 123, 240, 0.42);
+  --editor-selection-block-bg: rgba(123, 123, 240, 0.22);
+  --editor-selection-block-border: rgba(168, 168, 255, 0.78);
+}
+
 * {
   box-sizing: border-box;
   scrollbar-width: thin;

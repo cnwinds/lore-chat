@@ -1,7 +1,7 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
-import { STORAGE_KEY, applyTheme } from "../theme";
+import { STORAGE_KEY } from "../theme";
 import { ThemeToggle } from "./ThemeToggle";
 
 afterEach(() => {
@@ -12,19 +12,21 @@ afterEach(() => {
 });
 
 describe("ThemeToggle", () => {
-  it("opens a menu of four palettes from the theme button", async () => {
+  it("opens a menu of palettes ordered from light to dark", async () => {
     const user = userEvent.setup();
     render(<ThemeToggle compact />);
     await user.click(screen.getByRole("button", { name: /主题/ }));
     const menu = screen.getByRole("menu", { name: "选择主题" });
     expect(menu).toBeInTheDocument();
+    expect(
+      screen.getAllByRole("menuitemradio").map(
+        (el) => el.querySelector(".theme-menu-swatch + span")?.textContent,
+      ),
+    ).toEqual(["紫藤", "青瓷", "米色", "墨砚", "夜紫"]);
     expect(screen.getByRole("menuitemradio", { name: "青瓷" })).toHaveAttribute(
       "aria-checked",
       "true",
     );
-    expect(screen.getByRole("menuitemradio", { name: "墨砚" })).toBeInTheDocument();
-    expect(screen.getByRole("menuitemradio", { name: "紫藤" })).toBeInTheDocument();
-    expect(screen.getByRole("menuitemradio", { name: "米色" })).toBeInTheDocument();
   });
 
   it("applies and persists the chosen palette", async () => {
@@ -56,10 +58,14 @@ describe("ThemeToggle", () => {
     ).toBeInTheDocument();
   });
 
-  it("shows the restored palette after a stored iris value", () => {
-    localStorage.setItem(STORAGE_KEY, "iris");
-    applyTheme("iris");
+  it("applies the black-and-purple palette", async () => {
+    const user = userEvent.setup();
     render(<ThemeToggle />);
-    expect(screen.getByRole("button", { name: /当前为紫藤/ })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /选择主题/ }));
+    await user.click(screen.getByRole("menuitemradio", { name: "夜紫" }));
+    expect(localStorage.getItem(STORAGE_KEY)).toBe("violet");
+    expect(document.documentElement.dataset.theme).toBe("violet");
+    expect(document.documentElement.dataset.themeTone).toBe("dark");
+    expect(screen.getByRole("button", { name: /当前为夜紫/ })).toBeInTheDocument();
   });
 });
