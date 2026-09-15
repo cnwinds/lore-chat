@@ -5957,7 +5957,7 @@ button.memory-fact-statement--jump:focus-visible {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 16px 20px 8px;
+  padding: 16px 24px 12px;
   display: flex;
   flex-direction: column;
 }
@@ -8530,7 +8530,7 @@ button.source-link--inline.conversation-md-link {
   width: 100%;
   max-width: var(--chat-content-max-width);
   margin: 0 auto;
-  padding: 0 20px 18px;
+  padding: 0 24px 20px;
   box-sizing: border-box;
 }
 

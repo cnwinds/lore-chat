@@ -57,9 +57,12 @@ describe("mobile three-pane grid", () => {
 });
 
 describe("kb sidebar chrome", () => {
-  it("keeps the knowledge heading tight against the tree", () => {
-    expect(css).toMatch(/\.kb-sidebar-head\s*\{[^}]*padding:\s*2px 10px 0;/);
-    expect(css).toMatch(/\.kb-sidebar-scroll\s*\{[^}]*padding:\s*0 8px 8px;/);
+  it("insets the knowledge tree and leaves a canvas gutter before chat", () => {
+    expect(css).toMatch(/\.kb-sidebar-head\s*\{[^}]*padding:\s*8px 12px 6px;/);
+    expect(css).toMatch(/\.kb-sidebar-scroll\s*\{[^}]*padding:\s*4px 12px 12px;/);
+    expect(css).toMatch(
+      /\.app-shell--three-pane \.main-panel\s*\{[^}]*margin-left:\s*12px;/,
+    );
   });
 });
 
