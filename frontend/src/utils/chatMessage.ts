@@ -67,6 +67,29 @@ export function timelineAwaitsUserAnswer(
   return false;
 }
 
+/** 最近一条助手消息是否还在等征询答案。 */
+export function latestAssistantAwaitsUser(msgs: ChatMessage[]): boolean {
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    const m = msgs[i];
+    if (m.role === "assistant") {
+      return timelineAwaitsUserAnswer(m.timeline);
+    }
+  }
+  return false;
+}
+
+/** 当前未答征询的提问者（群气泡 speaker）。 */
+export function latestAskerRoleId(msgs: ChatMessage[]): string | undefined {
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    const m = msgs[i];
+    if (m.role === "assistant" && timelineAwaitsUserAnswer(m.timeline)) {
+      const id = (m.speaker_id || "").trim();
+      return id || undefined;
+    }
+  }
+  return undefined;
+}
+
 /** 助手回复失败/中断，可展示「重新回复」（待确认 ask_user 除外）。 */
 export function canRetryAssistantReply(m: ChatMessage): boolean {
   if (m.role !== "assistant") return false;

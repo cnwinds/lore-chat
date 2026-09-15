@@ -5,6 +5,8 @@ import {
   kbPathFromToolResult,
   expandMessagesForDisplay,
   timelineAwaitsUserAnswer,
+  latestAssistantAwaitsUser,
+  latestAskerRoleId,
   normalizeLoadedMessage,
   canRetryAssistantReply,
   findPrecedingUserForRetry,
@@ -156,6 +158,35 @@ describe("timelineAwaitsUserAnswer", () => {
         },
       ]),
     ).toBe(false);
+  });
+});
+
+describe("latestAssistantAwaitsUser", () => {
+  it("reads the latest assistant timeline", () => {
+    const awaiting: ChatMessage = {
+      role: "assistant",
+      speaker_id: "dev",
+      timeline: [
+        {
+          type: "tool",
+          id: "t1",
+          tool: "ask_user",
+          label: "征询",
+          ts: "t",
+          status: "done",
+          question_id: "q1",
+          options: [{ id: "a", label: "A" }],
+        },
+      ],
+    };
+    expect(latestAssistantAwaitsUser([awaiting])).toBe(true);
+    expect(latestAskerRoleId([awaiting])).toBe("dev");
+    expect(
+      latestAssistantAwaitsUser([
+        awaiting,
+        { role: "user", text: "A：重力翻转" },
+      ]),
+    ).toBe(true);
   });
 });
 

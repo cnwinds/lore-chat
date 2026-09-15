@@ -33,6 +33,8 @@ class IngestResult:
     continue_prompt: str | None = None
     # 沙箱确认：由 SandboxCommandGate 填充；PendingResolver 代跑
     sandbox_run_args: dict | None = None
+    resume_conversation_id: str | None = None
+    resume_role_id: str | None = None
 
 
 class Organizer:
@@ -236,5 +238,7 @@ class Organizer:
             message=r.message,
             continue_prompt=r.continue_prompt,
             sandbox_run_args=r.sandbox_run_args,
+            resume_conversation_id=r.resume_conversation_id,
+            resume_role_id=r.resume_role_id,
         )
 

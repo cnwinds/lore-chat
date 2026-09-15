@@ -191,7 +191,9 @@ def build_agent_subgraph(
     )
     from app.engine.rooms.delivery import RoomDelivery
 
-    room_delivery = RoomDelivery(conversations, roles, settings=settings)
+    room_delivery = RoomDelivery(
+        conversations, roles, settings=settings, pending=pending
+    )
     room_delivery.bind_starter(chat_runner.begin_persisted_turn)
     tool_registry.roles_tools.delivery = room_delivery
     conversations._after_turn_finalized = room_delivery.drain_role

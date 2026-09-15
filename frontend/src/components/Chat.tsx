@@ -25,6 +25,7 @@ import {
   useRoleTimeline,
 } from "../hooks/chat/useRoleTimeline";
 import {
+  beginChatTurn,
   getConversation,
   isMarkdownPath,
   normalizeDocContext,
@@ -41,6 +42,8 @@ import {
   canRetryAssistantReply,
   findPrecedingUserForRetry,
   isInjectedUserMessage,
+  latestAskerRoleId,
+  latestAssistantAwaitsUser,
   markToolBlockResolved,
   normalizeLoadedMessage,
 } from "../utils/chatMessage";
@@ -398,12 +401,17 @@ export function Chat({
           replaceAssistantIndex: first.replaceAssistantIndex,
           mentions:
             roomMode === "group"
-              ? resolveMentionRoleIds(text, roles)
+              ? first.mentions?.length
+                ? first.mentions
+                : resolveMentionRoleIds(text, roles)
               : undefined,
           assistantSpeaker:
             roomMode === "group"
               ? (() => {
-                  const id = resolveMentionRoleIds(text, roles)[0];
+                  const ids = first.mentions?.length
+                    ? first.mentions
+                    : resolveMentionRoleIds(text, roles);
+                  const id = ids[0];
                   const role = id ? roles.find((r) => r.id === id) : undefined;
                   return role
                     ? { id: role.id, name: role.name }
@@ -561,11 +569,25 @@ export function Chat({
 
     const mentions =
       roomMode === "group" ? resolveMentionRoleIds(text, roles) : [];
-    const mentionedRole = mentions[0]
-      ? roles.find((r) => r.id === mentions[0])
+    const askerId = latestAskerRoleId(msgs);
+    const groupMentions =
+      roomMode === "group"
+        ? mentions.length
+          ? mentions
+          : latestAssistantAwaitsUser(msgs) && askerId
+            ? [askerId]
+            : []
+        : mentions;
+    const mentionedRole = groupMentions[0]
+      ? roles.find((r) => r.id === groupMentions[0])
       : undefined;
 
-    if (roomMode === "group" && conversationId && mentions.length === 0) {
+    if (
+      roomMode === "group" &&
+      conversationId &&
+      groupMentions.length === 0 &&
+      !latestAssistantAwaitsUser(msgs)
+    ) {
       try {
         await postRoomMessage(conversationId, { text, mentions: [] });
         const conv = await getConversation(conversationId);
@@ -613,7 +635,7 @@ export function Chat({
         ctx,
         {
           webEnabled,
-          mentions: mentions.length ? mentions : undefined,
+          mentions: groupMentions.length ? groupMentions : undefined,
           assistantSpeaker: mentionedRole
             ? { id: mentionedRole.id, name: mentionedRole.name }
             : undefined,
@@ -645,6 +667,7 @@ export function Chat({
       primary_doc: ctx.primary,
       attachments: uploadedPaths.length ? uploadedPaths : undefined,
       webEnabled,
+      mentions: groupMentions.length ? groupMentions : undefined,
       locked: false,
       error: null,
     };
@@ -829,17 +852,54 @@ export function Chat({
       // unless it asks another question.
       outbound.pausedRef.current = false;
       sendQueue.setPaused(false);
+      const resumeCid =
+        (result.resume_conversation_id || "").trim() || conversationId;
+      const resumeRoleId =
+        (result.resume_role_id || "").trim() ||
+        latestAskerRoleId(msgs) ||
+        undefined;
+      const mentionedRole = resumeRoleId
+        ? roles.find((r) => r.id === resumeRoleId)
+        : undefined;
+      if (resumeCid && resumeCid !== conversationId) {
+        void beginChatTurn(result.continue_prompt, {
+          conversationId: resumeCid,
+          mentions: resumeRoleId ? [resumeRoleId] : undefined,
+          webEnabled,
+        }).catch((err) => {
+          const msg = err instanceof Error ? err.message : "继续失败";
+          setMsgs((m) => [
+            ...m,
+            { role: "assistant", text: `错误：${msg}`, ts: nowIsoDisplay() },
+          ]);
+        });
+        return;
+      }
+      const streamOpts = {
+        webEnabled,
+        mentions:
+          roomMode === "group" && resumeRoleId ? [resumeRoleId] : undefined,
+        assistantSpeaker:
+          roomMode === "group" && mentionedRole
+            ? { id: mentionedRole.id, name: mentionedRole.name }
+            : undefined,
+      };
       if (streamingForView || sendQueue.items.length > 0) {
         sendQueue.enqueue({
           text: result.continue_prompt,
           timing: "defer",
           webEnabled,
+          mentions: streamOpts.mentions,
         });
         if (!streamingForView) void outbound.flushQueue();
       } else {
-        void runAgentStream(result.continue_prompt, choiceLabel, undefined, undefined, {
-          webEnabled,
-        });
+        void runAgentStream(
+          result.continue_prompt,
+          choiceLabel,
+          undefined,
+          undefined,
+          streamOpts,
+        );
       }
       return;
     }

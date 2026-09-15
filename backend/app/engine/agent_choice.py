@@ -19,6 +19,8 @@ class ChoiceResult:
     message: str
     continue_prompt: str | None = None
     sandbox_run_args: dict | None = None
+    resume_conversation_id: str | None = None
+    resume_role_id: str | None = None
 
 
 class AgentChoiceResolution:
@@ -60,6 +62,10 @@ class AgentChoiceResolution:
         context = payload.get("context", "")
         self.pending.resolve_many(qid, choice_ids)
         choice_text = "、".join(labels)
+        resume_cid = str(payload.get("conversation_id") or "").strip() or None
+        resume_rid = str(
+            payload.get("responding_role_id") or payload.get("role_id") or ""
+        ).strip() or None
 
         if payload.get("kind") == "agent":
             if choice_ids == ["done"]:
@@ -85,6 +91,8 @@ class AgentChoiceResolution:
                 question_id=None,
                 message="正在根据你的选择继续处理…",
                 continue_prompt=choice_text,
+                resume_conversation_id=resume_cid,
+                resume_role_id=resume_rid,
             )
 
         if not payload.get("kind"):
@@ -101,4 +109,6 @@ class AgentChoiceResolution:
             question_id=None,
             message="请按目录规划写入知识库。",
             continue_prompt=choice_text,
+            resume_conversation_id=resume_cid,
+            resume_role_id=resume_rid,
         )

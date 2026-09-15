@@ -99,6 +99,25 @@ def test_resolve_agent_choices_returns_continue(tmp_path):
     assert pending.get(qid)["status"] == "resolved"
 
 
+def test_resolve_agent_choices_includes_resume_ids(tmp_path):
+    org, repo, pending = _make(tmp_path, [])
+    del repo
+    qid = pending.create(
+        "选哪条？",
+        [{"id": "a", "label": "A：重力翻转"}],
+        {
+            "kind": "agent",
+            "conversation_id": "group1",
+            "responding_role_id": "dev",
+        },
+    )
+    result = org.resolve_agent_choices(qid, ["a"])
+    assert result.status == "continue"
+    assert result.continue_prompt == "A：重力翻转"
+    assert result.resume_conversation_id == "group1"
+    assert result.resume_role_id == "dev"
+
+
 def test_resolve_agent_done_after_write_acknowledges_path(tmp_path):
     org, repo, pending = _make(tmp_path, [])
     qid = pending.create(

@@ -1,7 +1,9 @@
 from app.engine.agent.prompts import MODE_API, MODE_DEFAULT
 from app.engine.agent.tool_catalog import select_tools
+from app.engine.agent.tool_impl.interaction import InteractionTools
 from app.engine.conversation.transcript import ConversationTranscript
 from app.engine.conversations import ConversationStore
+from app.engine.pending import PendingStore
 from app.engine.rooms.delivery import RoomDelivery
 from app.engine.rooms.schema import KIND_OWNER_DM, KIND_PEER_DM, ROOM_ROLE_PLACEHOLDER
 from app.engine.rooms.types import format_peer_message
@@ -339,6 +341,8 @@ def test_collab_prompt_forbids_doing_handed_off_work():
     assert "本群" in text
     assert "叫醒" in text
     assert "一对一" in text
+    assert "征询" in text
+    assert "交棒" in text
 
 
 def test_owner_interject_peer_wakes_last(tmp_path):
@@ -368,6 +372,8 @@ def test_owner_interject_peer_wakes_last(tmp_path):
     assert result["wake_status"] == "started"
     assert result["target_role_id"] == other["id"]
     assert started[0]["stimulus"].is_owner()
+    extra = started[0]["stimulus"].extra_system or ""
+    assert "征询" not in extra
 
 
 def test_owner_group_no_mention_no_wake(tmp_path):
@@ -393,6 +399,125 @@ def test_owner_group_no_mention_no_wake(tmp_path):
     assert started and started[0]["stimulus"].responding_role_id == other["id"]
     msgs = store.get(group)["messages"]
     assert any(m.get("speaker_kind") == "user" and "先记一笔" in m["text"] for m in msgs)
+
+
+def test_ask_user_stores_room_and_asker(tmp_path):
+    pending = PendingStore(tmp_path / "pending.json")
+    tools = InteractionTools(pending)
+    out = tools.ask_user(
+        {
+            "question": "选哪条路线？",
+            "options": [{"id": "a", "label": "A：重力翻转"}],
+        },
+        conversation_id="room1",
+        responding_role_id="dev-role",
+    )
+    q = pending.get(out["question_id"])
+    assert q["payload"]["conversation_id"] == "room1"
+    assert q["payload"]["responding_role_id"] == "dev-role"
+
+
+def _group_with_dev(tmp_path):
+    store = _conv(tmp_path)
+    roles = _roles(tmp_path)
+    dev = roles.create(name="游戏开发助手")
+    started = []
+
+    def starter(**kwargs):
+        started.append(kwargs)
+        return {"turn_id": f"t{len(started)}", "status": "running"}
+
+    pending = PendingStore(tmp_path / "pending.json")
+    delivery = RoomDelivery(store, roles, pending=pending)
+    delivery.bind_starter(starter)
+    group = delivery.create_group(
+        title="三角洲", role_ids=[DEFAULT_ROLE_ID, dev["id"]]
+    )["id"]
+    return store, roles, delivery, pending, group, dev["id"], started
+
+
+def test_group_ask_user_reply_wakes_asker_without_at(tmp_path):
+    _store, _roles_store, delivery, pending, group, dev, started = _group_with_dev(
+        tmp_path
+    )
+    pending.create(
+        "选哪条？",
+        [{"id": "a", "label": "A：重力翻转"}],
+        {
+            "kind": "agent",
+            "conversation_id": group,
+            "responding_role_id": dev,
+        },
+    )
+    result = delivery.send_from_owner(room_id=group, text="A：重力翻转")
+    assert result["wake_status"] == "started"
+    assert result["target_role_id"] == dev
+    extra = started[0]["stimulus"].extra_system or ""
+    assert "征询" in extra
+    assert "点名" in extra
+
+
+def test_group_redundant_at_asker_is_solicitation_reply(tmp_path):
+    _store, _roles_store, delivery, pending, group, dev, started = _group_with_dev(
+        tmp_path
+    )
+    pending.create(
+        "选哪条？",
+        [{"id": "a", "label": "A：重力翻转"}],
+        {
+            "kind": "agent",
+            "conversation_id": group,
+            "responding_role_id": dev,
+        },
+    )
+    result = delivery.send_from_owner(
+        room_id=group,
+        text="@游戏开发助手 A：重力翻转",
+        mentions=["游戏开发助手"],
+    )
+    assert result["wake_status"] == "started"
+    assert result["target_role_id"] == dev
+    extra = started[0]["stimulus"].extra_system or ""
+    assert "征询" in extra
+    assert "交棒" in extra
+
+
+def test_group_at_other_while_ask_open_wakes_named(tmp_path):
+    _store, _roles_store, delivery, pending, group, dev, started = _group_with_dev(
+        tmp_path
+    )
+    pending.create(
+        "选哪条？",
+        [{"id": "a", "label": "A：重力翻转"}],
+        {
+            "kind": "agent",
+            "conversation_id": group,
+            "responding_role_id": dev,
+        },
+    )
+    result = delivery.send_from_owner(
+        room_id=group, text="@通用 你来拍板"
+    )
+    assert result["wake_status"] == "started"
+    assert result["target_role_id"] == DEFAULT_ROLE_ID
+    extra = started[0]["stimulus"].extra_system or ""
+    assert "征询" not in extra
+
+
+def test_group_structured_mentions_without_at_resume_after_resolve(tmp_path):
+    """点选后 pending 已关闭；正文无 @ 的 mentions 仍续提问者，不当新点名。"""
+    _store, _roles_store, delivery, _pending, group, dev, started = _group_with_dev(
+        tmp_path
+    )
+    result = delivery.send_from_owner(
+        room_id=group,
+        text="A：重力翻转",
+        mentions=[dev],
+    )
+    assert result["wake_status"] == "started"
+    assert result["target_role_id"] == dev
+    extra = started[0]["stimulus"].extra_system or ""
+    assert "征询" in extra
 
 
 def test_collab_status_queued(tmp_path):

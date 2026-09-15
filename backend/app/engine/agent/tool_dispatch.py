@@ -74,7 +74,9 @@ def build_tool_dispatch(registry: ToolRegistry) -> dict[str, ToolHandler]:
         "delete_kb": lambda args, **kw: asyncio.to_thread(kb_mutate.delete_kb, args),
         "move_entry": lambda args, **kw: asyncio.to_thread(kb_mutate.move_entry, args),
         "ask_user": lambda args, **kw: interaction.ask_user(
-            args, conversation_id=kw.get("conversation_id")
+            args,
+            conversation_id=kw.get("conversation_id"),
+            responding_role_id=kw.get("responding_role_id"),
         ),
         "list_roles": lambda args, **kw: roles.list_roles(
             args, conversation_id=kw.get("conversation_id")

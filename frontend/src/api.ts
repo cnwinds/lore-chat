@@ -562,6 +562,20 @@ export async function* chatStream(
   yield* readSseResponse(r);
 }
 
+/** 在指定会话开一轮但不跟当前视图流式。断开观测不取消执行。 */
+export async function beginChatTurn(
+  text: string,
+  options: ChatStreamOptions = {},
+): Promise<void> {
+  const ac = new AbortController();
+  const gen = chatStream(text, { ...options, signal: ac.signal });
+  try {
+    await gen.next();
+  } finally {
+    ac.abort();
+  }
+}
+
 
 export async function* observeActiveTurnStream(
   conversationId: string,

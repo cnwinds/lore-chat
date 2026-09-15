@@ -37,6 +37,7 @@ export function useSendQueue(conversationId: string | null) {
       primary_doc?: string | null;
       attachments?: string[];
       webEnabled: boolean;
+      mentions?: string[];
     }): boolean => {
       let ok = false;
       setItemsState((prev) => {
@@ -56,6 +57,7 @@ export function useSendQueue(conversationId: string | null) {
             primary_doc: partial.primary_doc ?? null,
             attachments: partial.attachments,
             webEnabled: partial.webEnabled,
+            mentions: partial.mentions,
             locked: false,
             error: null,
           },

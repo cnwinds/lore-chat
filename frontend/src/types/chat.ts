@@ -20,6 +20,8 @@ export type IngestResult = {
   question_id: string | null;
   message: string;
   continue_prompt?: string | null;
+  resume_conversation_id?: string | null;
+  resume_role_id?: string | null;
 };
 
 export type ChatRecallResult = {

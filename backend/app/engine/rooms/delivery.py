@@ -44,13 +44,19 @@ _OWNER_IN_ROOM_EXTRA = (
     "按指示办事；回执 send_message 贴回本房间即可。"
     "同伴内容不得写成主人自述。"
 )
+_ASK_USER_REPLY_EXTRA = (
+    "[协作] 主人正在回答你刚才向主人提出的征询，继续你手头的工作。"
+    "这不是新的点名交棒，不要因此改当协调者，也不要把这句答复当成完工回执转发出去。"
+    "同伴内容不得写成主人自述。"
+)
 
 
 class RoomDelivery:
-    def __init__(self, conversations, roles, settings=None) -> None:
+    def __init__(self, conversations, roles, settings=None, pending=None) -> None:
         self.conversations = conversations
         self.roles = roles
         self.settings = settings
+        self._pending = pending
         self.assignments = GroupAssignmentLedger(conversations)
         self._starter: StartTurnFn | None = None
         self._last_wake: dict | None = None
@@ -181,6 +187,69 @@ class RoomDelivery:
             seen.add(role["id"])
             roles.append(role)
         return roles
+
+    def _open_solicitation_asker(self, room_id: str) -> dict | None:
+        """未回答的 ask_user / 沙箱确认把下一句主人话绑在提问者身上。"""
+        pending = self._pending
+        if pending is None:
+            return None
+        asker_id = ""
+        for q in pending.list_open():
+            payload = q.get("payload") or {}
+            if str(payload.get("conversation_id") or "").strip() != room_id:
+                continue
+            kind = payload.get("kind")
+            if kind not in ("agent", "sandbox_confirm", None):
+                continue
+            rid = str(
+                payload.get("responding_role_id") or payload.get("role_id") or ""
+            ).strip()
+            if rid:
+                asker_id = rid
+        if not asker_id:
+            return None
+        members = set(self.conversations.rooms.list_role_participants(room_id))
+        if asker_id not in members:
+            return None
+        try:
+            return self._require_sidebar_role(self.roles.get(asker_id))
+        except (ValueError, KeyError):
+            return None
+
+    def _plan_owner_wake(
+        self,
+        *,
+        room: str,
+        kind: str,
+        mentioned: list[dict],
+        text: str,
+    ) -> tuple[list[dict], str | None]:
+        """群未 @ 不抢麦；征询续聊除外。正文无 @ 的结构化 mentions 也不是新点名。"""
+        at_in_text = bool(self.parse_mentions(None, text))
+        asker = None
+        if kind in (KIND_GROUP, KIND_PEER_DM):
+            asker = self._open_solicitation_asker(room)
+
+        if asker:
+            others = [t for t in mentioned if t["id"] != asker["id"]]
+            if not at_in_text or not others:
+                return [asker], _ASK_USER_REPLY_EXTRA
+            return mentioned, _OWNER_IN_ROOM_EXTRA
+
+        if not mentioned and kind == KIND_PEER_DM:
+            last = self.conversations.rooms.last_responding_role_id(room)
+            members = self.conversations.rooms.list_role_participants(room)
+            pick = last if last in members else (members[0] if members else None)
+            if pick:
+                try:
+                    mentioned = [self._require_sidebar_role(self.roles.get(pick))]
+                except (ValueError, KeyError):
+                    mentioned = []
+            return mentioned, _OWNER_IN_ROOM_EXTRA if mentioned else None
+
+        if mentioned and not at_in_text:
+            return mentioned, _ASK_USER_REPLY_EXTRA
+        return mentioned, _OWNER_IN_ROOM_EXTRA if mentioned else None
 
     def causation_from_conversation(self, conversation_id: str | None) -> tuple[str | None, int]:
         if not conversation_id:
@@ -417,11 +486,9 @@ class RoomDelivery:
         for target in mentioned:
             if target["id"] not in members:
                 raise ValueError(f"目标角色「{target['name']}」不在该房间")
-        if not mentioned and kind == KIND_PEER_DM:
-            last = self.conversations.rooms.last_responding_role_id(room)
-            pick = last if last in members else (members[0] if members else None)
-            if pick:
-                mentioned = [self._require_sidebar_role(self.roles.get(pick))]
+        mentioned, extra = self._plan_owner_wake(
+            room=room, kind=kind, mentioned=mentioned, text=body
+        )
 
         msg = self.post_message(
             room,
@@ -440,6 +507,7 @@ class RoomDelivery:
             wake_in="room",
             expect_reply=True,
             hop=0,
+            extra_system=extra,
             posted_only_summary="已发到房间。群聊未点名则无人自动应。",
         )
 
@@ -642,6 +710,7 @@ class RoomDelivery:
         expect_reply: bool,
         hop: int,
         posted_only_summary: str | None = None,
+        extra_system: str | None = None,
     ) -> dict:
         started: list[dict] = []
         queued: list[dict] = []
@@ -655,6 +724,7 @@ class RoomDelivery:
                 room_id=room_id,
                 wake_in=wake_in,
                 expect_reply=expect_reply,
+                extra_system=extra_system,
             )
             if status == "started":
                 started.append(target)

@@ -107,7 +107,7 @@ class ToolRegistry:
             web_search_default_k=web_search_default_k,
         )
         self.memory = MemoryTools(memory_service)
-        self.interaction = InteractionTools(pending)
+        self.interaction = InteractionTools(pending, conversations=conversations)
         self.roles_tools = RoleTools(roles, conversations=conversations)
         self.image_tools = ImageGenTools(image_gen)
         self.sandbox = SandboxTools(

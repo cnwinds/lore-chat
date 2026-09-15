@@ -15,6 +15,8 @@ export type SendQueueItem = {
   /** 原地重新回复：复用已有用户消息 */
   reuseUserMessageId?: string;
   replaceAssistantIndex?: number;
+  /** 群征询续聊：结构化唤醒提问者，正文不要带 @ */
+  mentions?: string[];
   /** Locked while inject submitted to backend for current turn. */
   locked?: boolean;
   error?: string | null;
@@ -53,6 +55,9 @@ export function loadSendQueue(conversationId: string | null): SendQueueItem[] {
           typeof x.replaceAssistantIndex === "number"
             ? x.replaceAssistantIndex
             : undefined,
+        mentions: Array.isArray(x.mentions)
+          ? x.mentions.filter((id): id is string => typeof id === "string")
+          : undefined,
         locked: false,
         error: null,
       }));
@@ -79,6 +84,7 @@ export function saveSendQueue(
         webEnabled,
         reuseUserMessageId,
         replaceAssistantIndex,
+        mentions,
       }) => ({
         id,
         text,
@@ -90,6 +96,7 @@ export function saveSendQueue(
         webEnabled,
         reuseUserMessageId,
         replaceAssistantIndex,
+        mentions,
       }),
     );
     localStorage.setItem(

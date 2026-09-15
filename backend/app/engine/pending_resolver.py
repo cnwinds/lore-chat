@@ -134,6 +134,11 @@ class PendingResolver:
                 f"{summary}\n\n"
                 "请根据以上输出继续任务；不要重复征询或重复执行同一命令。"
             ),
+            resume_conversation_id=str(
+                run_payload.get("conversation_id") or body.conversation_id or ""
+            ).strip()
+            or None,
+            resume_role_id=str(run_payload.get("role_id") or "").strip() or None,
         )
 
 
