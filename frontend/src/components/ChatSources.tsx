@@ -4,6 +4,7 @@ import {
   isDisplayableImageRef,
   mediaDisplayUrl,
 } from "../utils/kbImageUrls";
+import { FoldChevron } from "./FoldChevron";
 import { ImageThumbButton } from "./ImageThumbButton";
 import { SourceChip } from "./SourceChip";
 import { useImageLightbox } from "../hooks/useImageLightbox";
@@ -61,9 +62,7 @@ export function ChatSources({
       >
         <span className="chat-sources-title">{sectionTitle}</span>
         <span className="chat-sources-count">{items.length} 项</span>
-        <span className="chat-sources-chevron" aria-hidden>
-          {open ? "▾" : "▸"}
-        </span>
+        <FoldChevron open={open} className="chat-sources-chevron" />
       </button>
       {open && (
         <div className="chat-sources-body">

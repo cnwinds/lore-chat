@@ -29,6 +29,7 @@ import {
   channelNextSteps,
   type CreateKeyDraft,
 } from "../settings/openApiSettingsModel";
+import { FoldChevron } from "../FoldChevron";
 import { ChannelCard } from "./ChannelCard";
 import { CreateKeyScreen, PickTypeScreen } from "./ChannelCreateScreens";
 import { ChannelPersonas } from "./ChannelPersonas";
@@ -520,10 +521,10 @@ export function ChannelPanel({
                   aria-expanded={personasOpen}
                   onClick={() => setPersonasOpen((v) => !v)}
                 >
-                  <span>
+                  <span className="channel-shared-toggle-label">
                     <strong>共用角色</strong>
                   </span>
-                  <span aria-hidden>{personasOpen ? "▾" : "›"}</span>
+                  <FoldChevron open={personasOpen} />
                 </button>
                 {personasOpen ? (
                   <ChannelPersonas

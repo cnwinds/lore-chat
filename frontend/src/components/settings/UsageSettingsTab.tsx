@@ -13,6 +13,7 @@ import {
   type UsageSummary,
 } from "../../api";
 import { listChannelInstances, type ChannelInstance } from "../../api/channelPlugins";
+import { FoldChevron } from "../FoldChevron";
 import { priceRowNeedsSetup } from "./settingsAttention";
 import { SettingsAttentionDot } from "./SettingsAttentionDot";
 
@@ -540,9 +541,7 @@ export function UsageSettingsTab({
                 : "点击展开后加载"}
             </span>
           </span>
-          <span className="usage-disclosure-chevron" aria-hidden>
-            {eventsOpen ? "▾" : "▸"}
-          </span>
+          <FoldChevron open={eventsOpen} className="usage-disclosure-chevron" />
         </button>
         {eventsOpen ? (
           eventsLoading && !eventsLoaded ? (
@@ -572,9 +571,7 @@ export function UsageSettingsTab({
               {dirtyModels.size > 0 ? ` · ${dirtyModels.size} 处未保存` : ""}
             </span>
           </span>
-          <span className="usage-disclosure-chevron" aria-hidden>
-            {pricesOpen ? "▾" : "▸"}
-          </span>
+          <FoldChevron open={pricesOpen} className="usage-disclosure-chevron" />
         </button>
         {pricesOpen ? (
           <div className="usage-price-list">
@@ -727,9 +724,7 @@ export function UsageSettingsTab({
               保留 {prefs?.retention_days ?? 365} 天
             </span>
           </span>
-          <span className="usage-disclosure-chevron" aria-hidden>
-            {prefsOpen ? "▾" : "▸"}
-          </span>
+          <FoldChevron open={prefsOpen} className="usage-disclosure-chevron" />
         </button>
         {prefsOpen ? (
           <div className="usage-prefs">

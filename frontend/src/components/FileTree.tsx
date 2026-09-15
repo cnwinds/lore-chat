@@ -8,6 +8,7 @@ import {
   type TreeNode,
 } from "../utils/fileTree";
 import { dropEffectForTransfer } from "../utils/droppedFiles";
+import { FoldChevron } from "./FoldChevron";
 import { SettingsAttentionDot } from "./settings/SettingsAttentionDot";
 
 function parentDirectoryFromPath(path: string): string {
@@ -269,7 +270,7 @@ function TreeItem({
           {opensFloat ? (
             <span className="file-tree-chevron file-tree-chevron--leaf" aria-hidden />
           ) : (
-            <span className="file-tree-chevron">{isOpen ? "▼" : "▶"}</span>
+            <FoldChevron open={isOpen} size={11} className="file-tree-chevron" />
           )}
           <span className="file-tree-icon">
             {isOpen ? "📂" : "📁"}

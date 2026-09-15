@@ -1838,9 +1838,44 @@ a:hover {
   background: var(--kb-special-bg-hover);
 }
 
+/* 折叠指示：细线箭头，开合靠旋转，不用字符三角 */
+.fold-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  line-height: 0;
+  color: var(--text-muted);
+}
+
+.fold-chevron svg {
+  display: block;
+  transform: rotate(0deg);
+  transform-origin: 50% 50%;
+  transition: transform 0.16s ease;
+}
+
+.fold-chevron.is-open svg {
+  transform: rotate(90deg);
+}
+
+.fold-chevron--from-down svg {
+  transform: rotate(90deg);
+}
+
+.fold-chevron--from-down.is-open svg {
+  transform: rotate(-90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fold-chevron svg {
+    transition: none;
+  }
+}
+
 .file-tree-chevron {
   width: 12px;
-  font-size: 9px;
+  height: 12px;
   color: var(--text-muted);
   flex-shrink: 0;
 }
@@ -2794,10 +2829,7 @@ button.memory-fact-statement--jump:focus-visible {
 
 .settings-fold-chevron {
   flex: 0 0 auto;
-  width: 1em;
   color: var(--text-muted);
-  font-size: var(--text-xs);
-  line-height: 1;
 }
 
 .settings-fold-header-main {
@@ -3881,9 +3913,7 @@ button.memory-fact-statement--jump:focus-visible {
 .usage-disclosure-chevron {
   flex-shrink: 0;
   color: var(--text-muted);
-  font-size: 12px;
-  line-height: 1.4;
-  padding-top: 1px;
+  padding-top: 3px;
 }
 
 .usage-price-card {
@@ -5201,7 +5231,7 @@ button.memory-fact-statement--jump:focus-visible {
   cursor: pointer;
 }
 
-.channel-shared-toggle span {
+.channel-shared-toggle-label {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -6880,7 +6910,6 @@ button.memory-fact-statement--jump:focus-visible {
 .timeline-tool-chevron {
   flex-shrink: 0;
   color: var(--text-muted);
-  font-size: 10px;
 }
 
 .timeline-tool-sources-inline {
@@ -7209,7 +7238,6 @@ button.source-link--inline.conversation-md-link {
 
 .chat-sources-chevron {
   flex-shrink: 0;
-  font-size: 10px;
   color: var(--text-muted);
 }
 
@@ -11179,9 +11207,9 @@ button.source-link--inline.conversation-md-link {
   }
 
   .mobile-chat-header-caret {
-    font-size: 12px;
     opacity: 0.7;
     flex-shrink: 0;
+    color: currentColor;
   }
 
   .mobile-role-sheet-backdrop {

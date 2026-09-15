@@ -7,6 +7,7 @@ import {
   type SourceRef,
   type TimelineBlock,
 } from "../api";
+import { FoldChevron } from "./FoldChevron";
 import { KbAttachmentList } from "./KbAttachmentList";
 import { MarkdownContent } from "./MarkdownContent";
 import { PendingQuestion } from "./PendingQuestion";
@@ -202,7 +203,7 @@ function ToolBlockView({
             {formatDuration(displayMs)}
           </span>
         )}
-        <span className="timeline-tool-chevron">{open ? "▾" : "▸"}</span>
+        <FoldChevron open={open} className="timeline-tool-chevron" />
       </button>
       {open &&
         block.tool === "sandbox_run" &&
@@ -361,7 +362,7 @@ function ThinkBlockView({
         {!open && preview ? (
           <span className="timeline-think-oneline">{preview}</span>
         ) : null}
-        <span className="timeline-think-chevron">{open ? "▾" : "▸"}</span>
+        <FoldChevron open={open} className="timeline-think-chevron" />
       </button>
       {open ? (
         <div className="timeline-think-body">

@@ -4,6 +4,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { FoldChevron } from "../FoldChevron";
 import { SettingsAttentionDot } from "./SettingsAttentionDot";
 
 type FoldSectionProps = {
@@ -40,9 +41,7 @@ export function SettingsFoldSection({
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
       >
-        <span className="settings-fold-chevron" aria-hidden>
-          {open ? "▾" : "▸"}
-        </span>
+        <FoldChevron open={open} className="settings-fold-chevron" />
         <span className="settings-fold-header-main">
           <span className="settings-group-title">
             {title}
@@ -122,9 +121,7 @@ export function SettingsCandidateFoldToggle({
       onClick={onToggle}
       title={open ? "收起配置" : "展开配置"}
     >
-      <span className="settings-fold-chevron" aria-hidden>
-        {open ? "▾" : "▸"}
-      </span>
+      <FoldChevron open={open} className="settings-fold-chevron" />
       {priority != null ? (
         <span
           className={`settings-priority-badge${primary ? " settings-priority-badge--primary" : ""}`}

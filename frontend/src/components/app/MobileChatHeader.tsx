@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { RoleSummary, RoomParticipant } from "../../api";
+import { FoldChevron } from "../FoldChevron";
 import { ChatRoleHeading } from "../chat/ChatRoleHeading";
 import { GroupAvatar } from "../role/GroupAvatar";
 
@@ -91,9 +92,11 @@ export function MobileChatHeader({
           aria-expanded={sheetOpen}
         >
           {heading}
-          <span className="mobile-chat-header-caret" aria-hidden>
-            ▾
-          </span>
+          <FoldChevron
+            open={sheetOpen}
+            from="down"
+            className="mobile-chat-header-caret"
+          />
         </button>
       ) : (
         <h1 className="mobile-chat-header-title">
