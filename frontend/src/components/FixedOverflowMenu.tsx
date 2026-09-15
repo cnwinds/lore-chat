@@ -15,6 +15,7 @@ type Props = {
   anchorRef: RefObject<HTMLElement | null>;
   align?: "start" | "end";
   label?: string;
+  className?: string;
   onDismiss: () => void;
   children: ReactNode;
 };
@@ -25,6 +26,7 @@ export function FixedOverflowMenu({
   anchorRef,
   align = "end",
   label,
+  className,
   onDismiss,
   children,
 }: Props) {
@@ -69,7 +71,7 @@ export function FixedOverflowMenu({
   return createPortal(
     <div
       ref={menuRef}
-      className="doc-overflow-menu doc-overflow-menu--fixed"
+      className={`doc-overflow-menu doc-overflow-menu--fixed${className ? ` ${className}` : ""}`}
       role="menu"
       aria-label={label}
       style={

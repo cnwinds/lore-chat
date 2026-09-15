@@ -12,6 +12,7 @@
 
 ### Added
 
+- 主题按钮改为弹出菜单：可在青瓷、墨砚、原先的紫藤、新增米色四套配色间选择；旧的浅色 / 暗色会分别迁到青瓷 / 墨砚
 - 聊天通道 P2：Slack Socket Mode、企业微信回调、钉钉 Stream；群/频道仅 @ 或引用才开回合，回复进 thread；群默认关沙箱直到发送者白名单；富媒体走现有附件；`ask_user` 在 IM 降级为纯文本；企微缺公网根可保存、启用则报错。微信公众号仅灰显（[product-channel-plugins.md](docs/product-channel-plugins.md)）
 - 聊天通道 P1：飞书长连接（不依赖公网根）；私聊文本入站排队、幂等、异步回复；按通道实例查看日志与用量（[product-channel-plugins.md](docs/product-channel-plugins.md)）
 - 聊天通道 P0：设置页改为「聊天通道」同级列表；旧 API Key 投影为脚本通道；`POST /api/v1/chat` 行为不变（[product-channel-plugins.md](docs/product-channel-plugins.md)）

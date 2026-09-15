@@ -43,9 +43,11 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* 浅色主题（默认）：青瓷底、松烟字、朱砂印 */
+/* 青瓷（默认浅色）：青瓷底、松烟字、朱砂印。light 为旧键别名。 */
 :root,
-[data-theme="light"] {
+[data-theme="light"],
+[data-theme="celadon"] {
+  color-scheme: light;
   --bg-app: #e7eeea;
   --bg: var(--bg-app);
   --bg-surface: #f7faf8;
@@ -113,8 +115,10 @@
   --editor-selection-block-border: rgba(196, 69, 54, 0.62);
 }
 
-/* 暗色主题：墨砚底、青瓷釉、朱砂印 */
-[data-theme="dark"] {
+/* 墨砚（暗色）。dark 为旧键别名。 */
+[data-theme="dark"],
+[data-theme="ink"] {
+  color-scheme: dark;
   --bg-app: #101614;
   --bg: var(--bg-app);
   --bg-surface: #171f1c;
@@ -177,6 +181,140 @@
   --editor-selection-bg: rgba(224, 112, 100, 0.38);
   --editor-selection-block-bg: rgba(224, 112, 100, 0.18);
   --editor-selection-block-border: rgba(236, 138, 127, 0.78);
+}
+
+/* 紫藤：统一改版前的浅色紫调 */
+[data-theme="iris"] {
+  color-scheme: light;
+  --bg-app: #f3f4f6;
+  --bg: var(--bg-app);
+  --bg-surface: #ffffff;
+  --bg-muted: #f9fafb;
+  --bg-hover: #f3f4ff;
+  --bg-subtle: #eef0f3;
+
+  --border: #e8eaed;
+  --border-strong: #d8dce3;
+
+  --text: #1a1d21;
+  --text-secondary: #5c6370;
+  --text-muted: #8b939e;
+  --text-on-accent: #ffffff;
+
+  --glaze: #5b5bd6;
+  --glaze-soft: #e8e8fb;
+  --seal-gold: #b45309;
+  --seal-gold-soft: rgba(180, 83, 9, 0.12);
+
+  --accent: #5b5bd6;
+  --accent-hover: #4a4ac4;
+  --accent-soft: #f0f0ff;
+  --accent-border: #d4d4f7;
+  --accent-focus: rgba(91, 91, 214, 0.1);
+
+  --user-bubble: #f6f6ff;
+  --assistant-bubble: #ffffff;
+
+  --code-bg: #f4f5f8;
+  --code-border: #e4e7ec;
+  --code-text: #2f3640;
+  --code-inline-bg: #eef0f4;
+  --code-comment: #8b939e;
+  --highlight-bg: rgba(91, 91, 214, 0.14);
+  --highlight-border: rgba(91, 91, 214, 0.35);
+  --highlight-code-bg: rgba(91, 91, 214, 0.12);
+
+  --danger: #dc2626;
+  --danger-text: #b91c1c;
+  --danger-bg: #fef2f2;
+  --danger-border: #fecaca;
+
+  --system-layer: #b45309;
+  --system-layer-soft: rgba(180, 83, 9, 0.1);
+  --kb-special-bg: rgba(71, 85, 105, 0.09);
+  --kb-special-bg-hover: rgba(71, 85, 105, 0.14);
+
+  --backdrop: rgba(17, 24, 39, 0.4);
+
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-md: 0 8px 24px rgba(15, 23, 42, 0.08);
+  --shadow-panel: -2px 0 16px rgba(15, 23, 42, 0.04);
+
+  --scrollbar-track: transparent;
+  --scrollbar-thumb: rgba(92, 99, 112, 0.28);
+  --scrollbar-thumb-hover: rgba(91, 91, 214, 0.45);
+
+  --editor-caret: #4338ca;
+  --editor-selection-bg: rgba(91, 91, 214, 0.32);
+  --editor-selection-block-bg: rgba(91, 91, 214, 0.14);
+  --editor-selection-block-border: rgba(91, 91, 214, 0.62);
+}
+
+/* 米色：宣纸底、松烟字、赭石印，茶釉作铺陈 */
+[data-theme="beige"] {
+  color-scheme: light;
+  --bg-app: #ede4d2;
+  --bg: var(--bg-app);
+  --bg-surface: #f7f1e4;
+  --bg-muted: #f3ebd9;
+  --bg-hover: #e8dcc4;
+  --bg-subtle: #e6d9c4;
+
+  --border: #d4c6ae;
+  --border-strong: #c4b396;
+
+  --text: #2a2418;
+  --text-secondary: #5c5346;
+  --text-muted: #8a7e6c;
+  --text-on-accent: #f7f1e4;
+
+  --glaze: #6a5a3c;
+  --glaze-soft: #e8dfc8;
+  --seal-gold: #b08a3e;
+  --seal-gold-soft: rgba(176, 138, 62, 0.2);
+
+  --accent: #7a3e2b;
+  --accent-hover: #632f20;
+  --accent-soft: #f0e2d4;
+  --accent-border: #d4b4a4;
+  --accent-focus: rgba(122, 62, 43, 0.14);
+
+  --user-bubble: #e9ddc6;
+  --assistant-bubble: #f7f1e4;
+
+  --code-bg: #efe6d4;
+  --code-border: #d9ccb4;
+  --code-text: #322a1c;
+  --code-inline-bg: #e8dcc4;
+  --code-comment: #8a7e6c;
+  --highlight-bg: rgba(122, 62, 43, 0.14);
+  --highlight-border: rgba(122, 62, 43, 0.38);
+  --highlight-code-bg: rgba(122, 62, 43, 0.1);
+
+  --danger: #9b3a2a;
+  --danger-text: #7a2e22;
+  --danger-bg: #f4e4dc;
+  --danger-border: #e0c0b4;
+
+  --system-layer: #8a6a28;
+  --system-layer-soft: rgba(138, 106, 40, 0.14);
+  --kb-special-bg: rgba(106, 90, 60, 0.12);
+  --kb-special-bg-hover: rgba(106, 90, 60, 0.2);
+
+  --backdrop: rgba(42, 36, 24, 0.42);
+
+  --shadow-sm: 0 1px 2px rgba(42, 36, 24, 0.06);
+  --shadow-md: 0 10px 28px rgba(42, 36, 24, 0.1);
+  --shadow-panel: -2px 0 18px rgba(42, 36, 24, 0.06);
+
+  --scrollbar-track: transparent;
+  --scrollbar-thumb: rgba(92, 83, 70, 0.28);
+  --scrollbar-thumb-hover: rgba(122, 62, 43, 0.45);
+
+  --editor-caret: #7a3e2b;
+  --editor-selection-bg: rgba(122, 62, 43, 0.28);
+  --editor-selection-block-bg: rgba(122, 62, 43, 0.12);
+  --editor-selection-block-border: rgba(122, 62, 43, 0.62);
 }
 
 * {
@@ -1957,6 +2095,7 @@ a:hover {
   color: var(--text-secondary);
   font-size: var(--text-sm);
   font-weight: 500;
+  cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }
 
@@ -1964,15 +2103,46 @@ a:hover {
   flex: 0.8;
 }
 
-.theme-toggle:hover {
+.theme-toggle:hover,
+.theme-toggle[aria-expanded="true"] {
   background: var(--bg-hover);
   color: var(--text);
 }
 
-.theme-toggle-icon {
-  font-size: 13px;
-  line-height: 1;
+.theme-toggle-swatch,
+.theme-menu-swatch {
+  display: inline-flex;
   flex-shrink: 0;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+}
+
+.theme-toggle-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+}
+
+.theme-menu-swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+}
+
+.theme-toggle-swatch span,
+.theme-menu-swatch span {
+  display: block;
+  height: 100%;
+}
+
+.theme-toggle-swatch span:first-child,
+.theme-menu-swatch span:first-child {
+  flex: 1;
+}
+
+.theme-toggle-swatch span:last-child,
+.theme-menu-swatch span:last-child {
+  flex: 0 0 40%;
 }
 
 .theme-toggle-label {
@@ -3019,11 +3189,13 @@ button.memory-fact-statement--jump:focus-visible {
 }
 
 :root .settings-cap-select,
-[data-theme="light"] .settings-cap-select {
+[data-theme="light"] .settings-cap-select,
+[data-theme-tone="light"] .settings-cap-select {
   color-scheme: light;
 }
 
-[data-theme="dark"] .settings-cap-select {
+[data-theme="dark"] .settings-cap-select,
+[data-theme-tone="dark"] .settings-cap-select {
   color-scheme: dark;
 }
 
@@ -3065,7 +3237,8 @@ button.memory-fact-statement--jump:focus-visible {
   white-space: nowrap;
 }
 
-[data-theme="dark"] .settings-health-bar--warn {
+[data-theme="dark"] .settings-health-bar--warn,
+[data-theme-tone="dark"] .settings-health-bar--warn {
   color: #fbbf24;
 }
 
@@ -5618,6 +5791,16 @@ button.memory-fact-statement--jump:focus-visible {
 .doc-overflow-item--danger:hover:not(:disabled) {
   background: color-mix(in srgb, var(--danger, #b91c1c) 12%, var(--bg-hover));
   color: var(--danger, #b91c1c);
+}
+
+.theme-menu {
+  min-width: 176px;
+}
+
+.theme-menu-check {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--accent);
 }
 
 .doc-meta {

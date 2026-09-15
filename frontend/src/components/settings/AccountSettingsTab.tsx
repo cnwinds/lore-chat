@@ -30,7 +30,7 @@ export function AccountSettingsTab({
     <>
       <div className="settings-group">
         <h3 className="settings-group-title">外观</h3>
-        <p className="settings-group-hint">切换浅色或暗色主题。</p>
+        <p className="settings-group-hint">点主题按钮，在多套配色里选择。</p>
         <div className="settings-theme-row">
           <ThemeToggle />
         </div>

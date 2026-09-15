@@ -14,11 +14,16 @@
     <script>
       (function () {
         try {
+          var tones = { celadon: "light", ink: "dark", iris: "light", beige: "light" };
+          var legacy = { light: "celadon", dark: "ink" };
           var t = localStorage.getItem("kb-theme");
-          document.documentElement.dataset.theme =
-            t === "dark" ? "dark" : "light";
+          if (legacy[t]) t = legacy[t];
+          if (!tones[t]) t = "celadon";
+          document.documentElement.dataset.theme = t;
+          document.documentElement.dataset.themeTone = tones[t];
         } catch (e) {
-          document.documentElement.dataset.theme = "light";
+          document.documentElement.dataset.theme = "celadon";
+          document.documentElement.dataset.themeTone = "light";
         }
       })();
     </script>
