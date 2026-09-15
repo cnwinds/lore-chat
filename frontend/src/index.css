@@ -1951,6 +1951,11 @@ a:hover {
   flex: 0.8;
 }
 
+.theme-toggle:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
 .theme-toggle-icon {
   font-size: 13px;
   line-height: 1;
