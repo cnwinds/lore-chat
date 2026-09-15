@@ -57,9 +57,9 @@ describe("mobile three-pane grid", () => {
 });
 
 describe("kb sidebar chrome", () => {
-  it("keeps the knowledge heading tight against the tree", () => {
-    expect(css).toMatch(/\.kb-sidebar-head\s*\{[^}]*padding:\s*2px 10px 0;/);
-    expect(css).toMatch(/\.kb-sidebar-scroll\s*\{[^}]*padding:\s*0 8px 8px;/);
+  it("leaves a quiet gap under the knowledge heading, inset from the edges", () => {
+    expect(css).toMatch(/\.kb-sidebar-head\s*\{[^}]*padding:\s*8px 10px;/);
+    expect(css).toMatch(/\.kb-sidebar-scroll\s*\{[^}]*padding:\s*0 10px 10px;/);
   });
 });
 
