@@ -49,7 +49,8 @@ export function useWorkspaceShell({
       doc.showFloat ||
       doc.showPinned ||
       doc.showMemoryPanel ||
-      doc.showMediaGallery
+      doc.showMediaGallery ||
+      doc.showChannelPanel
     ) {
       setMobileNavOpen(false);
     }
@@ -59,6 +60,7 @@ export function useWorkspaceShell({
     doc.showPinned,
     doc.showMemoryPanel,
     doc.showMediaGallery,
+    doc.showChannelPanel,
   ]);
 
   useEffect(() => {

@@ -48,9 +48,11 @@ export async function openJson<T>(path: string, init?: RequestInit): Promise<T> 
         detail =
           typeof body.detail === "string"
             ? body.detail
-            : typeof body.message === "string"
-              ? body.message
-              : JSON.stringify(body);
+            : typeof body.detail?.message === "string"
+              ? body.detail.message
+              : typeof body.message === "string"
+                ? body.message
+                : JSON.stringify(body);
       }
     } catch {
       try {

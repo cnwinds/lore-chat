@@ -1,6 +1,7 @@
 import { DocViewer } from "../DocViewer";
 import type { MergeReviewInfo } from "../../hooks/doc/useDocDirtyPrompt";
 import type { DocWidth } from "../../types/doc";
+import { KbFloatLayer } from "./KbFloatLayer";
 
 type Props = {
   path: string;
@@ -52,43 +53,30 @@ export function DocFloatLayer({
   onShareDoc,
 }: Props) {
   return (
-    <>
-      {showBackdrop && (
-        <div
-          className="doc-float-backdrop"
-          aria-hidden
-          onClick={onRequestClose}
-        />
-      )}
-      <div
-        className="doc-float-panel"
-        onClick={(e) => e.stopPropagation()}
-        onMouseDown={(e) => e.stopPropagation()}
-      >
-        <DocViewer
-          path={path}
-          refreshKey={refreshKey}
-          highlightText={highlightText}
-          mode="float"
-          docWidth={docWidth}
-          docFocus={docFocus}
-          onClose={onClose}
-          onBindClose={onBindClose}
-          onSaved={onSaved}
-          onNavigationBlocked={onNavigationBlocked}
-          onPin={onPin}
-          onToggleWidth={onToggleWidth}
-          onToggleFocus={onToggleFocus}
-          onOpenConversation={onOpenConversation}
-          mergeReview={mergeReview}
-          onMergeReviewChange={onMergeReviewChange}
-          onMergeAccept={onMergeAccept}
-          onMergeRegenerate={onMergeRegenerate}
-          onMergeReject={onMergeReject}
-          onLocateInTree={onLocateInTree}
-          onShareDoc={onShareDoc}
-        />
-      </div>
-    </>
+    <KbFloatLayer onClose={onRequestClose} showBackdrop={showBackdrop}>
+      <DocViewer
+        path={path}
+        refreshKey={refreshKey}
+        highlightText={highlightText}
+        mode="float"
+        docWidth={docWidth}
+        docFocus={docFocus}
+        onClose={onClose}
+        onBindClose={onBindClose}
+        onSaved={onSaved}
+        onNavigationBlocked={onNavigationBlocked}
+        onPin={onPin}
+        onToggleWidth={onToggleWidth}
+        onToggleFocus={onToggleFocus}
+        onOpenConversation={onOpenConversation}
+        mergeReview={mergeReview}
+        onMergeReviewChange={onMergeReviewChange}
+        onMergeAccept={onMergeAccept}
+        onMergeRegenerate={onMergeRegenerate}
+        onMergeReject={onMergeReject}
+        onLocateInTree={onLocateInTree}
+        onShareDoc={onShareDoc}
+      />
+    </KbFloatLayer>
   );
 }

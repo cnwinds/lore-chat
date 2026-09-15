@@ -256,12 +256,29 @@ class OpenApiService:
         )
 
     def revoke_instance(self, instance_id: str) -> dict:
-        updated = self._enrich_instance(
-            self.channel_instances.set_enabled(instance_id, False)
-        )
+        internal = self.channel_instances.get_internal(instance_id)
+        type_id = str(internal.get("type_id") or SCRIPT_API_TYPE_ID)
+        if type_id == SCRIPT_API_TYPE_ID:
+            updated = self._enrich_instance(
+                self.channel_instances.set_enabled(instance_id, False)
+            )
+            if self.channel_runtime is not None:
+                self.channel_runtime.sync_instance(instance_id)
+            return updated
+        if internal.get("enabled"):
+            raise OpenApiError(
+                "请先停用通道，再删除",
+                code="channel_enabled",
+                status=409,
+            )
         if self.channel_runtime is not None:
-            self.channel_runtime.sync_instance(instance_id)
-        return updated
+            self.channel_runtime.stop_instance(instance_id)
+        removed = self.channel_instances.delete(instance_id)
+        return {
+            "deleted": True,
+            "id": removed.get("id"),
+            "type_id": removed.get("type_id"),
+        }
 
     def update_instance(
         self,

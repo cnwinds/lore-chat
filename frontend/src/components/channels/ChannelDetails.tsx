@@ -97,7 +97,7 @@ export function ChannelDetails({
   return (
     <div className="channel-details">
       <div
-        className="channel-seg"
+        className="channel-details-tabs"
         role="tablist"
         aria-label={`${inst.name} 通道页签`}
       >
@@ -110,7 +110,7 @@ export function ChannelDetails({
               role="tab"
               aria-selected={pressed}
               aria-pressed={pressed}
-              className={`channel-seg-btn${pressed ? " channel-seg-btn--active" : ""}`}
+              className={`settings-tab${pressed ? " settings-tab--active" : ""}`}
               onClick={() => onToggleTab(item.id)}
             >
               {item.label}
@@ -212,19 +212,49 @@ export function ChannelDetails({
 
       {activeTab === "revoke" ? (
         <div className="channel-details-body">
-          <p className="channel-guide-lead">
-            {inst.type_id === "script_api"
-              ? "吊销后外部将无法再用这把 Key。历史仍可查看。"
-              : "停用后外部将无法再发来消息。历史仍可查看。"}
-          </p>
-          <button
-            type="button"
-            className="openapi-btn openapi-btn--danger"
-            disabled={busy || !inst.enabled}
-            onClick={() => onRevoke(inst.id)}
-          >
-            {inst.enabled ? revokeLabel : "已停用"}
-          </button>
+          {inst.type_id === "script_api" ? (
+            <>
+              <p className="channel-guide-lead">
+                吊销后外部将无法再用这把 Key。历史仍可查看。
+              </p>
+              <button
+                type="button"
+                className="openapi-btn openapi-btn--danger"
+                disabled={busy || !inst.enabled}
+                onClick={() => onRevoke(inst.id)}
+              >
+                {inst.enabled ? "吊销" : "已吊销"}
+              </button>
+            </>
+          ) : inst.enabled ? (
+            <>
+              <p className="channel-guide-lead">
+                请先停用通道，再删除。停用后外部不再进线；删除会把卡片从列表拿掉，历史仍可查看。
+              </p>
+              <button
+                type="button"
+                className="openapi-btn openapi-btn--danger"
+                disabled
+                title="请先停用通道，再删除"
+              >
+                删除
+              </button>
+            </>
+          ) : (
+            <>
+              <p className="channel-guide-lead">
+                删除后该通道会从列表消失。外部无法再接入；历史会话仍保留。
+              </p>
+              <button
+                type="button"
+                className="openapi-btn openapi-btn--danger"
+                disabled={busy}
+                onClick={() => onRevoke(inst.id)}
+              >
+                删除
+              </button>
+            </>
+          )}
         </div>
       ) : null}
     </div>

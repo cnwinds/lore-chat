@@ -153,6 +153,41 @@ describe("useDocPreviewLayout refresh after local save", () => {
     });
     expect(result.current.memoryPanelOpen).toBe(false);
   });
+
+  it("openChannelPanel uses the same exclusive left-edge slot as memory/media", () => {
+    const refreshSidebar = vi.fn();
+    const { result } = renderHook(() => useDocPreviewLayout(refreshSidebar));
+
+    act(() => {
+      result.current.openDocPreview("notes/a.md", undefined, { pin: true });
+      result.current.openDocPreview("notes/b.md");
+      result.current.openChannelPanel();
+    });
+    expect(result.current.channelPanelOpen).toBe(true);
+    expect(result.current.showChannelPanel).toBe(true);
+    expect(result.current.floatPath).toBeNull();
+    expect(result.current.mediaFolderPath).toBeNull();
+    expect(result.current.memoryPanelOpen).toBe(false);
+    expect(result.current.pinnedPath).toBe("notes/a.md");
+    expect(result.current.mainFloatWide).toBe(true);
+
+    act(() => {
+      result.current.openMemoryPanel();
+    });
+    expect(result.current.channelPanelOpen).toBe(false);
+    expect(result.current.memoryPanelOpen).toBe(true);
+
+    act(() => {
+      result.current.openChannelPanel();
+    });
+    expect(result.current.memoryPanelOpen).toBe(false);
+    expect(result.current.channelPanelOpen).toBe(true);
+
+    act(() => {
+      result.current.openChannelPanel();
+    });
+    expect(result.current.channelPanelOpen).toBe(false);
+  });
 });
 
 describe("buildDocViewerHandlers onSaved preserves pane position", () => {

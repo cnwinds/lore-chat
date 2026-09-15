@@ -3,7 +3,6 @@ import { RoleList } from "../role/RoleList";
 import { KbSidebar } from "../KbSidebar";
 import { RoleConfigPanel } from "../role/RoleConfigPanel";
 import { LeftSidebarFooter } from "./LeftSidebarFooter";
-import { ChannelPanel } from "../channels/ChannelPanel";
 import { useLeftSidebarWidth } from "../../hooks/useLeftSidebarWidth";
 
 type RoleListProps = ComponentProps<typeof RoleList>;
@@ -131,12 +130,6 @@ export function AppShell({
       </main>
       <RoleConfigPanel {...roleConfigPanelProps} />
       {docPinned}
-      <ChannelPanel
-        open={channelsOpen}
-        onRequestClose={() => {
-          if (channelsOpen) onToggleChannels?.();
-        }}
-      />
       {modals}
     </div>
   );

@@ -14,7 +14,8 @@ export function useAppEscapeKey(
       doc.floatPath ||
         doc.pinnedPath ||
         doc.mediaFolderPath ||
-        doc.memoryPanelOpen,
+        doc.memoryPanelOpen ||
+        doc.channelPanelOpen,
     );
     if (!hasPreview && !snippetSource) return;
     function onKeyDown(e: KeyboardEvent) {
@@ -40,6 +41,10 @@ export function useAppEscapeKey(
         doc.closeMediaFolder();
         return;
       }
+      if (doc.channelPanelOpen) {
+        doc.closeChannelPanel();
+        return;
+      }
       if (doc.floatPath) {
         doc.requestCloseFloatPreview();
         return;
@@ -55,6 +60,7 @@ export function useAppEscapeKey(
     doc.pinnedPath,
     doc.mediaFolderPath,
     doc.memoryPanelOpen,
+    doc.channelPanelOpen,
     doc.floatFocus,
     doc.pinnedFocus,
     snippetSource,

@@ -75,7 +75,7 @@ export function ChannelCard({
               {status.text}
             </span>
           </div>
-          <label className="channel-switch">
+          <label className="openapi-switch">
             <input
               type="checkbox"
               checked={inst.enabled}
@@ -113,7 +113,7 @@ export function ChannelCard({
           </div>
           <button
             type="button"
-            className="channel-copy-btn"
+            className="settings-btn settings-btn--compact"
             disabled={busy}
             onClick={() => onCopy(inst)}
           >
@@ -140,7 +140,7 @@ export function ChannelCard({
           </select>
           <button
             type="button"
-            className="channel-edit-link"
+            className="openapi-btn"
             disabled={busy || !inst.persona_id}
             onClick={() => onStartEditPrompt(inst)}
           >

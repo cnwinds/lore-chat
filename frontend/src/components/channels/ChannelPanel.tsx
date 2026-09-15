@@ -19,6 +19,7 @@ import {
   type ApiPersona,
 } from "../../api/openApi";
 import { copyTextToClipboard } from "../../utils/clipboard";
+import type { DocWidth } from "../../types/doc";
 import { showToast } from "../../utils/toast";
 import {
   EMPTY_CREATE_DRAFT,
@@ -26,6 +27,7 @@ import {
   buildTypeConfig,
   canSubmitCreateKey,
   channelNextSteps,
+  createLead,
   type CreateKeyDraft,
 } from "../settings/openApiSettingsModel";
 import { ChannelCard } from "./ChannelCard";
@@ -42,11 +44,16 @@ import {
 type Screen = "home" | "pick-type" | "create";
 
 type Props = {
-  open: boolean;
-  onRequestClose: () => void;
+  docWidth?: DocWidth;
+  onClose: () => void;
+  onToggleWidth?: () => void;
 };
 
-export function ChannelPanel({ open, onRequestClose }: Props) {
+export function ChannelPanel({
+  docWidth = "wide",
+  onClose,
+  onToggleWidth,
+}: Props) {
   const [personas, setPersonas] = useState<ApiPersona[]>([]);
   const [instances, setInstances] = useState<ChannelInstance[]>([]);
   const [types, setTypes] = useState<ChannelType[]>([]);
@@ -102,25 +109,21 @@ export function ChannelPanel({ open, onRequestClose }: Props) {
   }, []);
 
   useEffect(() => {
-    if (!open) return;
     void reload();
-  }, [open, reload]);
+  }, [reload]);
 
   useEffect(() => {
-    if (!open) return;
     function onKey(e: KeyboardEvent) {
-      if (e.key !== "Escape") return;
+      if (e.key !== "Escape" || screen === "home") return;
+      // 捕获阶段拦住，避免 App 级 Esc 把整层浮窗连同右侧钉住文档一起关掉。
       e.preventDefault();
-      if (screen !== "home") {
-        setScreen("home");
-        setError(null);
-        return;
-      }
-      onRequestClose();
+      e.stopImmediatePropagation();
+      setScreen("home");
+      setError(null);
     }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onRequestClose, screen]);
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [screen]);
 
   const usage = useMemo(() => personaUsage(instances), [instances]);
 
@@ -181,15 +184,22 @@ export function ChannelPanel({ open, onRequestClose }: Props) {
 
   const handleRevoke = async (id: string) => {
     const inst = instances.find((item) => item.id === id);
-    const label = inst?.type_id === "script_api" ? "吊销" : "停用";
-    if (!window.confirm(`${label}后外部将无法再发来消息。历史仍可查看。`)) return;
+    const isScript = inst?.type_id === "script_api";
+    if (!isScript && inst?.enabled) {
+      setError("请先停用通道，再删除");
+      return;
+    }
+    const confirmText = isScript
+      ? "吊销后外部将无法再用这把 Key。历史仍可查看。"
+      : "删除后该通道会从列表消失。外部无法再接入；历史仍可查看。";
+    if (!window.confirm(confirmText)) return;
     setBusy(true);
     try {
       await revokeChannelInstance(id);
-      showToast("已停用");
+      showToast(isScript ? "已吊销" : "已删除");
       await reload();
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "停用失败");
+      setError(e instanceof Error ? e.message : isScript ? "吊销失败" : "删除失败");
     } finally {
       setBusy(false);
     }
@@ -349,105 +359,105 @@ export function ChannelPanel({ open, onRequestClose }: Props) {
     });
   };
 
-  useEffect(() => {
-    if (open) return;
-    setScreen("home");
-    setError(null);
-    setImHint(null);
-  }, [open]);
-
-  useEffect(() => {
-    if (!open) return;
-    function onPointerDown(e: PointerEvent) {
-      const target = e.target;
-      if (!(target instanceof Element)) return;
-      if (target.closest("[data-channel-float]")) return;
-      if (target.closest("[data-channel-dock]")) return;
-      onRequestClose();
-    }
-    document.addEventListener("pointerdown", onPointerDown);
-    return () => document.removeEventListener("pointerdown", onPointerDown);
-  }, [open, onRequestClose]);
-
-  if (!open) return null;
+  const homeCrumb = "密钥可复制 · Tab 直接点开";
+  const title =
+    screen === "pick-type"
+      ? "添加通道"
+      : screen === "create"
+        ? `添加${typeLabel(createType, types)}`
+        : "聊天通道";
+  const crumb =
+    screen === "pick-type"
+      ? "先选类型。未实现的会标明即将支持。"
+      : screen === "create"
+        ? createLead(createType)
+        : homeCrumb;
+  const metaLabel = loading
+    ? "加载中…"
+    : screen === "home"
+      ? `${instances.length} 个通道`
+      : null;
 
   return (
-    <div className="channel-float-layer">
-      <div className="channel-float-scrim" aria-hidden />
-      <div
-        className="channel-float"
-        data-channel-float=""
-        role="dialog"
-        aria-modal="false"
-        aria-label="聊天通道"
-      >
-        {loading && screen === "home" ? (
-          <div className="openapi openapi--loading">
-            <ChannelFloatClose onClick={onRequestClose} />
-            <div className="openapi-skeleton" />
-            <div className="openapi-skeleton openapi-skeleton--short" />
-          </div>
-        ) : screen === "pick-type" ? (
-          <>
-            <ChannelFloatClose onClick={onRequestClose} />
-            <PickTypeScreen
-              types={types}
-              busy={busy}
-              error={error}
-              onBack={() => {
-                setError(null);
-                setScreen("home");
-              }}
-              onPick={(typeId) => openCreate(typeId)}
-            />
-          </>
+    <div
+      className={`kb-float-panel kb-float-panel--${docWidth}`}
+      aria-label="聊天通道"
+    >
+      <header className="kb-float-header">
+        <div className="kb-float-header-main">
+          <div className="kb-float-kicker">聊天通道</div>
+          <h2 className="kb-float-title">{title}</h2>
+          <nav className="kb-float-crumb" aria-label="说明">
+            <span className="kb-float-crumb-seg">
+              <span className="is-current">{crumb}</span>
+            </span>
+          </nav>
+        </div>
+        <div className="kb-float-header-actions">
+          {screen === "home" && instances.length > 0 ? (
+            <button
+              type="button"
+              className="settings-btn settings-btn--compact settings-btn--primary"
+              disabled={busy}
+              onClick={openPicker}
+            >
+              添加
+            </button>
+          ) : null}
+          {onToggleWidth ? (
+            <button
+              type="button"
+              className="doc-icon-btn"
+              title={docWidth === "wide" ? "变窄" : "变宽"}
+              onClick={onToggleWidth}
+            >
+              {docWidth === "wide" ? "⟧" : "⟦"}
+            </button>
+          ) : null}
+          <button
+            type="button"
+            className="doc-icon-btn"
+            title="关闭"
+            aria-label="关闭"
+            onClick={onClose}
+          >
+            ×
+          </button>
+        </div>
+      </header>
+
+      {metaLabel ? <div className="kb-float-meta">{metaLabel}</div> : null}
+
+      <div className="kb-float-body">
+        {error ? <div className="kb-float-error">错误：{error}</div> : null}
+
+        {screen === "pick-type" ? (
+          <PickTypeScreen
+            types={types}
+            busy={busy}
+            onBack={() => {
+              setError(null);
+              setScreen("home");
+            }}
+            onPick={(typeId) => openCreate(typeId)}
+          />
         ) : screen === "create" ? (
-          <>
-            <ChannelFloatClose onClick={onRequestClose} />
-            <CreateKeyScreen
-              draft={draft}
-              personas={personas}
-              roles={roles}
-              busy={busy}
-              error={error}
-              typeId={createType}
-              typeLabel={typeLabel(createType, types)}
-              onChange={setDraft}
-              onBack={() => {
-                setError(null);
-                setScreen("pick-type");
-              }}
-              onSubmit={() => void handleCreate()}
-            />
-          </>
+          <CreateKeyScreen
+            draft={draft}
+            personas={personas}
+            roles={roles}
+            busy={busy}
+            typeId={createType}
+            typeLabel={typeLabel(createType, types)}
+            onChange={setDraft}
+            onBack={() => {
+              setError(null);
+              setScreen("pick-type");
+            }}
+            onSubmit={() => void handleCreate()}
+          />
         ) : (
           <div className="channel-panel-home">
-            <header className="channel-float-header">
-              <div>
-                <h3 className="channel-panel-title">
-                  聊天通道
-                </h3>
-                <p className="channel-panel-lead">
-                  悬浮窗 · 密钥可复制 · Tab 直接点开
-                </p>
-              </div>
-              <div className="channel-float-header-actions">
-                {instances.length > 0 ? (
-                  <button
-                    type="button"
-                    className="settings-btn settings-btn--compact settings-btn--primary channel-add-btn"
-                    disabled={busy}
-                    onClick={openPicker}
-                  >
-                    添加
-                  </button>
-                ) : null}
-                <ChannelFloatClose onClick={onRequestClose} />
-              </div>
-            </header>
-
-            {error ? <p className="settings-panel-error">{error}</p> : null}
-
             {imHint ? (
               <div className="openapi-token" role="status">
                 <p className="openapi-token-warn">{imHint}</p>
@@ -463,11 +473,11 @@ export function ChannelPanel({ open, onRequestClose }: Props) {
               </div>
             ) : null}
 
-            {instances.length === 0 ? (
-              <div className="openapi-empty">
-                <span className="openapi-empty-icon" aria-hidden />
-                <p className="openapi-empty-title">还没有聊天通道</p>
-                <p className="openapi-empty-hint">
+            {!loading && instances.length === 0 ? (
+              <div className="kb-float-empty">
+                <div className="kb-float-empty-mark" aria-hidden />
+                <p>还没有聊天通道</p>
+                <p className="kb-float-empty-hint">
                   添加后，脚本或外部聊天就能接到这里。
                 </p>
                 <button
@@ -479,7 +489,9 @@ export function ChannelPanel({ open, onRequestClose }: Props) {
                   添加通道
                 </button>
               </div>
-            ) : (
+            ) : null}
+
+            {instances.length > 0 ? (
               <ul className="channel-card-list">
                 {instances.map((inst) => (
                   <ChannelCard
@@ -508,77 +520,59 @@ export function ChannelPanel({ open, onRequestClose }: Props) {
                   />
                 ))}
               </ul>
-            )}
+            ) : null}
 
-            <section className="channel-shared">
-              <button
-                type="button"
-                className="channel-shared-toggle"
-                aria-expanded={personasOpen}
-                onClick={() => setPersonasOpen((v) => !v)}
-              >
-                <span>
-                  <strong>共用角色</strong>
-                  <em>默认折叠 · 可多个</em>
-                </span>
-                <span aria-hidden>{personasOpen ? "▾" : "›"}</span>
-              </button>
-              {personasOpen ? (
-                <ChannelPersonas
-                  personas={personas}
-                  usage={usage}
-                  busy={busy}
-                  editingId={editingPersonaId}
-                  editName={editName}
-                  editPrompt={editPrompt}
-                  creating={creatingPersona}
-                  createName={createPersonaName}
-                  createPrompt={createPersonaPrompt}
-                  onToggleCreate={() => {
-                    setCreatingPersona((v) => !v);
-                    setCreatePersonaName("");
-                    setCreatePersonaPrompt("");
-                  }}
-                  onCreateName={setCreatePersonaName}
-                  onCreatePrompt={setCreatePersonaPrompt}
-                  onCreate={() => void handleCreatePersona()}
-                  onEditName={setEditName}
-                  onEditPrompt={setEditPrompt}
-                  onStartEdit={(persona) => {
-                    setEditingPersonaId(persona.id);
-                    setEditingPromptId(null);
-                    setEditName(persona.name);
-                    setEditPrompt(persona.system_prompt || "");
-                  }}
-                  onCancelEdit={() => setEditingPersonaId(null)}
-                  onSave={(id) => void handleSavePersona(id)}
-                  onDelete={(id) => void handleDeletePersona(id)}
-                />
-              ) : null}
-            </section>
+            {!loading ? (
+              <section className="settings-group channel-shared">
+                <button
+                  type="button"
+                  className="channel-shared-toggle"
+                  aria-expanded={personasOpen}
+                  onClick={() => setPersonasOpen((v) => !v)}
+                >
+                  <span>
+                    <strong>共用角色</strong>
+                    <em>默认折叠 · 可多个</em>
+                  </span>
+                  <span aria-hidden>{personasOpen ? "▾" : "›"}</span>
+                </button>
+                {personasOpen ? (
+                  <ChannelPersonas
+                    personas={personas}
+                    usage={usage}
+                    busy={busy}
+                    editingId={editingPersonaId}
+                    editName={editName}
+                    editPrompt={editPrompt}
+                    creating={creatingPersona}
+                    createName={createPersonaName}
+                    createPrompt={createPersonaPrompt}
+                    onToggleCreate={() => {
+                      setCreatingPersona((v) => !v);
+                      setCreatePersonaName("");
+                      setCreatePersonaPrompt("");
+                    }}
+                    onCreateName={setCreatePersonaName}
+                    onCreatePrompt={setCreatePersonaPrompt}
+                    onCreate={() => void handleCreatePersona()}
+                    onEditName={setEditName}
+                    onEditPrompt={setEditPrompt}
+                    onStartEdit={(persona) => {
+                      setEditingPersonaId(persona.id);
+                      setEditingPromptId(null);
+                      setEditName(persona.name);
+                      setEditPrompt(persona.system_prompt || "");
+                    }}
+                    onCancelEdit={() => setEditingPersonaId(null)}
+                    onSave={(id) => void handleSavePersona(id)}
+                    onDelete={(id) => void handleDeletePersona(id)}
+                  />
+                ) : null}
+              </section>
+            ) : null}
           </div>
         )}
       </div>
     </div>
-  );
-}
-
-function ChannelFloatClose({ onClick }: { onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      className="channel-float-close"
-      aria-label="关闭聊天通道"
-      onClick={onClick}
-    >
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden>
-        <path
-          d="M6 6l12 12M18 6L6 18"
-          stroke="currentColor"
-          strokeWidth="2.2"
-          strokeLinecap="round"
-        />
-      </svg>
-    </button>
   );
 }

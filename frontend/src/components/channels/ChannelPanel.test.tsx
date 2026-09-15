@@ -50,6 +50,7 @@ const getChannelTimeline = vi.mocked(channelPlugins.getChannelTimeline);
 const getChannelLogs = vi.mocked(channelPlugins.getChannelLogs);
 const getChannelUsage = vi.mocked(channelPlugins.getChannelUsage);
 const getChannelCredential = vi.mocked(channelPlugins.getChannelCredential);
+const revokeChannelInstance = vi.mocked(channelPlugins.revokeChannelInstance);
 const copyTextToClipboard = vi.mocked(clipboard.copyTextToClipboard);
 
 const sampleTypes = [
@@ -134,6 +135,7 @@ function seedEmpty() {
     can_copy_full: true,
   });
   copyTextToClipboard.mockResolvedValue(true);
+  revokeChannelInstance.mockResolvedValue({ deleted: true, id: "k1" } as never);
 }
 
 afterEach(() => {
@@ -146,7 +148,7 @@ beforeEach(() => {
 });
 
 function renderPanel() {
-  return render(<ChannelPanel open onRequestClose={() => undefined} />);
+  return render(<ChannelPanel onClose={() => undefined} />);
 }
 
 async function goCreateScript(user: ReturnType<typeof userEvent.setup>) {
@@ -159,7 +161,7 @@ describe("ChannelPanel", () => {
     renderPanel();
     expect(await screen.findByText("还没有聊天通道")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "添加通道" })).toBeInTheDocument();
-    expect(screen.getByText("聊天通道")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "聊天通道" })).toBeInTheDocument();
     expect(screen.queryByText("开放接口")).toBeNull();
   });
 
@@ -180,7 +182,7 @@ describe("ChannelPanel", () => {
         name: "周报脚本",
       });
     });
-    expect(await screen.findByText("悬浮窗 · 密钥可复制 · Tab 直接点开")).toBeInTheDocument();
+    expect(await screen.findByText("密钥可复制 · Tab 直接点开")).toBeInTheDocument();
     expect(screen.queryByText("只显示这一次，请立刻复制保存。")).toBeNull();
   });
 
@@ -393,26 +395,27 @@ describe("ChannelPanel", () => {
     });
   });
 
-  it("renders as a floating dialog and closes via X, Escape, or click-outside", async () => {
+  it("uses the kb-float content chrome and closes via X", async () => {
     const user = userEvent.setup();
-    const onRequestClose = vi.fn();
-    render(
-      <div>
-        <button type="button">outside</button>
-        <ChannelPanel open onRequestClose={onRequestClose} />
-      </div>,
-    );
-    expect(await screen.findByRole("dialog", { name: "聊天通道" })).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "关闭聊天通道" }));
-    expect(onRequestClose).toHaveBeenCalledTimes(1);
+    const onClose = vi.fn();
+    const { container } = render(<ChannelPanel onClose={onClose} />);
+    expect(await screen.findByLabelText("聊天通道")).toBeInTheDocument();
+    expect(container.querySelector(".kb-float-panel")).not.toBeNull();
+    expect(container.querySelector(".kb-float-header")).not.toBeNull();
+    expect(container.querySelector(".channel-float")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "关闭" }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
 
-    onRequestClose.mockClear();
+  it("returns from create screens on Escape without closing the float", async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    render(<ChannelPanel onClose={onClose} />);
+    await user.click(await screen.findByRole("button", { name: "添加通道" }));
+    expect(await screen.findByRole("button", { name: /脚本 \/ HTTP/ })).toBeInTheDocument();
     await user.keyboard("{Escape}");
-    expect(onRequestClose).toHaveBeenCalledTimes(1);
-
-    onRequestClose.mockClear();
-    await user.click(screen.getByRole("button", { name: "outside" }));
-    expect(onRequestClose).toHaveBeenCalledTimes(1);
+    expect(onClose).not.toHaveBeenCalled();
+    expect(await screen.findByText("还没有聊天通道")).toBeInTheDocument();
   });
 
   it("keeps shared personas collapsed until opened", async () => {
@@ -427,5 +430,61 @@ describe("ChannelPanel", () => {
     await user.click(screen.getByRole("button", { name: /共用角色/ }));
     expect(await screen.findByRole("button", { name: "新建共用角色" })).toBeInTheDocument();
     expect(screen.getByText("1 个通道在用")).toBeInTheDocument();
+  });
+
+  it("does not delete an enabled Feishu channel until it is disabled", async () => {
+    const user = userEvent.setup();
+    const feishu = {
+      ...sampleInstance,
+      id: "f1",
+      type_id: "feishu",
+      name: "飞书助手",
+      role_id: "ext_f1",
+      config: { app_id: "cli_x", ingress: "websocket" },
+    };
+    listApiPersonas.mockResolvedValue({
+      personas: [sampleInstance.persona!],
+    });
+    listChannelInstances.mockResolvedValue({ instances: [feishu] });
+    renderPanel();
+    await user.click(await screen.findByRole("tab", { name: "删除" }));
+    expect(
+      screen.getByText(/请先停用通道，再删除/),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "删除" })).toBeDisabled();
+    expect(revokeChannelInstance).not.toHaveBeenCalled();
+  });
+
+  it("deletes a disabled Feishu channel from the delete tab", async () => {
+    const user = userEvent.setup();
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const feishu = {
+      ...sampleInstance,
+      id: "f1",
+      type_id: "feishu",
+      name: "飞书助手",
+      enabled: false,
+      status: "disabled",
+      role_id: "ext_f1",
+      config: { app_id: "cli_x", ingress: "websocket" },
+    };
+    listApiPersonas.mockResolvedValue({
+      personas: [sampleInstance.persona!],
+    });
+    listChannelInstances
+      .mockResolvedValueOnce({ instances: [feishu] })
+      .mockResolvedValue({ instances: [] });
+    revokeChannelInstance.mockResolvedValue({ deleted: true, id: "f1" } as never);
+    renderPanel();
+    await user.click(await screen.findByRole("tab", { name: "删除" }));
+    const deleteBtn = screen.getByRole("button", { name: "删除" });
+    expect(deleteBtn).toBeEnabled();
+    await user.click(deleteBtn);
+    await waitFor(() => {
+      expect(revokeChannelInstance).toHaveBeenCalledWith("f1");
+    });
+    expect(confirmSpy).toHaveBeenCalled();
+    expect(await screen.findByText("还没有聊天通道")).toBeInTheDocument();
+    confirmSpy.mockRestore();
   });
 });
