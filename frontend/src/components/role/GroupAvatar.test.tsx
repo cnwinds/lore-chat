@@ -23,7 +23,10 @@ describe("GroupAvatar", () => {
         ]}
       />,
     );
-    expect(document.querySelector(".group-avatar--2")).toBeTruthy();
+    expect(document.querySelector(".group-avatar")).toBeTruthy();
+    expect(document.querySelector(".group-avatar--2")).toBeNull();
+    expect(document.querySelectorAll(".group-avatar .role-avatar")).toHaveLength(2);
+    expect(document.querySelectorAll(".group-avatar-slot")).toHaveLength(2);
     const letters = [...document.querySelectorAll(".role-avatar-letter")].map(
       (el) => el.textContent,
     );
@@ -40,5 +43,22 @@ describe("GroupAvatar", () => {
     const mark = document.querySelector(".group-avatar-mark");
     expect(mark).toHaveTextContent("群");
     expect(mark).toHaveAttribute("title", "群聊");
+  });
+
+  it("keeps a 2x2 grid and empty slots instead of stretching tiles", () => {
+    render(
+      <GroupAvatar
+        name="登录页"
+        seed="g1"
+        members={[
+          { id: "a", name: "通用助手" },
+          { id: "b", name: "游戏开发" },
+          { id: "c", name: "写作助手" },
+        ]}
+      />,
+    );
+    expect(document.querySelector(".group-avatar--3")).toBeNull();
+    expect(document.querySelectorAll(".group-avatar .role-avatar")).toHaveLength(3);
+    expect(document.querySelectorAll(".group-avatar-slot")).toHaveLength(1);
   });
 });

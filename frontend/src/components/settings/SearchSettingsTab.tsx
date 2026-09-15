@@ -28,7 +28,6 @@ export function SearchSettingsTab({
     <>
       <div className="settings-group">
         <h3 className="settings-group-title">检索参数</h3>
-        <p className="settings-group-hint">控制知识库混合检索的召回与融合策略。</p>
         <label className="settings-field">
           <span>向量相似度下限</span>
           <input

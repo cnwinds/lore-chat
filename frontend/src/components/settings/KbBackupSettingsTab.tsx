@@ -46,7 +46,6 @@ export function KbBackupSettingsTab({
 
       <div className="settings-group">
         <h3 className="settings-group-title">导出</h3>
-        <p className="settings-group-hint">将当前知识库打包为 zip 文件下载到本地。</p>
         <div className="settings-action-row">
           <div className="settings-action-row-text">
             <span className="settings-action-row-title">导出知识库</span>
@@ -65,7 +64,6 @@ export function KbBackupSettingsTab({
 
       <div className="settings-group">
         <h3 className="settings-group-title">导入</h3>
-        <p className="settings-group-hint">从 zip 备份包恢复知识库数据。</p>
         <div className="settings-import-block">
           <span className="settings-field-label">选择 zip 包</span>
           <input

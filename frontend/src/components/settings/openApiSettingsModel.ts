@@ -213,22 +213,6 @@ export function feishuNextSteps(): string {
   return channelNextSteps("feishu") || "";
 }
 
-export function createLead(typeId: string): string {
-  if (typeId === "feishu") {
-    return "填名称和飞书应用凭证。默认走长连接，不需要公网地址。";
-  }
-  if (typeId === "slack") {
-    return "填 Bot Token。默认 Socket Mode，需要 App Token；不需要公网地址。";
-  }
-  if (typeId === "wecom") {
-    return "填企业微信应用凭证。回调需要公网根地址；可先保存再启用。";
-  }
-  if (typeId === "dingtalk") {
-    return "填 AppKey / AppSecret。默认 Stream 长连接，不需要公网地址。";
-  }
-  return "填个名字就行。说话方式可先不改。";
-}
-
 export function formatOpenApiWhen(iso?: string | null): string {
   if (!iso) return "尚未调用";
   const ms = Date.parse(iso);

@@ -520,10 +520,10 @@ a:hover {
 
 .kb-float-header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 14px 16px 10px;
+  padding: 10px 16px;
   border-bottom: 1px solid var(--border);
   background:
     linear-gradient(
@@ -4528,7 +4528,7 @@ button.memory-fact-statement--jump:focus-visible {
   font-size: var(--text-sm);
 }
 
-.openapi-type-card span:last-child {
+.openapi-type-soon {
   font-size: 11px;
   color: var(--text-muted);
 }
@@ -10181,20 +10181,10 @@ button.source-link--inline.conversation-md-link {
 }
 
 .share-modal-header h3 {
-  margin: 0 0 4px;
+  margin: 0;
   font-size: var(--text-md, 1rem);
   font-weight: 600;
   letter-spacing: -0.01em;
-}
-
-.share-modal-subtitle {
-  margin: 0;
-  font-size: var(--text-xs);
-  color: var(--text-muted);
-  line-height: 1.45;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .share-modal-alert {

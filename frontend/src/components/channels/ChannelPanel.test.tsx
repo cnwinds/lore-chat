@@ -163,6 +163,8 @@ describe("ChannelPanel", () => {
     expect(screen.getByRole("button", { name: "添加通道" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "聊天通道" })).toBeInTheDocument();
     expect(screen.queryByText("开放接口")).toBeNull();
+    expect(document.querySelector(".kb-float-kicker")).toBeNull();
+    expect(screen.queryByText("密钥可复制 · Tab 直接点开")).toBeNull();
   });
 
   it("creates a script channel with only a name on the default path", async () => {
@@ -173,7 +175,8 @@ describe("ChannelPanel", () => {
     });
     renderPanel();
     await goCreateScript(user);
-    expect(screen.getByText("填个名字就行。说话方式可先不改。")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "添加脚本 / HTTP" })).toBeInTheDocument();
+    expect(screen.queryByText("填个名字就行。说话方式可先不改。")).toBeNull();
     await user.type(screen.getByPlaceholderText("例如：周报脚本"), "周报脚本");
     await user.click(screen.getByRole("button", { name: "创建并启用" }));
     await waitFor(() => {
@@ -182,7 +185,8 @@ describe("ChannelPanel", () => {
         name: "周报脚本",
       });
     });
-    expect(await screen.findByText("密钥可复制 · Tab 直接点开")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "聊天通道" })).toBeInTheDocument();
+    expect(screen.queryByText("密钥可复制 · Tab 直接点开")).toBeNull();
     expect(screen.queryByText("只显示这一次，请立刻复制保存。")).toBeNull();
   });
 
@@ -309,9 +313,10 @@ describe("ChannelPanel", () => {
     expect(screen.getByRole("button", { name: /微信公众号/ })).toBeDisabled();
     expect(screen.getByText("即将支持")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /飞书/ }));
+    expect(screen.getByRole("heading", { name: "添加飞书" })).toBeInTheDocument();
     expect(
-      screen.getByText("填名称和飞书应用凭证。默认走长连接，不需要公网地址。"),
-    ).toBeInTheDocument();
+      screen.queryByText("填名称和飞书应用凭证。默认走长连接，不需要公网地址。"),
+    ).toBeNull();
     createChannelInstance.mockResolvedValue({
       id: "f1",
       type_id: "feishu",

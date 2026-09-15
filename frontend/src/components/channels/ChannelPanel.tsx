@@ -27,7 +27,6 @@ import {
   buildTypeConfig,
   canSubmitCreateKey,
   channelNextSteps,
-  createLead,
   type CreateKeyDraft,
 } from "../settings/openApiSettingsModel";
 import { ChannelCard } from "./ChannelCard";
@@ -363,19 +362,12 @@ export function ChannelPanel({
     });
   };
 
-  const homeCrumb = "密钥可复制 · Tab 直接点开";
   const title =
     screen === "pick-type"
       ? "添加通道"
       : screen === "create"
         ? `添加${typeLabel(createType, types)}`
         : "聊天通道";
-  const crumb =
-    screen === "pick-type"
-      ? "先选类型。未实现的会标明即将支持。"
-      : screen === "create"
-        ? createLead(createType)
-        : homeCrumb;
   const metaLabel = loading
     ? "加载中…"
     : screen === "home"
@@ -389,13 +381,7 @@ export function ChannelPanel({
     >
       <header className="kb-float-header">
         <div className="kb-float-header-main">
-          <div className="kb-float-kicker">聊天通道</div>
           <h2 className="kb-float-title">{title}</h2>
-          <nav className="kb-float-crumb" aria-label="说明">
-            <span className="kb-float-crumb-seg">
-              <span className="is-current">{crumb}</span>
-            </span>
-          </nav>
         </div>
         <div className="kb-float-header-actions">
           {screen === "home" && instances.length > 0 ? (
@@ -536,7 +522,6 @@ export function ChannelPanel({
                 >
                   <span>
                     <strong>共用角色</strong>
-                    <em>默认折叠 · 可多个</em>
                   </span>
                   <span aria-hidden>{personasOpen ? "▾" : "›"}</span>
                 </button>

@@ -360,13 +360,6 @@ export function ShareLinkModal({
           <ShareTypeIcon kind={target.type} />
           <div className="share-modal-header-text">
             <h3 id="share-link-title">分享{isConversation ? "对话" : "文档"}</h3>
-            <p className="share-modal-subtitle">
-              {isConversation
-                ? followLive
-                  ? "生成只读外链，访客可查看该对话的最新内容"
-                  : "生成只读外链，内容为当前消息快照"
-                : target.path}
-            </p>
           </div>
         </header>
 

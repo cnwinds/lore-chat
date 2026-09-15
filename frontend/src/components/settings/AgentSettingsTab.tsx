@@ -68,7 +68,6 @@ export function AgentSettingsTab({
       </div>
       <div className="settings-group">
         <h3 className="settings-group-title">工具调用</h3>
-        <p className="settings-group-hint">控制 Agent 执行工具时的并发与次数限制。</p>
         <label className="settings-field">
           <span>最大工具调用次数</span>
           <input
