@@ -18,6 +18,14 @@ describe("chat bubble chrome", () => {
     expect(css).toMatch(/\.chat-meta-user\s*\{[^}]*justify-content:\s*flex-end;/);
     expect(css).not.toMatch(/\.chat-meta-spacer/);
   });
+
+  it("keeps the assistant colophon in one left-aligned cluster", () => {
+    expect(css).toMatch(
+      /\.chat-meta-assistant\s*\{[^}]*justify-content:\s*flex-start;/,
+    );
+    expect(css).not.toMatch(/\.chat-meta-actions\s*\{[^}]*margin-left:\s*auto/);
+    expect(css).not.toMatch(/\.chat-meta-info\s*\{/);
+  });
 });
 
 describe("fold chevron", () => {

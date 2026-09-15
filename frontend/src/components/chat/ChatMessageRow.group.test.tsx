@@ -113,3 +113,38 @@ describe("ChatMessageRow user meta", () => {
     expect(meta?.querySelector(".chat-meta-spacer")).toBeNull();
   });
 });
+
+describe("ChatMessageRow assistant meta", () => {
+  it("lays out time with nested duration, then model, then copy", () => {
+    const message: ChatMessage = {
+      id: "a1",
+      role: "assistant",
+      text: "故事主线是第一地球。",
+      ts: "2026-01-01T06:33:00.000Z",
+      model_name: "glm-5.3-flash - max",
+      total_duration_ms: 58200,
+    };
+    render(
+      <ChatMessageRow
+        message={message}
+        isLiveStreaming={false}
+        liveElapsedMs={0}
+        previewPath={null}
+        conversationId="c1"
+        onOpenSource={() => {}}
+        onQuestionResolved={() => {}}
+      />,
+    );
+    const meta = document.querySelector(".chat-meta-assistant");
+    const when = meta?.querySelector(".chat-meta-when");
+    const model = meta?.querySelector(".chat-meta-model");
+    const copy = meta?.querySelector(".chat-copy-btn");
+    expect(when?.textContent).toMatch(/（58\.2s）/);
+    expect(model?.textContent).toBe("glm-5.3-flash - max");
+    expect(copy).toBeTruthy();
+    expect(when?.nextElementSibling).toBe(model);
+    expect(model?.nextElementSibling).toBe(
+      meta?.querySelector(".chat-meta-actions"),
+    );
+  });
+});

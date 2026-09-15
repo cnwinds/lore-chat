@@ -6642,17 +6642,28 @@ button.memory-fact-statement--jump:focus-visible {
   gap: 10px;
 }
 
-.chat-meta-info {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  min-width: 0;
-  overflow-wrap: anywhere;
+.chat-meta-assistant {
+  justify-content: flex-start;
+  gap: 12px;
 }
 
-.chat-meta-assistant {
-  justify-content: space-between;
+.chat-meta-when {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
+
+.chat-meta-elapsed {
+  color: var(--text-muted);
+}
+
+.chat-meta-model {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 18em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
 }
 
 .chat-meta-actions {
@@ -6660,7 +6671,6 @@ button.memory-fact-statement--jump:focus-visible {
   align-items: center;
   gap: 6px;
   flex-shrink: 0;
-  margin-left: auto;
 }
 
 .chat-retry-btn {
