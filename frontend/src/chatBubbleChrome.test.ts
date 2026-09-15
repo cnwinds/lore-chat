@@ -31,7 +31,7 @@ describe("chat bubble chrome", () => {
 describe("overlay scrollbars", () => {
   it("hides native scrollbars so they do not occupy layout", () => {
     expect(css).toMatch(/\*\s*\{[^}]*scrollbar-width:\s*none;/);
-    expect(css).toMatch(/\*::-webkit-scrollbar\s*\{[^}]*width:\s*0;/);
+    expect(css).toMatch(/\*::-webkit-scrollbar\s*\{[^}]*display:\s*none;/);
     expect(css).not.toMatch(/\*\s*\{[^}]*scrollbar-width:\s*thin;/);
   });
 });
