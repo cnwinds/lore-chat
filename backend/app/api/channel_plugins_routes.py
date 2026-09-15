@@ -112,6 +112,8 @@ async def revoke_instance(instance_id: str, request: Request):
         return container(request).open_api.revoke_instance(instance_id)
     except KeyError as e:
         raise HTTPException(404, "通道不存在") from e
+    except OpenApiError as e:
+        _raise(e)
 
 
 @router.get("/personas")

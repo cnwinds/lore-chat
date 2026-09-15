@@ -313,6 +313,22 @@ class ChannelInstanceStore:
     def set_enabled(self, instance_id: str, enabled: bool) -> dict[str, Any]:
         return self.update(instance_id, enabled=enabled)
 
+    def delete(self, instance_id: str) -> dict[str, Any]:
+        """从列表移除实例。不删 hidden 工作角色与历史会话。"""
+        with self._lock:
+            items = self._load()
+            found = None
+            kept: list[dict[str, Any]] = []
+            for item in items:
+                if item.get("id") == instance_id:
+                    found = item
+                    continue
+                kept.append(item)
+            if found is None:
+                raise KeyError(instance_id)
+            self._save(kept)
+            return self._public(found)
+
     def touch(self, instance_id: str) -> None:
         stamp = _now()
         with self._lock:

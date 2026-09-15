@@ -186,15 +186,22 @@ export function ChannelPanel({
 
   const handleRevoke = async (id: string) => {
     const inst = instances.find((item) => item.id === id);
-    const label = inst?.type_id === "script_api" ? "吊销" : "停用";
-    if (!window.confirm(`${label}后外部将无法再发来消息。历史仍可查看。`)) return;
+    const isScript = inst?.type_id === "script_api";
+    if (!isScript && inst?.enabled) {
+      setError("请先停用通道，再删除");
+      return;
+    }
+    const confirmText = isScript
+      ? "吊销后外部将无法再用这把 Key。历史仍可查看。"
+      : "删除后该通道会从列表消失。外部无法再接入；历史仍可查看。";
+    if (!window.confirm(confirmText)) return;
     setBusy(true);
     try {
       await revokeChannelInstance(id);
-      showToast("已停用");
+      showToast(isScript ? "已吊销" : "已删除");
       await reload();
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "停用失败");
+      setError(e instanceof Error ? e.message : isScript ? "吊销失败" : "删除失败");
     } finally {
       setBusy(false);
     }

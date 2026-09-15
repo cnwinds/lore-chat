@@ -336,3 +336,80 @@ def test_feishu_credential_copy_includes_app_id(tmp_path):
         assert "secret-value" in payload["copy_text"]
     finally:
         _close(client)
+
+
+def test_store_delete_removes_instance(tmp_path):
+    kb = tmp_path / "kb"
+    store = ChannelInstanceStore(kb, api_keys=ApiKeyStore(kb))
+    inst = store.create(
+        type_id="feishu",
+        name="飞书",
+        persona_id="p1",
+        role_id="ext_del01",
+        config={"app_id": "cli_x"},
+        secrets={"app_secret": "s"},
+        enabled=False,
+    )
+    removed = store.delete(inst["id"])
+    assert removed["id"] == inst["id"]
+    assert store.list_all() == []
+
+
+def test_delete_disabled_feishu_instance(tmp_path):
+    _app, client = _setup(tmp_path)
+    try:
+        created = client.post(
+            "/api/channel-plugins/instances",
+            json={
+                "type_id": "feishu",
+                "name": "飞书待删",
+                "config": {"app_id": "cli_del", "ingress": "websocket"},
+                "secrets": {"app_secret": "secret-value"},
+            },
+        )
+        assert created.status_code == 200, created.text
+        inst_id = created.json()["id"]
+
+        blocked = client.delete(f"/api/channel-plugins/instances/{inst_id}")
+        assert blocked.status_code == 409, blocked.text
+        assert "请先停用" in blocked.text
+        still = client.get("/api/channel-plugins/instances").json()["instances"]
+        assert any(item["id"] == inst_id for item in still)
+
+        off = client.patch(
+            f"/api/channel-plugins/instances/{inst_id}",
+            json={"enabled": False},
+        )
+        assert off.status_code == 200, off.text
+        assert off.json()["enabled"] is False
+
+        deleted = client.delete(f"/api/channel-plugins/instances/{inst_id}")
+        assert deleted.status_code == 200, deleted.text
+        assert deleted.json()["deleted"] is True
+        assert deleted.json()["id"] == inst_id
+        gone = client.get("/api/channel-plugins/instances").json()["instances"]
+        assert all(item["id"] != inst_id for item in gone)
+        missing = client.delete(f"/api/channel-plugins/instances/{inst_id}")
+        assert missing.status_code == 404
+    finally:
+        _close(client)
+
+
+def test_script_delete_still_revokes_instead_of_removing(tmp_path):
+    _app, client = _setup(tmp_path)
+    try:
+        created = client.post(
+            "/api/channel-plugins/instances",
+            json={"type_id": "script_api", "name": "脚本吊销"},
+        )
+        assert created.status_code == 200, created.text
+        inst_id = created.json()["id"]
+        revoked = client.delete(f"/api/channel-plugins/instances/{inst_id}")
+        assert revoked.status_code == 200, revoked.text
+        body = revoked.json()
+        assert body["id"] == inst_id
+        assert body["enabled"] is False
+        listed = client.get("/api/channel-plugins/instances").json()["instances"]
+        assert any(item["id"] == inst_id and item["enabled"] is False for item in listed)
+    finally:
+        _close(client)
