@@ -5837,7 +5837,8 @@ button.memory-fact-statement--jump:focus-visible {
 .doc-overflow-menu--fixed {
   position: fixed;
   right: auto;
-  z-index: 80;
+  /* 高于手机左栏 110、设置抽屉 1002，否则菜单会画在侧栏后面，点了像没反应 */
+  z-index: 1300;
 }
 
 .doc-overflow-item {

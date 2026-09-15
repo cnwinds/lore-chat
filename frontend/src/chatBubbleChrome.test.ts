@@ -28,6 +28,12 @@ describe("chat bubble chrome", () => {
   });
 });
 
+describe("fixed overflow menu", () => {
+  it("stacks above the mobile nav drawer and settings sheet", () => {
+    expect(css).toMatch(/\.doc-overflow-menu--fixed\s*\{[^}]*z-index:\s*1300;/);
+  });
+});
+
 describe("overlay scrollbars", () => {
   it("hides native scrollbars so they do not occupy layout", () => {
     expect(css).toMatch(/\*\s*\{[^}]*scrollbar-width:\s*none;/);

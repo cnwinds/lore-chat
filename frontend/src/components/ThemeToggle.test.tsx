@@ -18,6 +18,8 @@ describe("ThemeToggle", () => {
     await user.click(screen.getByRole("button", { name: /主题/ }));
     const menu = screen.getByRole("menu", { name: "选择主题" });
     expect(menu).toBeInTheDocument();
+    expect(menu.className).toMatch(/doc-overflow-menu--fixed/);
+    expect(document.body.contains(menu)).toBe(true);
     expect(
       screen.getAllByRole("menuitemradio").map(
         (el) => el.querySelector(".theme-menu-swatch + span")?.textContent,
