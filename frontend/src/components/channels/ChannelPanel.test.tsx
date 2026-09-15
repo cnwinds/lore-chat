@@ -395,7 +395,7 @@ describe("ChannelPanel", () => {
     });
   });
 
-  it("uses the kb-float content chrome and closes via X or Escape", async () => {
+  it("uses the kb-float content chrome and closes via X", async () => {
     const user = userEvent.setup();
     const onClose = vi.fn();
     const { container } = render(<ChannelPanel onClose={onClose} />);
@@ -405,10 +405,17 @@ describe("ChannelPanel", () => {
     expect(container.querySelector(".channel-float")).toBeNull();
     await user.click(screen.getByRole("button", { name: "关闭" }));
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
 
-    onClose.mockClear();
+  it("returns from create screens on Escape without closing the float", async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    render(<ChannelPanel onClose={onClose} />);
+    await user.click(await screen.findByRole("button", { name: "添加通道" }));
+    expect(await screen.findByRole("button", { name: /脚本 \/ HTTP/ })).toBeInTheDocument();
     await user.keyboard("{Escape}");
-    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onClose).not.toHaveBeenCalled();
+    expect(await screen.findByText("还没有聊天通道")).toBeInTheDocument();
   });
 
   it("keeps shared personas collapsed until opened", async () => {

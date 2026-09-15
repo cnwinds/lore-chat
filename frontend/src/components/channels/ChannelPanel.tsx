@@ -114,18 +114,16 @@ export function ChannelPanel({
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.key !== "Escape") return;
+      if (e.key !== "Escape" || screen === "home") return;
+      // 捕获阶段拦住，避免 App 级 Esc 把整层浮窗连同右侧钉住文档一起关掉。
       e.preventDefault();
-      if (screen !== "home") {
-        setScreen("home");
-        setError(null);
-        return;
-      }
-      onClose();
+      e.stopImmediatePropagation();
+      setScreen("home");
+      setError(null);
     }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, screen]);
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [screen]);
 
   const usage = useMemo(() => personaUsage(instances), [instances]);
 
