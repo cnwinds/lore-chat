@@ -45,8 +45,8 @@ export function ChatSources({
   const imageSources = items.filter(isKbImageSource);
   const otherSources = items.filter((s) => !isKbImageSource(s));
   const hasConversation = items.some((s) => s.type === "conversation");
-  // 会话引用 / 图片瓦片需要可点查看：有会话或图片时默认展开
-  const [open, setOpen] = useState(hasConversation || imageSources.length > 0);
+  // 会话引用 / 图片瓦片也默认收起，由用户点开
+  const [open, setOpen] = useState(false);
   const sectionTitle = hasConversation ? "参考与会话" : "参考";
   const { openPreview, lightbox } = useImageLightbox();
 

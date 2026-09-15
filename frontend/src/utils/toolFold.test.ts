@@ -17,7 +17,7 @@ function tool(
 }
 
 describe("toolBlockDefaultOpen", () => {
-  it("collapses finished sandbox and staging tools when the turn is not live", () => {
+  it("collapses sandbox, search, and generated images unless the user expands them", () => {
     expect(
       toolBlockDefaultOpen(
         tool({
@@ -25,22 +25,13 @@ describe("toolBlockDefaultOpen", () => {
           query: "python --version",
           progress_log: ["Python 3.12.0"],
         }),
-        { isLive: false },
       ),
     ).toBe(false);
     expect(
       toolBlockDefaultOpen(
-        tool({
-          tool: "stage_to_sandbox",
-          summary: "投放 1 个文件",
-          progress_log: ["Traceback (most recent call last):"],
-        }),
-        { isLive: false },
+        tool({ tool: "search_kb", query: "docker", status: "running" }),
       ),
     ).toBe(false);
-  });
-
-  it("keeps generated image and svg attachments open after the turn ends", () => {
     expect(
       toolBlockDefaultOpen(
         tool({
@@ -48,42 +39,28 @@ describe("toolBlockDefaultOpen", () => {
           query: "一只猫",
           attachments: ["媒体/生成/2026/cat.png"],
         }),
-        { isLive: false },
       ),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       toolBlockDefaultOpen(
         tool({
           tool: "write_kb_file",
           attachments: ["媒体/生成/2026/logo.svg"],
         }),
-        { isLive: false },
       ),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       toolBlockDefaultOpen(
         tool({
-          tool: "publish_from_sandbox",
-          attachments: ["媒体/生成/2026/icon.png"],
+          tool: "sandbox_run",
+          status: "running",
+          query: "ls",
         }),
-        { isLive: false },
-      ),
-    ).toBe(true);
-  });
-
-  it("does not treat a mention of an image path in summary as a reason to expand", () => {
-    expect(
-      toolBlockDefaultOpen(
-        tool({
-          tool: "read_doc",
-          summary: "读了 媒体/生成/2026/logo.svg",
-        }),
-        { isLive: false },
       ),
     ).toBe(false);
   });
 
-  it("keeps unanswered asks open after the turn ends", () => {
+  it("keeps unanswered asks open so the user can choose", () => {
     expect(
       toolBlockDefaultOpen(
         tool({
@@ -92,26 +69,17 @@ describe("toolBlockDefaultOpen", () => {
           question: "继续吗？",
           options: [{ id: "a", label: "好" }],
         }),
-        { isLive: false },
       ),
     ).toBe(true);
-  });
-
-  it("expands non-search tools while streaming, but still folds search", () => {
     expect(
       toolBlockDefaultOpen(
         tool({
-          tool: "sandbox_run",
-          status: "running",
-          query: "ls",
+          tool: "ask_user",
+          question_id: "q1",
+          question: "继续吗？",
+          options: [{ id: "a", label: "好" }],
+          choice_resolved: "好",
         }),
-        { isLive: true },
-      ),
-    ).toBe(true);
-    expect(
-      toolBlockDefaultOpen(
-        tool({ tool: "search_kb", query: "docker", status: "running" }),
-        { isLive: true },
       ),
     ).toBe(false);
   });

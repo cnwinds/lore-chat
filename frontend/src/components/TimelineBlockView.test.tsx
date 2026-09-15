@@ -40,7 +40,7 @@ describe("TimelineBlockView default fold", () => {
     expect(document.querySelector(".timeline-tool-body")).toBeNull();
   });
 
-  it("keeps generated svg attachments expanded after the turn ends", () => {
+  it("collapses generated svg attachments until the user expands them", () => {
     renderBlock({
       type: "tool",
       id: "svg1",
@@ -53,9 +53,9 @@ describe("TimelineBlockView default fold", () => {
     });
     expect(screen.getByRole("button", { name: /写入知识库矢量图/ })).toHaveAttribute(
       "aria-expanded",
-      "true",
+      "false",
     );
-    expect(document.querySelector(".timeline-tool-attachments")).not.toBeNull();
+    expect(document.querySelector(".timeline-tool-attachments")).toBeNull();
   });
 
   it("renders send_message as a collaboration card", () => {
@@ -76,6 +76,21 @@ describe("TimelineBlockView default fold", () => {
     expect(screen.getByText("排队中")).toBeTruthy();
   });
 
+  it("collapses think blocks even while the turn is live", () => {
+    renderBlock(
+      {
+        type: "think",
+        ts: "t",
+        content: "先看链接再总结",
+      },
+      true,
+    );
+    expect(screen.getByRole("button", { name: /思考过程/ })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+  });
+
   it("collapses think blocks when the turn is no longer live", () => {
     renderBlock({
       type: "think",
@@ -85,6 +100,24 @@ describe("TimelineBlockView default fold", () => {
     expect(screen.getByRole("button", { name: /思考过程/ })).toHaveAttribute(
       "aria-expanded",
       "false",
+    );
+  });
+
+  it("keeps unanswered asks expanded so choices stay visible", () => {
+    renderBlock({
+      type: "tool",
+      id: "q1",
+      tool: "ask_user",
+      label: "征询",
+      ts: "t",
+      status: "done",
+      question_id: "q1",
+      question: "继续吗？",
+      options: [{ id: "a", label: "好" }],
+    });
+    expect(screen.getByRole("button", { name: /征询/ })).toHaveAttribute(
+      "aria-expanded",
+      "true",
     );
   });
 });

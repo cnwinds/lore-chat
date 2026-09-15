@@ -133,8 +133,8 @@ function ToolBlockView({
 }) {
   const isLive =
     isLiveProp ?? (liveElapsedMs !== undefined || nowMs !== undefined);
-  // 已结束会话默认折叠（仅征询 / 生图 SVG 展开）；流式中检索类仍折叠。
-  const defaultOpen = toolBlockDefaultOpen(block, { isLive });
+  // 信息流默认折叠；未答征询除外，方便直接点选。
+  const defaultOpen = toolBlockDefaultOpen(block);
   // 用户显式点过则以其选择为准，否则用默认值。
   // 展开状态用组件内 state 维护，随组件卸载自动回收（不跨会话泄漏）。
   const [override, setOverride] = useState<boolean | null>(null);
@@ -336,15 +336,13 @@ function ToolBlockView({
 
 function ThinkBlockView({
   block,
-  isLive,
   onOpenConversation,
 }: {
   block: Extract<TimelineBlock, { type: "think" }>;
-  isLive?: boolean;
   onOpenConversation?: (target: ConversationLinkTarget) => void;
 }) {
   const [override, setOverride] = useState<boolean | null>(null);
-  const open = override ?? !!isLive;
+  const open = override ?? false;
   const preview =
     block.content.length > 120
       ? `${block.content.slice(0, 120).trim()}…`
@@ -470,7 +468,6 @@ export function TimelineBlockView({
     return (
       <ThinkBlockView
         block={block}
-        isLive={isLive}
         onOpenConversation={onOpenConversation}
       />
     );
