@@ -144,7 +144,6 @@ function renderMessageMeta(
     return (
       <div className="chat-meta chat-meta-user">
         {copyText && <CopyButton text={copyText} />}
-        <span className="chat-meta-spacer" />
         {m.ts && <span>{formatMessageTs(m.ts)}</span>}
       </div>
     );

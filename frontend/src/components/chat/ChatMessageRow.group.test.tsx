@@ -86,3 +86,30 @@ describe("ChatMessageRow group layout", () => {
     expect(screen.getByText(/超过预期/)).toBeTruthy();
   });
 });
+
+describe("ChatMessageRow user meta", () => {
+  it("places the copy button immediately before the timestamp", () => {
+    const message: ChatMessage = {
+      id: "m-copy",
+      role: "user",
+      text: "你好",
+      ts: "2026-01-01T14:32:00.000Z",
+    };
+    render(
+      <ChatMessageRow
+        message={message}
+        isLiveStreaming={false}
+        liveElapsedMs={0}
+        previewPath={null}
+        conversationId="c1"
+        onOpenSource={() => {}}
+        onQuestionResolved={() => {}}
+      />,
+    );
+    const meta = document.querySelector(".chat-meta-user");
+    const copy = meta?.querySelector(".chat-copy-btn");
+    expect(copy).toBeTruthy();
+    expect(copy?.nextElementSibling?.tagName).toBe("SPAN");
+    expect(meta?.querySelector(".chat-meta-spacer")).toBeNull();
+  });
+});

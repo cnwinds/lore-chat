@@ -6637,8 +6637,9 @@ button.memory-fact-statement--jump:focus-visible {
   min-width: 0;
 }
 
-.chat-meta-spacer {
-  flex: 1;
+.chat-meta-user {
+  justify-content: flex-end;
+  gap: 10px;
 }
 
 .chat-meta-info {

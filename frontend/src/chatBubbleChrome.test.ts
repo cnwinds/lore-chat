@@ -13,6 +13,11 @@ describe("chat bubble chrome", () => {
     expect(css).not.toMatch(/\.chat-meta\s*\{[^}]*border-top:/);
     expect(css).not.toMatch(/\.chat-sources\s*\{[^}]*border-top:/);
   });
+
+  it("tucks the user copy button next to the timestamp with a gap", () => {
+    expect(css).toMatch(/\.chat-meta-user\s*\{[^}]*justify-content:\s*flex-end;/);
+    expect(css).not.toMatch(/\.chat-meta-spacer/);
+  });
 });
 
 describe("fold chevron", () => {
