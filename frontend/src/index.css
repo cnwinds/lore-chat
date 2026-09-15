@@ -5236,7 +5236,7 @@ button.memory-fact-statement--jump:focus-visible {
   align-items: baseline;
   justify-content: space-between;
   gap: 12px;
-  width: 100%;
+  flex: 1;
   min-width: 0;
 }
 
