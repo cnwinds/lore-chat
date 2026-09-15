@@ -20,10 +20,6 @@ type Props = {
   onToggleWidth?: () => void;
 };
 
-function pathSegments(dir: string): string[] {
-  return dir.split("/").filter(Boolean);
-}
-
 /**
  * 媒体末级目录图库内容：由浮窗层承载，瓦片浏览；图片点击查看大图，视频点击播放。
  */
@@ -95,9 +91,7 @@ export function MediaGalleryPanel({
     [children],
   );
   const mediaCount = images.length + videos.length;
-
-  const segments = pathSegments(directory);
-  const title = segments[segments.length - 1] || directory;
+  const title = pathBasename(directory) || directory;
 
   return (
     <div
@@ -106,24 +100,9 @@ export function MediaGalleryPanel({
     >
       <header className="kb-float-header">
         <div className="kb-float-header-main">
-          <div className="kb-float-kicker">媒体图库</div>
           <h2 className="kb-float-title" title={directory}>
             {title}
           </h2>
-          <nav className="kb-float-crumb" aria-label="路径">
-            {segments.map((seg, i) => (
-              <span key={`${i}-${seg}`} className="kb-float-crumb-seg">
-                {i > 0 ? (
-                  <span className="kb-float-crumb-sep" aria-hidden>
-                    /
-                  </span>
-                ) : null}
-                <span className={i === segments.length - 1 ? "is-current" : ""}>
-                  {seg}
-                </span>
-              </span>
-            ))}
-          </nav>
         </div>
         <div className="kb-float-header-actions">
           {onToggleWidth ? (

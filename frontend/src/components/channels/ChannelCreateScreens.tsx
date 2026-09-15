@@ -52,7 +52,7 @@ export function PickTypeScreen({
                 {TYPE_MARK[item.type_id] || "·"}
               </span>
               <strong>{item.display_name}</strong>
-              <span>{item.available ? "现在可用" : "即将支持"}</span>
+              {item.available ? null : <span className="openapi-type-soon">即将支持</span>}
             </button>
           </li>
         ))}

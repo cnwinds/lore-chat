@@ -56,6 +56,25 @@ describe("mobile three-pane grid", () => {
   });
 });
 
+describe("kb sidebar chrome", () => {
+  it("keeps the knowledge heading tight against the tree", () => {
+    expect(css).toMatch(/\.kb-sidebar-head\s*\{[^}]*padding:\s*2px 10px 0;/);
+    expect(css).toMatch(/\.kb-sidebar-scroll\s*\{[^}]*padding:\s*0 8px 8px;/);
+  });
+});
+
+describe("group avatar collage", () => {
+  it("uses a fixed 2x2 grid so missing members leave empty cells", () => {
+    expect(css).toMatch(
+      /\.group-avatar\s*\{[^}]*grid-template-columns:\s*1fr 1fr;[^}]*grid-template-rows:\s*1fr 1fr;/,
+    );
+    expect(css).not.toMatch(/\.group-avatar--3\s*>\s*:first-child/);
+    expect(css).toMatch(
+      /\.group-avatar\s+\.role-avatar\s+img\s*\{[^}]*object-fit:\s*contain;/,
+    );
+  });
+});
+
 describe("group avatar mark", () => {
   it("keeps the group type chip at top-left and the busy dot at bottom-right", () => {
     expect(css).toMatch(

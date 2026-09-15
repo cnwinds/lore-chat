@@ -267,17 +267,11 @@ export function MemoryPanel({
   return (
     <div
       className={`kb-float-panel kb-float-panel--${docWidth}`}
-      aria-label="长期画像"
+      aria-label="记忆"
     >
       <header className="kb-float-header">
         <div className="kb-float-header-main">
-          <div className="kb-float-kicker">记忆</div>
-          <h2 className="kb-float-title">长期画像</h2>
-          <nav className="kb-float-crumb" aria-label="路径">
-            <span className="kb-float-crumb-seg">
-              <span className="is-current">记忆</span>
-            </span>
-          </nav>
+          <h2 className="kb-float-title">记忆</h2>
         </div>
         <div className="kb-float-header-actions">
           <button

@@ -30,16 +30,12 @@ export function AccountSettingsTab({
     <>
       <div className="settings-group">
         <h3 className="settings-group-title">外观</h3>
-        <p className="settings-group-hint">切换浅色或暗色主题。</p>
         <div className="settings-theme-row">
           <ThemeToggle />
         </div>
       </div>
       <div className="settings-group">
         <h3 className="settings-group-title">修改密码</h3>
-        <p className="settings-group-hint">
-          新密码至少 8 位。修改成功后需使用新密码登录。
-        </p>
         <form className="settings-form settings-form--fields" onSubmit={onSubmit}>
           {pwdError ? <p className="settings-panel-error">{pwdError}</p> : null}
           {pwdMsg ? <p className="settings-panel-success">{pwdMsg}</p> : null}

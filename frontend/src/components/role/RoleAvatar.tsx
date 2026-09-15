@@ -18,6 +18,7 @@ export function RoleAvatar({
 }: Props) {
   const letter = (name.trim()[0] || "?").toUpperCase();
   const { showImage, src, onError } = useRoleAvatarSrc(avatar);
+  const letterSize = Math.max(8, Math.round(size * 0.42));
   return (
     <div
       className={`role-avatar${className ? ` ${className}` : ""}`}
@@ -31,7 +32,9 @@ export function RoleAvatar({
       {showImage && src ? (
         <img src={src} alt="" onError={onError} />
       ) : (
-        <span className="role-avatar-letter">{letter}</span>
+        <span className="role-avatar-letter" style={{ fontSize: letterSize }}>
+          {letter}
+        </span>
       )}
     </div>
   );

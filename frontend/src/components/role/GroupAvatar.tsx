@@ -32,6 +32,7 @@ export function GroupAvatar({
   className = "",
 }: Props) {
   const tiles = members.slice(0, 4);
+  const tileSize = Math.ceil(size / 2);
   let face;
   if (avatar) {
     face = (
@@ -47,22 +48,27 @@ export function GroupAvatar({
       />
     );
   } else {
-    const count = tiles.length as 2 | 3 | 4;
     face = (
       <div
-        className={`group-avatar group-avatar--${count}`}
+        className="group-avatar"
         style={{ width: size, height: size }}
         aria-hidden
       >
-        {tiles.map((m) => (
-          <RoleAvatar
-            key={m.id}
-            name={m.name}
-            seed={m.id}
-            avatar={m.avatar}
-            size={Math.ceil(size / 2)}
-          />
-        ))}
+        {Array.from({ length: 4 }, (_, i) => {
+          const member = tiles[i];
+          if (!member) {
+            return <span key={`empty-${i}`} className="group-avatar-slot" />;
+          }
+          return (
+            <RoleAvatar
+              key={member.id}
+              name={member.name}
+              seed={member.id}
+              avatar={member.avatar}
+              size={tileSize}
+            />
+          );
+        })}
       </div>
     );
   }
