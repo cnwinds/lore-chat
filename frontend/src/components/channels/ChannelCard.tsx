@@ -4,13 +4,13 @@ import { formatOpenApiWhen } from "../settings/openApiSettingsModel";
 import { ChannelDetails } from "./ChannelDetails";
 import {
   NEW_EXCLUSIVE_VALUE,
-  TYPE_MARK,
   credentialChip,
   isExclusiveTo,
+  isScriptRevoked,
   personaOptionLabel,
   personasSelectableFor,
   statusLabel,
-  typeLabel,
+  typeBadgeLabel,
   type DetailTab,
 } from "./channelUiModel";
 
@@ -63,63 +63,79 @@ export function ChannelCard({
   const exclusive =
     Boolean(inst.persona_id) &&
     isExclusiveTo(inst.persona_id || "", inst.id, usage);
-  const typeName = typeLabel(inst.type_id, types);
+  const revoked = isScriptRevoked(inst);
+  const typeName = typeBadgeLabel(inst.type_id, types);
 
   return (
-    <li className={`channel-card channel-card--${inst.type_id}`}>
+    <li
+      className={`channel-card channel-card--${inst.type_id}${inst.enabled ? "" : " channel-card--off"}`}
+    >
       <div className="channel-card-main">
         <div className="channel-card-top">
           <div className="channel-card-identity">
             <h4 className="channel-card-title">{inst.name}</h4>
-            <span className={`openapi-status openapi-status--${status.kind}`}>
-              {status.text}
+            <span className={`channel-type-badge channel-type-badge--${inst.type_id}`}>
+              {typeName}
             </span>
-          </div>
-          <label className="openapi-switch">
-            <input
-              type="checkbox"
-              checked={inst.enabled}
-              disabled={busy}
-              aria-label={inst.enabled ? "停用通道" : "启用通道"}
-              onChange={() => onToggle(inst)}
-            />
-          </label>
-        </div>
-
-        <p className="channel-card-type">
-          <span
-            className={`openapi-type-icon openapi-type-icon--${inst.type_id}`}
-            aria-hidden
-          >
-            {TYPE_MARK[inst.type_id] || "·"}
-          </span>
-          {typeName}
-          {inst.config?.ingress === "websocket" ? " · 长连接" : ""}
-        </p>
-
-        <div className="channel-cred">
-          <div className="channel-cred-chip">
-            {chip.kind === "token" ? (
-              <span className="channel-cred-kicker">KEY</span>
-            ) : (
-              <span className="channel-cred-kicker">凭证</span>
-            )}
-            <code className="channel-cred-text">{chip.text}</code>
-            <span className="channel-cred-hint">
-              {chip.kind === "token"
-                ? formatOpenApiWhen(inst.last_event_at)
-                : "已保存"}
-            </span>
+            {status.kind === "error" ? (
+              <span className="channel-card-alert">{status.text}</span>
+            ) : null}
           </div>
           <button
             type="button"
-            className="settings-btn settings-btn--compact"
+            role="switch"
+            className={`channel-switch${inst.enabled ? " is-on" : ""}`}
+            aria-checked={inst.enabled}
+            aria-label={inst.enabled ? "停用通道" : "启用通道"}
             disabled={busy}
-            onClick={() => onCopy(inst)}
+            onClick={() => onToggle(inst)}
           >
-            复制
+            <span className="channel-switch-track" aria-hidden>
+              <span className="channel-switch-knob" />
+            </span>
           </button>
         </div>
+
+        {revoked ? (
+          <div className="channel-vault channel-vault--revoked" role="status">
+            <div className="channel-vault-row">
+              <span className="channel-vault-kicker">KEY</span>
+              <span className="channel-vault-void" aria-hidden>
+                ••••••••••••
+              </span>
+              <span className="channel-vault-seal">已吊销</span>
+            </div>
+            <p className="channel-vault-hint">
+              这把 Key 已失效，外部无法再调用。打开开关可重新启用同一把 Key。
+            </p>
+          </div>
+        ) : (
+          <div className="channel-vault">
+            <div className="channel-vault-row">
+              <span className="channel-vault-kicker">
+                {chip.kind === "token" ? "KEY" : "凭证"}
+              </span>
+              <code className="channel-vault-text">{chip.text}</code>
+              <span className="channel-vault-meta">
+                {chip.kind === "token"
+                  ? formatOpenApiWhen(inst.last_event_at)
+                  : inst.enabled
+                    ? "已保存"
+                    : "停用中"}
+              </span>
+              {chip.copyable ? (
+                <button
+                  type="button"
+                  className="channel-vault-copy"
+                  disabled={busy}
+                  onClick={() => onCopy(inst)}
+                >
+                  复制
+                </button>
+              ) : null}
+            </div>
+          </div>
+        )}
 
         <div className="channel-role-row">
           <span className="channel-role-label">角色</span>
@@ -140,7 +156,7 @@ export function ChannelCard({
           </select>
           <button
             type="button"
-            className="openapi-btn"
+            className="channel-role-edit"
             disabled={busy || !inst.persona_id}
             onClick={() => onStartEditPrompt(inst)}
           >

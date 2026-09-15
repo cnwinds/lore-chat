@@ -8,6 +8,7 @@ import {
   personaUsage,
   personasSelectableFor,
   revokeTabLabel,
+  typeBadgeLabel,
 } from "./channelUiModel";
 
 const persona = (id: string, name: string): ApiPersona => ({
@@ -60,12 +61,31 @@ describe("channelUiModel", () => {
       credentialChip({
         ...inst("a", "p1"),
         config: { key_prefix: "lc_live_abcd" },
-      }).text,
-    ).toBe("lc_live_abcd…");
-    expect(credentialChip(inst("b", "p1", "feishu")).text).toBe(
-      "凭证 App ID / Secret 已保存",
-    );
+      }),
+    ).toEqual({
+      kind: "token",
+      text: "lc_live_abcd…",
+      copyable: true,
+    });
+    expect(credentialChip(inst("b", "p1", "feishu"))).toEqual({
+      kind: "secrets",
+      text: "凭证已保存",
+      copyable: true,
+    });
+    expect(
+      credentialChip({
+        ...inst("a", "p1"),
+        enabled: false,
+        status: "disabled",
+        config: { key_prefix: "lc_live_abcd" },
+      }),
+    ).toEqual({ kind: "revoked", text: "", copyable: false });
     expect(revokeTabLabel("script_api")).toBe("吊销");
     expect(revokeTabLabel("feishu")).toBe("删除");
+  });
+
+  it("uses a short type badge next to the channel name", () => {
+    expect(typeBadgeLabel("script_api")).toBe("脚本");
+    expect(typeBadgeLabel("feishu")).toBe("飞书");
   });
 });

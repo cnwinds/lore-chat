@@ -85,7 +85,7 @@ export function ChannelDetails({
     };
   }, [activeTab, inst.id, inst.role_id]);
 
-  const guide = accessGuide(inst.type_id);
+  const guide = accessGuide(inst.type_id, inst.enabled);
   const revokeLabel = revokeTabLabel(inst.type_id);
   const tabs: { id: DetailTab; label: string }[] = [
     { id: "guide", label: "接入说明" },
@@ -215,7 +215,9 @@ export function ChannelDetails({
           {inst.type_id === "script_api" ? (
             <>
               <p className="channel-guide-lead">
-                吊销后外部将无法再用这把 Key。历史仍可查看。
+                {inst.enabled
+                  ? "吊销后这把 Key 立刻失效，卡片上不再显示可复制密钥。打开开关可重新启用同一把 Key；历史仍可查看。"
+                  : "这把 Key 已失效，卡片上不再显示密钥。打开开关可重新启用同一把 Key；历史仍可查看。"}
               </p>
               <button
                 type="button"

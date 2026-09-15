@@ -85,8 +85,8 @@
 
 ## Language（对话与知识库）
 
-**聊天通道浮窗**：入口在左栏底栏「主题 | 聊天通道 | 设置」；点「聊天通道」打开与媒体图库同一套聊天区左缘浮窗（`KbFloatLayer` / `.doc-float-*` + `.kb-float-*`），与记忆/文档互斥同槽。卡片常驻名称 / 类型 / 启用 / 可复制 Key 或凭证 / 角色选择；页签（接入说明、会话、日志、吊销或删除）直接画在卡片上，默认只显示页签不展开内容；「共用角色」默认收起。脚本 Key 明文只经 Cookie `GET /api/channel-plugins/instances/{id}/credential` 取出，列表不回传。
-_Avoid_: 把通道再塞回设置页签；用「详情」手风琴包住页签；另做一套底栏气泡/自定义浮层；做成挡住聊天的整页模态；把主题切换只藏进设置
+**聊天通道浮窗**：入口在左栏底栏「主题 | 聊天通道 | 设置」；点「聊天通道」打开与媒体图库同一套聊天区左缘浮窗（`KbFloatLayer` / `.doc-float-*` + `.kb-float-*`），与记忆/文档互斥同槽。卡片常驻名称 + 类型 badge / 滑动开关 / 可复制 Key 或凭证 / 角色选择；脚本吊销后不展示密钥、不可复制。页签（接入说明、会话、日志、吊销或删除）直接画在卡片上，默认只显示页签不展开内容；「共用角色」默认收起。脚本 Key 明文只经 Cookie `GET /api/channel-plugins/instances/{id}/credential` 取出，列表不回传。
+_Avoid_: 把通道再塞回设置页签；用「详情」手风琴包住页签；另做一套底栏气泡/自定义浮层；做成挡住聊天的整页模态；把主题切换只藏进设置；吊销后仍把 Key 前缀当可复制凭证展示
 
 **模型设置页签**：`ModelSettingsTab` 只装配；有序链 UI 在 `CandidateChainEditor` / `EmbedChainEditor`；draft 解析在 `modelChainDrafts`；能力 lookup 在 `modelCapabilities`；设置 hydrate/serialize 在 `settingsDrafts`（Panel 只接线与副作用）。
 _Avoid_: 经 ModelSettingsTab barrel re-export Search/Image 类型或 providerPresets；在页签壳里再堆 ChainEditor；在 SettingsPanel 再堆 parse/put patch 拼装

@@ -193,9 +193,11 @@ describe("ChannelPanel", () => {
     listChannelInstances.mockResolvedValue({ instances: [sampleInstance] });
     renderPanel();
     expect(await screen.findByText("周报脚本")).toBeInTheDocument();
+    expect(screen.getByText("脚本")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "复制" })).toBeInTheDocument();
     expect(screen.getByLabelText("周报脚本 角色")).toBeInTheDocument();
-    expect(screen.getByRole("checkbox", { name: "停用通道" })).toBeChecked();
+    expect(screen.getByRole("switch", { name: "停用通道" })).toBeChecked();
+    expect(screen.queryByText("脚本 / HTTP")).toBeNull();
     expect(screen.getByRole("tab", { name: "接入说明" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "会话" })).toBeInTheDocument();
     expect(screen.queryByText(/POST \/api\/v1\/chat/)).toBeNull();
@@ -351,7 +353,7 @@ describe("ChannelPanel", () => {
       status: "disabled",
     });
     renderPanel();
-    await user.click(await screen.findByRole("checkbox", { name: "停用通道" }));
+    await user.click(await screen.findByRole("switch", { name: "停用通道" }));
     await waitFor(() => {
       expect(patchChannelInstance).toHaveBeenCalledWith("k1", { enabled: false });
     });
@@ -430,6 +432,29 @@ describe("ChannelPanel", () => {
     await user.click(screen.getByRole("button", { name: /共用角色/ }));
     expect(await screen.findByRole("button", { name: "新建共用角色" })).toBeInTheDocument();
     expect(screen.getByText("1 个通道在用")).toBeInTheDocument();
+  });
+
+  it("hides a revoked script key instead of showing a copyable prefix", async () => {
+    listApiPersonas.mockResolvedValue({
+      personas: [sampleInstance.persona!],
+    });
+    listChannelInstances.mockResolvedValue({
+      instances: [
+        {
+          ...sampleInstance,
+          enabled: false,
+          status: "disabled",
+        },
+      ],
+    });
+    renderPanel();
+    expect(await screen.findByText("周报脚本")).toBeInTheDocument();
+    expect(screen.getByText("脚本")).toBeInTheDocument();
+    expect(screen.getByText("已吊销")).toBeInTheDocument();
+    expect(screen.getByText(/这把 Key 已失效/)).toBeInTheDocument();
+    expect(screen.queryByText(/lc_live_abcd/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "复制" })).toBeNull();
+    expect(screen.getByRole("switch", { name: "启用通道" })).not.toBeChecked();
   });
 
   it("does not delete an enabled Feishu channel until it is disabled", async () => {
