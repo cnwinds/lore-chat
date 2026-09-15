@@ -32,6 +32,9 @@ describe("MediaGalleryPanel", () => {
       expect(container.textContent).toContain("1 张图片");
       expect(container.textContent).toContain("1 个视频");
     });
+    expect(getByRole("button", { name: "关闭" })).toBeTruthy();
+    expect(container.querySelector('[title="变宽"]')).toBeNull();
+    expect(container.querySelector('[title="变窄"]')).toBeNull();
 
     const thumb = container.querySelector(".media-gallery-tile-video-btn");
     expect(thumb).not.toBeNull();

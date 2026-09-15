@@ -447,19 +447,19 @@ export function ChatMessageRow({
       data-speaker-id={groupSpeaker?.id || m.speaker_id || undefined}
     >
       {layout === "group" && groupSpeaker?.kind === "role" ? (
-        <>
-          <RoleAvatar
-            name={groupSpeaker.name}
-            seed={groupSpeaker.id || groupSpeaker.name}
-            avatar={groupSpeaker.role?.avatar}
-            size={32}
-            className="chat-row-group-avatar"
-          />
-          <div className="chat-row-group-col">
+        <div className="chat-row-group-col">
+          <div className="chat-row-group-head">
+            <RoleAvatar
+              name={groupSpeaker.name}
+              seed={groupSpeaker.id || groupSpeaker.name}
+              avatar={groupSpeaker.role?.avatar}
+              size={20}
+              className="chat-row-group-avatar"
+            />
             <div className="chat-row-group-name">{groupSpeaker.name}</div>
-            {bubble}
           </div>
-        </>
+          {bubble}
+        </div>
       ) : (
         bubble
       )}

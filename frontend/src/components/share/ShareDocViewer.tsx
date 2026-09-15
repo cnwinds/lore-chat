@@ -152,14 +152,14 @@ export function ShareDocViewer({ body }: Props) {
         <>
           <button
             type="button"
-            className="share-sheet-fab"
+            className="share-sheet-fab share-sheet-fab--compact"
             aria-label={`打开目录（${outlineItems.length} 个章节）`}
             aria-expanded={mobileOutlineOpen}
             aria-controls="share-doc-toc-sheet"
             onClick={() => setMobileOutlineOpen(true)}
           >
-            <OutlineIcon size={18} />
-            <span className="share-sheet-fab-label">目录</span>
+            <OutlineIcon size={16} />
+            <span className="share-sheet-fab-label visually-hidden">目录</span>
             <span className="share-sheet-fab-badge" aria-hidden>
               {outlineItems.length}
             </span>

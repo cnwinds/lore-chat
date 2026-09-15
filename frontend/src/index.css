@@ -6148,6 +6148,25 @@ button.memory-fact-statement--jump:focus-visible {
   -webkit-tap-highlight-color: transparent;
 }
 
+.share-sheet-fab--compact {
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  padding: 0;
+  gap: 0;
+  justify-content: center;
+}
+
+.share-sheet-fab--compact .share-sheet-fab-badge {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  line-height: 16px;
+}
+
 .share-sheet-fab:active {
   transform: scale(0.97);
 }
@@ -6473,7 +6492,6 @@ button.memory-fact-statement--jump:focus-visible {
 
 .chat-row-group {
   align-items: flex-start;
-  gap: 8px;
 }
 
 .chat-row-group-owner {
@@ -6489,18 +6507,30 @@ button.memory-fact-statement--jump:focus-visible {
   flex-direction: column;
   min-width: 0;
   flex: 1 1 auto;
-  max-width: min(680px, calc(100% - 40px));
+  max-width: min(680px, 100%);
 }
 
 .chat-row-group-col .chat-bubble {
   max-width: 100%;
 }
 
+.chat-row-group-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 1px 0 6px;
+  min-width: 0;
+}
+
 .chat-row-group-name {
   font-size: 12px;
   line-height: 1.3;
   color: var(--text-secondary);
-  margin: 1px 0 6px;
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .chat-row-group-avatar {
@@ -11312,7 +11342,7 @@ button.source-link--inline.conversation-md-link {
   }
 
   .chat-panel--mobile .chat-row-group-col {
-    max-width: calc(100% - 40px);
+    max-width: 100%;
   }
 
   .chat-panel--mobile .chat-row-group-system .chat-bubble-system {

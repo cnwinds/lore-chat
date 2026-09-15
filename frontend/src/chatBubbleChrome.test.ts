@@ -19,6 +19,24 @@ describe("chat bubble chrome", () => {
     expect(css).not.toMatch(/\.chat-meta-spacer/);
   });
 
+  it("shrinks the mobile sheet FAB to an icon so it does not cover bubbles", () => {
+    expect(css).toMatch(/\.share-sheet-fab--compact\s*\{[^}]*width:\s*40px;/);
+    expect(css).toMatch(
+      /\.share-sheet-fab--compact \.share-sheet-fab-badge\s*\{[^}]*position:\s*absolute;/,
+    );
+  });
+
+  it("does not reserve a side column for group role avatars", () => {
+    expect(css).toMatch(
+      /\.chat-row-group-col\s*\{[^}]*max-width:\s*min\(680px,\s*100%\);/,
+    );
+    expect(css).toMatch(/\.chat-row-group-head\s*\{/);
+    expect(css).toMatch(
+      /\.chat-panel--mobile \.chat-row-group-col\s*\{[^}]*max-width:\s*100%;/,
+    );
+    expect(css).not.toMatch(/calc\(100% - 40px\)/);
+  });
+
   it("keeps the assistant colophon in one left-aligned cluster", () => {
     expect(css).toMatch(
       /\.chat-meta-assistant\s*\{[^}]*justify-content:\s*flex-start;/,

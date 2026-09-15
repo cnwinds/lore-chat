@@ -47,7 +47,14 @@ describe("ConversationOutline", () => {
   it("sheet layout opens bottom dialog", () => {
     cleanup();
     render(<Harness layout="sheet" msgs={msgsWithQuestions(3)} />);
-    fireEvent.click(screen.getByRole("button", { name: /打开提问导航/ }));
+    const fab = screen.getByRole("button", { name: /打开提问导航/ });
+    expect(fab.classList.contains("share-sheet-fab--compact")).toBe(true);
+    expect(
+      fab.querySelector(".share-sheet-fab-label")?.classList.contains(
+        "visually-hidden",
+      ),
+    ).toBe(true);
+    fireEvent.click(fab);
     expect(
       screen.getByRole("dialog", { name: "会话提问导航" }),
     ).toBeInTheDocument();

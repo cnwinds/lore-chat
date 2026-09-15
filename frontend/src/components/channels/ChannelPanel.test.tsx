@@ -412,6 +412,8 @@ describe("ChannelPanel", () => {
     expect(container.querySelector(".channel-float")).toBeNull();
     await user.click(screen.getByRole("button", { name: "关闭" }));
     expect(onClose).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTitle("变宽")).toBeNull();
+    expect(screen.queryByTitle("变窄")).toBeNull();
   });
 
   it("returns from create screens on Escape without closing the float", async () => {

@@ -17,7 +17,6 @@ type Props = {
   paths?: string[] | null;
   docWidth?: DocWidth;
   onClose: () => void;
-  onToggleWidth?: () => void;
 };
 
 /**
@@ -29,7 +28,6 @@ export function MediaGalleryPanel({
   paths: pathsProp = null,
   docWidth = "wide",
   onClose,
-  onToggleWidth,
 }: Props) {
   const [fetchedPaths, setFetchedPaths] = useState<string[]>([]);
   const [loading, setLoading] = useState(pathsProp == null);
@@ -105,16 +103,6 @@ export function MediaGalleryPanel({
           </h2>
         </div>
         <div className="kb-float-header-actions">
-          {onToggleWidth ? (
-            <button
-              type="button"
-              className="doc-icon-btn"
-              title={docWidth === "wide" ? "变窄" : "变宽"}
-              onClick={onToggleWidth}
-            >
-              {docWidth === "wide" ? "⟧" : "⟦"}
-            </button>
-          ) : null}
           <button
             type="button"
             className="doc-icon-btn"

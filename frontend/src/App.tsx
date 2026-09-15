@@ -436,7 +436,6 @@ function AppMain() {
               paths={kbPaths}
               docWidth={doc.floatWidth}
               onClose={doc.closeMediaFolder}
-              onToggleWidth={doc.toggleFloatWidth}
             />
           ) : doc.showFloat ? (
             <DocFloatLayer
@@ -454,7 +453,6 @@ function AppMain() {
             <ChannelFloatLayer
               docWidth={doc.floatWidth}
               onClose={doc.closeChannelPanel}
-              onToggleWidth={doc.toggleFloatWidth}
             />
           ) : null
         }

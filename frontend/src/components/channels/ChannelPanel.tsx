@@ -46,13 +46,11 @@ type Screen = "home" | "pick-type" | "create";
 type Props = {
   docWidth?: DocWidth;
   onClose: () => void;
-  onToggleWidth?: () => void;
 };
 
 export function ChannelPanel({
   docWidth = "wide",
   onClose,
-  onToggleWidth,
 }: Props) {
   const [personas, setPersonas] = useState<ApiPersona[]>([]);
   const [instances, setInstances] = useState<ChannelInstance[]>([]);
@@ -393,16 +391,6 @@ export function ChannelPanel({
               onClick={openPicker}
             >
               添加
-            </button>
-          ) : null}
-          {onToggleWidth ? (
-            <button
-              type="button"
-              className="doc-icon-btn"
-              title={docWidth === "wide" ? "变窄" : "变宽"}
-              onClick={onToggleWidth}
-            >
-              {docWidth === "wide" ? "⟧" : "⟦"}
             </button>
           ) : null}
           <button

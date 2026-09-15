@@ -8,7 +8,6 @@ type Props = {
   paths?: string[] | null;
   docWidth?: DocWidth;
   onClose: () => void;
-  onToggleWidth?: () => void;
 };
 
 /** 媒体图库浮窗：贴在聊天区左缘，与文档浮窗同槽。 */
@@ -18,7 +17,6 @@ export function MediaGalleryFloatLayer({
   paths = null,
   docWidth = "wide",
   onClose,
-  onToggleWidth,
 }: Props) {
   return (
     <KbFloatLayer onClose={onClose}>
@@ -28,7 +26,6 @@ export function MediaGalleryFloatLayer({
         paths={paths}
         docWidth={docWidth}
         onClose={onClose}
-        onToggleWidth={onToggleWidth}
       />
     </KbFloatLayer>
   );

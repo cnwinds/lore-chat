@@ -140,14 +140,14 @@ export function ConversationOutline({
       <div className={`chat-outline chat-outline--sheet${open ? " is-open" : ""}`}>
         <button
           type="button"
-          className="share-sheet-fab"
+          className="share-sheet-fab share-sheet-fab--compact"
           aria-label={`打开提问导航（${items.length} 条）`}
           aria-expanded={open}
           aria-controls="chat-outline-sheet"
           onClick={handleToggle}
         >
-          <OutlineIcon size={18} />
-          <span className="share-sheet-fab-label">提问</span>
+          <OutlineIcon size={16} />
+          <span className="share-sheet-fab-label visually-hidden">提问</span>
           <span className="share-sheet-fab-badge" aria-hidden>
             {items.length}
           </span>

@@ -34,7 +34,9 @@ describe("ShareDocViewer", () => {
     render(<ShareDocViewer body={"# 第一章\n\n## 第二节"} />);
 
     expect(screen.queryByRole("navigation", { name: "章节导航" })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /打开目录/ }));
+    const fab = screen.getByRole("button", { name: /打开目录/ });
+    expect(fab.classList.contains("share-sheet-fab--compact")).toBe(true);
+    fireEvent.click(fab);
 
     expect(screen.getByRole("dialog", { name: "文档目录" })).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: /第一章/ }).length).toBeGreaterThan(0);

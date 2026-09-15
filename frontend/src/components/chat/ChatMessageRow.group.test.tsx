@@ -48,9 +48,9 @@ describe("ChatMessageRow group layout", () => {
     expect(screen.queryByText(/来自/)).toBeNull();
     expect(document.querySelector(".chat-row-group-role")).toBeTruthy();
     const row = document.querySelector(".chat-row-group-role");
-    expect(row?.firstElementChild?.classList.contains("role-avatar")).toBe(
-      true,
-    );
+    const col = row?.querySelector(".chat-row-group-col");
+    expect(row?.firstElementChild).toBe(col);
+    expect(col?.querySelector(".chat-row-group-head .role-avatar")).toBeTruthy();
     expect(row?.querySelector(".chat-row-group-name")?.textContent).toBe(
       "游戏开发助手",
     );
