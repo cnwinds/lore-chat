@@ -6600,9 +6600,7 @@ button.memory-fact-statement--jump:focus-visible {
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
-  margin-top: 8px;
-  padding-top: 6px;
-  border-top: 1px solid var(--border);
+  margin-top: 6px;
   font-size: var(--text-xs);
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
@@ -6620,10 +6618,6 @@ button.memory-fact-statement--jump:focus-visible {
   gap: 8px;
   min-width: 0;
   overflow-wrap: anywhere;
-}
-
-.chat-meta-user {
-  border-top-color: var(--accent-border);
 }
 
 .chat-meta-assistant {
@@ -7181,8 +7175,6 @@ button.source-link--inline.conversation-md-link {
 
 .chat-sources {
   margin-top: 8px;
-  padding-top: 6px;
-  border-top: 1px solid var(--border);
 }
 
 .chat-sources-toggle {
