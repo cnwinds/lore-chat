@@ -46,15 +46,35 @@ export function formatDuration(ms: number): string {
   return `${m}m ${rem}s`;
 }
 
-/** 助手落款里模型名后的本轮用量；两端都缺则不展示。 */
-export function formatMessageTokens(m: {
+/** 落款紧凑用量：满千用 K、满百万用 M，均留两位小数；不足千则原样。 */
+export function compactTokenCount(n: number): string {
+  const abs = Math.abs(n);
+  if (abs < 1_000) return String(Math.round(n));
+  if (abs < 1_000_000) return `${(n / 1_000).toFixed(2)}K`;
+  return `${(n / 1_000_000).toFixed(2)}M`;
+}
+
+/** 悬停时的精确个数，千分位用逗号，不依赖运行时 locale。 */
+export function exactTokenCount(n: number): string {
+  const rounded = String(Math.round(n));
+  return rounded.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}
+
+export type MessageTokenUsage = {
+  prompt: number;
+  completion: number;
+};
+
+/** 助手落款本轮用量；两端都缺则不展示。 */
+export function getMessageTokenUsage(m: {
   prompt_tokens?: number;
   completion_tokens?: number;
-}): string | null {
+}): MessageTokenUsage | null {
   if (m.prompt_tokens == null && m.completion_tokens == null) return null;
-  const inn = m.prompt_tokens ?? 0;
-  const out = m.completion_tokens ?? 0;
-  return `(in:${inn}·out:${out})`;
+  return {
+    prompt: m.prompt_tokens ?? 0,
+    completion: m.completion_tokens ?? 0,
+  };
 }
 /** 按时间线顺序计算各步骤完成时的累计耗时 */
 export function computeCumulative(timeline: TimelineBlock[]): CumulativeInfo {

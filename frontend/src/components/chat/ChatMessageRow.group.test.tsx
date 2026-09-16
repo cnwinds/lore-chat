@@ -150,7 +150,7 @@ describe("ChatMessageRow assistant meta", () => {
     expect(document.querySelector(".chat-meta-tokens")).toBeNull();
   });
 
-  it("tucks input/output tokens after the model name on desktop", () => {
+  it("tucks compact token glyphs after the model name on desktop", () => {
     render(
       <ChatMessageRow
         message={{
@@ -175,7 +175,17 @@ describe("ChatMessageRow assistant meta", () => {
     const model = cluster?.querySelector(".chat-meta-model");
     const tokens = cluster?.querySelector(".chat-meta-tokens");
     expect(model?.textContent).toBe("glm-5.3-flash - max");
-    expect(tokens?.textContent).toBe("(in:12345·out:678)");
+    expect(tokens?.querySelector(".chat-meta-token-count")?.textContent).toBe("12.35K");
+    expect(
+      tokens?.querySelectorAll(".chat-meta-token-count")[1]?.textContent,
+    ).toBe("678");
+    expect(tokens).toHaveAttribute("aria-label", "输入 12,345，输出 678");
+    expect(tokens?.querySelector(".chat-meta-tokens-tip")?.textContent).toMatch(
+      /输入/,
+    );
+    expect(tokens?.querySelector(".chat-meta-tokens-tip")?.textContent).toContain(
+      "12,345",
+    );
     expect(model?.nextElementSibling).toBe(tokens);
   });
 });

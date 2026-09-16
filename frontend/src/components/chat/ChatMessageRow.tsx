@@ -1,8 +1,8 @@
 import {
   computeCumulative,
   formatDuration,
-  formatMessageTokens,
   getMessageCopyText,
+  getMessageTokenUsage,
   isMarkdownPath,
   normalizeDocContext,
   type ChatMessage,
@@ -19,6 +19,7 @@ import { KbAttachmentList } from "../KbAttachmentList";
 import { ChatSources } from "../ChatSources";
 import { CopyButton } from "../CopyButton";
 import { TimelineBlockView } from "../TimelineBlockView";
+import { ChatMetaTokens } from "./ChatMetaTokens";
 import { MessageRangeHighlight } from "./MessageRangeHighlight";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -153,8 +154,8 @@ function renderMessageMeta(
   const durationMs = isLive ? liveElapsedMs : getMessageDuration(m);
   const timeStr = !isLive && m.ts ? formatMessageTs(m.ts) : null;
   const showDuration = durationMs !== undefined && durationMs > 0;
-  const tokenLine = formatMessageTokens(m);
-  if (!timeStr && !showDuration && !copyText && !m.model_name && !showRetry && !tokenLine) {
+  const tokenUsage = getMessageTokenUsage(m);
+  if (!timeStr && !showDuration && !copyText && !m.model_name && !showRetry && !tokenUsage) {
     return null;
   }
 
@@ -172,7 +173,7 @@ function renderMessageMeta(
           ) : null}
         </span>
       )}
-      {m.model_name || tokenLine ? (
+      {m.model_name || tokenUsage ? (
         <span className="chat-meta-model-wrap">
           {m.model_name ? (
             <span
@@ -183,9 +184,7 @@ function renderMessageMeta(
               {m.model_failover ? " 已切换" : ""}
             </span>
           ) : null}
-          {tokenLine ? (
-            <span className="chat-meta-tokens">{tokenLine}</span>
-          ) : null}
+          {tokenUsage ? <ChatMetaTokens usage={tokenUsage} /> : null}
         </span>
       ) : null}
       {showRetry || (copyText && !isLive) ? (

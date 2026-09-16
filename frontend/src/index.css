@@ -6758,8 +6758,8 @@ button.memory-fact-statement--jump:focus-visible {
 
 .chat-meta-model-wrap {
   display: inline-flex;
-  align-items: baseline;
-  gap: 0.35em;
+  align-items: center;
+  gap: 0.55em;
   min-width: 0;
   flex: 0 1 auto;
 }
@@ -6782,10 +6782,68 @@ button.memory-fact-statement--jump:focus-visible {
 }
 
 .chat-meta-tokens {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   flex-shrink: 0;
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  cursor: default;
+}
+
+.chat-meta-token {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.chat-meta-token-icon {
+  display: block;
+  flex-shrink: 0;
+}
+
+.chat-meta-token-count {
+  letter-spacing: 0.01em;
+}
+
+.chat-meta-tokens-tip {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 8;
+  display: grid;
+  grid-template-columns: auto auto;
+  column-gap: 12px;
+  row-gap: 2px;
+  min-width: max-content;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-sm);
+  color: var(--text);
+  font-size: 11px;
+  line-height: 1.45;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.chat-meta-tokens:hover .chat-meta-tokens-tip,
+.chat-meta-tokens:focus-visible .chat-meta-tokens-tip {
+  opacity: 1;
+  visibility: visible;
+}
+
+.chat-meta-tokens-tip-k {
+  color: var(--text-muted);
+}
+
+.chat-meta-tokens-tip-n {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 
 @media (max-width: 768px) {

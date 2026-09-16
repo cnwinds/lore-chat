@@ -50,6 +50,12 @@ describe("chat bubble chrome", () => {
       /@media \(max-width: 768px\)\s*\{\s*\n\s*\.chat-meta-tokens\s*\{[^}]*display:\s*none;/,
     );
   });
+
+  it("reveals exact token counts on hover in a compact slip", () => {
+    expect(css).toMatch(
+      /\.chat-meta-tokens:hover \.chat-meta-tokens-tip,\s*\n\s*\.chat-meta-tokens:focus-visible \.chat-meta-tokens-tip\s*\{[^}]*visibility:\s*visible;/,
+    );
+  });
 });
 
 describe("fixed overflow menu", () => {
