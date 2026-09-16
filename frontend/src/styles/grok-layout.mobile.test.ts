@@ -77,7 +77,7 @@ describe("kb sidebar chrome", () => {
 
   it("keeps left-edge floats flush to the dock with shadow only toward chat", () => {
     expect(css).toMatch(
-      /\.app-shell--three-pane \.doc-float-panel\s*\{[^}]*box-shadow:\s*8px 0 24px/,
+      /\.app-shell--three-pane \.doc-float-panel\s*\{[^}]*box-shadow:\s*16px 0 16px[\s\S]*?clip-path:\s*inset\(0 -40px 0 0\);/,
     );
     expect(css).toMatch(
       /\.app-shell--three-pane\.app-shell--doc-focus-float \.doc-float-panel\s*\{[^}]*box-shadow:\s*none;/,

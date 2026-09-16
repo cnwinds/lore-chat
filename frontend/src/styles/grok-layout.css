@@ -149,7 +149,8 @@
 /* Docs / media / channels share this left-edge float. Keep the drop shadow
    on the chat side so it does not paint a seam over the dock. */
 .app-shell--three-pane .doc-float-panel {
-  box-shadow: 8px 0 24px color-mix(in srgb, var(--text) 12%, transparent);
+  box-shadow: 16px 0 16px color-mix(in srgb, var(--text) 12%, transparent);
+  clip-path: inset(0 -40px 0 0);
 }
 
 .app-shell--three-pane.app-shell--doc-focus-float .doc-float-panel {
