@@ -6678,6 +6678,14 @@ button.memory-fact-statement--jump:focus-visible {
   color: var(--text-muted);
 }
 
+.chat-meta-model-wrap {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35em;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+
 .chat-meta-model {
   flex: 0 1 auto;
   min-width: 0;
@@ -6696,8 +6704,7 @@ button.memory-fact-statement--jump:focus-visible {
 }
 
 .chat-meta-tokens {
-  margin-top: 2px;
-  font-size: var(--text-xs);
+  flex-shrink: 0;
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;

@@ -159,48 +159,52 @@ function renderMessageMeta(
   }
 
   return (
-    <>
-      <div className="chat-meta chat-meta-assistant">
-        {(timeStr || showDuration) && (
-          <span className="chat-meta-when">
-            {timeStr ? <span className="chat-meta-clock">{timeStr}</span> : null}
-            {showDuration && durationMs != null ? (
-              <span className="chat-meta-elapsed">
-                {timeStr
-                  ? `（${formatDuration(durationMs)}）`
-                  : formatDuration(durationMs)}
-              </span>
-            ) : null}
-          </span>
-        )}
-        {m.model_name ? (
-          <span
-            className="chat-meta-model"
-            title={m.model_failover ? "已切换至备胎模型" : m.model_name}
-          >
-            {m.model_name}
-            {m.model_failover ? " 已切换" : ""}
-          </span>
-        ) : null}
-        {showRetry || (copyText && !isLive) ? (
-          <span className="chat-meta-actions">
-            {showRetry ? (
-              <button
-                type="button"
-                className="chat-retry-btn"
-                onClick={onRetryReply}
-                disabled={retryDisabled}
-                title="重新生成这一轮回复（不重复提问）"
-              >
-                重新回复
-              </button>
-            ) : null}
-            {copyText && !isLive ? <CopyButton text={copyText} /> : null}
-          </span>
-        ) : null}
-      </div>
-      {tokenLine ? <div className="chat-meta-tokens">{tokenLine}</div> : null}
-    </>
+    <div className="chat-meta chat-meta-assistant">
+      {(timeStr || showDuration) && (
+        <span className="chat-meta-when">
+          {timeStr ? <span className="chat-meta-clock">{timeStr}</span> : null}
+          {showDuration && durationMs != null ? (
+            <span className="chat-meta-elapsed">
+              {timeStr
+                ? `（${formatDuration(durationMs)}）`
+                : formatDuration(durationMs)}
+            </span>
+          ) : null}
+        </span>
+      )}
+      {m.model_name || tokenLine ? (
+        <span className="chat-meta-model-wrap">
+          {m.model_name ? (
+            <span
+              className="chat-meta-model"
+              title={m.model_failover ? "已切换至备胎模型" : m.model_name}
+            >
+              {m.model_name}
+              {m.model_failover ? " 已切换" : ""}
+            </span>
+          ) : null}
+          {tokenLine ? (
+            <span className="chat-meta-tokens">{tokenLine}</span>
+          ) : null}
+        </span>
+      ) : null}
+      {showRetry || (copyText && !isLive) ? (
+        <span className="chat-meta-actions">
+          {showRetry ? (
+            <button
+              type="button"
+              className="chat-retry-btn"
+              onClick={onRetryReply}
+              disabled={retryDisabled}
+              title="重新生成这一轮回复（不重复提问）"
+            >
+              重新回复
+            </button>
+          ) : null}
+          {copyText && !isLive ? <CopyButton text={copyText} /> : null}
+        </span>
+      ) : null}
+    </div>
   );
 }
 

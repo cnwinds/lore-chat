@@ -46,7 +46,7 @@ export function formatDuration(ms: number): string {
   return `${m}m ${rem}s`;
 }
 
-/** 助手落款下方的本轮输入/输出 token；两端都缺则不展示。 */
+/** 助手落款里模型名后的本轮用量；两端都缺则不展示。 */
 export function formatMessageTokens(m: {
   prompt_tokens?: number;
   completion_tokens?: number;
@@ -54,7 +54,7 @@ export function formatMessageTokens(m: {
   if (m.prompt_tokens == null && m.completion_tokens == null) return null;
   const inn = m.prompt_tokens ?? 0;
   const out = m.completion_tokens ?? 0;
-  return `输入 ${inn.toLocaleString("zh-CN")} · 输出 ${out.toLocaleString("zh-CN")}`;
+  return `(in:${inn}·out:${out})`;
 }
 /** 按时间线顺序计算各步骤完成时的累计耗时 */
 export function computeCumulative(timeline: TimelineBlock[]): CumulativeInfo {

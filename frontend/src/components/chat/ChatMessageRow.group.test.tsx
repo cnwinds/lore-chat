@@ -137,19 +137,20 @@ describe("ChatMessageRow assistant meta", () => {
     );
     const meta = document.querySelector(".chat-meta-assistant");
     const when = meta?.querySelector(".chat-meta-when");
-    const model = meta?.querySelector(".chat-meta-model");
+    const cluster = meta?.querySelector(".chat-meta-model-wrap");
+    const model = cluster?.querySelector(".chat-meta-model");
     const copy = meta?.querySelector(".chat-copy-btn");
     expect(when?.textContent).toMatch(/（58\.2s）/);
     expect(model?.textContent).toBe("glm-5.3-flash - max");
     expect(copy).toBeTruthy();
-    expect(when?.nextElementSibling).toBe(model);
-    expect(model?.nextElementSibling).toBe(
+    expect(when?.nextElementSibling).toBe(cluster);
+    expect(cluster?.nextElementSibling).toBe(
       meta?.querySelector(".chat-meta-actions"),
     );
     expect(document.querySelector(".chat-meta-tokens")).toBeNull();
   });
 
-  it("shows input/output tokens under the assistant meta on desktop", () => {
+  it("tucks input/output tokens after the model name on desktop", () => {
     render(
       <ChatMessageRow
         message={{
@@ -170,9 +171,11 @@ describe("ChatMessageRow assistant meta", () => {
         onQuestionResolved={() => {}}
       />,
     );
-    const meta = document.querySelector(".chat-meta-assistant");
-    const tokens = document.querySelector(".chat-meta-tokens");
-    expect(tokens?.textContent).toBe("输入 12,345 · 输出 678");
-    expect(meta?.nextElementSibling).toBe(tokens);
+    const cluster = document.querySelector(".chat-meta-model-wrap");
+    const model = cluster?.querySelector(".chat-meta-model");
+    const tokens = cluster?.querySelector(".chat-meta-tokens");
+    expect(model?.textContent).toBe("glm-5.3-flash - max");
+    expect(tokens?.textContent).toBe("(in:12345·out:678)");
+    expect(model?.nextElementSibling).toBe(tokens);
   });
 });
