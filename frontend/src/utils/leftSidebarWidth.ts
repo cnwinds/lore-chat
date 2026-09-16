@@ -18,6 +18,18 @@ export function isLeftSidebarIconOnly(width: number): boolean {
   return width <= LEFT_SIDEBAR_ICON_AT;
 }
 
+/**
+ * 桌面左栏拖到 ≤88px 才进图标轨。手机抽屉 CSS 宽度是 min(300px, 88vw)，
+ * 与 localStorage 里的桌面栏宽无关；绝不能因为桌面曾经拖窄就把手机侧栏
+ * 藏掉角色名 / 目录名 / 底栏文字。
+ */
+export function shouldUseLeftSidebarIcons(
+  width: number,
+  mobileLayout = false,
+): boolean {
+  return !mobileLayout && isLeftSidebarIconOnly(width);
+}
+
 export function readLeftSidebarWidth(): number {
   try {
     const raw = localStorage.getItem(LEFT_SIDEBAR_WIDTH_KEY);

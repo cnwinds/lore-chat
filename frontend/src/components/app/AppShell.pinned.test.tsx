@@ -1,9 +1,11 @@
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AppShell } from "./AppShell";
+import { LEFT_SIDEBAR_WIDTH_KEY } from "../../utils/leftSidebarWidth";
 
 afterEach(() => {
   cleanup();
+  localStorage.removeItem(LEFT_SIDEBAR_WIDTH_KEY);
 });
 
 vi.mock("../role/RoleList", () => ({
@@ -66,6 +68,40 @@ describe("AppShell pinned document class", () => {
 
     expect(container.firstElementChild?.className).toContain(
       "app-shell--doc-pinned",
+    );
+  });
+});
+
+const shellProps = {
+  panelFocus: false,
+  floatFocus: false,
+  hasMergeReview: false,
+  mainFloatWide: false,
+  roleListProps,
+  kbSidebarProps,
+  roleConfigPanelProps: { roleId: "default", collapsed: true },
+  chat: <div>chat</div>,
+  docFloat: null,
+  docPinned: null,
+  modals: null,
+} as const;
+
+describe("AppShell mobile left drawer", () => {
+  it("does not apply the desktop icon rail when the stored desktop width is narrow", () => {
+    localStorage.setItem(LEFT_SIDEBAR_WIDTH_KEY, "64");
+    const { container } = render(
+      <AppShell {...shellProps} mobileLayout mobileNavOpen />,
+    );
+    expect(container.querySelector(".app-shell-left")?.className).not.toContain(
+      "app-shell-left--icons",
+    );
+  });
+
+  it("still uses the icon rail on desktop when the stored width is narrow", () => {
+    localStorage.setItem(LEFT_SIDEBAR_WIDTH_KEY, "64");
+    const { container } = render(<AppShell {...shellProps} />);
+    expect(container.querySelector(".app-shell-left")?.className).toContain(
+      "app-shell-left--icons",
     );
   });
 });

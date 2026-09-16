@@ -54,6 +54,19 @@ describe("mobile three-pane grid", () => {
       /\.app-shell--mobile \.role-config-panel\s*\{\s*\n\s*display:\s*none;/,
     );
   });
+
+  it("keeps names in the mobile drawer even if the desktop icon-rail class leaks on", () => {
+    const mobile = css.slice(css.indexOf("@media (max-width: 768px)"));
+    expect(mobile).toMatch(
+      /\.app-shell--mobile \.app-shell-left--icons \.file-tree-label/,
+    );
+    expect(mobile).toMatch(
+      /\.app-shell--mobile \.app-shell-left--icons \.role-item-content/,
+    );
+    expect(mobile).toMatch(
+      /\.app-shell--mobile \.app-shell-left--icons \.sidebar-footer-actions\s*\{\s*\n\s*flex-direction:\s*row;/,
+    );
+  });
 });
 
 describe("kb sidebar chrome", () => {

@@ -13,6 +13,7 @@ import {
   persistLeftSidebarWidth,
   readLeftSidebarRoleShare,
   readLeftSidebarWidth,
+  shouldUseLeftSidebarIcons,
 } from "./leftSidebarWidth";
 
 afterEach(() => {
@@ -33,6 +34,19 @@ describe("isLeftSidebarIconOnly", () => {
     expect(isLeftSidebarIconOnly(64)).toBe(true);
     expect(isLeftSidebarIconOnly(88)).toBe(true);
     expect(isLeftSidebarIconOnly(120)).toBe(false);
+  });
+});
+
+describe("shouldUseLeftSidebarIcons", () => {
+  it("never icon-collapses the mobile drawer", () => {
+    expect(shouldUseLeftSidebarIcons(64, true)).toBe(false);
+    expect(shouldUseLeftSidebarIcons(88, true)).toBe(false);
+    expect(shouldUseLeftSidebarIcons(272, true)).toBe(false);
+  });
+
+  it("still icon-collapses a narrow desktop rail", () => {
+    expect(shouldUseLeftSidebarIcons(64, false)).toBe(true);
+    expect(shouldUseLeftSidebarIcons(120, false)).toBe(false);
   });
 });
 

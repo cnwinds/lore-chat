@@ -1728,6 +1728,8 @@ select.role-config-input {
    Responsive adjustments
    ======================================== */
 
+/* 仅桌面：左栏拖到 ≤88px 的图标轨。手机抽屉宽约 88vw，禁止套这组规则
+   （栏宽存在 localStorage，桌面拖窄后手机也会误藏名字）。 */
 .app-shell-left--icons .role-item-content,
 .app-shell-left--icons .kb-sidebar-title h4,
 .app-shell-left--icons .kb-hint-btn,
@@ -1832,6 +1834,47 @@ select.role-config-input {
 
   .app-shell--mobile.app-shell--mobile-nav-open .app-shell-left {
     transform: translateX(0);
+  }
+
+  /* 抽屉已经是宽栏：即使误加了 --icons，也要把文字和横排底栏找回来。 */
+  .app-shell--mobile .app-shell-left--icons .role-item-content,
+  .app-shell--mobile .app-shell-left--icons .kb-sidebar-title h4,
+  .app-shell--mobile .app-shell-left--icons .kb-hint-btn,
+  .app-shell--mobile .app-shell-left--icons .file-tree-label,
+  .app-shell--mobile .app-shell-left--icons .file-tree-chevron,
+  .app-shell--mobile .app-shell-left--icons .file-tree-rename-input,
+  .app-shell--mobile .app-shell-left--icons .theme-toggle-label,
+  .app-shell--mobile .app-shell-left--icons .sidebar-settings-label {
+    display: unset;
+  }
+
+  .app-shell--mobile .app-shell-left--icons .role-item-content {
+    display: flex;
+  }
+
+  .app-shell--mobile .app-shell-left--icons .file-tree-label,
+  .app-shell--mobile .app-shell-left--icons .sidebar-settings-label {
+    display: inline-flex;
+  }
+
+  .app-shell--mobile .app-shell-left--icons .role-list-toolbar {
+    justify-content: space-between;
+    padding: 0 10px;
+  }
+
+  .app-shell--mobile .app-shell-left--icons .role-item,
+  .app-shell--mobile .app-shell-left--icons .file-tree-row,
+  .app-shell--mobile .app-shell-left--icons .kb-sidebar-head {
+    justify-content: flex-start;
+  }
+
+  .app-shell--mobile .app-shell-left--icons .sidebar-footer-actions {
+    flex-direction: row;
+  }
+
+  .app-shell--mobile .app-shell-left--icons .sidebar-footer-actions > * + * {
+    border-left: 1px solid var(--border);
+    border-top: none;
   }
 
   .app-shell--mobile .app-shell-left-resizer,

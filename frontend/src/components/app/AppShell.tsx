@@ -5,6 +5,7 @@ import { RoleConfigPanel } from "../role/RoleConfigPanel";
 import { GroupConfigPanel } from "../role/GroupConfigPanel";
 import { LeftSidebarFooter } from "./LeftSidebarFooter";
 import { useLeftSidebarWidth } from "../../hooks/useLeftSidebarWidth";
+import { shouldUseLeftSidebarIcons } from "../../utils/leftSidebarWidth";
 
 type RoleListProps = ComponentProps<typeof RoleList>;
 type KbSidebarProps = ComponentProps<typeof KbSidebar>;
@@ -107,7 +108,7 @@ export function AppShell({
         />
       )}
       <div
-        className={`app-shell-left${leftSidebar.iconOnly ? " app-shell-left--icons" : ""}`}
+        className={`app-shell-left${shouldUseLeftSidebarIcons(leftSidebar.width, mobileLayout) ? " app-shell-left--icons" : ""}`}
       >
         <div className="app-shell-left-split" ref={leftSidebar.splitRef}>
           <RoleList {...roleListProps} />
