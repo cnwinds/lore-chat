@@ -33,6 +33,7 @@ async def resolve(qid: str, body: ResolveBody, request: Request):
                 choice=body.choice,
                 choices=body.choices,
                 conversation_id=body.conversation_id,
+                inputs=body.inputs,
             )
         )
     except KeyError as e:

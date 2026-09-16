@@ -99,6 +99,24 @@ def test_resolve_agent_choices_returns_continue(tmp_path):
     assert pending.get(qid)["status"] == "resolved"
 
 
+def test_resolve_agent_choices_includes_user_input_text(tmp_path):
+    org, repo, pending = _make(tmp_path, [])
+    del repo
+    qid = pending.create(
+        "这个角色主要负责什么方向？",
+        [
+            {"id": "research", "label": "研究分析"},
+            {"id": "other", "label": "其他（我来描述）", "input": True},
+        ],
+        {"kind": "agent", "context": "角色引导"},
+    )
+    result = org.resolve_agent_choices(
+        qid, ["other"], inputs={"other": "陪伴写作，帮我改稿"}
+    )
+    assert result.status == "continue"
+    assert result.continue_prompt == "其他（我来描述）：陪伴写作，帮我改稿"
+
+
 def test_resolve_agent_choices_includes_resume_ids(tmp_path):
     org, repo, pending = _make(tmp_path, [])
     del repo

@@ -103,6 +103,9 @@ _Avoid_: 在 Chat 直接读未 enrich 的 `chat_models` 字段臆断能力；绕
 **发送队列**：流式输出时输入框仍可编辑；发送进入按会话隔离的队列（`localStorage`，上限 20）。默认时机 **defer**（当前 turn `done` 后 FIFO/`begin_turn`）；可改为 **inject**（不中断 turn，在 tool 结果回写后、下次 LLM 前插入；无窗口则降级 defer）。「与下一条合并」将同策略相邻项合成一条用户消息。空闲且队列空则直发；停止只中断当前 turn；失败暂停刷队；若回合以未回答的 `ask_user` 征询结束则暂停刷队，待用户作答后再续。前端编排在 `useOutboundOrchestrator`；策略纯函数在 `outboundQueue`。
 _Avoid_: 流式中锁死输入；同会话并行多个 running turn；inject 打断当前生成；征询未答时自动刷队；在 `Chat.tsx` 再堆 flush/inject 状态机
 
+**征询卡片**：`ask_user` 选项可标 `input`；需要用户写出具体内容时在该选项内展开输入框，一次提交。标签已在邀请自述时同样展开（启发式）。决议经 `inputs` 回传，`continue_prompt` 为「标签：原文」。沙箱确认不提供自述。
+_Avoid_: 选完需要自述的选项后再用正文追问同一内容；用课程名/专名黑名单代替 input 契约
+
 **沙箱确认**：高风险 `sandbox_run` 在 trust_mode 关闭时经 `SandboxCommandGate` 建 Pending；用户批准后由 `PendingResolver` 后端代跑（不依赖模型再调工具）。
 _Avoid_: 在 Organizer / KB 摄入路径解析 `sandbox_confirm`
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from app.engine.agent.ask_user_options import normalize_ask_options
 from app.engine.pending import PendingStore
 
 
@@ -15,7 +16,7 @@ class InteractionTools:
         responding_role_id: str | None = None,
     ) -> dict:
         question = args["question"]
-        options = args["options"]
+        options = normalize_ask_options(args.get("options"))
         multi_select = bool(args.get("multi_select", False))
         payload = {
             "kind": "agent",

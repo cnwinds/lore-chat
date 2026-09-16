@@ -702,8 +702,16 @@ def test_ask_user_contract_requires_tool_not_prose():
     assert "提问卡片" in desc
     assert "必须调用" in desc
     assert "禁止把问题或选项写进正文" in desc
+    assert "input" in desc
+    assert "不要再为同一问题追问一遍" in desc
+    opt_props = defs["ask_user"]["parameters"]["properties"]["options"]["items"][
+        "properties"
+    ]
+    assert "input" in opt_props
     assert "提问卡片" in SYSTEM_PROMPT
     assert "必须调用 `ask_user`" in SYSTEM_PROMPT
+    assert "input" in SYSTEM_PROMPT
+    assert "禁止再为同一问题追问一遍" in SYSTEM_PROMPT
     names = _tool_names(select_tools(MODE_DEFAULT, web_enabled=True, role_messaging=True))
     assert "ask_user" in names
 

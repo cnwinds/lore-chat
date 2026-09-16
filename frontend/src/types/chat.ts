@@ -1,6 +1,6 @@
 /** 聊天 / 会话领域类型（与 HTTP 传输层分离）。 */
 
-export type QuestionOption = { id: string; label: string };
+export type QuestionOption = { id: string; label: string; input?: boolean };
 export type Question = {
   id: string;
   question: string;

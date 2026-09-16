@@ -737,7 +737,12 @@ export async function getQuestions() {
 
 export async function resolveQuestion(
   qid: string,
-  body: { choice?: string; choices?: string[]; conversation_id?: string },
+  body: {
+    choice?: string;
+    choices?: string[];
+    conversation_id?: string;
+    inputs?: Record<string, string>;
+  },
 ) {
   return apiFetch<IngestResult>(`/api/questions/${qid}/resolve`, {
     method: "POST",

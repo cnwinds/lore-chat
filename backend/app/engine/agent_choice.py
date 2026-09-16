@@ -8,6 +8,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from app.engine.agent.ask_user_options import format_choice_texts
 from app.engine.pending import PendingStore
 
 
@@ -40,6 +41,7 @@ class AgentChoiceResolution:
         self,
         qid: str,
         choice_ids: list[str],
+        inputs: dict[str, str] | None = None,
     ) -> ChoiceResult:
         q = self.pending.get(qid)
         payload = q.get("payload", {})
@@ -50,8 +52,7 @@ class AgentChoiceResolution:
                 question_id=qid,
                 message="沙箱确认请经 SandboxCommandGate 决议",
             )
-        options = {o["id"]: o["label"] for o in q["options"]}
-        labels = [options[cid] for cid in choice_ids if cid in options]
+        labels = format_choice_texts(q.get("options"), choice_ids, inputs)
         if not labels:
             return ChoiceResult(
                 status="rejected",

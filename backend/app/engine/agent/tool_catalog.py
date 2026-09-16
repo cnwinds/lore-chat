@@ -743,6 +743,9 @@ TOOL_DEFINITIONS: list[dict] = [
                 "禁止把问题或选项写进正文（包括【征询】标记、编号/分号列表），"
                 "那不会出现卡片，用户也无法点选。"
                 "同轮只问一个问题；options 每项含稳定短 id 与给用户看的 label。"
+                "若某选项本身不是完整答案、还需要用户写出具体内容，必须将该项 input 设为 true；"
+                "用户会在卡片里直接填写，一次提交。"
+                "用户已在卡片里写下的内容就是答案，不要再为同一问题追问一遍。"
             ),
             "parameters": {
                 "type": "object",
@@ -750,12 +753,23 @@ TOOL_DEFINITIONS: list[dict] = [
                     "question": {"type": "string", "description": "向用户展示的问题"},
                     "options": {
                         "type": "array",
-                        "description": "选项列表，每项含 id 和 label",
+                        "description": (
+                            "选项列表，每项含 id 和 label；"
+                            "需要用户写出具体内容的选项另加 input=true"
+                        ),
                         "items": {
                             "type": "object",
                             "properties": {
                                 "id": {"type": "string"},
                                 "label": {"type": "string"},
+                                "input": {
+                                    "type": "boolean",
+                                    "description": (
+                                        "该选项不是完整答案，需要用户在卡片内填写具体内容。"
+                                        "默认 false。"
+                                    ),
+                                    "default": False,
+                                },
                             },
                             "required": ["id", "label"],
                         },

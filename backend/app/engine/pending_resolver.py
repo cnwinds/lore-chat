@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from app.engine.agent.ask_user_options import format_choice_texts
 from app.engine.conversations import ConversationStore
 from app.engine.merge_sessions import MergeSessionStore
 from app.engine.merge_workflow import MergeResult, MergeWorkflow
@@ -15,6 +16,7 @@ class PendingResolveInput:
     choice: str | None = None
     choices: list[str] | None = None
     conversation_id: str | None = None
+    inputs: dict[str, str] | None = None
 
 
 class PendingResolver:
@@ -60,9 +62,9 @@ class PendingResolver:
                 raise ValueError("对话不存在") from e
 
         chosen_ids = body.choices or ([body.choice] if body.choice else [])
-        chosen_labels = [
-            o["label"] for o in q.get("options", []) if o.get("id") in chosen_ids
-        ]
+        chosen_labels = format_choice_texts(
+            q.get("options") or [], chosen_ids, body.inputs
+        )
         payload = q.get("payload", {})
 
         if payload.get("kind") == "merge_sources":
@@ -86,11 +88,15 @@ class PendingResolver:
         elif body.choices:
             if not self._is_agent_question(q):
                 raise ValueError("该问题不支持多选")
-            result = self.organizer.resolve_agent_choices(body.qid, body.choices)
+            result = self.organizer.resolve_agent_choices(
+                body.qid, body.choices, inputs=body.inputs
+            )
         elif body.choice:
             if not self._is_agent_question(q):
                 raise ValueError("该问题类型已废弃，请重新发起写入")
-            result = self.organizer.resolve_agent_choices(body.qid, [body.choice])
+            result = self.organizer.resolve_agent_choices(
+                body.qid, [body.choice], inputs=body.inputs
+            )
         else:
             raise ValueError("请提供 choice 或 choices")
 

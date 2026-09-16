@@ -16,6 +16,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from app.engine.agent.ask_user_options import normalize_ask_options
+
 # Markers we ourselves taught (legacy history) or still teach (tool report).
 _MARKERS = (
     "【征询】",
@@ -62,10 +64,12 @@ def parse_plaintext_solicitation(text: str) -> ParsedSolicitation | None:
     labels = _split_option_labels(body)
     if len(labels) < _MIN_OPTIONS or len(labels) > _MAX_OPTIONS:
         return None
-    options = [
-        {"id": f"opt{i + 1}", "label": label[:_MAX_LABEL_CHARS]}
-        for i, label in enumerate(labels)
-    ]
+    options = normalize_ask_options(
+        [
+            {"id": f"opt{i + 1}", "label": label[:_MAX_LABEL_CHARS]}
+            for i, label in enumerate(labels)
+        ]
+    )
     return ParsedSolicitation(
         question=question,
         options=options,

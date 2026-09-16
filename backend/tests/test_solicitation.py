@@ -23,6 +23,8 @@ def test_parse_screenshot_style_inline_options():
     ]
     assert parsed.options[0]["label"].startswith("推与序")
     assert parsed.options[-1]["label"].startswith("其他")
+    assert parsed.options[-1].get("input") is True
+    assert all("input" not in o for o in parsed.options[:-1])
     assert "方向已锁定" in parsed.remainder
     assert "【征询】" not in parsed.remainder
     assert parsed.multi_select is False

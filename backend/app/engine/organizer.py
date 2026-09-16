@@ -229,8 +229,9 @@ class Organizer:
         self,
         qid: str,
         choice_ids: list[str],
+        inputs: dict[str, str] | None = None,
     ) -> IngestResult:
-        r = self.choices.resolve(qid, choice_ids)
+        r = self.choices.resolve(qid, choice_ids, inputs=inputs)
         return IngestResult(
             status=r.status,
             rel_path=r.rel_path,

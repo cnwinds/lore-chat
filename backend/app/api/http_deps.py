@@ -43,6 +43,7 @@ class ResolveBody(BaseModel):
     choice: str | None = None
     choices: list[str] | None = None
     conversation_id: str | None = None
+    inputs: dict[str, str] | None = None
 
 
 class DocContextItem(BaseModel):

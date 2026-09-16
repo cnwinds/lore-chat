@@ -637,3 +637,40 @@ def test_resolve_legacy_agent_single_choice(client, tmp_path):
     r = client.post(f"/api/questions/{qid}/resolve", json={"choice": "basic"})
     assert r.status_code == 200, r.text
     assert r.json()["status"] == "saved"
+
+
+def test_resolve_agent_choice_includes_input_text(client, tmp_path):
+    pending_path = tmp_path / "knowledge" / ".kb" / "pending.json"
+    pending_path.parent.mkdir(parents=True, exist_ok=True)
+    qid = "askinput12ab"
+    pending_path.write_text(
+        json.dumps(
+            {
+                qid: {
+                    "id": qid,
+                    "question": "这个角色主要负责什么方向？",
+                    "options": [
+                        {"id": "research", "label": "研究分析"},
+                        {
+                            "id": "other",
+                            "label": "其他（我来描述）",
+                            "input": True,
+                        },
+                    ],
+                    "payload": {"kind": "agent"},
+                    "status": "open",
+                    "choice": None,
+                }
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    r = client.post(
+        f"/api/questions/{qid}/resolve",
+        json={"choice": "other", "inputs": {"other": "陪伴写作"}},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["status"] == "continue"
+    assert body["continue_prompt"] == "其他（我来描述）：陪伴写作"
