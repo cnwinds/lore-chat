@@ -140,7 +140,7 @@ describe("ChatMessageRow assistant meta", () => {
     const cluster = meta?.querySelector(".chat-meta-model-wrap");
     const model = cluster?.querySelector(".chat-meta-model");
     const copy = meta?.querySelector(".chat-copy-btn");
-    expect(when?.textContent).toMatch(/（58\.2s）/);
+    expect(when?.textContent).toMatch(/（58s）/);
     expect(model?.textContent).toBe("glm-5.3-flash - max");
     expect(copy).toBeTruthy();
     expect(when?.nextElementSibling).toBe(cluster);

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   compactTokenCount,
   exactTokenCount,
+  formatDuration,
   getMessageTokenUsage,
 } from "./chatMessageFormat";
 
@@ -39,5 +40,29 @@ describe("getMessageTokenUsage", () => {
       prompt: 12,
       completion: 0,
     });
+  });
+});
+
+describe("formatDuration", () => {
+  it("uses milliseconds under one second", () => {
+    expect(formatDuration(0)).toBe("0ms");
+    expect(formatDuration(499)).toBe("499ms");
+  });
+
+  it("keeps one decimal below ten seconds", () => {
+    expect(formatDuration(1500)).toBe("1.5s");
+    expect(formatDuration(9900)).toBe("9.9s");
+  });
+
+  it("drops decimals from ten seconds up to a minute", () => {
+    expect(formatDuration(10_000)).toBe("10s");
+    expect(formatDuration(10_300)).toBe("10s");
+    expect(formatDuration(40_300)).toBe("40s");
+    expect(formatDuration(58_200)).toBe("58s");
+  });
+
+  it("uses minutes after a minute", () => {
+    expect(formatDuration(60_000)).toBe("1m 0s");
+    expect(formatDuration(90_000)).toBe("1m 30s");
   });
 });

@@ -36,11 +36,12 @@ export function getMessageCopyText(m: ChatMessage): string | null {
   const text = stripProtocolMarkup(m.text ?? "").trim();
   return text || null;
 }
-/** 将毫秒格式化为可读耗时 */
+/** 将毫秒格式化为可读耗时。满 10 秒起不再带小数。 */
 export function formatDuration(ms: number): string {
   if (ms < 1000) return `${Math.round(ms)}ms`;
   const s = ms / 1000;
-  if (s < 60) return `${s.toFixed(1)}s`;
+  if (s < 10) return `${s.toFixed(1)}s`;
+  if (s < 60) return `${Math.round(s)}s`;
   const m = Math.floor(s / 60);
   const rem = Math.round(s % 60);
   return `${m}m ${rem}s`;
