@@ -27,4 +27,5 @@
 - 记忆与回合测试可打更小的生产 interface。
 - 观测 SSE 多一类 `timeline_state` 事件；旧客户端仍可读原始 tool/text 事件（兼容）；新 UI：结构靠投影，token/进度靠增量。
 - Hub 观测 buffer 对 `timeline_state` 只保留最新一条，并在 retain 窗口到期后淘汰已结束 turn。
+- 观测重连 replay 从最新 `timeline_state` 起播（尚无投影时仍重放全部增量），避免前端把快照前的 `think_delta` / 结构事件再 reduce 一遍。
 - `kb_entry_ops.py` 仅 re-export `WriteMode`。

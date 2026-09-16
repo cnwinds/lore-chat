@@ -386,6 +386,99 @@ describe("useAgentStream", () => {
     }
   });
 
+  it("reconnect with known responding role reuses the unlabeled live assistant bubble", async () => {
+    vi.mocked(api.chatStream).mockImplementation(async function* () {
+      yield {
+        event: "think_delta",
+        data: { delta: "用户问的是数学问题", ts: "2026-01-01T00:00:00.000Z" },
+      };
+      throw new Error("network dropped");
+      yield { event: "done", data: {} };
+    });
+    vi.mocked(api.getActiveTurnStatus).mockResolvedValue({
+      conversation_id: "cid-1",
+      turn_id: "t1",
+      status: "running",
+      started_at: "2026-01-01T00:00:00.000Z",
+      last_seq: 0,
+      observable: true,
+      responding_role_id: "default",
+    });
+    vi.mocked(api.observeActiveTurnStream).mockImplementation(async function* () {
+      yield {
+        event: "timeline_state",
+        data: {
+          assistant_text: "先检索",
+          timeline: [
+            {
+              type: "think",
+              ts: "2026-01-01T00:00:00.000Z",
+              content: "用户问的是数学问题",
+              duration_ms: 30500,
+            },
+            {
+              type: "tool",
+              id: "t1",
+              tool: "web_search",
+              label: "搜索网页",
+              ts: "2026-01-01T00:00:31.000Z",
+              status: "done",
+            },
+          ],
+        },
+      };
+      yield { event: "done", data: { sources: [] } };
+    });
+    vi.mocked(api.getConversation).mockResolvedValue({
+      id: "cid-1",
+      title: "t",
+      created_at: "",
+      updated_at: "",
+      message_count: 2,
+      summarized: false,
+      summary_path: null,
+      messages: [
+        { id: "u1", role: "user", text: "hello" },
+        {
+          id: "a1",
+          role: "assistant",
+          speaker_id: "default",
+          text: "先检索",
+          timeline: [
+            {
+              type: "think",
+              ts: "2026-01-01T00:00:00.000Z",
+              content: "用户问的是数学问题",
+              duration_ms: 30500,
+            },
+            {
+              type: "tool",
+              id: "t1",
+              tool: "web_search",
+              label: "搜索网页",
+              ts: "2026-01-01T00:00:31.000Z",
+              status: "done",
+            },
+          ],
+        },
+      ],
+    });
+
+    const { setMsgs, getCurrent } = makeSetMsgs([]);
+    const options = baseOptions({ setMsgs });
+    const { result } = renderHook(() => useAgentStream(options));
+
+    await act(async () => {
+      await result.current.runAgentStream("hello");
+    });
+
+    const assistants = getCurrent().filter((m) => m.role === "assistant");
+    expect(assistants).toHaveLength(1);
+    expect(assistants[0]?.speaker_id).toBe("default");
+    expect(assistants[0]?.timeline?.some((b) => b.type === "think")).toBe(true);
+    expect(assistants[0]?.timeline?.some((b) => b.type === "tool")).toBe(true);
+  });
+
   it("resumes observation when server turn is still running after stream throws", async () => {
     vi.mocked(api.chatStream).mockImplementation(async function* () {
       throw new Error("boom");

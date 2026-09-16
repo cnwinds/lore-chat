@@ -15,6 +15,7 @@ from app.engine.chat.turn_hub import (
     TurnRunSpec,
     _RETAIN_FINISHED_SEC,
     _sse_event_name,
+    replay_observe_events,
 )
 from app.engine.conversations import ConversationStore
 
@@ -139,6 +140,66 @@ async def test_second_subscribe_replays_buffer(tmp_path):
     assert len(second) >= 2
     assert any("event: done" in ev for ev in second)
     _cancel_purge(hub._by_turn.get(turn["turn_id"]))
+
+
+def test_replay_observe_events_starts_at_latest_timeline_state():
+    """重连不要把快照之前的 think_delta / tool_start 再送给前端 reduce。"""
+    think_before = think_delta("before")
+    snap = "event: timeline_state\ndata: {\"timeline\":[]}\n\n"
+    tool = tool_start("t1", "web_search", "搜索", {"query": "q"})
+    think_after = think_delta("after")
+    done_ev = done([], 1)
+    buffer = [
+        (1, think_before),
+        (2, snap),
+        (3, tool),
+        (4, think_after),
+        (5, done_ev),
+    ]
+    replay = replay_observe_events(buffer)
+    names = [_sse_event_name(ev) for ev in replay]
+    assert names[0] == "timeline_state"
+    assert "think_delta" in names
+    assert names.count("think_delta") == 1
+    assert think_before not in replay
+    assert think_after in replay
+    assert names[-1] == "done"
+
+
+def test_replay_observe_events_keeps_all_deltas_before_any_snapshot():
+    think_a = think_delta("a")
+    think_b = think_delta("b")
+    buffer = [(1, think_a), (2, think_b)]
+    assert replay_observe_events(buffer) == [think_a, think_b]
+
+
+@pytest.mark.asyncio
+async def test_subscribe_replay_skips_deltas_before_latest_snapshot(tmp_path):
+    store = ConversationStore(tmp_path / "c")
+    cid = store.create()
+    turn = store.begin_turn(cid, "hi", "cli-1", observation_allowed=False)
+    agent = _FakeAgent(
+        [
+            think_delta("early"),
+            tool_start("t1", "web_search", "搜索", {"query": "q"}),
+            think_delta("later"),
+            done([], 1),
+        ]
+    )
+    hub = TurnExecutionHub(agent, store)
+    at = hub.ensure_running(cid, turn, TurnRunSpec("hi", [], [], None, False))
+    await at.task
+    replay = [ev async for ev in hub.subscribe(cid, turn["turn_id"])]
+    names = [_sse_event_name(ev) for ev in replay]
+    assert names[0] == "timeline_state"
+    assert names.count("think_delta") == 1
+    parsed_think = next(
+        parse_agent_sse_event(ev) for ev in replay if _sse_event_name(ev) == "think_delta"
+    )
+    assert parsed_think is not None
+    _, data = parsed_think
+    assert data.get("delta") == "later"
+    _cancel_purge(at)
 
 
 @pytest.mark.asyncio

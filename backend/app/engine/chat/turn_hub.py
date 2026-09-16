@@ -48,6 +48,26 @@ def _sse_event_name(ev: str) -> str | None:
     return ev[7:end] if end != -1 else ev[7:]
 
 
+def replay_observe_events(
+    buffer: list[tuple[int, str]],
+    after_seq: int = 0,
+) -> list[str]:
+    """断线重连：从最新 ``timeline_state`` 起播。
+
+    快照已含此前结构与思考；若把更早的 ``think_delta`` / ``tool_start`` 再交给前端
+    本地 reduce，会在已有助手泡上叠出第二份思考过程和工具卡。
+    尚无投影（仍在首段思考）时仍重放全部增量。
+    """
+    replay = [(seq, ev) for seq, ev in buffer if seq > after_seq]
+    snap_at: int | None = None
+    for i, (_, ev) in enumerate(replay):
+        if _sse_event_name(ev) == "timeline_state":
+            snap_at = i
+    if snap_at is None:
+        return [ev for _, ev in replay]
+    return [ev for _, ev in replay[snap_at:]]
+
+
 @dataclass
 class TurnRunSpec:
     text: str
@@ -296,7 +316,7 @@ class TurnExecutionHub:
 
         q: asyncio.Queue = asyncio.Queue()
         async with at.lock:
-            replay = [ev for seq, ev in at.buffer if seq > after_seq]
+            replay = replay_observe_events(at.buffer, after_seq)
             finished = at.finished
             if not finished:
                 at.subscribers.add(q)
