@@ -11,51 +11,51 @@ function TokenWayIcon({ way }: { way: Way }) {
     <svg
       className="chat-meta-token-icon"
       viewBox="0 0 12 12"
-      width="11"
-      height="11"
+      width="12"
+      height="12"
       fill="none"
       aria-hidden
     >
       {way === "in" ? (
         <>
           <path
-            d="M2.2 6h5.6"
+            d="M6 1.7v6.1"
             stroke="currentColor"
-            strokeWidth="1.45"
+            strokeWidth="1.55"
             strokeLinecap="round"
           />
           <path
-            d="M6.1 3.7 8.5 6l-2.4 2.3"
+            d="M3.4 5.6 6 8.2 8.6 5.6"
             stroke="currentColor"
-            strokeWidth="1.45"
+            strokeWidth="1.55"
             strokeLinecap="round"
             strokeLinejoin="round"
           />
           <path
-            d="M10 3.1v5.8"
+            d="M2 10.4h8"
             stroke="currentColor"
-            strokeWidth="1.45"
+            strokeWidth="1.55"
             strokeLinecap="round"
           />
         </>
       ) : (
         <>
           <path
-            d="M2 3.1v5.8"
+            d="M2 1.6h8"
             stroke="currentColor"
-            strokeWidth="1.45"
+            strokeWidth="1.55"
             strokeLinecap="round"
           />
           <path
-            d="M3.8 6h5.6"
+            d="M6 4.2v6.1"
             stroke="currentColor"
-            strokeWidth="1.45"
+            strokeWidth="1.55"
             strokeLinecap="round"
           />
           <path
-            d="M7.5 3.7 9.9 6l-2.4 2.3"
+            d="M3.4 6.4 6 3.8 8.6 6.4"
             stroke="currentColor"
-            strokeWidth="1.45"
+            strokeWidth="1.55"
             strokeLinecap="round"
             strokeLinejoin="round"
           />
