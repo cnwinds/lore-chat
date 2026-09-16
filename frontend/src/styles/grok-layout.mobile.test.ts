@@ -57,21 +57,30 @@ describe("mobile three-pane grid", () => {
 });
 
 describe("kb sidebar chrome", () => {
-  it("insets the knowledge tree and leaves a quiet canvas before chat", () => {
+  it("insets the knowledge tree without a canvas seam before the center pane", () => {
     expect(css).toMatch(/\.kb-sidebar-head\s*\{[^}]*padding:\s*8px 12px 6px;/);
     expect(css).toMatch(/\.kb-sidebar-scroll\s*\{[^}]*padding:\s*4px 12px 12px;/);
-    expect(css).toMatch(/--app-chat-inset:\s*12px;/);
+    expect(css).not.toMatch(/--app-chat-inset/);
+    expect(css).not.toMatch(
+      /\.app-shell--three-pane \.main-panel\s*\{[^}]*margin-left:/,
+    );
+    expect(css).not.toMatch(
+      /\.app-shell--three-pane \.app-shell-left\s*\{[^}]*border-right:/,
+    );
     expect(css).toMatch(
-      /\.app-shell--three-pane \.main-panel\s*\{[^}]*margin-left:\s*var\(--app-chat-inset\);/,
+      /\.app-shell--mobile \.app-shell-left\s*\{[^}]*border-right:\s*1px solid var\(--border\);/,
+    );
+    expect(css).toMatch(
+      /\.app-shell--three-pane\.app-shell--doc-focus \.doc-panel\s*\{[^}]*grid-column:\s*2 \/ 4;/,
     );
   });
 
-  it("joins a focused document to the left dock without a canvas seam", () => {
+  it("keeps left-edge floats flush to the dock with shadow only toward chat", () => {
     expect(css).toMatch(
-      /\.app-shell--three-pane\.app-shell--doc-focus,\s*\n\s*\.app-shell--three-pane\.app-shell--doc-focus-float\s*\{\s*\n\s*--app-chat-inset:\s*0px;/,
+      /\.app-shell--three-pane \.doc-float-panel\s*\{[^}]*box-shadow:\s*8px 0 24px/,
     );
     expect(css).toMatch(
-      /\.app-shell--three-pane\.app-shell--doc-focus \.app-shell-left,\s*\n\s*\.app-shell--three-pane\.app-shell--doc-focus-float \.app-shell-left\s*\{[^}]*border-right:\s*none;/,
+      /\.app-shell--three-pane\.app-shell--doc-focus-float \.doc-float-panel\s*\{[^}]*box-shadow:\s*none;/,
     );
   });
 

@@ -9,7 +9,6 @@
 .app-shell--three-pane {
   --app-config-col: 300px;
   --app-doc-col: 0px;
-  --app-chat-inset: 12px;
   --app-split-hit: 6px;
   position: relative;
   display: grid;
@@ -51,7 +50,6 @@
   grid-template-rows: minmax(0, 1fr) auto;
   grid-template-columns: minmax(0, 1fr);
   background: var(--bg-surface);
-  border-right: 1px solid var(--border);
   overflow: hidden;
 }
 
@@ -132,7 +130,6 @@
   grid-row: 1;
   min-width: 0;
   min-height: 0;
-  margin-left: var(--app-chat-inset);
   background: var(--bg-app);
 }
 
@@ -144,19 +141,19 @@
   overflow: hidden;
 }
 
-.app-shell--three-pane.app-shell--doc-focus,
-.app-shell--three-pane.app-shell--doc-focus-float {
-  --app-chat-inset: 0px;
-}
-
-.app-shell--three-pane.app-shell--doc-focus .app-shell-left,
-.app-shell--three-pane.app-shell--doc-focus-float .app-shell-left {
-  border-right: none;
-}
-
 .app-shell--three-pane.app-shell--doc-focus .doc-panel {
   /* main-panel is display:none; occupy its track so the doc fills the center */
   grid-column: 2 / 4;
+}
+
+/* Docs / media / channels share this left-edge float. Keep the drop shadow
+   on the chat side so it does not paint a seam over the dock. */
+.app-shell--three-pane .doc-float-panel {
+  box-shadow: 8px 0 24px color-mix(in srgb, var(--text) 12%, transparent);
+}
+
+.app-shell--three-pane.app-shell--doc-focus-float .doc-float-panel {
+  box-shadow: none;
 }
 
 /* ========================================
@@ -1817,10 +1814,6 @@ select.role-config-input {
   .app-shell--mobile.app-shell--three-pane .doc-panel {
     grid-column: 1;
     grid-row: 1;
-  }
-
-  .app-shell--mobile.app-shell--three-pane .main-panel {
-    margin-left: 0;
   }
 
   .app-shell--mobile .app-shell-left {
