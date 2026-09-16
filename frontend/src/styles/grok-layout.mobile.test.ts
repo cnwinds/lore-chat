@@ -66,6 +66,15 @@ describe("kb sidebar chrome", () => {
     );
   });
 
+  it("joins a focused document to the left dock without a canvas seam", () => {
+    expect(css).toMatch(
+      /\.app-shell--three-pane\.app-shell--doc-focus,\s*\n\s*\.app-shell--three-pane\.app-shell--doc-focus-float\s*\{\s*\n\s*--app-chat-inset:\s*0px;/,
+    );
+    expect(css).toMatch(
+      /\.app-shell--three-pane\.app-shell--doc-focus \.app-shell-left,\s*\n\s*\.app-shell--three-pane\.app-shell--doc-focus-float \.app-shell-left\s*\{[^}]*border-right:\s*none;/,
+    );
+  });
+
   it("keeps the left dock footer on its own grid row", () => {
     expect(css).toMatch(
       /\.app-shell--three-pane \.app-shell-left\s*\{[^}]*grid-template-rows:\s*minmax\(0,\s*1fr\)\s+auto;/,

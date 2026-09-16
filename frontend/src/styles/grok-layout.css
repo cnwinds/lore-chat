@@ -144,6 +144,16 @@
   overflow: hidden;
 }
 
+.app-shell--three-pane.app-shell--doc-focus,
+.app-shell--three-pane.app-shell--doc-focus-float {
+  --app-chat-inset: 0px;
+}
+
+.app-shell--three-pane.app-shell--doc-focus .app-shell-left,
+.app-shell--three-pane.app-shell--doc-focus-float .app-shell-left {
+  border-right: none;
+}
+
 .app-shell--three-pane.app-shell--doc-focus .doc-panel {
   /* main-panel is display:none; occupy its track so the doc fills the center */
   grid-column: 2 / 4;
