@@ -23,6 +23,7 @@ def test_tool_progress_concatenates_chunks():
     )
     block = acc.timeline[0]
     assert block["progress_log"] == ["$ ls\na\nb\n"]
+    assert isinstance(block.get("started_at_ms"), int)
 
 
 def test_tool_progress_skips_noise():
@@ -36,6 +37,26 @@ def test_tool_progress_skips_noise():
         {"id": "1", "message": "仍在运行… 90s", "ts": "t1"},
     )
     assert acc.timeline[0].get("progress_log") in (None, [])
+
+
+def test_tool_start_stamps_started_at_ms_and_keeps_it():
+    acc = TimelineAccumulator()
+    acc.accumulate(
+        "tool_start",
+        {
+            "id": "1",
+            "tool": "fetch_url",
+            "label": "打开链接",
+            "ts": "t0",
+            "started_at_ms": 1_700_000_000_000,
+        },
+    )
+    assert acc.timeline[0]["started_at_ms"] == 1_700_000_000_000
+    acc.accumulate(
+        "tool_progress",
+        {"id": "1", "tool": "fetch_url", "message": "still going"},
+    )
+    assert acc.timeline[0]["started_at_ms"] == 1_700_000_000_000
 
 
 def test_tool_start_stores_command_as_query():

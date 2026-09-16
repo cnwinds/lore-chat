@@ -18,6 +18,11 @@ def now_iso_seconds() -> str:
     return now_display().isoformat(timespec="seconds")
 
 
+def now_epoch_ms() -> int:
+    """UTC 纪元毫秒，供秒表锚点；与浏览器 Date.now() 同一量纲。"""
+    return int(now_display().timestamp() * 1000)
+
+
 def now_wall_clock() -> str:
     """`YYYY-MM-DD HH:mm:ss`，供文档 frontmatter、changelog 等直接展示。"""
     return now_display().strftime("%Y-%m-%d %H:%M:%S")

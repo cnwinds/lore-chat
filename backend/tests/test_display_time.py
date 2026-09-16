@@ -1,9 +1,15 @@
-from app.time import DISPLAY_TZ, now_display, now_iso_seconds, now_wall_clock
+from app.time import DISPLAY_TZ, now_display, now_epoch_ms, now_iso_seconds, now_wall_clock
 
 
 def test_now_iso_seconds_has_china_offset():
     ts = now_iso_seconds()
     assert "+08:00" in ts
+
+
+def test_now_epoch_ms_is_unix_millis():
+    ms = now_epoch_ms()
+    assert ms > 1_700_000_000_000
+    assert abs(ms - int(now_display().timestamp() * 1000)) < 5
 
 
 def test_now_display_tz():

@@ -1,7 +1,7 @@
 from __future__ import annotations
 import json
 
-from app.time import now_iso_seconds
+from app.time import now_epoch_ms, now_iso_seconds
 
 
 def now_ts() -> str:
@@ -13,7 +13,16 @@ def sse_event(event_type: str, data: dict) -> str:
     return f"event: {event_type}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 def tool_start(id, tool, label, input_data):
-    return sse_event("tool_start", {"id": id, "tool": tool, "label": label, "input": input_data})
+    return sse_event(
+        "tool_start",
+        {
+            "id": id,
+            "tool": tool,
+            "label": label,
+            "input": input_data,
+            "started_at_ms": now_epoch_ms(),
+        },
+    )
 
 def tool_result(
     id,

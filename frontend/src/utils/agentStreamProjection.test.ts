@@ -4,6 +4,7 @@ import {
   type StreamReduceState,
 } from "./agentStreamProjection";
 import type { ChatMessage } from "../types/chat";
+import { toolDisplayDurationMs } from "./toolDuration";
 
 function baseState(overrides: Partial<StreamReduceState> = {}): StreamReduceState {
   const assistant: ChatMessage = {
@@ -160,6 +161,71 @@ describe("reduceStreamEvent serverTimeline + deltas", () => {
     expect(result.state.assistant.timeline).toEqual([
       { type: "text", ts: "t0", content: "前言" },
     ]);
+  });
+
+  it("stamps a later running tool from timeline_state after serverTimeline", () => {
+    let result = reduceStreamEvent(baseState(), "timeline_state", {
+      timeline: [
+        {
+          type: "tool",
+          id: "t1",
+          tool: "web_search",
+          label: "搜索网页",
+          ts: "2026-09-16T16:00:00+08:00",
+          status: "done",
+          duration_ms: 2000,
+        },
+      ],
+      assistant_text: "",
+    });
+    expect(result.state.serverTimeline).toBe(true);
+
+    result = reduceStreamEvent(result.state, "tool_start", {
+      id: "t2",
+      tool: "fetch_url",
+      label: "打开链接",
+      ts: "2026-09-16T16:00:04+08:00",
+    });
+    expect(
+      result.state.assistant.timeline?.some(
+        (b) => b.type === "tool" && b.id === "t2",
+      ),
+    ).toBe(false);
+
+    result = reduceStreamEvent(result.state, "timeline_state", {
+      timeline: [
+        {
+          type: "tool",
+          id: "t1",
+          tool: "web_search",
+          label: "搜索网页",
+          ts: "2026-09-16T16:00:00+08:00",
+          status: "done",
+          duration_ms: 2000,
+        },
+        {
+          type: "tool",
+          id: "t2",
+          tool: "fetch_url",
+          label: "打开链接",
+          ts: "2026-09-16T16:00:04+08:00",
+          status: "running",
+        },
+      ],
+      assistant_text: "",
+    });
+    const tool = result.state.assistant.timeline?.find(
+      (b) => b.type === "tool" && b.id === "t2",
+    );
+    expect(tool?.type).toBe("tool");
+    if (tool?.type === "tool") {
+      expect(tool.started_at_ms).toBe(Date.parse("2026-09-16T16:00:04+08:00"));
+      expect(
+        toolDisplayDurationMs(tool, {
+          nowMs: Date.parse("2026-09-16T16:00:09+08:00"),
+        }),
+      ).toBe(5000);
+    }
   });
 
   it("closes open think duration on done", () => {

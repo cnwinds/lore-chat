@@ -5,6 +5,7 @@ import time
 from app.engine.chat.progress_log import append_progress_chunk
 from app.engine.chat.tool_query import clip_tool_query
 from app.engine.source_key import extend_sources
+from app.time import now_epoch_ms
 
 
 class TimelineAccumulator:
@@ -34,6 +35,11 @@ class TimelineAccumulator:
             return
 
         if event_type == "tool_start":
+            started = data.get("started_at_ms")
+            try:
+                started_at_ms = int(started) if started is not None else now_epoch_ms()
+            except (TypeError, ValueError):
+                started_at_ms = now_epoch_ms()
             block = {
                 "type": "tool",
                 "id": data["id"],
@@ -41,6 +47,7 @@ class TimelineAccumulator:
                 "label": data["label"],
                 "ts": data["ts"],
                 "status": "running",
+                "started_at_ms": started_at_ms,
             }
             inp = data.get("input")
             if isinstance(inp, dict):

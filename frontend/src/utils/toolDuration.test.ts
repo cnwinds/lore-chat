@@ -2,6 +2,7 @@ import { describe, expect, it, vi, afterEach } from "vitest";
 import { updateTimeline } from "../api";
 import {
   resolveToolStartedAtMs,
+  stampRunningStartedAtMs,
   thinkDisplayDurationMs,
   toolDisplayDurationMs,
 } from "./toolDuration";
@@ -11,15 +12,53 @@ describe("resolveToolStartedAtMs", () => {
     expect(resolveToolStartedAtMs("2026-08-29T22:25:00+08:00", 111)).toBe(111);
   });
 
-  it("parses server ISO ts", () => {
+  it("parses server ISO ts with offset", () => {
     const iso = "2026-08-29T22:25:00+08:00";
     expect(resolveToolStartedAtMs(iso)).toBe(Date.parse(iso));
+  });
+
+  it("treats naive ISO as Beijing wall time, not UTC", () => {
+    const naive = "2026-09-16T16:00:00";
+    const now = Date.parse("2026-09-16T16:00:05+08:00");
+    expect(resolveToolStartedAtMs(naive, undefined, now)).toBe(
+      Date.parse("2026-09-16T16:00:00+08:00"),
+    );
+  });
+
+  it("rejects a start that is hours in the future", () => {
+    const future = "2026-09-16T16:00:00+08:00";
+    const now = Date.parse("2026-09-16T08:00:00+08:00");
+    expect(resolveToolStartedAtMs(future, undefined, now)).toBeUndefined();
+    expect(resolveToolStartedAtMs(undefined, Date.parse(future), now)).toBeUndefined();
   });
 
   it("returns undefined for unparsable ts (no Date.now fallback)", () => {
     expect(resolveToolStartedAtMs("t")).toBeUndefined();
     expect(resolveToolStartedAtMs("")).toBeUndefined();
     expect(resolveToolStartedAtMs(undefined)).toBeUndefined();
+  });
+});
+
+describe("stampRunningStartedAtMs", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("covers a running tool with no usable ts using now", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-16T16:00:00+08:00"));
+    expect(
+      stampRunningStartedAtMs({ status: "running", ts: "not-a-date" }),
+    ).toBe(Date.now());
+  });
+
+  it("does not invent a stamp for a finished tool with bad ts", () => {
+    expect(
+      stampRunningStartedAtMs({ status: "done", ts: "not-a-date", duration_ms: 12 } as {
+        status: string;
+        ts: string;
+      }),
+    ).toBeUndefined();
   });
 });
 
@@ -30,6 +69,21 @@ describe("toolDisplayDurationMs", () => {
       { nowMs: 4500, liveElapsedMs: 60_000 },
     );
     expect(ms).toBe(3500);
+  });
+
+  it("ticks as nowMs advances", () => {
+    const block = { status: "running", started_at_ms: 1000 };
+    expect(toolDisplayDurationMs(block, { nowMs: 1000 })).toBe(0);
+    expect(toolDisplayDurationMs(block, { nowMs: 1600 })).toBe(600);
+    expect(toolDisplayDurationMs(block, { nowMs: 4500 })).toBe(3500);
+  });
+
+  it("ignores a future started_at and falls back to live elapsed", () => {
+    const ms = toolDisplayDurationMs(
+      { status: "running", started_at_ms: 9_999_999_999_999 },
+      { nowMs: 5000, liveElapsedMs: 12_000 },
+    );
+    expect(ms).toBe(12_000);
   });
 
   it("uses duration_ms when done", () => {
@@ -88,6 +142,22 @@ describe("tool_start stamps started_at_ms", () => {
     expect(block.type).toBe("tool");
     if (block.type === "tool") {
       expect(block.started_at_ms).toBe(Date.parse(iso));
+    }
+  });
+
+  it("prefers server started_at_ms epoch over ts", () => {
+    const timeline = updateTimeline([], "tool_start", {
+      id: "1",
+      tool: "fetch_url",
+      label: "打开链接",
+      ts: "2026-09-16T16:00:00+08:00",
+      started_at_ms: 1_700_000_000_000,
+      input: { url: "https://example.com" },
+    });
+    const block = timeline[0];
+    expect(block.type).toBe("tool");
+    if (block.type === "tool") {
+      expect(block.started_at_ms).toBe(1_700_000_000_000);
     }
   });
 

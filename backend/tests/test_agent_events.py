@@ -10,6 +10,8 @@ def test_sse_event_format():
     data = json.loads(ev.split("data: ", 1)[1].strip())
     assert data["id"] == "t1"
     assert "ts" in data
+    assert isinstance(data.get("started_at_ms"), int)
+    assert data["started_at_ms"] > 1_700_000_000_000
 
 
 def test_tool_result_with_content():

@@ -76,7 +76,7 @@ export type TimelineBlock =
       sources?: SourceRef[];
       content?: string;
       duration_ms?: number;
-      /** 秒表锚点：优先服务端 tool ts；本地 tool_start 在 ts 不可解析时回退 Date.now() */
+      /** 秒表锚点：优先服务端 epoch ms；无则按北京时间解析 ts；未来锚点丢弃 */
       started_at_ms?: number;
       question_id?: string;
       question?: string;

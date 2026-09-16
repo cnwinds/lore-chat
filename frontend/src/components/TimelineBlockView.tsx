@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   formatDuration,
   type CumulativeInfo,
@@ -17,7 +17,7 @@ import {
   isNoiseProgressLine,
   joinProgressChunks,
 } from "../utils/progressLog";
-import { toolDisplayDurationMs, thinkDisplayDurationMs } from "../utils/toolDuration";
+import { isUsableStartMs, toolDisplayDurationMs, thinkDisplayDurationMs } from "../utils/toolDuration";
 import type { ConversationLinkTarget } from "../utils/conversationLinks";
 import { toolBlockDefaultOpen } from "../utils/toolFold";
 import { stripProtocolMarkup } from "../utils/visibleText";
@@ -104,6 +104,31 @@ function maxParallelDuration(children: TimelineBlock[]): number | undefined {
   return max;
 }
 
+/**
+ * 运行中工具的稳定秒表原点。父级若把 started_at_ms 重打成「现在」或打成未来，
+ * 仍沿用首次见到的原点，避免折叠行右侧冻在 0ms。
+ */
+function useLiveStopwatchOrigin(
+  id: string,
+  status: string,
+  startedAtMs: number | undefined,
+  nowMs: number | undefined,
+): number | undefined {
+  const originRef = useRef<{ id: string; start: number } | null>(null);
+  if (status !== "running") {
+    originRef.current = null;
+    return startedAtMs;
+  }
+  const now = nowMs ?? Date.now();
+  const incoming = isUsableStartMs(startedAtMs, now) ? startedAtMs : undefined;
+  if (originRef.current?.id !== id) {
+    originRef.current = { id, start: incoming ?? now };
+  } else if (incoming != null && incoming < originRef.current.start) {
+    originRef.current.start = incoming;
+  }
+  return originRef.current.start;
+}
+
 function ToolBlockView({
   block,
   liveElapsedMs,
@@ -139,6 +164,12 @@ function ToolBlockView({
   // 展开状态用组件内 state 维护，随组件卸载自动回收（不跨会话泄漏）。
   const [override, setOverride] = useState<boolean | null>(null);
   const open = override ?? defaultOpen;
+  const originMs = useLiveStopwatchOrigin(
+    block.id,
+    block.status,
+    block.started_at_ms,
+    nowMs,
+  );
 
   function toggleOpen() {
     setOverride(!open);
@@ -156,11 +187,14 @@ function ToolBlockView({
   }
 
   const oneLiner = toolOneLiner(block);
-  // 运行中：按本工具 started_at_ms 计秒；勿用整轮 liveElapsedMs（会偏长，结束后又跳回 duration 显得偏短）
-  const displayMs = toolDisplayDurationMs(block, {
-    nowMs,
-    liveElapsedMs,
-  });
+  // 运行中：按本工具起点计秒；勿用整轮 liveElapsedMs（会偏长，结束后又跳回 duration 显得偏短）
+  const displayMs = toolDisplayDurationMs(
+    { ...block, started_at_ms: originMs },
+    {
+      nowMs,
+      liveElapsedMs,
+    },
+  );
 
   function handleOpenSource(src: SourceRef) {
     if (

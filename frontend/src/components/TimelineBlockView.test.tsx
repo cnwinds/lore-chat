@@ -132,6 +132,46 @@ describe("TimelineBlockView default fold", () => {
     expect(screen.getByText("1.5s")).toBeTruthy();
   });
 
+  it("keeps a running tool stopwatch moving even if started_at_ms is in the future", () => {
+    cleanup();
+    const { rerender } = render(
+      <TimelineBlockView
+        block={{
+          type: "tool",
+          id: "fetch-1",
+          tool: "fetch_url",
+          label: "打开链接",
+          ts: "t",
+          status: "running",
+          started_at_ms: 9_999_999_999_999,
+        }}
+        cumulative={emptyCumulative}
+        isLive
+        nowMs={1000}
+        onOpenSource={() => {}}
+      />,
+    );
+    expect(screen.getByText("0ms")).toBeTruthy();
+    rerender(
+      <TimelineBlockView
+        block={{
+          type: "tool",
+          id: "fetch-1",
+          tool: "fetch_url",
+          label: "打开链接",
+          ts: "t",
+          status: "running",
+          started_at_ms: 9_999_999_999_999,
+        }}
+        cumulative={emptyCumulative}
+        isLive
+        nowMs={2500}
+        onOpenSource={() => {}}
+      />,
+    );
+    expect(screen.getByText("1.5s")).toBeTruthy();
+  });
+
   it("keeps unanswered asks expanded so choices stay visible", () => {
     renderBlock({
       type: "tool",

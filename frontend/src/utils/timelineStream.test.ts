@@ -85,7 +85,7 @@ describe("mergeServerTimeline", () => {
     }
   });
 
-  it("does not invent Date.now when ts is unparsable", () => {
+  it("stamps Date.now once for a running tool with unparsable ts, then keeps it", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-08-29T22:30:00+08:00"));
     const prev: ChatMessage = {
@@ -104,11 +104,63 @@ describe("mergeServerTimeline", () => {
         status: "running",
       },
     ];
-    const next = mergeServerTimeline(prev, incoming);
+    const first = mergeServerTimeline(prev, incoming);
+    const tool = first.timeline?.[0];
+    expect(tool?.type).toBe("tool");
+    if (tool?.type !== "tool") return;
+    expect(tool.started_at_ms).toBe(Date.now());
+    vi.setSystemTime(new Date("2026-08-29T22:31:00+08:00"));
+    const second = mergeServerTimeline(first, incoming);
+    const again = second.timeline?.[0];
+    expect(again?.type).toBe("tool");
+    if (again?.type === "tool") {
+      expect(again.started_at_ms).toBe(tool.started_at_ms);
+    }
+  });
+
+  it("keeps a server epoch started_at_ms from timeline_state", () => {
+    const incoming: TimelineBlock[] = [
+      {
+        type: "tool",
+        id: "t1",
+        tool: "fetch_url",
+        label: "打开链接",
+        ts: "2026-09-16T16:00:00+08:00",
+        status: "running",
+        started_at_ms: 1_700_000_000_000,
+      },
+    ];
+    const next = mergeServerTimeline(
+      { role: "assistant", text: "", ts: "t0", timeline: [] },
+      incoming,
+    );
     const tool = next.timeline?.[0];
     expect(tool?.type).toBe("tool");
     if (tool?.type === "tool") {
-      expect(tool.started_at_ms).toBeUndefined();
+      expect(tool.started_at_ms).toBe(1_700_000_000_000);
+    }
+  });
+
+  it("does not treat naive Beijing ts as a future UTC instant", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-16T16:00:05+08:00"));
+    const next = mergeServerTimeline(
+      { role: "assistant", text: "", ts: "t0", timeline: [] },
+      [
+        {
+          type: "tool",
+          id: "t1",
+          tool: "fetch_url",
+          label: "打开链接",
+          ts: "2026-09-16T16:00:00",
+          status: "running",
+        },
+      ],
+    );
+    const tool = next.timeline?.[0];
+    expect(tool?.type).toBe("tool");
+    if (tool?.type === "tool") {
+      expect(tool.started_at_ms).toBe(Date.parse("2026-09-16T16:00:00+08:00"));
     }
   });
 
