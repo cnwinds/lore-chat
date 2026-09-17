@@ -102,15 +102,6 @@ function buildConfirmCopy(opts: {
   return `${parts.join("。")}。\n\n确定创建分享链接？`;
 }
 
-function ShareTypeIcon({ kind }: { kind: "conversation" | "doc" }) {
-  return (
-    <span
-      className={`share-modal-type-icon share-modal-type-icon--${kind}`}
-      aria-hidden
-    />
-  );
-}
-
 export function ShareLinkModal({
   open,
   target,
@@ -357,10 +348,15 @@ export function ShareLinkModal({
         onClick={(e) => e.stopPropagation()}
       >
         <header className="share-modal-header">
-          <ShareTypeIcon kind={target.type} />
-          <div className="share-modal-header-text">
-            <h3 id="share-link-title">分享{isConversation ? "对话" : "文档"}</h3>
-          </div>
+          <h3 id="share-link-title">分享{isConversation ? "对话" : "文档"}</h3>
+          <button
+            type="button"
+            className="share-modal-close"
+            onClick={onClose}
+            aria-label="关闭"
+          >
+            ×
+          </button>
         </header>
 
         {publicBaseMissing && (
