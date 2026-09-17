@@ -22,7 +22,7 @@ docker build -t lorechat-sandbox-agent:local \
 |------|------|
 | 系统 | ffmpeg、curl、unzip、fonts-noto-cjk、Chrome headless 运行库 |
 | Node | 22.18.0 |
-| Python | edge-tts、mutagen、matplotlib、numpy |
+| Python | CPython **3.12**（python-build-standalone，装进镜像）；edge-tts、mutagen、matplotlib、numpy |
 | npm 全局 | hyperframes@0.7.94（`ONNXRUNTIME_NODE_INSTALL_CUDA=skip`） |
 
 ## 不在镜像内

@@ -1,10 +1,14 @@
-# lore-chat Agent 沙箱「业务镜像」：固化 hn-video-report §0 依赖（Debian）。
+# lore-chat Agent 沙箱「业务镜像」：固化 hn-video-report §0 依赖 + CPython 3.12。
 # OpenSandbox 会另用 execd_image（官方 opensandbox/execd）把 execd 注入本镜像启动的容器。
 #
 #   docker build -t lorechat-sandbox-agent:local \
 #     -f docker/opensandbox/Dockerfile.agent docker/opensandbox
 #
 # 不预装：项目 package.json / hyperframes.json、chrome-headless-shell（首次 render 自动下）。
+#
+# CPython 3.12 用 python-build-standalone（与官方 CPython 同构，uv 同一套包），
+# 装进镜像，避免 Debian bookworm 自带 3.11、运行时再下一份解释器。
+# 不 FROM python:3.12-*：部分环境的 Docker Hub 镜像加速不可用，且会把基础 OS 漂到 Trixie。
 
 FROM debian:bookworm-slim
 
@@ -15,18 +19,26 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV ONNXRUNTIME_NODE_INSTALL_CUDA=skip
 ENV npm_config_onnxruntime_node_install_cuda=skip
 ENV PATH="/usr/local/lib/nodejs/current/bin:/usr/local/bin:/usr/bin:/bin"
+ENV UV_INSTALL_DIR=/usr/local/uv
+ENV UV_PYTHON_INSTALL_DIR=/usr/local/share/uv/python
+ENV UV_CACHE_DIR=/usr/local/share/uv/cache
 
-RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources \
-    && sed -i 's/security.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends \
+RUN set -eux; \
+    if [ -f /etc/apt/sources.list.d/debian.sources ]; then \
+        sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources; \
+        sed -i 's/security.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources; \
+    fi; \
+    if [ -f /etc/apt/sources.list ]; then \
+        sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list; \
+        sed -i 's/security.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list; \
+    fi; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
         curl \
         ca-certificates \
         xz-utils \
         unzip \
         ffmpeg \
-        python3 \
-        python3-pip \
         fonts-noto-cjk \
         libnss3 \
         libnspr4 \
@@ -42,8 +54,28 @@ RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debia
         libgbm1 \
         libasound2 \
         libpango-1.0-0 \
-        libcairo2 \
-    && rm -rf /var/lib/apt/lists/*
+        libcairo2; \
+    rm -rf /var/lib/apt/lists/*
+
+# 独立 CPython 3.12：先国内 npmmirror，再官方 GitHub Releases（CI 上通常后者可用）。
+RUN mkdir -p "${UV_INSTALL_DIR}" "${UV_PYTHON_INSTALL_DIR}" "${UV_CACHE_DIR}" \
+    && curl -fsSL https://astral.sh/uv/install.sh | env UV_INSTALL_DIR="${UV_INSTALL_DIR}" sh \
+    && ln -sfn "${UV_INSTALL_DIR}/uv" /usr/local/bin/uv \
+    && ( \
+         UV_PYTHON_INSTALL_MIRROR="https://registry.npmmirror.com/-/binary/python-build-standalone/" \
+           uv python install 3.12 \
+         || uv python install 3.12 \
+       ) \
+    && PY="$(uv python find 3.12)" \
+    && ln -sfn "${PY}" /usr/local/bin/python3.12 \
+    && ln -sfn /usr/local/bin/python3.12 /usr/local/bin/python3 \
+    && ln -sfn /usr/local/bin/python3.12 /usr/local/bin/python \
+    && python3 -m ensurepip --upgrade \
+    && printf '%s\n' '#!/bin/sh' 'exec /usr/local/bin/python3 -m pip "$@"' > /usr/local/bin/pip3 \
+    && chmod +x /usr/local/bin/pip3 \
+    && python3 -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 12) else 1)' \
+    && python3 --version \
+    && pip3 --version
 
 RUN curl -fsSL "https://npmmirror.com/mirrors/node/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" \
          -o /tmp/node.tar.xz \
