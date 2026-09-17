@@ -1,4 +1,5 @@
 import type { ChangeEvent, RefObject } from "react";
+import { ModelPickerButton } from "./chat/ModelPickerButton";
 
 type Props = {
   webEnabled: boolean;
@@ -165,6 +166,7 @@ export function ComposerToolbar({
         >
           <GlobeIcon />
         </button>
+        <ModelPickerButton />
       </div>
       <div className="composer-toolbar-right">
         <button
