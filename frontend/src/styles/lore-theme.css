@@ -494,14 +494,9 @@ body {
   border-bottom: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
 }
 
-.role-list-toolbar {
-  border-bottom: 1px solid color-mix(in srgb, var(--border) 45%, transparent);
-}
-
-/* 知识库区头：小节标签 + 细线，给树一个清晰的起点 */
+/* 知识库区头：小节标签（与树同属一体，不加分隔线） */
 .kb-sidebar-head {
   padding: 10px 12px 8px;
-  border-bottom: 1px solid color-mix(in srgb, var(--border) 45%, transparent);
 }
 
 .kb-sidebar-title h4 {
