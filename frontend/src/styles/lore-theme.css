@@ -288,10 +288,22 @@ body {
   padding: 2px 6px;
 }
 
+/* 特殊目录整组圆角底；行保持直角，避免中间项各自成胶囊 */
+.file-tree-special-group {
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
 .file-tree-row {
   border-radius: 0;
   min-height: 28px;
   transition: background 0.12s ease;
+}
+
+.file-tree-special-group .file-tree-row,
+.file-tree-special-group .file-tree-row:hover,
+.file-tree-special-group .file-tree-row.selected {
+  border-radius: 0;
 }
 
 .file-tree-row:hover {

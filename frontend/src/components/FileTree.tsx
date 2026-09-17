@@ -5,6 +5,7 @@ import {
   isSpecialKbPath,
   MEMORY_DIR,
   opensKbFloatInsteadOfExpand,
+  partitionFileTreeRoot,
   type TreeNode,
 } from "../utils/fileTree";
 import { dropEffectForTransfer } from "../utils/droppedFiles";
@@ -140,40 +141,56 @@ export function FileTree({
     onDropHighlightDir(directory);
   }
 
+  function renderRootNode(node: TreeNode) {
+    return (
+      <TreeItem
+        key={node.type === "file" ? node.path : `folder:${node.path}`}
+        node={node}
+        depth={0}
+        expanded={expanded}
+        activePathSet={activePathSet}
+        dropHighlightDir={dropHighlightDir}
+        dragPath={dragPath}
+        setDragSource={setDragSource}
+        readDragSource={readDragSource}
+        setDragPayload={setDragPayload}
+        onToggleFolder={onToggleFolder}
+        onSelectFile={onSelectFile}
+        onSelectFolder={onSelectFolder}
+        onFolderDrop={handleFolderDrop}
+        onFolderDragOver={allowDrop}
+        onDropFiles={onDropFiles}
+        onMovePath={onMovePath}
+        onDropHighlightDir={onDropHighlightDir}
+        onContextMenu={onContextMenu}
+        renamingPath={renamingPath}
+        renamingValue={renamingValue}
+        onRenamingValueChange={onRenamingValueChange}
+        onRenameCommit={onRenameCommit}
+        onRenameCancel={onRenameCancel}
+        onStartRename={onStartRename}
+        disabled={disabled}
+        memoryAttention={memoryAttention}
+      />
+    );
+  }
+
   return (
     <div className={`file-tree${disabled ? " file-tree--busy" : ""}`}>
       {tree.length === 0 && <div className="file-tree-empty">暂无文档</div>}
-      {tree.map((node) => (
-        <TreeItem
-          key={node.type === "file" ? node.path : `folder:${node.path}`}
-          node={node}
-          depth={0}
-          expanded={expanded}
-          activePathSet={activePathSet}
-          dropHighlightDir={dropHighlightDir}
-          dragPath={dragPath}
-          setDragSource={setDragSource}
-          readDragSource={readDragSource}
-          setDragPayload={setDragPayload}
-          onToggleFolder={onToggleFolder}
-          onSelectFile={onSelectFile}
-          onSelectFolder={onSelectFolder}
-          onFolderDrop={handleFolderDrop}
-          onFolderDragOver={allowDrop}
-          onDropFiles={onDropFiles}
-          onMovePath={onMovePath}
-          onDropHighlightDir={onDropHighlightDir}
-          onContextMenu={onContextMenu}
-          renamingPath={renamingPath}
-          renamingValue={renamingValue}
-          onRenamingValueChange={onRenamingValueChange}
-          onRenameCommit={onRenameCommit}
-          onRenameCancel={onRenameCancel}
-          onStartRename={onStartRename}
-          disabled={disabled}
-          memoryAttention={memoryAttention}
-        />
-      ))}
+      {partitionFileTreeRoot(tree).map((part) => {
+        if (part.kind === "special-group") {
+          return (
+            <div
+              key={`kb-special-group:${part.nodes.map((n) => n.path).join("|")}`}
+              className="file-tree-special-group"
+            >
+              {part.nodes.map(renderRootNode)}
+            </div>
+          );
+        }
+        return renderRootNode(part.node);
+      })}
     </div>
   );
 }
