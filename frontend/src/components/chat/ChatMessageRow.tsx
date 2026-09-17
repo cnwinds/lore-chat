@@ -30,6 +30,7 @@ import {
 import type { HighlightRangeDetail } from "../../hooks/chat/useConversationJump";
 import type { ConversationLinkTarget } from "../../utils/conversationLinks";
 import { stripProtocolMarkup } from "../../utils/visibleText";
+import { displayModelName } from "../../utils/modelDisplay";
 
 export type ChatMessageRowProps = {
   message: ChatMessage;
@@ -182,9 +183,13 @@ function renderMessageMeta(
           {m.model_name ? (
             <span
               className="chat-meta-model"
-              title={m.model_failover ? "已切换至备胎模型" : m.model_name}
+              title={
+                m.model_failover
+                  ? "已切换至备胎模型"
+                  : displayModelName(m.model_name)
+              }
             >
-              {m.model_name}
+              {displayModelName(m.model_name)}
               {m.model_failover ? " 已切换" : ""}
             </span>
           ) : null}
@@ -392,7 +397,7 @@ export function ChatMessageRow({
       <div className={bubbleClass}>
         {m.role === "assistant" && m.model_failover ? (
           <div className="chat-failover-banner" role="status">
-            高优先级模型暂不可用，已切换至 {m.model_name || "备胎模型"}
+            高优先级模型暂不可用，已切换至 {displayModelName(m.model_name) || "备胎模型"}
           </div>
         ) : null}
         {layout !== "group" && m.role === "user" && m.speaker_kind === "role" && (

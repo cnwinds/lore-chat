@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getSettings, putSettings } from "../../api";
+import { applyModelSettings } from "../../utils/modelDisplay";
 import { FixedOverflowMenu } from "../FixedOverflowMenu";
 import { showToast } from "../../utils/toast";
 import {
@@ -42,6 +43,7 @@ export function ModelPickerButton({ disabled = false }: Props) {
     setLoading(true);
     try {
       const s = await getSettings();
+      applyModelSettings(s);
       const raw = s.chat_models;
       setModels(Array.isArray(raw) ? (raw as ChatModelEntry[]) : []);
     } catch {

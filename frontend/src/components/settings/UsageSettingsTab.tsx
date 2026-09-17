@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { displayModelName, refreshModelProviderMap } from "../../utils/modelDisplay";
 import {
   clearUsage,
   getUsageEvents,
@@ -159,8 +160,11 @@ function ModelBreakdown({ rows }: { rows: Array<UsageAgg & { model: string }> })
         return (
           <li key={row.model} className="usage-model-row">
             <div className="usage-model-head">
-              <span className="usage-model-name" title={row.model}>
-                {row.model}
+              <span
+                className="usage-model-name"
+                title={displayModelName(row.model)}
+              >
+                {displayModelName(row.model)}
               </span>
               <span className="usage-model-cost">
                 {fmtCost(row.cost, costKnown)}
@@ -311,6 +315,7 @@ export function UsageSettingsTab({
 
   useEffect(() => {
     void reload();
+    void refreshModelProviderMap();
   }, [reload]);
 
   useEffect(() => {

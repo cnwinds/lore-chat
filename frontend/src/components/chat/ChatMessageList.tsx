@@ -9,6 +9,7 @@ import type { ConversationLinkTarget } from "../../utils/conversationLinks";
 import type { TimelineSegmentView } from "../../hooks/chat/useRoleTimeline";
 import { chatTranscriptChrome } from "../../utils/chatTranscriptChrome";
 import { LoreLogo } from "../LoreLogo";
+import { displayModelName, refreshModelProviderMap } from "../../utils/modelDisplay";
 import { ChatMessageRow, messageHasBody } from "./ChatMessageRow";
 import { ConversationOutline } from "./ConversationOutline";
 import { TimelineSeparator } from "./TimelineSeparator";
@@ -18,6 +19,14 @@ import { membersFromRoleIds } from "../../utils/groupChatDisplay";
 import type { RoleSummary } from "../../api";
 
 const EMPTY_HISTORICAL: TimelineSegmentView[] = [];
+
+let modelMapRefreshed = false;
+/** 首次进入聊天时拉取模型→供应商映射（静默失败）。 */
+function ensureModelProviderMap() {
+  if (modelMapRefreshed) return;
+  modelMapRefreshed = true;
+  void refreshModelProviderMap();
+}
 
 export type ChatMessageListProps = {
   msgs: ChatMessage[];
@@ -193,6 +202,7 @@ export function ChatMessageList({
   respondingRoleId = null,
   onSuggestionPick,
 }: ChatMessageListProps) {
+  ensureModelProviderMap();
   const hasHistory = historicalSegments.some(
     (s) => s.messages.length > 0 || s.kind === "group_card",
   );
@@ -426,7 +436,9 @@ export function ChatMessageList({
                 <path d="M12 2a10 10 0 0 1 10 10" />
               </svg>
               {liveModel && (
-                <span className="chat-streaming-model">{liveModel}</span>
+                <span className="chat-streaming-model">
+                  {displayModelName(liveModel)}
+                </span>
               )}
               {liveElapsedMs > 0 && (
                 <span className="chat-streaming-duration">
