@@ -23,17 +23,17 @@ describe("docStorage", () => {
     expect(getStoredEditMode()).toBe("markdown");
   });
 
-  it("defaults float width to narrow", () => {
-    expect(getStoredFloatWidth()).toBe("narrow");
-  });
-
-  it("persists float width", () => {
-    setStoredFloatWidth("wide");
+  it("defaults float width to wide", () => {
     expect(getStoredFloatWidth()).toBe("wide");
   });
 
-  it("defaults panel width to narrow", () => {
-    expect(getStoredPanelWidth()).toBe("narrow");
+  it("persists float width", () => {
+    setStoredFloatWidth("narrow");
+    expect(getStoredFloatWidth()).toBe("narrow");
+  });
+
+  it("defaults panel width to wide", () => {
+    expect(getStoredPanelWidth()).toBe("wide");
   });
 
   it("persists panel width independently from float", () => {

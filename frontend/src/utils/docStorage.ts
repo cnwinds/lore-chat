@@ -24,7 +24,8 @@ export function setStoredEditMode(mode: EditMode) {
 }
 
 function readWidth(key: string): DocWidth {
-  return localStorage.getItem(key) === "wide" ? "wide" : "narrow";
+  // 存量显式值只有 narrow / wide；未显式存过 narrow 的一律视为 wide
+  return localStorage.getItem(key) === "narrow" ? "narrow" : "wide";
 }
 
 export function getStoredFloatWidth(): DocWidth {
@@ -38,7 +39,7 @@ export function getStoredFloatWidth(): DocWidth {
   } catch {
     /* ignore */
   }
-  return "narrow";
+  return "wide";
 }
 
 export function setStoredFloatWidth(width: DocWidth) {
@@ -57,7 +58,7 @@ export function getStoredPanelWidth(): DocWidth {
   } catch {
     /* ignore */
   }
-  return "narrow";
+  return "wide";
 }
 
 export function setStoredPanelWidth(width: DocWidth) {
