@@ -86,6 +86,30 @@ export type FolderNode = {
 };
 export type TreeNode = FileNode | FolderNode;
 
+export type FileTreeRootPart =
+  | { kind: "special-group"; nodes: TreeNode[] }
+  | { kind: "item"; node: TreeNode };
+
+/** 根级连续特殊目录收成一组，供侧栏画整块圆角底（中间行仍保持直角）。 */
+export function partitionFileTreeRoot(nodes: TreeNode[]): FileTreeRootPart[] {
+  const parts: FileTreeRootPart[] = [];
+  let i = 0;
+  while (i < nodes.length) {
+    if (isSpecialKbPath(nodes[i].path)) {
+      const group: TreeNode[] = [];
+      while (i < nodes.length && isSpecialKbPath(nodes[i].path)) {
+        group.push(nodes[i]);
+        i += 1;
+      }
+      parts.push({ kind: "special-group", nodes: group });
+    } else {
+      parts.push({ kind: "item", node: nodes[i] });
+      i += 1;
+    }
+  }
+  return parts;
+}
+
 function ensureFolder(parent: FolderNode, name: string): FolderNode {
   let folder = parent.children.find(
     (c): c is FolderNode => c.type === "folder" && c.name === name,

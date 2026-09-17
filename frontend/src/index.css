@@ -1901,8 +1901,13 @@ a:hover {
   font-weight: 600;
 }
 
-.file-tree-row.kb-special {
+/* 特殊目录整组铺底；行本身透明，悬停/选中再盖一层 */
+.file-tree-special-group {
   background: var(--kb-special-bg);
+}
+
+.file-tree-row.kb-special {
+  background: transparent;
 }
 
 .file-tree-row.kb-special:hover {

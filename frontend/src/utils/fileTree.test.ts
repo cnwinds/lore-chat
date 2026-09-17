@@ -11,10 +11,43 @@ import {
   MEMORY_DIR,
   nextUserExpandedAfterTreeChange,
   opensKbFloatInsteadOfExpand,
+  partitionFileTreeRoot,
   resolveExpandedFolderPaths,
   SKILLS_DIR,
   SYSTEM_LAYER_DIR,
 } from "./fileTree";
+
+describe("partitionFileTreeRoot", () => {
+  it("groups consecutive special folders ahead of user folders", () => {
+    const tree = buildFileTree(["业务/a.md", `${SKILLS_DIR}/demo/SKILL.md`]);
+    const parts = partitionFileTreeRoot(tree);
+    expect(parts[0]).toMatchObject({ kind: "special-group" });
+    if (parts[0].kind !== "special-group") {
+      throw new Error("expected special-group");
+    }
+    expect(parts[0].nodes.map((n) => n.name)).toEqual([
+      "系统",
+      "技能",
+      "记忆",
+      "媒体",
+    ]);
+    expect(parts.slice(1).map((p) => (p.kind === "item" ? p.node.name : null))).toEqual(
+      ["业务"],
+    );
+  });
+
+  it("does not wrap a tree that has no special roots", () => {
+    const business = {
+      type: "folder" as const,
+      name: "业务",
+      path: "业务",
+      children: [],
+    };
+    expect(partitionFileTreeRoot([business])).toEqual([
+      { kind: "item", node: business },
+    ]);
+  });
+});
 
 describe("isSpecialKbPath", () => {
   it("marks 系统 / 技能 / 记忆 / 媒体 trees including descendants", () => {
