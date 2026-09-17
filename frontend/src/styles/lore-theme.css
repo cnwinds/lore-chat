@@ -237,7 +237,7 @@ body {
 }
 
 .file-tree-row {
-  border-radius: 7px;
+  border-radius: 0;
   min-height: 28px;
   transition: background 0.12s ease;
 }
