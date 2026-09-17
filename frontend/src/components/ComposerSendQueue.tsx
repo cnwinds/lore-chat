@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { SendQueueItem, QueueTiming } from "../utils/sendQueue";
 
 type Props = {
@@ -85,40 +86,6 @@ function IconTrash() {
   );
 }
 
-function IconUp() {
-  return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.2"
-      strokeLinecap="round"
-      aria-hidden
-    >
-      <path d="M12 19V5M5 12l7-7 7 7" />
-    </svg>
-  );
-}
-
-function IconDown() {
-  return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.2"
-      strokeLinecap="round"
-      aria-hidden
-    >
-      <path d="M12 5v14M19 12l-7 7-7-7" />
-    </svg>
-  );
-}
-
 function IconX() {
   return (
     <svg
@@ -153,7 +120,21 @@ function IconSpinner() {
   );
 }
 
-function TimingSwitch({
+function IconGrip() {
+  return (
+    <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor" aria-hidden>
+      <circle cx="2.5" cy="2.5" r="1.3" />
+      <circle cx="7.5" cy="2.5" r="1.3" />
+      <circle cx="2.5" cy="7" r="1.3" />
+      <circle cx="7.5" cy="7" r="1.3" />
+      <circle cx="2.5" cy="11.5" r="1.3" />
+      <circle cx="7.5" cy="11.5" r="1.3" />
+    </svg>
+  );
+}
+
+/** 时机签：inject=↑ 本轮（accent 提示），defer=下回（弱化）。点击切换。 */
+function TimingPill({
   value,
   disabled,
   onChange,
@@ -166,22 +147,14 @@ function TimingSwitch({
   return (
     <button
       type="button"
-      className={`composer-queue-timing${inject ? " is-inject" : " is-defer"}`}
+      className={`composer-queue-timing${inject ? " is-inject" : ""}`}
       disabled={disabled}
       onClick={() => onChange(inject ? "defer" : "inject")}
       title={inject ? "插入本轮（点击改为回合后）" : "回合后再发（点击改为插入本轮）"}
       aria-label={inject ? "时机：插入本轮" : "时机：回合后"}
       aria-pressed={inject}
     >
-      <span className="composer-queue-timing-track" aria-hidden>
-        <span className="composer-queue-timing-label composer-queue-timing-label--inject">
-          本轮
-        </span>
-        <span className="composer-queue-timing-label composer-queue-timing-label--defer">
-          下回
-        </span>
-        <span className="composer-queue-timing-knob" />
-      </span>
+      {inject ? "↑ 本轮" : "下回"}
     </button>
   );
 }
@@ -197,108 +170,111 @@ export function ComposerSendQueue({
   onToggleMerge,
   onRemove,
   onMove,
-  onSetAllTiming,
-  onSetAllMerge,
   onClear,
 }: Props) {
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+
   if (!items.length) return null;
 
   const hasError = items.some((x) => x.error);
-  const allMerged =
-    items.length > 1 && items.slice(0, -1).every((x) => x.mergeWithNext);
+
+  function moveToIndex(from: number, target: number) {
+    const dir: -1 | 1 = target > from ? 1 : -1;
+    const steps = Math.abs(target - from);
+    for (let i = 0; i < steps; i++) onMove(items[from].id, dir);
+  }
 
   return (
     <div className="composer-send-queue" role="region" aria-label="发送队列">
-      <div className="composer-send-queue-bar">
-        <div className="composer-send-queue-meta">
-          <span className="composer-send-queue-count">{items.length}</span>
-          <span className="composer-send-queue-label">
-            待发送{paused ? " · 暂停" : ""}
-          </span>
-        </div>
-        <div className="composer-send-queue-actions">
-          {paused && (
-            <button
-              type="button"
-              className="composer-queue-icon-btn composer-queue-icon-btn--accent"
-              onClick={onContinue}
-              title="继续发送"
-              aria-label="继续发送"
-            >
-              <IconPlay />
-            </button>
-          )}
-          {hasError && (
-            <>
+      {(paused || hasError) && (
+        <div className="composer-send-queue-bar">
+          {paused && <span className="composer-queue-flag">已暂停</span>}
+          {hasError && <span className="composer-queue-flag is-error">发送失败</span>}
+          <div className="composer-send-queue-actions">
+            {paused && (
               <button
                 type="button"
-                className="composer-queue-icon-btn"
-                onClick={onRetry}
-                title="重试失败项"
-                aria-label="重试"
+                className="composer-queue-icon-btn composer-queue-icon-btn--accent"
+                onClick={onContinue}
+                title="继续发送"
+                aria-label="继续发送"
               >
-                <IconRetry />
+                <IconPlay />
               </button>
-              <button
-                type="button"
-                className="composer-queue-icon-btn"
-                onClick={onSkipFailed}
-                title="跳过失败项"
-                aria-label="跳过失败"
-              >
-                <IconSkip />
-              </button>
-            </>
-          )}
-          <button
-            type="button"
-            className={`composer-queue-icon-btn${items.every((x) => x.timing === "inject") ? " is-active" : ""}`}
-            onClick={() => onSetAllTiming("inject")}
-            title="全部改为插入本轮"
-            aria-label="全部插入本轮"
-          >
-            <span className="composer-queue-chip-text">本轮</span>
-          </button>
-          <button
-            type="button"
-            className={`composer-queue-icon-btn${items.every((x) => x.timing === "defer") ? " is-active" : ""}`}
-            onClick={() => onSetAllTiming("defer")}
-            title="全部改为回合后"
-            aria-label="全部回合后"
-          >
-            <span className="composer-queue-chip-text">下回</span>
-          </button>
-          {items.length > 1 && (
+            )}
+            {hasError && (
+              <>
+                <button
+                  type="button"
+                  className="composer-queue-icon-btn"
+                  onClick={onRetry}
+                  title="重试失败项"
+                  aria-label="重试"
+                >
+                  <IconRetry />
+                </button>
+                <button
+                  type="button"
+                  className="composer-queue-icon-btn"
+                  onClick={onSkipFailed}
+                  title="跳过失败项"
+                  aria-label="跳过失败"
+                >
+                  <IconSkip />
+                </button>
+              </>
+            )}
             <button
               type="button"
-              className={`composer-queue-icon-btn${allMerged ? " is-active" : ""}`}
-              onClick={() => onSetAllMerge(!allMerged)}
-              title={allMerged ? "取消全部合并" : "全部合并"}
-              aria-label={allMerged ? "取消全部合并" : "全部合并"}
+              className="composer-queue-icon-btn"
+              onClick={onClear}
+              title="清空队列"
+              aria-label="清空"
             >
-              <IconLink />
+              <IconTrash />
             </button>
-          )}
-          <button
-            type="button"
-            className="composer-queue-icon-btn composer-queue-icon-btn--danger"
-            onClick={onClear}
-            title="清空队列"
-            aria-label="清空"
-          >
-            <IconTrash />
-          </button>
+          </div>
         </div>
-      </div>
+      )}
 
       <ul className="composer-send-queue-list">
         {items.map((item, index) => (
-          <li key={item.id} className="composer-send-queue-slot">
+          <li
+            key={item.id}
+            className={`composer-send-queue-slot${dragOverIndex === index && dragId !== item.id ? " is-drag-over" : ""}`}
+            onDragOver={(e) => {
+              if (!dragId || dragId === item.id) return;
+              e.preventDefault();
+              setDragOverIndex(index);
+            }}
+            onDrop={(e) => {
+              e.preventDefault();
+              const from = items.findIndex((x) => x.id === dragId);
+              if (from >= 0 && from !== index) moveToIndex(from, index);
+              setDragId(null);
+              setDragOverIndex(null);
+            }}
+          >
             <div
-              className={`composer-send-queue-row${item.locked ? " is-locked" : ""}${item.error ? " is-error" : ""}${item.timing === "inject" ? " is-inject" : ""}`}
+              className={`composer-send-queue-row${item.locked ? " is-locked" : ""}${item.error ? " is-error" : ""}`}
             >
-              <span className="composer-send-queue-index" aria-hidden>
-                {index + 1}
+              <span
+                className="composer-queue-grip"
+                title="拖动排序"
+                aria-hidden
+                draggable
+                onDragStart={(e) => {
+                  e.dataTransfer.effectAllowed = "move";
+                  e.dataTransfer.setData("text/plain", item.id);
+                  setDragId(item.id);
+                }}
+                onDragEnd={() => {
+                  setDragId(null);
+                  setDragOverIndex(null);
+                }}
+              >
+                <IconGrip />
               </span>
               {item.locked ? (
                 <span className="composer-send-queue-text" title={item.text}>
@@ -306,61 +282,34 @@ export function ComposerSendQueue({
                   <span>{item.text.trim() || "注入中…"}</span>
                 </span>
               ) : (
-                <div className="composer-send-queue-body">
-                  <input
-                    className="composer-send-queue-edit"
-                    value={item.text}
-                    onChange={(e) => onUpdateText(item.id, e.target.value)}
-                    aria-label={`队列消息 ${index + 1}`}
-                    placeholder="排队消息…"
-                  />
-                  {item.error && (
-                    <span
-                      className="composer-send-queue-error"
-                      title={item.error}
-                    >
-                      !
-                    </span>
-                  )}
-                </div>
+                <input
+                  className="composer-send-queue-edit"
+                  value={item.text}
+                  onChange={(e) => onUpdateText(item.id, e.target.value)}
+                  aria-label={`队列消息 ${index + 1}`}
+                  placeholder="排队消息…"
+                />
               )}
-              <TimingSwitch
+              {item.error && (
+                <span className="composer-send-queue-error" title={item.error}>
+                  !
+                </span>
+              )}
+              <TimingPill
                 value={item.timing}
                 disabled={!!item.locked}
                 onChange={(v) => onSetTiming(item.id, v)}
               />
-              <div className="composer-send-queue-row-actions">
-                <button
-                  type="button"
-                  className="composer-queue-icon-btn"
-                  disabled={!!item.locked || index === 0}
-                  onClick={() => onMove(item.id, -1)}
-                  title="上移"
-                  aria-label="上移"
-                >
-                  <IconUp />
-                </button>
-                <button
-                  type="button"
-                  className="composer-queue-icon-btn"
-                  disabled={!!item.locked || index === items.length - 1}
-                  onClick={() => onMove(item.id, 1)}
-                  title="下移"
-                  aria-label="下移"
-                >
-                  <IconDown />
-                </button>
-                <button
-                  type="button"
-                  className="composer-queue-icon-btn composer-queue-icon-btn--danger"
-                  disabled={!!item.locked}
-                  onClick={() => onRemove(item.id)}
-                  title="删除"
-                  aria-label="删除"
-                >
-                  <IconX />
-                </button>
-              </div>
+              <button
+                type="button"
+                className="composer-queue-icon-btn composer-queue-icon-btn--danger"
+                disabled={!!item.locked}
+                onClick={() => onRemove(item.id)}
+                title="删除"
+                aria-label="删除"
+              >
+                <IconX />
+              </button>
             </div>
 
             {index < items.length - 1 && (

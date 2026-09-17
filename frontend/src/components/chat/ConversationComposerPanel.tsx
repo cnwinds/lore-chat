@@ -110,21 +110,6 @@ export function ConversationComposerPanel({
 }: Props) {
   return (
     <div className="chat-composer-wrap">
-      <ComposerSendQueue
-        items={sendQueueItems}
-        paused={sendQueuePaused}
-        onContinue={onContinue}
-        onRetry={onRetry}
-        onSkipFailed={onSkipFailed}
-        onUpdateText={onUpdateQueueText}
-        onSetTiming={onSetQueueTiming}
-        onToggleMerge={onToggleQueueMerge}
-        onRemove={onRemoveQueueItem}
-        onMove={onMoveQueueItem}
-        onSetAllTiming={onSetAllQueueTiming}
-        onSetAllMerge={onSetAllQueueMerge}
-        onClear={onClearQueue}
-      />
       <div className="composer-card-stack">
         {mentionSlot}
         <div className="composer-card">
@@ -136,6 +121,21 @@ export function ConversationComposerPanel({
             onSetPrimary={onTraySetPrimary}
             onRemoveDoc={onTrayRemove}
             onRemoveFile={onRemovePendingFile}
+          />
+          <ComposerSendQueue
+            items={sendQueueItems}
+            paused={sendQueuePaused}
+            onContinue={onContinue}
+            onRetry={onRetry}
+            onSkipFailed={onSkipFailed}
+            onUpdateText={onUpdateQueueText}
+            onSetTiming={onSetQueueTiming}
+            onToggleMerge={onToggleQueueMerge}
+            onRemove={onRemoveQueueItem}
+            onMove={onMoveQueueItem}
+            onSetAllTiming={onSetAllQueueTiming}
+            onSetAllMerge={onSetAllQueueMerge}
+            onClear={onClearQueue}
           />
           <div className="composer-body">
             <div className="composer-input">
@@ -149,7 +149,13 @@ export function ConversationComposerPanel({
                 onClick={onCaretSync}
                 onKeyUp={onCaretSync}
                 rows={1}
-                placeholder={streaming ? "输入消息加入队列…" : "输入消息…"}
+                placeholder={
+                  sendQueueItems.length > 0
+                    ? "继续输入以排队…"
+                    : streaming
+                      ? "输入消息加入队列…"
+                      : "输入消息…"
+                }
                 title="Enter 发送，Shift+Enter 换行；可粘贴本地文件或图片到托盘"
                 aria-expanded={mentionOpen}
                 aria-controls={mentionOpen ? mentionListId : undefined}
