@@ -141,6 +141,26 @@ async def get_conversation(
         raise HTTPException(404, "对话不存在") from e
 
 
+@router.get("/conversations/{cid}/context-stats")
+def get_conversation_context_stats(cid: str, request: Request):
+    """会话上下文统计：容量、分段占比、缓存命中率、工具调用、成本。"""
+    from app.engine.usage.context_stats import build_context_stats
+
+    c = container(request)
+    try:
+        conv = c.conversations.get(cid)
+    except KeyError as e:
+        raise HTTPException(404, "对话不存在") from e
+    return build_context_stats(
+        conversation=conv,
+        roles=c.roles,
+        system_layer=c.system_layer,
+        usage_store=c.usage.store,
+        models_dev=c.models_dev,
+        chat_models=c.settings.chat_models or [],
+    )
+
+
 @router.get("/conversations/{cid}/messages")
 async def list_conversation_messages(
     cid: str,

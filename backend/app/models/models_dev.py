@@ -325,6 +325,34 @@ def index_payload(payload: dict[str, Any]) -> dict[str, CatalogHit]:
     return out
 
 
+def context_limits_from_payload(payload: dict[str, Any]) -> dict[str, int]:
+    """provider → models → limit.context；键位与 index_payload 一致。"""
+    out: dict[str, int] = {}
+    if not isinstance(payload, dict):
+        return out
+    for provider, meta in payload.items():
+        if not isinstance(meta, dict):
+            continue
+        models = meta.get("models")
+        if not isinstance(models, dict):
+            continue
+        for mid, raw in models.items():
+            if not isinstance(raw, dict):
+                continue
+            limit = raw.get("limit")
+            if not isinstance(limit, dict):
+                continue
+            ctx = limit.get("context")
+            if not isinstance(ctx, int) or ctx <= 0:
+                continue
+            mid_s = str(mid).strip().lower()
+            if not mid_s:
+                continue
+            out[mid_s] = ctx
+            out[f"{str(provider).lower()}/{mid_s}"] = ctx
+    return out
+
+
 def unique_hits_by_id(index: dict[str, CatalogHit]) -> list[CatalogHit]:
     """同一 id 只留一条；跳过 provider/id 双键（模型 id 本身可含斜杠）。"""
     seen: dict[str, CatalogHit] = {}
@@ -394,6 +422,7 @@ class ModelsDevStore:
             Path(bundled_path) if bundled_path is not None else default_bundled_path()
         )
         self._index: dict[str, CatalogHit] = {}
+        self._context_limits: dict[str, int] = {}
         self._fetched_at: float = 0.0
         self._source: str = "empty"
         self._error: str | None = None
@@ -421,6 +450,7 @@ class ModelsDevStore:
                 return False
         with self._lock:
             self._index = index
+            self._context_limits = context_limits_from_payload(payload)
             self._fetched_at = fetched_at
             self._source = source
             self._error = None
@@ -559,6 +589,19 @@ class ModelsDevStore:
             return None
         with self._lock:
             return self._index.get(mid)
+
+    def context_limit(
+        self, model_id: str, provider: str | None = None
+    ) -> int | None:
+        """按模型 id（或 provider/id）查上下文窗口上限；未知返回 None。"""
+        with self._lock:
+            limits = self._context_limits
+        mid = model_id.strip().lower()
+        if provider:
+            hit = limits.get(f"{provider.strip().lower()}/{mid}")
+            if hit:
+                return hit
+        return limits.get(mid)
 
     def search(
         self,

@@ -322,6 +322,49 @@ class UsageStore:
             ).fetchone()
         return _price_row_public(dict(row))
 
+    def conversation_usage_totals(self, conversation_id: str) -> dict[str, Any]:
+        """按会话聚合：最近一次 prompt（模型/用量）与累计缓存/成本。"""
+        with self._lock:
+            out: dict[str, Any] = {
+                "last_prompt_tokens": None,
+                "last_model": None,
+                "cache_tokens": 0,
+                "prompt_tokens": 0,
+                "cost_total": None,
+                "turns_with_usage": 0,
+            }
+            row = self.conn.execute(
+                """
+                SELECT model, prompt_tokens
+                  FROM usage_events
+                 WHERE conversation_id = ?
+                   AND prompt_tokens IS NOT NULL
+                 ORDER BY ts DESC
+                 LIMIT 1
+                """,
+                (conversation_id,),
+            ).fetchone()
+            if row is not None:
+                out["last_model"] = row["model"]
+                out["last_prompt_tokens"] = row["prompt_tokens"]
+            totals = self.conn.execute(
+                """
+                SELECT COALESCE(SUM(cache_tokens), 0)  AS cache_tokens,
+                       COALESCE(SUM(prompt_tokens), 0) AS prompt_tokens,
+                       SUM(cost)                       AS cost_total,
+                       COUNT(*)                        AS turns_with_usage
+                  FROM usage_events
+                 WHERE conversation_id = ?
+                   AND prompt_tokens IS NOT NULL
+                """,
+                (conversation_id,),
+            ).fetchone()
+            out["cache_tokens"] = totals["cache_tokens"] or 0
+            out["prompt_tokens"] = totals["prompt_tokens"] or 0
+            out["cost_total"] = totals["cost_total"]
+            out["turns_with_usage"] = totals["turns_with_usage"] or 0
+            return out
+
     def ensure_model_price_row(self, model: str, *, kind: str | None = None) -> None:
         model = (model or "").strip()
         if not model:

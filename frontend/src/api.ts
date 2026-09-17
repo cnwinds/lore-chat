@@ -1157,6 +1157,28 @@ export async function getActiveTurnStatus(conversationId: string) {
   );
 }
 
+export type ContextStatsSegment = {
+  key: string;
+  label: string;
+  tokens: number;
+};
+
+export type ContextStats = {
+  model: string | null;
+  context: { used_tokens: number | null; limit_tokens: number | null };
+  segments: ContextStatsSegment[];
+  cache_hit_rate: number | null;
+  tool_calls: number;
+  cost_total: number | null;
+  turns_with_usage: number;
+};
+
+export function getContextStats(conversationId: string) {
+  return apiFetch<ContextStats>(
+    `/api/conversations/${encodeURIComponent(conversationId)}/context-stats`,
+  );
+}
+
 export type ConversationSystemEvent = {
   id: string;
   event_type: string;
