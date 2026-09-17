@@ -13,7 +13,12 @@ from openai import OpenAI
 
 from app.config import Settings
 from app.logging_config import get_logger
-from app.models.candidate import ModelCandidate, ModelChain
+from app.models.candidate import (
+    ModelCandidate,
+    ModelChain,
+    format_vendor_model_label,
+    resolve_provider_label,
+)
 from app.models.cooldown import (
     CooldownStore,
     classify_error,
@@ -58,13 +63,18 @@ def consolidate_system_messages(messages: list[dict]) -> list[dict]:
 
 
 def _display_model_label(cand: ModelCandidate) -> str:
-    """用候选已保存/enrich 的 effort_options（空 = 无强度档），不覆盖为 live 目录。"""
-    return format_model_label(
+    """信息流落款：当时显示的「厂家 · 模型[- 档位]」，写入记录后不再按设置回填。"""
+    base = format_model_label(
         cand.model,
         thinking=bool(cand.thinking),
         effort=str(cand.effort or ""),
         effort_options=tuple(cand.effort_options or ()),
     )
+    vendor = resolve_provider_label(
+        getattr(cand, "provider", None),
+        getattr(cand, "provider_label", None),
+    )
+    return format_vendor_model_label(vendor, base)
 
 
 @dataclass

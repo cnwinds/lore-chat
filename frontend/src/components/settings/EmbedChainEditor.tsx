@@ -6,12 +6,15 @@ import {
 } from "./SettingsFold";
 import { SettingsChainGrip, useSettingsChainDrag } from "./SettingsChainDrag";
 import { ProviderApiKeyLabel } from "./ProviderApiKeyLabel";
+import { ProviderLabelField } from "./ProviderLabelField";
 import { ModelNameField } from "./CandidateChainEditor";
 import {
   EMBED_PROVIDER_DEFAULT_BASE_URL,
   EMBED_PROVIDER_OPTIONS,
   embedCandidateFromProvider,
   embedProviderLabel,
+  formatVendorModelTitle,
+  resolvedEmbedProviderLabel,
   type EmbedCandidateDraft,
   type EmbedProviderPresetId,
 } from "./providerPresets";
@@ -60,9 +63,10 @@ export function EmbedChainEditor({
           const cooling = Boolean(st && !st.available && !st.disabled);
           const disabled = Boolean(st?.disabled);
           const open = isOpen(c.id);
-          const rowTitle = c.model.trim()
-            ? `${embedProviderLabel(c.provider)} · ${c.model.trim()}`
-            : embedProviderLabel(c.provider);
+          const rowTitle = formatVendorModelTitle(
+            resolvedEmbedProviderLabel(c.provider, c.provider_label),
+            c.model,
+          );
           const drag = articleProps(c.id, i);
           return (
             <article
@@ -106,6 +110,14 @@ export function EmbedChainEditor({
 
               {open ? (
                 <div className="settings-model-candidate-body">
+                  <div className="settings-field-row">
+                    <ProviderLabelField
+                      value={c.provider_label}
+                      fallback={embedProviderLabel(c.provider)}
+                      disabled={saving}
+                      onChange={(provider_label) => updateAt(i, { provider_label })}
+                    />
+                  </div>
                   <div className="settings-field-row">
                     <label className="settings-field">
                       <span>Base URL</span>

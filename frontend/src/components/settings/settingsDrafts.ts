@@ -1,5 +1,7 @@
 import { parseCandidates } from "./modelChainDrafts";
 import {
+  llmProviderLabel,
+  embedProviderLabel,
   maskApiKeyPlaceholder,
   parseEmbedCandidates,
   type EmbedCandidateDraft,
@@ -155,6 +157,8 @@ export function parseImageProviders(raw: unknown): ImageProviderDraft[] {
     extra: (row) => ({
       base_url: typeof row.base_url === "string" ? row.base_url : "",
       model: typeof row.model === "string" ? row.model : "",
+      provider_label:
+        typeof row.provider_label === "string" ? row.provider_label : "",
     }),
   }) as ImageProviderDraft[];
 }
@@ -171,6 +175,27 @@ export function draftCandidateHasContent(c: {
       (c.api_key || "").trim() ||
       (c.api_key_masked || "").trim(),
   );
+}
+
+function serializeLlmDraft(c: ModelCandidateDraft) {
+  return {
+    id: c.id,
+    model: c.model,
+    provider: c.provider,
+    provider_label:
+      (c.provider_label || "").trim() || llmProviderLabel(c.provider),
+    base_url: c.base_url.trim() || null,
+    api_key: c.api_key.trim() || null,
+    image: c.image,
+    video: c.video,
+    thinking: c.thinking,
+    effort: c.effort,
+    effort_options: c.effort_options,
+    image_wire: c.image_wire,
+    video_wire: c.video_wire,
+    max_videos: c.max_videos,
+    max_images: c.max_images,
+  };
 }
 
 export function hydrateSettingsDrafts(
@@ -239,44 +264,16 @@ export function toSettingsPatch(drafts: {
 }): Record<string, unknown> {
   return {
     public_base_url: drafts.publicBaseUrl.trim() || null,
-    chat_models: drafts.chatModels.filter(draftCandidateHasContent).map((c) => ({
-      id: c.id,
-      model: c.model,
-      provider: c.provider,
-      base_url: c.base_url.trim() || null,
-      api_key: c.api_key.trim() || null,
-      image: c.image,
-      video: c.video,
-      thinking: c.thinking,
-      effort: c.effort,
-      effort_options: c.effort_options,
-      image_wire: c.image_wire,
-      video_wire: c.video_wire,
-      max_videos: c.max_videos,
-      max_images: c.max_images,
-    })),
+    chat_models: drafts.chatModels.filter(draftCandidateHasContent).map(serializeLlmDraft),
     utility_models: drafts.utilityModels
       .filter(draftCandidateHasContent)
-      .map((c) => ({
-        id: c.id,
-        model: c.model,
-        provider: c.provider,
-        base_url: c.base_url.trim() || null,
-        api_key: c.api_key.trim() || null,
-        image: c.image,
-        video: c.video,
-        thinking: c.thinking,
-        effort: c.effort,
-        effort_options: c.effort_options,
-        image_wire: c.image_wire,
-        video_wire: c.video_wire,
-        max_videos: c.max_videos,
-        max_images: c.max_images,
-      })),
+      .map(serializeLlmDraft),
     embed_models: drafts.embedModels.filter(draftCandidateHasContent).map((c) => ({
       id: c.id,
       model: c.model,
       provider: c.provider,
+      provider_label:
+        (c.provider_label || "").trim() || embedProviderLabel(c.provider),
       base_url: c.base_url.trim() || null,
       api_key: c.api_key.trim() || null,
       image: false,
@@ -294,6 +291,9 @@ export function toSettingsPatch(drafts: {
     image_providers: drafts.imageProviders.map((p) => ({
       id: p.id,
       provider: p.provider,
+      provider_label:
+        (p.provider_label || "").trim() ||
+        (IMAGE_PROVIDER_OPTIONS.find((o) => o.id === p.provider)?.label ?? p.provider),
       api_key: p.api_key.trim() || null,
       base_url: p.base_url.trim() || null,
       model: p.model.trim() || null,

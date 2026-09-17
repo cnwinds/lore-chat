@@ -9,6 +9,8 @@ import {
 } from "./SettingsFold";
 import { SettingsChainGrip, useSettingsChainDrag } from "./SettingsChainDrag";
 import { ProviderApiKeyLabel } from "./ProviderApiKeyLabel";
+import { ProviderLabelField } from "./ProviderLabelField";
+import { formatVendorModelTitle } from "./providerPresets";
 
 export type ImageProviderId =
   | "openai"
@@ -54,6 +56,18 @@ export const IMAGE_PROVIDER_OPTIONS: {
   { id: "custom", label: "自定义" },
 ];
 
+export function imageProviderLabel(id: ImageProviderId): string {
+  return IMAGE_PROVIDER_OPTIONS.find((o) => o.id === id)?.label ?? id;
+}
+
+export function resolvedImageProviderLabel(
+  provider: ImageProviderId,
+  custom?: string | null,
+): string {
+  const t = (custom || "").trim();
+  return t || imageProviderLabel(provider);
+}
+
 export type ImageProviderDraft = {
   id: string;
   provider: ImageProviderId;
@@ -61,6 +75,8 @@ export type ImageProviderDraft = {
   api_key_masked?: string;
   base_url: string;
   model: string;
+  /** 用户可改的厂家显示名；空则按预设回退 */
+  provider_label: string;
 };
 
 type Props = {
@@ -277,6 +293,7 @@ export function ImageProviderEditor({
           api_key: "",
           base_url: "",
           model: "",
+          provider_label: imageProviderLabel("custom"),
         },
       ]);
       return;
@@ -289,12 +306,10 @@ export function ImageProviderEditor({
         api_key: "",
         base_url: IMAGE_PROVIDER_DEFAULT_BASE_URL[provider],
         model: IMAGE_PROVIDER_DEFAULT_MODEL[provider],
+        provider_label: imageProviderLabel(provider),
       },
     ]);
   }
-
-  const labelOf = (id: ImageProviderId) =>
-    IMAGE_PROVIDER_OPTIONS.find((o) => o.id === id)?.label ?? id;
 
   return (
     <SettingsFoldSection title="生图模型" count={providers.length}>
@@ -304,10 +319,10 @@ export function ImageProviderEditor({
           const cooling = Boolean(st && !st.available && !st.disabled);
           const disabled = Boolean(st?.disabled);
           const open = isOpen(p.id);
-          const title =
-            p.model.trim() !== ""
-              ? `${labelOf(p.provider)} · ${p.model.trim()}`
-              : labelOf(p.provider);
+          const title = formatVendorModelTitle(
+            resolvedImageProviderLabel(p.provider, p.provider_label),
+            p.model,
+          );
           const drag = articleProps(p.id, i);
           return (
             <article
@@ -351,6 +366,14 @@ export function ImageProviderEditor({
 
               {open ? (
                 <div className="settings-model-candidate-body">
+                  <div className="settings-field-row">
+                    <ProviderLabelField
+                      value={p.provider_label}
+                      fallback={imageProviderLabel(p.provider)}
+                      disabled={saving}
+                      onChange={(provider_label) => updateAt(i, { provider_label })}
+                    />
+                  </div>
                   <div className="settings-field-row">
                     <label className="settings-field">
                       <span>Base URL</span>

@@ -1,4 +1,4 @@
-import type { MutableRefObject, RefObject } from "react";
+import { useEffect, type MutableRefObject, type RefObject } from "react";
 import { formatDuration, type ChatMessage, type IngestResult, type SourceRef } from "../../api";
 import {
   expandMessagesForDisplay,
@@ -10,6 +10,7 @@ import type { TimelineSegmentView } from "../../hooks/chat/useRoleTimeline";
 import { chatTranscriptChrome } from "../../utils/chatTranscriptChrome";
 import { LoreLogo } from "../LoreLogo";
 import { displayModelName, refreshModelProviderMap } from "../../utils/modelDisplay";
+import { SETTINGS_CHANGED_EVENT } from "../../utils/settingsChangedEvent";
 import { ChatMessageRow, messageHasBody } from "./ChatMessageRow";
 import { ConversationOutline } from "./ConversationOutline";
 import { TimelineSeparator } from "./TimelineSeparator";
@@ -19,14 +20,6 @@ import { membersFromRoleIds } from "../../utils/groupChatDisplay";
 import type { RoleSummary } from "../../api";
 
 const EMPTY_HISTORICAL: TimelineSegmentView[] = [];
-
-let modelMapRefreshed = false;
-/** 首次进入聊天时拉取模型→供应商映射（静默失败）。 */
-function ensureModelProviderMap() {
-  if (modelMapRefreshed) return;
-  modelMapRefreshed = true;
-  void refreshModelProviderMap();
-}
 
 export type ChatMessageListProps = {
   msgs: ChatMessage[];
@@ -202,7 +195,14 @@ export function ChatMessageList({
   respondingRoleId = null,
   onSuggestionPick,
 }: ChatMessageListProps) {
-  ensureModelProviderMap();
+  useEffect(() => {
+    void refreshModelProviderMap();
+    const onChanged = () => {
+      void refreshModelProviderMap();
+    };
+    window.addEventListener(SETTINGS_CHANGED_EVENT, onChanged);
+    return () => window.removeEventListener(SETTINGS_CHANGED_EVENT, onChanged);
+  }, []);
   const hasHistory = historicalSegments.some(
     (s) => s.messages.length > 0 || s.kind === "group_card",
   );
