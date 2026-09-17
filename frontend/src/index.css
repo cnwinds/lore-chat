@@ -3664,10 +3664,15 @@ button.memory-fact-statement--jump:focus-visible {
   flex-shrink: 0;
 }
 
-.usage-channel-filter {
+/* 用量页通道筛选：复用 .settings-field select 皮肤，尺寸与旁边 compact 按钮对齐 */
+.usage-hero-actions .usage-channel-filter {
+  width: auto;
+  flex: 0 1 200px;
   min-width: 140px;
   max-width: 220px;
-  font-size: 12px;
+  padding-top: 6px;
+  padding-bottom: 6px;
+  font-size: var(--text-xs);
 }
 
 .usage-hero-copy {
@@ -4154,7 +4159,8 @@ button.memory-fact-statement--jump:focus-visible {
 .settings-field input[type="password"],
 .settings-field input[type="number"],
 .settings-field input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
-.settings-field select {
+.settings-field select,
+.usage-channel-filter {
   width: 100%;
   padding: 8px 9px;
   border: 1px solid var(--border);
@@ -4165,7 +4171,8 @@ button.memory-fact-statement--jump:focus-visible {
   box-sizing: border-box;
 }
 
-.settings-field select {
+.settings-field select,
+.usage-channel-filter {
   cursor: pointer;
   appearance: none;
   background-image: linear-gradient(45deg, transparent 50%, var(--text-muted) 50%),
@@ -4195,7 +4202,8 @@ button.memory-fact-statement--jump:focus-visible {
 
 .settings-field input:focus,
 .settings-field textarea:focus,
-.settings-field select:focus {
+.settings-field select:focus,
+.usage-channel-filter:focus {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 2px var(--accent-focus);
