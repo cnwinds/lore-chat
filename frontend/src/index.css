@@ -49,7 +49,7 @@
 [data-theme="celadon"] {
   color-scheme: light;
   /* 图底分层：--bg-app 是两侧「桌沿」，--bg-stage 是中栏「瓷面舞台」 */
-  --bg-app: #e2ebe4;
+  --bg-app: #dae6dc;
   --bg: var(--bg-app);
   --bg-stage: #f5f8f4;
   --bg-surface: #fbfdfb;
@@ -122,7 +122,7 @@
 [data-theme="dark"],
 [data-theme="ink"] {
   color-scheme: dark;
-  --bg-app: #0e1412;
+  --bg-app: #0c1210;
   --bg: var(--bg-app);
   --bg-stage: #141b17;
   --bg-surface: #1a231f;

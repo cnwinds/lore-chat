@@ -43,6 +43,7 @@ type Props = {
   onOpenGroup?: (roomId: string) => void;
   roomMode?: "role" | "group";
   respondingRoleId?: string | null;
+  onSuggestionPick?: (text: string) => void;
 };
 
 /** 会话消息区：列表 + 可选记忆提示。 */
@@ -76,6 +77,7 @@ export function ConversationTranscriptPanel({
   onOpenGroup,
   roomMode,
   respondingRoleId,
+  onSuggestionPick,
 }: Props) {
   return (
     <>
@@ -120,6 +122,7 @@ export function ConversationTranscriptPanel({
         onOpenGroup={onOpenGroup}
         roomMode={roomMode}
         respondingRoleId={respondingRoleId}
+        onSuggestionPick={onSuggestionPick}
       />
     </>
   );

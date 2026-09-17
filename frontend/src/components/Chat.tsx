@@ -1133,6 +1133,11 @@ export function Chat({
         respondingRoleId={respondingRoleId}
         memoryNotice={memoryNotice}
         onDismissMemoryNotice={dismissMemoryNotice}
+        onSuggestionPick={(text) => {
+          setInput(text);
+          setCaret(text.length);
+          textareaRef.current?.focus();
+        }}
       />
       <ConversationComposerPanel
         sendQueueItems={sendQueue.items}

@@ -56,7 +56,16 @@ export type ChatMessageListProps = {
   onOpenGroup?: (roomId: string) => void;
   roomMode?: "role" | "group";
   respondingRoleId?: string | null;
+  /** 首屏欢迎页的建议提问；提供后才渲染建议 chips（只读转录无输入框，不渲染） */
+  onSuggestionPick?: (text: string) => void;
 };
+
+/** 首屏建议提问：与具体知识库内容无关，任何实例都能用。 */
+const WELCOME_SUGGESTIONS: readonly string[] = [
+  "这个知识库里有什么？",
+  "帮我把一段想法整理成文档",
+  "根据我的记忆，我更偏好什么样的回答？",
+];
 
 function renderSegmentRows(opts: {
   msgs: ChatMessage[];
@@ -172,6 +181,7 @@ export function ChatMessageList({
   onOpenGroup,
   roomMode = "role",
   respondingRoleId = null,
+  onSuggestionPick,
 }: ChatMessageListProps) {
   const hasHistory = historicalSegments.some(
     (s) => s.messages.length > 0 || s.kind === "group_card",
@@ -200,8 +210,31 @@ export function ChatMessageList({
             role={showWelcomeLoading ? "status" : undefined}
           >
             <LoreLogo variant="wordmark" className="chat-welcome-logo" />
-            {showWelcomeLoading && (
+            {showWelcomeLoading ? (
               <div className="chat-welcome-status">加载对话中…</div>
+            ) : (
+              <>
+                <div className="chat-welcome-headline">
+                  把对话，沉淀成知识库
+                </div>
+                <div className="chat-welcome-sub">
+                  聊天里的结论与笔记会自动归位到左侧目录，可检索、可溯源。从一个问题开始。
+                </div>
+                {onSuggestionPick && (
+                  <div className="chat-welcome-suggestions">
+                    {WELCOME_SUGGESTIONS.map((text) => (
+                      <button
+                        key={text}
+                        type="button"
+                        className="chat-welcome-suggestion"
+                        onClick={() => onSuggestionPick(text)}
+                      >
+                        {text}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </>
             )}
           </div>
         )}

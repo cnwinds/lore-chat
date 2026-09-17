@@ -57,6 +57,10 @@ body {
   background: var(--bg-stage);
 }
 
+.chat-desktop-header {
+  border-bottom: 1px solid var(--border);
+}
+
 .app-shell-left {
   background: transparent;
 }
@@ -158,10 +162,62 @@ body {
   }
 }
 
-/* —— 空状态：瓷面留白，logo 即全部 —— */
+/* —— 空状态：首屏即产品叙事 —— */
+.chat-welcome {
+  gap: 10px;
+}
+
 .chat-welcome-logo {
+  width: min(180px, 52vw);
   color: var(--text);
   opacity: 0.92;
+}
+
+.chat-welcome-headline {
+  font-family: var(--font-display);
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text);
+  line-height: 1.4;
+  pointer-events: auto;
+}
+
+.chat-welcome-sub {
+  max-width: 30em;
+  font-size: var(--font-ui-sm);
+  line-height: 1.7;
+  color: var(--text-muted);
+}
+
+.chat-welcome-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 10px;
+  pointer-events: auto;
+}
+
+.chat-welcome-suggestion {
+  padding: 7px 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-size: var(--font-ui-sm);
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    color 0.15s ease,
+    background 0.15s ease;
+}
+
+.chat-welcome-suggestion:hover {
+  border-color: var(--glaze);
+  color: var(--text);
+  background: var(--bg-surface);
 }
 
 .chat-welcome-status {

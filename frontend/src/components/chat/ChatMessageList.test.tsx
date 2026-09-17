@@ -1,5 +1,5 @@
 import { createRef } from "react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { ChatMessageList } from "./ChatMessageList";
 
@@ -32,6 +32,53 @@ describe("ChatMessageList loading chrome", () => {
     expect(document.querySelector(".chat-messages-inner--fill")).not.toBeNull();
     expect(document.querySelector(".chat-empty")).toBeNull();
     expect(screen.queryByText("向上滚动加载更早对话")).toBeNull();
+  });
+
+  it("shows welcome headline and suggestion chips only when a picker is provided", () => {
+    const onSuggestionPick = vi.fn();
+    const { rerender } = render(
+      <ChatMessageList
+        msgs={[]}
+        loadingHistory={false}
+        streaming={false}
+        liveElapsedMs={0}
+        streamingAssistantIdxRef={emptyRefs.streamingAssistantIdxRef}
+        messagesContainerRef={emptyRefs.messagesContainerRef}
+        messagesEndRef={emptyRefs.messagesEndRef}
+        conversationId="cid"
+        onOpenSource={() => {}}
+        onQuestionResolved={() => {}}
+        onSuggestionPick={onSuggestionPick}
+      />,
+    );
+
+    expect(screen.getByText("把对话，沉淀成知识库")).toBeInTheDocument();
+    const chips = Array.from(
+      document.querySelectorAll<HTMLButtonElement>(".chat-welcome-suggestion"),
+    );
+    expect(chips.length).toBeGreaterThanOrEqual(3);
+    chips[0].click();
+    expect(onSuggestionPick).toHaveBeenCalledWith(chips[0].textContent);
+
+    // 只读转录没有输入框，不渲染建议
+    rerender(
+      <ChatMessageList
+        msgs={[]}
+        loadingHistory={false}
+        streaming={false}
+        liveElapsedMs={0}
+        streamingAssistantIdxRef={emptyRefs.streamingAssistantIdxRef}
+        messagesContainerRef={emptyRefs.messagesContainerRef}
+        messagesEndRef={emptyRefs.messagesEndRef}
+        conversationId="cid"
+        onOpenSource={() => {}}
+        onQuestionResolved={() => {}}
+      />,
+    );
+    expect(screen.queryByText("把对话，沉淀成知识库")).toBeInTheDocument();
+    expect(
+      document.querySelector(".chat-welcome-suggestions"),
+    ).toBeNull();
   });
 
   it("marks a search-jump gap so the unread middle is not implied to be loaded", () => {
