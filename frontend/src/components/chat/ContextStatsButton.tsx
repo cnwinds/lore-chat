@@ -10,7 +10,45 @@ type Props = {
   conversationId: string | null;
 };
 
-/** 标题栏「会话统计」：容量条 + 分项占比 + 缓存命中率。 */
+/** 圆形进度环：上下文占用百分比（进度色=青釉，>80% 转朱砂预警）。 */
+function ContextRing({ used, limit }: { used: number | null; limit: number | null }) {
+  const size = 20;
+  const stroke = 2.4;
+  const r = (size - stroke) / 2;
+  const c = 2 * Math.PI * r;
+  const pct = used != null && limit ? Math.min(1, used / limit) : 0;
+  const progressColor = pct > 0.8 ? "var(--accent)" : "var(--glaze)";
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox={`0 0 ${size} ${size}`}
+      aria-hidden
+    >
+      <circle
+        cx={size / 2}
+        cy={size / 2}
+        r={r}
+        fill="none"
+        stroke="var(--border)"
+        strokeWidth={stroke}
+      />
+      <circle
+        cx={size / 2}
+        cy={size / 2}
+        r={r}
+        fill="none"
+        stroke={progressColor}
+        strokeWidth={stroke}
+        strokeLinecap="round"
+        strokeDasharray={`${c * pct} ${c}`}
+        transform={`rotate(-90 ${size / 2} ${size / 2})`}
+      />
+    </svg>
+  );
+}
+
+/** 输入条右侧的会话统计环：点击弹出容量/分项/命中率面板。 */
 export function ContextStatsButton({ conversationId }: Props) {
   const [open, setOpen] = useState(false);
   const [stats, setStats] = useState<ContextStats | null>(null);
@@ -32,6 +70,11 @@ export function ContextStatsButton({ conversationId }: Props) {
   }, [conversationId]);
 
   useEffect(() => {
+    // 环上的百分比需要数据：挂载即拉一次
+    void load();
+  }, [load]);
+
+  useEffect(() => {
     if (open) void load();
   }, [open, load]);
 
@@ -39,28 +82,24 @@ export function ContextStatsButton({ conversationId }: Props) {
 
   const used = stats?.context.used_tokens ?? null;
   const limit = stats?.context.limit_tokens ?? null;
-  const pct =
-    used != null && limit ? Math.min(100, (used / limit) * 100) : null;
+  const pct = used != null && limit ? (used / limit) * 100 : null;
 
   return (
     <>
       <button
         ref={anchorRef}
         type="button"
-        className="chat-desktop-header-btn"
+        className="composer-icon-btn ctxstats-ring-btn"
         onClick={() => setOpen((v) => !v)}
-        title="会话统计"
+        title={
+          pct != null
+            ? `会话统计：上下文 ${pct.toFixed(1)}%`
+            : "会话统计"
+        }
         aria-label="会话统计"
         aria-expanded={open}
       >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
-          <path
-            d="M4 20V10M10 20V4M16 20v-7M22 20H2"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-          />
-        </svg>
+        <ContextRing used={used} limit={limit} />
       </button>
       <FixedOverflowMenu
         open={open}

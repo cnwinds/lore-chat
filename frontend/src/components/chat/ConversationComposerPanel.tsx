@@ -9,6 +9,7 @@ const INPUT_MIN_HEIGHT = 34;
 const INPUT_MAX_HEIGHT = 160;
 
 type Props = {
+  conversationId: string | null;
   sendQueueItems: SendQueueItem[];
   sendQueuePaused: boolean;
   onContinue: () => void;
@@ -52,6 +53,7 @@ type Props = {
 
 /** 会话输入区：发送队列 + 文档托盘 + 文本框 + 工具栏。 */
 export function ConversationComposerPanel({
+  conversationId,
   sendQueueItems,
   sendQueuePaused,
   onContinue,
@@ -156,6 +158,7 @@ export function ConversationComposerPanel({
               onToggleWeb={onToggleWeb}
               streaming={streaming}
               canSend={canSend}
+              conversationId={conversationId}
               onAttachClick={onAttachClick}
               onSend={onSend}
               onStop={onStop}

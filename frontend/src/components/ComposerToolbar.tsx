@@ -1,11 +1,13 @@
 import type { ChangeEvent, RefObject } from "react";
 import { ModelPickerButton } from "./chat/ModelPickerButton";
+import { ContextStatsButton } from "./chat/ContextStatsButton";
 
 type Props = {
   webEnabled: boolean;
   onToggleWeb: () => void;
   streaming: boolean;
   canSend: boolean;
+  conversationId: string | null;
   onAttachClick: () => void;
   onSend: () => void;
   onStop?: () => void;
@@ -84,6 +86,7 @@ export function ComposerToolbar({
   onToggleWeb,
   streaming,
   canSend,
+  conversationId,
   onAttachClick,
   onSend,
   onStop,
@@ -126,6 +129,7 @@ export function ComposerToolbar({
         </button>
       </div>
       <div className="composer-toolbar-right">
+        <ContextStatsButton conversationId={conversationId} />
         <ModelPickerButton />
         {streaming && onStop ? (
           <button

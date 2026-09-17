@@ -69,7 +69,6 @@ import {
   validatePendingAttachments,
 } from "../utils/chatAttachmentValidation";
 import { MobileChatHeader } from "./app/MobileChatHeader";
-import { ContextStatsButton } from "./chat/ContextStatsButton";
 import { ChatRoleHeading } from "./chat/ChatRoleHeading";
 import { GroupAvatar } from "./role/GroupAvatar";
 import { mentionCandidatesForRoom } from "../utils/groupChatDisplay";
@@ -1021,7 +1020,6 @@ export function Chat({
             )}
           </h1>
           <div className="chat-desktop-header-actions">
-            <ContextStatsButton conversationId={conversationId} />
             {onShareConversation && !mobileLayout ? (
               <button
                 type="button"
@@ -1161,6 +1159,7 @@ export function Chat({
         onToggleWeb={toggleWebSearch}
         streaming={streamingForView}
         canSend={!!input.trim() || pendingFiles.length > 0}
+        conversationId={conversationId}
         onAttachClick={() => fileInputRef.current?.click()}
         onSend={send}
         onStop={handleStop}

@@ -2,13 +2,16 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CandidateChainEditor } from "./CandidateChainEditor";
+import type { ModelCandidateDraft } from "./providerPresets";
 import { candidateFromProvider } from "./providerPresets";
 
 afterEach(() => {
   cleanup();
 });
 
-function renderChain(onChange: ReturnType<typeof vi.fn> = vi.fn()) {
+function renderChain(
+  onChange: (next: ModelCandidateDraft[]) => void = vi.fn(),
+) {
   const a = { ...candidateFromProvider("zhipu"), id: "a", model: "glm-a" };
   const b = { ...candidateFromProvider("deepseek"), id: "b", model: "ds-b" };
   const result = render(
