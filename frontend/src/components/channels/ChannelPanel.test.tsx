@@ -427,18 +427,15 @@ describe("ChannelPanel", () => {
     expect(await screen.findByText("还没有聊天通道")).toBeInTheDocument();
   });
 
-  it("keeps shared personas collapsed until opened", async () => {
-    const user = userEvent.setup();
+  it("no longer renders a shared-persona management section", async () => {
     listApiPersonas.mockResolvedValue({
       personas: [sampleInstance.persona!],
     });
     listChannelInstances.mockResolvedValue({ instances: [sampleInstance] });
     renderPanel();
-    expect(await screen.findByText("共用角色")).toBeInTheDocument();
-    expect(screen.queryByText("新建共用角色")).toBeNull();
-    await user.click(screen.getByRole("button", { name: /共用角色/ }));
-    expect(await screen.findByRole("button", { name: "新建共用角色" })).toBeInTheDocument();
-    expect(screen.getByText("1 个通道在用")).toBeInTheDocument();
+    expect(await screen.findByText("周报脚本")).toBeInTheDocument();
+    expect(screen.queryByText("共用角色")).toBeNull();
+    expect(screen.queryByRole("button", { name: /共用角色/ })).toBeNull();
   });
 
   it("hides a revoked script key instead of showing a copyable prefix", async () => {

@@ -13,7 +13,6 @@ import {
 } from "../../api/channelPlugins";
 import {
   createApiPersona,
-  deleteApiPersona,
   listApiPersonas,
   updateApiPersona,
   type ApiPersona,
@@ -29,10 +28,8 @@ import {
   channelNextSteps,
   type CreateKeyDraft,
 } from "../settings/openApiSettingsModel";
-import { FoldChevron } from "../FoldChevron";
 import { ChannelCard } from "./ChannelCard";
 import { CreateKeyScreen, PickTypeScreen } from "./ChannelCreateScreens";
-import { ChannelPersonas } from "./ChannelPersonas";
 import {
   NEW_EXCLUSIVE_VALUE,
   isExclusiveTo,
@@ -66,14 +63,9 @@ export function ChannelPanel({
   const [openTabById, setOpenTabById] = useState<Record<string, DetailTab>>(
     {},
   );
-  const [personasOpen, setPersonasOpen] = useState(false);
   const [editingPromptId, setEditingPromptId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [editPrompt, setEditPrompt] = useState("");
-  const [editingPersonaId, setEditingPersonaId] = useState<string | null>(null);
-  const [creatingPersona, setCreatingPersona] = useState(false);
-  const [createPersonaName, setCreatePersonaName] = useState("");
-  const [createPersonaPrompt, setCreatePersonaPrompt] = useState("");
   const mountedRef = useRef(true);
 
   useEffect(() => {
@@ -271,7 +263,6 @@ export function ChannelPanel({
     const persona = personas.find((p) => p.id === inst.persona_id);
     if (!persona) return;
     setEditingPromptId(inst.id);
-    setEditingPersonaId(null);
     setEditName(persona.name);
     setEditPrompt(persona.system_prompt || "");
   };
@@ -289,62 +280,6 @@ export function ChannelPanel({
       await reload();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "保存失败");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const handleSavePersona = async (id: string) => {
-    const name = editName.trim();
-    if (!name) return;
-    setBusy(true);
-    try {
-      await updateApiPersona(id, {
-        name,
-        system_prompt: editPrompt,
-      });
-      setEditingPersonaId(null);
-      showToast("提示词已更新，下一轮调用生效");
-      await reload();
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "保存失败");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const handleDeletePersona = async (id: string) => {
-    if (!window.confirm("删除这套说话方式？仍被通道使用时会失败。")) return;
-    setBusy(true);
-    try {
-      await deleteApiPersona(id);
-      if (editingPersonaId === id) setEditingPersonaId(null);
-      showToast("已删除");
-      await reload();
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "删除失败");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const handleCreatePersona = async () => {
-    const name = createPersonaName.trim();
-    if (!name) return;
-    setBusy(true);
-    try {
-      await createApiPersona({
-        name,
-        system_prompt: createPersonaPrompt,
-      });
-      setCreatingPersona(false);
-      setCreatePersonaName("");
-      setCreatePersonaPrompt("");
-      setPersonasOpen(true);
-      showToast("已创建共用角色");
-      await reload();
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "创建失败");
     } finally {
       setBusy(false);
     }
@@ -390,7 +325,7 @@ export function ChannelPanel({
               disabled={busy}
               onClick={openPicker}
             >
-              添加
+              添加通道
             </button>
           ) : null}
           <button
@@ -457,7 +392,7 @@ export function ChannelPanel({
                 <div className="kb-float-empty-mark" aria-hidden />
                 <p>还没有聊天通道</p>
                 <p className="kb-float-empty-hint">
-                  添加后，脚本或外部聊天就能接到这里。
+                  添加通道后，脚本或外部 IM 就能把消息送进这个会话。
                 </p>
                 <button
                   type="button"
@@ -501,53 +436,6 @@ export function ChannelPanel({
               </ul>
             ) : null}
 
-            {!loading ? (
-              <section className="settings-group channel-shared">
-                <button
-                  type="button"
-                  className="channel-shared-toggle"
-                  aria-expanded={personasOpen}
-                  onClick={() => setPersonasOpen((v) => !v)}
-                >
-                  <span className="channel-shared-toggle-label">
-                    <strong>共用角色</strong>
-                  </span>
-                  <FoldChevron open={personasOpen} />
-                </button>
-                {personasOpen ? (
-                  <ChannelPersonas
-                    personas={personas}
-                    usage={usage}
-                    busy={busy}
-                    editingId={editingPersonaId}
-                    editName={editName}
-                    editPrompt={editPrompt}
-                    creating={creatingPersona}
-                    createName={createPersonaName}
-                    createPrompt={createPersonaPrompt}
-                    onToggleCreate={() => {
-                      setCreatingPersona((v) => !v);
-                      setCreatePersonaName("");
-                      setCreatePersonaPrompt("");
-                    }}
-                    onCreateName={setCreatePersonaName}
-                    onCreatePrompt={setCreatePersonaPrompt}
-                    onCreate={() => void handleCreatePersona()}
-                    onEditName={setEditName}
-                    onEditPrompt={setEditPrompt}
-                    onStartEdit={(persona) => {
-                      setEditingPersonaId(persona.id);
-                      setEditingPromptId(null);
-                      setEditName(persona.name);
-                      setEditPrompt(persona.system_prompt || "");
-                    }}
-                    onCancelEdit={() => setEditingPersonaId(null)}
-                    onSave={(id) => void handleSavePersona(id)}
-                    onDelete={(id) => void handleDeletePersona(id)}
-                  />
-                ) : null}
-              </section>
-            ) : null}
           </div>
         )}
       </div>

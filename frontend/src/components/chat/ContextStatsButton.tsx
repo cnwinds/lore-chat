@@ -10,6 +10,18 @@ type Props = {
   conversationId: string | null;
 };
 
+/** 分项配色（与后端 segments 顺序对应）：系统=琥珀、历史=青釉、工具=钴蓝、附件=藕紫。 */
+const SEGMENT_COLORS: Record<string, string> = {
+  system: "var(--system-layer)",
+  history: "var(--glaze)",
+  tools: "var(--ctx-tools)",
+  attachments: "var(--ctx-att)",
+};
+
+function segmentColor(key: string): string {
+  return SEGMENT_COLORS[key] ?? "var(--text-muted)";
+}
+
 /** 圆形进度环：上下文占用百分比（进度色=青釉，>80% 转朱砂预警）。 */
 function ContextRing({ used, limit }: { used: number | null; limit: number | null }) {
   const size = 20;
@@ -83,6 +95,11 @@ export function ContextStatsButton({ conversationId }: Props) {
   const used = stats?.context.used_tokens ?? null;
   const limit = stats?.context.limit_tokens ?? null;
   const pct = used != null && limit ? (used / limit) * 100 : null;
+  // 无上限时按构成占比铺满整条；比例始终以分项 tokens 为准
+  const barDenominator = limit ?? used;
+  const barSegments = (stats?.segments ?? []).filter(
+    (seg) => seg.tokens > 0 && barDenominator,
+  );
 
   return (
     <>
@@ -117,15 +134,34 @@ export function ContextStatsButton({ conversationId }: Props) {
           <>
             <div className="ctxstats-head">
               <span className="ctxstats-title">上下文容量</span>
-              <span className="ctxstats-pct">
+              <span
+                className={`ctxstats-pct${pct != null && pct > 80 ? " ctxstats-pct--warn" : ""}`}
+              >
                 {pct != null ? `${pct.toFixed(1)}%` : "—"}
               </span>
             </div>
             <div className="ctxstats-bar-track">
-              <div
-                className="ctxstats-bar-fill"
-                style={{ width: `${pct ?? 0}%` }}
-              />
+              {barSegments.map((seg) => {
+                const width =
+                  barDenominator && barDenominator > 0
+                    ? (seg.tokens / barDenominator) * 100
+                    : 0;
+                const share =
+                  used && used > 0
+                    ? ` · ${((seg.tokens / used) * 100).toFixed(1)}%`
+                    : "";
+                return (
+                  <div
+                    key={seg.key}
+                    className="ctxstats-bar-seg"
+                    style={{
+                      width: `${width}%`,
+                      background: segmentColor(seg.key),
+                    }}
+                    title={`${seg.label}${share}`}
+                  />
+                );
+              })}
             </div>
             <div className="ctxstats-used">
               {used != null
@@ -140,7 +176,13 @@ export function ContextStatsButton({ conversationId }: Props) {
                     : null;
                 return (
                   <div key={seg.key} className="ctxstats-row">
-                    <span className="ctxstats-row-label">{seg.label}</span>
+                    <span className="ctxstats-row-label">
+                      <span
+                        className="ctxstats-dot"
+                        style={{ background: segmentColor(seg.key) }}
+                      />
+                      {seg.label}
+                    </span>
                     <span className="ctxstats-row-value">
                       {compactTokenCount(seg.tokens)}
                       {segPct != null ? ` · ${segPct.toFixed(1)}%` : ""}
