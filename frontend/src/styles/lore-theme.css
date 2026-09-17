@@ -481,6 +481,75 @@ body {
   border-color: var(--danger);
 }
 
+/* —— 信息流过程块：安静的页边脚注，不与正文争色 ——
+   思考/工具行一律去描边、去底色盒，文字降一档；时长不再用强调色。
+   全部走主题令牌，五套配色下都自动保持从属地位。 */
+.timeline-tool,
+.timeline-think {
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  margin: 2px 0;
+}
+
+.timeline-tool-header,
+.timeline-think-header {
+  padding: 5px 8px;
+  border-radius: 8px;
+  transition: background 0.12s ease;
+}
+
+.timeline-tool-header:hover,
+.timeline-think-header:hover {
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+}
+
+/* 运行中用青釉结构色轻扫，不使用强调色 */
+.timeline-tool-running,
+.timeline-tool-running:hover {
+  border: none;
+  background: var(--glaze-soft);
+}
+
+/* 中断只靠 ⚠ 图标与文字示警，不整块描边 */
+.timeline-tool-interrupted {
+  border: none;
+  background: transparent;
+}
+
+.timeline-tool-name {
+  color: var(--text-secondary);
+  font-weight: 550;
+  font-size: var(--text-xs);
+}
+
+.timeline-tool-oneline {
+  color: var(--text-muted);
+}
+
+/* 时长从强调色降为弱化文字：过程数据不为页面定调 */
+.timeline-duration {
+  color: var(--text-muted);
+}
+
+/* 展开正文：淡一层底色内衬，替代原来的整框描边 */
+.timeline-tool-body {
+  border-top: none;
+  background: color-mix(in srgb, var(--bg-muted) 55%, transparent);
+  border-radius: 8px;
+  margin: 0 4px 4px;
+}
+
+.timeline-think-body {
+  border-top: none;
+  padding-top: 2px;
+}
+
+/* 并行组：左侧引导线用普通边框色，不用强调色 */
+.timeline-parallel {
+  border-left: 2px solid var(--border);
+}
+
 /* —— 文档面板：白瓷阅读面 —— */
 .doc-panel {
   background: var(--bg-surface);
