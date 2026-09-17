@@ -6,6 +6,7 @@ import {
   SettingsFoldSection,
   useSettingsItemFold,
 } from "./SettingsFold";
+import { SettingsChainGrip, useSettingsChainDrag } from "./SettingsChainDrag";
 import { ProviderApiKeyLabel } from "./ProviderApiKeyLabel";
 
 export type SearchProviderId = "tavily" | "serper" | "brave";
@@ -47,17 +48,14 @@ export function SearchProviderEditor({
   const available = SEARCH_PROVIDER_OPTIONS.filter((o) => !used.has(o.id));
   const ids = useMemo(() => providers.map((p) => p.id), [providers]);
   const { isOpen, toggle } = useSettingsItemFold(ids);
+  const { articleProps, gripProps } = useSettingsChainDrag(
+    providers,
+    onChange,
+    saving,
+  );
 
   function updateAt(i: number, patch: Partial<SearchProviderDraft>) {
     onChange(providers.map((p, idx) => (idx === i ? { ...p, ...patch } : p)));
-  }
-
-  function move(i: number, dir: -1 | 1) {
-    const j = i + dir;
-    if (j < 0 || j >= providers.length) return;
-    const next = [...providers];
-    [next[i], next[j]] = [next[j], next[i]];
-    onChange(next);
   }
 
   function addProvider(provider: SearchProviderId) {
@@ -76,6 +74,7 @@ export function SearchProviderEditor({
           const cooling = Boolean(st && !st.available && !st.disabled);
           const disabled = Boolean(st?.disabled);
           const open = isOpen(p.id);
+          const drag = articleProps(p.id, i);
           return (
             <article
               key={p.id}
@@ -85,11 +84,15 @@ export function SearchProviderEditor({
                 i === 0 ? "settings-model-candidate--primary" : "",
                 disabled ? "settings-model-candidate--disabled" : "",
                 cooling ? "settings-model-candidate--cooling" : "",
+                drag.extraClass,
               ]
                 .filter(Boolean)
                 .join(" ")}
+              onDragOver={drag.onDragOver}
+              onDrop={drag.onDrop}
             >
               <div className="settings-model-candidate-head">
+                <SettingsChainGrip {...gripProps(p.id, i)} />
                 <SettingsCandidateFoldToggle
                   open={open}
                   onToggle={() => toggle(p.id)}
@@ -98,26 +101,6 @@ export function SearchProviderEditor({
                   primary={i === 0}
                 />
                 <div className="settings-model-candidate-actions">
-                  <button
-                    type="button"
-                    className="settings-icon-btn"
-                    disabled={saving || i === 0}
-                    onClick={() => move(i, -1)}
-                    aria-label="上移"
-                    title="上移"
-                  >
-                    ↑
-                  </button>
-                  <button
-                    type="button"
-                    className="settings-icon-btn"
-                    disabled={saving || i === providers.length - 1}
-                    onClick={() => move(i, 1)}
-                    aria-label="下移"
-                    title="下移"
-                  >
-                    ↓
-                  </button>
                   <button
                     type="button"
                     className="settings-icon-btn settings-icon-btn--danger"

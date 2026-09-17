@@ -6,6 +6,7 @@ import {
   SettingsFoldSection,
   useSettingsItemFold,
 } from "./SettingsFold";
+import { SettingsChainGrip, useSettingsChainDrag } from "./SettingsChainDrag";
 import { ProviderApiKeyLabel } from "./ProviderApiKeyLabel";
 import { resolveModelCaps, capsFromCatalogItem } from "./modelCapabilities";
 import { pickEffortInOptions } from "./modelChainDrafts";
@@ -377,17 +378,14 @@ export function CandidateChainEditor({
 }: CandidateChainEditorProps) {
   const ids = candidates.map((c) => c.id);
   const { isOpen, toggle } = useSettingsItemFold(ids);
+  const { articleProps, gripProps } = useSettingsChainDrag(
+    candidates,
+    onChange,
+    saving,
+  );
 
   function updateAt(i: number, patch: Partial<ModelCandidateDraft>) {
     onChange(candidates.map((c, idx) => (idx === i ? { ...c, ...patch } : c)));
-  }
-
-  function move(i: number, dir: -1 | 1) {
-    const j = i + dir;
-    if (j < 0 || j >= candidates.length) return;
-    const next = [...candidates];
-    [next[i], next[j]] = [next[j], next[i]];
-    onChange(next);
   }
 
   return (
@@ -406,6 +404,7 @@ export function CandidateChainEditor({
           const rowTitle = c.model.trim()
             ? `${llmProviderLabel(c.provider)} · ${c.model.trim()}`
             : llmProviderLabel(c.provider);
+          const drag = articleProps(c.id, i);
           return (
             <article
               key={c.id}
@@ -415,11 +414,15 @@ export function CandidateChainEditor({
                 i === 0 ? "settings-model-candidate--primary" : "",
                 disabled ? "settings-model-candidate--disabled" : "",
                 cooling ? "settings-model-candidate--cooling" : "",
+                drag.extraClass,
               ]
                 .filter(Boolean)
                 .join(" ")}
+              onDragOver={drag.onDragOver}
+              onDrop={drag.onDrop}
             >
               <div className="settings-model-candidate-head">
+                <SettingsChainGrip {...gripProps(c.id, i)} />
                 <SettingsCandidateFoldToggle
                   open={open}
                   onToggle={() => toggle(c.id)}
@@ -429,26 +432,6 @@ export function CandidateChainEditor({
                   primary={i === 0}
                 />
                 <div className="settings-model-candidate-actions">
-                  <button
-                    type="button"
-                    className="settings-icon-btn"
-                    disabled={saving || i === 0}
-                    onClick={() => move(i, -1)}
-                    aria-label="上移"
-                    title="上移"
-                  >
-                    ↑
-                  </button>
-                  <button
-                    type="button"
-                    className="settings-icon-btn"
-                    disabled={saving || i === candidates.length - 1}
-                    onClick={() => move(i, 1)}
-                    aria-label="下移"
-                    title="下移"
-                  >
-                    ↓
-                  </button>
                   <button
                     type="button"
                     className="settings-icon-btn settings-icon-btn--danger"
