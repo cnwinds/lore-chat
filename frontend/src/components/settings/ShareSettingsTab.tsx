@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listShares, revokeShare, type ShareLinkItem } from "../../api/share";
 import { useCopyShareUrl } from "../../hooks/useShareLink";
 import { showToast } from "../../utils/toast";
+import { FoldChevron } from "../FoldChevron";
 
 type Filter = "all" | "conversation" | "doc";
 
@@ -45,6 +46,157 @@ function rangeLabel(item: ShareLinkItem): string | null {
   const count = item.options.message_count ?? item.options.message_ids?.length;
   if (count != null && count > 0) return `区间 · ${count} 条`;
   return null;
+}
+
+function compactSummary(item: ShareLinkItem): string[] {
+  const parts = [`${item.view_count} 次`];
+  if (item.type !== "doc" && item.options.pin_version === false) {
+    parts.push("跟随更新");
+  } else {
+    const range = rangeLabel(item);
+    if (range) parts.push(range);
+  }
+  return parts;
+}
+
+type ShareMgmtCardProps = {
+  item: ShareLinkItem;
+  expanded: boolean;
+  copied: boolean;
+  onToggle: () => void;
+  onCopy: () => void;
+  onOpen: () => void;
+  onRevoke: () => void;
+};
+
+function ShareMgmtCard({
+  item,
+  expanded,
+  copied,
+  onToggle,
+  onCopy,
+  onOpen,
+  onRevoke,
+}: ShareMgmtCardProps) {
+  const exp = formatExp(item.exp);
+  const isDoc = item.type === "doc";
+  const locked = !!item.options.has_password;
+  const recent = item.recent_views ?? [];
+  const summary = compactSummary(item);
+  const bodyId = `share-mgmt-body-${item.share_id}`;
+
+  return (
+    <li
+      className={`share-mgmt-card${expanded ? " share-mgmt-card--open" : ""}`}
+    >
+      <button
+        type="button"
+        className="share-mgmt-card-toggle"
+        aria-expanded={expanded}
+        aria-controls={expanded ? bodyId : undefined}
+        onClick={onToggle}
+      >
+        <FoldChevron open={expanded} className="share-mgmt-card-chevron" />
+        <span className="share-mgmt-card-main">
+          <span className="share-mgmt-card-line">
+            <span className={`share-mgmt-badge share-mgmt-badge--${item.type}`}>
+              {isDoc ? "文档" : "对话"}
+            </span>
+            {locked ? (
+              <span className="share-mgmt-lock" title="需密码访问">
+                锁
+              </span>
+            ) : null}
+            <span className="share-mgmt-card-title">{item.title}</span>
+          </span>
+          <span className="share-mgmt-card-summary">
+            {summary.join(" · ")}
+            {" · "}
+            <span className={`share-mgmt-exp share-mgmt-exp--${exp.tone}`}>
+              {exp.text}
+            </span>
+          </span>
+        </span>
+      </button>
+      {expanded ? (
+        <div className="share-mgmt-card-body" id={bodyId}>
+          {isDoc && item.options.source_path ? (
+            <p className="share-mgmt-card-path">{item.options.source_path}</p>
+          ) : null}
+          <dl className="share-mgmt-meta">
+            <dt>创建</dt>
+            <dd>{formatCreated(item.created_at)}</dd>
+            <dt>访问</dt>
+            <dd>{item.view_count} 次</dd>
+            <dt>最近</dt>
+            <dd>
+              {item.last_viewed_at ? formatViewTime(item.last_viewed_at) : "—"}
+            </dd>
+            {isDoc && item.options.pin_version !== undefined ? (
+              <>
+                <dt>版本</dt>
+                <dd>{item.options.pin_version ? "已固定" : "跟随文档"}</dd>
+              </>
+            ) : null}
+            {!isDoc ? (
+              <>
+                <dt>内容</dt>
+                <dd>
+                  {item.options.pin_version === false
+                    ? "跟随会话"
+                    : item.options.message_count
+                      ? `快照 · ${item.options.message_count} 条`
+                      : "快照 · 全部"}
+                </dd>
+              </>
+            ) : null}
+          </dl>
+          <div className="share-mgmt-recent">
+            <p className="share-mgmt-recent-title">最近访问</p>
+            {!recent.length ? (
+              <p className="share-mgmt-recent-empty">暂无记录</p>
+            ) : (
+              <ul className="share-mgmt-recent-list">
+                {[...recent].reverse().map((v, i) => (
+                  <li key={`${v.ts}-${i}`}>
+                    <span>{formatViewTime(v.ts)}</span>
+                    <span className="share-mgmt-recent-ref">
+                      {v.referer || "—"}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <div className="share-mgmt-card-actions">
+            <button
+              type="button"
+              className="share-mgmt-btn"
+              disabled={!item.url}
+              onClick={onOpen}
+            >
+              打开
+            </button>
+            <button
+              type="button"
+              className="share-mgmt-btn share-mgmt-btn--primary"
+              disabled={!item.url}
+              onClick={onCopy}
+            >
+              {copied ? "已复制" : "复制链接"}
+            </button>
+            <button
+              type="button"
+              className="share-mgmt-btn share-mgmt-btn--danger"
+              onClick={onRevoke}
+            >
+              撤销
+            </button>
+          </div>
+        </div>
+      ) : null}
+    </li>
+  );
 }
 
 export function ShareSettingsTab() {
@@ -115,6 +267,7 @@ export function ShareSettingsTab() {
     try {
       await revokeShare(shareId);
       showToast("已撤销分享");
+      setExpandedId((cur) => (cur === shareId ? null : cur));
       reload({ silent: true });
     } catch (e: unknown) {
       if (mountedRef.current) {
@@ -200,126 +353,22 @@ export function ShareSettingsTab() {
             <p className="share-mgmt-empty-filter">当前筛选下没有分享链接</p>
           ) : (
             <ul className="share-mgmt-list">
-              {filtered.map((item) => {
-                const exp = formatExp(item.exp);
-                const isDoc = item.type === "doc";
-                const range = rangeLabel(item);
-                const live = !isDoc && item.options.pin_version === false;
-                const locked = !!item.options.has_password;
-                const expanded = expandedId === item.share_id;
-                const recent = item.recent_views ?? [];
-                return (
-                  <li key={item.share_id} className="share-mgmt-card">
-                    <div className="share-mgmt-card-top">
-                      <span
-                        className={`share-mgmt-badge share-mgmt-badge--${item.type}`}
-                      >
-                        {isDoc ? "文档" : "对话"}
-                      </span>
-                      {locked ? (
-                        <span className="share-mgmt-lock" title="需密码访问">
-                          锁
-                        </span>
-                      ) : null}
-                      {live ? (
-                        <span className="share-mgmt-range">跟随更新</span>
-                      ) : range ? (
-                        <span className="share-mgmt-range">{range}</span>
-                      ) : null}
-                      <span className={`share-mgmt-exp share-mgmt-exp--${exp.tone}`}>
-                        {exp.text}
-                      </span>
-                    </div>
-                    <h4 className="share-mgmt-card-title">{item.title}</h4>
-                    {isDoc && item.options.source_path ? (
-                      <p className="share-mgmt-card-path">{item.options.source_path}</p>
-                    ) : null}
-                    <dl className="share-mgmt-meta">
-                      <dt>创建</dt>
-                      <dd>{formatCreated(item.created_at)}</dd>
-                      <dt>访问</dt>
-                      <dd>{item.view_count} 次</dd>
-                      <dt>最近</dt>
-                      <dd>
-                        {item.last_viewed_at
-                          ? formatViewTime(item.last_viewed_at)
-                          : "—"}
-                      </dd>
-                      {isDoc && item.options.pin_version !== undefined ? (
-                        <>
-                          <dt>版本</dt>
-                          <dd>{item.options.pin_version ? "已固定" : "跟随文档"}</dd>
-                        </>
-                      ) : null}
-                      {!isDoc ? (
-                        <>
-                          <dt>内容</dt>
-                          <dd>
-                            {item.options.pin_version === false
-                              ? "跟随会话"
-                              : item.options.message_count
-                                ? `快照 · ${item.options.message_count} 条`
-                                : "快照 · 全部"}
-                          </dd>
-                        </>
-                      ) : null}
-                    </dl>
-                    {expanded && (
-                      <div className="share-mgmt-recent">
-                        <p className="share-mgmt-recent-title">最近访问</p>
-                        {!recent.length ? (
-                          <p className="share-mgmt-recent-empty">暂无记录</p>
-                        ) : (
-                          <ul className="share-mgmt-recent-list">
-                            {[...recent].reverse().map((v, i) => (
-                              <li key={`${v.ts}-${i}`}>
-                                <span>{formatViewTime(v.ts)}</span>
-                                <span className="share-mgmt-recent-ref">
-                                  {v.referer || "—"}
-                                </span>
-                              </li>
-                            ))}
-                          </ul>
-                        )}
-                      </div>
-                    )}
-                    <div className="share-mgmt-card-actions">
-                      <button
-                        type="button"
-                        className="share-mgmt-btn"
-                        onClick={() =>
-                          setExpandedId(expanded ? null : item.share_id)
-                        }
-                      >
-                        {expanded ? "收起" : "详情"}
-                      </button>
-                      <button
-                        type="button"
-                        className="share-mgmt-btn"
-                        disabled={!item.url}
-                        onClick={() => handleOpen(item)}
-                      >
-                        打开
-                      </button>
-                      <button
-                        type="button"
-                        className="share-mgmt-btn share-mgmt-btn--primary"
-                        disabled={!item.url}
-                        onClick={() => void handleCopy(item)}
-                      >
-                        {copiedId === item.share_id ? "已复制" : "复制链接"}
-                      </button>
-                      <button
-                        type="button"
-                        className="share-mgmt-btn share-mgmt-btn--danger"
-                        onClick={() => void handleRevoke(item.share_id)}
-                      >
-                        撤销
-                      </button>
-                    </div>
-                  </li>
-                );
-              })}
+              {filtered.map((item) => (
+                <ShareMgmtCard
+                  key={item.share_id}
+                  item={item}
+                  expanded={expandedId === item.share_id}
+                  copied={copiedId === item.share_id}
+                  onToggle={() =>
+                    setExpandedId((cur) =>
+                      cur === item.share_id ? null : item.share_id,
+                    )
+                  }
+                  onCopy={() => void handleCopy(item)}
+                  onOpen={() => handleOpen(item)}
+                  onRevoke={() => void handleRevoke(item.share_id)}
+                />
+              ))}
             </ul>
           )}
         </>
