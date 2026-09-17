@@ -65,10 +65,10 @@ describe("fixed overflow menu", () => {
 });
 
 describe("left dock chrome", () => {
-  it("gives 主题 / 聊天通道 / 设置 a taller hit target", () => {
-    expect(css).toMatch(/\.theme-toggle\s*\{[^}]*min-height:\s*40px;/);
-    expect(css).toMatch(/\.sidebar-dock-btn\s*\{[^}]*min-height:\s*40px;/);
-    expect(css).toMatch(/\.sidebar-settings-btn\s*\{[^}]*min-height:\s*40px;/);
+  it("keeps 主题 / 聊天通道 / 设置 compact but still tappable", () => {
+    expect(css).toMatch(/\.theme-toggle\s*\{[^}]*min-height:\s*36px;/);
+    expect(css).toMatch(/\.sidebar-dock-btn\s*\{[^}]*min-height:\s*36px;/);
+    expect(css).toMatch(/\.sidebar-settings-btn\s*\{[^}]*min-height:\s*36px;/);
   });
 });
 

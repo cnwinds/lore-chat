@@ -369,7 +369,6 @@ body {
 .sidebar-dock-btn,
 .sidebar-settings-btn {
   border-radius: 0;
-  min-height: 34px;
 }
 
 /* 悬停只用整段平铺的浅色，不再出现圆角弧块 */
