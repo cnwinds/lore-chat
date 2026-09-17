@@ -9010,66 +9010,10 @@ button.source-link--inline.conversation-md-link {
   cursor: not-allowed;
 }
 
-/* 本轮 = 会注入当前回合，用强调色轻提示 */
+/* 引导 = 会移到队首并注入当前回合，用强调色轻提示 */
 .composer-queue-timing.is-inject {
   background: var(--accent-soft);
   color: var(--accent);
-}
-
-/* Chain bridge between rows */
-.composer-queue-bridge {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0;
-  height: 18px;
-  margin: -1px 18px;
-}
-
-.composer-queue-bridge-line {
-  flex: 1;
-  height: 1px;
-  background: color-mix(in srgb, var(--border-strong) 70%, transparent);
-}
-
-.composer-queue-bridge-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  margin: 0 4px;
-  padding: 0;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  background: var(--bg-surface);
-  color: var(--text-muted);
-  cursor: pointer;
-  transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease,
-    transform 0.12s ease;
-}
-
-.composer-queue-bridge-btn:hover:not(:disabled) {
-  color: var(--accent);
-  border-color: var(--accent-border);
-  transform: scale(1.06);
-}
-
-.composer-queue-bridge-btn.is-on {
-  color: #fff;
-  background: var(--accent);
-  border-color: transparent;
-  box-shadow: 0 0 0 3px var(--accent-soft);
-}
-
-.composer-queue-bridge-btn.is-on + .composer-queue-bridge-line,
-.composer-queue-bridge:has(.is-on) .composer-queue-bridge-line {
-  background: color-mix(in srgb, var(--accent) 45%, var(--border));
-}
-
-.composer-queue-bridge-btn:disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
 }
 
 .chat-inject-tag {

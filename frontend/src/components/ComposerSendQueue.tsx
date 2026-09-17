@@ -51,24 +51,6 @@ function IconSkip() {
   );
 }
 
-function IconLink() {
-  return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.2"
-      strokeLinecap="round"
-      aria-hidden
-    >
-      <path d="M10 13a5 5 0 0 0 7.5.5l2-2a5 5 0 0 0-7.1-7.1l-1.1 1.1" />
-      <path d="M14 11a5 5 0 0 0-7.5-.5l-2 2a5 5 0 0 0 7.1 7.1l1.1-1.1" />
-    </svg>
-  );
-}
-
 function IconTrash() {
   return (
     <svg
@@ -133,15 +115,17 @@ function IconGrip() {
   );
 }
 
-/** 时机签：inject=↑ 本轮（accent 提示），defer=下回（弱化）。点击切换。 */
+/** 二态时机签：引导=移到队首并注入当前信息流（accent 提示）；排队=回合后再发。 */
 function TimingPill({
   value,
   disabled,
-  onChange,
+  onGuide,
+  onQueue,
 }: {
   value: QueueTiming;
   disabled?: boolean;
-  onChange: (v: QueueTiming) => void;
+  onGuide: () => void;
+  onQueue: () => void;
 }) {
   const inject = value === "inject";
   return (
@@ -149,12 +133,12 @@ function TimingPill({
       type="button"
       className={`composer-queue-timing${inject ? " is-inject" : ""}`}
       disabled={disabled}
-      onClick={() => onChange(inject ? "defer" : "inject")}
-      title={inject ? "插入本轮（点击改为回合后）" : "回合后再发（点击改为插入本轮）"}
-      aria-label={inject ? "时机：插入本轮" : "时机：回合后"}
+      onClick={() => (inject ? onQueue() : onGuide())}
+      title={inject ? "引导中：注入当前信息流（点击改回排队）" : "排队中：点击引导到队首并插入当前信息流"}
+      aria-label={inject ? "引导中：注入当前信息流" : "排队中"}
       aria-pressed={inject}
     >
-      {inject ? "↑ 本轮" : "下回"}
+      {inject ? "引导" : "排队"}
     </button>
   );
 }
@@ -167,7 +151,6 @@ export function ComposerSendQueue({
   onSkipFailed,
   onUpdateText,
   onSetTiming,
-  onToggleMerge,
   onRemove,
   onMove,
   onClear,
@@ -183,6 +166,12 @@ export function ComposerSendQueue({
     const dir: -1 | 1 = target > from ? 1 : -1;
     const steps = Math.abs(target - from);
     for (let i = 0; i < steps; i++) onMove(items[from].id, dir);
+  }
+
+  /** 引导：把该条移到队首并注入当前信息流 */
+  function guideItem(item: SendQueueItem, index: number) {
+    onSetTiming(item.id, "inject");
+    if (index > 0) moveToIndex(index, 0);
   }
 
   return (
@@ -298,7 +287,8 @@ export function ComposerSendQueue({
               <TimingPill
                 value={item.timing}
                 disabled={!!item.locked}
-                onChange={(v) => onSetTiming(item.id, v)}
+                onGuide={() => guideItem(item, index)}
+                onQueue={() => onSetTiming(item.id, "defer")}
               />
               <button
                 type="button"
@@ -311,30 +301,6 @@ export function ComposerSendQueue({
                 <IconX />
               </button>
             </div>
-
-            {index < items.length - 1 && (
-              <div className="composer-queue-bridge">
-                <span className="composer-queue-bridge-line" aria-hidden />
-                <button
-                  type="button"
-                  className={`composer-queue-bridge-btn${item.mergeWithNext ? " is-on" : ""}`}
-                  disabled={!!item.locked || !!items[index + 1]?.locked}
-                  onClick={() => onToggleMerge(item.id)}
-                  title={
-                    item.mergeWithNext
-                      ? "已与下一条合并（点击取消）"
-                      : "与下一条合并发送"
-                  }
-                  aria-label={
-                    item.mergeWithNext ? "取消与下一条合并" : "与下一条合并"
-                  }
-                  aria-pressed={item.mergeWithNext}
-                >
-                  <IconLink />
-                </button>
-                <span className="composer-queue-bridge-line" aria-hidden />
-              </div>
-            )}
           </li>
         ))}
       </ul>
