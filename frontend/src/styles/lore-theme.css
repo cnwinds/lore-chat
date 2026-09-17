@@ -360,17 +360,24 @@ body {
   border-left: 1px solid var(--border);
 }
 
+/* 老规则在相邻 dock 按钮间隐藏分隔线；分段框语言下必须显式恢复 */
+.sidebar-footer-actions > .sidebar-dock-btn + .sidebar-dock-btn {
+  border-left: 1px solid var(--border);
+}
+
 .theme-toggle,
 .sidebar-dock-btn,
 .sidebar-settings-btn {
-  border-radius: 8px;
+  border-radius: 0;
   min-height: 34px;
 }
 
+/* 悬停只用整段平铺的浅色，不再出现圆角弧块 */
 .theme-toggle:hover,
 .sidebar-dock-btn:hover,
 .sidebar-settings-btn:hover {
   background: var(--bg-hover);
+  border-radius: 0;
 }
 
 .sidebar-dock-btn--active {
