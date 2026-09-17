@@ -342,21 +342,22 @@ body {
 }
 
 /* —— 侧栏页脚：撤掉描边小盒子，改为安静的桌沿 —— */
+/* —— 侧栏页脚：三钮组成一个发丝线分段控件 —— */
 .sidebar-footer {
   background: transparent;
   border-top: 1px solid var(--border);
-  padding: 6px 10px 8px;
+  padding: 8px 10px;
 }
 
 .sidebar-footer-actions {
-  border: none;
-  border-radius: 0;
-  background: transparent;
-  overflow: visible;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--bg-surface);
+  overflow: hidden;
 }
 
 .sidebar-footer-actions > * + * {
-  border-left: none;
+  border-left: 1px solid var(--border);
 }
 
 .theme-toggle,
