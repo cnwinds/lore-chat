@@ -6449,21 +6449,23 @@ button.memory-fact-statement--jump:focus-visible {
 .chat-streaming-bar {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 6px;
   width: fit-content;
   max-width: 100%;
-  padding: 8px 12px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--accent-border);
-  background: var(--accent-soft);
-  font-size: var(--text-sm);
-  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
   flex-shrink: 0;
 }
 
+/* 旋转菊花：思考中的唯一视觉，裸行不做成卡片 */
+.chat-streaming-spinner {
+  display: block;
+  flex-shrink: 0;
+  animation: composer-queue-spin 0.8s linear infinite;
+}
+
 .chat-streaming-bar--reconcile {
-  border-color: var(--border-strong, var(--border));
-  background: var(--bg-muted);
+  gap: 10px;
 }
 
 .chat-streaming-bar--reconcile .chat-streaming-label {

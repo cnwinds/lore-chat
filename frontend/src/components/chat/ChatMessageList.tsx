@@ -404,7 +404,19 @@ export function ChatMessageList({
       {streaming && (
         <div className="chat-streaming-wrap">
           <div className="chat-streaming-bar">
-            <span className="chat-streaming-label">思考中…</span>
+            <svg
+              className="chat-streaming-spinner"
+              viewBox="0 0 24 24"
+              width="13"
+              height="13"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              aria-hidden
+            >
+              <path d="M12 2a10 10 0 0 1 10 10" />
+            </svg>
             {liveElapsedMs > 0 && (
               <span className="chat-streaming-duration">
                 用时 {formatDuration(liveElapsedMs)}
