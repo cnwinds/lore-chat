@@ -22,7 +22,48 @@ __all__ = [
     "ThinkingProtocol",
     "ModelChain",
     "ModelCandidate",
+    "LLM_PROVIDER_DISPLAY_LABELS",
+    "resolve_provider_label",
+    "format_vendor_model_label",
 ]
+
+
+# 与前端 LLM_PROVIDER_OPTIONS 对齐；空 provider_label 时作展示回退
+LLM_PROVIDER_DISPLAY_LABELS: dict[str, str] = {
+    "openai": "OpenAI",
+    "zhipu": "智谱",
+    "zhipu_plan": "智谱 Plan",
+    "bailian": "百炼 / 通义",
+    "deepseek": "DeepSeek",
+    "minimax": "MiniMax",
+    "minimax_plan": "MiniMax Plan",
+    "agnes": "Agnes",
+    "openrouter": "OpenRouter",
+    "custom": "自定义",
+}
+
+
+def resolve_provider_label(
+    provider: str | None,
+    provider_label: str | None = None,
+) -> str:
+    """用户改过的厂家名优先；否则用预设中文名；未知 id 回退原始值。"""
+    custom = (provider_label or "").strip()
+    if custom:
+        return custom
+    pid = (provider or "").strip().lower()
+    if pid in LLM_PROVIDER_DISPLAY_LABELS:
+        return LLM_PROVIDER_DISPLAY_LABELS[pid]
+    return pid or LLM_PROVIDER_DISPLAY_LABELS["custom"]
+
+
+def format_vendor_model_label(vendor: str, model: str) -> str:
+    """设置 / 信息流同一格式：「厂家 · 模型」。缺一侧则只返回另一侧。"""
+    v = (vendor or "").strip()
+    m = (model or "").strip()
+    if v and m:
+        return f"{v} · {m}"
+    return m or v
 
 
 class ModelCandidate(BaseModel):
@@ -32,6 +73,8 @@ class ModelCandidate(BaseModel):
     api_key: str | None = None
     # 厂家预设 id（openai/zhipu/.../custom）；仅设置 UI，运行时路由不依赖
     provider: str | None = None
+    # 用户可改的厂家显示名；空则按 provider 预设回退
+    provider_label: str = ""
     image: bool = False
     video: bool = False
     thinking: bool = False
@@ -48,6 +91,13 @@ class ModelCandidate(BaseModel):
     @classmethod
     def _empty_id(cls, v: Any) -> str:
         if v is None or (isinstance(v, str) and not v.strip()):
+            return ""
+        return str(v).strip()
+
+    @field_validator("provider_label", mode="before")
+    @classmethod
+    def _provider_label(cls, v: Any) -> str:
+        if v is None:
             return ""
         return str(v).strip()
 

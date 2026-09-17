@@ -95,6 +95,22 @@ def test_enrich_fills_effort_options_when_thinking_but_catalog_empty():
     assert "max" in out["effort_options"]
 
 
+def test_parse_candidates_keeps_provider_label():
+    from app.models.candidate import parse_candidates
+
+    rows = parse_candidates(
+        [
+            {
+                "model": "glm-5.3-flash",
+                "provider": "custom",
+                "provider_label": " 家里网关 ",
+            }
+        ]
+    )
+    assert rows[0].provider_label == "家里网关"
+    assert rows[0].provider == "custom"
+
+
 def test_migrate_settings_dict_from_legacy():
     data = migrate_settings_dict(
         {

@@ -126,16 +126,36 @@ def test_display_label_uses_candidate_effort_options():
 
     deepseek = ModelCandidate(
         model="deepseek-v4-flash-0731",
+        provider="deepseek",
         thinking=True,
         effort="high",
         effort_options=["low", "medium", "high"],
     )
-    assert _display_model_label(deepseek) == "deepseek-v4-flash-0731 - high"
+    assert _display_model_label(deepseek) == "DeepSeek · deepseek-v4-flash-0731 - high"
 
     agnes = ModelCandidate(
         model="agnes-2.5-pro",
+        provider="agnes",
         thinking=True,
         effort="medium",
         effort_options=[],
     )
-    assert _display_model_label(agnes) == "agnes-2.5-pro"
+    assert _display_model_label(agnes) == "Agnes · agnes-2.5-pro"
+
+
+def test_display_label_uses_custom_provider_label():
+    from app.models.candidate import ModelCandidate
+    from app.models.llm import _display_model_label
+
+    cand = ModelCandidate(
+        model="glm-5.3-flash",
+        provider="custom",
+        provider_label="家里网关",
+        thinking=True,
+        effort="max",
+        effort_options=["low", "max"],
+    )
+    assert _display_model_label(cand) == "家里网关 · glm-5.3-flash - max"
+
+    unlabeled = ModelCandidate(model="glm-5.3-flash", provider="custom")
+    assert _display_model_label(unlabeled) == "自定义 · glm-5.3-flash"

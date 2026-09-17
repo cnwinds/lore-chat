@@ -60,6 +60,7 @@ class ImageGenProviderEntry:
     api_key: str | None = None
     base_url: str | None = None
     model: str | None = None
+    provider_label: str | None = None
 
     def resolved_base_url(self) -> str:
         return normalize_image_base_url(self.provider, self.base_url)
@@ -75,6 +76,7 @@ class ImageGenProviderEntry:
             "api_key": self.api_key,
             "base_url": self.base_url,
             "model": self.model,
+            "provider_label": self.provider_label or "",
         }
 
 
@@ -131,6 +133,8 @@ def parse_image_providers(raw: Any) -> list[ImageGenProviderEntry]:
         base_s = None if base_url is None else str(base_url).strip() or None
         model = item.get("model")
         model_s = None if model is None else str(model).strip() or None
+        label = item.get("provider_label")
+        label_s = None if label is None else str(label).strip() or None
         out.append(
             ImageGenProviderEntry(
                 id=cid,
@@ -138,6 +142,7 @@ def parse_image_providers(raw: Any) -> list[ImageGenProviderEntry]:
                 api_key=api_key,
                 base_url=base_s,
                 model=model_s,
+                provider_label=label_s,
             )
         )
     return out

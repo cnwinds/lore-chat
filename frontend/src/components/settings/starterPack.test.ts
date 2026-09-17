@@ -131,6 +131,7 @@ describe("starterPackPhase", () => {
               base_url: "https://api.deepseek.com",
               api_key: "",
               provider: "deepseek",
+              provider_label: "",
               image: false,
               video: false,
               thinking: false,

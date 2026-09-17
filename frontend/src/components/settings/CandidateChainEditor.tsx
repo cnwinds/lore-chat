@@ -7,13 +7,16 @@ import {
   useSettingsItemFold,
 } from "./SettingsFold";
 import { ProviderApiKeyLabel } from "./ProviderApiKeyLabel";
+import { ProviderLabelField } from "./ProviderLabelField";
 import { resolveModelCaps, capsFromCatalogItem } from "./modelCapabilities";
 import { pickEffortInOptions } from "./modelChainDrafts";
 import {
   LLM_PROVIDER_DEFAULT_BASE_URL,
   LLM_PROVIDER_OPTIONS,
   candidateFromProvider,
+  formatVendorModelTitle,
   llmProviderLabel,
+  resolvedLlmProviderLabel,
   type LlmProviderPresetId,
   type ModelCandidateDraft,
 } from "./providerPresets";
@@ -403,9 +406,10 @@ export function CandidateChainEditor({
           const cooling = Boolean(st && !st.available && !st.disabled);
           const disabled = Boolean(st?.disabled);
           const open = isOpen(c.id);
-          const rowTitle = c.model.trim()
-            ? `${llmProviderLabel(c.provider)} · ${c.model.trim()}`
-            : llmProviderLabel(c.provider);
+          const rowTitle = formatVendorModelTitle(
+            resolvedLlmProviderLabel(c.provider, c.provider_label),
+            c.model,
+          );
           return (
             <article
               key={c.id}
@@ -464,6 +468,14 @@ export function CandidateChainEditor({
 
               {open ? (
                 <div className="settings-model-candidate-body">
+                  <div className="settings-field-row">
+                    <ProviderLabelField
+                      value={c.provider_label}
+                      fallback={llmProviderLabel(c.provider)}
+                      disabled={saving}
+                      onChange={(provider_label) => updateAt(i, { provider_label })}
+                    />
+                  </div>
                   <div className="settings-field-row">
                     <label className="settings-field">
                       <span>Base URL</span>

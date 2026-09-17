@@ -5,9 +5,11 @@ import {
   candidateFromProvider,
   embedCandidateFromProvider,
   embedProviderLabel,
+  formatVendorModelTitle,
   inferEmbedProviderFromBaseUrl,
   inferProviderFromBaseUrl,
   llmProviderLabel,
+  resolvedLlmProviderLabel,
 } from "./providerPresets";
 
 describe("candidateFromProvider", () => {
@@ -16,6 +18,7 @@ describe("candidateFromProvider", () => {
     expect(c.provider).toBe("custom");
     expect(c.base_url).toBe("");
     expect(c.model).toBe("");
+    expect(c.provider_label).toBe("自定义");
   });
 
   it.each(
@@ -39,6 +42,7 @@ describe("embedCandidateFromProvider", () => {
     expect(c.provider).toBe("custom");
     expect(c.base_url).toBe("");
     expect(c.model).toBe("");
+    expect(c.provider_label).toBe("自定义");
   });
 
   it.each(
@@ -86,6 +90,24 @@ describe("llmProviderLabel", () => {
     expect(llmProviderLabel("minimax_plan")).toBe("MiniMax Plan");
     expect(llmProviderLabel("openrouter")).toBe("OpenRouter");
     expect(llmProviderLabel("custom")).toBe("自定义");
+  });
+});
+
+describe("resolvedLlmProviderLabel", () => {
+  it("prefers a custom vendor name", () => {
+    expect(resolvedLlmProviderLabel("custom", "家里网关")).toBe("家里网关");
+    expect(resolvedLlmProviderLabel("deepseek", "  ")).toBe("DeepSeek");
+    expect(resolvedLlmProviderLabel("", "")).toBe("自定义");
+  });
+});
+
+describe("formatVendorModelTitle", () => {
+  it("joins vendor and model", () => {
+    expect(formatVendorModelTitle("自定义", "glm-5.3-flash")).toBe(
+      "自定义 · glm-5.3-flash",
+    );
+    expect(formatVendorModelTitle("DeepSeek", "")).toBe("DeepSeek");
+    expect(formatVendorModelTitle("", "glm")).toBe("glm");
   });
 });
 

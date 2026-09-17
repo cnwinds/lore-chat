@@ -71,6 +71,21 @@ def test_parse_and_validate_image_providers():
     )
 
 
+def test_parse_image_provider_label():
+    entries = parse_image_providers(
+        [
+            {
+                "provider": "openai",
+                "api_key": "sk-a",
+                "model": "dall-e-3",
+                "provider_label": " 我家图 ",
+            }
+        ]
+    )
+    assert entries[0].provider_label == "我家图"
+    assert entries[0].model_dump()["provider_label"] == "我家图"
+
+
 def test_parse_custom_image_provider_requires_url():
     entries = parse_image_providers(
         [
