@@ -70,7 +70,10 @@ def _display_model_label(cand: ModelCandidate) -> str:
         effort=str(cand.effort or ""),
         effort_options=tuple(cand.effort_options or ()),
     )
-    vendor = resolve_provider_label(cand.provider, cand.provider_label)
+    vendor = resolve_provider_label(
+        getattr(cand, "provider", None),
+        getattr(cand, "provider_label", None),
+    )
     return format_vendor_model_label(vendor, base)
 
 
