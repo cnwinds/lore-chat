@@ -124,9 +124,9 @@ export function ComposerToolbar({
         >
           <GlobeIcon />
         </button>
-        <ModelPickerButton />
       </div>
       <div className="composer-toolbar-right">
+        <ModelPickerButton />
         {streaming && onStop ? (
           <button
             type="button"

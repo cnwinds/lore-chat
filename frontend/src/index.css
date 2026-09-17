@@ -9591,9 +9591,11 @@ button.source-link--inline.conversation-md-link {
   align-items: center;
   gap: 5px;
   max-width: 200px;
-  padding: 5px 10px;
+  height: 34px;
+  padding: 0 12px;
+  margin-right: 6px;
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: 10px;
   background: transparent;
   color: var(--text-secondary);
   font-size: var(--text-xs);
