@@ -135,7 +135,6 @@ function getMessageDuration(m: ChatMessage): number | undefined {
 function renderMessageMeta(
   m: ChatMessage,
   isLive: boolean,
-  liveElapsedMs: number,
   onRetryReply?: () => void,
   retryDisabled?: boolean,
 ) {
@@ -153,7 +152,10 @@ function renderMessageMeta(
     );
   }
 
-  const durationMs = isLive ? liveElapsedMs : getMessageDuration(m);
+  // 流式等待中：时长与模型由底部菊花行展示，落款不重复
+  if (isLive) return null;
+
+  const durationMs = getMessageDuration(m);
   const timeStr = !isLive && m.ts ? formatMessageTs(m.ts) : null;
   const showDuration = durationMs !== undefined && durationMs > 0;
   const tokenUsage = getMessageTokenUsage(m);
@@ -442,7 +444,6 @@ export function ChatMessageRow({
         {renderMessageMeta(
           m,
           isLiveStreaming,
-          liveElapsedMs,
           showRetry ? onRetryReply : undefined,
           retryDisabled,
         )}

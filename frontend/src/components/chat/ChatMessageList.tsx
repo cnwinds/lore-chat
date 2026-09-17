@@ -401,30 +401,42 @@ export function ChatMessageList({
           </div>
         </div>
       )}
-      {streaming && (
-        <div className="chat-streaming-wrap">
-          <div className="chat-streaming-bar">
-            <svg
-              className="chat-streaming-spinner"
-              viewBox="0 0 24 24"
-              width="13"
-              height="13"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-              aria-hidden
-            >
-              <path d="M12 2a10 10 0 0 1 10 10" />
-            </svg>
-            {liveElapsedMs > 0 && (
-              <span className="chat-streaming-duration">
-                用时 {formatDuration(liveElapsedMs)}
-              </span>
-            )}
+      {streaming && (() => {
+        // 流式等待行：菊花 + 模型名 + 用时（落款元信息此时不重复展示）
+        const liveIdx = streamingAssistantIdxRef.current;
+        const liveMsg = liveIdx != null ? msgs[liveIdx] : null;
+        const liveModel =
+          liveMsg && liveMsg.role === "assistant"
+            ? liveMsg.model_name
+            : null;
+        return (
+          <div className="chat-streaming-wrap">
+            <div className="chat-streaming-bar">
+              <svg
+                className="chat-streaming-spinner"
+                viewBox="0 0 24 24"
+                width="13"
+                height="13"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                aria-hidden
+              >
+                <path d="M12 2a10 10 0 0 1 10 10" />
+              </svg>
+              {liveModel && (
+                <span className="chat-streaming-model">{liveModel}</span>
+              )}
+              {liveElapsedMs > 0 && (
+                <span className="chat-streaming-duration">
+                  用时 {formatDuration(liveElapsedMs)}
+                </span>
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </>
   );
 }

@@ -6484,6 +6484,13 @@ button.memory-fact-statement--jump:focus-visible {
   white-space: nowrap;
 }
 
+.chat-streaming-model {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: min(40vw, 320px);
+}
+
 .chat-streaming-duration {
   font-variant-numeric: tabular-nums;
   color: var(--text-muted);
