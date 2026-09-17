@@ -8857,12 +8857,11 @@ button.source-link--inline.conversation-md-link {
 }
 
 .composer-send-queue-row {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  display: flex;
   align-items: center;
   gap: 8px;
   min-height: 34px;
-  padding: 2px 6px 2px 6px;
+  padding: 2px 6px;
   border-radius: 8px;
   transition: background 0.12s ease;
 }
@@ -8912,7 +8911,7 @@ button.source-link--inline.conversation-md-link {
 }
 
 .composer-send-queue-edit {
-  width: 100%;
+  flex: 1 1 auto;
   min-width: 0;
   border: none;
   border-radius: 6px;
@@ -8933,10 +8932,12 @@ button.source-link--inline.conversation-md-link {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   font-size: 13px;
-  color: var(--text-muted);
+  color: var(--text);
+  cursor: text;
 }
 
 .composer-send-queue-text > span {
@@ -8972,13 +8973,16 @@ button.source-link--inline.conversation-md-link {
 
 @media (max-width: 640px) {
   .composer-send-queue-row {
-    grid-template-columns: auto minmax(0, 1fr) auto;
-    grid-template-rows: auto auto;
+    flex-wrap: wrap;
+  }
+
+  .composer-send-queue-text,
+  .composer-send-queue-edit {
+    flex-basis: 100%;
   }
 
   .composer-queue-timing {
-    grid-column: 1 / -1;
-    justify-self: start;
+    margin-left: auto;
   }
 }
 
