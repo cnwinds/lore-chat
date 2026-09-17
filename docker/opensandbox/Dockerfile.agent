@@ -58,6 +58,7 @@ RUN set -eux; \
     rm -rf /var/lib/apt/lists/*
 
 # 独立 CPython 3.12：先国内 npmmirror，再官方 GitHub Releases（CI 上通常后者可用）。
+# uv 装的 standalone 已自带 pip；ensurepip 会触发 PEP 668，不要跑。
 RUN mkdir -p "${UV_INSTALL_DIR}" "${UV_PYTHON_INSTALL_DIR}" "${UV_CACHE_DIR}" \
     && curl -fsSL https://astral.sh/uv/install.sh | env UV_INSTALL_DIR="${UV_INSTALL_DIR}" sh \
     && ln -sfn "${UV_INSTALL_DIR}/uv" /usr/local/bin/uv \
@@ -70,12 +71,11 @@ RUN mkdir -p "${UV_INSTALL_DIR}" "${UV_PYTHON_INSTALL_DIR}" "${UV_CACHE_DIR}" \
     && ln -sfn "${PY}" /usr/local/bin/python3.12 \
     && ln -sfn /usr/local/bin/python3.12 /usr/local/bin/python3 \
     && ln -sfn /usr/local/bin/python3.12 /usr/local/bin/python \
-    && python3 -m ensurepip --upgrade \
     && printf '%s\n' '#!/bin/sh' 'exec /usr/local/bin/python3 -m pip "$@"' > /usr/local/bin/pip3 \
     && chmod +x /usr/local/bin/pip3 \
     && python3 -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 12) else 1)' \
     && python3 --version \
-    && pip3 --version
+    && python3 -m pip --version
 
 RUN curl -fsSL "https://npmmirror.com/mirrors/node/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" \
          -o /tmp/node.tar.xz \
