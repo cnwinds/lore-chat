@@ -42,6 +42,19 @@ describe("parseImageProviders", () => {
     expect(rows).toHaveLength(2);
     expect(rows.map((r) => r.id).sort()).toEqual(["openai", "openai-2"]);
   });
+
+  it("reads a saved vendor label", () => {
+    const rows = parseImageProviders([
+      {
+        id: "openai",
+        provider: "openai",
+        api_key: "a",
+        model: "dall-e-3",
+        provider_label: "我家 OpenAI",
+      },
+    ]);
+    expect(rows[0].provider_label).toBe("我家 OpenAI");
+  });
 });
 
 describe("hydrateSettingsDrafts", () => {
@@ -84,6 +97,7 @@ describe("toSettingsPatch", () => {
       effort: "high",
       effort_options: ["low", "high"],
       image_wire: "url" as const,
+      provider_label: "家里网关",
     };
     const patch = toSettingsPatch({
       publicBaseUrl: "https://host",
@@ -98,6 +112,7 @@ describe("toSettingsPatch", () => {
           api_key: "",
           base_url: "https://api.openai.com/v1",
           model: "dall-e-3",
+          provider_label: "",
         },
       ],
       minVectorScore: 0.5,
@@ -121,6 +136,7 @@ describe("toSettingsPatch", () => {
       model: "m1",
       api_key: "sk-real",
       image_wire: "url",
+      provider_label: "家里网关",
     });
     expect(patch.sandbox_mirror_region).toBe("global");
     expect(patch.sandbox_max_roles).toBe(6);
@@ -128,6 +144,10 @@ describe("toSettingsPatch", () => {
     expect(patch.sandbox_destroy_volume_on_role_delete).toBe(true);
     expect(patch.web_search_default_k).toBe(7);
     expect(patch.agent_parallel_tools).toBe(false);
+    expect((patch.image_providers as unknown[])[0]).toMatchObject({
+      id: "openai",
+      provider_label: "OpenAI Images",
+    });
   });
 });
 

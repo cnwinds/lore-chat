@@ -37,6 +37,7 @@ export function parseCandidates(raw: unknown): ModelCandidateDraft[] {
         api_key: "",
         ...(hadKey ? { api_key_masked: maskApiKeyPlaceholder(rawKey) } : {}),
         provider,
+        provider_label: str(x.provider_label),
         image: Boolean(x.image),
         video: Boolean(x.video),
         thinking: Boolean(x.thinking),

@@ -1,10 +1,11 @@
 import { getSettings } from "../api";
 import {
-  llmProviderLabel,
-  type LlmProviderPresetId,
+  formatVendorModelTitle,
+  resolvedEmbedProviderLabel,
+  resolvedLlmProviderLabel,
 } from "../components/settings/providerPresets";
 
-/** 模型 id → 供应商展示名（来自设置里的各模型链，去重后共享）。 */
+/** 模型 id → 厂家显示名（来自设置里的各模型链，去重后共享）。 */
 let providerByModel = new Map<string, string>();
 let refreshPromise: Promise<void> | null = null;
 
@@ -15,10 +16,16 @@ export function applyModelSettings(s: Record<string, unknown>): void {
     const list = Array.isArray(s[key]) ? s[key] : [];
     for (const c of list) {
       const model = typeof c?.model === "string" ? c.model.trim() : "";
+      if (!model) continue;
       const provider =
         typeof c?.provider === "string" ? c.provider.trim() : "";
-      if (!model || !provider) continue;
-      next.set(model, llmProviderLabel(provider as LlmProviderPresetId));
+      const custom =
+        typeof c?.provider_label === "string" ? c.provider_label : "";
+      const resolve =
+        key === "embed_models"
+          ? resolvedEmbedProviderLabel
+          : resolvedLlmProviderLabel;
+      next.set(model, resolve(provider, custom));
     }
   }
   providerByModel = next;
@@ -40,19 +47,20 @@ export function refreshModelProviderMap(): Promise<void> {
 }
 
 /**
- * 展示用模型名：能解析到供应商时输出「供应商 · 模型」，
- * 否则原样返回。兼容带推理档后缀的 model_name（如 "glm-5.3-flash - max"）。
+ * 展示用模型名。信息流已记下「厂家 · 模型」时原样返回；
+ * 旧记录只有裸模型名时，再按设置补厂家。兼容「- max」等推理档后缀。
  */
 export function displayModelName(modelName?: string | null): string {
   const m = (modelName || "").trim();
   if (!m) return "";
+  if (m.includes(" · ")) return m;
   const exact = providerByModel.get(m);
-  if (exact) return `${exact} · ${m}`;
+  if (exact) return formatVendorModelTitle(exact, m);
   const sep = m.indexOf(" - ");
   if (sep > 0) {
     const base = m.slice(0, sep).trim();
     const baseProvider = providerByModel.get(base);
-    if (baseProvider) return `${baseProvider} · ${m}`;
+    if (baseProvider) return formatVendorModelTitle(baseProvider, m);
   }
   return m;
 }

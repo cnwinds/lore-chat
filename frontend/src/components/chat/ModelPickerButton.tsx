@@ -4,28 +4,27 @@ import { applyModelSettings } from "../../utils/modelDisplay";
 import { FixedOverflowMenu } from "../FixedOverflowMenu";
 import { showToast } from "../../utils/toast";
 import {
-  llmProviderLabel,
-  type LlmProviderPresetId,
+  formatVendorModelTitle,
+  resolvedLlmProviderLabel,
 } from "../settings/providerPresets";
 
 type ChatModelEntry = {
   id?: string;
   model?: string;
   provider?: string;
+  provider_label?: string;
 };
 
 type Props = {
   disabled?: boolean;
 };
 
-/** 与设置页链表同格式：供应商 · 模型 */
+/** 与设置页链表同格式：厂家 · 模型 */
 function modelName(entry: ChatModelEntry): string {
   const m = (entry.model || "").trim();
   const base = m || (entry.id || "").trim() || "未命名模型";
-  const provider = (entry.provider || "").trim();
-  if (!provider) return base;
-  const label = llmProviderLabel(provider as LlmProviderPresetId);
-  return `${label} · ${base}`;
+  const vendor = resolvedLlmProviderLabel(entry.provider, entry.provider_label);
+  return formatVendorModelTitle(vendor, base);
 }
 
 /**

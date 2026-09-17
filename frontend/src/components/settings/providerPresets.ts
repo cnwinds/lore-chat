@@ -83,6 +83,14 @@ export function embedProviderLabel(id: EmbedProviderPresetId): string {
   return EMBED_PROVIDER_OPTIONS.find((o) => o.id === id)?.label ?? id;
 }
 
+/** 设置 / 选择器 / 信息流同一格式：「厂家 · 模型」。 */
+export function formatVendorModelTitle(vendor: string, model: string): string {
+  const v = vendor.trim();
+  const m = model.trim();
+  if (v && m) return `${v} · ${m}`;
+  return m || v;
+}
+
 function inferPresetFromBaseUrl<T extends string>(
   baseUrl: string,
   defaults: Record<Exclude<T, "custom">, string>,
@@ -139,6 +147,31 @@ export function parseEmbedProviderPresetId(
   return null;
 }
 
+/** 用户改过的厂家名优先；空则用预设。 */
+export function resolvedLlmProviderLabel(
+  provider?: string | null,
+  custom?: string | null,
+): string {
+  const t = (custom || "").trim();
+  if (t) return t;
+  const parsed = parseProviderPresetId(provider);
+  if (parsed) return llmProviderLabel(parsed);
+  const raw = (provider || "").trim();
+  return raw || llmProviderLabel("custom");
+}
+
+export function resolvedEmbedProviderLabel(
+  provider?: string | null,
+  custom?: string | null,
+): string {
+  const t = (custom || "").trim();
+  if (t) return t;
+  const parsed = parseEmbedProviderPresetId(provider);
+  if (parsed) return embedProviderLabel(parsed);
+  const raw = (provider || "").trim();
+  return raw || embedProviderLabel("custom");
+}
+
 export type ModelCandidateDraft = {
   id: string;
   model: string;
@@ -148,6 +181,8 @@ export type ModelCandidateDraft = {
   api_key_masked?: string;
   /** 厂家预设；非 custom 时 Base URL 只读 */
   provider: LlmProviderPresetId;
+  /** 用户可改的厂家显示名；空则按预设回退 */
+  provider_label: string;
   image: boolean;
   video: boolean;
   thinking: boolean;
@@ -169,6 +204,7 @@ export type EmbedCandidateDraft = {
   api_key: string;
   api_key_masked?: string;
   provider: EmbedProviderPresetId;
+  provider_label: string;
 };
 
 /** 后端已脱敏则原样；否则本地补首尾掩码，避免 placeholder 露出全文。 */
@@ -185,6 +221,7 @@ export function emptyCandidate(): ModelCandidateDraft {
     base_url: "",
     api_key: "",
     provider: "custom",
+    provider_label: "",
     image: false,
     video: false,
     thinking: false,
@@ -203,11 +240,16 @@ export function candidateFromProvider(
   provider: LlmProviderPresetId,
 ): ModelCandidateDraft {
   if (provider === "custom") {
-    return { ...emptyCandidate(), provider: "custom" };
+    return {
+      ...emptyCandidate(),
+      provider: "custom",
+      provider_label: llmProviderLabel("custom"),
+    };
   }
   return {
     ...emptyCandidate(),
     provider,
+    provider_label: llmProviderLabel(provider),
     base_url: LLM_PROVIDER_DEFAULT_BASE_URL[provider],
   };
 }
@@ -219,6 +261,7 @@ export function emptyEmbedCandidate(): EmbedCandidateDraft {
     base_url: "",
     api_key: "",
     provider: "custom",
+    provider_label: "",
   };
 }
 
@@ -226,11 +269,16 @@ export function embedCandidateFromProvider(
   provider: EmbedProviderPresetId,
 ): EmbedCandidateDraft {
   if (provider === "custom") {
-    return { ...emptyEmbedCandidate(), provider: "custom" };
+    return {
+      ...emptyEmbedCandidate(),
+      provider: "custom",
+      provider_label: embedProviderLabel("custom"),
+    };
   }
   return {
     ...emptyEmbedCandidate(),
     provider,
+    provider_label: embedProviderLabel(provider),
     base_url: EMBED_PROVIDER_DEFAULT_BASE_URL[provider],
   };
 }
@@ -258,6 +306,7 @@ export function parseEmbedCandidates(raw: unknown): EmbedCandidateDraft[] {
         api_key: "",
         ...(hadKey ? { api_key_masked: maskApiKeyPlaceholder(rawKey) } : {}),
         provider,
+        provider_label: str(x.provider_label),
       };
     });
 }
@@ -281,6 +330,7 @@ export function embedCandidatesFromLegacy(data: {
       api_key: "",
       ...(rawKey ? { api_key_masked: maskApiKeyPlaceholder(rawKey) } : {}),
       provider: inferEmbedProviderFromBaseUrl(base),
+      provider_label: "",
     },
   ];
 }
