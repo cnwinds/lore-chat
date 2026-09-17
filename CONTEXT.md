@@ -71,8 +71,8 @@
 
 ## 运行数据（Docker）
 
-- **一键拉取（小白）**：单文件启动器 [`deploy/lorechat.sh`](deploy/lorechat.sh) / [`deploy/lorechat.ps1`](deploy/lorechat.ps1)（由 [`scripts/gen-deploy-launchers.py`](scripts/gen-deploy-launchers.py) 生成；运行时在脚本旁写出 compose / 沙箱配置）。数据默认 `./data/knowledge/`、`./data/backups/`。镜像 tag：`LORECHAT_IMAGE_TAG`（`latest` 或 `0.1.0` 这类，不带 `v`；git tag 仍是 `v0.1.0`）；跟随 master 自动更新：`./lorechat.sh autoupdate on`（Watchtower）；发版流程见 [AGENTS.md](AGENTS.md#二版本发布)
-- **源码构建（开发者）**：`docker/docker-compose.yml` + 根 `./lorechat.sh start --chat|--work`（共用 [`scripts/lorechat-compose-lib.sh`](scripts/lorechat-compose-lib.sh)）
+- **一键拉取（小白）**：单文件启动器 [`deploy/lorechat.sh`](deploy/lorechat.sh) / [`deploy/lorechat.ps1`](deploy/lorechat.ps1)（由 [`scripts/gen-deploy-launchers.py`](scripts/gen-deploy-launchers.py) 生成；运行时在脚本旁写出 compose / 沙箱配置）。独立安装目录数据默认 `./data/`；**在本仓库 `deploy/` 下运行则挂载 `docker/data`**。镜像 tag：`LORECHAT_IMAGE_TAG`（`latest` 或 `0.1.0` 这类，不带 `v`；git tag 仍是 `v0.1.0`）；跟随 master 自动更新：`./lorechat.sh autoupdate on`（Watchtower）；发版流程见 [AGENTS.md](AGENTS.md#二版本发布)
+- **源码构建（开发者）**：`docker/docker-compose.yml` + 根 `./lorechat.sh start --chat|--work`（共用 [`scripts/lorechat-compose-lib.sh`](scripts/lorechat-compose-lib.sh)）；`--prebuilt` 改拉 GHCR、数据仍是 `docker/data`
 - **可选执行能力**：叠加 sandbox compose；`SANDBOX_ENABLED` / `GET /api/health` → `capabilities.sandbox`。见 [ADR 2026-08-06](docs/adr/2026-08-06-opensandbox-runtime.md)；多角色并行时每角色一把执行沙箱，见 [ADR 2026-09-10](docs/adr/2026-09-10-role-scoped-sandbox.md)
 - OpenSandbox 配置源：`docker/opensandbox/config.toml`（嵌入预构建启动器；开发路径挂载 `docker/opensandbox/`）
 - 镜像 pin：`scripts/opensandbox-pins.sh` 由 `gen-deploy-launchers.py` 从 config.toml + sandbox compose 生成；根 `lorechat-compose-lib.sh` source 该文件

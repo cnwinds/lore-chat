@@ -1,0 +1,14 @@
+# 预构建镜像叠加：覆盖本地 build，改拉 GHCR。
+# 数据目录仍是 docker/data（或 LORECHAT_DATA_DIR）。
+#
+#   ./lorechat.sh start --prebuilt --work
+
+services:
+  backend:
+    image: ${LORECHAT_BACKEND_IMAGE:-ghcr.io/cnwinds/lore-chat-backend:${LORECHAT_IMAGE_TAG:-latest}}
+    build: !reset
+    environment:
+      SANDBOX_IMAGE: ${SANDBOX_IMAGE:-ghcr.io/cnwinds/lore-chat-sandbox-agent:${LORECHAT_IMAGE_TAG:-latest}}
+  web:
+    image: ${LORECHAT_WEB_IMAGE:-ghcr.io/cnwinds/lore-chat-web:${LORECHAT_IMAGE_TAG:-latest}}
+    build: !reset

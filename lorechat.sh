@@ -21,8 +21,10 @@ LORECHAT_COMPOSE_ENV="${ROOT}/.env"
 LORECHAT_COMPOSE_BASE="${ROOT}/docker/docker-compose.yml"
 LORECHAT_COMPOSE_SANDBOX="${ROOT}/docker/docker-compose.sandbox.yml"
 LORECHAT_COMPOSE_DEV_FILE="${ROOT}/docker/docker-compose.dev.yml"
+LORECHAT_COMPOSE_PREBUILT_FILE="${ROOT}/docker/docker-compose.prebuilt.yml"
 LORECHAT_DEFAULT_SANDBOX_IMAGE="lorechat-sandbox-agent:local"
 COMPOSE_DEV_FILE="${RUNTIME}/compose-dev"
+COMPOSE_PREBUILT_FILE="${RUNTIME}/compose-prebuilt"
 PROXY_RELAY_PID_FILE="${RUNTIME}/proxy-relay.pid"
 PROXY_RELAY_LOG="${RUNTIME}/proxy-relay.log"
 
@@ -33,21 +35,23 @@ Usage: ./lorechat.sh <command> [options]
 Commands:
   setup                   Create backend venv, install deps, copy env examples
   dev                     Host development (uvicorn --reload + Vite HMR)
-  start [--chat|--work] [--dev]
-                          Docker Compose (local build); --dev mounts source + hot reload
+  start [--chat|--work] [--dev|--prebuilt]
+                          Docker Compose；默认本地 build
   stop                    Stop Docker Compose stack (or local dev helpers)
   restart                 stop then start (or re-run last mode)
   log|logs                Tail Docker Compose logs (or local .lorechat/web.log)
   help                    Show this help
 
 Modes (start):
-  --chat   Core stack only (default)
-  --work   Core + OpenSandbox (first run may pull large images)
-  --dev    Bind-mount backend/frontend; uvicorn --reload + Vite HMR (no rebuild on edit)
+  --chat       Core stack only (default)
+  --work       Core + OpenSandbox (first run may pull large images)
+  --dev        Bind-mount backend/frontend; uvicorn --reload + Vite HMR
+  --prebuilt   Pull GHCR images (no local build); same docker/data as --dev
 
 Environment:
   LORECHAT_BACKEND_PORT   default 8000
   LORECHAT_FRONTEND_PORT  default 5173
+  LORECHAT_DATA_DIR       知识库目录（默认 docker/data）
 EOF
 }
 
@@ -190,15 +194,18 @@ ensure_docker_compose() {
   fi
 }
 
-# 解析 start 参数：--chat|--work 与可选 --dev（顺序不限）
-# 结果写入 LORECHAT_STACK_MODE / LORECHAT_COMPOSE_DEV（勿用 $() 调用，否则 set -u 下侧效应丢失）
+# 解析 start 参数：--chat|--work 与可选 --dev / --prebuilt（顺序不限）
+# 结果写入 LORECHAT_STACK_MODE / LORECHAT_COMPOSE_DEV / LORECHAT_COMPOSE_PREBUILT
+# （勿用 $() 调用，否则 set -u 下侧效应丢失）
 lorechat_parse_start_args() {
   local stack_flag=""
   LORECHAT_COMPOSE_DEV=0
+  LORECHAT_COMPOSE_PREBUILT=0
   local arg
   for arg in "$@"; do
     case "${arg}" in
       --dev|dev) LORECHAT_COMPOSE_DEV=1 ;;
+      --prebuilt|prebuilt) LORECHAT_COMPOSE_PREBUILT=1 ;;
       --chat|chat|--work|work|"")
         if [[ -n "${stack_flag}" && -n "${arg}" ]]; then
           echo "[Lore Chat] 只能指定一个栈模式（--chat 或 --work）" >&2
@@ -207,12 +214,25 @@ lorechat_parse_start_args() {
         stack_flag="${arg}"
         ;;
       *)
-        echo "[Lore Chat] 未知参数: ${arg}（用 --chat / --work / --dev）" >&2
+        echo "[Lore Chat] 未知参数: ${arg}（用 --chat / --work / --dev / --prebuilt）" >&2
         return 1
         ;;
     esac
   done
+  if [[ "${LORECHAT_COMPOSE_DEV}" == "1" && "${LORECHAT_COMPOSE_PREBUILT}" == "1" ]]; then
+    echo "[Lore Chat] --dev 与 --prebuilt 不能同时使用" >&2
+    return 1
+  fi
   LORECHAT_STACK_MODE="$(lorechat_resolve_stack_mode "${stack_flag}")" || return 1
+}
+
+lorechat_apply_prebuilt_sandbox_image() {
+  local tag
+  [[ "${LORECHAT_COMPOSE_PREBUILT}" == "1" ]] || return 0
+  if [[ -z "$(_lorechat_env_get SANDBOX_IMAGE)" && -z "${SANDBOX_IMAGE:-}" ]]; then
+    tag="$(_lorechat_env_get LORECHAT_IMAGE_TAG)"
+    export SANDBOX_IMAGE="ghcr.io/cnwinds/lore-chat-sandbox-agent:${tag:-latest}"
+  fi
 }
 
 do_start() {
@@ -221,6 +241,9 @@ do_start() {
   lorechat_parse_start_args "$@" || exit 1
   local stack_mode="${LORECHAT_STACK_MODE}"
   export LORECHAT_COMPOSE_DEV
+  export LORECHAT_COMPOSE_PREBUILT
+  lorechat_apply_prebuilt_sandbox_image
+  lorechat_prepare_data_dir
   if [[ "${stack_mode}" == "work" ]]; then
     lorechat_warn_work_images
   fi
@@ -229,14 +252,27 @@ do_start() {
   lorechat_save_stack_mode "${stack_mode}"
   if [[ "${LORECHAT_COMPOSE_DEV}" == "1" ]]; then
     echo "1" >"${COMPOSE_DEV_FILE}"
+    rm -f "${COMPOSE_PREBUILT_FILE}"
     echo "[Lore Chat] Starting Docker Compose (mode: ${stack_mode}, --dev hot-reload) ..."
-  else
+  elif [[ "${LORECHAT_COMPOSE_PREBUILT}" == "1" ]]; then
+    echo "1" >"${COMPOSE_PREBUILT_FILE}"
     rm -f "${COMPOSE_DEV_FILE}"
+    echo "[Lore Chat] Starting Docker Compose (mode: ${stack_mode}, --prebuilt GHCR) ..."
+  else
+    rm -f "${COMPOSE_DEV_FILE}" "${COMPOSE_PREBUILT_FILE}"
     echo "[Lore Chat] Starting Docker Compose (mode: ${stack_mode}, local --build) ..."
   fi
   lorechat_teardown_stack
-  # 开发叠加用预构建/已有镜像挂载源码即可；仍 --build 以同步 Dockerfile 依赖
-  lorechat_compose "${stack_mode}" up -d --build
+  if [[ "${LORECHAT_COMPOSE_PREBUILT}" == "1" ]]; then
+    if ! lorechat_compose "${stack_mode}" pull; then
+      echo "[Lore Chat] 拉取镜像失败，将尝试使用本机已有镜像。" >&2
+      echo "[Lore Chat] 若需跟随 GHCR：确认包为 Public，或 docker login ghcr.io" >&2
+    fi
+    lorechat_compose "${stack_mode}" up -d
+  else
+    # 开发叠加用已有镜像挂载源码即可；仍 --build 以同步 Dockerfile 依赖
+    lorechat_compose "${stack_mode}" up -d --build
+  fi
   local port
   port="$(grep -E '^WEB_PORT=' "${ROOT}/.env" 2>/dev/null | cut -d= -f2- || true)"
   port="${port:-8080}"
@@ -283,6 +319,8 @@ do_restart() {
     start_args=("--${stack_mode}")
     if [[ -f "${COMPOSE_DEV_FILE}" ]] && [[ "$(tr -d '[:space:]' <"${COMPOSE_DEV_FILE}")" == "1" ]]; then
       start_args+=(--dev)
+    elif [[ -f "${COMPOSE_PREBUILT_FILE}" ]] && [[ "$(tr -d '[:space:]' <"${COMPOSE_PREBUILT_FILE}")" == "1" ]]; then
+      start_args+=(--prebuilt)
     fi
     do_start "${start_args[@]}"
   fi
@@ -293,6 +331,9 @@ do_log() {
     ensure_docker_compose
     if [[ -f "${COMPOSE_DEV_FILE}" ]] && [[ "$(tr -d '[:space:]' <"${COMPOSE_DEV_FILE}")" == "1" ]]; then
       export LORECHAT_COMPOSE_DEV=1
+    fi
+    if [[ -f "${COMPOSE_PREBUILT_FILE}" ]] && [[ "$(tr -d '[:space:]' <"${COMPOSE_PREBUILT_FILE}")" == "1" ]]; then
+      export LORECHAT_COMPOSE_PREBUILT=1
     fi
     lorechat_compose "$(lorechat_read_stack_mode)" logs -f --tail=50
     return

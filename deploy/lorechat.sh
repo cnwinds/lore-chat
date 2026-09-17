@@ -35,6 +35,10 @@ Modes:
   --chat   仅对话与知识库
   --work   带 OpenSandbox（首次镜像较大时会提示）
 
+数据目录：
+  默认脚本旁 ./data。若本脚本位于 git 仓库的 deploy/ 下，则改用 ../docker/data。
+  也可用环境变量或 .env 中的 LORECHAT_DATA_DIR 覆盖。
+
 自动更新：
   保持 .env 中 LORECHAT_IMAGE_TAG=latest（跟随 master 推送的 GHCR latest）。
   启用后只监视 lorechat-backend / lorechat-web；沙箱 agent 镜像在手动 update 时一并刷新。
@@ -54,8 +58,42 @@ write_file() {
   cat >"${path}"
 }
 
+in_repo_deploy() {
+  [[ "$(basename "${ROOT}")" == "deploy" && -f "${ROOT}/../lorechat.sh" && -f "${ROOT}/../docker/docker-compose.yml" ]]
+}
+
+resolve_data_dir() {
+  local explicit=""
+  if [[ -n "${LORECHAT_DATA_DIR:-}" ]]; then
+    explicit="${LORECHAT_DATA_DIR}"
+  else
+    explicit="$(env_get LORECHAT_DATA_DIR)"
+  fi
+  local target
+  if [[ -n "${explicit}" ]]; then
+    if [[ "${explicit}" = /* ]]; then
+      target="${explicit}"
+    else
+      target="${ROOT}/${explicit}"
+    fi
+  elif in_repo_deploy; then
+    target="${ROOT}/../docker/data"
+  else
+    target="${ROOT}/data"
+  fi
+  mkdir -p "${target}"
+  (cd "${target}" && pwd)
+}
+
+prepare_data_dir() {
+  local dir
+  dir="$(resolve_data_dir)"
+  mkdir -p "${dir}/knowledge" "${dir}/backups"
+  export LORECHAT_DATA_DIR="${dir}"
+}
+
 materialize_bundle() {
-  mkdir -p "${ROOT}/opensandbox" "${ROOT}/data/knowledge" "${ROOT}/data/backups" "${RUNTIME}"
+  mkdir -p "${ROOT}/opensandbox" "${RUNTIME}"
   write_file "${ROOT}/docker-compose.yml" <<'LORECHAT_EOF'
 name: lore-chat
 
@@ -76,8 +114,8 @@ services:
       NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1}
       no_proxy: ${no_proxy:-${NO_PROXY:-localhost,127.0.0.1}}
     volumes:
-      - ./data/knowledge:/data/knowledge
-      - ./data/backups:/data/backups
+      - ${LORECHAT_DATA_DIR:-./data}/knowledge:/data/knowledge
+      - ${LORECHAT_DATA_DIR:-./data}/backups:/data/backups
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
@@ -215,12 +253,17 @@ LORECHAT_IMAGE_TAG=latest
 # LORECHAT_BACKEND_IMAGE=ghcr.io/cnwinds/lore-chat-backend:0.1.0
 # LORECHAT_WEB_IMAGE=ghcr.io/cnwinds/lore-chat-web:0.1.0
 # SANDBOX_IMAGE=ghcr.io/cnwinds/lore-chat-sandbox-agent:0.1.0
+
+# 可选：覆盖知识库目录（绝对路径或相对脚本目录）
+# 仓库内运行本启动器时默认已是 ../docker/data，一般不必改
+# LORECHAT_DATA_DIR=
 LORECHAT_EOF
 
   if [[ ! -f "${ROOT}/.env" ]]; then
     cp "${ROOT}/.env.example" "${ROOT}/.env"
     echo "[Lore Chat] 已创建 .env（API Key 可在网页设置中填写）"
   fi
+  prepare_data_dir
 }
 
 read_saved_mode() {
@@ -446,6 +489,10 @@ do_start() {
     warn_work_images
   fi
   echo "[Lore Chat] 正在启动（模式: ${mode}）..."
+  echo "[Lore Chat] 数据目录 → ${LORECHAT_DATA_DIR}"
+  if in_repo_deploy; then
+    echo "[Lore Chat] 仓库内预构建启动器挂载 docker/data；热重载请用根目录 ./lorechat.sh start --dev"
+  fi
   teardown_all
   if ! run_compose "${mode}" pull; then
     echo "[Lore Chat] 拉取镜像失败，将尝试使用本机已有镜像。" >&2

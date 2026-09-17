@@ -158,6 +158,10 @@ Modes:
   --chat   仅对话与知识库
   --work   带 OpenSandbox（首次镜像较大时会提示）
 
+数据目录：
+  默认脚本旁 ./data。若本脚本位于 git 仓库的 deploy/ 下，则改用 ../docker/data。
+  也可用环境变量或 .env 中的 LORECHAT_DATA_DIR 覆盖。
+
 自动更新：
   保持 .env 中 LORECHAT_IMAGE_TAG=latest（跟随 master 推送的 GHCR latest）。
   启用后只监视 lorechat-backend / lorechat-web；沙箱 agent 镜像在手动 update 时一并刷新。
@@ -177,13 +181,48 @@ write_file() {{
   cat >"${{path}}"
 }}
 
+in_repo_deploy() {{
+  [[ "$(basename "${{ROOT}}")" == "deploy" && -f "${{ROOT}}/../lorechat.sh" && -f "${{ROOT}}/../docker/docker-compose.yml" ]]
+}}
+
+resolve_data_dir() {{
+  local explicit=""
+  if [[ -n "${{LORECHAT_DATA_DIR:-}}" ]]; then
+    explicit="${{LORECHAT_DATA_DIR}}"
+  else
+    explicit="$(env_get LORECHAT_DATA_DIR)"
+  fi
+  local target
+  if [[ -n "${{explicit}}" ]]; then
+    if [[ "${{explicit}}" = /* ]]; then
+      target="${{explicit}}"
+    else
+      target="${{ROOT}}/${{explicit}}"
+    fi
+  elif in_repo_deploy; then
+    target="${{ROOT}}/../docker/data"
+  else
+    target="${{ROOT}}/data"
+  fi
+  mkdir -p "${{target}}"
+  (cd "${{target}}" && pwd)
+}}
+
+prepare_data_dir() {{
+  local dir
+  dir="$(resolve_data_dir)"
+  mkdir -p "${{dir}}/knowledge" "${{dir}}/backups"
+  export LORECHAT_DATA_DIR="${{dir}}"
+}}
+
 materialize_bundle() {{
-  mkdir -p "${{ROOT}}/opensandbox" "${{ROOT}}/data/knowledge" "${{ROOT}}/data/backups" "${{RUNTIME}}"
+  mkdir -p "${{ROOT}}/opensandbox" "${{RUNTIME}}"
 {assets}
   if [[ ! -f "${{ROOT}}/.env" ]]; then
     cp "${{ROOT}}/.env.example" "${{ROOT}}/.env"
     echo "[Lore Chat] 已创建 .env（API Key 可在网页设置中填写）"
   fi
+  prepare_data_dir
 }}
 
 read_saved_mode() {{
@@ -409,6 +448,10 @@ do_start() {{
     warn_work_images
   fi
   echo "[Lore Chat] 正在启动（模式: ${{mode}}）..."
+  echo "[Lore Chat] 数据目录 → ${{LORECHAT_DATA_DIR}}"
+  if in_repo_deploy; then
+    echo "[Lore Chat] 仓库内预构建启动器挂载 docker/data；热重载请用根目录 ./lorechat.sh start --dev"
+  fi
   teardown_all
   if ! run_compose "${{mode}}" pull; then
     echo "[Lore Chat] 拉取镜像失败，将尝试使用本机已有镜像。" >&2
@@ -520,6 +563,10 @@ Commands:
   help                    Help
 
 Keep LORECHAT_IMAGE_TAG=latest in .env to follow master pushes.
+
+Data directory:
+  Default ./data next to this script. If this script lives in a git clone's deploy\\, uses ..\\docker\\data.
+  Override with LORECHAT_DATA_DIR (env or .env).
 "@
 }}
 
@@ -531,10 +578,42 @@ function Write-BundleFile([string]$RelPath, [string]$Content) {{
   [System.IO.File]::WriteAllText($path, $Content.TrimEnd() + "`n", $utf8)
 }}
 
+function Test-InRepoDeploy {{
+  $repoRoot = Split-Path -Parent $Root
+  $leaf = Split-Path -Leaf $Root
+  $launcher = Join-Path $repoRoot "lorechat.sh"
+  $compose = Join-Path $repoRoot "docker\\docker-compose.yml"
+  return ($leaf -eq "deploy") -and (Test-Path $launcher) -and (Test-Path $compose)
+}}
+
+function Get-AbsoluteDir([string]$Path) {{
+  if (-not [System.IO.Path]::IsPathRooted($Path)) {{
+    $Path = Join-Path $Root $Path
+  }}
+  New-Item -ItemType Directory -Force -Path $Path | Out-Null
+  return (Resolve-Path $Path).Path
+}}
+
+function Resolve-DataDir {{
+  $explicit = $env:LORECHAT_DATA_DIR
+  if (-not $explicit) {{ $explicit = Get-EnvValue "LORECHAT_DATA_DIR" }}
+  if ($explicit) {{ return (Get-AbsoluteDir $explicit) }}
+  if (Test-InRepoDeploy) {{
+    $repoRoot = Split-Path -Parent $Root
+    return (Get-AbsoluteDir (Join-Path $repoRoot "docker\\data"))
+  }}
+  return (Get-AbsoluteDir (Join-Path $Root "data"))
+}}
+
+function Prepare-DataDir {{
+  $dir = Resolve-DataDir
+  New-Item -ItemType Directory -Force -Path (Join-Path $dir "knowledge") | Out-Null
+  New-Item -ItemType Directory -Force -Path (Join-Path $dir "backups") | Out-Null
+  $env:LORECHAT_DATA_DIR = $dir
+}}
+
 function Materialize-Bundle {{
   New-Item -ItemType Directory -Force -Path $Runtime | Out-Null
-  New-Item -ItemType Directory -Force -Path (Join-Path $Root "data\\knowledge") | Out-Null
-  New-Item -ItemType Directory -Force -Path (Join-Path $Root "data\\backups") | Out-Null
 {assets}
   $envPath = Join-Path $Root ".env"
   $example = Join-Path $Root ".env.example"
@@ -542,6 +621,7 @@ function Materialize-Bundle {{
     Copy-Item $example $envPath
     Write-Host "[Lore Chat] Created .env (set API Key in the web UI if needed)"
   }}
+  Prepare-DataDir
 }}
 
 function Read-SavedMode {{
@@ -744,6 +824,10 @@ function Start-Lore([string]$Flag) {{
   $mode = Resolve-Mode $Flag
   if ($mode -eq "work") {{ Warn-WorkImages }}
   Write-Host "[Lore Chat] Starting (mode: $mode)..."
+  Write-Host "[Lore Chat] Data dir -> $($env:LORECHAT_DATA_DIR)"
+  if (Test-InRepoDeploy) {{
+    Write-Host "[Lore Chat] In-repo prebuilt launcher mounts docker/data; for hot reload use repo-root ./lorechat.sh start --dev"
+  }}
   Teardown-All
   try {{
     Invoke-Compose $mode @("pull")

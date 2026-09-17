@@ -111,13 +111,48 @@ lorechat_warn_work_images() {
   echo "[Lore Chat] 首次下载可能较慢，请耐心等待。"
 }
 
-# $1 = chat|work；其余为 compose 参数。若 LORECHAT_COMPOSE_DEV=1 则叠加 docker-compose.dev.yml
+lorechat_resolve_data_dir() {
+  local explicit="${LORECHAT_DATA_DIR:-}"
+  local line root_base target
+  if [[ -z "${explicit}" && -n "${LORECHAT_COMPOSE_ENV:-}" && -f "${LORECHAT_COMPOSE_ENV}" ]]; then
+    line="$(grep -E '^LORECHAT_DATA_DIR=' "${LORECHAT_COMPOSE_ENV}" 2>/dev/null | tail -n1 || true)"
+    explicit="${line#*=}"
+    explicit="${explicit//$'\r'/}"
+  fi
+  root_base="$(cd "${LORECHAT_COMPOSE_DIR}/.." && pwd)"
+  if [[ -n "${explicit}" ]]; then
+    if [[ "${explicit}" = /* ]]; then
+      target="${explicit}"
+    else
+      target="${root_base}/${explicit}"
+    fi
+  else
+    target="${LORECHAT_COMPOSE_DIR}/data"
+  fi
+  mkdir -p "${target}"
+  (cd "${target}" && pwd)
+}
+
+lorechat_prepare_data_dir() {
+  local dir
+  dir="$(lorechat_resolve_data_dir)"
+  mkdir -p "${dir}/knowledge" "${dir}/backups"
+  export LORECHAT_DATA_DIR="${dir}"
+  echo "[Lore Chat] 数据目录 → ${dir}"
+}
+
+# $1 = chat|work；其余为 compose 参数。
+# LORECHAT_COMPOSE_DEV=1 叠加 docker-compose.dev.yml
+# LORECHAT_COMPOSE_PREBUILT=1 叠加 docker-compose.prebuilt.yml（须在 sandbox 之后，以覆盖本地 SANDBOX_IMAGE 默认）
 lorechat_compose() {
   local mode="$1"
   shift
   local -a files=(-f "${LORECHAT_COMPOSE_BASE}")
   if [[ "${mode}" == "work" ]]; then
     files+=(-f "${LORECHAT_COMPOSE_SANDBOX}")
+  fi
+  if [[ "${LORECHAT_COMPOSE_PREBUILT:-}" == "1" ]]; then
+    files+=(-f "${LORECHAT_COMPOSE_PREBUILT_FILE:-${LORECHAT_COMPOSE_DIR}/docker-compose.prebuilt.yml}")
   fi
   if [[ "${LORECHAT_COMPOSE_DEV:-}" == "1" ]]; then
     files+=(-f "${LORECHAT_COMPOSE_DEV_FILE:-${LORECHAT_COMPOSE_DIR}/docker-compose.dev.yml}")

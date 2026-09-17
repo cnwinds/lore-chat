@@ -17,8 +17,8 @@ services:
       NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1}
       no_proxy: ${no_proxy:-${NO_PROXY:-localhost,127.0.0.1}}
     volumes:
-      - ./data/knowledge:/data/knowledge
-      - ./data/backups:/data/backups
+      - ${LORECHAT_DATA_DIR:-./data}/knowledge:/data/knowledge
+      - ${LORECHAT_DATA_DIR:-./data}/backups:/data/backups
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped

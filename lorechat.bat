@@ -290,8 +290,8 @@ echo Lore Chat
 echo.
 echo   lorechat.bat setup              Detect / install Python, Node, dependencies
 echo   lorechat.bat start              Local production: build frontend, serve on :%LORECHAT_WEB_PORT%
-echo   lorechat.bat start --chat       Docker pull/start ^(chat mode via deploy\lorechat.ps1^)
-echo   lorechat.bat start --work       Docker pull/start ^(Work / sandbox via deploy\lorechat.ps1^)
+echo   lorechat.bat start --chat       Docker pull GHCR ^(chat; in-repo data is docker\data^)
+echo   lorechat.bat start --work       Docker pull GHCR ^(Work / sandbox; in-repo data is docker\data^)
 echo   lorechat.bat dev                Development: API :%LORECHAT_BACKEND_PORT% + Vite :%LORECHAT_FRONTEND_PORT%
 echo   lorechat.bat stop               Stop local and Docker stacks
 echo   lorechat.bat restart            Restart last mode

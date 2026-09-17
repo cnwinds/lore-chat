@@ -42,6 +42,7 @@ Copy-Item frontend\.env.example frontend\.env
 
 - **开发热重载**（推荐改代码时用）：`cp .env.docker.example .env && ./lorechat.sh start --chat --dev`（或 `--work --dev`）。详见 [README「Docker 开发模式」](README.md#docker-开发模式源码映射--热重载)。
 - **生产式本地构建**：`./lorechat.sh start --chat` / `--work`（沙箱见 [ADR](docs/adr/2026-08-06-opensandbox-runtime.md)）。
+- **拉 GHCR、不 build**：`./lorechat.sh start --work --prebuilt`。仓库内的 `deploy/lorechat.sh` 同样挂 `docker/data`，不要再指望脚本旁另有一份 `deploy/data`。
 
 ## 测试
 

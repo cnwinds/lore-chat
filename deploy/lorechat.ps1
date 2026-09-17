@@ -30,6 +30,10 @@ Commands:
   help                    Help
 
 Keep LORECHAT_IMAGE_TAG=latest in .env to follow master pushes.
+
+Data directory:
+  Default ./data next to this script. If this script lives in a git clone's deploy\, uses ..\docker\data.
+  Override with LORECHAT_DATA_DIR (env or .env).
 "@
 }
 
@@ -41,10 +45,42 @@ function Write-BundleFile([string]$RelPath, [string]$Content) {
   [System.IO.File]::WriteAllText($path, $Content.TrimEnd() + "`n", $utf8)
 }
 
+function Test-InRepoDeploy {
+  $repoRoot = Split-Path -Parent $Root
+  $leaf = Split-Path -Leaf $Root
+  $launcher = Join-Path $repoRoot "lorechat.sh"
+  $compose = Join-Path $repoRoot "docker\docker-compose.yml"
+  return ($leaf -eq "deploy") -and (Test-Path $launcher) -and (Test-Path $compose)
+}
+
+function Get-AbsoluteDir([string]$Path) {
+  if (-not [System.IO.Path]::IsPathRooted($Path)) {
+    $Path = Join-Path $Root $Path
+  }
+  New-Item -ItemType Directory -Force -Path $Path | Out-Null
+  return (Resolve-Path $Path).Path
+}
+
+function Resolve-DataDir {
+  $explicit = $env:LORECHAT_DATA_DIR
+  if (-not $explicit) { $explicit = Get-EnvValue "LORECHAT_DATA_DIR" }
+  if ($explicit) { return (Get-AbsoluteDir $explicit) }
+  if (Test-InRepoDeploy) {
+    $repoRoot = Split-Path -Parent $Root
+    return (Get-AbsoluteDir (Join-Path $repoRoot "docker\data"))
+  }
+  return (Get-AbsoluteDir (Join-Path $Root "data"))
+}
+
+function Prepare-DataDir {
+  $dir = Resolve-DataDir
+  New-Item -ItemType Directory -Force -Path (Join-Path $dir "knowledge") | Out-Null
+  New-Item -ItemType Directory -Force -Path (Join-Path $dir "backups") | Out-Null
+  $env:LORECHAT_DATA_DIR = $dir
+}
+
 function Materialize-Bundle {
   New-Item -ItemType Directory -Force -Path $Runtime | Out-Null
-  New-Item -ItemType Directory -Force -Path (Join-Path $Root "data\knowledge") | Out-Null
-  New-Item -ItemType Directory -Force -Path (Join-Path $Root "data\backups") | Out-Null
   Write-BundleFile 'docker-compose.yml' @'
 name: lore-chat
 
@@ -65,8 +101,8 @@ services:
       NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1}
       no_proxy: ${no_proxy:-${NO_PROXY:-localhost,127.0.0.1}}
     volumes:
-      - ./data/knowledge:/data/knowledge
-      - ./data/backups:/data/backups
+      - ${LORECHAT_DATA_DIR:-./data}/knowledge:/data/knowledge
+      - ${LORECHAT_DATA_DIR:-./data}/backups:/data/backups
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
@@ -204,6 +240,10 @@ LORECHAT_IMAGE_TAG=latest
 # LORECHAT_BACKEND_IMAGE=ghcr.io/cnwinds/lore-chat-backend:0.1.0
 # LORECHAT_WEB_IMAGE=ghcr.io/cnwinds/lore-chat-web:0.1.0
 # SANDBOX_IMAGE=ghcr.io/cnwinds/lore-chat-sandbox-agent:0.1.0
+
+# 可选：覆盖知识库目录（绝对路径或相对脚本目录）
+# 仓库内运行本启动器时默认已是 ../docker/data，一般不必改
+# LORECHAT_DATA_DIR=
 '@
 
   $envPath = Join-Path $Root ".env"
@@ -212,6 +252,7 @@ LORECHAT_IMAGE_TAG=latest
     Copy-Item $example $envPath
     Write-Host "[Lore Chat] Created .env (set API Key in the web UI if needed)"
   }
+  Prepare-DataDir
 }
 
 function Read-SavedMode {
@@ -414,6 +455,10 @@ function Start-Lore([string]$Flag) {
   $mode = Resolve-Mode $Flag
   if ($mode -eq "work") { Warn-WorkImages }
   Write-Host "[Lore Chat] Starting (mode: $mode)..."
+  Write-Host "[Lore Chat] Data dir -> $($env:LORECHAT_DATA_DIR)"
+  if (Test-InRepoDeploy) {
+    Write-Host "[Lore Chat] In-repo prebuilt launcher mounts docker/data; for hot reload use repo-root ./lorechat.sh start --dev"
+  }
   Teardown-All
   try {
     Invoke-Compose $mode @("pull")

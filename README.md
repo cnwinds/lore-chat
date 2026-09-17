@@ -108,6 +108,17 @@ LORECHAT_IMAGE_TAG=0.1.0
 
 贡献流程、本机 venv / Vite 等见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
+仓库里有两个都叫 `lorechat.sh` 的入口，**参数不同**；clone 里知识库都是 `docker/data`，只有 curl 安装目录才用脚本旁的 `./data`：
+
+| 你在哪 | 用哪个 | 做什么 | 知识库 |
+|--------|--------|--------|--------|
+| git clone | 根目录 `./lorechat.sh start --work --dev` | 源码热重载 | `docker/data` |
+| git clone | 根目录 `./lorechat.sh start --work` | 本地 build 镜像 | `docker/data` |
+| git clone | 根目录 `./lorechat.sh start --work --prebuilt` **或** `deploy/lorechat.sh start --work` | 拉 GHCR，不 build | `docker/data` |
+| curl 安装目录 | 目录里仅有的 `./lorechat.sh` | 拉 GHCR | 脚本旁 `./data` |
+
+覆盖数据目录：环境变量或 `.env` 里的 `LORECHAT_DATA_DIR`。独立安装不要去跑仓库里的 `deploy/` 目录。
+
 ### Docker 开发模式（源码映射 + 热重载）
 
 适合在容器里改代码、不希望每次改完都重建/重启镜像。叠加 `docker/docker-compose.dev.yml`：后端 bind-mount + `uvicorn --reload`，前端 Vite HMR。
@@ -139,17 +150,17 @@ cp .env.docker.example .env
 ```bash
 ./lorechat.sh log      # 跟日志
 ./lorechat.sh stop     # 停止
-./lorechat.sh restart  # 按上次的 chat/work 与是否 --dev 重启
+./lorechat.sh restart  # 按上次的 chat/work 与是否 --dev / --prebuilt 重启
 ```
 
 说明：
 
 - 改 `backend/app` 或 `frontend` 源码一般**不必**重启容器。
 - 改 `requirements.txt` / `package.json` 后需重建或进容器重装依赖（例如再次 `./lorechat.sh start … --dev`，或 web 容器内 `npm install`）。
-- 运行时知识库默认在 `docker/data/knowledge`（可与仓库根 `data/knowledge` 做符号链接对齐已有数据）。
+- 运行时知识库默认在 `docker/data/knowledge`。仓库内无论根目录脚本还是 `deploy/lorechat.sh`，都挂这一份；curl 安装才用启动器旁的 `data/`。
 - 沙箱能力说明见 [ADR：OpenSandbox](docs/adr/2026-08-06-opensandbox-runtime.md)。
 
-生产式本地构建（无热重载）：`./lorechat.sh start --chat` 或 `--work`。
+生产式本地构建（无热重载）：`./lorechat.sh start --chat` 或 `--work`。拉 GHCR、不本地 build：`./lorechat.sh start --work --prebuilt`。
 
 ## 更多
 
