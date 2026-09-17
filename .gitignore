@@ -3,6 +3,7 @@
 **/.venv/
 backend/.venv/
 
+# Superpowers plugin local sessions (unused; do not commit)
 .superpowers/
 
 # Local runtime data (private knowledge base — do not commit)

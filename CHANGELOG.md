@@ -6,6 +6,7 @@
 
 ### Changed
 
+- 文档整理：删除无用的 Superpowers 本地头脑风暴产物；产品规格收入 `docs/product/`；去掉与 ADR 重复的沙箱摘要；文档地图按已落地状态更新
 - 设置里模型链（对话 / 辅助 / 嵌入 / 生图）和搜索提供商改用左侧拖动手柄排序，去掉右侧上下按钮
 - 设置 → 分享链接默认只显示简洁卡片（类型、标题、访问次数与有效期），点开后再看路径、统计和操作
 - Work 模式沙箱镜像预装 CPython 3.12（python-build-standalone），不再使用 Debian 自带的 3.11；依赖 3.12 语法的技能不必在运行时再下载解释器
@@ -33,9 +34,9 @@
 - 征询卡片里需要用户自述的选项（例如「其他，我来描述」）可直接在选项内填写，不必再和助手多说一轮
 - PC 上助手落款的模型名后用入/出箭头标用量，满千、满百万分别写成 `67.41K` / `1.23M`；悬停或聚焦再看精确个数。手机不显示
 - 主题按钮改为弹出菜单：可在紫藤、青瓷、米色、墨砚、夜紫五套配色间选择，菜单由亮到暗排列；旧的浅色 / 暗色会分别迁到青瓷 / 墨砚
-- 聊天通道 P2：Slack Socket Mode、企业微信回调、钉钉 Stream；群/频道仅 @ 或引用才开回合，回复进 thread；群默认关沙箱直到发送者白名单；富媒体走现有附件；`ask_user` 在 IM 降级为纯文本；企微缺公网根可保存、启用则报错。微信公众号仅灰显（[product-channel-plugins.md](docs/product-channel-plugins.md)）
-- 聊天通道 P1：飞书长连接（不依赖公网根）；私聊文本入站排队、幂等、异步回复；按通道实例查看日志与用量（[product-channel-plugins.md](docs/product-channel-plugins.md)）
-- 聊天通道 P0：设置页改为「聊天通道」同级列表；旧 API Key 投影为脚本通道；`POST /api/v1/chat` 行为不变（[product-channel-plugins.md](docs/product-channel-plugins.md)）
+- 聊天通道 P2：Slack Socket Mode、企业微信回调、钉钉 Stream；群/频道仅 @ 或引用才开回合，回复进 thread；群默认关沙箱直到发送者白名单；富媒体走现有附件；`ask_user` 在 IM 降级为纯文本；企微缺公网根可保存、启用则报错。微信公众号仅灰显（[product-channel-plugins.md](docs/product/channel-plugins.md)）
+- 聊天通道 P1：飞书长连接（不依赖公网根）；私聊文本入站排队、幂等、异步回复；按通道实例查看日志与用量（[product-channel-plugins.md](docs/product/channel-plugins.md)）
+- 聊天通道 P0：设置页改为「聊天通道」同级列表；旧 API Key 投影为脚本通道；`POST /api/v1/chat` 行为不变（[product-channel-plugins.md](docs/product/channel-plugins.md)）
 - 群聊协作：被点名的角色当本轮协调者，拆任务后工人在本群用人设和沙箱干活；回执不必再 @ 也会叫醒协调者；超时只让协调者开口询问（[ADR 2026-09-14](docs/adr/2026-09-14-group-orchestration.md)）
 
 ### Fixed

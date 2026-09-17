@@ -5,7 +5,7 @@
 ## 开始之前
 
 1. 浏览模块地图与 seam 约定：[CONTEXT.md](CONTEXT.md)
-2. 相关架构决策见 [`docs/adr/`](docs/adr/)
+2. 相关架构决策见 [`docs/adr/`](docs/adr/)；产品展开见 [`docs/product/`](docs/product/)
 3. 提示词相关改动须遵守根目录 [AGENTS.md](AGENTS.md)（根因治理，禁止孤例补丁）
 4. **发布版本**须遵守 [AGENTS.md「版本发布」](AGENTS.md#二版本发布)：改 `VERSION` + `CHANGELOG.md`，在 `master` 打 annotated tag `vX.Y.Z` 并推送；CI 发布 GHCR `latest` / `X.Y.Z` 镜像并创建 GitHub Release
 

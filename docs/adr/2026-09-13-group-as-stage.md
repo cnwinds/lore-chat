@@ -2,7 +2,7 @@
 
 ## 状态
 
-已采纳（2026-09-13）。修订 [ADR 2026-09-12](2026-09-12-role-rooms.md) 第 5、6 条里「群经参与者并入角色时间线」的投影方式。引擎仍是 Actor / Room / Delivery / Wake。产品展开见 [product-role-rooms.md](../product-role-rooms.md)。
+已采纳（2026-09-13）。修订 [ADR 2026-09-12](2026-09-12-role-rooms.md) 第 5、6 条里「群经参与者并入角色时间线」的投影方式。引擎仍是 Actor / Room / Delivery / Wake。产品展开见 [product-role-rooms.md](../product/role-rooms.md)。
 
 ## 背景
 

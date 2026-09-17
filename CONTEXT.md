@@ -13,9 +13,9 @@
 | 生图 | `backend/app/engine/imagegen/`（`providers` / `router` / `backends` / `service`）+ Agent `generate_image` | 多厂商薄 adapter、有序链 + 隔离冷却；权威身份为 KB 相对路径；见 [ADR 2026-08-12](docs/adr/2026-08-12-image-generation-providers.md) |
 | Agent | `backend/app/engine/agent/` | `AgentOrchestrator`（adapter）、`AgentToolLoop`（LLM+工具循环；终轮明文「【征询】」提升为 `ask_user`）、`tool_catalog`、`tool_impl/*`（执行）、`tools.py`（`ToolRegistry.execute` / `rebind` / `interrupt_runtime`） |
 | 会话 | `conversations.py` + `conversation/*` | SQLite 消息/turn；`role_id` 归属角色；outbox；`MemoryExtractSchedule`；`ConversationTranscript`；`ConversationDeletionWorkflow`；`ConversationMessageGraph`；`ConversationSummaryLedger`（`store.summaries`）；`ConversationSystemEvents`（`store.system_events`）；其余 store 兼容委托逐步收口 |
-| 角色 | `roles.py`（`RoleStore`） | 默认通用角色 + 可创建；人设/头像/system_prompt；侧栏角色列表 + **统一时间线**见 [ADR 2026-09-09](docs/adr/2026-09-09-multi-role-shell.md) / [ADR 2026-09-10 timeline](docs/adr/2026-09-10-role-timeline.md) / [product-multi-role.md](docs/product-multi-role.md) |
+| 角色 | `roles.py`（`RoleStore`） | 默认通用角色 + 可创建；人设/头像/system_prompt；侧栏角色列表 + **统一时间线**见 [ADR 2026-09-09](docs/adr/2026-09-09-multi-role-shell.md) / [ADR 2026-09-10 timeline](docs/adr/2026-09-10-role-timeline.md) / [多角色产品](docs/product/multi-role.md) |
 | 角色互通 | `backend/app/engine/rooms/` | Actor / Room / `RoomDelivery`（贴消息 + Wake + 入站队列）；`send_message`；群是独立现场（头像 / CRUD / 说话人气泡，角色时间线只出卡片）；群内 Assignment 账本（回执唤醒协调者、超时只叫协调者）；见 [ADR 2026-09-12](docs/adr/2026-09-12-role-rooms.md)、[ADR 2026-09-13](docs/adr/2026-09-13-group-as-stage.md)、[ADR 2026-09-14](docs/adr/2026-09-14-group-orchestration.md) |
-| 聊天通道 | `backend/app/engine/channel_plugins/` | Registry / Adapter / 实例存储 / `ChannelTurnService`（验身份 → hidden role → `begin_persisted_turn`）；`ChannelRuntime` 挂飞书 / Slack Socket Mode / 钉钉 Stream；公开 webhook 在 `/api/channels/{id}/{type}`。HTTP **不**另写 Agent 编排。类型：`script_api`、`feishu`、`slack`、`wecom`、`dingtalk`（`wechat_mp` 灰显）。群仅 @/引用才入队；群默认关沙箱直到发送者白名单。见 [product-channel-plugins.md](docs/product-channel-plugins.md) |
+| 聊天通道 | `backend/app/engine/channel_plugins/` | Registry / Adapter / 实例存储 / `ChannelTurnService`（验身份 → hidden role → `begin_persisted_turn`）；`ChannelRuntime` 挂飞书 / Slack Socket Mode / 钉钉 Stream；公开 webhook 在 `/api/channels/{id}/{type}`。HTTP **不**另写 Agent 编排。类型：`script_api`、`feishu`、`slack`、`wecom`、`dingtalk`（`wechat_mp` 灰显）。群仅 @/引用才入队；群默认关沙箱直到发送者白名单。见 [聊天通道产品](docs/product/channel-plugins.md) |
 | 知识写入 | `backend/app/engine/knowledge_writer.py` | 路径 + git + 索引 + changelog **唯一写入 seam**；意图级 `persist_document` / `import_entry`（`allow_binary`）/ `read_entry_bytes` / `move_entry` / `delete_entry`；非 MD 准入经 `assert_non_md_asset_allowed`；Merge/Agent 勿自组 drop_index |
 | 沙箱 | `backend/app/engine/sandbox/` | `RoleSandboxPool`（每角色固定 agent+PVC；`sandbox_max_roles` / 空闲 TTL 毁容器留 PVC；控制面仍一个 `opensandbox-server`）；`SandboxRuntime` 端口；`SandboxExecutionEngine`（统一 job+poll 流式、wait 预算检查点）；`SandboxCommandGate`（高风险确认，文案带角色）；`KbSandboxExchange`（stage/publish）；`SandboxTools` 按 `conversation.role_id` 取 slot，stop 不跨角色 |
 | 文档成文 | `backend/app/engine/document_synthesis.py` | 归档/合并/入库合并的 LLM 成文；Organizer 与 MergeWorkflow 共用 |
@@ -79,9 +79,9 @@
 
 ## 进一步阅读
 
-- [ADR：引擎模块 seam（2026-08-04）](docs/adr/2026-08-04-engine-module-seams.md)
-- [ADR：多文档合并仅 UI（2026-08-05）](docs/adr/2026-08-05-merge-ui-only.md)
-- 产品规格与文档地图：[docs/README.md](docs/README.md)
+- 文档地图：[docs/README.md](docs/README.md)
+- 架构决策：[docs/adr/](docs/adr/)
+- 产品规格：[docs/product/](docs/product/)
 
 ## Language（对话与知识库）
 

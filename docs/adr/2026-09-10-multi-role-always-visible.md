@@ -67,9 +67,9 @@
 
 - `RoleList` 组件**不检查** `roles.length === 1` 来决定是否渲染
 - 任何文档中提到「单角色时隐藏角色列表」的描述均已废弃，以本 ADR 为准
-- 产品文档 `docs/product-multi-role.md` 已更新，明确此设计决策
+- 产品文档 `docs/product/multi-role.md` 已更新，明确此设计决策
 
 ## 相关文档
 
-- `docs/product-multi-role.md` §1「角色列表始终可见」
+- `docs/product/multi-role.md` §1「角色列表始终可见」
 - 用户需求：Grok Bot 布局重构任务

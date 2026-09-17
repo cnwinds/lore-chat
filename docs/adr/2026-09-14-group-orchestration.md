@@ -2,7 +2,7 @@
 
 ## 状态
 
-已采纳（2026-09-14）。补强 [ADR 2026-09-12](2026-09-12-role-rooms.md) 与 [ADR 2026-09-13 group-as-stage](2026-09-13-group-as-stage.md)。产品展开见 [product-role-rooms.md](../product-role-rooms.md)。
+已采纳（2026-09-14）。补强 [ADR 2026-09-12](2026-09-12-role-rooms.md) 与 [ADR 2026-09-13 group-as-stage](2026-09-13-group-as-stage.md)。产品展开见 [product-role-rooms.md](../product/role-rooms.md)。
 
 ## 背景
 

@@ -1,6 +1,6 @@
 # Lore Chat — Agent 约定
 
-本文件约束在本仓库工作的 AI。**改提示词**或**做版本发布**前先读对应章节；日常写代码仍以 [CONTEXT.md](CONTEXT.md) 与 [docs/adr/](docs/adr/) 为准。
+本文件约束在本仓库工作的 AI。**改提示词**或**做版本发布**前先读对应章节；日常写代码仍以 [CONTEXT.md](CONTEXT.md) 与 [docs/adr/](docs/adr/) 为准。产品展开见 [docs/product/](docs/product/)。
 
 - [一、提示词编写](#一提示词编写)
 - [二、版本发布](#二版本发布)

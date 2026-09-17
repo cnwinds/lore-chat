@@ -1,6 +1,6 @@
 # 多角色产品设计（ADR 配套 + Grok Bot 三栏布局）
 
-> 权威决策见 [ADR 2026-09-09](adr/2026-09-09-multi-role-shell.md)、[ADR 2026-09-10 always-visible](adr/2026-09-10-multi-role-always-visible.md)、[ADR 2026-09-10 timeline](adr/2026-09-10-role-timeline.md)。本文展开产品/界面/分期,供实现对照。
+> 状态：**已落地**。权威决策见 [ADR 2026-09-09](../adr/2026-09-09-multi-role-shell.md)、[ADR 2026-09-10 always-visible](../adr/2026-09-10-multi-role-always-visible.md)、[ADR 2026-09-10 timeline](../adr/2026-09-10-role-timeline.md)。本文是拍板时的产品/界面展开，现状以代码与 ADR 为准。
 
 ## 0. 角色列表始终可见（2026-09-10 更新）
 
@@ -12,11 +12,11 @@
 - 简化实现：无需维护条件显示逻辑
 - 符合 Grok Bot 的 UX 参考
 
-**废弃规则**：~~早期设计（ADR 2026-09-09 §2）曾考虑「单角色时隐藏角色列表，多角色时显示」，现已被明确废弃。~~ 详见 [ADR 2026-09-10](adr/2026-09-10-multi-role-always-visible.md)。
+**废弃规则**：~~早期设计（ADR 2026-09-09 §2）曾考虑「单角色时隐藏角色列表，多角色时显示」，现已被明确废弃。~~ 详见 [ADR 2026-09-10](../adr/2026-09-10-multi-role-always-visible.md)。
 
 ## 0.1 角色统一时间线（2026-09-10）
 
-**最新决策**：选中角色后，中栏展示该角色**全部会话段**拼成一条时间线（段间分隔），而非只加载空 tip。详见 [ADR 2026-09-10 timeline](adr/2026-09-10-role-timeline.md)。
+**最新决策**：选中角色后，中栏展示该角色**全部会话段**拼成一条时间线（段间分隔），而非只加载空 tip。详见 [ADR 2026-09-10 timeline](../adr/2026-09-10-role-timeline.md)。
 
 **废弃规则**：~~主区只看活跃线、历史主要靠抽屉~~。
 
@@ -29,7 +29,7 @@
 | 知识库 | **全角色共享**读写 |
 | 记忆 | **全局抽取**覆盖所有角色会话；规则仍为关于主人 / 耐久性 / 语境保全；**关段**亦触发抽取 |
 | 并行 | 角色独立上下文与 turn；切换 UI **不取消**其他角色 running turn |
-| 沙箱 | **每角色**固定一把执行沙箱（agent 容器 + PVC）；`opensandbox-server` 仍只有一份。见 [ADR 2026-09-10 sandbox](adr/2026-09-10-role-scoped-sandbox.md) |
+| 沙箱 | **每角色**固定一把执行沙箱（agent 容器 + PVC）；`opensandbox-server` 仍只有一份。见 [ADR 2026-09-10 sandbox](../adr/2026-09-10-role-scoped-sandbox.md) |
 | 生长 | 用户可创建新角色（设置 / 后续对话工具）；不强制安装向导 |
 
 心法/戒律 = 全局底线；角色 `system_prompt` = 叠加层。
@@ -147,12 +147,12 @@ HTTP `/api/roles*` 保留用于 UI shell（列表、ensure-active、可选右栏
 
 | 模块 | 改动 |
 |------|------|
-| [`AppShell.tsx`](../frontend/src/components/app/AppShell.tsx) | 三栏布局容器：左（角色列表 + KB）、中（Chat）、右（RoleConfigPanel） |
-| [`RoleList.tsx`](../frontend/src/components/role/RoleList.tsx) | 对话列表：角色与群混排；搜索图标打开工作区搜索面板；「＋」新建角色或发起群聊 |
-| [`RoleConfigPanel.tsx`](../frontend/src/components/role/RoleConfigPanel.tsx) | 右侧角色配置面板 |
-| [`ChatMessageList.tsx`](../frontend/src/components/chat/ChatMessageList.tsx) | 多段时间线 + 段间分隔 |
-| [`useRoleTimeline.ts`](../frontend/src/hooks/chat/useRoleTimeline.ts) | 加载角色 timeline |
-| [`api.ts`](../frontend/src/api.ts) | Role / timeline API |
+| [`AppShell.tsx`](../../frontend/src/components/app/AppShell.tsx) | 三栏布局容器：左（角色列表 + KB）、中（Chat）、右（RoleConfigPanel） |
+| [`RoleList.tsx`](../../frontend/src/components/role/RoleList.tsx) | 对话列表：角色与群混排；搜索图标打开工作区搜索面板；「＋」新建角色或发起群聊 |
+| [`RoleConfigPanel.tsx`](../../frontend/src/components/role/RoleConfigPanel.tsx) | 右侧角色配置面板 |
+| [`ChatMessageList.tsx`](../../frontend/src/components/chat/ChatMessageList.tsx) | 多段时间线 + 段间分隔 |
+| [`useRoleTimeline.ts`](../../frontend/src/hooks/chat/useRoleTimeline.ts) | 加载角色 timeline |
+| [`api.ts`](../../frontend/src/api.ts) | Role / timeline API |
 
 ## 5. 交互流程
 
@@ -179,7 +179,7 @@ HTTP `/api/roles*` 保留用于 UI shell（列表、ensure-active、可选右栏
 ### 定时任务
 - 右侧面板「定时任务」区域 CRUD
 
-## 6. 分期
+## 6. 分期（均已落地）
 
 1. **P0** — RoleStore + `role_id` + API + 默认角色；创建/列表会话带角色；prompt 注入；侧栏始终显示角色列表与活跃线；三栏布局。
 2. **P1** — 连续窗口精细化、用户侧会话搜索、新话题文案与空态引导。（含设置页连续窗口、手机角色 sheet、提示词「接着上次」强化）
@@ -210,11 +210,10 @@ HTTP `/api/roles*` 保留用于 UI shell（列表、ensure-active、可选右栏
 - 忙碌角标（该角色有 running turn）。
 - 本角色会话历史抽屉。
 
-## 8. 后续：角色互通 / 群聊
+## 8. 角色互通 / 群聊
 
-多角色并行之后，角色之间可以互相投递消息（「你去喊游戏开发助手做 X」），并长出群聊。见 [product-role-rooms.md](product-role-rooms.md) 与 [ADR 2026-09-12](adr/2026-09-12-role-rooms.md)：底层是房间 + 演员 + 投递 + 唤醒，而不是点对点特判。
+多角色并行之后，角色之间可以互相投递消息（「你去喊游戏开发助手做 X」），并长出群聊。见 [role-rooms.md](role-rooms.md) 与 [ADR 2026-09-12](../adr/2026-09-12-role-rooms.md)：底层是房间 + 演员 + 投递 + 唤醒，而不是点对点特判。
 
 ## 参考
 
-- Grok Bot UI 截图：`/workspace/lore-ui/grok-bot-reference.png`
-- ADR：`docs/adr/2026-09-09-multi-role-shell.md`、`docs/adr/2026-09-10-multi-role-always-visible.md`
+- [ADR 2026-09-09](../adr/2026-09-09-multi-role-shell.md)、[ADR 2026-09-10 always-visible](../adr/2026-09-10-multi-role-always-visible.md)

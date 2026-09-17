@@ -2,7 +2,7 @@
 
 ## 状态
 
-**已确认 / P2 已落地**（2026-09-14）。产品口径已拍板，见 [product-channel-plugins.md](../product-channel-plugins.md) §12。P0 脚本通道、P1 飞书长连接与按实例日志/用量、P2 Slack/企微/钉钉与群规则已落地。本篇是架构摘要，不替代 product 文。
+**已确认 / P2 已落地**（2026-09-14）。产品口径已拍板，见 [product-channel-plugins.md](../product/channel-plugins.md) §12。P0 脚本通道、P1 飞书长连接与按实例日志/用量、P2 Slack/企微/钉钉与群规则已落地。本篇是架构摘要，不替代 product 文。
 
 ## 背景
 

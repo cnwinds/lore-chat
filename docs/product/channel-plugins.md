@@ -6,17 +6,17 @@
 >
 > 主人补充（命名）：统一叫 **「聊天通道插件」（Channel Plugin）**。不要泛泛叫「插件」，也不要把脚本和 IM 当成完全无关的两类。平台差异只是适配层；共有能力见 §2。
 >
-> 配套：[product-external-chat-api.md](product-external-chat-api.md)（**已确认**的脚本通道口径，本文不改写）、[ADR 2026-09-14 channel-plugins](adr/2026-09-14-channel-plugins.md)（已确认 / 待实现）、[CONTEXT.md](../CONTEXT.md)（HTTP **不**重编排 Agent）。
+> 配套：[external-chat-api.md](external-chat-api.md)（脚本通道口径，本文不改写）、[ADR 2026-09-14 channel-plugins](../adr/2026-09-14-channel-plugins.md)、[CONTEXT.md](../../CONTEXT.md)（HTTP **不**重编排 Agent）。
 
-文件名保持 `product-channel-plugins.md`。文内标题与设置文案用「聊天通道插件 / 聊天通道」。
+文内标题与设置文案用「聊天通道插件 / 聊天通道」。
 
 ## 与已确认文档的关系
 
 | 文档 | 关系 |
 |------|------|
-| [product-external-chat-api.md](product-external-chat-api.md) | **并列、被包含。** 脚本 Key / `POST /api/v1/chat` / 人设可共享 / 每 Key 一个隐藏工作角色，仍以该文为权威。本文是其**超集**：把那一套收成第一种聊天通道（`script_api` / HTTP），并规定微信/钉钉/飞书/Slack 走**同一公共模型**。 |
-| 本文 | 聊天通道插件的产品 + 架构规格。**已确认 / 待实现**；**不**替代上一文。 |
-| 已确认口径 | 实现时遵守对外聊天 API 文，加上 §11 列出的、已拍板的代码侧变更。 |
+| [external-chat-api.md](external-chat-api.md) | **并列、被包含。** 脚本 Key / `POST /api/v1/chat` / 人设可共享 / 每 Key 一个隐藏工作角色，仍以该文为权威。本文是其**超集**：把那一套收成第一种聊天通道（`script_api` / HTTP），并规定微信/钉钉/飞书/Slack 走**同一公共模型**。 |
+| 本文 | 聊天通道插件的产品 + 架构规格。**已落地（P0–P2）**；**不**替代上一文。 |
+| 已确认口径 | 遵守对外聊天 API 文，加上 §11 已落地的代码侧变更。 |
 
 现网对照（以代码为准）：`OpenApiService.complete_chat`（验 Key → 取 hidden `role_id` → `begin_persisted_turn`，`mode=api`，`origin=api`）；聊天通道入口在左栏底栏，点开后是与媒体图库同一套聊天区左缘浮窗列出实例。现有密钥是列表里的第一种卡片。
 
@@ -218,7 +218,7 @@ HTTP 路由只验签、拆 DTO、交给通道再交给 runner。**禁止**在 we
 - P1（飞书长连接）只做**私聊/单聊**。
 - 群 / 频道（P2，含飞书群、Slack 频道）：默认 **被 @ 或被引用才开回合**；无 @ 的裸消息忽略。
 - 平台支持 thread（Slack）：助手回复发进该 thread，不在频道顶栏抢麦。
-- 外部群 **不是** 左栏角色群（[product-role-rooms.md](product-role-rooms.md)）。不创建 lore-chat `group` 房间，不进左栏。
+- 外部群 **不是** 左栏角色群（[role-rooms.md](role-rooms.md)）。不创建 lore-chat `group` 房间，不进左栏。
 - 外部群里的「别人」不要写成主人气泡去抽画像。非脚本通道 **P1 不跑记忆抽取**（§12）。
 
 左栏：`GET /api/roles` 仍只返回 `visibility=sidebar`。`ensure_active` / tip / 最近活动只看网页主人线。现网用 `origin != api` 排除；实现后应排除**全部通道 origin**（§11）。
@@ -620,7 +620,7 @@ P1 范围：飞书**私聊**文本；共有启停/状态/查看会话；异步�
 
 ## 11. 实现时相对对外聊天 API 文须改的点
 
-[product-external-chat-api.md](product-external-chat-api.md) 在代码落地前仍描述现网。下列变更**已拍板**，实现时改代码并在该文补一句「已被聊天通道超集」即可，不要悄悄改已确认的脚本语义。
+[external-chat-api.md](external-chat-api.md) 仍是脚本 Key 的权威口径。下列变更**已落地**；不要悄悄改已确认的脚本语义。
 
 | # | 现口径 | 已拍板的实现变更 | 为何 |
 |---|--------|------------------|------|
@@ -657,7 +657,7 @@ P1 范围：飞书**私聊**文本；共有启停/状态/查看会话；异步�
 
 ---
 
-## 13. 下一阶段实现切片
+## 13. 历史实现切片（P0–P1 已完成；P2 见 §8）
 
 1. 公共模型：Registry + 实例存储 + Key 投影为 `script_api`；测试投影与 list。
 2. 设置 UI：页签「聊天通道」、同级列表 + 共有槽位（人设、查看会话、启停、状态）；先只创建脚本通道。P0 不做独立用量入口。

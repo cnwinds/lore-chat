@@ -2,7 +2,7 @@
 
 ## 状态
 
-已采纳（2026-09-12）。产品展开见 [product-role-rooms.md](../product-role-rooms.md)。
+已采纳（2026-09-12）。产品展开见 [product-role-rooms.md](../product/role-rooms.md)。
 
 ## 背景
 

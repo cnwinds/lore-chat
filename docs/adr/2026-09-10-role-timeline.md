@@ -15,7 +15,7 @@
 3. **新 tip 首轮**服务端默认检索本角色会话 + KB，注入检索摘要；关段触发既有记忆抽取。
 4. 废弃「主区只看活跃线 / 历史抽屉为主」的交互叙事；历史抽屉可保留为可选，搜索改为时间线内定位。
 
-细节见 [product-multi-role.md](../product-multi-role.md)「统一时间线」节。
+细节见 [product-multi-role.md](../product/multi-role.md)「统一时间线」节。
 
 ## 后果
 

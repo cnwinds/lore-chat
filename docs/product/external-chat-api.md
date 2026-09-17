@@ -1,10 +1,10 @@
 # 对外聊天 API
 
-> 状态：**已确认 / 实现中**（2026-09-12）。人设可共享；**每把 API Key = 一个独立隐藏角色**（独立沙箱、独立会话）。
+> 状态：**已落地**（脚本通道 P0）。人设可共享；**每把 API Key = 一个独立隐藏角色**（独立沙箱、独立会话）。P1/P2（`thread_id`、精简 SSE、独立人设、OpenAI 兼容网关等）仍后置。
 >
-> 已被 [聊天通道插件](product-channel-plugins.md) 作为第一种通道（`script_api`）包含。本文仍是脚本 Key / `POST /api/v1/chat` 的权威口径；P0 **不改**这些行为。设置入口现为「聊天通道」。
+> 已被 [聊天通道插件](channel-plugins.md) 作为第一种通道（`script_api`）包含。本文仍是脚本 Key / `POST /api/v1/chat` 的权威口径；P0 **不改**这些行为。设置入口现为「聊天通道」。
 >
-> 配套：[CONTEXT.md](../CONTEXT.md)、[product-multi-role.md](product-multi-role.md)、[ADR 2026-09-10 timeline](adr/2026-09-10-role-timeline.md)、[ADR 2026-09-10 sandbox](adr/2026-09-10-role-scoped-sandbox.md)。
+> 配套：[CONTEXT.md](../../CONTEXT.md)、[multi-role.md](multi-role.md)、[ADR 2026-09-10 timeline](../adr/2026-09-10-role-timeline.md)、[ADR 2026-09-10 sandbox](../adr/2026-09-10-role-scoped-sandbox.md)。
 
 ## 0. 一句话
 
