@@ -473,7 +473,11 @@ body {
 }
 
 /* —— 左栏：分区锚定，消解大片空白带来的「平」 ——
-   CONTEXT.md 约定左栏与中栏贴齐拼接、不留常驻右边线，故只做分区内锚定 */
+   左栏与中栏之间以 1px 发丝线分界（CONTEXT.md 认可的边界语言） */
+.app-shell-left {
+  border-right: 1px solid var(--border);
+}
+
 .app-shell-left-split .role-list {
   border-bottom: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
 }
