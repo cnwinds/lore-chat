@@ -6,19 +6,11 @@ type Props = {
   onToggleWeb: () => void;
   streaming: boolean;
   canSend: boolean;
-  archiving: boolean;
-  conversationId: string | null;
-  summarized: boolean;
-  summaryPath: string | null;
-  canArchive: boolean;
-  onArchive: () => void;
-  onOpenSummary?: (path: string) => void;
   onAttachClick: () => void;
   onSend: () => void;
   onStop?: () => void;
   fileInputRef: RefObject<HTMLInputElement | null>;
   onFileChange: (e: ChangeEvent<HTMLInputElement>) => void;
-  onShare?: () => void;
 };
 
 function GlobeIcon() {
@@ -92,46 +84,12 @@ export function ComposerToolbar({
   onToggleWeb,
   streaming,
   canSend,
-  archiving,
-  conversationId,
-  summarized,
-  summaryPath,
-  canArchive,
-  onArchive,
-  onOpenSummary,
   onAttachClick,
   onSend,
   onStop,
   fileInputRef,
   onFileChange,
-  onShare,
 }: Props) {
-  const archiveLinked = summarized && summaryPath;
-  const archiveDisabled =
-    streaming ||
-    archiving ||
-    !conversationId ||
-    (!summarized && !canArchive);
-
-  const handleArchiveClick = () => {
-    if (archiveLinked && summaryPath && onOpenSummary) {
-      onOpenSummary(summaryPath);
-    } else {
-      onArchive();
-    }
-  };
-
-  const archiveLabel = archiving
-    ? "沉淀中…"
-    : archiveLinked
-      ? "查看文档"
-      : "沉淀";
-
-  const archiveTitle =
-    archiveLinked && summaryPath
-      ? `查看归档文档：${summaryPath}`
-      : "把整段会话通读后重构、去重，沉淀为一篇知识库文档";
-
   return (
     <div className="composer-toolbar">
       <div className="composer-toolbar-left">
@@ -169,26 +127,6 @@ export function ComposerToolbar({
         <ModelPickerButton />
       </div>
       <div className="composer-toolbar-right">
-        <button
-          type="button"
-          className={`composer-archive-btn${archiveLinked ? " composer-archive-btn--linked" : ""}`}
-          onClick={handleArchiveClick}
-          disabled={archiveDisabled}
-          title={archiveTitle}
-        >
-          {archiveLabel}
-        </button>
-        {onShare && conversationId ? (
-          <button
-            type="button"
-            className="composer-archive-btn"
-            onClick={onShare}
-            disabled={streaming}
-            title="生成只读分享链接"
-          >
-            分享
-          </button>
-        ) : null}
         {streaming && onStop ? (
           <button
             type="button"

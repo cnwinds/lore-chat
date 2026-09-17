@@ -30,7 +30,6 @@ import {
   isMarkdownPath,
   normalizeDocContext,
   postRoomMessage,
-  summarizeConversation,
   type DocContextItem,
   type IngestResult,
   type RoleSummary,
@@ -61,7 +60,6 @@ import {
 } from "../utils/sendQueue";
 import { ConversationTranscriptPanel } from "./chat/ConversationTranscriptPanel";
 import { ConversationComposerPanel } from "./chat/ConversationComposerPanel";
-import { ArchiveConversationModal } from "./ArchiveConversationModal";
 import type { DocTrayItem, PendingFile } from "../types/composer";
 import { extractClipboardFiles } from "../utils/clipboard";
 import { importChatAttachment } from "../utils/chatAttachmentImport";
@@ -70,7 +68,6 @@ import {
   buildComposerMediaHints,
   validatePendingAttachments,
 } from "../utils/chatAttachmentValidation";
-import { suggestArchivePath } from "../utils/suggestArchivePath";
 import { MobileChatHeader } from "./app/MobileChatHeader";
 import { ChatRoleHeading } from "./chat/ChatRoleHeading";
 import { GroupAvatar } from "./role/GroupAvatar";
@@ -155,8 +152,6 @@ export function Chat({
 
   const [input, setInput] = useState("");
   const [caret, setCaret] = useState(0);
-  const [archiving, setArchiving] = useState(false);
-  const [archiveModalOpen, setArchiveModalOpen] = useState(false);
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
   const {
     videoSupported: chatVideoSupported,
@@ -209,9 +204,7 @@ export function Chat({
     loadingOlderMessages,
     olderMessageCount,
     loadOlderMessages,
-    summarized,
     setSummarized,
-    summaryPath,
     setSummaryPath,
     respondingRoleId,
   } = useChatConversation({
@@ -787,58 +780,6 @@ export function Chat({
     outbound.enqueueAndKick(newItem);
   }
 
-  function openArchiveModal() {
-    if (!conversationId || streamingForView || archiving) return;
-    if (!msgs.some((m) => m.role === "user")) return;
-    setArchiveModalOpen(true);
-  }
-
-  async function performArchive(directory: string, filename: string) {
-    if (!conversationId || streamingForView || archiving) return;
-    const targetCid = conversationId;
-    setArchiving(true);
-    try {
-      const result = await summarizeConversation(targetCid, { directory, filename });
-      setArchiveModalOpen(false);
-      if (conversationIdRef.current !== targetCid) {
-        onSidebarRefresh?.();
-        if (result.rel_path) refreshKb(result.rel_path);
-        return;
-      }
-      const text =
-        result.status === "saved" && result.rel_path
-          ? `已把本次会话归档为文档：${result.rel_path}`
-          : result.message || "归档完成";
-      setMsgs((m) => [
-        ...m,
-        { role: "assistant", text, ts: nowIsoDisplay() },
-      ]);
-      if (result.rel_path) {
-        setSummarized(true);
-        setSummaryPath(result.rel_path);
-        refreshKb(result.rel_path);
-        openDoc(result.rel_path, undefined, { pin: true });
-      }
-      onSidebarRefresh?.();
-    } catch (err) {
-      if (conversationIdRef.current !== targetCid) {
-        onSidebarRefresh?.();
-        return;
-      }
-      const msg = err instanceof Error ? err.message : "归档失败";
-      setMsgs((m) => [
-        ...m,
-        { role: "assistant", text: `错误：${msg}`, ts: nowIsoDisplay() },
-      ]);
-    } finally {
-      setArchiving(false);
-    }
-  }
-
-  const firstUserText =
-    msgs.find((m) => m.role === "user")?.text?.trim() ?? "";
-  const archiveDefaults = suggestArchivePath(summaryPath, firstUserText);
-
   function handleQuestionResolved(
     blockId: string,
     result: IngestResult,
@@ -1078,8 +1019,27 @@ export function Chat({
               />
             )}
           </h1>
-          {roleConfigCollapsed && onToggleRoleConfig ? (
-            <div className="chat-desktop-header-actions">
+          <div className="chat-desktop-header-actions">
+            {onShareConversation && !mobileLayout ? (
+              <button
+                type="button"
+                className="chat-desktop-header-btn"
+                onClick={onShareConversation}
+                title="分享对话"
+                aria-label="分享对话"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
+                  <path
+                    d="M12 3v12M8 6l4-3 4 3M5 11v8a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-8"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </button>
+            ) : null}
+            {roleConfigCollapsed && onToggleRoleConfig ? (
               <button
                 type="button"
                 className="chat-desktop-header-btn"
@@ -1097,8 +1057,8 @@ export function Chat({
                   />
                 </svg>
               </button>
-            </div>
-          ) : null}
+            ) : null}
+          </div>
         </header>
       )}
       <ConversationTranscriptPanel
@@ -1199,27 +1159,11 @@ export function Chat({
         onToggleWeb={toggleWebSearch}
         streaming={streamingForView}
         canSend={!!input.trim() || pendingFiles.length > 0}
-        archiving={archiving}
-        conversationId={conversationId}
-        summarized={summarized}
-        summaryPath={summaryPath}
-        canArchive={msgs.some((m) => m.role === "user")}
-        onArchive={openArchiveModal}
-        onOpenSummary={(path) => openDoc(path, undefined, { pin: true })}
         onAttachClick={() => fileInputRef.current?.click()}
         onSend={send}
         onStop={handleStop}
         fileInputRef={fileInputRef}
         onFileChange={onFile}
-        onShare={onShareConversation}
-      />
-      <ArchiveConversationModal
-        open={archiveModalOpen}
-        initialDirectory={archiveDefaults.directory}
-        initialFilename={archiveDefaults.filename}
-        submitting={archiving}
-        onClose={() => !archiving && setArchiveModalOpen(false)}
-        onConfirm={(directory, filename) => void performArchive(directory, filename)}
       />
     </div>
   );

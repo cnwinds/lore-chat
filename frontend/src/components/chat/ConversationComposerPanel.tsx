@@ -43,19 +43,11 @@ type Props = {
   onToggleWeb: () => void;
   streaming: boolean;
   canSend: boolean;
-  archiving: boolean;
-  conversationId: string | null;
-  summarized: boolean;
-  summaryPath: string | null;
-  canArchive: boolean;
-  onArchive: () => void;
-  onOpenSummary: (path: string) => void;
   onAttachClick: () => void;
   onSend: () => void;
   onStop: () => void;
   fileInputRef: RefObject<HTMLInputElement | null>;
   onFileChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  onShare?: () => void;
 };
 
 /** 会话输入区：发送队列 + 文档托盘 + 文本框 + 工具栏。 */
@@ -94,19 +86,11 @@ export function ConversationComposerPanel({
   onToggleWeb,
   streaming,
   canSend,
-  archiving,
-  conversationId,
-  summarized,
-  summaryPath,
-  canArchive,
-  onArchive,
-  onOpenSummary,
   onAttachClick,
   onSend,
   onStop,
   fileInputRef,
   onFileChange,
-  onShare,
 }: Props) {
   return (
     <div className="chat-composer-wrap">
@@ -172,19 +156,11 @@ export function ConversationComposerPanel({
               onToggleWeb={onToggleWeb}
               streaming={streaming}
               canSend={canSend}
-              archiving={archiving}
-              conversationId={conversationId}
-              summarized={summarized}
-              summaryPath={summaryPath}
-              canArchive={canArchive}
-              onArchive={onArchive}
-              onOpenSummary={onOpenSummary}
               onAttachClick={onAttachClick}
               onSend={onSend}
               onStop={onStop}
               fileInputRef={fileInputRef}
               onFileChange={onFileChange}
-              onShare={onShare}
             />
           </div>
         </div>
