@@ -512,7 +512,6 @@ a:hover {
   flex-direction: column;
   background: var(--bg-surface);
   border-right: 1px solid var(--border);
-  box-shadow: 16px 0 16px color-mix(in srgb, var(--text) 12%, transparent);
   animation: slideInFloat 0.2s ease-out;
 }
 
