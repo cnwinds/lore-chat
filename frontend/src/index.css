@@ -3005,6 +3005,63 @@ button.memory-fact-statement--jump:focus-visible {
   min-width: 0;
 }
 
+.settings-chain-grip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 18px;
+  height: 28px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  opacity: 0.42;
+  cursor: grab;
+  user-select: none;
+  transition: opacity 0.12s ease, color 0.12s ease, background 0.12s ease;
+}
+
+.settings-model-candidate:hover .settings-chain-grip,
+.settings-chain-grip:hover,
+.settings-chain-grip:focus-visible {
+  opacity: 1;
+  color: var(--text-secondary);
+}
+
+.settings-chain-grip:hover,
+.settings-chain-grip:focus-visible {
+  background: var(--bg-hover);
+}
+
+.settings-chain-grip:active {
+  cursor: grabbing;
+}
+
+.settings-chain-grip:disabled {
+  opacity: 0.25;
+  cursor: default;
+  background: transparent;
+}
+
+.settings-model-candidate--dragging {
+  opacity: 0.55;
+}
+
+.settings-model-candidate--drag-over::before {
+  content: "";
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  top: -1px;
+  height: 2px;
+  background: var(--glaze);
+  border-radius: 1px;
+  pointer-events: none;
+}
+
 .settings-candidate-fold-toggle {
   display: flex;
   align-items: center;
