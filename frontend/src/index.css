@@ -6813,13 +6813,16 @@ button.memory-fact-statement--jump:focus-visible {
 
 .chat-meta-token {
   display: inline-flex;
-  align-items: center;
+  align-items: baseline;
   gap: 3px;
 }
 
-.chat-meta-token-icon {
-  display: block;
-  flex-shrink: 0;
+/* 入/出单字微标签：比方向箭头零歧义，与悬停提示的「输入/输出」同源 */
+.chat-meta-token-way {
+  font-size: 10px;
+  line-height: 1;
+  color: var(--text-muted);
+  opacity: 0.85;
 }
 
 .chat-meta-token-count {
