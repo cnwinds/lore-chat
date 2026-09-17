@@ -54,7 +54,7 @@ export function DocViewer({
   refreshKey = 0,
   highlightText,
   mode = "panel",
-  docWidth = "narrow",
+  docWidth = "wide",
   docFocus = false,
   onClose,
   onBindClose,

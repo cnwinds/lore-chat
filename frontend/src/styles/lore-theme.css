@@ -61,14 +61,6 @@ body {
   border-bottom: 1px solid var(--border);
 }
 
-.app-shell-left {
-  background: transparent;
-}
-
-.role-config-panel {
-  background: transparent;
-}
-
 /* —— 登录 / 首次设密 —— */
 .auth-gate {
   background-image:
@@ -222,7 +214,6 @@ body {
 .chat-welcome-suggestion:hover {
   border-color: var(--glaze);
   color: var(--text);
-  background: var(--bg-surface);
 }
 
 .chat-welcome-status {
@@ -481,16 +472,9 @@ body {
   border-color: var(--danger);
 }
 
-/* —— 左栏：分区锚定，消解大片空白带来的「平」 —— */
-.app-shell-left {
-  border-right: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
-}
-
-/* 会话区贴合内容高度（多到超份额时才在份额内滚动），
-   底部细线成为与知识库区的分界，空白不再淤积在会话与知识库之间 */
+/* —— 左栏：分区锚定，消解大片空白带来的「平」 ——
+   CONTEXT.md 约定左栏与中栏贴齐拼接、不留常驻右边线，故只做分区内锚定 */
 .app-shell-left-split .role-list {
-  flex: 0 1 auto;
-  max-height: calc(var(--app-left-role-share, 0.46) * 100%);
   border-bottom: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
 }
 

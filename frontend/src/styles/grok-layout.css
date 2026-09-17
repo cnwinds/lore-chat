@@ -167,7 +167,9 @@
 }
 
 .app-shell-left-split .role-list {
-  flex: 0 1 calc(var(--app-left-role-share, 0.46) * 100%);
+  /* 贴合内容高度：会话少时不留大片空白；超出用户拖分的份额才在份额内滚动 */
+  flex: 0 1 auto;
+  max-height: calc(var(--app-left-role-share, 0.46) * 100%);
   min-height: 0;
 }
 
