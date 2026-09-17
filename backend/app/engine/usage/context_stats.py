@@ -13,9 +13,11 @@ from typing import Any
 
 TOKENS_PER_CHAR = 0.75
 
+# 按实际上下文装配顺序排列：系统提示词在最前，其后为历史消息，
+# 工具结果与附件随消息注入（前端容量条按此顺序分段着色）。
 _SEGMENTS = (
-    ("history", "历史消息"),
     ("system", "系统提示词"),
+    ("history", "历史消息"),
     ("tools", "工具与检索结果"),
     ("attachments", "附件与文档"),
 )
