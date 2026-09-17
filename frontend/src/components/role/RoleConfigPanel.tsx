@@ -233,16 +233,14 @@ export function RoleConfigPanel({
               onClick={() => setEditing(true)}
               title="编辑角色"
             >
-              <div
-                className="role-config-cover-art"
-                style={
-                  coverAvatar.showImage
-                    ? undefined
-                    : {
-                        background: `radial-gradient(120% 90% at 28% 8%, color-mix(in srgb, ${coverBg} 42%, white), ${coverBg})`,
-                      }
-                }
-              >
+                <div
+                  className="role-config-cover-art"
+                  style={
+                    coverAvatar.showImage
+                      ? undefined
+                      : { background: coverBg }
+                  }
+                >
                 {coverAvatar.showImage && coverAvatar.src ? (
                   <img
                     src={coverAvatar.src}

@@ -5,6 +5,7 @@ import { scrollKbTreeNodeIntoView } from "../utils/kbTreeScroll";
 import { FileTree } from "./FileTree";
 import { KbFloatingRootDrop } from "./KbFloatingRootDrop";
 import { KbTreeProgressBar } from "./KbTreeProgressBar";
+import { RefreshGlyph } from "./KbIcons";
 import { useKbTreeActions } from "../hooks/useKbTreeActions";
 import { useFileTreeInteraction } from "../hooks/useFileTreeInteraction";
 import { useDragAutoScroll } from "../hooks/useDragAutoScroll";
@@ -258,7 +259,7 @@ export function KbSidebar({
           </div>
           <div className="kb-sidebar-actions">
             <button type="button" className="kb-refresh-btn" onClick={refresh} title="刷新">
-              ↻
+              <RefreshGlyph />
             </button>
           </div>
         </div>

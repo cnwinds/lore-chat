@@ -10,6 +10,20 @@ import {
 import { dropEffectForTransfer } from "../utils/droppedFiles";
 import { FoldChevron } from "./FoldChevron";
 import { SettingsAttentionDot } from "./settings/SettingsAttentionDot";
+import {
+  DocGlyph,
+  FolderGlyph,
+  ImageGlyph,
+  PaperclipGlyph,
+} from "./KbIcons";
+
+/** 按文件类型给树行配细线图标（与 fileTreeFileIcon 同一分类）。 */
+function FileTypeGlyph({ path }: { path: string }) {
+  const icon = fileTreeFileIcon(path);
+  if (icon === "🖼") return <ImageGlyph />;
+  if (icon === "📎") return <PaperclipGlyph />;
+  return <DocGlyph />;
+}
 
 function parentDirectoryFromPath(path: string): string {
   const idx = path.lastIndexOf("/");
@@ -273,7 +287,7 @@ function TreeItem({
             <FoldChevron open={isOpen} size={11} className="file-tree-chevron" />
           )}
           <span className="file-tree-icon">
-            {isOpen ? "📂" : "📁"}
+            <FolderGlyph open={isOpen} />
           </span>
           {isRenaming ? (
             <input
@@ -407,7 +421,9 @@ function TreeItem({
           }
           onDoubleClick={() => onStartRename(node.path, node.name)}
         >
-          <span className="file-tree-icon">{fileTreeFileIcon(node.path)}</span>
+          <span className="file-tree-icon">
+            <FileTypeGlyph path={node.path} />
+          </span>
           <span className="file-tree-label">{node.name}</span>
         </button>
       )}

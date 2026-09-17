@@ -5,6 +5,7 @@ import { isImageFile } from "../utils/kbImageUrls";
 import { isVideoFile } from "../utils/kbVideoUrls";
 import { ImageThumbButton } from "./ImageThumbButton";
 import { VideoThumbButton } from "./VideoThumbButton";
+import { DocGlyph } from "./KbIcons";
 import { useImageLightbox } from "../hooks/useImageLightbox";
 import { useVideoLightbox } from "../hooks/useVideoLightbox";
 import type { VideoPreviewTarget } from "../hooks/useVideoLightbox";
@@ -73,7 +74,7 @@ export function FileChip({ name, tooltip, size, onRemove }: FileChipProps) {
   return (
     <div className="composer-file-chip" title={tooltip ?? name}>
       <span className="composer-file-icon" aria-hidden>
-        📄
+        <DocGlyph size={12} />
       </span>
       <span className="composer-file-name">{name}</span>
       {size !== undefined && (

@@ -18,6 +18,7 @@ import { KbFloatingRootDrop } from "./KbFloatingRootDrop";
 import { KbTreeProgressBar } from "./KbTreeProgressBar";
 import { LoreLogo } from "./LoreLogo";
 import { ThemeToggle } from "./ThemeToggle";
+import { GearGlyph, RefreshGlyph } from "./KbIcons";
 import { useKbTreeActions } from "../hooks/useKbTreeActions";
 import { useFileTreeInteraction } from "../hooks/useFileTreeInteraction";
 import { useDragAutoScroll } from "../hooks/useDragAutoScroll";
@@ -428,7 +429,7 @@ export function Sidebar({
                             onEditRole(r.id);
                           }}
                         >
-                          ⚙
+                          <GearGlyph size={12} />
                         </button>
                       )}
                     </div>
@@ -578,7 +579,7 @@ export function Sidebar({
                   </button>
                 )}
                 <button type="button" className="sidebar-refresh" onClick={refresh} title="刷新">
-                  ↻
+                  <RefreshGlyph />
                 </button>
               </div>
             </div>
@@ -626,7 +627,7 @@ export function Sidebar({
                   }
                 >
                   <span className="sidebar-settings-icon" aria-hidden>
-                    ⚙
+                    <GearGlyph />
                   </span>
                   <span className="sidebar-settings-label">
                     设置

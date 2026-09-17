@@ -48,34 +48,36 @@
 [data-theme="light"],
 [data-theme="celadon"] {
   color-scheme: light;
-  --bg-app: #e7eeea;
+  /* 图底分层：--bg-app 是两侧「桌沿」，--bg-stage 是中栏「瓷面舞台」 */
+  --bg-app: #e2ebe4;
   --bg: var(--bg-app);
-  --bg-surface: #f7faf8;
-  --bg-muted: #eef4f0;
-  --bg-hover: #dce8e1;
-  --bg-subtle: #e3ebe6;
+  --bg-stage: #f5f8f4;
+  --bg-surface: #fbfdfb;
+  --bg-muted: #edf3ee;
+  --bg-hover: #d9e6dd;
+  --bg-subtle: #e2eae4;
 
-  --border: #c9d6ce;
-  --border-strong: #aebfbf;
+  --border: #c6d4c9;
+  --border-strong: #a7bdae;
 
-  --text: #1c2a24;
-  --text-secondary: #4a5c54;
-  --text-muted: #71857a;
+  --text: #1e2c25;
+  --text-secondary: #47594e;
+  --text-muted: #6c7f73;
   --text-on-accent: #fff8f6;
 
-  --glaze: #3f6f5c;
+  --glaze: #3d6b58;
   --glaze-soft: #d5e4db;
   --seal-gold: #c9a24a;
   --seal-gold-soft: rgba(201, 162, 74, 0.18);
 
-  --accent: #c44536;
-  --accent-hover: #a8382c;
+  --accent: #bc4033;
+  --accent-hover: #a23427;
   --accent-soft: #f6e4e1;
   --accent-border: #e3b8b2;
-  --accent-focus: rgba(196, 69, 54, 0.14);
+  --accent-focus: rgba(188, 64, 51, 0.16);
 
-  --user-bubble: #e7f0ea;
-  --assistant-bubble: #f7faf8;
+  --user-bubble: #e8f1ea;
+  --assistant-bubble: #fbfdfb;
 
   --code-bg: #eef3f0;
   --code-border: #d2ddd6;
@@ -99,9 +101,10 @@
 
   --backdrop: rgba(22, 32, 28, 0.42);
 
-  --shadow-sm: 0 1px 2px rgba(28, 42, 36, 0.05);
-  --shadow-md: 0 10px 28px rgba(28, 42, 36, 0.08);
-  --shadow-panel: -2px 0 18px rgba(28, 42, 36, 0.05);
+  --shadow-sm: 0 1px 2px rgba(30, 44, 37, 0.05);
+  --shadow-md: 0 12px 32px rgba(30, 44, 37, 0.1);
+  --shadow-panel: -2px 0 20px rgba(30, 44, 37, 0.06);
+  --shadow-float: 0 18px 44px rgba(30, 44, 37, 0.16);
 
   --chat-content-max-width: 820px;
 
@@ -119,10 +122,11 @@
 [data-theme="dark"],
 [data-theme="ink"] {
   color-scheme: dark;
-  --bg-app: #101614;
+  --bg-app: #0e1412;
   --bg: var(--bg-app);
-  --bg-surface: #171f1c;
-  --bg-muted: #141b18;
+  --bg-stage: #141b17;
+  --bg-surface: #1a231f;
+  --bg-muted: #151d19;
   --bg-hover: #22302a;
   --bg-subtle: #1c2622;
 
@@ -170,8 +174,9 @@
   --backdrop: rgba(0, 0, 0, 0.62);
 
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.28);
-  --shadow-md: 0 10px 28px rgba(0, 0, 0, 0.42);
-  --shadow-panel: -2px 0 18px rgba(0, 0, 0, 0.32);
+  --shadow-md: 0 12px 32px rgba(0, 0, 0, 0.44);
+  --shadow-panel: -2px 0 20px rgba(0, 0, 0, 0.34);
+  --shadow-float: 0 18px 44px rgba(0, 0, 0, 0.52);
 
   --scrollbar-track: transparent;
   --scrollbar-thumb: rgba(154, 173, 164, 0.22);
@@ -186,11 +191,12 @@
 /* 紫藤：统一改版前的浅色紫调 */
 [data-theme="iris"] {
   color-scheme: light;
-  --bg-app: #f3f4f6;
+  --bg-app: #eef0f4;
   --bg: var(--bg-app);
+  --bg-stage: #fbfcfe;
   --bg-surface: #ffffff;
-  --bg-muted: #f9fafb;
-  --bg-hover: #f3f4ff;
+  --bg-muted: #f4f5f9;
+  --bg-hover: #e9ebfb;
   --bg-subtle: #eef0f3;
 
   --border: #e8eaed;
@@ -237,8 +243,9 @@
   --backdrop: rgba(17, 24, 39, 0.4);
 
   --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04);
-  --shadow-md: 0 8px 24px rgba(15, 23, 42, 0.08);
-  --shadow-panel: -2px 0 16px rgba(15, 23, 42, 0.04);
+  --shadow-md: 0 12px 32px rgba(15, 23, 42, 0.1);
+  --shadow-panel: -2px 0 20px rgba(15, 23, 42, 0.05);
+  --shadow-float: 0 18px 44px rgba(15, 23, 42, 0.16);
 
   --scrollbar-track: transparent;
   --scrollbar-thumb: rgba(92, 99, 112, 0.28);
@@ -253,12 +260,13 @@
 /* 米色：宣纸底、松烟字、赭石印，茶釉作铺陈 */
 [data-theme="beige"] {
   color-scheme: light;
-  --bg-app: #ede4d2;
+  --bg-app: #e7ddc9;
   --bg: var(--bg-app);
-  --bg-surface: #f7f1e4;
-  --bg-muted: #f3ebd9;
-  --bg-hover: #e8dcc4;
-  --bg-subtle: #e6d9c4;
+  --bg-stage: #f8f2e5;
+  --bg-surface: #fbf6ea;
+  --bg-muted: #f2ead7;
+  --bg-hover: #e6d9c1;
+  --bg-subtle: #e5d8c3;
 
   --border: #d4c6ae;
   --border-strong: #c4b396;
@@ -304,8 +312,9 @@
   --backdrop: rgba(42, 36, 24, 0.42);
 
   --shadow-sm: 0 1px 2px rgba(42, 36, 24, 0.06);
-  --shadow-md: 0 10px 28px rgba(42, 36, 24, 0.1);
-  --shadow-panel: -2px 0 18px rgba(42, 36, 24, 0.06);
+  --shadow-md: 0 12px 32px rgba(42, 36, 24, 0.12);
+  --shadow-panel: -2px 0 20px rgba(42, 36, 24, 0.07);
+  --shadow-float: 0 18px 44px rgba(42, 36, 24, 0.18);
 
   --scrollbar-track: transparent;
   --scrollbar-thumb: rgba(92, 83, 70, 0.28);
@@ -320,10 +329,11 @@
 /* 夜紫：近黑底、紫藤强调（改版前的暗色） */
 [data-theme="violet"] {
   color-scheme: dark;
-  --bg-app: #0f1117;
+  --bg-app: #0d0f15;
   --bg: var(--bg-app);
-  --bg-surface: #1a1d26;
-  --bg-muted: #151820;
+  --bg-stage: #13161f;
+  --bg-surface: #1b1f2a;
+  --bg-muted: #161923;
   --bg-hover: #22263a;
   --bg-subtle: #1e222c;
 
@@ -371,8 +381,9 @@
   --backdrop: rgba(0, 0, 0, 0.6);
 
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.24);
-  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.4);
-  --shadow-panel: -2px 0 16px rgba(0, 0, 0, 0.28);
+  --shadow-md: 0 12px 32px rgba(0, 0, 0, 0.42);
+  --shadow-panel: -2px 0 20px rgba(0, 0, 0, 0.3);
+  --shadow-float: 0 18px 44px rgba(0, 0, 0, 0.5);
 
   --scrollbar-track: transparent;
   --scrollbar-thumb: rgba(154, 163, 176, 0.22);

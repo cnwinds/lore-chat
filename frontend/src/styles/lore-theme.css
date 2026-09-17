@@ -1,8 +1,15 @@
-/* Lore 账册气质：在各套配色令牌之上收口界面。
-   强调色只落在印记处（朱砂 / 赭石 / 紫藤），其余保持安静。 */
+/* ============================================================
+   Lore 收口层：瓷面印房
+   ------------------------------------------------------------
+   中栏是最亮的「瓷面舞台」，两侧后退为青瓷桌沿；朱砂只盖在
+   「落印」处：发送印章钮、选中内嵌线、沉淀与身份印记。
+   其余元素保持安静的墨色阶；emoji 一律以细线图标替代。
+   本层只做气质收口，结构性样式在 index.css / grok-layout.css。
+   ============================================================ */
 
 :root {
   --font-display: "Source Serif 4", "Noto Serif SC", "Songti SC", serif;
+  --radius-card: 14px;
 }
 
 body {
@@ -10,7 +17,7 @@ body {
   background-image:
     radial-gradient(
       1200px 640px at 0% -8%,
-      color-mix(in srgb, var(--glaze) 14%, transparent),
+      color-mix(in srgb, var(--glaze) 12%, transparent),
       transparent 58%
     );
 }
@@ -45,82 +52,42 @@ body {
   letter-spacing: 0.01em;
 }
 
+/* —— 舞台与桌沿：中栏提亮，两侧保持青瓷底 —— */
+.main-panel {
+  background: var(--bg-stage);
+}
+
+.app-shell-left {
+  background: transparent;
+}
+
+.role-config-panel {
+  background: transparent;
+}
+
 /* —— 登录 / 首次设密 —— */
 .auth-gate {
   background-image:
     radial-gradient(
       900px 480px at 8% -12%,
-      color-mix(in srgb, var(--glaze) 22%, transparent),
+      color-mix(in srgb, var(--glaze) 20%, transparent),
       transparent 56%
     ),
     radial-gradient(
       700px 420px at 100% 110%,
-      color-mix(in srgb, var(--accent) 8%, transparent),
+      color-mix(in srgb, var(--accent) 7%, transparent),
       transparent 48%
     );
 }
 
 .auth-gate-card {
-  position: relative;
-  padding: 32px 28px 28px 32px;
-  border-radius: 4px;
-  background: var(--bg-surface);
-  box-shadow:
-    0 1px 0 var(--seal-gold-soft),
-    var(--shadow-md);
+  border-radius: 16px;
+  box-shadow: var(--shadow-float);
 }
 
-.auth-gate-card::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 22px;
-  bottom: 22px;
-  width: 3px;
-  background: var(--accent);
-  border-radius: 0 2px 2px 0;
-}
-
-.auth-gate-title {
-  font-weight: 600;
-}
-
-.auth-gate-submit {
-  border-radius: 4px;
-  letter-spacing: 0.02em;
-}
-
-/* —— 设置抽屉 —— */
-.settings-panel {
-  background: var(--bg-surface);
-}
-
-.settings-panel-header {
-  background: color-mix(in srgb, var(--glaze-soft) 55%, var(--bg-surface));
-}
-
-.settings-panel-header h2 {
-  font-weight: 650;
-  letter-spacing: 0.02em;
-}
-
-.settings-panel-body {
-  background:
-    radial-gradient(
-      120% 40% at 100% 0%,
-      color-mix(in srgb, var(--glaze-soft) 70%, transparent),
-      transparent 55%
-    ),
-    var(--bg-surface);
-}
-
-/* —— 中栏顶栏 / 欢迎 —— */
-.chat-desktop-header {
-  background: transparent;
-}
-
-.chat-welcome-logo {
-  color: var(--text);
+/* —— 聊天时间线：助手开放文本，用户瓷片 —— */
+.chat-messages {
+  padding: 20px 28px 14px;
 }
 
 .chat-bubble {
@@ -129,32 +96,276 @@ body {
 
 .chat-bubble-user {
   background: var(--user-bubble);
+  border: 1px solid color-mix(in srgb, var(--glaze) 22%, transparent);
+  border-radius: var(--radius-card);
+  border-bottom-right-radius: 4px;
 }
 
+.chat-bubble-assistant {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding-left: 2px;
+}
+
+.chat-bubble-peer {
+  border-radius: var(--radius-card);
+  border-bottom-left-radius: 4px;
+}
+
+/* 元信息降噪：时间是常驻的唯一元数据，操作 hover / focus 浮现 */
+.chat-meta-actions {
+  opacity: 0;
+  transition: opacity 0.14s ease;
+}
+
+.chat-row:hover .chat-meta-actions,
+.chat-row:focus-within .chat-meta-actions {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .chat-meta-actions {
+    opacity: 1;
+  }
+}
+
+.chat-meta-model {
+  opacity: 0.85;
+}
+
+/* 时间线分隔线：细线 + 弱化标签 */
+.chat-timeline-separator-label {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+/* —— 消息进场：唯一的一次编排动效 —— */
+@media (prefers-reduced-motion: no-preference) {
+  .chat-messages .chat-row {
+    animation: lore-row-in 0.18s ease-out both;
+  }
+}
+
+@keyframes lore-row-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* —— 空状态：瓷面留白，logo 即全部 —— */
+.chat-welcome-logo {
+  color: var(--text);
+  opacity: 0.92;
+}
+
+.chat-welcome-status {
+  color: var(--text-muted);
+}
+
+/* —— 输入区：印泥托盘 —— */
 .composer-card {
-  border-radius: var(--radius-md);
-  border-color: var(--border);
+  border: 1px solid var(--border);
+  border-radius: 16px;
   background: var(--bg-surface);
-  box-shadow: none;
+  box-shadow: var(--shadow-sm);
+  transition:
+    border-color 0.16s ease,
+    box-shadow 0.16s ease;
+}
+
+.composer-card:focus-within {
+  border-color: var(--glaze);
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--glaze) 14%, transparent),
+    var(--shadow-sm);
+}
+
+/* 发送钮 = 朱砂印：可发送时是全界面唯一的实心朱砂圆 */
+.composer-send-btn {
+  border-radius: 50%;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    transform 0.12s ease;
 }
 
 .composer-send-btn--ready {
   background: var(--accent);
   color: var(--text-on-accent);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--accent) 32%, transparent);
 }
 
-/* —— 左栏 —— */
+.composer-send-btn--ready:hover:not(:disabled) {
+  background: var(--accent-hover);
+  opacity: 1;
+  transform: translateY(-1px);
+}
+
+.composer-send-btn--ready:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+/* 沉淀 / 分享：安静的瓷面胶囊，悬停才着墨 */
+.composer-archive-btn {
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.composer-archive-btn:hover:not(:disabled) {
+  background: var(--bg-muted);
+  color: var(--text);
+}
+
+.composer-archive-btn:disabled {
+  opacity: 0.45;
+}
+
+/* —— 知识库树：细线行 + 青釉选中 + 朱砂内嵌线 —— */
+.file-tree {
+  padding: 2px 6px;
+}
+
+.file-tree-row {
+  border-radius: 7px;
+  min-height: 28px;
+  transition: background 0.12s ease;
+}
+
+.file-tree-row:hover {
+  background: var(--bg-hover);
+}
+
+.file-tree-row.folder.selected,
+.file-tree-row.file.selected {
+  background: var(--glaze-soft);
+  border-left: none;
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.file-tree-row.folder.selected .file-tree-label,
+.file-tree-row.file.selected .file-tree-label,
+.file-tree-file-btn--active .file-tree-label {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.file-tree-row.kb-special.folder.selected,
+.file-tree-row.kb-special.file.selected {
+  background: var(--kb-special-bg-hover);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.file-tree-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.file-tree-row.kb-special .file-tree-icon {
+  color: var(--glaze);
+}
+
+.file-tree-row.folder.selected .file-tree-icon {
+  color: var(--glaze);
+}
+
+.file-tree-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* —— 侧栏页脚：撤掉描边小盒子，改为安静的桌沿 —— */
+.sidebar-footer {
+  background: transparent;
+  border-top: 1px solid var(--border);
+  padding: 6px 10px 8px;
+}
+
+.sidebar-footer-actions {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  overflow: visible;
+}
+
+.sidebar-footer-actions > * + * {
+  border-left: none;
+}
+
+.theme-toggle,
+.sidebar-dock-btn,
+.sidebar-settings-btn {
+  border-radius: 8px;
+  min-height: 34px;
+}
+
+.theme-toggle:hover,
+.sidebar-dock-btn:hover,
+.sidebar-settings-btn:hover {
+  background: var(--bg-hover);
+}
+
+.sidebar-dock-btn--active {
+  background: var(--glaze-soft);
+  color: var(--text);
+}
+
+.sidebar-settings-icon {
+  display: inline-flex;
+  color: var(--text-muted);
+}
+
+/* —— 角色栏：印章方印 —— */
+.role-avatar {
+  border-radius: 26%;
+}
+
+.role-avatar-letter {
+  font-family: var(--font-display);
+  font-weight: 600;
+}
+
+.role-config-cover {
+  border-radius: 12px;
+}
+
+.role-config-cover-art {
+  border-radius: 22%;
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--text-on-accent) 26%, transparent),
+    0 10px 28px color-mix(in srgb, var(--glaze) 24%, transparent);
+}
+
+.role-config-panel .role-config-cover-letter {
+  font-weight: 650;
+}
+
+.role-config-panel,
 .app-shell-left {
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--glaze-soft) 35%, var(--bg-surface)) 0%,
-      var(--bg-surface) 120px
-    );
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--glaze-soft) 24%, var(--bg-app)) 0%,
+    var(--bg-app) 150px
+  );
 }
 
 .app-shell-left .role-item--active {
-  background: color-mix(in srgb, var(--glaze) 12%, var(--bg-surface));
+  background: color-mix(in srgb, var(--glaze) 12%, var(--bg-app));
   box-shadow: inset 2px 0 0 var(--accent);
 }
 
@@ -166,23 +377,6 @@ body {
 .role-config-cover-caption {
   font-size: 17px;
   color: var(--text);
-}
-
-.role-config-panel {
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--glaze-soft) 28%, var(--bg-app)) 0%,
-      var(--bg-app) 160px
-    );
-}
-
-.role-config-cover-art--group {
-  width: min(168px, 64%);
-  aspect-ratio: 1;
-  border-radius: 30%;
-  overflow: visible;
-  background: transparent;
 }
 
 .role-config-members {
@@ -226,13 +420,27 @@ body {
   border-color: var(--danger);
 }
 
+/* —— 文档面板：白瓷阅读面 —— */
+.doc-panel {
+  background: var(--bg-surface);
+}
+
+.doc-viewer-header {
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.doc-viewer-body {
+  background: transparent;
+}
+
 /* —— 分享页 —— */
 .share-page {
   background: var(--bg-app);
   background-image:
     radial-gradient(
       1000px 520px at 8% -10%,
-      color-mix(in srgb, var(--glaze) 16%, transparent),
+      color-mix(in srgb, var(--glaze) 14%, transparent),
       transparent 55%
     );
 }
@@ -269,6 +477,10 @@ body {
   .doc-float-panel,
   .doc-panel {
     transition: none;
+    animation: none;
+  }
+
+  .chat-messages .chat-row {
     animation: none;
   }
 }

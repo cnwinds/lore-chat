@@ -1,5 +1,6 @@
 import { SettingsAttentionDot } from "../settings/SettingsAttentionDot";
 import { ThemeToggle } from "../ThemeToggle";
+import { GearGlyph } from "../KbIcons";
 
 type Props = {
   settingsAttention?: boolean;
@@ -52,7 +53,7 @@ export function LeftSidebarFooter({
             }
           >
             <span className="sidebar-settings-icon" aria-hidden>
-              ⚙
+              <GearGlyph />
             </span>
             <span className="sidebar-settings-label">
               设置
