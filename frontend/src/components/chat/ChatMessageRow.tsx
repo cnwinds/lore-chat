@@ -54,6 +54,8 @@ export type ChatMessageRowProps = {
   layout?: "dm" | "group";
   roles?: RoleSummary[];
   respondingRoleId?: string | null;
+  /** 时间线里最新一条有正文的助手回复：元信息常驻，不参与 hover 降噪 */
+  latest?: boolean;
 };
 
 function basename(path: string): string {
@@ -323,6 +325,7 @@ export function ChatMessageRow({
   layout = "dm",
   roles = [],
   respondingRoleId = null,
+  latest = false,
 }: ChatMessageRowProps) {
   const rowRef = useRef<HTMLDivElement>(null);
   const [highlightRange, setHighlightRange] = useState<{
@@ -449,7 +452,7 @@ export function ChatMessageRow({
   return (
     <div
       ref={rowRef}
-      className={rowClass}
+      className={latest ? `${rowClass} chat-row--latest` : rowClass}
       {...(m.id ? { "data-message-id": m.id } : {})}
       data-speaker-kind={groupSpeaker?.kind || m.speaker_kind || m.role}
       data-speaker-id={groupSpeaker?.id || m.speaker_id || undefined}

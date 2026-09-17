@@ -117,25 +117,30 @@ body {
   border-bottom-left-radius: 4px;
 }
 
-/* 元信息降噪：时间是常驻的唯一元数据，操作 hover / focus 浮现 */
-.chat-meta-actions {
+/* 元信息分层：时间常驻作落款；耗时/模型/token/操作 hover 或键盘聚焦时浮现；
+   最新一条助手回复（含流式中的那条）常驻完整信息，方便确认刚用了什么模型、跑了多久。
+   用 opacity 而非 display，行高恒定不跳版；触屏无 hover，自动回退为常驻。 */
+.chat-meta-actions,
+.chat-meta-elapsed,
+.chat-meta-model-wrap,
+.chat-meta-user .chat-copy-btn {
   opacity: 0;
   transition: opacity 0.14s ease;
 }
 
-.chat-row:hover .chat-meta-actions,
-.chat-row:focus-within .chat-meta-actions {
+.chat-row:hover :is(.chat-meta-actions, .chat-meta-elapsed, .chat-meta-model-wrap, .chat-meta-user .chat-copy-btn),
+.chat-row:focus-within :is(.chat-meta-actions, .chat-meta-elapsed, .chat-meta-model-wrap, .chat-meta-user .chat-copy-btn),
+.chat-row--latest :is(.chat-meta-actions, .chat-meta-elapsed, .chat-meta-model-wrap) {
   opacity: 1;
 }
 
 @media (hover: none) {
-  .chat-meta-actions {
+  .chat-meta-actions,
+  .chat-meta-elapsed,
+  .chat-meta-model-wrap,
+  .chat-meta-user .chat-copy-btn {
     opacity: 1;
   }
-}
-
-.chat-meta-model {
-  opacity: 0.85;
 }
 
 /* 时间线分隔线：细线 + 弱化标签 */

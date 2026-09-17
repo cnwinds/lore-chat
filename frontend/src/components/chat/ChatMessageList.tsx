@@ -104,6 +104,15 @@ function renderSegmentRows(opts: {
     respondingRoleId = null,
   } = opts;
   const rows = expandMessagesForDisplay(msgs);
+  // 最新一条有正文的助手回复：元信息常驻（其余历史消息 hover 才浮现）
+  let latestAssistantKey: string | undefined;
+  if (isTip) {
+    for (const row of rows) {
+      if (row.message.role === "assistant" && messageHasBody(row.message, false)) {
+        latestAssistantKey = row.key;
+      }
+    }
+  }
   return rows.map((row) => {
     const isLiveStreaming =
       isTip &&
@@ -146,6 +155,7 @@ function renderSegmentRows(opts: {
         layout={roomMode === "group" ? "group" : "dm"}
         roles={roles}
         respondingRoleId={respondingRoleId}
+        latest={isTip && row.key === latestAssistantKey}
       />
     );
   });
