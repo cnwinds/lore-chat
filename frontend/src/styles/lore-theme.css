@@ -481,6 +481,40 @@ body {
   border-color: var(--danger);
 }
 
+/* —— 左栏：分区锚定，消解大片空白带来的「平」 —— */
+.app-shell-left {
+  border-right: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+}
+
+/* 会话区贴合内容高度（多到超份额时才在份额内滚动），
+   底部细线成为与知识库区的分界，空白不再淤积在会话与知识库之间 */
+.app-shell-left-split .role-list {
+  flex: 0 1 auto;
+  max-height: calc(var(--app-left-role-share, 0.46) * 100%);
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+}
+
+.role-list-toolbar {
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 45%, transparent);
+}
+
+/* 知识库区头：小节标签 + 细线，给树一个清晰的起点 */
+.kb-sidebar-head {
+  padding: 10px 12px 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 45%, transparent);
+}
+
+.kb-sidebar-title h4 {
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  color: var(--text-secondary);
+}
+
+.kb-sidebar-body {
+  padding-top: 6px;
+}
+
 /* —— 信息流过程块：安静的页边脚注，不与正文争色 ——
    思考/工具行一律去描边、去底色盒，文字降一档；时长不再用强调色。
    全部走主题令牌，五套配色下都自动保持从属地位。 */
