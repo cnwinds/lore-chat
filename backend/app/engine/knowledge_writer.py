@@ -104,10 +104,31 @@ class KnowledgeWriter:
         indexer: Indexer | None = None,
         *,
         skills_dir: str = "技能",
+        enabled_skills=None,
     ):
         self.repo = repo
         self.indexer = indexer
         self.skills_dir = skills_dir.replace("\\", "/").strip("/") or "技能"
+        self.enabled_skills = enabled_skills
+
+    def _enable_new_skill_root(self, root: str) -> None:
+        store = self.enabled_skills
+        if store is None:
+            return
+        try:
+            store.try_enable_root(self.repo, root)
+        except Exception:
+            return
+
+    def _enable_new_skill_from_path(self, rel_path: str) -> None:
+        from app.engine.kb_skill import skill_package_root_from_skill_md
+        from app.engine.skills_dir import is_skill_md_path
+
+        if not is_skill_md_path(rel_path):
+            return
+        root = skill_package_root_from_skill_md(rel_path)
+        if root:
+            self._enable_new_skill_root(root)
 
     def persist_document(
         self,
@@ -124,6 +145,7 @@ class KnowledgeWriter:
         if is_memory_projection_path(norm):
             raise ValueError(MEMORY_FILE_DISABLED_MSG)
         require_skill_md_in_skills_dir(norm, self.skills_dir)
+        existed = self.repo.abs_path(norm).is_file()
         body = sanitize_markdown_image_srcs_for_storage(body)
         self.repo.write_doc(norm, meta, body, commit_msg=commit_msg)
         if self.indexer is not None:
@@ -132,6 +154,8 @@ class KnowledgeWriter:
             changelog_line,
             commit_msg=f"chore: changelog for {norm}",
         )
+        if not existed:
+            self._enable_new_skill_from_path(norm)
         return norm
 
     def update_document_meta(
@@ -389,6 +413,8 @@ class KnowledgeWriter:
             f"导入{label} {dest_root}（{len(written)} 个文件）",
             commit_msg=f"chore: changelog import pack {dest_root}",
         )
+        if kind == "skill_package":
+            self._enable_new_skill_root(dest_root)
         return {
             "rel_path": dest_root,
             "kind": kind,

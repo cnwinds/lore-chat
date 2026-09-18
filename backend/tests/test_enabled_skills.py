@@ -51,3 +51,34 @@ def test_enabled_skills_store_put_rewrites(tmp_path):
     roots = store.put(repo, ["技能/a"])
     assert roots == ["技能/a"]
     assert store.load_roots() == ["技能/a"]
+
+
+def test_try_enable_root_appends_valid_and_skips_invalid(tmp_path):
+    repo = KnowledgeRepo(tmp_path)
+    repo.write_doc(
+        "技能/a/SKILL.md",
+        {"title": "a"},
+        "---\nname: a\ndescription: Use a.\n---\n\n# a\n",
+        commit_msg="seed",
+    )
+    repo.write_doc(
+        "技能/bare/SKILL.md",
+        {"title": "b"},
+        "# no yaml\n",
+        commit_msg="seed",
+    )
+    store = EnabledSkillsStore(tmp_path, skills_dir="技能")
+    store.save_roots(["技能/a"])
+    assert store.try_enable_root(repo, "技能/a") is False
+    assert store.load_roots() == ["技能/a"]
+    assert store.try_enable_root(repo, "技能/bare") is False
+    assert store.load_roots() == ["技能/a"]
+
+    repo.write_doc(
+        "技能/c/SKILL.md",
+        {"title": "c"},
+        "---\nname: c\ndescription: Use c.\n---\n\n# c\n",
+        commit_msg="seed",
+    )
+    assert store.try_enable_root(repo, "技能/c") is True
+    assert store.load_roots() == ["技能/a", "技能/c"]

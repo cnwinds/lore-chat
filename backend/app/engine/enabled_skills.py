@@ -69,6 +69,21 @@ class EnabledSkillsStore:
         build_skill_catalog(repo, roots_in, skills_dir=self.skills_dir)
         return self.save_roots(roots_in)
 
+    def try_enable_root(self, repo: KnowledgeRepo, root: str) -> bool:
+        """新包加入启用集：已在集内或触发头不齐则跳过，不抛错。"""
+        root_n = norm_dir(root)
+        if not root_n:
+            return False
+        current = self.load_roots()
+        if root_n in current:
+            return False
+        try:
+            build_skill_catalog(repo, [root_n], skills_dir=self.skills_dir)
+        except EnabledSkillsError:
+            return False
+        self.save_roots([*current, root_n])
+        return True
+
     def catalog_for_chat(self, repo: KnowledgeRepo) -> list[SkillCatalogEntry]:
         """加载启用集并校验触发头；供 chat 注入。"""
         return build_skill_catalog(

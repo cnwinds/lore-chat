@@ -41,6 +41,16 @@ def _writer(tmp_path):
     return KnowledgeWriter(repo, idx), repo
 
 
+def _writer_with_enabled(tmp_path):
+    from app.engine.enabled_skills import EnabledSkillsStore
+
+    repo = KnowledgeRepo(tmp_path / "knowledge")
+    llm = FakeLLMClient(embed_dim=8)
+    idx = Indexer(VectorIndex(tmp_path / "vec"), FullTextIndex(tmp_path / "fts.db"), llm)
+    store = EnabledSkillsStore(tmp_path / "knowledge", skills_dir="技能")
+    return KnowledgeWriter(repo, idx, enabled_skills=store), repo, store
+
+
 def test_is_zip_filename_and_package_name():
     assert is_zip_filename("数数查询.zip")
     assert is_zip_filename("Foo.ZIP")
@@ -260,3 +270,43 @@ def test_import_skill_pack_dest_outside_skills_rejected(tmp_path):
             dest_root="技术/数数查询",
         )
     assert "技术/数数查询/SKILL.md" not in repo.list_tree()
+
+
+def test_import_skill_zip_enables_by_default(tmp_path):
+    writer, repo, store = _writer_with_enabled(tmp_path)
+    store.save_roots([])
+    data = _pack_zip(
+        {
+            "数数查询/SKILL.md": (
+                "---\nname: count\ndescription: 数数\n---\n\n# 数\n"
+            ).encode(),
+        },
+        "技能/数数查询",
+    )
+    writer.import_entry(directory="技能", filename="数数查询.zip", data=data)
+    assert store.load_roots() == ["技能/数数查询"]
+
+
+def test_import_skill_zip_without_trigger_header_does_not_enable(tmp_path):
+    writer, _repo, store = _writer_with_enabled(tmp_path)
+    data = _pack_zip({"demo/SKILL.md": b"# skill\n"}, "技能/demo")
+    writer.import_entry(directory="技能", filename="demo.zip", data=data)
+    assert store.load_roots() == []
+
+
+def test_new_skill_md_enables_but_edit_does_not_reenable(tmp_path):
+    writer, _repo, store = _writer_with_enabled(tmp_path)
+    body = "---\nname: demo\ndescription: Use demo.\n---\n\n# demo\n"
+    writer.import_entry(
+        directory="技能/demo", filename="SKILL.md", data=body.encode()
+    )
+    assert store.load_roots() == ["技能/demo"]
+    store.save_roots([])
+    writer.persist_document(
+        "技能/demo/SKILL.md",
+        {"title": "demo"},
+        body,
+        commit_msg="edit",
+        changelog_line="edit",
+    )
+    assert store.load_roots() == []

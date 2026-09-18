@@ -118,7 +118,7 @@ _Avoid_: 附件托盘；用托盘表达 Skill 启用；Ctrl+单击非「技能�
 **主文档**：托盘内用于默认 `edit_doc` 目标的普通 Markdown 文档。文档元数据用 `write_doc.meta` / `read_doc_meta` / `update_doc_meta`，调用方不感知磁盘定界。
 _Avoid_: 在正文伪造 KB 元数据头
 
-**Skill 启用集（catalog）**：跨会话保存在 `.kb/enabled_skills.json`；编排在 `useEnabledSkillsAttach`。**仅** Ctrl+单击顶层「技能」目录（或该目录右键「启用 Skill…」）→ 发现全部包 → 勾选维护默认启用集（首次无启用则默认全选，否则预勾选「候选 ∩ 已启用」）。确认后 `PUT /api/enabled-skills` **整表重写** `roots`。每轮注入 name/description（见 `[Skill 目录]`）；命中后再 `read_doc`。启用集**不进**托盘；要对某包改内容，Ctrl+单击该包目录/文件加入托盘即可。Skill 包（含 `SKILL.md`）**必须**落在「技能」目录下（发现 / 启用 / 写入硬约束）；对话 catalog 由 `ChatSessionRunner.resolve_skill_catalog` 装配。
+**Skill 启用集（catalog）**：跨会话保存在 `.kb/enabled_skills.json`；编排在 `useEnabledSkillsAttach`。**仅** Ctrl+单击顶层「技能」目录（或该目录右键「启用 Skill…」）→ 发现全部包 → 勾选维护默认启用集（首次无启用则默认全选，否则预勾选「候选 ∩ 已启用」）。确认后 `PUT /api/enabled-skills` **整表重写** `roots`。新建或导入 Skill 包（含触发头）时由 `KnowledgeWriter` 默认追加进启用集；改已有 `SKILL.md` 不会把用户关掉的包再打开。每轮注入 name/description（见 `[Skill 目录]`）；命中后再 `read_doc`。启用集**不进**托盘；要对某包改内容，Ctrl+单击该包目录/文件加入托盘即可。Skill 包（含 `SKILL.md`）**必须**落在「技能」目录下（发现 / 启用 / 写入硬约束）；对话 catalog 由 `ChatSessionRunner.resolve_skill_catalog` 装配。
 _Avoid_: 挂载即灌入 SKILL.md 全文；子文件夹 Ctrl+单击打开启用窗；把 name/description 写入 `<<<LORE_META`；在 SYSTEM_PROMPT 与 catalog 注入重复写触发契约；在 HTTP 路由内直接编排 `EnabledSkillsStore`；作用域合并双形态 PUT
 
 **Skill 正文头**：每个 `SKILL.md` 正文开头须有 `---` YAML，含非空 `name` 与 `description`（何时使用，语言不限）。缺头时启用/对话返回可读错误，引导用户改文件。KB 文档元数据只用 `<<<LORE_META`；正文 `---` 不作库头解析。文档预览模式将触发头拆成表格展示，正文交给编辑器；源码模式仍编辑原始 YAML；落盘保留原 header 块。

@@ -364,6 +364,8 @@ def test_skill_zip_download_upload_roundtrip(client):
     assert "技能/数数查询/lorechat-pack.json" not in tree
     doc = client.get("/api/doc", params={"path": "技能/数数查询/SKILL.md"}).json()
     assert "数数查询" in doc["body"]
+    enabled = client.get("/api/enabled-skills").json()["roots"]
+    assert "技能/数数查询" in enabled
 
 
 def test_kb_import_skill_zip_conflict(client):
