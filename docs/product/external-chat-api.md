@@ -1,6 +1,6 @@
 # 对外聊天 API
 
-> 状态：**已落地**（脚本通道 P0）。人设可共享；**每把 API Key = 一个独立隐藏角色**（独立沙箱、独立会话）。P1/P2（`thread_id`、精简 SSE、独立人设、OpenAI 兼容网关等）仍后置。
+> 状态：**已落地**（脚本通道 P0）。人设可共享；**每把 API Key = 一个独立隐藏角色**（独立沙箱、独立会话）。P1 精简 SSE（`stream: true`）已落地；其余 P1/P2（`thread_id`、独立人设、OpenAI 兼容网关等）仍后置。
 >
 > 已被 [聊天通道插件](channel-plugins.md) 作为第一种通道（`script_api`）包含。本文仍是脚本 Key / `POST /api/v1/chat` 的权威口径；P0 **不改**这些行为。设置入口现为「聊天通道」。
 >
@@ -37,7 +37,7 @@
 | KB / Skill | 可读、可跑 Skill；不能改 KB、不能改 Skill、不能沙箱回写。 |
 | 沙箱 | 能跑。每个工作角色一把容器/卷，与左栏角色互不 interrupt。 |
 | 会话 | 默认每次调用新建一段；可带该 Key 自己的 `conversation_id` 多轮。 |
-| 响应 | 同步 JSON；超时 202。 |
+| 响应 | 默认同步 JSON；超时 202。可选 `stream: true` 精简 SSE（断开不取消执行） |
 
 ## 3. 数据怎么落
 
@@ -103,12 +103,26 @@ Skill catalog =（Key 可选白名单，否则全局启用集）∩ 请求 `skil
 ```
 POST /api/v1/chat
 Authorization: Bearer lc_live_…
-{ "message": "…", "conversation_id": null, "skills": ["技能/周报助手"], "title": "…" }
+{ "message": "…", "conversation_id": null, "skills": ["技能/周报助手"], "title": "…", "stream": false }
 ```
 
 - 不传 `conversation_id`：在**这把 Key 的工作角色**下新建会话
 - 带 id：必须属于这把 Key，否则 404（A 的 id 不能拿去续 B）
 - 角色/人设不由请求指定，避免脚本改绑到别人的工作角色
+- **`stream: true`**：请求体仍是 JSON；响应为 `text/event-stream`。先 `start`（含 `conversation_id` / `turn_id`），再增量，最后 `done`（终答在 `message.content`）。思考 / 工具事件默认不下发，由通道卡片「思考」「工具」开关打开。不把网页用的 `timeline_state` 暴露给脚本。断开 SSE **不**取消回合。
+
+```
+event: start
+data: {"conversation_id":"…","turn_id":"…","status":"running"}
+
+event: text_delta
+data: {"delta":"你好"}
+
+event: done
+data: {"conversation_id":"…","turn_id":"…","status":"completed","message":{"role":"assistant","content":"你好"}}
+```
+
+可选事件：`think_delta`（卡片开「思考」）、`tool_start` / `tool_progress` / `tool_result`（卡片开「工具」）、`error`。`done` 可能带 `needs_input`（征询纯文本）。终答以 `done.message.content` 为准。
 
 其它：`GET/stop` 会话与回合、`GET /api/v1/skills`。网页 Cookie 做 Key CRUD + 读某把 Key 的时间线。Bearer 不能打设置/KB 树。
 
@@ -128,7 +142,7 @@ Authorization: Bearer lc_live_…
 
 **P0**：人设 CRUD；创建 Key 必选/新建人设并生成隐藏角色；v1 chat + 按 Key 只读时间线；`mode=api`；API 沙箱不占左栏 4 名额；同 Key 并发 409。
 
-**P1**：`thread_id`；精简 SSE；设置页回答 `needs_input`；「改为独立人设」；删 Key 时是否毁卷。
+**P1**：`thread_id`；**精简 SSE（`stream: true`）已落地**；设置页回答 `needs_input`；「改为独立人设」；删 Key 时是否毁卷。
 
 **P2**：OpenAI 兼容适配；用量；附件。
 
@@ -151,3 +165,4 @@ Authorization: Bearer lc_live_…
 - 左栏出现这些工作角色
 - 同一把 Key 再开多把沙箱
 - ephemeral、自动写回 KB
+- 把网页 `timeline_state` 原样暴露给脚本 SSE

@@ -172,6 +172,8 @@ describe("chatCurlExample", () => {
     expect(sample).toContain("POST \"$LORECHAT_URL/api/v1/chat\"");
     expect(sample).toContain("Authorization: Bearer lc_live_secret");
     expect(sample).toContain("你好");
+    expect(sample).toContain('"stream":true');
+    expect(sample).toContain("curl -N");
   });
 });
 

@@ -430,6 +430,24 @@ class OpenApiService:
     def _assert_key_conversation(self, key: dict, cid: str) -> dict:
         return self.channel_turns.assert_instance_conversation(key, cid)
 
+    def begin_chat(
+        self,
+        *,
+        key: dict,
+        message: str,
+        conversation_id: str | None = None,
+        skills: list[str] | None = None,
+        title: str | None = None,
+    ) -> tuple[str, dict]:
+        return self.channel_turns.begin_chat(
+            record=key,
+            message=message,
+            conversation_id=conversation_id,
+            skills=skills,
+            title=title,
+            type_id=SCRIPT_API_TYPE_ID,
+        )
+
     async def complete_chat(
         self,
         *,
@@ -448,6 +466,13 @@ class OpenApiService:
             title=title,
             timeout_sec=timeout_sec,
             type_id=SCRIPT_API_TYPE_ID,
+        )
+
+    def iter_chat_sse(self, *, key: dict, conversation_id: str, turn: dict):
+        return self.channel_turns.iter_chat_sse(
+            record=key,
+            conversation_id=conversation_id,
+            turn=turn,
         )
 
     def list_key_conversations(self, key_id: str) -> list[dict]:

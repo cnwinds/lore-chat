@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ApiPersona } from "../../api/openApi";
 import type { ChannelInstance } from "../../api/channelPlugins";
 import {
+  accessGuide,
   credentialChip,
   isExclusiveTo,
   personaOptionLabel,
@@ -87,5 +88,12 @@ describe("channelUiModel", () => {
   it("uses a short type badge next to the channel name", () => {
     expect(typeBadgeLabel("script_api")).toBe("脚本");
     expect(typeBadgeLabel("feishu")).toBe("飞书");
+  });
+
+  it("tells script callers how to switch to SSE", () => {
+    const guide = accessGuide("script_api");
+    expect(guide.lead).toContain("stream: true");
+    expect(guide.steps.some((step) => step.includes("stream"))).toBe(true);
+    expect(guide.curl).toContain('"stream":true');
   });
 });

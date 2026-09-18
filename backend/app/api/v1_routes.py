@@ -3,14 +3,21 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.api.http_deps import container
+from app.engine.chat.sse_keepalive import with_sse_keepalive
 from app.engine.conversation.shared import TurnInProgress
 from app.engine.open_api import OpenApiError
 
 router = APIRouter(prefix="/v1")
+
+_SSE_HEADERS = {
+    "Cache-Control": "no-cache",
+    "Connection": "keep-alive",
+    "X-Accel-Buffering": "no",
+}
 
 
 class V1ChatBody(BaseModel):
@@ -20,6 +27,7 @@ class V1ChatBody(BaseModel):
     title: str | None = None
     wait: bool = True
     timeout_sec: float = 120
+    stream: bool = False
 
 
 def _api_key(request: Request) -> dict:
@@ -41,6 +49,26 @@ async def v1_chat(body: V1ChatBody, request: Request):
     key = _api_key(request)
     svc = container(request).open_api
     try:
+        if body.stream:
+            cid, turn = svc.begin_chat(
+                key=key,
+                message=body.message,
+                conversation_id=body.conversation_id,
+                skills=body.skills or None,
+                title=body.title,
+            )
+            headers = {
+                **_SSE_HEADERS,
+                "X-Turn-Id": turn["turn_id"],
+                "X-Conversation-Id": cid,
+            }
+            return StreamingResponse(
+                with_sse_keepalive(
+                    svc.iter_chat_sse(key=key, conversation_id=cid, turn=turn)
+                ),
+                media_type="text/event-stream",
+                headers=headers,
+            )
         result = await svc.complete_chat(
             key=key,
             message=body.message,

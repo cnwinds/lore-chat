@@ -117,7 +117,7 @@ HTTP 路由只验签、拆 DTO、交给通道再交给 runner。**禁止**在 we
 | **查看聊天记录** | 进入该实例的只读时间线 / 会话列表，对齐现网「查看会话」。只看这一实例，不按人设合并 |
 | **配置参数** | 先填公共项（名称、人设），再填该类型表单 |
 | **启停** | 关：不收消息、断开长连接；`script_api` 关 ≈ 吊销 Key。开：校验通过才进可用状态 |
-| **过程输出** | 卡片上「思考」「工具」两个开关，**默认关**。关：外部只收到终答（及征询纯文本）。开：把思考过程 / 工具结果一并写入出站。脚本通道开时写入 `message.content`；结构化 `assistant.timeline` 仍始终返回 |
+| **过程输出** | 卡片上「思考」「工具」两个开关，**默认关**。关：外部只收到终答（及征询纯文本）。开：把思考过程 / 工具结果一并写入出站。脚本通道开时写入 `message.content`；`stream: true` 时下发 `think_delta` / `tool_*`。结构化 `assistant.timeline` 仍始终在同步 JSON 里 |
 | **状态** | 未启用 / 已启用 / 校验失败（含签名错、缺公网、长连接断开）。失败原因写在卡片上 |
 | **会话映射** | 外部线程标识 ↔ 内部 `conversation_id`，多轮连续 |
 | **日志 / 用量** | **P1** 按通道实例。P0 脚本沿用「上次调用」，不做独立用量入口 |
@@ -459,7 +459,7 @@ IM 的 App Secret **运行时还要拿去调厂商**，不能只存哈希。
 | `ChannelPluginRegistry` | 内置通道类型；进程启动时挂上 |
 | `ChannelAdapter` | `validate_config`、`start/stop`、`parse_inbound`、`send_outbound`、`challenge` |
 | `ChannelInstanceStore` | 实例 CRUD；secret 脱敏；`script_api` 与 Key 投影 |
-| `ChannelTurnService` | **共有**：验实例启用 → 映射会话 → `begin_persisted_turn`；不解析 SSE |
+| `ChannelTurnService` | **共有**：验实例启用 → 映射会话 → `begin_persisted_turn`；脚本流式经 `public_sse` 投影；HTTP 不解析 Agent 事件 |
 | `channel_runtime` | 长连接 task，跟 `Container` / `apply_settings` |
 
 HTTP：
@@ -475,7 +475,8 @@ HTTP：
 
 | 调用方 | wait |
 |--------|------|
-| `POST /api/v1/chat` | 是（现网 timeout / 202） |
+| `POST /api/v1/chat` | 默认同步 wait（timeout / 202） |
+| `POST /api/v1/chat` `stream: true` | 否；观测 hub 精简 SSE。HTTP **不**解析 Agent 事件 |
 | IM adapter | 否；finalize 后 `send_outbound` |
 
 观测仍走 `TurnExecutionHub`。禁止为飞书再写 `stream_ephemeral`；禁止通道会话 `origin=web`。

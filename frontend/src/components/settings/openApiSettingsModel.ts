@@ -186,10 +186,18 @@ export function buildTypeConfig(typeId: string, draft: CreateKeyDraft) {
 
 export function chatCurlExample(token = "lc_live_…"): string {
   return [
+    `# 同步 JSON`,
     `curl -sS -X POST "$LORECHAT_URL/api/v1/chat" \\`,
     `  -H "Authorization: Bearer ${token}" \\`,
     `  -H "Content-Type: application/json" \\`,
     `  -d '{"message":"你好"}'`,
+    ``,
+    `# 流式 SSE`,
+    `curl -N -sS -X POST "$LORECHAT_URL/api/v1/chat" \\`,
+    `  -H "Authorization: Bearer ${token}" \\`,
+    `  -H "Content-Type: application/json" \\`,
+    `  -H "Accept: text/event-stream" \\`,
+    `  -d '{"message":"你好","stream":true}'`,
   ].join("\n");
 }
 

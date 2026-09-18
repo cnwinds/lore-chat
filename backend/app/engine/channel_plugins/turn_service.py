@@ -1,4 +1,7 @@
-"""共有回合：验实例/角色 → 映射会话 → begin_persisted_turn。不解析 SSE。"""
+"""共有回合：验实例/角色 → 映射会话 → begin_persisted_turn。
+
+HTTP 不解析 Agent SSE。脚本 `stream: true` 的精简事件由 `public_sse` 投影。
+"""
 
 from __future__ import annotations
 
@@ -19,6 +22,7 @@ from app.engine.channel_plugins.group_policy import (
     should_enqueue_group,
     thread_external_key,
 )
+from app.engine.channel_plugins.public_sse import iter_public_chat_sse
 from app.engine.channel_plugins.media import materialize_media
 from app.engine.channel_plugins.types import SCRIPT_API_TYPE_ID, origin_for_type
 from app.engine.conversation.shared import TurnInProgress
@@ -105,7 +109,7 @@ class ChannelTurnService:
                 continue
         return None
 
-    async def complete_chat(
+    def begin_chat(
         self,
         *,
         record: dict,
@@ -113,9 +117,8 @@ class ChannelTurnService:
         conversation_id: str | None = None,
         skills: list[str] | None = None,
         title: str | None = None,
-        timeout_sec: float = 120,
         type_id: str = SCRIPT_API_TYPE_ID,
-    ) -> dict[str, Any]:
+    ) -> tuple[str, dict[str, Any]]:
         text = (message or "").strip()
         if not text:
             raise ChannelError("message required")
@@ -145,6 +148,27 @@ class ChannelTurnService:
             )
 
         turn = self._begin(record, cid, text, skills=skills)
+        return cid, turn
+
+    async def complete_chat(
+        self,
+        *,
+        record: dict,
+        message: str,
+        conversation_id: str | None = None,
+        skills: list[str] | None = None,
+        title: str | None = None,
+        timeout_sec: float = 120,
+        type_id: str = SCRIPT_API_TYPE_ID,
+    ) -> dict[str, Any]:
+        cid, turn = self.begin_chat(
+            record=record,
+            message=message,
+            conversation_id=conversation_id,
+            skills=skills,
+            title=title,
+            type_id=type_id,
+        )
         wait = min(max(float(timeout_sec or 120), 0.05), 600.0)
         status = await self._wait_turn(turn, timeout_sec=wait)
         payload = self._chat_payload(cid, turn["turn_id"], status=status)
@@ -158,6 +182,38 @@ class ChannelTurnService:
                 show_tool_output=show_tool_output,
             )
         return payload
+
+    async def iter_chat_sse(
+        self,
+        *,
+        record: dict,
+        conversation_id: str,
+        turn: dict,
+    ):
+        """精简 SSE：观测 hub，不解析业务进 HTTP。断开不取消回合。"""
+        show_thinking, show_tool_output = output_flags(record)
+        turn_id = turn["turn_id"]
+        if turn.get("status", "running") != "running":
+            source = self.chat_runner.replay_turn(turn)
+        else:
+            source = self.chat_runner.observe_turn(
+                conversation_id, turn_id, after_seq=0
+            )
+
+        def _done_payload() -> dict[str, Any]:
+            row = self.conversations.get_turn(turn_id)
+            status = str((row or {}).get("status") or turn.get("status") or "complete")
+            return self._chat_payload(conversation_id, turn_id, status=status)
+
+        async for ev in iter_public_chat_sse(
+            source,
+            conversation_id=conversation_id,
+            turn_id=turn_id,
+            show_thinking=show_thinking,
+            show_tool_output=show_tool_output,
+            done_payload=_done_payload,
+        ):
+            yield ev
 
     def enqueue_now(self, event) -> dict[str, Any]:
         """先处理入站（去重/排队），回合异步。不对平台 409。"""

@@ -779,7 +779,12 @@ class FakeLLMClient:
         big: bool = True,
         temperature: float = 0.2,
     ) -> Iterator[ChatStreamChunk]:
+        think = ""
+        if self._i < len(self.tool_responses):
+            think = str(self.tool_responses[self._i].get("think") or "")
         result = self.chat_with_tools(messages, tools, big=big, temperature=temperature)
+        if think:
+            yield ChatStreamChunk(think_delta=think)
         if result.content:
             yield ChatStreamChunk(text_delta=result.content)
         yield ChatStreamChunk(result=result)

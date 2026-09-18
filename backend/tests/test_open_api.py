@@ -1,5 +1,7 @@
 """对外聊天 API：人设可共享，每把 Key 一个独立隐藏角色。"""
 
+import json
+
 from fastapi.testclient import TestClient
 
 from app.config import Settings
@@ -7,7 +9,7 @@ from app.engine.agent.prompts import MODE_API
 from app.engine.agent.tool_catalog import select_tools
 from app.engine.roles import API_ROLE_PREFIX, VISIBILITY_HIDDEN
 from app.main import create_app
-from app.models.llm import FakeLLMClient
+from app.models.llm import FakeLLMClient, ToolCall
 
 
 def _text_llm() -> FakeLLMClient:
@@ -282,3 +284,174 @@ def test_hidden_role_and_persona_store(tmp_path):
     assert all(r["id"] != hidden["id"] for r in store.list_all(visibility="sidebar"))
     assert any(r["id"] == hidden["id"] for r in store.list_all())
     assert store.get_persona(persona["id"])["system_prompt"] == "提示词"
+
+
+def _parse_sse_events(text: str) -> list[tuple[str, dict]]:
+    events: list[tuple[str, dict]] = []
+    for block in text.split("\n\n"):
+        block = block.strip()
+        if not block or block.startswith(":"):
+            continue
+        event_type = None
+        data = None
+        for line in block.split("\n"):
+            if line.startswith("event: "):
+                event_type = line[7:]
+            elif line.startswith("data: "):
+                data = json.loads(line[6:])
+        if event_type and data is not None:
+            events.append((event_type, data))
+    return events
+
+
+def test_v1_chat_stream_is_sse_and_hides_trace_by_default(tmp_path):
+    llm = FakeLLMClient(
+        chat_responses=["ok"] * 20,
+        tool_responses=[
+            {"content": "流式已收到", "think": "先想一步", "tool_calls": []}
+        ]
+        * 20,
+        embed_dim=8,
+    )
+    app, client = _setup(tmp_path, llm=llm)
+    try:
+        key, _ = _create_key(client, name="脚本")
+        r = client.post(
+            "/api/v1/chat",
+            headers=_auth(key["token"]),
+            json={"message": "流式一下", "stream": True},
+        )
+        assert r.status_code == 200, r.text
+        assert "text/event-stream" in r.headers.get("content-type", "")
+        events = _parse_sse_events(r.text)
+        types = [t for t, _ in events]
+        assert types[0] == "start"
+        assert "text_delta" in types
+        assert "done" in types
+        assert "think_delta" not in types
+        assert "tool_start" not in types
+        assert "timeline_state" not in types
+        start = events[0][1]
+        done = next(data for t, data in events if t == "done")
+        assert start["conversation_id"] == done["conversation_id"]
+        assert start["turn_id"] == done["turn_id"]
+        assert r.headers.get("X-Turn-Id") == done["turn_id"]
+        assert r.headers.get("X-Conversation-Id") == done["conversation_id"]
+        assert done["status"] == "completed"
+        assert "流式已收到" in (done.get("message") or {}).get("content", "")
+        assert "assistant" not in done
+        text = "".join(
+            data.get("delta") or "" for t, data in events if t == "text_delta"
+        )
+        assert "流式已收到" in text
+        assert "先想一步" not in text
+    finally:
+        _close(client)
+
+
+def test_v1_chat_stream_emits_thinking_when_enabled(tmp_path):
+    llm = FakeLLMClient(
+        chat_responses=["ok"] * 20,
+        tool_responses=[
+            {"content": "打开思考", "think": "先想一步", "tool_calls": []}
+        ]
+        * 20,
+        embed_dim=8,
+    )
+    app, client = _setup(tmp_path, llm=llm)
+    try:
+        key, _ = _create_key(client, name="脚本")
+        patched = client.patch(
+            f"/api/channel-plugins/instances/{key['id']}",
+            json={"show_thinking": True},
+        )
+        assert patched.status_code == 200, patched.text
+        r = client.post(
+            "/api/v1/chat",
+            headers=_auth(key["token"]),
+            json={"message": "带思考", "stream": True},
+        )
+        assert r.status_code == 200, r.text
+        events = _parse_sse_events(r.text)
+        types = [t for t, _ in events]
+        assert "think_delta" in types
+        think = "".join(
+            data.get("delta") or "" for t, data in events if t == "think_delta"
+        )
+        assert "先想一步" in think
+        assert "timeline_state" not in types
+    finally:
+        _close(client)
+
+
+def test_v1_chat_stream_emits_tools_when_enabled(tmp_path):
+    llm = FakeLLMClient(
+        chat_responses=["ok"] * 20,
+        tool_responses=[
+            {
+                "content": None,
+                "tool_calls": [
+                    ToolCall(
+                        id="1",
+                        name="search_kb",
+                        arguments={"query": "周报"},
+                    )
+                ],
+            },
+            {"content": "检索结论", "tool_calls": []},
+        ]
+        * 10,
+        embed_dim=8,
+    )
+    _app, client = _setup(tmp_path, llm=llm)
+    try:
+        key, _ = _create_key(client, name="脚本")
+        hidden = client.post(
+            "/api/v1/chat",
+            headers=_auth(key["token"]),
+            json={"message": "先关着", "stream": True},
+        )
+        assert hidden.status_code == 200, hidden.text
+        hidden_types = [t for t, _ in _parse_sse_events(hidden.text)]
+        assert "tool_start" not in hidden_types
+        assert "tool_result" not in hidden_types
+        assert "timeline_state" not in hidden_types
+
+        patched = client.patch(
+            f"/api/channel-plugins/instances/{key['id']}",
+            json={"show_tool_output": True},
+        )
+        assert patched.status_code == 200, patched.text
+        r = client.post(
+            "/api/v1/chat",
+            headers=_auth(key["token"]),
+            json={"message": "再开工具", "stream": True},
+        )
+        assert r.status_code == 200, r.text
+        events = _parse_sse_events(r.text)
+        types = [t for t, _ in events]
+        assert "tool_start" in types
+        assert "tool_result" in types
+        assert "timeline_state" not in types
+        start = next(data for t, data in events if t == "tool_start")
+        assert start["tool"] == "search_kb"
+        assert start.get("query") == "周报"
+        assert "input" not in start
+        done = next(data for t, data in events if t == "done")
+        assert "检索结论" in (done.get("message") or {}).get("content", "")
+    finally:
+        _close(client)
+
+
+def test_v1_chat_stream_rejects_empty_message(tmp_path):
+    _app, client = _setup(tmp_path)
+    try:
+        key, _ = _create_key(client, name="脚本")
+        r = client.post(
+            "/api/v1/chat",
+            headers=_auth(key["token"]),
+            json={"message": "  ", "stream": True},
+        )
+        assert r.status_code == 400
+    finally:
+        _close(client)

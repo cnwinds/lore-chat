@@ -122,12 +122,13 @@ export function accessGuide(typeId: string, enabled = true): {
 } {
   if (typeId === "script_api") {
     return {
-      lead: "用调用 Key 请求 POST /api/v1/chat ，Header 写 Authorization: Bearer <key> 。",
+      lead: "用调用 Key 请求 POST /api/v1/chat。默认同步 JSON；加 stream: true 改为精简 SSE。",
       steps: [
         enabled
           ? "复制上方 Key（启用时可随时再复制，无需重新生成）"
           : "打开开关重新启用后，即可再复制这把 Key",
         "按 JSON 发送 { \"message\": \"…\" }；可带 conversation_id 续聊",
+        "需要边生成边收时加 \"stream\": true；思考/工具事件由卡片开关决定",
         "排查时切到「日志」",
       ],
       extra: null,
