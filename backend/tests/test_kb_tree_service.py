@@ -97,3 +97,22 @@ def test_import_skill_zip_unpacks(tmp_path):
     assert "技能/demo/SKILL.md" in repo.list_tree()
     assert "技能/demo/extra.txt" in repo.list_tree()
     assert "技能/demo.zip" not in repo.list_tree()
+
+
+def test_import_uploads_bumps_revision_once(tmp_path):
+    svc, repo, rev = _svc(tmp_path)
+    assert rev.get() == 0
+    out = svc.import_uploads(
+        [
+            ("课", "a.ipynb", b"{}"),
+            ("课", "b.py", b"x=1\n"),
+            ("课", "c.md", b"# c\n"),
+        ]
+    )
+    assert rev.get() == 1
+    assert [i["rel_path"] for i in out["items"]] == [
+        "课/a.ipynb",
+        "课/b.py",
+        "课/c.md",
+    ]
+    assert repo.abs_path("课/a.ipynb").exists()

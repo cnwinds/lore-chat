@@ -10,6 +10,7 @@ MAINTENANCE_WRITE_ROUTES = frozenset(
         ("POST", "/api/ingest"),
         ("PUT", "/api/doc"),
         ("POST", "/api/kb/import"),
+        ("POST", "/api/kb/import-batch"),
         ("POST", "/api/admin/import"),
         ("GET", "/api/admin/export"),
         ("POST", "/api/admin/reindex"),

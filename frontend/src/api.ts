@@ -697,6 +697,29 @@ export async function kbImport(
   }>("/api/kb/import", { method: "POST", body: fd });
 }
 
+export async function kbImportMany(
+  entries: { file: File; directory: string; filename: string }[],
+) {
+  const fd = new FormData();
+  fd.append(
+    "items",
+    JSON.stringify(
+      entries.map(({ directory, filename }) => ({ directory, filename })),
+    ),
+  );
+  for (const entry of entries) {
+    fd.append("files", entry.file, entry.filename);
+  }
+  return apiFetch<{
+    items: {
+      rel_path: string;
+      kind: string;
+      indexed: boolean;
+      reused?: boolean;
+    }[];
+  }>("/api/kb/import-batch", { method: "POST", body: fd });
+}
+
 export async function kbMove(body: {
   from_path: string;
   to_directory: string;

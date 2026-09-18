@@ -4,6 +4,7 @@ import logging
 import re
 import shutil
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING
 
@@ -35,6 +36,14 @@ class KbPathExistsError(FileExistsError):
     def __init__(self, rel_path: str):
         self.rel_path = rel_path
         super().__init__(f"目标路径已存在：{rel_path}")
+
+
+@dataclass
+class _PlainImportPlan:
+    rel: str
+    kind: str
+    payload: bytes | None
+    reused: bool = False
 
 
 def is_markdown_path(rel_path: str) -> bool:
@@ -422,6 +431,146 @@ class KnowledgeWriter:
             "files": written,
         }
 
+    def _plan_plain_import(
+        self,
+        *,
+        directory: str,
+        filename: str,
+        data: bytes,
+        allow_binary: bool,
+    ) -> _PlainImportPlan:
+        from app.engine.kb_pack import read_pack_meta
+        from app.engine.kb_skill_zip import is_zip_filename
+        from app.engine.skills_dir import require_skill_md_in_skills_dir
+
+        fn = _safe_basename(filename)
+        try:
+            normalize_directory(directory)
+        except KbPathError as e:
+            raise ValueError(str(e)) from e
+        if is_zip_filename(fn) and read_pack_meta(data) is not None:
+            raise ValueError("知识库压缩包请单独导入")
+        if is_markdown_path(fn):
+            try:
+                rel = join_kb_path(directory, fn)
+            except KbPathError as e:
+                raise ValueError(str(e)) from e
+            if is_memory_projection_path(rel):
+                raise ValueError(MEMORY_FILE_DISABLED_MSG)
+            require_skill_md_in_skills_dir(rel, self.skills_dir)
+            if self.repo.abs_path(rel).exists():
+                raise KbPathExistsError(rel)
+            return _PlainImportPlan(
+                rel=rel,
+                kind="markdown",
+                payload=self._imported_markdown_bytes(rel, data),
+            )
+
+        self.assert_non_md_asset_allowed(fn, allow_binary=allow_binary)
+        dest_directory = directory
+        payload = data
+        if PurePosixPath(fn).suffix.lower() == ".svg":
+            dest_directory = media_generated_dir()
+            try:
+                payload = _normalize_svg_content(payload.decode("utf-8")).encode(
+                    "utf-8"
+                )
+            except UnicodeDecodeError:
+                pass
+        rel = _file_rel(dest_directory, fn)
+        abs_p = self.repo.abs_path(rel)
+        if abs_p.exists():
+            if self.repo.read_bytes(rel) == payload:
+                return _PlainImportPlan(
+                    rel=rel, kind="file", payload=None, reused=True
+                )
+            raise KbPathExistsError(rel)
+        return _PlainImportPlan(rel=rel, kind="file", payload=payload)
+
+    def import_entries(
+        self,
+        items: list[tuple[str, str, bytes]],
+        *,
+        allow_binary: bool = True,
+    ) -> list[dict]:
+        """批量导入普通文件：一次 write_files + 一条 changelog。
+
+        带打包信息的 zip 仍走 ``import_entry``（可能要解压路径选择）。
+        """
+        if not items:
+            raise ValueError("没有可导入的文件")
+        plans: list[_PlainImportPlan] = []
+        seen: set[str] = set()
+        for directory, filename, data in items:
+            plan = self._plan_plain_import(
+                directory=directory,
+                filename=filename,
+                data=data,
+                allow_binary=allow_binary,
+            )
+            if plan.rel in seen:
+                raise KbPathExistsError(plan.rel)
+            seen.add(plan.rel)
+            plans.append(plan)
+
+        to_write = [(p.rel, p.payload) for p in plans if p.payload is not None]
+        indexed_by_rel: dict[str, bool] = {}
+        if to_write:
+            commit_msg = (
+                f"import file: {to_write[0][0]}"
+                if len(to_write) == 1 and not is_markdown_path(to_write[0][0])
+                else f"import: {to_write[0][0]}"
+                if len(to_write) == 1
+                else f"import: {len(to_write)} files"
+            )
+            self.repo.write_files(to_write, commit_msg=commit_msg)
+            for rel, _ in to_write:
+                if is_markdown_path(rel):
+                    doc = self.repo.read_doc(rel)
+                    if self.indexer is not None:
+                        self.indexer.reindex_doc(rel, doc.body)
+                    indexed_by_rel[rel] = True
+                    self._enable_new_skill_from_path(rel)
+                else:
+                    extracted = extract_text(self.repo.abs_path(rel))
+                    indexed_by_rel[rel] = self.index_extracted_text(
+                        rel, extracted
+                    )
+            if len(to_write) == 1:
+                rel = to_write[0][0]
+                name = PurePosixPath(rel).name
+                line = f"导入 {rel}" if is_markdown_path(rel) else f"导入文件 {rel}"
+                self.repo.log_change(
+                    line, commit_msg=f"chore: changelog import {name}"
+                )
+            else:
+                self.repo.log_change(
+                    f"导入 {len(to_write)} 个文件",
+                    commit_msg=f"chore: changelog import {len(to_write)} files",
+                )
+
+        results: list[dict] = []
+        for plan in plans:
+            if plan.reused:
+                extracted = extract_text(self.repo.abs_path(plan.rel))
+                results.append(
+                    {
+                        "rel_path": plan.rel,
+                        "kind": "file",
+                        "indexed": bool(extracted and extracted.strip()),
+                        "reused": True,
+                    }
+                )
+                continue
+            results.append(
+                {
+                    "rel_path": plan.rel,
+                    "kind": plan.kind,
+                    "indexed": indexed_by_rel.get(plan.rel, False),
+                }
+            )
+        return results
+
     def import_entry(
         self,
         *,
@@ -488,57 +637,10 @@ class KnowledgeWriter:
                     require_skill_md=meta.kind == "skill",
                     allow_binary=allow_binary,
                 )
-        if is_markdown_path(fn):
-            try:
-                rel = join_kb_path(directory, fn)
-            except KbPathError as e:
-                raise ValueError(str(e)) from e
-            if self.repo.abs_path(rel).exists():
-                raise KbPathExistsError(rel)
-            text = data.decode("utf-8", errors="replace")
-            meta, body = frontmatter.parse(text)
-            if not meta.get("title"):
-                meta["title"] = title_from_rel_path(rel)
-            meta.setdefault("source", "import")
-            self.persist_document(
-                rel,
-                meta,
-                body if body.endswith("\n") else body + "\n",
-                commit_msg=f"import: {rel}",
-                changelog_line=f"导入 {rel}",
-            )
-            return {"rel_path": rel, "kind": "markdown", "indexed": True}
-
-        self.assert_non_md_asset_allowed(fn, allow_binary=allow_binary)
-        # 生成/发布的 SVG 与 PNG 同落媒体目录，并规范化便于 <img> 预览
-        if PurePosixPath(fn).suffix.lower() == ".svg":
-            directory = media_generated_dir()
-            try:
-                data = _normalize_svg_content(data.decode("utf-8")).encode("utf-8")
-            except UnicodeDecodeError:
-                pass
-        rel = _file_rel(directory, fn)
-        abs_p = self.repo.abs_path(rel)
-        if abs_p.exists():
-            # 同路径同字节：幂等复用（粘贴同图再发常见），避免无意义冲突
-            if self.repo.read_bytes(rel) == data:
-                extracted = extract_text(abs_p)
-                indexed = bool(extracted and extracted.strip())
-                return {
-                    "rel_path": rel,
-                    "kind": "file",
-                    "indexed": indexed,
-                    "reused": True,
-                }
-            raise KbPathExistsError(rel)
-        self.repo.write_bytes(rel, data, commit_msg=f"import file: {rel}")
-        extracted = extract_text(self.repo.abs_path(rel))
-        indexed = self.index_extracted_text(rel, extracted)
-        self.repo.log_change(
-            f"导入文件 {rel}",
-            commit_msg=f"chore: changelog import {fn}",
-        )
-        return {"rel_path": rel, "kind": "file", "indexed": indexed}
+        return self.import_entries(
+            [(directory, fn, data)],
+            allow_binary=allow_binary,
+        )[0]
 
     def write_text_file(
         self,
