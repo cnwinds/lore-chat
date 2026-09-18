@@ -98,6 +98,7 @@
   /* 会话统计分项色：工具=青花钴蓝、附件=藕紫（与青釉/琥珀构成四色组） */
   --ctx-tools: #3e6da3;
   --ctx-att: #8a6fc0;
+  --ctx-skill: #a98a2e;
   /* 知识库特殊目录（系统/技能/记忆/媒体）统一底色，不用黄字 */
   --kb-special-bg: rgba(63, 111, 92, 0.1);
   --kb-special-bg-hover: rgba(63, 111, 92, 0.16);
@@ -173,6 +174,7 @@
   --system-layer-soft: rgba(212, 181, 106, 0.14);
   --ctx-tools: #7ba7d4;
   --ctx-att: #b294cc;
+  --ctx-skill: #c9b45a;
   --kb-special-bg: rgba(127, 168, 148, 0.12);
   --kb-special-bg-hover: rgba(127, 168, 148, 0.2);
 
@@ -244,6 +246,7 @@
   --system-layer-soft: rgba(180, 83, 9, 0.1);
   --ctx-tools: #0e7f8c;
   --ctx-att: #c2587d;
+  --ctx-skill: #7ba05a;
   --kb-special-bg: rgba(71, 85, 105, 0.09);
   --kb-special-bg-hover: rgba(71, 85, 105, 0.14);
 
@@ -315,6 +318,7 @@
   --system-layer-soft: rgba(138, 106, 40, 0.14);
   --ctx-tools: #4f7d99;
   --ctx-att: #a34a5e;
+  --ctx-skill: #5a8a8a;
   --kb-special-bg: rgba(106, 90, 60, 0.12);
   --kb-special-bg-hover: rgba(106, 90, 60, 0.2);
 
@@ -386,6 +390,7 @@
   --system-layer-soft: rgba(245, 158, 11, 0.14);
   --ctx-tools: #2aa198;
   --ctx-att: #d45a8a;
+  --ctx-skill: #8a6fc0;
   --kb-special-bg: rgba(148, 163, 184, 0.12);
   --kb-special-bg-hover: rgba(148, 163, 184, 0.18);
 
@@ -9691,7 +9696,7 @@ button.source-link--inline.conversation-md-link {
 /* 分段堆叠容量条：段序=实际上下文装配顺序，段宽=占比 */
 .ctxstats-bar-track {
   display: flex;
-  gap: 2px;
+  gap: 0;
   height: 8px;
   border-radius: 999px;
   background: var(--bg-subtle);

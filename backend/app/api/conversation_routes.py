@@ -255,6 +255,7 @@ def get_conversation_context_stats(cid: str, request: Request):
         usage_store=c.usage.store,
         models_dev=c.models_dev,
         chat_models=c.settings.chat_models or [],
+        skill_catalog=c.chat_runner.resolve_skill_catalog(),
     )
 
 

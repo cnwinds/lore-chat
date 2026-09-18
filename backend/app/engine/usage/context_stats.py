@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.engine.agent.skill_activation import build_skill_catalog_system_messages
+
 TOKENS_PER_CHAR = 0.75
 
 # 按实际上下文装配顺序排列：系统提示词在最前，其后为历史消息，
@@ -19,6 +21,7 @@ _SEGMENTS = (
     ("system", "系统提示词"),
     ("history", "历史消息"),
     ("tools", "工具与检索结果"),
+    ("skill", "Skill"),
     ("attachments", "附件与文档"),
 )
 
@@ -35,6 +38,7 @@ def build_context_stats(
     usage_store,
     models_dev,
     chat_models: list[dict[str, Any]],
+    skill_catalog: list[dict[str, str]] | None = None,
 ) -> dict[str, Any]:
     messages = conversation.get("messages") or []
 
@@ -63,10 +67,16 @@ def build_context_stats(
     attachments = 0
     for m in messages:
         attachments += len(m.get("attachments") or [])
+    # Skill 分段：启用技能目录注入 system message 的真实字符量
+    skill_chars = 0
+    for msg in build_skill_catalog_system_messages(skill_catalog or []):
+        skill_chars += len(msg.get("content") or "")
+
     estimates = {
         "history": _segment_tokens(history_chars),
         "system": _segment_tokens(system_chars),
         "tools": _segment_tokens(tool_chars),
+        "skill": _segment_tokens(skill_chars),
         "attachments": attachments * _segment_tokens(200),
     }
 

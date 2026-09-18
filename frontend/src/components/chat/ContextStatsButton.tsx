@@ -10,11 +10,12 @@ type Props = {
   conversationId: string | null;
 };
 
-/** 分项配色（与后端 segments 顺序对应）：系统=琥珀、历史=青釉、工具=钴蓝、附件=藕紫。 */
+/** 分项配色（与后端 segments 顺序对应）：系统=琥珀、历史=青釉、工具=钴蓝、Skill=金、附件=藕紫。 */
 const SEGMENT_COLORS: Record<string, string> = {
   system: "var(--system-layer)",
   history: "var(--glaze)",
   tools: "var(--ctx-tools)",
+  skill: "var(--ctx-skill)",
   attachments: "var(--ctx-att)",
 };
 
