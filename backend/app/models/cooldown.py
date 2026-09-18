@@ -224,7 +224,7 @@ class CooldownStore:
         now = time.time() if now is None else now
         h = self.get(candidate_id)
         h.last_error_class = error_class.value
-        h.last_error = (error or "")[:500] or None
+        h.last_error = (error or "")[:2000] or None
 
         if error_class == ErrorClass.CAPABILITY:
             self._state[candidate_id] = h

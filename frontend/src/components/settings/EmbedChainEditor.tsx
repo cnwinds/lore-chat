@@ -6,6 +6,7 @@ import {
 } from "./SettingsFold";
 import { SettingsChainGrip, useSettingsChainDrag } from "./SettingsChainDrag";
 import { ProviderApiKeyLabel } from "./ProviderApiKeyLabel";
+import { SettingsHealthBar } from "./SettingsHealthBar";
 import { ProviderLabelField } from "./ProviderLabelField";
 import { ModelNameField } from "./CandidateChainEditor";
 import {
@@ -168,24 +169,17 @@ export function EmbedChainEditor({
                   />
 
                   {st && (!st.available || st.disabled) ? (
-                    <div
-                      className={`settings-health-bar${disabled ? " settings-health-bar--danger" : " settings-health-bar--warn"}`}
-                    >
-                      <span className="settings-health-dot" aria-hidden />
-                      <span className="settings-health-text">
-                        {disabled
+                    <SettingsHealthBar
+                      tone={disabled ? "danger" : "warn"}
+                      summary={
+                        disabled
                           ? `已禁用${st.last_error ? ` · ${st.last_error}` : ""}`
-                          : `冷却中 · ${st.cooldown_remaining_sec ?? 0}s`}
-                      </span>
-                      <button
-                        type="button"
-                        className="settings-btn settings-btn--compact settings-btn--secondary"
-                        disabled={saving}
-                        onClick={() => onClearCooldown(c.id)}
-                      >
-                        立即重试
-                      </button>
-                    </div>
+                          : `冷却中 · ${st.cooldown_remaining_sec ?? 0}s`
+                      }
+                      detail={st.last_error}
+                      retryDisabled={saving}
+                      onRetry={() => onClearCooldown(c.id)}
+                    />
                   ) : null}
                 </div>
               ) : null}
