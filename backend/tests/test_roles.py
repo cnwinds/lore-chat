@@ -939,12 +939,3 @@ def test_list_timeline_limit_excludes_empty_tip_from_quota(tmp_path):
     assert [s["id"] for s in page[:-1]] == ids[-2:]
 
 
-def test_should_prefetch_role_context():
-    from app.engine.chat.role_context_prefetch import should_prefetch_role_context
-
-    assert should_prefetch_role_context([]) is True
-    assert should_prefetch_role_context(None) is True
-    assert should_prefetch_role_context([{"role": "assistant", "content": "x"}]) is True
-    assert (
-        should_prefetch_role_context([{"role": "user", "content": "hi"}]) is False
-    )

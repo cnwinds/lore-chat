@@ -54,7 +54,9 @@ def build_tool_dispatch(registry: ToolRegistry) -> dict[str, ToolHandler]:
             kb_read.list_kb_structure, args
         ),
         "read_conversation_context": lambda args, **kw: asyncio.to_thread(
-            kb_read.read_conversation_context, args
+            kb_read.read_conversation_context,
+            args,
+            conversation_id=kw.get("conversation_id"),
         ),
         "fetch_url": lambda args, **kw: web.fetch_url(args),
         "web_search": lambda args, **kw: web.web_search(args),

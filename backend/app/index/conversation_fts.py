@@ -131,12 +131,24 @@ class ConversationFTS:
         *,
         conversation_id: str | None,
         exclude_conversation_id: str | None,
+        ts_after: str | None = None,
+        ts_before: str | None = None,
     ) -> tuple[str, tuple]:
+        sql = ""
+        params: list = []
         if conversation_id:
-            return " AND conversation_id = ?", (conversation_id,)
-        if exclude_conversation_id:
-            return " AND conversation_id != ?", (exclude_conversation_id,)
-        return "", ()
+            sql += " AND conversation_id = ?"
+            params.append(conversation_id)
+        elif exclude_conversation_id:
+            sql += " AND conversation_id != ?"
+            params.append(exclude_conversation_id)
+        if ts_after:
+            sql += " AND ts >= ?"
+            params.append(ts_after)
+        if ts_before:
+            sql += " AND ts < ?"
+            params.append(ts_before)
+        return sql, tuple(params)
 
     def query(
         self,
@@ -145,12 +157,16 @@ class ConversationFTS:
         *,
         conversation_id: str | None = None,
         exclude_conversation_id: str | None = None,
+        ts_after: str | None = None,
+        ts_before: str | None = None,
     ) -> list[ConversationHit]:
         return self.query_with_tier(
             text,
             k=k,
             conversation_id=conversation_id,
             exclude_conversation_id=exclude_conversation_id,
+            ts_after=ts_after,
+            ts_before=ts_before,
         ).hits
 
     def query_with_tier(
@@ -160,6 +176,8 @@ class ConversationFTS:
         *,
         conversation_id: str | None = None,
         exclude_conversation_id: str | None = None,
+        ts_after: str | None = None,
+        ts_before: str | None = None,
     ) -> ConversationFtsOutcome:
         text = text.strip()
         if not text:
@@ -168,6 +186,8 @@ class ConversationFTS:
         cid_filter, params_suffix = self._conversation_filter(
             conversation_id=conversation_id,
             exclude_conversation_id=exclude_conversation_id,
+            ts_after=ts_after,
+            ts_before=ts_before,
         )
         with self._lock:
             if compiled.strict_fts:

@@ -66,3 +66,32 @@ def test_retriever_merges_kb_and_conversation_hits_sorted_by_score(tmp_path):
     sources = {(h.doc_id, h.message_id) for h in hits}
     assert ("技术/漫剧.md", None) in sources
     assert any(h.message_id == "m1" for h in hits)
+
+
+def test_retriever_search_filters_conversation_hits_by_ts(tmp_path):
+    vi, fi, cfts, llm = _setup(tmp_path)
+    cfts.upsert_message_chunks(
+        conversation_id="old",
+        message_id="m-old",
+        role="user",
+        ts="2026-08-12T10:00:00+08:00",
+        conversation_title="八月",
+        chunks=[MessageChunk(0, 0, 5, "马尔可夫链")],
+    )
+    cfts.upsert_message_chunks(
+        conversation_id="yday",
+        message_id="m-y",
+        role="user",
+        ts="2026-09-17T15:30:00+08:00",
+        conversation_title="昨天",
+        chunks=[MessageChunk(0, 0, 5, "马尔可夫链")],
+    )
+    retr = Retriever(vi, fi, llm, conversation_fts=cfts)
+    hits = retr.search(
+        "马尔可夫链",
+        k=5,
+        scope="conversations",
+        ts_after="2026-09-17",
+        ts_before="2026-09-18",
+    ).hits
+    assert [h.message_id for h in hits] == ["m-y"]

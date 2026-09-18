@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from app.engine.conversation_context import read_conversation_context
+from app.engine.conversation_context import read_conversation_context as load_conversation_context
 from app.engine.disclosure import DisclosureWindows, disclose, disclosure_summary
 from app.engine.kb_structure import summarize_kb_structure
 from app.engine.agent.tool_impl.doc_read_guard import DocReadGuard
 from app.storage.kb_text_files import is_kb_text_file
 from app.storage.repo import KnowledgeRepo
+from app.time import normalize_search_ts
 
 
 class KbReadTools:
@@ -47,6 +48,8 @@ class KbReadTools:
             conversation_id=explicit_cid,
             exclude_conversation_id=exclude_cid,
             role_id=role_id if scope in ("all", "conversations") else None,
+            ts_after=normalize_search_ts(args.get("ts_after")),
+            ts_before=normalize_search_ts(args.get("ts_before")),
             cursor=cursor,
         )
         hits = page.hits
@@ -191,7 +194,9 @@ class KbReadTools:
             "total_docs": data["total_docs"],
         }
 
-    def read_conversation_context(self, args: dict) -> dict:
+    def read_conversation_context(
+        self, args: dict, *, conversation_id: str | None = None
+    ) -> dict:
         if not self.conversations:
             return {
                 "summary": "会话存储未配置",
@@ -201,13 +206,14 @@ class KbReadTools:
                 "error": "not_configured",
             }
         try:
-            return read_conversation_context(
+            return load_conversation_context(
                 self.conversations,
-                conversation_id=args["conversation_id"],
-                message_id=args["message_id"],
+                conversation_id=args.get("conversation_id"),
+                message_id=args.get("message_id"),
                 before_messages=args.get("before_messages", 2),
                 after_messages=args.get("after_messages", 2),
                 max_chars=self.conversation_context_max_chars,
+                current_conversation_id=conversation_id,
             )
         except KeyError:
             return {

@@ -26,6 +26,7 @@ from app.index.vector import VectorIndex
 from app.logging_config import get_logger
 from app.models.llm import LLMClient
 from app.engine.knowledge_writer import is_markdown_path
+from app.time import normalize_search_ts, ts_in_search_range
 
 # 向量余弦相似度下限；低于此视为无关（小库中否则会把全部文档都当最近邻返回）
 MIN_VECTOR_SCORE = 0.50
@@ -166,6 +167,8 @@ class Retriever:
         *,
         conversation_id: str | None,
         exclude_conversation_id: str | None,
+        ts_after: str | None = None,
+        ts_before: str | None = None,
     ) -> tuple[list[str], dict[str, Hit], dict[str, HitMeta]]:
         if self.conversation_fts is None:
             return [], {}, {}
@@ -175,6 +178,8 @@ class Retriever:
                 k=lane_k,
                 conversation_id=conversation_id,
                 exclude_conversation_id=exclude_conversation_id,
+                ts_after=ts_after,
+                ts_before=ts_before,
             )
             hits = [self._conversation_hit(ch) for ch in outcome.hits]
         except Exception:
@@ -194,6 +199,8 @@ class Retriever:
         vector_text: str,
         conversation_id: str | None,
         exclude_conversation_id: str | None,
+        ts_after: str | None = None,
+        ts_before: str | None = None,
     ) -> tuple[list[str], dict[str, Hit], dict[str, HitMeta]]:
         if self.conversation_vector is None:
             return [], {}, {}
@@ -204,6 +211,8 @@ class Retriever:
                 k=lane_k,
                 conversation_id=conversation_id,
                 exclude_conversation_id=exclude_conversation_id,
+                ts_after=ts_after,
+                ts_before=ts_before,
             )
             hits = [self._conversation_hit(ch) for ch in raw]
             hits = [h for h in hits if h.score >= self.min_score]
@@ -235,15 +244,21 @@ class Retriever:
         conversation_id: str | None = None,
         exclude_conversation_id: str | None = None,
         role_id: str | None = None,
+        ts_after: str | None = None,
+        ts_before: str | None = None,
         cursor: str | None = None,
     ) -> SearchPage:
         rev = self.index_revision.get() if self.index_revision else 0
         offset = 0
+        ts_after = normalize_search_ts(ts_after)
+        ts_before = normalize_search_ts(ts_before)
         filters = {
             "scope": scope,
             "conversation_id": conversation_id,
             "exclude_conversation_id": exclude_conversation_id,
             "role_id": role_id,
+            "ts_after": ts_after,
+            "ts_before": ts_before,
         }
 
         if cursor:
@@ -266,6 +281,10 @@ class Retriever:
                     "exclude_conversation_id", exclude_conversation_id
                 )
                 role_id = filters.get("role_id", role_id)
+                ts_after = normalize_search_ts(filters.get("ts_after") or ts_after)
+                ts_before = normalize_search_ts(filters.get("ts_before") or ts_before)
+                filters["ts_after"] = ts_after
+                filters["ts_before"] = ts_before
                 offset = int(parsed.get("off", 0))
             except (json.JSONDecodeError, ValueError, TypeError):
                 return SearchPage(
@@ -331,6 +350,8 @@ class Retriever:
                 conv_lane_k,
                 conversation_id=conversation_id,
                 exclude_conversation_id=exclude_conversation_id,
+                ts_after=ts_after,
+                ts_before=ts_before,
             )
             if ids:
                 lanes.append(ids)
@@ -343,6 +364,8 @@ class Retriever:
                 vector_text=compiled.vector_text,
                 conversation_id=conversation_id,
                 exclude_conversation_id=exclude_conversation_id,
+                ts_after=ts_after,
+                ts_before=ts_before,
             )
             if ids:
                 lanes.append(ids)
@@ -353,19 +376,28 @@ class Retriever:
         fused = reciprocal_rank_fusion(lanes, k=self.rrf_k, weights=weights)
         page_hits: list[Hit] = []
         next_offset = offset + k
-        if role_id:
+        need_skip = bool(role_id or ts_after or ts_before)
+
+        def _keep_hit(h: Hit) -> bool:
+            src = h.source or ""
+            if not src.startswith("conv:"):
+                return True
+            if role_id and not self._conversation_role_ok(src[5:], role_id):
+                return False
+            if (ts_after or ts_before) and not ts_in_search_range(
+                h.ts or "", ts_after, ts_before
+            ):
+                return False
+            return True
+
+        if need_skip:
             # 按 fused 顺序过滤，游标推进到实际消费位置，避免下页重复/空页 has_more
             consumed = offset
             for i in range(offset, len(fused)):
                 consumed = i + 1
                 doc_id = fused[i][0]
                 h = hit_map.get(doc_id)
-                if h is None:
-                    continue
-                src = h.source or ""
-                if src.startswith("conv:") and not self._conversation_role_ok(
-                    src[5:], role_id
-                ):
+                if h is None or not _keep_hit(h):
                     continue
                 page_hits.append(h)
                 if len(page_hits) >= k:

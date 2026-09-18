@@ -51,6 +51,13 @@ def test_precepts_align_with_runtime_tools(tmp_path):
     assert "非 Markdown 不得走文档局部编辑" in body
     assert "普通知识不得写入或移入" in body
     assert "若本轮提供了沙箱工具" in body
+    assert "跨段接续" in body
+    assert "用户所指的那段" in body
+    assert "已给出时间、主题、标题" in body
+    assert "不得改成「最近一段」交差" in body
+    soul = repo.read_doc("系统/心法.md").body
+    assert "默认指向本角色最近一段对话" in soul
+    assert "先消解，仍不够再问" in soul
 
 
 def test_stock_precepts_refresh_unmodified_and_preserve_edits(tmp_path, monkeypatch):

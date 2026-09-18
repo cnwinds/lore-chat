@@ -113,7 +113,7 @@ TOOL_LABELS = {
     "read_doc": "读取文档",
     "read_doc_meta": "读取文档元数据",
     "list_kb_structure": "查看知识库目录结构",
-    "read_conversation_context": "读取会话邻近消息",
+    "read_conversation_context": "读取会话上下文",
     "fetch_url": "打开链接",
     "web_search": "搜索网页",
     "generate_image": "生成图片",
@@ -245,7 +245,12 @@ TOOL_DEFINITIONS: list[dict] = [
         "type": "function",
         "function": {
             "name": "search_kb",
-            "description": "检索本地知识库，查找与用户问题相关的文档片段",
+            "description": (
+                "按相关度检索本地知识库或会话片段。"
+                "已给出时间时用 ts_after/ts_before 过滤会话命中（工具按时间戳过滤，不是把日期写进 query）；"
+                "主题、标题放 query。未点明是哪一段时不要用本工具在全历史里碰运气，"
+                "应先 read_conversation_context（可省略参数读取上一会话段）。"
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -270,6 +275,20 @@ TOOL_DEFINITIONS: list[dict] = [
                     "cursor": {
                         "type": "string",
                         "description": "分页游标，用于续取上一页未返回的结果",
+                    },
+                    "ts_after": {
+                        "type": "string",
+                        "description": (
+                            "仅会话命中：起始时刻（含）。写 ISO 或日期 2026-09-17（当天 00:00 北京时间）。"
+                            "相对时间（昨天/本周）须先按【当前时间】换成日期，不要把「昨天」写进 query。"
+                        ),
+                    },
+                    "ts_before": {
+                        "type": "string",
+                        "description": (
+                            "仅会话命中：结束时刻（不含）。日期 2026-09-18 表示当天 00:00 之前。"
+                            "查「昨天」时 ts_after=昨天日期、ts_before=今天日期。"
+                        ),
                     },
                 },
                 "required": ["query"],
@@ -311,16 +330,26 @@ TOOL_DEFINITIONS: list[dict] = [
         "type": "function",
         "function": {
             "name": "read_conversation_context",
-            "description": "读取某条会话消息及其前后若干条邻近消息（用于核验检索命中、展开上下文）。",
+            "description": (
+                "读取会话原文。省略 conversation_id 时读取本角色上一会话段；"
+                "省略 message_id 时读取该段尾部。"
+                "用于消解新段中的指代与接续，或核验检索命中的邻近上下文。"
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "conversation_id": {"type": "string"},
-                    "message_id": {"type": "string"},
+                    "conversation_id": {
+                        "type": "string",
+                        "description": "会话 id；省略则取本角色上一会话段（排除当前段）",
+                    },
+                    "message_id": {
+                        "type": "string",
+                        "description": "锚点消息；省略则读取该会话尾部",
+                    },
                     "before_messages": {"type": "integer", "minimum": 0, "maximum": 10, "default": 2},
                     "after_messages": {"type": "integer", "minimum": 0, "maximum": 10, "default": 2},
                 },
-                "required": ["conversation_id", "message_id"],
+                "required": [],
             },
         },
     },

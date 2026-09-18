@@ -45,3 +45,34 @@ def test_delete_conversation(tmp_path):
     )
     idx.delete_conversation("c1")
     assert idx.query([0.3] * 8, k=5) == []
+
+
+def test_query_filters_by_ts_range(tmp_path):
+    idx = ConversationVector(tmp_path / "vec")
+    chunk = [MessageChunk(index=0, text="马尔可夫链", start_char=0, end_char=5)]
+    emb = [[0.2] * 8]
+    idx.upsert_message_chunks(
+        conversation_id="old",
+        message_id="m-old",
+        role="user",
+        ts="2026-08-12T10:00:00+08:00",
+        conversation_title="八月",
+        chunks=chunk,
+        embeddings=emb,
+    )
+    idx.upsert_message_chunks(
+        conversation_id="yday",
+        message_id="m-y",
+        role="user",
+        ts="2026-09-17T15:30:00+08:00",
+        conversation_title="昨天",
+        chunks=chunk,
+        embeddings=emb,
+    )
+    hits = idx.query(
+        [0.2] * 8,
+        k=5,
+        ts_after="2026-09-17T00:00:00+08:00",
+        ts_before="2026-09-18T00:00:00+08:00",
+    )
+    assert [h.message_id for h in hits] == ["m-y"]

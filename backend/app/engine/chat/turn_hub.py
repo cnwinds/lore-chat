@@ -210,8 +210,6 @@ class TurnExecutionHub:
             retriever = getattr(self.agent.tools.kb_read, "retriever", None)
         except Exception:
             retriever = None
-        if retriever is None:
-            return None
         try:
             role_id = self.conversations.get_role_id(cid)
         except KeyError:

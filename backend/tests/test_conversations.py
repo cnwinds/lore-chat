@@ -626,3 +626,57 @@ def test_load_messages_before_unknown_anchor_is_empty(tmp_path):
     assert older == []
     assert remaining == 0
 
+
+def test_latest_prior_owner_dm_skips_empty_current(tmp_path):
+    from app.engine.roles import DEFAULT_ROLE_ID
+
+    store = _store(tmp_path)
+    prior = store.create(role_id=DEFAULT_ROLE_ID)
+    store.append_exchange(prior, "上次的方案", {"role": "assistant", "text": "记下了"})
+    empty = store.create(role_id=DEFAULT_ROLE_ID)
+    hit = store.latest_prior_owner_dm(DEFAULT_ROLE_ID, exclude_conversation_id=empty)
+    assert hit is not None
+    assert hit["id"] == prior
+    assert store.latest_prior_owner_dm(DEFAULT_ROLE_ID, exclude_conversation_id=prior) is None
+
+
+def test_load_dialogue_tail_ignores_tool_rows(tmp_path):
+    store = _store(tmp_path)
+    cid = store.create()
+    store.append_exchange(cid, "方案正文", {"role": "assistant", "text": "助手回复"})
+    store.append_messages(cid, [{"role": "tool", "text": "工具噪声"}] * 8)
+    rows, older = store.load_dialogue_tail(cid, tail=4)
+    assert older == 0
+    assert [m["role"] for m in rows] == ["user", "assistant"]
+    assert "方案正文" in rows[0]["text"]
+
+
+def test_get_message_window_counts_dialogue_not_seq_gap(tmp_path):
+    store = _store(tmp_path)
+    cid = store.create()
+    store.append_exchange(cid, "前面的用户句", {"role": "assistant", "text": "前面的助手句"})
+    store.append_messages(cid, [{"role": "tool", "text": "中间工具"}] * 3)
+    later = store.append_exchange(cid, "后面的用户句", {"role": "assistant", "text": "后面的助手句"})
+    msgs = later["messages"]
+    later_user = next(
+        m for m in reversed(msgs) if m["role"] == "user" and m["text"] == "后面的用户句"
+    )
+    window = store.get_message_window(
+        cid, later_user["id"], before_messages=2, after_messages=1
+    )
+    texts = [m["text"] for m in window]
+    assert "前面的用户句" in texts
+    assert "前面的助手句" in texts
+    assert "后面的用户句" in texts
+    assert "后面的助手句" in texts
+    assert all("工具" not in t for t in texts)
+
+
+def test_conversation_id_for_message(tmp_path):
+    store = _store(tmp_path)
+    cid = store.create()
+    store.append_exchange(cid, "hi", {"role": "assistant", "text": "hello"})
+    mid = store.get(cid)["messages"][0]["id"]
+    assert store.conversation_id_for_message(mid) == cid
+    assert store.conversation_id_for_message("missing") is None
+

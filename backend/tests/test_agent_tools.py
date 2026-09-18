@@ -223,6 +223,23 @@ async def test_read_conversation_context_tool(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_read_conversation_context_defaults_to_prior_segment(tmp_path):
+    store = ConversationStore(tmp_path / "knowledge" / ".kb" / "conversations")
+    prior = store.create()
+    store.append_exchange(prior, "先做新闻视频方案", {"role": "assistant", "text": "已记下月报流程"})
+    current = store.create()
+    registry, _repo, _idx = _make_registry(tmp_path, conversations=store)
+    result = await registry.execute(
+        "read_conversation_context",
+        {},
+        conversation_id=current,
+    )
+    texts = " ".join(m["text"] for m in result["messages"])
+    assert "新闻视频方案" in texts
+    assert result["anchor"]["conversation_id"] == prior
+
+
+@pytest.mark.asyncio
 async def test_search_kb_scope_conversations(tmp_path):
     cfts = ConversationFTS(tmp_path / "conversation_fts.db")
     cfts.upsert_message_chunks(
@@ -241,6 +258,41 @@ async def test_search_kb_scope_conversations(tmp_path):
         "search_kb", {"query": "漫剧", "k": 5, "scope": "conversations"}
     )
     assert all(s["type"] == "conversation" for s in result["sources"])
+
+
+@pytest.mark.asyncio
+async def test_search_kb_filters_conversations_by_ts_range(tmp_path):
+    cfts = ConversationFTS(tmp_path / "conversation_fts.db")
+    cfts.upsert_message_chunks(
+        conversation_id="old",
+        message_id="m-old",
+        role="user",
+        ts="2026-08-12T10:00:00+08:00",
+        conversation_title="八月游戏",
+        chunks=[MessageChunk(0, 0, 5, "马尔可夫链")],
+    )
+    cfts.upsert_message_chunks(
+        conversation_id="yesterday",
+        message_id="m-y",
+        role="user",
+        ts="2026-09-17T15:00:00+08:00",
+        conversation_title="新闻视频",
+        chunks=[MessageChunk(0, 0, 5, "马尔可夫链")],
+    )
+    registry, _repo, _idx = _make_registry(tmp_path, conversation_fts=cfts)
+    result = await registry.execute(
+        "search_kb",
+        {
+            "query": "马尔可夫链",
+            "k": 5,
+            "scope": "conversations",
+            "ts_after": "2026-09-17",
+            "ts_before": "2026-09-18",
+        },
+    )
+    conv_sources = [s for s in result["sources"] if s["type"] == "conversation"]
+    assert len(conv_sources) == 1
+    assert conv_sources[0]["cid"] == "yesterday"
 
 
 @pytest.mark.asyncio
@@ -712,6 +764,30 @@ def test_ask_user_contract_requires_tool_not_prose():
     assert "必须调用 `ask_user`" in SYSTEM_PROMPT
     assert "input" in SYSTEM_PROMPT
     assert "禁止再为同一问题追问一遍" in SYSTEM_PROMPT
+    names = _tool_names(select_tools(MODE_DEFAULT, web_enabled=True, role_messaging=True))
+    assert "ask_user" in names
+
+
+def test_cross_segment_continuity_contract():
+    from app.engine.agent.prompts import SYSTEM_PROMPT
+    from app.engine.agent.tool_catalog import TOOL_DEFINITIONS
+
+    assert "跨段接续" in SYSTEM_PROMPT
+    assert "上一会话段" in SYSTEM_PROMPT
+    assert "read_conversation_context" in SYSTEM_PROMPT
+    assert "已给出时间、主题、标题" in SYSTEM_PROMPT
+    assert "search_kb(scope=conversations)" in SYSTEM_PROMPT
+    defs = {d["function"]["name"]: d["function"] for d in TOOL_DEFINITIONS}
+    ctx = defs["read_conversation_context"]
+    assert ctx["parameters"]["required"] == []
+    assert "上一会话段" in ctx["description"]
+    search = defs["search_kb"]
+    assert "相关度" in search["description"]
+    assert "read_conversation_context" in search["description"]
+    assert "ts_after" in search["parameters"]["properties"]
+    assert "ts_before" in search["parameters"]["properties"]
+    assert "ts_after" in SYSTEM_PROMPT
+    assert "ts_before" in SYSTEM_PROMPT
     names = _tool_names(select_tools(MODE_DEFAULT, web_enabled=True, role_messaging=True))
     assert "ask_user" in names
 

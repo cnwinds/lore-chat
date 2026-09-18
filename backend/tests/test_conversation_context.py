@@ -94,3 +94,83 @@ def test_read_context_truncates_at_char_cap(tmp_path):
     total = sum(len(m["text"]) for m in out["messages"])
     assert total <= 12000
     assert out["truncated"] is True
+
+
+def test_read_context_tail_without_message_id(tmp_path):
+    store = _store(tmp_path)
+    cid = store.create()
+    store.append_exchange(cid, "方案草稿", {"role": "assistant", "text": "先写大纲"})
+    store.append_exchange(cid, "继续", {"role": "assistant", "text": "已补细节"})
+    out = read_conversation_context(store, conversation_id=cid)
+    texts = " ".join(m["text"] for m in out["messages"])
+    assert "方案草稿" in texts
+    assert "已补细节" in texts
+    assert out["anchor"]["conversation_id"] == cid
+    assert out["anchor"]["message_id"]
+
+
+def test_read_context_omitted_ids_uses_prior_segment(tmp_path):
+    store = _store(tmp_path)
+    prior = store.create()
+    store.append_exchange(
+        prior, "帮我统计最近一个月的新闻做一个视频", {"role": "assistant", "text": "先对齐范围"}
+    )
+    current = store.create()
+    out = read_conversation_context(store, current_conversation_id=current)
+    texts = " ".join(m["text"] for m in out["messages"])
+    assert "新闻" in texts
+    assert out["anchor"]["conversation_id"] == prior
+
+
+def test_read_context_no_prior_segment(tmp_path):
+    store = _store(tmp_path)
+    current = store.create()
+    out = read_conversation_context(store, current_conversation_id=current)
+    assert out["error"] == "no_prior"
+    assert out["messages"] == []
+
+
+def test_read_context_tail_skips_non_dialogue_roles(tmp_path):
+    store = _store(tmp_path)
+    cid = store.create()
+    store.append_exchange(cid, "真正要接续的方案", {"role": "assistant", "text": "记下了"})
+    store.append_messages(
+        cid,
+        [{"role": "tool", "text": "search_kb 命中熔岩尾焰鸟"}] * 12,
+    )
+    out = read_conversation_context(store, conversation_id=cid)
+    texts = " ".join(m["text"] for m in out["messages"])
+    assert "真正要接续的方案" in texts
+    assert "熔岩尾焰鸟" not in texts
+    assert all(m["role"] in ("user", "assistant") for m in out["messages"])
+
+
+def test_read_context_message_id_resolves_own_conversation(tmp_path):
+    store = _store(tmp_path)
+    prior = store.create()
+    store.append_exchange(prior, "不相关的上一会话", {"role": "assistant", "text": "旧段"})
+    target = store.create()
+    store.append_exchange(target, "马尔可夫链笔记", {"role": "assistant", "text": "已整理"})
+    current = store.create()
+    mid = store.get(target)["messages"][0]["id"]
+    out = read_conversation_context(
+        store,
+        message_id=mid,
+        current_conversation_id=current,
+        before_messages=0,
+        after_messages=1,
+    )
+    texts = " ".join(m["text"] for m in out["messages"])
+    assert "马尔可夫链" in texts
+    assert "不相关" not in texts
+    assert out["anchor"]["conversation_id"] == target
+
+
+def test_read_context_unknown_message_id_is_not_found(tmp_path):
+    store = _store(tmp_path)
+    current = store.create()
+    out = read_conversation_context(
+        store, message_id="missing", current_conversation_id=current
+    )
+    assert out["error"] == "not_found"
+    assert out["messages"] == []

@@ -66,7 +66,7 @@ Grok Bot 参考截图中的「连接中 / 屏幕」大块不在 lore-chat 的产
 - 每条会话段（`conversation`）归属于一个角色；**不**把多段物理合并成一行。
 - 选中角色 → 中栏展示该角色**全部段**拼成一条时间线（旧上新下），段间有分隔线。
 - 可输入/发送的只有当前 tip 段；更早段只读，搜索命中则滚动定位。
-- Agent `history` **仅当前 tip 段**；跨段靠默认检索 / `search_kb`，不自动拼接。
+- Agent `history` **仅当前 tip 段**；跨段靠新段注入的「上一会话段」、`read_conversation_context`，以及带时间/主题限定的 `search_kb`，不自动拼接。
 - 「新话题」= 强制新开一段；超时超出 `continuity_idle_hours` 也会静默新段。
 - 关段（窗口外新建 / 新话题）时对上一有内容段触发记忆抽取。
 
@@ -139,7 +139,7 @@ HTTP `/api/roles*` 保留用于 UI shell（列表、ensure-active、可选右栏
 ### 3.4 Agent 注入
 
 顺序：心法戒律 →（可选）角色 system_prompt 块 → 内置 SYSTEM_PROMPT → user_memory → …  
-新 tip 首轮另注入「检索摘要」（本角色会话 + KB）。
+新 tip 首轮另注入「上一会话段」（本角色最近一段有内容的对话）与「检索摘要」（相关度检索：本角色会话 + KB）。指定时间或主题的回忆由 `search_kb` 的 query 与 `ts_after` / `ts_before` 完成。
 
 在 `TurnExecutionHub` / `AgentOrchestrator.run` 按 `conversation.role_id` 查 `RoleStore`。
 

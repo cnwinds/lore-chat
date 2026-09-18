@@ -716,6 +716,48 @@ class ConversationStore:
                 cid, before_id=before_id, limit=max(0, int(limit))
             )
 
+    def conversation_id_for_message(self, message_id: str) -> str | None:
+        mid = (message_id or "").strip()
+        if not mid:
+            return None
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT conversation_id FROM messages WHERE id = ?",
+                (mid,),
+            ).fetchone()
+            return str(row["conversation_id"]) if row else None
+
+    def load_dialogue_tail(self, cid: str, *, tail: int) -> tuple[list[dict], int]:
+        """最近 ``tail`` 条 user/assistant，以及更早的对话条数（不含其它 role）。"""
+        with self._lock:
+            self._conversation_row(cid)
+            take = max(0, int(tail))
+            total = int(
+                self.conn.execute(
+                    """
+                    SELECT COUNT(*) AS n FROM messages
+                    WHERE conversation_id = ? AND role IN ('user', 'assistant')
+                    """,
+                    (cid,),
+                ).fetchone()["n"]
+            )
+            if take <= 0:
+                return [], total
+            rows = self.conn.execute(
+                """
+                SELECT * FROM messages
+                WHERE conversation_id = ? AND role IN ('user', 'assistant')
+                ORDER BY seq DESC
+                LIMIT ?
+                """,
+                (cid, take),
+            ).fetchall()
+            rows = list(reversed(rows))
+            return (
+                self._message_dicts(cid, rows),
+                max(0, total - len(rows)),
+            )
+
     def get_message_window(
         self,
         cid: str,
@@ -724,25 +766,48 @@ class ConversationStore:
         before_messages: int = 0,
         after_messages: int = 0,
     ) -> list[dict]:
+        """锚点前后各若干条 user/assistant（按对话条数，不是 seq 间距）。"""
         with self._lock:
             self._conversation_row(cid)
             anchor = self.conn.execute(
-                "SELECT seq FROM messages WHERE id = ? AND conversation_id = ?",
+                "SELECT * FROM messages WHERE id = ? AND conversation_id = ?",
                 (message_id, cid),
             ).fetchone()
             if anchor is None:
                 raise KeyError(message_id)
             seq = int(anchor["seq"])
-            rows = self.conn.execute(
-                """
-                SELECT * FROM messages
-                WHERE conversation_id = ?
-                  AND seq BETWEEN ? AND ?
-                  AND role IN ('user', 'assistant')
-                ORDER BY seq ASC
-                """,
-                (cid, seq - before_messages, seq + after_messages),
-            ).fetchall()
+            before = max(0, int(before_messages))
+            after = max(0, int(after_messages))
+            before_rows: list = []
+            if before:
+                before_rows = self.conn.execute(
+                    """
+                    SELECT * FROM messages
+                    WHERE conversation_id = ?
+                      AND seq < ?
+                      AND role IN ('user', 'assistant')
+                    ORDER BY seq DESC
+                    LIMIT ?
+                    """,
+                    (cid, seq, before),
+                ).fetchall()
+                before_rows = list(reversed(before_rows))
+            after_rows: list = []
+            if after:
+                after_rows = self.conn.execute(
+                    """
+                    SELECT * FROM messages
+                    WHERE conversation_id = ?
+                      AND seq > ?
+                      AND role IN ('user', 'assistant')
+                    ORDER BY seq ASC
+                    LIMIT ?
+                    """,
+                    (cid, seq, after),
+                ).fetchall()
+            rows = list(before_rows)
+            rows.append(anchor)
+            rows.extend(after_rows)
             return self._message_dicts(cid, rows)
 
     def _summary_state(self, cid: str) -> tuple[bool, str | None, str | None]:
@@ -1336,6 +1401,19 @@ class ConversationStore:
     def _latest_conversation_id(self, role_id: str) -> str | None:
         items = self._owner_dm_web_items(role_id)
         return items[0]["id"] if items else None
+
+    def latest_prior_owner_dm(
+        self, role_id: str, *, exclude_conversation_id: str | None = None
+    ) -> dict | None:
+        """本角色 web 一对一中，排除当前段后最近一条有消息的会话。"""
+        skip = (exclude_conversation_id or "").strip()
+        for item in self._owner_dm_web_items(role_id):
+            if skip and item["id"] == skip:
+                continue
+            if int(item.get("message_count") or 0) <= 0:
+                continue
+            return item
+        return None
 
     def _maybe_close_segment_for_memory(self, cid: str | None) -> None:
         """关段时触发记忆抽取；无消息或已 pending 则由 request_immediate 去重。"""

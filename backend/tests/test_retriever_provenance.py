@@ -77,7 +77,16 @@ def test_conv_vector_lane_respects_min_score(tmp_path, monkeypatch):
         embeddings=[[1.0] * 8],
     )
 
-    def fake_query(embedding, k=5, *, conversation_id=None, exclude_conversation_id=None):
+    def fake_query(
+        embedding,
+        k=5,
+        *,
+        conversation_id=None,
+        exclude_conversation_id=None,
+        ts_after=None,
+        ts_before=None,
+    ):
+        del embedding, k, conversation_id, exclude_conversation_id, ts_after, ts_before
         return [
             ConversationVectorHit("a", "c1", "low", "user", 0, 4, "低分", 0.1),
             ConversationVectorHit("b", "c1", "high", "user", 0, 4, "高分", 0.95),

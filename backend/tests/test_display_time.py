@@ -1,4 +1,12 @@
-from app.time import DISPLAY_TZ, now_display, now_epoch_ms, now_iso_seconds, now_wall_clock
+from app.time import (
+    DISPLAY_TZ,
+    normalize_search_ts,
+    now_display,
+    now_epoch_ms,
+    now_iso_seconds,
+    now_wall_clock,
+    ts_in_search_range,
+)
 
 
 def test_now_iso_seconds_has_china_offset():
@@ -21,3 +29,28 @@ def test_now_wall_clock_format():
     assert len(s) == 19
     assert s[4] == "-" and s[7] == "-" and s[10] == " "
     assert s[13] == ":" and s[16] == ":"
+
+
+def test_normalize_search_ts_date_is_beijing_midnight():
+    assert normalize_search_ts("2026-09-17") == "2026-09-17T00:00:00+08:00"
+    assert normalize_search_ts("  ") is None
+    zulu = normalize_search_ts("2026-09-17T16:00:00Z")
+    assert zulu == "2026-09-18T00:00:00+08:00"
+
+
+def test_ts_in_search_range_uses_instants():
+    assert ts_in_search_range(
+        "2026-09-17T15:00:00+08:00",
+        "2026-09-17",
+        "2026-09-18",
+    )
+    assert not ts_in_search_range(
+        "2026-08-12T10:00:00+08:00",
+        "2026-09-17",
+        "2026-09-18",
+    )
+    assert not ts_in_search_range(
+        "2026-09-18T00:00:00+08:00",
+        "2026-09-17",
+        "2026-09-18",
+    )

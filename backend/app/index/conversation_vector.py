@@ -5,8 +5,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from app.index.chroma_client import ThreadLocalChroma
-
 from app.index.message_chunk import MessageChunk
+from app.time import ts_in_search_range
 
 
 @dataclass
@@ -96,12 +96,23 @@ class ConversationVector:
         *,
         conversation_id: str | None,
         exclude_conversation_id: str | None,
+        ts_after: str | None = None,
+        ts_before: str | None = None,
     ) -> dict | None:
+        parts: list[dict] = []
         if conversation_id:
-            return {"conversation_id": conversation_id}
-        if exclude_conversation_id:
-            return {"conversation_id": {"$ne": exclude_conversation_id}}
-        return None
+            parts.append({"conversation_id": conversation_id})
+        elif exclude_conversation_id:
+            parts.append({"conversation_id": {"$ne": exclude_conversation_id}})
+        if ts_after:
+            parts.append({"ts": {"$gte": ts_after}})
+        if ts_before:
+            parts.append({"ts": {"$lt": ts_before}})
+        if not parts:
+            return None
+        if len(parts) == 1:
+            return parts[0]
+        return {"$and": parts}
 
     def query(
         self,
@@ -110,16 +121,34 @@ class ConversationVector:
         *,
         conversation_id: str | None = None,
         exclude_conversation_id: str | None = None,
+        ts_after: str | None = None,
+        ts_before: str | None = None,
     ) -> list[ConversationVectorHit]:
         where = self._conversation_where(
             conversation_id=conversation_id,
             exclude_conversation_id=exclude_conversation_id,
+            ts_after=ts_after,
+            ts_before=ts_before,
         )
+        n = max(k, 1)
+        if ts_after or ts_before:
+            n = max(k * 8, 8)
+
+        def _run(where_clause: dict | None):
+            kwargs: dict = {"query_embeddings": [embedding], "n_results": n}
+            if where_clause:
+                kwargs["where"] = where_clause
+            return self._chroma.collection().query(**kwargs)
+
         with self._lock:
-            kwargs: dict = {"query_embeddings": [embedding], "n_results": max(k, 1)}
-            if where:
-                kwargs["where"] = where
-            res = self._chroma.collection().query(**kwargs)
+            try:
+                res = _run(where)
+            except Exception:
+                where_no_ts = self._conversation_where(
+                    conversation_id=conversation_id,
+                    exclude_conversation_id=exclude_conversation_id,
+                )
+                res = _run(where_no_ts)
         hits: list[ConversationVectorHit] = []
         docs = (res.get("documents") or [[]])[0]
         metas = (res.get("metadatas") or [[]])[0]
@@ -142,6 +171,12 @@ class ConversationVector:
                     score=1.0 - float(dist),
                 )
             )
+        if ts_after or ts_before:
+            hits = [
+                h
+                for h in hits
+                if ts_in_search_range(h.ts, ts_after, ts_before)
+            ]
         return hits[:k]
 
     def delete_conversation(self, conversation_id: str) -> None:
