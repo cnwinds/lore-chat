@@ -364,6 +364,37 @@ describe("ChannelPanel", () => {
     });
   });
 
+  it("toggles thinking and tool output on the card, default off", async () => {
+    const user = userEvent.setup();
+    listApiPersonas.mockResolvedValue({
+      personas: [sampleInstance.persona!],
+    });
+    listChannelInstances.mockResolvedValue({ instances: [sampleInstance] });
+    patchChannelInstance.mockImplementation(async (_id, body) => ({
+      ...sampleInstance,
+      ...body,
+    }));
+    renderPanel();
+    const think = await screen.findByRole("switch", { name: "输出思考" });
+    const tools = screen.getByRole("switch", { name: "输出工具" });
+    expect(think).toHaveAttribute("aria-checked", "false");
+    expect(tools).toHaveAttribute("aria-checked", "false");
+    await user.click(think);
+    await waitFor(() => {
+      expect(patchChannelInstance).toHaveBeenCalledWith("k1", {
+        show_thinking: true,
+      });
+    });
+    expect(think).toHaveAttribute("aria-checked", "true");
+    await user.click(tools);
+    await waitFor(() => {
+      expect(patchChannelInstance).toHaveBeenCalledWith("k1", {
+        show_tool_output: true,
+      });
+    });
+    expect(tools).toHaveAttribute("aria-checked", "true");
+  });
+
   it("binds a channel-specific persona from the card picker", async () => {
     const user = userEvent.setup();
     const shared = sampleInstance.persona!;

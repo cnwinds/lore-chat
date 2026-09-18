@@ -96,14 +96,111 @@ def format_needs_input(assistant: dict | None) -> str | None:
     return None
 
 
-def compose_im_reply(assistant: dict | None, *, fallback: str = "") -> str:
+_THINK_LIMIT = 6000
+_TOOL_LIMIT = 2500
+_TRACE_LIMIT = 16000
+
+
+def output_flags(instance: dict[str, Any] | None) -> tuple[bool, bool]:
+    row = instance or {}
+    return bool(row.get("show_thinking")), bool(row.get("show_tool_output"))
+
+
+def _clip(text: str, limit: int) -> str:
+    body = (text or "").strip()
+    if len(body) <= limit:
+        return body
+    return body[: max(0, limit - 1)].rstrip() + "…"
+
+
+def _tool_awaiting(block: dict) -> bool:
+    return bool(block.get("awaiting_user") or block.get("awaiting_confirm"))
+
+
+def _format_think_block(block: dict) -> str:
+    content = _clip(str(block.get("content") or ""), _THINK_LIMIT)
+    if not content:
+        return ""
+    return f"思考\n{content}"
+
+
+def _format_tool_block(block: dict) -> str:
+    if block.get("tool") == "ask_user" or _tool_awaiting(block):
+        return ""
+    label = str(block.get("label") or block.get("tool") or "工具").strip() or "工具"
+    lines = [f"工具 · {label}"]
+    query = str(block.get("query") or "").strip()
+    if query:
+        lines.append(_clip(query, _TOOL_LIMIT))
+    summary = str(block.get("summary") or "").strip()
+    content = str(block.get("content") or "").strip()
+    detail = summary or content
+    if detail:
+        lines.append(_clip(detail, _TOOL_LIMIT))
+    error = str(block.get("error") or "").strip()
+    if error:
+        lines.append(_clip(error, _TOOL_LIMIT))
+    if block.get("status") == "interrupted":
+        lines.append("（已中断）")
+    return "\n".join(lines)
+
+
+def format_trace(
+    assistant: dict | None,
+    *,
+    show_thinking: bool = False,
+    show_tool_output: bool = False,
+) -> str:
+    if not assistant or not (show_thinking or show_tool_output):
+        return ""
+    parts: list[str] = []
+    used = 0
+    for block in _walk_blocks(assistant.get("timeline")):
+        kind = block.get("type")
+        chunk = ""
+        if kind == "think" and show_thinking:
+            chunk = _format_think_block(block)
+        elif kind == "tool" and show_tool_output:
+            chunk = _format_tool_block(block)
+        if not chunk:
+            continue
+        extra = len(chunk) + (2 if parts else 0)
+        if used + extra > _TRACE_LIMIT:
+            remain = _TRACE_LIMIT - used - (2 if parts else 0)
+            if remain > 8:
+                parts.append(_clip(chunk, remain))
+            break
+        parts.append(chunk)
+        used += extra
+    return "\n\n".join(parts)
+
+
+def compose_im_reply(
+    assistant: dict | None,
+    *,
+    fallback: str = "",
+    show_thinking: bool = False,
+    show_tool_output: bool = False,
+) -> str:
     text = ((assistant or {}).get("text") or "").strip()
     prompt = format_needs_input(assistant)
+    trace = format_trace(
+        assistant,
+        show_thinking=show_thinking,
+        show_tool_output=show_tool_output,
+    )
+    parts: list[str] = []
+    if trace:
+        parts.append(trace)
     if prompt:
         if text and text not in prompt:
-            return f"{text}\n\n{prompt}"
-        return prompt
-    return text or (fallback or "").strip()
+            parts.append(text)
+        parts.append(prompt)
+    elif text:
+        parts.append(text)
+    if parts:
+        return "\n\n".join(parts)
+    return (fallback or "").strip()
 
 
 def missing_public_url_detail() -> str:

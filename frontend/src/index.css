@@ -5331,6 +5331,46 @@ button.memory-fact-statement--jump:focus-visible {
   outline-offset: 2px;
 }
 
+.channel-switch--sm .channel-switch-track {
+  width: 34px;
+  height: 20px;
+}
+
+.channel-switch--sm .channel-switch-knob {
+  width: 16px;
+  height: 16px;
+}
+
+.channel-switch--sm.is-on .channel-switch-knob {
+  transform: translateX(14px);
+}
+
+.channel-output-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.channel-output-toggles {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  min-width: 0;
+  flex: 1;
+}
+
+.channel-output-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.channel-output-toggle-name {
+  font-size: var(--text-sm);
+  color: var(--text);
+}
+
 .channel-vault {
   display: flex;
   flex-direction: column;

@@ -159,6 +159,73 @@ def test_compose_im_reply_degrades_ask_user():
     assert "请回复选项" in text
 
 
+def test_compose_im_reply_omits_thinking_and_tools_by_default():
+    assistant = {
+        "text": "最终答案",
+        "timeline": [
+            {"type": "think", "content": "先想一步"},
+            {
+                "type": "tool",
+                "tool": "read_doc",
+                "label": "读文档",
+                "query": "笔记.md",
+                "summary": "找到了",
+            },
+        ],
+    }
+    text = compose_im_reply(assistant)
+    assert text == "最终答案"
+    assert "先想一步" not in text
+    assert "读文档" not in text
+
+
+def test_compose_im_reply_includes_thinking_and_tools_when_enabled():
+    assistant = {
+        "text": "最终答案",
+        "timeline": [
+            {"type": "think", "content": "先想一步"},
+            {
+                "type": "parallel",
+                "children": [
+                    {
+                        "type": "tool",
+                        "tool": "read_doc",
+                        "label": "读文档",
+                        "query": "笔记.md",
+                        "summary": "找到了",
+                    }
+                ],
+            },
+            {
+                "type": "tool",
+                "tool": "ask_user",
+                "question": "接下来？",
+                "options": [{"id": "a", "label": "继续"}],
+            },
+        ],
+    }
+    thinking = compose_im_reply(assistant, show_thinking=True)
+    assert "思考" in thinking
+    assert "先想一步" in thinking
+    assert "最终答案" in thinking
+    assert "读文档" not in thinking
+    assert "接下来？" in thinking
+
+    tools = compose_im_reply(assistant, show_tool_output=True)
+    assert "工具 · 读文档" in tools
+    assert "笔记.md" in tools
+    assert "找到了" in tools
+    assert "先想一步" not in tools
+    assert "接下来？" in tools
+    assert "请回复选项" in tools
+
+    both = compose_im_reply(
+        assistant, show_thinking=True, show_tool_output=True
+    )
+    assert both.index("先想一步") < both.index("读文档")
+    assert both.index("读文档") < both.index("最终答案")
+
+
 def test_materialize_media_writes_upload_attachment(tmp_path):
     kb = tmp_path / "knowledge"
     kb.mkdir()

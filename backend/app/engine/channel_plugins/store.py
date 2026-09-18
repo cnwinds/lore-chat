@@ -85,6 +85,8 @@ class ChannelInstanceStore:
             "enabled": not revoked,
             "persona_id": key.get("persona_id"),
             "role_id": key.get("role_id"),
+            "show_thinking": bool(key.get("show_thinking")),
+            "show_tool_output": bool(key.get("show_tool_output")),
             "config": {"key_prefix": key.get("prefix") or ""},
             "secrets": {"key_hash": key.get("hash") or ""},
             "status": STATUS_DISABLED if revoked else STATUS_ENABLED,
@@ -122,6 +124,8 @@ class ChannelInstanceStore:
             "enabled": enabled,
             "persona_id": item.get("persona_id"),
             "role_id": item.get("role_id"),
+            "show_thinking": bool(item.get("show_thinking")),
+            "show_tool_output": bool(item.get("show_tool_output")),
             "config": dict(item.get("config") or {}),
             "secrets": public_secrets(item.get("secrets")),
             "status": status,
@@ -150,6 +154,8 @@ class ChannelInstanceStore:
                 "persona_id": item.get("persona_id"),
                 "role_id": item.get("role_id"),
                 "revoked": bool(item.get("revoked")),
+                "show_thinking": bool(item.get("show_thinking")),
+                "show_tool_output": bool(item.get("show_tool_output")),
                 "created_at": item.get("created_at"),
                 "last_used_at": item.get("last_used_at"),
             }
@@ -161,6 +167,8 @@ class ChannelInstanceStore:
             "persona_id": item.get("persona_id"),
             "role_id": item.get("role_id"),
             "revoked": not bool(item.get("enabled")),
+            "show_thinking": bool(item.get("show_thinking")),
+            "show_tool_output": bool(item.get("show_tool_output")),
             "created_at": item.get("created_at"),
             "last_used_at": item.get("last_event_at"),
         }
@@ -200,6 +208,8 @@ class ChannelInstanceStore:
             "enabled": True,
             "persona_id": persona_id,
             "role_id": role_id,
+            "show_thinking": False,
+            "show_tool_output": False,
             "config": {"key_prefix": raw[:12]},
             "secrets": {
                 "key_hash": hash_api_key(raw),
@@ -245,6 +255,8 @@ class ChannelInstanceStore:
             "enabled": enabled_flag,
             "persona_id": persona_id,
             "role_id": role_id,
+            "show_thinking": False,
+            "show_tool_output": False,
             "config": dict(config or {}),
             "secrets": dict(secrets or {}),
             "status": status or (STATUS_ENABLED if enabled_flag else STATUS_DISABLED),
@@ -267,6 +279,8 @@ class ChannelInstanceStore:
         name: str | None = None,
         persona_id: str | None = None,
         enabled: bool | None = None,
+        show_thinking: bool | None = None,
+        show_tool_output: bool | None = None,
         status: str | None = None,
         status_detail: str | None = None,
         config: dict[str, Any] | None = None,
@@ -293,6 +307,10 @@ class ChannelInstanceStore:
                 if status is None:
                     found["status"] = STATUS_ENABLED if enabled else STATUS_DISABLED
                     found["status_detail"] = None
+            if show_thinking is not None:
+                found["show_thinking"] = bool(show_thinking)
+            if show_tool_output is not None:
+                found["show_tool_output"] = bool(show_tool_output)
             if status is not None:
                 found["status"] = status
             if status_detail is not None or status is not None:

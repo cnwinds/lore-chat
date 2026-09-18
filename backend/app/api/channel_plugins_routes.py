@@ -29,6 +29,8 @@ class PatchInstanceBody(BaseModel):
     name: str | None = None
     persona_id: str | None = None
     enabled: bool | None = None
+    show_thinking: bool | None = None
+    show_tool_output: bool | None = None
     config: dict[str, Any] | None = None
     secrets: dict[str, Any] | None = None
 
@@ -95,6 +97,8 @@ async def update_instance(
             name=body.name,
             persona_id=body.persona_id,
             enabled=body.enabled,
+            show_thinking=body.show_thinking,
+            show_tool_output=body.show_tool_output,
             config=body.config,
             secrets=body.secrets,
         )

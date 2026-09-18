@@ -14,6 +14,7 @@ from app.engine.agent.prompts import MODE_API
 from app.engine.channel_plugins.errors import ChannelError
 from app.engine.channel_plugins.group_policy import (
     compose_im_reply,
+    output_flags,
     sandbox_allowed_for,
     should_enqueue_group,
     thread_external_key,
@@ -146,7 +147,17 @@ class ChannelTurnService:
         turn = self._begin(record, cid, text, skills=skills)
         wait = min(max(float(timeout_sec or 120), 0.05), 600.0)
         status = await self._wait_turn(turn, timeout_sec=wait)
-        return self._chat_payload(cid, turn["turn_id"], status=status)
+        payload = self._chat_payload(cid, turn["turn_id"], status=status)
+        show_thinking, show_tool_output = output_flags(record)
+        if (show_thinking or show_tool_output) and payload.get("message"):
+            assistant = payload.get("assistant") or {}
+            payload["message"]["content"] = compose_im_reply(
+                assistant,
+                fallback=(payload["message"].get("content") or ""),
+                show_thinking=show_thinking,
+                show_tool_output=show_tool_output,
+            )
+        return payload
 
     def enqueue_now(self, event) -> dict[str, Any]:
         """先处理入站（去重/排队），回合异步。不对平台 409。"""
@@ -310,9 +321,12 @@ class ChannelTurnService:
         duration_ms = int((time.monotonic() - started) * 1000)
         payload = self._chat_payload(cid, turn["turn_id"], status=status)
         assistant = payload.get("assistant") or {}
+        show_thinking, show_tool_output = output_flags(inst)
         reply = compose_im_reply(
             assistant,
             fallback=((payload.get("message") or {}).get("content") or ""),
+            show_thinking=show_thinking,
+            show_tool_output=show_tool_output,
         )
         http_status = payload.get("status")
         if http_status == "failed":

@@ -209,6 +209,27 @@ export function ChannelPanel({
     }
   };
 
+  const handleToggleOutput = async (
+    inst: ChannelInstance,
+    field: "show_thinking" | "show_tool_output",
+  ) => {
+    const next = !Boolean(inst[field]);
+    setInstances((prev) =>
+      prev.map((item) => (item.id === inst.id ? { ...item, [field]: next } : item)),
+    );
+    setError(null);
+    try {
+      await patchChannelInstance(inst.id, { [field]: next });
+    } catch (e: unknown) {
+      setInstances((prev) =>
+        prev.map((item) =>
+          item.id === inst.id ? { ...item, [field]: Boolean(inst[field]) } : item,
+        ),
+      );
+      setError(e instanceof Error ? e.message : "更新失败");
+    }
+  };
+
   const handleCopy = async (inst: ChannelInstance) => {
     if (inst.type_id === "script_api" && !inst.enabled) {
       showToast("Key 已吊销，无法复制");
@@ -429,6 +450,9 @@ export function ChannelPanel({
                     editName={editName}
                     editPrompt={editPrompt}
                     onToggle={(item) => void handleToggle(item)}
+                    onToggleOutput={(item, field) =>
+                      void handleToggleOutput(item, field)
+                    }
                     onCopy={(item) => void handleCopy(item)}
                     onToggleTab={toggleTab}
                     onSelectPersona={(item, value) =>

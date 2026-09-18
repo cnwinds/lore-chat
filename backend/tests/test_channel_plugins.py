@@ -226,6 +226,15 @@ def test_v1_chat_still_works_after_projection(tmp_path):
         assert feishu["enabled"] is True
         assert feishu["secrets"]["app_secret"] != "secret-value"
         assert "secret-value" not in coming.text
+        assert body["show_thinking"] is False
+        assert body["show_tool_output"] is False
+        patched = client.patch(
+            f"/api/channel-plugins/instances/{body['id']}",
+            json={"show_thinking": True, "show_tool_output": True},
+        )
+        assert patched.status_code == 200, patched.text
+        assert patched.json()["show_thinking"] is True
+        assert patched.json()["show_tool_output"] is True
     finally:
         _close(client)
 

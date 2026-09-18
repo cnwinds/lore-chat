@@ -287,6 +287,8 @@ class OpenApiService:
         name: str | None = None,
         persona_id: str | None = None,
         enabled: bool | None = None,
+        show_thinking: bool | None = None,
+        show_tool_output: bool | None = None,
         config: dict | None = None,
         secrets: dict | None = None,
     ) -> dict:
@@ -328,6 +330,8 @@ class OpenApiService:
             name=name,
             persona_id=persona_id,
             enabled=enabled,
+            show_thinking=show_thinking,
+            show_tool_output=show_tool_output,
             status=status,
             status_detail=detail,
             config=config,

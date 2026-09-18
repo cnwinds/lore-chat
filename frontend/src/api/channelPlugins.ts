@@ -19,6 +19,8 @@ export type ChannelInstance = {
   status_detail?: string | null;
   persona_id?: string | null;
   role_id?: string | null;
+  show_thinking?: boolean;
+  show_tool_output?: boolean;
   created_at: string;
   last_event_at?: string | null;
   config?: {
@@ -76,6 +78,8 @@ export function patchChannelInstance(
     name?: string;
     persona_id?: string;
     enabled?: boolean;
+    show_thinking?: boolean;
+    show_tool_output?: boolean;
     config?: Record<string, string>;
     secrets?: Record<string, string>;
   },

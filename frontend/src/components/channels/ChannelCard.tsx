@@ -25,6 +25,10 @@ type Props = {
   editName: string;
   editPrompt: string;
   onToggle: (inst: ChannelInstance) => void;
+  onToggleOutput: (
+    inst: ChannelInstance,
+    field: "show_thinking" | "show_tool_output",
+  ) => void;
   onCopy: (inst: ChannelInstance) => void;
   onToggleTab: (id: string, tab: DetailTab) => void;
   onSelectPersona: (inst: ChannelInstance, value: string) => void;
@@ -47,6 +51,7 @@ export function ChannelCard({
   editName,
   editPrompt,
   onToggle,
+  onToggleOutput,
   onCopy,
   onToggleTab,
   onSelectPersona,
@@ -81,19 +86,12 @@ export function ChannelCard({
               <span className="channel-card-alert">{status.text}</span>
             ) : null}
           </div>
-          <button
-            type="button"
-            role="switch"
-            className={`channel-switch${inst.enabled ? " is-on" : ""}`}
-            aria-checked={inst.enabled}
-            aria-label={inst.enabled ? "停用通道" : "启用通道"}
+          <ChannelSwitch
+            on={inst.enabled}
+            label={inst.enabled ? "停用通道" : "启用通道"}
             disabled={busy}
             onClick={() => onToggle(inst)}
-          >
-            <span className="channel-switch-track" aria-hidden>
-              <span className="channel-switch-knob" />
-            </span>
-          </button>
+          />
         </div>
 
         {revoked ? (
@@ -164,6 +162,32 @@ export function ChannelCard({
           </button>
         </div>
 
+        <div className="channel-output-row">
+          <span className="channel-role-label">输出</span>
+          <div className="channel-output-toggles">
+            <div className="channel-output-toggle">
+              <span className="channel-output-toggle-name">思考</span>
+              <ChannelSwitch
+                on={Boolean(inst.show_thinking)}
+                label="输出思考"
+                disabled={busy}
+                compact
+                onClick={() => onToggleOutput(inst, "show_thinking")}
+              />
+            </div>
+            <div className="channel-output-toggle">
+              <span className="channel-output-toggle-name">工具</span>
+              <ChannelSwitch
+                on={Boolean(inst.show_tool_output)}
+                label="输出工具"
+                disabled={busy}
+                compact
+                onClick={() => onToggleOutput(inst, "show_tool_output")}
+              />
+            </div>
+          </div>
+        </div>
+
         {editingPrompt ? (
           <div className="channel-prompt-edit">
             {exclusive ? null : (
@@ -219,5 +243,35 @@ export function ChannelCard({
         />
       </div>
     </li>
+  );
+}
+
+function ChannelSwitch({
+  on,
+  label,
+  disabled,
+  onClick,
+  compact = false,
+}: {
+  on: boolean;
+  label: string;
+  disabled: boolean;
+  onClick: () => void;
+  compact?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      className={`channel-switch${compact ? " channel-switch--sm" : ""}${on ? " is-on" : ""}`}
+      aria-checked={on}
+      aria-label={label}
+      disabled={disabled}
+      onClick={onClick}
+    >
+      <span className="channel-switch-track" aria-hidden>
+        <span className="channel-switch-knob" />
+      </span>
+    </button>
   );
 }
