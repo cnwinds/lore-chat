@@ -321,11 +321,20 @@ export function ChannelPanel({
           {screen === "home" && instances.length > 0 ? (
             <button
               type="button"
-              className="settings-btn settings-btn--compact settings-btn--primary"
+              className="doc-icon-btn"
               disabled={busy}
               onClick={openPicker}
+              title="添加通道"
+              aria-label="添加通道"
             >
-              添加通道
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden>
+                <path
+                  d="M12 5v14M5 12h14"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                />
+              </svg>
             </button>
           ) : null}
           <button
