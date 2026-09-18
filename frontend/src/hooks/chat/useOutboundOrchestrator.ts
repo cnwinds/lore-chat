@@ -22,10 +22,7 @@ type Options = {
 
 type MutableRefObject<T> = { current: T };
 
-export function useOutboundOrchestrator({
-  sendQueue,
-  runOutbound: _runOutbound,
-}: Options) {
+export function useOutboundOrchestrator({ sendQueue }: Options) {
   const itemsRef = useRef(sendQueue.items);
   const pausedRef = useRef(sendQueue.paused);
   itemsRef.current = sendQueue.items;
@@ -37,26 +34,17 @@ export function useOutboundOrchestrator({
 
   // 流结束（完成/失败/征询/停止）：服务端 drain 已做出暂停或续发决策，
   // 客户端延迟刷新镜像即可；注入被服务端拒绝(409)时服务端已改为排队。
-  const handleStreamEnd = useCallback(
-    (_info: unknown) => {
-      window.setTimeout(refresh, 1200);
-    },
-    [refresh],
-  );
+  const handleStreamEnd = useCallback(() => {
+    window.setTimeout(refresh, 1200);
+  }, [refresh]);
 
-  const handleInjectDeferred = useCallback(
-    (_id: string) => {
-      refresh();
-    },
-    [refresh],
-  );
+  const handleInjectDeferred = useCallback(() => {
+    refresh();
+  }, [refresh]);
 
-  const handleUserInjected = useCallback(
-    (_id: string) => {
-      refresh();
-    },
-    [refresh],
-  );
+  const handleUserInjected = useCallback(() => {
+    refresh();
+  }, [refresh]);
 
   const handleStop = useCallback(() => {
     // 服务端 stop 通道同样会暂停队列；本地仅标记
