@@ -74,6 +74,14 @@ def test_read_pack_meta_bad_json():
         read_pack_meta(data)
 
 
+def test_read_pack_meta_rejects_oversized():
+    from app.engine.kb_pack import MAX_PACK_META_BYTES
+
+    data = _zip_bytes({"lorechat-pack.json": b"x" * (MAX_PACK_META_BYTES + 1)})
+    with pytest.raises(ValueError, match="过大"):
+        read_pack_meta(data)
+
+
 def test_unpack_paths():
     skill = pack_meta_for_directory("技能/数数查询")
     assert original_unpack_path(skill, skills_dir="技能") == "技能/数数查询"

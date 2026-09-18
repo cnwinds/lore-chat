@@ -14,6 +14,7 @@ from app.storage.kb_paths import KbPathError, join_kb_directory, normalize_direc
 PACK_FORMAT = "lorechat.kb-pack"
 PACK_VERSION = 1
 PACK_META_NAMES = frozenset({"lorechat-pack.json", ".lorechat-pack.json"})
+MAX_PACK_META_BYTES = 64 * 1024
 
 PackKind = Literal["skill", "directory"]
 
@@ -124,16 +125,23 @@ def read_pack_meta(data: bytes) -> KbPackMeta | None:
     except (zipfile.BadZipFile, zipfile.LargeZipFile, OSError):
         return None
     raw: bytes | None = None
-    for info in zf.infolist():
-        name = info.filename.replace("\\", "/").lstrip("/")
-        if "/" in name or info.is_dir() or name.endswith("/"):
-            continue
-        if name in PACK_META_NAMES:
-            try:
-                raw = zf.read(info)
-            except (RuntimeError, zipfile.BadZipFile, OSError) as e:
-                raise ValueError("无法读取打包信息") from e
-            break
+    try:
+        for info in zf.infolist():
+            name = info.filename.replace("\\", "/").lstrip("/")
+            if "/" in name or info.is_dir() or name.endswith("/"):
+                continue
+            if name in PACK_META_NAMES:
+                if info.file_size < 0 or info.file_size > MAX_PACK_META_BYTES:
+                    raise ValueError("打包信息过大")
+                try:
+                    raw = zf.read(info)
+                except (RuntimeError, zipfile.BadZipFile, OSError) as e:
+                    raise ValueError("无法读取打包信息") from e
+                if len(raw) > MAX_PACK_META_BYTES:
+                    raise ValueError("打包信息过大")
+                break
+    finally:
+        zf.close()
     if raw is None:
         return None
     try:
