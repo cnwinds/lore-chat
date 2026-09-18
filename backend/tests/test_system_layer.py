@@ -40,6 +40,19 @@ def test_precepts_align_with_runtime_tools(tmp_path):
     assert "读写删已有条目用 `path`" not in body
     assert "口令不限字面" in body
     assert "不受本条阻挡" in body and "生图" in body
+    # 写库门槛是一条原则（默认不沉淀 且 仅明确要求才写入），不是两条同义规则
+    persist = re.search(r"## 一、落库（知识沉淀）\n(.*?)(?=\n## )", body, re.S)
+    assert persist is not None
+    persist_items = re.findall(
+        r"(?ms)^(\d+)\. (.+?)(?=\n\d+\. |\Z)", persist.group(1)
+    )
+    assert len(persist_items) == 3
+    gate = persist_items[0][1]
+    assert "不把对话零散沉淀" in gate
+    assert "仅当用户明确要求" in gate
+    assert "口令不限字面" in gate
+    assert "仅当用户明确要求" not in persist_items[1][1]
+    assert "不确定是否该记" in persist_items[1][1]
     assert "不要自行拼接一篇再 `write_doc`" in body
     assert "系统会标记该会话已总结" in body
     assert "不再检索" not in body
