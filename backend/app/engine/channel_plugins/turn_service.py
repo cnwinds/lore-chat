@@ -196,8 +196,9 @@ class ChannelTurnService:
         if turn.get("status", "running") != "running":
             source = self.chat_runner.replay_turn(turn)
         else:
+            # hub seq 从 0 起；after_seq 是「已见最后一条」，-1 才能重放首事件。
             source = self.chat_runner.observe_turn(
-                conversation_id, turn_id, after_seq=0
+                conversation_id, turn_id, after_seq=-1
             )
 
         def _done_payload() -> dict[str, Any]:

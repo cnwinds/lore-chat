@@ -366,6 +366,7 @@ def test_v1_chat_stream_emits_thinking_when_enabled(tmp_path):
             json={"show_thinking": True},
         )
         assert patched.status_code == 200, patched.text
+        assert patched.json()["show_thinking"] is True
         r = client.post(
             "/api/v1/chat",
             headers=_auth(key["token"]),
