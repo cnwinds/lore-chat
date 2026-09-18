@@ -63,6 +63,13 @@ def test_precepts_align_with_runtime_tools(tmp_path):
     assert "局部编辑前须先读取目标区域" in body
     assert "非 Markdown 不得走文档局部编辑" in body
     assert "普通知识不得写入或移入" in body
+    # 驻留/不检索/删除保护/用户修订生效是代码事实，不进提示词
+    assert "系统控制层自身" not in body
+    assert "不参与检索" not in body
+    assert "不得自行删除或绕过" not in body
+    assert "## 六、文档编辑" in body
+    assert "## 七、目录规划" in body
+    assert re.search(r"^## 八、", body, re.M) is None
     assert "若本轮提供了沙箱工具" in body
     assert "跨段接续" in body
     assert "用户所指的那段" in body
