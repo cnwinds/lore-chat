@@ -311,7 +311,7 @@ def test_download_zip_directory(client):
 
 
 def test_skill_zip_download_upload_roundtrip(client):
-    skill_body = b"---\nname: count\ndescription: 数数查询\n---\n\n# 数数\n"
+    skill_body = "---\nname: count\ndescription: 数数查询\n---\n\n# 数数\n".encode()
     r = client.post(
         "/api/kb/import",
         files={"file": ("SKILL.md", skill_body, "text/markdown")},

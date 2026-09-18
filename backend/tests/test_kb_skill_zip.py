@@ -99,7 +99,9 @@ def test_import_skill_zip_under_skills_dir(tmp_path):
     writer, repo = _writer(tmp_path)
     data = _zip_bytes(
         {
-            "数数查询/SKILL.md": b"---\nname: count\ndescription: 数数\n---\n\n# 数\n",
+            "数数查询/SKILL.md": (
+                "---\nname: count\ndescription: 数数\n---\n\n# 数\n"
+            ).encode(),
             "数数查询/scripts/run.py": b"print(1)\n",
         }
     )
