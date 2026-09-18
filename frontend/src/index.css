@@ -9039,6 +9039,12 @@ button.source-link--inline.conversation-md-link {
   color: var(--accent);
 }
 
+/* 注入中：请求已发出，只读标签 */
+.composer-queue-timing.is-locked {
+  cursor: default;
+  opacity: 0.75;
+}
+
 .chat-inject-tag {
   font-size: 11px;
   color: var(--text-muted);

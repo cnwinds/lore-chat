@@ -156,15 +156,28 @@ function IconGrip() {
 function TimingPill({
   value,
   disabled,
+  locked,
   onGuide,
   onQueue,
 }: {
   value: QueueTiming;
   disabled?: boolean;
+  locked?: boolean;
   onGuide: () => void;
   onQueue: () => void;
 }) {
   const inject = value === "inject";
+  // 锁定 = 注入请求已发出，内容无法撤回：明确展示为不可交互状态
+  if (locked) {
+    return (
+      <span
+        className="composer-queue-timing is-inject is-locked"
+        title="正在插入当前回合，无法撤回"
+      >
+        注入中
+      </span>
+    );
+  }
   return (
     <button
       type="button"
@@ -339,6 +352,7 @@ export function ComposerSendQueue({
               )}
               <TimingPill
                 value={item.timing}
+                locked={!!item.locked}
                 disabled={!!item.locked}
                 onGuide={() => guideItem(item, index)}
                 onQueue={() => onSetTiming(item.id, "defer")}
