@@ -81,7 +81,7 @@ body {
   box-shadow: var(--shadow-float);
 }
 
-/* —— 聊天时间线：助手开放文本，用户瓷片 —— */
+/* —— 聊天时间线：双方均为开放文本，说话人靠左右对齐分辨，不再铺底色卡片 —— */
 .chat-messages {
   padding: 20px 28px 14px;
 }
@@ -91,10 +91,10 @@ body {
 }
 
 .chat-bubble-user {
-  background: var(--user-bubble);
-  border: 1px solid color-mix(in srgb, var(--glaze) 22%, transparent);
-  border-radius: var(--radius-card);
-  border-bottom-right-radius: 4px;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding-right: 2px;
 }
 
 .chat-bubble-assistant {
