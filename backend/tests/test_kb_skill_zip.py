@@ -93,6 +93,9 @@ def test_parse_rejects_empty_and_garbage():
         parse_skill_zip_entries(b"")
     with pytest.raises(ValueError, match="不是有效"):
         parse_skill_zip_entries(b"not-a-zip")
+    data = _zip_bytes({"SKILL.md": b"# skill\n"})
+    with pytest.raises(ValueError, match="不是有效|无法读取"):
+        parse_skill_zip_entries(data[:-8])
 
 
 def test_import_skill_zip_under_skills_dir(tmp_path):

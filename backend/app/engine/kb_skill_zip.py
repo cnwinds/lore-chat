@@ -87,7 +87,9 @@ def parse_skill_zip_entries(data: bytes) -> list[tuple[str, bytes]]:
         raise ValueError("压缩包是空的")
     try:
         zf = zipfile.ZipFile(io.BytesIO(data))
-    except zipfile.BadZipFile as e:
+    except zipfile.LargeZipFile as e:
+        raise ValueError("技能压缩包过大") from e
+    except (zipfile.BadZipFile, OSError) as e:
         raise ValueError("不是有效的 zip 压缩包") from e
 
     members: list[tuple[str, zipfile.ZipInfo]] = []
@@ -111,18 +113,24 @@ def parse_skill_zip_entries(data: bytes) -> list[tuple[str, bytes]]:
     seen: set[str] = set()
     for (_orig, info), inner in zip(members, inners, strict=True):
         inner = _canonicalize_inner(inner)
+        if not inner:
+            continue
         if inner in seen:
             raise ValueError(f"压缩包内路径重复：{inner}")
         seen.add(inner)
         if info.file_size < 0 or info.file_size > MAX_SKILL_ZIP_BYTES:
             raise ValueError("技能压缩包过大")
-        total += info.file_size
-        if total > MAX_SKILL_ZIP_BYTES:
-            raise ValueError("技能压缩包过大")
         try:
             payload = zf.read(info)
-        except RuntimeError as e:
-            raise ValueError("无法读取压缩包（可能已加密）") from e
+        except zipfile.LargeZipFile as e:
+            raise ValueError("技能压缩包过大") from e
+        except (RuntimeError, zipfile.BadZipFile, OSError) as e:
+            raise ValueError("无法读取压缩包") from e
+        if len(payload) > MAX_SKILL_ZIP_BYTES:
+            raise ValueError("技能压缩包过大")
+        total += max(info.file_size, len(payload))
+        if total > MAX_SKILL_ZIP_BYTES:
+            raise ValueError("技能压缩包过大")
         out.append((inner, payload))
 
     if not any(_is_skill_md_name(path) for path, _ in out):
