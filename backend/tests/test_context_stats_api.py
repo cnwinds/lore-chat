@@ -29,7 +29,7 @@ def test_context_stats_shape(client):
     assert r.status_code == 200
     body = r.json()
     keys = {seg["key"] for seg in body["segments"]}
-    assert keys == {"history", "system", "tools", "attachments"}
+    assert keys == {"history", "system", "tools", "skill", "attachments"}
     assert body["tool_calls"] == 0
     assert body["cache_hit_rate"] is None
     # FakeLLM 不产生真实用量事件 → used_tokens 允许为 None
