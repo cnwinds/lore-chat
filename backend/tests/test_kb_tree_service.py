@@ -1,5 +1,6 @@
 import pytest
 
+from app.engine.enabled_skills import EnabledSkillsStore
 from app.engine.kb_tree_service import KbTreeService
 from app.engine.knowledge_writer import KbPathExistsError, KnowledgeWriter
 from app.index.fulltext import FullTextIndex
@@ -14,7 +15,7 @@ def _svc(tmp_path, *, protected=("系统",), skills_dir="技能"):
     repo = KnowledgeRepo(tmp_path / "knowledge", protected_dirs=protected)
     llm = FakeLLMClient(embed_dim=8)
     idx = Indexer(VectorIndex(tmp_path / "vec"), FullTextIndex(tmp_path / "fts.db"), llm)
-    writer = KnowledgeWriter(repo, idx)
+    writer = KnowledgeWriter(repo, idx, skills_dir=skills_dir)
     rev = IndexRevision(tmp_path / "revision.txt")
     return KbTreeService(repo, writer, rev, skills_dir=skills_dir), repo, rev
 
@@ -116,3 +117,44 @@ def test_import_uploads_bumps_revision_once(tmp_path):
         "课/c.md",
     ]
     assert repo.abs_path("课/a.ipynb").exists()
+
+
+_SKILL_BODY = b"---\nname: demo\ndescription: Use demo.\n---\n\n# Demo\n"
+
+
+def test_delete_skill_package_prunes_enabled_roots(tmp_path):
+    svc, repo, _ = _svc(tmp_path)
+    svc.import_upload(directory="技能/keep", filename="SKILL.md", data=_SKILL_BODY)
+    svc.import_upload(directory="技能/gone", filename="SKILL.md", data=_SKILL_BODY)
+    store = EnabledSkillsStore(repo.root, skills_dir="技能")
+    store.save_roots(["技能/keep", "技能/gone"])
+    svc.delete("技能/gone")
+    assert store.load_roots() == ["技能/keep"]
+
+
+def test_delete_skill_md_prunes_package_root(tmp_path):
+    svc, repo, _ = _svc(tmp_path)
+    svc.import_upload(directory="技能/gone", filename="SKILL.md", data=_SKILL_BODY)
+    store = EnabledSkillsStore(repo.root, skills_dir="技能")
+    store.save_roots(["技能/gone"])
+    svc.delete("技能/gone/SKILL.md")
+    assert store.load_roots() == []
+
+
+def test_delete_unrelated_file_keeps_enabled_roots(tmp_path):
+    svc, repo, _ = _svc(tmp_path)
+    svc.import_upload(directory="技能/keep", filename="SKILL.md", data=_SKILL_BODY)
+    svc.import_upload(directory="笔记", filename="a.md", data=b"# a\n")
+    store = EnabledSkillsStore(repo.root, skills_dir="技能")
+    store.save_roots(["技能/keep"])
+    svc.delete("笔记/a.md")
+    assert store.load_roots() == ["技能/keep"]
+
+
+def test_move_skill_package_remaps_enabled_root(tmp_path):
+    svc, repo, _ = _svc(tmp_path)
+    svc.import_upload(directory="技能/old-pkg", filename="SKILL.md", data=_SKILL_BODY)
+    store = EnabledSkillsStore(repo.root, skills_dir="技能")
+    store.save_roots(["技能/old-pkg"])
+    svc.move(from_path="技能/old-pkg", to_directory="技能", to_filename="new-pkg")
+    assert store.load_roots() == ["技能/new-pkg"]

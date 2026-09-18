@@ -13,6 +13,7 @@ from app.engine.retriever import Retriever
 from app.engine.web.fetcher import WebFetcher
 from app.engine.web.search import SearchResult, WebSearch
 from app.engine.conversations import ConversationStore
+from app.engine.enabled_skills import EnabledSkillsStore
 from app.index.conversation_fts import ConversationFTS
 from app.index.fulltext import FullTextIndex
 from app.index.indexer import Indexer
@@ -453,6 +454,22 @@ async def test_move_entry_directory(tmp_path):
     repo.read_doc("技能/new-pkg/SKILL.md")
     repo.read_doc("技能/new-pkg/references/a.md")
     assert not (repo.root / "技能" / "old-pkg").exists()
+
+
+@pytest.mark.asyncio
+async def test_delete_kb_skill_package_prunes_enabled_set(tmp_path):
+    registry, repo, _ = _make_registry(tmp_path)
+    repo.write_doc(
+        "技能/gone/SKILL.md",
+        {"title": "gone"},
+        "---\nname: gone\ndescription: Use gone.\n---\n\n# g\n",
+        commit_msg="seed",
+    )
+    store = EnabledSkillsStore(repo.root, skills_dir="技能")
+    store.save_roots(["技能/gone"])
+    result = await registry.execute("delete_kb", {"path": "技能/gone"})
+    assert "已删除" in result["summary"]
+    assert store.load_roots() == []
 
 
 @pytest.mark.asyncio

@@ -18,6 +18,7 @@ from app.storage.kb_paths import (
     normalize_directory,
     title_from_rel_path,
 )
+from app.engine.enabled_skills import EnabledSkillsStore
 from app.engine.kb_markdown_images import sanitize_markdown_image_srcs_for_storage
 from app.engine.memory.constants import (
     MEMORY_FILE_DISABLED_MSG,
@@ -113,19 +114,18 @@ class KnowledgeWriter:
         indexer: Indexer | None = None,
         *,
         skills_dir: str = "技能",
-        enabled_skills=None,
+        enabled_skills: EnabledSkillsStore | None = None,
     ):
         self.repo = repo
         self.indexer = indexer
         self.skills_dir = skills_dir.replace("\\", "/").strip("/") or "技能"
-        self.enabled_skills = enabled_skills
+        self.enabled_skills = enabled_skills or EnabledSkillsStore(
+            repo.root, skills_dir=self.skills_dir
+        )
 
     def _enable_new_skill_root(self, root: str) -> None:
-        store = self.enabled_skills
-        if store is None:
-            return
         try:
-            store.try_enable_root(self.repo, root)
+            self.enabled_skills.try_enable_root(self.repo, root)
         except Exception:
             return
 
@@ -138,6 +138,22 @@ class KnowledgeWriter:
         root = skill_package_root_from_skill_md(rel_path)
         if root:
             self._enable_new_skill_root(root)
+
+    def _sync_enabled_skills(
+        self,
+        *,
+        from_path: str | None = None,
+        to_path: str | None = None,
+    ) -> None:
+        """删除后去掉缺包根；搬家则改写对应启用路径。"""
+        store = self.enabled_skills
+        if from_path and to_path:
+            from app.engine.kb_skill import skill_package_root_from_skill_md
+
+            src = skill_package_root_from_skill_md(from_path) or from_path
+            dst = skill_package_root_from_skill_md(to_path) or to_path
+            store.remap_roots(src, dst)
+        store.prune_missing_packages(self.repo)
 
     def persist_document(
         self,
@@ -264,6 +280,7 @@ class KnowledgeWriter:
             commit_msg=f"chore: changelog move {new_path}",
         )
         self._follow_share_paths({from_norm: new_path})
+        self._sync_enabled_skills(from_path=from_norm, to_path=new_path)
         return new_path
 
     def _follow_share_paths(self, path_map: dict[str, str]) -> None:
@@ -743,6 +760,7 @@ class KnowledgeWriter:
             commit_msg=f"chore: changelog move dir {new_root}",
         )
         self._follow_share_paths(dict(zip(old_paths, new_paths)))
+        self._sync_enabled_skills(from_path=from_norm, to_path=new_root)
         return new_root
 
     def move_entry(
@@ -796,6 +814,7 @@ class KnowledgeWriter:
             f"移动文件 {from_norm} → {new_path}",
             commit_msg=f"chore: changelog move {new_path}",
         )
+        self._sync_enabled_skills(from_path=from_norm, to_path=new_path)
         return new_path
 
     def delete_entry(self, path: str) -> list[str]:
@@ -806,6 +825,7 @@ class KnowledgeWriter:
         if deleted:
             self.drop_from_index(deleted)
             self.record_deletion(norm, deleted)
+            self._sync_enabled_skills()
         return deleted
 
     def apply_placement(

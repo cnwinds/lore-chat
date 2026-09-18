@@ -201,6 +201,30 @@ def test_chat_rejects_enabled_skill_missing_header(client):
     assert "SKILL.md" in r.json()["detail"]
 
 
+def test_kb_delete_skill_package_prunes_enabled_set(client):
+    for name in ("keep", "gone"):
+        body = f"---\nname: {name}\ndescription: Use {name}.\n---\n\n# {name}\n".encode()
+        files = {"file": ("SKILL.md", body, "text/markdown")}
+        assert (
+            client.post(
+                "/api/kb/import",
+                files=files,
+                data={"directory": f"技能/{name}"},
+            ).status_code
+            == 200
+        )
+    assert (
+        client.put(
+            "/api/enabled-skills",
+            json={"roots": ["技能/keep", "技能/gone"]},
+        ).status_code
+        == 200
+    )
+    r = client.post("/api/kb/delete", json={"path": "技能/gone"})
+    assert r.status_code == 200, r.text
+    assert client.get("/api/enabled-skills").json()["roots"] == ["技能/keep"]
+
+
 def test_enabled_skills_put_and_get(client):
     body = (
         "---\nname: demo\ndescription: Use when demo is needed.\n---\n\n# Demo\n"
