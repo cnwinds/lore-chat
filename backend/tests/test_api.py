@@ -201,6 +201,30 @@ def test_chat_rejects_enabled_skill_missing_header(client):
     assert "SKILL.md" in r.json()["detail"]
 
 
+def test_kb_delete_skill_package_prunes_enabled_set(client):
+    for name in ("keep", "gone"):
+        body = f"---\nname: {name}\ndescription: Use {name}.\n---\n\n# {name}\n".encode()
+        files = {"file": ("SKILL.md", body, "text/markdown")}
+        assert (
+            client.post(
+                "/api/kb/import",
+                files=files,
+                data={"directory": f"技能/{name}"},
+            ).status_code
+            == 200
+        )
+    assert (
+        client.put(
+            "/api/enabled-skills",
+            json={"roots": ["技能/keep", "技能/gone"]},
+        ).status_code
+        == 200
+    )
+    r = client.post("/api/kb/delete", json={"path": "技能/gone"})
+    assert r.status_code == 200, r.text
+    assert client.get("/api/enabled-skills").json()["roots"] == ["技能/keep"]
+
+
 def test_enabled_skills_put_and_get(client):
     body = (
         "---\nname: demo\ndescription: Use when demo is needed.\n---\n\n# Demo\n"
@@ -479,6 +503,68 @@ def test_kb_import_conflict(client):
     detail = r2.json()["detail"]
     assert detail["code"] == "PATH_EXISTS"
     assert "suggested_filename" in detail
+
+
+def test_kb_import_batch_writes_many_files(client):
+    r = client.post(
+        "/api/kb/import-batch",
+        files=[
+            ("files", ("a.ipynb", b'{"nb":1}', "application/json")),
+            ("files", ("b.py", b"print(1)\n", "text/x-python")),
+            ("files", ("c.md", b"# hi\n", "text/markdown")),
+        ],
+        data={
+            "items": json.dumps(
+                [
+                    {"directory": "课程/notebooks", "filename": "a.ipynb"},
+                    {"directory": "课程/notebooks", "filename": "b.py"},
+                    {"directory": "课程/notebooks", "filename": "c.md"},
+                ]
+            )
+        },
+    )
+    assert r.status_code == 200, r.text
+    paths = [i["rel_path"] for i in r.json()["items"]]
+    assert paths == [
+        "课程/notebooks/a.ipynb",
+        "课程/notebooks/b.py",
+        "课程/notebooks/c.md",
+    ]
+    tree = client.get("/api/tree").json()["docs"]
+    for p in paths:
+        assert p in tree
+    note = client.get("/api/doc", params={"path": "课程/notebooks/c.md"}).json()
+    assert note["body"].startswith("# hi")
+
+
+def test_kb_import_batch_conflict_writes_nothing(client):
+    assert (
+        client.post(
+            "/api/kb/import",
+            files={"file": ("keep.txt", b"old\n", "text/plain")},
+            data={"directory": "课"},
+        ).status_code
+        == 200
+    )
+    r = client.post(
+        "/api/kb/import-batch",
+        files=[
+            ("files", ("new.py", b"x=1\n", "text/x-python")),
+            ("files", ("keep.txt", b"new\n", "text/plain")),
+        ],
+        data={
+            "items": json.dumps(
+                [
+                    {"directory": "课", "filename": "new.py"},
+                    {"directory": "课", "filename": "keep.txt"},
+                ]
+            )
+        },
+    )
+    assert r.status_code == 409
+    tree = client.get("/api/tree").json()["docs"]
+    assert "课/keep.txt" in tree
+    assert "课/new.py" not in tree
 
 
 def test_kb_import_rejects_oversized_video(client):

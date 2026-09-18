@@ -40,6 +40,19 @@ def test_precepts_align_with_runtime_tools(tmp_path):
     assert "读写删已有条目用 `path`" not in body
     assert "口令不限字面" in body
     assert "不受本条阻挡" in body and "生图" in body
+    # 写库门槛是一条原则（默认不沉淀 且 仅明确要求才写入），不是两条同义规则
+    persist = re.search(r"## 一、落库（知识沉淀）\n(.*?)(?=\n## )", body, re.S)
+    assert persist is not None
+    persist_items = re.findall(
+        r"(?ms)^(\d+)\. (.+?)(?=\n\d+\. |\Z)", persist.group(1)
+    )
+    assert len(persist_items) == 3
+    gate = persist_items[0][1]
+    assert "不把对话零散沉淀" in gate
+    assert "仅当用户明确要求" in gate
+    assert "口令不限字面" in gate
+    assert "仅当用户明确要求" not in persist_items[1][1]
+    assert "不确定是否该记" in persist_items[1][1]
     assert "不要自行拼接一篇再 `write_doc`" in body
     assert "系统会标记该会话已总结" in body
     assert "不再检索" not in body
@@ -50,6 +63,13 @@ def test_precepts_align_with_runtime_tools(tmp_path):
     assert "局部编辑前须先读取目标区域" in body
     assert "非 Markdown 不得走文档局部编辑" in body
     assert "普通知识不得写入或移入" in body
+    # 驻留/不检索/删除保护/用户修订生效是代码事实，不进提示词
+    assert "系统控制层自身" not in body
+    assert "不参与检索" not in body
+    assert "不得自行删除或绕过" not in body
+    assert "## 六、文档编辑" in body
+    assert "## 七、目录规划" in body
+    assert re.search(r"^## 八、", body, re.M) is None
     assert "若本轮提供了沙箱工具" in body
     assert "跨段接续" in body
     assert "用户所指的那段" in body

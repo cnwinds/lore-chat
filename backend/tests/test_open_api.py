@@ -456,3 +456,26 @@ def test_v1_chat_stream_rejects_empty_message(tmp_path):
         assert r.status_code == 400
     finally:
         _close(client)
+
+
+def test_v1_chat_skips_stale_enabled_skill_package(tmp_path):
+    """启用集残留已删包时，脚本通道仍应能说话（与线上「技能/数数查询」同类）。"""
+    _app, client = _setup(tmp_path)
+    try:
+        key, _ = _create_key(client, name="脚本")
+        kb = tmp_path / "knowledge"
+        (kb / ".kb").mkdir(parents=True, exist_ok=True)
+        (kb / ".kb" / "enabled_skills.json").write_text(
+            '{"roots": ["技能/数数查询"]}\n',
+            encoding="utf-8",
+        )
+        r = client.post(
+            "/api/v1/chat",
+            headers=_auth(key["token"]),
+            json={"message": "你好"},
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["status"] == "completed"
+        assert r.json()["message"]["content"]
+    finally:
+        _close(client)

@@ -1,3 +1,5 @@
+import pytest
+
 from app.engine.enabled_skills import (
     EnabledSkillsError,
     EnabledSkillsStore,
@@ -5,7 +7,6 @@ from app.engine.enabled_skills import (
 )
 from app.engine.kb_skill import skill_trigger_fields
 from app.storage.repo import KnowledgeRepo
-import pytest
 
 
 def test_skill_trigger_fields_from_body_yaml_not_meta():
@@ -82,3 +83,65 @@ def test_try_enable_root_appends_valid_and_skips_invalid(tmp_path):
     )
     assert store.try_enable_root(repo, "技能/c") is True
     assert store.load_roots() == ["技能/a", "技能/c"]
+
+
+def test_build_skill_catalog_put_rejects_missing_package(tmp_path):
+    repo = KnowledgeRepo(tmp_path)
+    with pytest.raises(EnabledSkillsError, match="SKILL.md"):
+        build_skill_catalog(repo, ["技能/数数查询"], skills_dir="技能")
+
+
+def test_build_skill_catalog_chat_skips_missing_package(tmp_path):
+    repo = KnowledgeRepo(tmp_path)
+    repo.write_doc(
+        "技能/ok/SKILL.md",
+        {"title": "ok"},
+        "---\nname: ok\ndescription: Use ok.\n---\n\n# ok\n",
+        commit_msg="seed",
+    )
+    catalog = build_skill_catalog(
+        repo,
+        ["技能/数数查询", "技能/ok"],
+        skills_dir="技能",
+        drop_missing=True,
+    )
+    assert [item["root"] for item in catalog] == ["技能/ok"]
+
+
+def test_prune_missing_packages_drops_deleted_keeps_present(tmp_path):
+    repo = KnowledgeRepo(tmp_path)
+    repo.write_doc(
+        "技能/ok/SKILL.md",
+        {"title": "ok"},
+        "---\nname: ok\ndescription: Use ok.\n---\n\n# ok\n",
+        commit_msg="seed",
+    )
+    store = EnabledSkillsStore(tmp_path, skills_dir="技能")
+    store.save_roots(["技能/ok", "技能/数数查询"])
+    assert store.prune_missing_packages(repo) == ["技能/ok"]
+    assert store.load_roots() == ["技能/ok"]
+
+
+def test_prune_missing_packages_noop_when_all_present(tmp_path):
+    repo = KnowledgeRepo(tmp_path)
+    repo.write_doc(
+        "技能/ok/SKILL.md",
+        {"title": "ok"},
+        "---\nname: ok\ndescription: Use ok.\n---\n\n# ok\n",
+        commit_msg="seed",
+    )
+    store = EnabledSkillsStore(tmp_path, skills_dir="技能")
+    store.save_roots(["技能/ok"])
+    before = (tmp_path / ".kb" / "enabled_skills.json").read_text(encoding="utf-8")
+    assert store.prune_missing_packages(repo) == ["技能/ok"]
+    assert (tmp_path / ".kb" / "enabled_skills.json").read_text(encoding="utf-8") == before
+
+
+def test_remap_roots_rewrites_package_and_nested(tmp_path):
+    store = EnabledSkillsStore(tmp_path, skills_dir="技能")
+    store.save_roots(["技能/old", "技能/other"])
+    assert store.remap_roots("技能/old", "技能/new") == ["技能/new", "技能/other"]
+    assert store.load_roots() == ["技能/new", "技能/other"]
+    # 不得把 技能/old-extra 当成 技能/old 的子路径
+    store.save_roots(["技能/old-extra", "技能/old"])
+    assert store.remap_roots("技能/old", "技能/new") == ["技能/old-extra", "技能/new"]

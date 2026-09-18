@@ -395,6 +395,13 @@ def test_write_routes_blocked_during_maintenance(client, tmp_path):
         )
         assert r.status_code == 503
 
+        r = client.post(
+            "/api/kb/import-batch",
+            files=[("files", ("x.txt", io.BytesIO(b"hi"), "text/plain"))],
+            data={"items": json.dumps([{"directory": "未分类", "filename": "x.txt"}])},
+        )
+        assert r.status_code == 503
+
         r = client.get("/api/admin/export")
         assert r.status_code == 503
 
