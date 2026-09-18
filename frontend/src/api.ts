@@ -686,10 +686,12 @@ export async function kbImport(
   fd.append("file", file);
   fd.append("directory", directory);
   if (filename) fd.append("filename", filename);
-  return apiFetch<{ rel_path: string; kind: string; indexed: boolean }>(
-    "/api/kb/import",
-    { method: "POST", body: fd },
-  );
+  return apiFetch<{
+    rel_path: string;
+    kind: string;
+    indexed: boolean;
+    files?: string[];
+  }>("/api/kb/import", { method: "POST", body: fd });
 }
 
 export async function kbMove(body: {

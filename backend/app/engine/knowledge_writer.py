@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import re
+import shutil
 from collections.abc import Callable
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING
@@ -306,6 +307,99 @@ class KnowledgeWriter:
             f"不支持的文件类型：{fn}（仅允许 Markdown、文本代码/配置类，或图片扩展名）"
         )
 
+    def _imported_markdown_bytes(self, rel: str, data: bytes) -> bytes:
+        from app.time import now_wall_clock
+
+        text = data.decode("utf-8", errors="replace")
+        meta, body = frontmatter.parse(text)
+        if not meta.get("title"):
+            meta["title"] = title_from_rel_path(rel)
+        meta.setdefault("source", "import")
+        body = sanitize_markdown_image_srcs_for_storage(body)
+        if not body.endswith("\n"):
+            body += "\n"
+        now = now_wall_clock()
+        meta.setdefault("created", now)
+        meta["updated"] = now
+        return frontmatter.dump(meta, body).encode("utf-8")
+
+    def import_skill_archive(
+        self,
+        *,
+        directory: str,
+        filename: str,
+        data: bytes,
+        allow_binary: bool = True,
+    ) -> dict:
+        """把 Skill zip 解到技能目录下的包文件夹，不把 .zip 留在树上。"""
+        from app.engine.kb_skill_zip import (
+            parse_skill_zip_entries,
+            skill_zip_package_name,
+        )
+        from app.engine.skills_dir import (
+            is_skill_md_path,
+            require_skill_md_in_skills_dir,
+            require_skill_root_in_skills_dir,
+        )
+
+        name = skill_zip_package_name(filename)
+        try:
+            dest_root = join_kb_directory(directory, name)
+        except KbPathError as e:
+            raise ValueError(str(e)) from e
+        require_skill_root_in_skills_dir(dest_root, self.skills_dir)
+        if self.repo.abs_path(dest_root).exists():
+            raise KbPathExistsError(dest_root)
+
+        entries = parse_skill_zip_entries(data)
+        prepared: list[tuple[str, bytes]] = []
+        for inner, raw in entries:
+            rel = f"{dest_root}/{inner}"
+            if is_memory_projection_path(rel):
+                raise ValueError(MEMORY_FILE_DISABLED_MSG)
+            if is_skill_md_path(rel):
+                require_skill_md_in_skills_dir(rel, self.skills_dir)
+            if is_markdown_path(rel):
+                payload = self._imported_markdown_bytes(rel, raw)
+            else:
+                self.assert_non_md_asset_allowed(
+                    PurePosixPath(rel).name, allow_binary=allow_binary
+                )
+                payload = raw
+            prepared.append((rel, payload))
+
+        dest_abs = self.repo.abs_path(dest_root)
+        try:
+            written = self.repo.write_files(
+                prepared, commit_msg=f"import skill: {dest_root}"
+            )
+        except Exception:
+            if dest_abs.exists():
+                shutil.rmtree(dest_abs, ignore_errors=True)
+            raise
+
+        indexed_any = False
+        for rel, _ in prepared:
+            if is_markdown_path(rel):
+                doc = self.repo.read_doc(rel)
+                if self.indexer is not None:
+                    self.indexer.reindex_doc(rel, doc.body)
+                    indexed_any = True
+            else:
+                extracted = extract_text(self.repo.abs_path(rel))
+                if self.index_extracted_text(rel, extracted):
+                    indexed_any = True
+        self.repo.log_change(
+            f"导入 Skill 包 {dest_root}（{len(written)} 个文件）",
+            commit_msg=f"chore: changelog import skill {dest_root}",
+        )
+        return {
+            "rel_path": dest_root,
+            "kind": "skill_package",
+            "indexed": indexed_any,
+            "files": written,
+        }
+
     def import_entry(
         self,
         *,
@@ -314,7 +408,21 @@ class KnowledgeWriter:
         data: bytes,
         allow_binary: bool = True,
     ) -> dict:
+        from app.engine.kb_skill import is_under_dir
+        from app.engine.kb_skill_zip import is_zip_filename
+
         fn = _safe_basename(filename)
+        try:
+            dest_dir = normalize_directory(directory)
+        except KbPathError as e:
+            raise ValueError(str(e)) from e
+        if is_zip_filename(fn) and is_under_dir(dest_dir, self.skills_dir):
+            return self.import_skill_archive(
+                directory=dest_dir,
+                filename=fn,
+                data=data,
+                allow_binary=allow_binary,
+            )
         if is_markdown_path(fn):
             try:
                 rel = join_kb_path(directory, fn)

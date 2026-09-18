@@ -132,6 +132,26 @@ class KnowledgeRepo:
         self._commit([norm], commit_msg)
         return norm
 
+    def write_files(
+        self, files: list[tuple[str, bytes]], *, commit_msg: str
+    ) -> list[str]:
+        """写入多个新文件并一次 commit（Skill 解包等批量导入）。"""
+        if not files:
+            raise ValueError("没有可写入的文件")
+        written: list[str] = []
+        for rel_path, data in files:
+            norm = rel_path.replace("\\", "/").lstrip("/")
+            if self._is_internal(norm):
+                raise ValueError(f"禁止写入：{rel_path}")
+            abs_p = self._abs(norm)
+            if abs_p.exists():
+                raise ValueError(f"目标路径已存在：{rel_path}")
+            abs_p.parent.mkdir(parents=True, exist_ok=True)
+            abs_p.write_bytes(data)
+            written.append(norm)
+        self._commit(written, commit_msg)
+        return written
+
     def read_bytes(self, rel_path: str) -> bytes:
         abs_p = self._abs(rel_path)
         if not abs_p.exists():

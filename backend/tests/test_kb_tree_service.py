@@ -72,3 +72,22 @@ def test_import_conflict(tmp_path):
     svc.import_upload(directory="", filename="a.md", data=b"x\n")
     with pytest.raises(KbPathExistsError):
         svc.import_upload(directory="", filename="a.md", data=b"y\n")
+
+
+def test_import_skill_zip_unpacks(tmp_path):
+    import io
+    import zipfile
+
+    svc, repo, _ = _svc(tmp_path)
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("demo/SKILL.md", b"# skill\n")
+        zf.writestr("demo/extra.txt", b"hi\n")
+    result = svc.import_upload(
+        directory="技能", filename="demo.zip", data=buf.getvalue()
+    )
+    assert result["kind"] == "skill_package"
+    assert result["rel_path"] == "技能/demo"
+    assert "技能/demo/SKILL.md" in repo.list_tree()
+    assert "技能/demo/extra.txt" in repo.list_tree()
+    assert "技能/demo.zip" not in repo.list_tree()

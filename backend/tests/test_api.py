@@ -310,6 +310,75 @@ def test_download_zip_directory(client):
         assert "导出目录/note.md" in z.namelist()
 
 
+def test_skill_zip_download_upload_roundtrip(client):
+    skill_body = b"---\nname: count\ndescription: 数数查询\n---\n\n# 数数\n"
+    r = client.post(
+        "/api/kb/import",
+        files={"file": ("SKILL.md", skill_body, "text/markdown")},
+        data={"directory": "技能/数数查询"},
+    )
+    assert r.status_code == 200
+    r = client.post(
+        "/api/kb/import",
+        files={"file": ("run.py", b"print(1)\n", "text/x-python")},
+        data={"directory": "技能/数数查询"},
+    )
+    assert r.status_code == 200
+
+    packed = client.get("/api/download-zip", params={"path": "技能/数数查询"})
+    assert packed.status_code == 200
+    assert (
+        client.post("/api/kb/delete", json={"path": "技能/数数查询"}).status_code
+        == 200
+    )
+    tree = client.get("/api/tree").json()["docs"]
+    assert "技能/数数查询/SKILL.md" not in tree
+
+    uploaded = client.post(
+        "/api/kb/import",
+        files={"file": ("数数查询.zip", packed.content, "application/zip")},
+        data={"directory": "技能"},
+    )
+    assert uploaded.status_code == 200
+    body = uploaded.json()
+    assert body["kind"] == "skill_package"
+    assert body["rel_path"] == "技能/数数查询"
+    tree = client.get("/api/tree").json()["docs"]
+    assert "技能/数数查询/SKILL.md" in tree
+    assert "技能/数数查询/run.py" in tree
+    assert "技能/数数查询.zip" not in tree
+    doc = client.get("/api/doc", params={"path": "技能/数数查询/SKILL.md"}).json()
+    assert "数数查询" in doc["body"]
+
+
+def test_kb_import_skill_zip_conflict(client):
+    files = {"file": ("SKILL.md", b"# existing\n", "text/markdown")}
+    assert (
+        client.post(
+            "/api/kb/import",
+            files=files,
+            data={"directory": "技能/数数查询"},
+        ).status_code
+        == 200
+    )
+    import zipfile
+    from io import BytesIO
+
+    buf = BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("数数查询/SKILL.md", b"# new\n")
+    r = client.post(
+        "/api/kb/import",
+        files={"file": ("数数查询.zip", buf.getvalue(), "application/zip")},
+        data={"directory": "技能"},
+    )
+    assert r.status_code == 409
+    detail = r.json()["detail"]
+    assert detail["code"] == "PATH_EXISTS"
+    assert detail["path"] == "技能/数数查询"
+    assert detail["suggested_filename"] == "数数查询 (1).zip"
+
+
 def test_kb_import_conflict(client):
     files = {"file": ("note.md", b"# a\n", "text/markdown")}
     r = client.post("/api/kb/import", files=files, data={"directory": "导入测试"})
