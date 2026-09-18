@@ -530,6 +530,7 @@ class KnowledgeWriter:
                     if self.indexer is not None:
                         self.indexer.reindex_doc(rel, doc.body)
                     indexed_by_rel[rel] = True
+                    self._enable_new_skill_from_path(rel)
                 else:
                     extracted = extract_text(self.repo.abs_path(rel))
                     indexed_by_rel[rel] = self.index_extracted_text(
