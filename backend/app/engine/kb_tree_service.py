@@ -9,6 +9,8 @@ from app.engine.knowledge_writer import (
 from app.index.revision import IndexRevision
 from app.storage.repo import KnowledgeRepo
 
+MAX_KB_IMPORT_BATCH_FILES = 32
+
 
 class KbTreeService:
     """知识库树 import/move/delete：protected 校验、写入 seam、索引 revision。"""
@@ -46,6 +48,23 @@ class KbTreeService:
         )
         self.index_revision.bump()
         return result
+
+    def import_uploads(
+        self, items: list[tuple[str, str, bytes]]
+    ) -> dict:
+        if not items:
+            raise ValueError("没有可导入的文件")
+        if len(items) > MAX_KB_IMPORT_BATCH_FILES:
+            raise ValueError(
+                f"单次最多导入 {MAX_KB_IMPORT_BATCH_FILES} 个文件"
+            )
+        for directory, _filename, _data in items:
+            d = directory.strip()
+            if d and self.repo.is_protected(f"{d}/.md"):
+                raise PermissionError("禁止写入该目录")
+        results = self.writer.import_entries(items, allow_binary=True)
+        self.index_revision.bump()
+        return {"items": results}
 
     def move(
         self,
@@ -88,5 +107,6 @@ class KbTreeService:
 __all__ = [
     "KbTreeService",
     "KbPathExistsError",
+    "MAX_KB_IMPORT_BATCH_FILES",
     "suggest_alternate_filename",
 ]

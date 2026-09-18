@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import io
+import json
+from pathlib import PurePosixPath
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
@@ -23,6 +26,47 @@ from app.engine.memory.constants import (
 from app.engine.patch import diff_affected_range
 
 router = APIRouter()
+
+
+def _reject_oversized_video(data: bytes, name: str) -> None:
+    from app.models.media import MAX_VIDEO_UPLOAD_BYTES, bytes_look_like_video
+
+    if len(data) > MAX_VIDEO_UPLOAD_BYTES and bytes_look_like_video(data, name=name):
+        limit_mb = MAX_VIDEO_UPLOAD_BYTES // (1024 * 1024)
+        raise HTTPException(400, f"视频超过 {limit_mb}MB 上限")
+
+
+def _raise_kb_import_error(exc: Exception, *, filename: str) -> None:
+    from app.engine.kb_pack import PackPathChoiceError
+    from app.engine.kb_tree_service import (
+        KbPathExistsError,
+        suggest_alternate_filename,
+    )
+
+    if isinstance(exc, KbPathExistsError):
+        raise HTTPException(
+            409,
+            detail=kb_path_exists_detail(
+                exc.rel_path, str(exc), suggest_alternate_filename(filename)
+            ),
+        ) from exc
+    if isinstance(exc, PackPathChoiceError):
+        raise HTTPException(
+            409,
+            detail=pack_path_choice_detail(
+                kind=exc.kind,
+                original_path=exc.original_path,
+                upload_path=exc.upload_path,
+                default_path=exc.default_path,
+                skills_dir=exc.skills_dir,
+                message=str(exc),
+            ),
+        ) from exc
+    if isinstance(exc, PermissionError):
+        raise HTTPException(403, str(exc)) from exc
+    if isinstance(exc, ValueError):
+        raise HTTPException(400, str(exc)) from exc
+    raise exc
 
 
 @router.get("/download")
@@ -201,47 +245,65 @@ async def kb_import(
     filename: str | None = Form(None),
     dest_root: str | None = Form(None),
 ):
-    from app.engine.kb_pack import PackPathChoiceError
-    from app.engine.kb_tree_service import (
-        KbPathExistsError,
-        suggest_alternate_filename,
-    )
-
     _, svc = kb_tree_service(request)
     name = (filename or file.filename or "upload.bin").strip()
     data = await file.read()
-    from app.models.media import MAX_VIDEO_UPLOAD_BYTES, bytes_look_like_video
+    _reject_oversized_video(data, name)
+    from app.engine.kb_pack import PackPathChoiceError
+    from app.engine.kb_tree_service import KbPathExistsError
 
-    if len(data) > MAX_VIDEO_UPLOAD_BYTES and bytes_look_like_video(data, name=name):
-        limit_mb = MAX_VIDEO_UPLOAD_BYTES // (1024 * 1024)
-        raise HTTPException(400, f"视频超过 {limit_mb}MB 上限")
     try:
         return svc.import_upload(
             directory=directory, filename=name, data=data, dest_root=dest_root
         )
-    except KbPathExistsError as e:
+    except (KbPathExistsError, PackPathChoiceError, PermissionError, ValueError) as e:
+        _raise_kb_import_error(e, filename=name)
+        raise
+
+
+@router.post("/kb/import-batch")
+async def kb_import_batch(
+    request: Request,
+    files: list[UploadFile] = File(...),
+    items: str = Form(...),
+):
+    from app.engine.kb_pack import PackPathChoiceError
+    from app.engine.kb_tree_service import (
+        KbPathExistsError,
+        MAX_KB_IMPORT_BATCH_FILES,
+    )
+
+    _, svc = kb_tree_service(request)
+    try:
+        specs = json.loads(items)
+    except json.JSONDecodeError as e:
+        raise HTTPException(400, "items 不是合法 JSON") from e
+    if not isinstance(specs, list):
+        raise HTTPException(400, "items 必须是数组")
+    if len(files) != len(specs):
+        raise HTTPException(400, "files 与 items 数量不一致")
+    if len(files) > MAX_KB_IMPORT_BATCH_FILES:
         raise HTTPException(
-            409,
-            detail=kb_path_exists_detail(
-                e.rel_path, str(e), suggest_alternate_filename(name)
-            ),
-        ) from e
-    except PackPathChoiceError as e:
-        raise HTTPException(
-            409,
-            detail=pack_path_choice_detail(
-                kind=e.kind,
-                original_path=e.original_path,
-                upload_path=e.upload_path,
-                default_path=e.default_path,
-                skills_dir=e.skills_dir,
-                message=str(e),
-            ),
-        ) from e
-    except PermissionError as e:
-        raise HTTPException(403, str(e)) from e
-    except ValueError as e:
-        raise HTTPException(400, str(e)) from e
+            400, f"单次最多导入 {MAX_KB_IMPORT_BATCH_FILES} 个文件"
+        )
+    payloads: list[tuple[str, str, bytes]] = []
+    for file, spec in zip(files, specs, strict=True):
+        if not isinstance(spec, dict):
+            raise HTTPException(400, "items 项必须是对象")
+        directory = str(spec.get("directory") or "")
+        name = str(spec.get("filename") or file.filename or "upload.bin").strip()
+        data = await file.read()
+        _reject_oversized_video(data, name)
+        payloads.append((directory, name, data))
+    try:
+        return await asyncio.to_thread(svc.import_uploads, payloads)
+    except (KbPathExistsError, PackPathChoiceError, PermissionError, ValueError) as e:
+        hint = payloads[0][1] if payloads else "upload.bin"
+        rel = getattr(e, "rel_path", None)
+        if isinstance(rel, str) and rel:
+            hint = PurePosixPath(rel).name or hint
+        _raise_kb_import_error(e, filename=hint)
+        raise
 
 
 @router.post("/kb/move")

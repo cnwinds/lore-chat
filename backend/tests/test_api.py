@@ -481,6 +481,68 @@ def test_kb_import_conflict(client):
     assert "suggested_filename" in detail
 
 
+def test_kb_import_batch_writes_many_files(client):
+    r = client.post(
+        "/api/kb/import-batch",
+        files=[
+            ("files", ("a.ipynb", b'{"nb":1}', "application/json")),
+            ("files", ("b.py", b"print(1)\n", "text/x-python")),
+            ("files", ("c.md", b"# hi\n", "text/markdown")),
+        ],
+        data={
+            "items": json.dumps(
+                [
+                    {"directory": "课程/notebooks", "filename": "a.ipynb"},
+                    {"directory": "课程/notebooks", "filename": "b.py"},
+                    {"directory": "课程/notebooks", "filename": "c.md"},
+                ]
+            )
+        },
+    )
+    assert r.status_code == 200, r.text
+    paths = [i["rel_path"] for i in r.json()["items"]]
+    assert paths == [
+        "课程/notebooks/a.ipynb",
+        "课程/notebooks/b.py",
+        "课程/notebooks/c.md",
+    ]
+    tree = client.get("/api/tree").json()["docs"]
+    for p in paths:
+        assert p in tree
+    note = client.get("/api/doc", params={"path": "课程/notebooks/c.md"}).json()
+    assert note["body"].startswith("# hi")
+
+
+def test_kb_import_batch_conflict_writes_nothing(client):
+    assert (
+        client.post(
+            "/api/kb/import",
+            files={"file": ("keep.txt", b"old\n", "text/plain")},
+            data={"directory": "课"},
+        ).status_code
+        == 200
+    )
+    r = client.post(
+        "/api/kb/import-batch",
+        files=[
+            ("files", ("new.py", b"x=1\n", "text/x-python")),
+            ("files", ("keep.txt", b"new\n", "text/plain")),
+        ],
+        data={
+            "items": json.dumps(
+                [
+                    {"directory": "课", "filename": "new.py"},
+                    {"directory": "课", "filename": "keep.txt"},
+                ]
+            )
+        },
+    )
+    assert r.status_code == 409
+    tree = client.get("/api/tree").json()["docs"]
+    assert "课/keep.txt" in tree
+    assert "课/new.py" not in tree
+
+
 def test_kb_import_rejects_oversized_video(client):
     from app.models.media import MAX_VIDEO_UPLOAD_BYTES
 

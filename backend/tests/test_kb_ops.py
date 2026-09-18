@@ -134,3 +134,75 @@ def test_delete_file(tmp_path):
 def test_path_helpers():
     assert is_markdown_path("a.md")
     assert not is_markdown_path("a.pdf")
+
+
+def _n_commits(repo: KnowledgeRepo) -> int:
+    try:
+        return int(repo.repo.git.rev_list("--count", "HEAD"))
+    except Exception:
+        return 0
+
+
+def test_import_entries_batches_git_commits(tmp_path):
+    repo = KnowledgeRepo(tmp_path / "knowledge")
+    w = _writer(repo, tmp_path)
+    items = [
+        ("课程/notebooks", "a.ipynb", b'{"cells":[]}'),
+        ("课程/notebooks", "b.py", b"print(1)\n"),
+        ("课程/notebooks", "c.md", b"# note\n"),
+        ("课程/notebooks", "d.txt", b"tiny\n"),
+        ("课程/notebooks", "e.csv", b"x,y\n1,2\n"),
+    ]
+    before = _n_commits(repo)
+    results = w.import_entries(items)
+    assert [r["rel_path"] for r in results] == [
+        "课程/notebooks/a.ipynb",
+        "课程/notebooks/b.py",
+        "课程/notebooks/c.md",
+        "课程/notebooks/d.txt",
+        "课程/notebooks/e.csv",
+    ]
+    assert repo.abs_path("课程/notebooks/a.ipynb").read_bytes() == b'{"cells":[]}'
+    assert repo.read_doc("课程/notebooks/c.md").body.startswith("# note")
+    # 一次 write_files + 一条 changelog，而不是每个文件两次 commit
+    assert _n_commits(repo) - before == 2
+
+
+def test_import_entries_conflict_is_atomic(tmp_path):
+    repo = KnowledgeRepo(tmp_path / "knowledge")
+    w = _writer(repo, tmp_path)
+    w.import_entry(directory="n", filename="keep.txt", data=b"old\n")
+    with pytest.raises(KbPathExistsError):
+        w.import_entries(
+            [
+                ("n", "new.py", b"print(1)\n"),
+                ("n", "keep.txt", b"new\n"),
+            ]
+        )
+    assert not repo.abs_path("n/new.py").exists()
+    assert repo.read_bytes("n/keep.txt") == b"old\n"
+
+
+def test_import_entries_rejects_pack_zip(tmp_path):
+    import io
+    import zipfile
+
+    from app.engine.kb_pack import dump_pack_meta, pack_meta_for_directory
+
+    repo = KnowledgeRepo(tmp_path / "knowledge")
+    w = _writer(repo, tmp_path)
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr(
+            "lorechat-pack.json",
+            dump_pack_meta(pack_meta_for_directory("技能/demo")),
+        )
+        zf.writestr("demo/SKILL.md", b"# skill\n")
+    with pytest.raises(ValueError, match="单独导入"):
+        w.import_entries(
+            [
+                ("课程", "a.py", b"x=1\n"),
+                ("技能", "demo.zip", buf.getvalue()),
+            ]
+        )
+    assert not repo.abs_path("课程/a.py").exists()

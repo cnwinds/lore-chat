@@ -2,6 +2,7 @@ import { useCallback, useState } from "react";
 import {
   kbDelete,
   kbImport,
+  kbImportMany,
   kbMove,
   parentDirectory,
 } from "../api";
@@ -13,6 +14,10 @@ import {
   targetDirectoryForDrop,
   type DroppedFile,
 } from "../utils/droppedFiles";
+import {
+  isInteractiveKbImportError,
+  planKbImportRuns,
+} from "../utils/kbImportBatch";
 import { isKbDirectoryPath } from "../utils/kbTreeMove";
 
 type ConflictState = {
@@ -128,16 +133,50 @@ export function useKbTreeActions(onTreeChanged: () => void, docs: string[]) {
         currentName: items[0]?.relativePath ?? "",
       });
       try {
-        for (let i = 0; i < items.length; i++) {
-          const { file, relativePath } = items[i];
-          const target = targetDirectoryForDrop(directory, relativePath);
+        const runs = planKbImportRuns(items);
+        let done = 0;
+        const importSequential = async (group: DroppedFile[]) => {
+          for (const entry of group) {
+            const target = targetDirectoryForDrop(directory, entry.relativePath);
+            setTreeProgress({
+              kind: "import",
+              total: items.length,
+              completed: done,
+              currentName: entry.relativePath,
+            });
+            await importOne(entry.file, target.directory, target.filename);
+            done += 1;
+          }
+        };
+        for (const run of runs) {
+          if (run.kind === "one") {
+            await importSequential([run.item]);
+            continue;
+          }
           setTreeProgress({
             kind: "import",
             total: items.length,
-            completed: i,
-            currentName: relativePath,
+            completed: done,
+            currentName: run.items[0]?.relativePath ?? "",
           });
-          await importOne(file, target.directory, target.filename);
+          const mapped = run.items.map((entry) => {
+            const target = targetDirectoryForDrop(directory, entry.relativePath);
+            return {
+              file: entry.file,
+              directory: target.directory,
+              filename: target.filename,
+            };
+          });
+          try {
+            await kbImportMany(mapped);
+            done += run.items.length;
+          } catch (e) {
+            if (isInteractiveKbImportError(e)) {
+              await importSequential(run.items);
+              continue;
+            }
+            throw e;
+          }
         }
         onTreeChanged();
       } catch (e) {
