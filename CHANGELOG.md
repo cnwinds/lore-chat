@@ -4,6 +4,12 @@
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-09-18
+
+### Fixed
+
+- 修复发送队列编排里未使用变量导致 `v0.3.0` 发行 CI 未通过（无镜像发布）
+
 ## [0.3.0] - 2026-09-18
 
 ### Added
@@ -251,7 +257,8 @@
 - MIT 许可证与开源社区文件（SECURITY、CONTRIBUTING、CODE_OF_CONDUCT）
 - GitHub Issue / PR 模板与 CI（backend pytest、frontend lint/test/build）
 
-[Unreleased]: https://github.com/cnwinds/lore-chat/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/cnwinds/lore-chat/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/cnwinds/lore-chat/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/cnwinds/lore-chat/compare/v0.2.10...v0.3.0
 [0.2.10]: https://github.com/cnwinds/lore-chat/compare/v0.2.9...v0.2.10
 [0.2.9]: https://github.com/cnwinds/lore-chat/compare/v0.2.8...v0.2.9
