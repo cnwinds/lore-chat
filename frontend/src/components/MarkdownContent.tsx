@@ -180,7 +180,10 @@ export function MarkdownContent({
   return (
     <div className={cls}>
       <ReactMarkdown
-        remarkPlugins={[remarkGfm, remarkTrimAutolinkUrls]}
+        remarkPlugins={[
+          [remarkGfm, { singleTilde: false }],
+          remarkTrimAutolinkUrls,
+        ]}
         rehypePlugins={rehypePlugins.length ? rehypePlugins : undefined}
         urlTransform={markdownUrlTransform}
         components={components}
