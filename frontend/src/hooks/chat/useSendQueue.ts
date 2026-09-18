@@ -71,6 +71,18 @@ export function useSendQueue(conversationId: string | null) {
       .finally(() => setLoading(false));
   }, [conversationId, applySnapshot]);
 
+  // 兜底对账：队列非空时定期与服务端收敛（注入完成/跨端变更均会体现）。
+  // 队列为空即停止，无常驻请求。
+  useEffect(() => {
+    if (!conversationId || items.length === 0) return;
+    const timer = window.setInterval(() => {
+      getContextSendQueue(conversationId)
+        .then(applySnapshot)
+        .catch(() => {});
+    }, 4000);
+    return () => window.clearInterval(timer);
+  }, [conversationId, items.length, applySnapshot]);
+
   /** 乐观更新 + 服务端收敛（以后端为准，兼顾跨端）。 */
   const mutate = useCallback(
     async (fn: () => Promise<unknown>) => {
