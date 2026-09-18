@@ -604,16 +604,6 @@ export function Chat({
     }
 
     const ctx = resolveDocContext();
-    if (
-      ctx.docContext.length === 0 &&
-      /[（(]*(几|两|\d+).*文档|合并|整合/.test(text)
-    ) {
-      setInput(text);
-      window.alert(
-        "请先在侧栏用 Ctrl+单击 将文件或目录加入工作托盘（顶层「技能」除外），再发送。",
-      );
-      return;
-    }
 
     const shouldQueue = streamingForView || sendQueue.items.length > 0;
     if (!shouldQueue) {
