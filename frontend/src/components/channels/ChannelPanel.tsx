@@ -213,7 +213,7 @@ export function ChannelPanel({
     inst: ChannelInstance,
     field: "show_thinking" | "show_tool_output",
   ) => {
-    const next = !Boolean(inst[field]);
+    const next = !inst[field];
     setInstances((prev) =>
       prev.map((item) => (item.id === inst.id ? { ...item, [field]: next } : item)),
     );
@@ -223,7 +223,7 @@ export function ChannelPanel({
     } catch (e: unknown) {
       setInstances((prev) =>
         prev.map((item) =>
-          item.id === inst.id ? { ...item, [field]: Boolean(inst[field]) } : item,
+          item.id === inst.id ? { ...item, [field]: !!inst[field] } : item,
         ),
       );
       setError(e instanceof Error ? e.message : "更新失败");

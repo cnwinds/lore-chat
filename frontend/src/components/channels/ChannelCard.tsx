@@ -168,7 +168,7 @@ export function ChannelCard({
             <div className="channel-output-toggle">
               <span className="channel-output-toggle-name">思考</span>
               <ChannelSwitch
-                on={Boolean(inst.show_thinking)}
+                on={!!inst.show_thinking}
                 label="输出思考"
                 disabled={busy}
                 compact
@@ -178,7 +178,7 @@ export function ChannelCard({
             <div className="channel-output-toggle">
               <span className="channel-output-toggle-name">工具</span>
               <ChannelSwitch
-                on={Boolean(inst.show_tool_output)}
+                on={!!inst.show_tool_output}
                 label="输出工具"
                 disabled={busy}
                 compact
