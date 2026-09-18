@@ -141,6 +141,103 @@ async def get_conversation(
         raise HTTPException(404, "对话不存在") from e
 
 
+@router.get("/conversations/{cid}/queue")
+async def list_send_queue(cid: str, request: Request):
+    c = container(request)
+    return {
+        "items": c.send_queue.list_items(cid),
+        "paused": c.send_queue.is_paused(cid),
+    }
+
+
+@router.post("/conversations/{cid}/queue")
+async def enqueue_send_queue(cid: str, request: Request):
+    import asyncio
+
+    from app.engine.chat.turn_inject import PendingInject
+
+    c = container(request)
+    body = await request.json()
+    item = c.send_queue.enqueue(cid, body)
+    # 服务端消费：timing=inject 且当前有运行中的回合 → 立即注入并出队
+    if item["timing"] == "inject" and (
+        c.chat_runner.resolve_active_turn_status(cid).get("status") == "running"
+    ):
+        def _consume() -> None:
+            c.chat_runner.enqueue_inject(
+                cid,
+                PendingInject(
+                    text=item["text"],
+                    inject_id=item["id"],
+                    client_message_id=f"inject:{item['id']}",
+                    doc_context=item.get("doc_context"),
+                    primary_doc=item.get("primary_doc"),
+                    attachments=item.get("attachments"),
+                ),
+            )
+            c.send_queue.remove(cid, item["id"])
+
+        loop = asyncio.get_running_loop()
+        loop.run_in_executor(None, _consume)
+    return {"item": c.send_queue.get(cid, item["id"])}
+
+
+@router.patch("/conversations/{cid}/queue/{item_id}")
+async def patch_send_queue_item(cid: str, item_id: str, request: Request):
+    c = container(request)
+    body = await request.json()
+    item = c.send_queue.update(cid, item_id, body)
+    if item is None:
+        raise HTTPException(404, "排队消息不存在")
+    return {"item": item}
+
+
+@router.post("/conversations/{cid}/queue/{item_id}/guide")
+async def guide_send_queue_item(cid: str, item_id: str, request: Request):
+    """引导：移到队首并注入当前信息流。"""
+    c = container(request)
+    c.send_queue.move_to_front(cid, item_id)
+    item = c.send_queue.update(cid, item_id, {"timing": "inject"})
+    if item is None:
+        raise HTTPException(404, "排队消息不存在")
+    # 引导 = 移到队首并立刻注入当前回合（由队列 drain 服务执行）
+    c.queue_drainer.schedule_inject_consume(cid, delay=0.1)
+    return {"item": item}
+
+
+@router.post("/conversations/{cid}/queue/{item_id}/move")
+async def move_send_queue_item(cid: str, item_id: str, request: Request):
+    c = container(request)
+    body = await request.json()
+    direction = body.get("direction")
+    if direction not in (-1, 1):
+        raise HTTPException(422, "direction 须为 -1 或 1")
+    c.send_queue.move(cid, item_id, direction)
+    return {"ok": True}
+
+
+@router.delete("/conversations/{cid}/queue/{item_id}")
+async def delete_send_queue_item(cid: str, item_id: str, request: Request):
+    c = container(request)
+    c.send_queue.remove(cid, item_id)
+    return {"ok": True}
+
+
+@router.delete("/conversations/{cid}/queue")
+async def clear_send_queue(cid: str, request: Request):
+    c = container(request)
+    c.send_queue.clear(cid)
+    return {"ok": True}
+
+
+@router.post("/conversations/{cid}/queue/pause")
+async def pause_send_queue(cid: str, request: Request):
+    c = container(request)
+    body = await request.json()
+    c.send_queue.set_paused(cid, bool(body.get("paused")))
+    return {"paused": bool(body.get("paused"))}
+
+
 @router.get("/conversations/{cid}/context-stats")
 def get_conversation_context_stats(cid: str, request: Request):
     """会话上下文统计：容量、分段占比、缓存命中率、工具调用、成本。"""

@@ -37,6 +37,8 @@ from app.engine.merge_workflow import MergeWorkflow
 from app.engine.organizer import Organizer
 from app.engine.knowledge_writer import KnowledgeWriter
 from app.engine.chat.session_runner import ChatSessionRunner
+from app.engine.chat.send_queue_drain import SendQueueDrainer
+from app.engine.chat.send_queue_store import SendQueueStore
 from app.engine.agent.orchestrator import AgentOrchestrator
 from app.engine.agent.system_layer import SystemLayer
 from app.engine.memory.service import MemoryService
@@ -69,6 +71,7 @@ class Container:
     image_cooldown: CooldownStore
     models_dev: ModelsDevStore
     usage: UsageService
+    send_queue: SendQueueStore
     repo: KnowledgeRepo
     indexer: Indexer
     retriever: Retriever
@@ -88,6 +91,7 @@ class Container:
     pending_resolver: PendingResolver
     agent: AgentOrchestrator
     chat_runner: ChatSessionRunner
+    queue_drainer: SendQueueDrainer
     system_layer: SystemLayer
     memory_service: MemoryService
     enabled_skills: EnabledSkillsStore
@@ -108,6 +112,9 @@ class Container:
 def build_container(settings: Settings, llm: LLMClient | None = None) -> Container:
     workspace_id = ensure_workspace_id(settings.kb_path)
     usage_store = UsageStore(settings.kb_path / ".kb" / "usage" / "usage.db")
+    send_queue_store = SendQueueStore(
+        settings.kb_path / ".kb" / "conversations" / "send_queue.db"
+    )
     usage_recorder = UsageRecorder(usage_store)
     usage = UsageService(usage_store)
     model_cooldown = shared_cooldown_store(cooldown_path_for_kb(settings.kb_path))
@@ -203,6 +210,12 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
     )
     agent.chat_runner.turn_hub.usage_store = usage_store
 
+    # 服务端发送队列：回合结束时由 TurnHub 钩子驱动 drain（注入/续发/暂停）
+    queue_drainer = SendQueueDrainer(
+        store=send_queue_store, chat_runner=agent.chat_runner, pending=pending
+    )
+    agent.chat_runner.turn_hub.on_turn_end = queue_drainer.on_turn_end
+
     pending_resolver = PendingResolver(
         pending=pending,
         organizer=agent.organizer,
@@ -252,6 +265,7 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
         image_cooldown=image_cooldown,
         models_dev=models_dev,
         usage=usage,
+        send_queue=send_queue_store,
         repo=repo,
         indexer=index.indexer,
         retriever=index.retriever,
@@ -297,6 +311,7 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
         _memory_subgraph=memory,
         _agent_subgraph=agent,
         _usage_store=usage_store,
+        queue_drainer=queue_drainer,
         _runtime_store=runtime_store,
     )
 

@@ -1107,6 +1107,7 @@ export function Chat({
         onSkipFailed={handleSkipFailed}
         onUpdateQueueText={(id, text) => sendQueue.updateItem(id, { text })}
         onSetQueueTiming={sendQueue.setItemTiming}
+        onGuideQueueItem={(id) => sendQueue.guideItem(id)}
         onToggleQueueMerge={(id) => {
           const item = sendQueue.items.find((x) => x.id === id);
           if (!item) return;

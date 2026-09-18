@@ -162,6 +162,10 @@ async def chat(body: ChatBody, request: Request):
             web_enabled=body.web_enabled,
             reuse_user_message_id=body.reuse_user_message_id,
         )
+        # 新回合开始：若发送队列队首为 inject 条目则自动注入
+        queue_drainer = getattr(c, "queue_drainer", None)
+        if queue_drainer is not None:
+            queue_drainer.schedule_inject_consume(cid, delay=0.3)
     except TurnInProgress as e:
         raise HTTPException(
             409,

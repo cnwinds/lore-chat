@@ -9,6 +9,7 @@ type Props = {
   onSkipFailed: () => void;
   onUpdateText: (id: string, text: string) => void;
   onSetTiming: (id: string, timing: QueueTiming) => void;
+  onGuide: (id: string) => void;
   onToggleMerge: (id: string) => void;
   onRemove: (id: string) => void;
   onMove: (id: string, direction: -1 | 1) => void;
@@ -203,6 +204,7 @@ export function ComposerSendQueue({
   onSetTiming,
   onRemove,
   onMove,
+  onGuide,
   onClear,
 }: Props) {
   const [dragId, setDragId] = useState<string | null>(null);
@@ -219,10 +221,9 @@ export function ComposerSendQueue({
     for (let i = 0; i < steps; i++) onMove(items[from].id, dir);
   }
 
-  /** 引导：把该条移到队首并注入当前信息流 */
-  function guideItem(item: SendQueueItem, index: number) {
-    onSetTiming(item.id, "inject");
-    if (index > 0) moveToIndex(index, 0);
+  /** 引导：服务端移到队首并注入当前回合 */
+  function guideItem(item: SendQueueItem) {
+    onGuide(item.id);
   }
 
   return (
@@ -354,7 +355,7 @@ export function ComposerSendQueue({
                 value={item.timing}
                 locked={!!item.locked}
                 disabled={!!item.locked}
-                onGuide={() => guideItem(item, index)}
+                onGuide={() => guideItem(item)}
                 onQueue={() => onSetTiming(item.id, "defer")}
               />
               {!item.locked && (

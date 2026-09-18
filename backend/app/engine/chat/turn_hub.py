@@ -115,6 +115,9 @@ class TurnExecutionHub:
         self.roles = roles
         self.usage_store = usage_store
         self.inject_broker = inject_broker or TurnInjectBroker()
+        # 回合结束回调（服务端发送队列 drain 挂此钩子）：
+        # on_turn_end(conversation_id, turn_status, stop_reason)
+        self.on_turn_end = None
         self._by_turn: dict[str, ActiveTurn] = {}
         self._cid_to_turn: dict[str, str] = {}
 
@@ -698,3 +701,14 @@ class TurnExecutionHub:
             )
             report.emit(_log, level=level)
             await self._finish(at)
+            if self.on_turn_end is not None:
+                try:
+                    result = self.on_turn_end(cid, turn_status, stop_reason)
+                    if result is not None and hasattr(result, "__await__"):
+                        await result
+                except Exception:
+                    _log.exception(
+                        "on_turn_end callback failed cid=%s turn_id=%s",
+                        cid,
+                        turn_id,
+                    )

@@ -17,6 +17,7 @@ type Props = {
   onSkipFailed: () => void;
   onUpdateQueueText: (id: string, text: string) => void;
   onSetQueueTiming: (id: string, timing: SendQueueItem["timing"]) => void;
+  onGuideQueueItem: (id: string) => void;
   onToggleQueueMerge: (id: string) => void;
   onRemoveQueueItem: (id: string) => void;
   onMoveQueueItem: (id: string, direction: -1 | 1) => void;
@@ -61,6 +62,7 @@ export function ConversationComposerPanel({
   onSkipFailed,
   onUpdateQueueText,
   onSetQueueTiming,
+  onGuideQueueItem,
   onToggleQueueMerge,
   onRemoveQueueItem,
   onMoveQueueItem,
@@ -116,6 +118,7 @@ export function ConversationComposerPanel({
             onSkipFailed={onSkipFailed}
             onUpdateText={onUpdateQueueText}
             onSetTiming={onSetQueueTiming}
+            onGuide={onGuideQueueItem}
             onToggleMerge={onToggleQueueMerge}
             onRemove={onRemoveQueueItem}
             onMove={onMoveQueueItem}

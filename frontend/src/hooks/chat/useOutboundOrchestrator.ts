@@ -1,259 +1,119 @@
 /**
- * 出站发送队列编排：flush / inject / stream-end / 暂停续发。
- * 策略纯函数在 outboundQueue；本 hook 持有 refs 与副作用。
+ * 出站发送队列编排（薄客户端层）。
+ *
+ * 注入与续发的驱动已迁移到服务端（TurnHub on_turn_end → 队列 drain），
+ * 客户端只负责：镜像同步、停止/继续/重试/跳过/清空的转发，
+ * 以及流结束/注入被拒后的镜像刷新。
  */
 
-import { useCallback, useEffect, useRef, type MutableRefObject } from "react";
-import { chatInject } from "../../api";
-import {
-  mergeGroupText,
-  takeNextGroup,
-  type SendQueueItem,
-} from "../../utils/sendQueue";
+import { useCallback, useRef } from "react";
 import type { useSendQueue } from "./useSendQueue";
-import {
-  applyInjectDeferred,
-  applyStreamEnd,
-  applyUserInjected,
-  type StreamEndInfo,
-} from "./outboundQueue";
+import type { SendQueueItem } from "../../utils/sendQueue";
 
 type SendQueueApi = ReturnType<typeof useSendQueue>;
-
-type RunOutbound = (group: SendQueueItem[]) => Promise<boolean>;
 
 type Options = {
   sendQueue: SendQueueApi;
   streaming: boolean;
   streamingRef: MutableRefObject<boolean>;
   conversationIdRef: MutableRefObject<string | null>;
-  runOutbound: RunOutbound;
+  runOutbound: (group: SendQueueItem[]) => Promise<boolean>;
 };
+
+type MutableRefObject<T> = { current: T };
 
 export function useOutboundOrchestrator({
   sendQueue,
-  streaming,
-  streamingRef,
-  conversationIdRef,
-  runOutbound,
+  runOutbound: _runOutbound,
 }: Options) {
   const itemsRef = useRef(sendQueue.items);
   const pausedRef = useRef(sendQueue.paused);
-  const flushingRef = useRef(false);
-  const pendingGroupRef = useRef<SendQueueItem[] | null>(null);
   itemsRef.current = sendQueue.items;
   pausedRef.current = sendQueue.paused;
 
-  const flushQueueRef = useRef<() => Promise<void>>(async () => {});
-  const maybeInjectFrontRef = useRef<() => Promise<void>>(async () => {});
+  const refresh = useCallback(() => {
+    void sendQueue.refresh();
+  }, [sendQueue]);
 
+  // 流结束（完成/失败/征询/停止）：服务端 drain 已做出暂停或续发决策，
+  // 客户端延迟刷新镜像即可；注入被服务端拒绝(409)时服务端已改为排队。
   const handleStreamEnd = useCallback(
-    (info: StreamEndInfo) => {
-      const next = applyStreamEnd(
-        {
-          items: itemsRef.current,
-          paused: pausedRef.current,
-          pendingGroup: pendingGroupRef.current,
-          flushing: flushingRef.current,
-        },
-        info,
-      );
-      itemsRef.current = next.items;
-      pendingGroupRef.current = next.pendingGroup;
-      flushingRef.current = next.flushing;
-      sendQueue.setPaused(next.paused);
-      sendQueue.setItems(next.items);
-      if (next.shouldFlush) {
-        queueMicrotask(() => {
-          void flushQueueRef.current();
-        });
-      }
+    (_info: unknown) => {
+      window.setTimeout(refresh, 1200);
     },
-    [sendQueue],
+    [refresh],
   );
 
   const handleInjectDeferred = useCallback(
-    (injectId: string) => {
-      const next = applyInjectDeferred(itemsRef.current, injectId);
-      itemsRef.current = next;
-      sendQueue.setItems(next);
-      console.info("本轮无法插入，已改为回合后再发", injectId);
+    (_id: string) => {
+      refresh();
     },
-    [sendQueue],
+    [refresh],
   );
 
   const handleUserInjected = useCallback(
-    (injectId: string) => {
-      const next = applyUserInjected(itemsRef.current, injectId);
-      itemsRef.current = next;
-      sendQueue.setItems(next);
+    (_id: string) => {
+      refresh();
     },
-    [sendQueue],
-  );
-
-  const flushQueue = useCallback(async () => {
-    if (flushingRef.current || streamingRef.current || pausedRef.current) return;
-    const taken = takeNextGroup(itemsRef.current);
-    if (!taken) return;
-    flushingRef.current = true;
-    const { group, rest } = taken;
-    pendingGroupRef.current = group;
-    itemsRef.current = rest;
-    sendQueue.setItems(rest);
-    try {
-      const started = await runOutbound(group);
-      if (!started) {
-        pendingGroupRef.current = null;
-        const restored = [...group, ...itemsRef.current];
-        itemsRef.current = restored;
-        sendQueue.setItems(restored);
-        flushingRef.current = false;
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "发送失败";
-      pendingGroupRef.current = null;
-      sendQueue.setPaused(true);
-      const restored = [
-        ...group.map((g, i) => ({
-          ...g,
-          locked: false,
-          error: i === 0 ? msg : null,
-        })),
-        ...itemsRef.current,
-      ];
-      itemsRef.current = restored;
-      sendQueue.setItems(restored);
-      flushingRef.current = false;
-    }
-  }, [runOutbound, sendQueue, streamingRef]);
-
-  flushQueueRef.current = flushQueue;
-
-  const maybeInjectFront = useCallback(async () => {
-    if (!streamingRef.current || pausedRef.current) return;
-    const items = itemsRef.current;
-    const taken = takeNextGroup(items);
-    if (!taken || taken.group[0].timing !== "inject") return;
-    if (taken.group.some((g) => g.locked)) return;
-    const cid = conversationIdRef.current;
-    if (!cid) return;
-
-    const { group, rest } = taken;
-    const injectId = group[0].id;
-    const locked = [...group.map((g) => ({ ...g, locked: true })), ...rest];
-    itemsRef.current = locked;
-    sendQueue.setItems(locked);
-    try {
-      await chatInject({
-        conversationId: cid,
-        text: mergeGroupText(group),
-        injectId,
-        clientMessageId: `inject:${injectId}`,
-        docContext: group[0].doc_context,
-        primaryDocPath: group[0].primary_doc,
-        attachments: group[0].attachments,
-      });
-    } catch (err) {
-      const status = (err as { status?: number }).status;
-      const deferred = [
-        ...group.map((g) => ({
-          ...g,
-          locked: false,
-          timing: "defer" as const,
-          error: null as string | null,
-        })),
-        ...rest,
-      ];
-      if (status === 409) {
-        itemsRef.current = deferred;
-        sendQueue.setItems(deferred);
-        console.info("本轮无法插入，已改为回合后再发");
-      } else {
-        const msg = err instanceof Error ? err.message : "注入失败";
-        const failed = [
-          {
-            ...group[0],
-            locked: false,
-            timing: "defer" as const,
-            error: msg,
-          },
-          ...group.slice(1).map((g) => ({
-            ...g,
-            locked: false,
-            timing: "defer" as const,
-          })),
-          ...rest,
-        ];
-        itemsRef.current = failed;
-        sendQueue.setItems(failed);
-        sendQueue.setPaused(true);
-      }
-    }
-  }, [sendQueue, streamingRef, conversationIdRef]);
-
-  maybeInjectFrontRef.current = maybeInjectFront;
-
-  useEffect(() => {
-    if (streaming) {
-      void maybeInjectFrontRef.current();
-    }
-  }, [streaming, sendQueue.items]);
-
-  const enqueueAndKick = useCallback(
-    (item: SendQueueItem) => {
-      const next = [...itemsRef.current, item];
-      itemsRef.current = next;
-      sendQueue.setItems(next);
-      if (!streamingRef.current && !sendQueue.paused) {
-        void flushQueue();
-      } else if (streamingRef.current) {
-        void maybeInjectFront();
-      }
-    },
-    [flushQueue, maybeInjectFront, sendQueue, streamingRef],
+    [refresh],
   );
 
   const handleStop = useCallback(() => {
+    // 服务端 stop 通道同样会暂停队列；本地仅标记
     sendQueue.setPaused(true);
   }, [sendQueue]);
 
   const handleContinue = useCallback(() => {
     sendQueue.setPaused(false);
+    refresh();
+  }, [sendQueue, refresh]);
+
+  const handleRetry = useCallback(() => {
     sendQueue.setItems(
       itemsRef.current.map((x) => ({ ...x, error: null, locked: false })),
     );
-    queueMicrotask(() => {
-      void flushQueueRef.current();
-    });
-  }, [sendQueue]);
-
-  const handleRetry = useCallback(() => {
-    sendQueue.setItems(itemsRef.current.map((x) => ({ ...x, error: null })));
     sendQueue.setPaused(false);
-    queueMicrotask(() => {
-      void flushQueueRef.current();
-    });
-  }, [sendQueue]);
+    refresh();
+  }, [sendQueue, refresh]);
 
   const handleSkipFailed = useCallback(() => {
-    const items = itemsRef.current;
-    const next = items[0]?.error
-      ? items.slice(1)
-      : items.filter((x) => !x.error);
-    sendQueue.setItems(next);
+    const failed = itemsRef.current.filter((x) => x.error);
+    for (const f of failed) {
+      if (!f.locked) sendQueue.removeItem(f.id);
+    }
     sendQueue.setPaused(false);
-    queueMicrotask(() => {
-      void flushQueueRef.current();
-    });
+    refresh();
   }, [sendQueue]);
+
+  const flushQueue = useCallback(() => {
+    // 兼容旧调用点：真正的续发由服务端 drain 完成
+    refresh();
+  }, [refresh]);
+
+  const maybeInjectFront = useCallback(() => {
+    refresh();
+  }, [refresh]);
+
+  const enqueueAndKick = useCallback(
+    (item: SendQueueItem) => {
+      void sendQueue.enqueue({
+        text: item.text,
+        timing: item.timing,
+        doc_context: item.doc_context,
+        primary_doc: item.primary_doc,
+        attachments: item.attachments,
+        webEnabled: item.webEnabled,
+        mentions: item.mentions,
+      });
+      refresh();
+    },
+    [sendQueue, refresh],
+  );
 
   const unpauseAndFlush = useCallback(() => {
     sendQueue.setPaused(false);
-    pausedRef.current = false;
-    queueMicrotask(() => {
-      void flushQueueRef.current();
-    });
-  }, [sendQueue]);
+    refresh();
+  }, [sendQueue, refresh]);
 
   return {
     itemsRef,
