@@ -307,7 +307,13 @@ def test_download_zip_directory(client):
     from io import BytesIO
 
     with zipfile.ZipFile(BytesIO(r2.content)) as z:
-        assert "导出目录/note.md" in z.namelist()
+        names = z.namelist()
+        assert "导出目录/note.md" in names
+        assert "lorechat-pack.json" in names
+        meta = json.loads(z.read("lorechat-pack.json"))
+    assert meta["format"] == "lorechat.kb-pack"
+    assert meta["kind"] == "directory"
+    assert meta["rel_path"] == "导出目录"
 
 
 def test_skill_zip_download_upload_roundtrip(client):
@@ -327,6 +333,14 @@ def test_skill_zip_download_upload_roundtrip(client):
 
     packed = client.get("/api/download-zip", params={"path": "技能/数数查询"})
     assert packed.status_code == 200
+    import zipfile
+    from io import BytesIO
+
+    with zipfile.ZipFile(BytesIO(packed.content)) as z:
+        assert "lorechat-pack.json" in z.namelist()
+        meta = json.loads(z.read("lorechat-pack.json"))
+    assert meta["kind"] == "skill"
+    assert meta["rel_path"] == "技能/数数查询"
     assert (
         client.post("/api/kb/delete", json={"path": "技能/数数查询"}).status_code
         == 200
@@ -347,6 +361,7 @@ def test_skill_zip_download_upload_roundtrip(client):
     assert "技能/数数查询/SKILL.md" in tree
     assert "技能/数数查询/run.py" in tree
     assert "技能/数数查询.zip" not in tree
+    assert "技能/数数查询/lorechat-pack.json" not in tree
     doc = client.get("/api/doc", params={"path": "技能/数数查询/SKILL.md"}).json()
     assert "数数查询" in doc["body"]
 
@@ -364,8 +379,14 @@ def test_kb_import_skill_zip_conflict(client):
     import zipfile
     from io import BytesIO
 
+    from app.engine.kb_pack import dump_pack_meta, pack_meta_for_directory
+
     buf = BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr(
+            "lorechat-pack.json",
+            dump_pack_meta(pack_meta_for_directory("技能/数数查询")),
+        )
         zf.writestr("数数查询/SKILL.md", b"# new\n")
     r = client.post(
         "/api/kb/import",
@@ -377,6 +398,74 @@ def test_kb_import_skill_zip_conflict(client):
     assert detail["code"] == "PATH_EXISTS"
     assert detail["path"] == "技能/数数查询"
     assert detail["suggested_filename"] == "数数查询 (1).zip"
+
+
+def test_kb_import_zip_without_meta_stays_file(client):
+    import zipfile
+    from io import BytesIO
+
+    buf = BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("数数查询/SKILL.md", b"# skill\n")
+    r = client.post(
+        "/api/kb/import",
+        files={"file": ("数数查询.zip", buf.getvalue(), "application/zip")},
+        data={"directory": "技能"},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["kind"] == "file"
+    assert body["rel_path"] == "技能/数数查询.zip"
+    tree = client.get("/api/tree").json()["docs"]
+    assert "技能/数数查询.zip" in tree
+    assert "技能/数数查询/SKILL.md" not in tree
+
+
+def test_kb_import_pack_path_choice_and_dest_root(client):
+    import zipfile
+    from io import BytesIO
+
+    from app.engine.kb_pack import dump_pack_meta, pack_meta_for_directory
+
+    buf = BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr(
+            "lorechat-pack.json",
+            dump_pack_meta(pack_meta_for_directory("技能/数数查询")),
+        )
+        zf.writestr("数数查询/SKILL.md", b"# skill\n")
+    packed = buf.getvalue()
+    r = client.post(
+        "/api/kb/import",
+        files={"file": ("数数查询.zip", packed, "application/zip")},
+        data={"directory": "技术"},
+    )
+    assert r.status_code == 409
+    detail = r.json()["detail"]
+    assert detail["code"] == "PACK_PATH_CHOICE"
+    assert detail["kind"] == "skill"
+    assert detail["original_path"] == "技能/数数查询"
+    assert detail["upload_path"] == "技术/数数查询"
+    assert detail["default_path"] == "技术/数数查询"
+    assert detail["upload_outside_skills"] is True
+
+    denied = client.post(
+        "/api/kb/import",
+        files={"file": ("数数查询.zip", packed, "application/zip")},
+        data={"directory": "技术", "dest_root": "技术/数数查询"},
+    )
+    assert denied.status_code == 400
+
+    ok = client.post(
+        "/api/kb/import",
+        files={"file": ("数数查询.zip", packed, "application/zip")},
+        data={"directory": "技术", "dest_root": "技能/数数查询"},
+    )
+    assert ok.status_code == 200
+    assert ok.json()["rel_path"] == "技能/数数查询"
+    tree = client.get("/api/tree").json()["docs"]
+    assert "技能/数数查询/SKILL.md" in tree
+    assert "技术/数数查询.zip" not in tree
 
 
 def test_kb_import_conflict(client):

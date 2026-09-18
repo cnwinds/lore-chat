@@ -5,7 +5,9 @@ import {
   kbMove,
   parentDirectory,
 } from "../api";
+import type { ApiError, PackPathChoiceDetail } from "../api";
 import { KbNameConflictDialog } from "../components/KbNameConflictDialog";
+import { PackPathChoiceDialog } from "../components/PackPathChoiceDialog";
 import { kbMutateWithConflictRetry } from "../lib/kbMutateWithConflictRetry";
 import {
   targetDirectoryForDrop,
@@ -19,6 +21,11 @@ type ConflictState = {
   resolve: (filename: string | null) => void;
 };
 
+type PackChoiceState = {
+  detail: PackPathChoiceDetail;
+  resolve: (path: string | null) => void;
+};
+
 export type KbTreeProgress = {
   kind: "import" | "move";
   total: number;
@@ -26,8 +33,21 @@ export type KbTreeProgress = {
   currentName: string;
 };
 
+function zipStem(filename: string): string {
+  const base = filename.replace(/\\/g, "/").split("/").pop() ?? filename;
+  return base.replace(/\.zip$/i, "").trim() || base;
+}
+
+function replacePathLeaf(path: string, leaf: string): string {
+  const parts = path.split("/").filter(Boolean);
+  if (!parts.length) return leaf;
+  parts[parts.length - 1] = leaf;
+  return parts.join("/");
+}
+
 export function useKbTreeActions(onTreeChanged: () => void, docs: string[]) {
   const [conflict, setConflict] = useState<ConflictState | null>(null);
+  const [packChoice, setPackChoice] = useState<PackChoiceState | null>(null);
   const [busy, setBusy] = useState(false);
   const [treeProgress, setTreeProgress] = useState<KbTreeProgress | null>(null);
 
@@ -43,6 +63,12 @@ export function useKbTreeActions(onTreeChanged: () => void, docs: string[]) {
     });
   }, []);
 
+  const promptPackPath = useCallback((detail: PackPathChoiceDetail) => {
+    return new Promise<string | null>((resolve) => {
+      setPackChoice({ detail, resolve });
+    });
+  }, []);
+
   const importOne = useCallback(
     async (
       file: File,
@@ -50,18 +76,46 @@ export function useKbTreeActions(onTreeChanged: () => void, docs: string[]) {
       filename?: string,
     ): Promise<string | null> => {
       const initialFilename = filename ?? file.name;
-      const rel = await kbMutateWithConflictRetry({
-        initialFilename,
-        onConflict: promptConflict,
-        run: async (name) => {
-          const r = await kbImport(file, directory, name!);
-          return r.rel_path;
-        },
-      });
-      setConflict(null);
-      return rel;
+      const runImport = (targetDir: string, destRoot?: string) => {
+        let currentDest = destRoot;
+        return kbMutateWithConflictRetry({
+          initialFilename,
+          onConflict: (ctx) => {
+            promptConflict({
+              suggestedFilename: ctx.suggestedFilename,
+              message: ctx.message,
+              resolve: (name) => {
+                if (name && currentDest) {
+                  currentDest = replacePathLeaf(currentDest, zipStem(name));
+                }
+                ctx.resolve(name);
+              },
+            });
+          },
+          run: async (name) => {
+            const r = await kbImport(file, targetDir, name!, currentDest);
+            return r.rel_path;
+          },
+        });
+      };
+      try {
+        const rel = await runImport(directory);
+        setConflict(null);
+        return rel;
+      } catch (e) {
+        const err = e as ApiError;
+        if (err.status === 409 && err.packPathChoice) {
+          const chosen = await promptPackPath(err.packPathChoice);
+          setPackChoice(null);
+          if (!chosen) return null;
+          const rel = await runImport(directory, chosen);
+          setConflict(null);
+          return rel;
+        }
+        throw e;
+      }
     },
-    [promptConflict],
+    [promptConflict, promptPackPath],
   );
 
   const importMany = useCallback(
@@ -85,6 +139,10 @@ export function useKbTreeActions(onTreeChanged: () => void, docs: string[]) {
           });
           await importOne(file, target.directory, target.filename);
         }
+        onTreeChanged();
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "导入失败";
+        window.alert(msg);
         onTreeChanged();
       } finally {
         setTreeProgress(null);
@@ -180,19 +238,31 @@ export function useKbTreeActions(onTreeChanged: () => void, docs: string[]) {
     [onTreeChanged],
   );
 
-  const conflictDialog = conflict ? (
-    <KbNameConflictDialog
-      open
-      title="名称已存在"
-      message={conflict.message}
-      filename={conflict.filename}
-      onFilenameChange={(filename) =>
-        setConflict((c) => (c ? { ...c, filename } : c))
-      }
-      onConfirm={() => conflict.resolve(conflict.filename)}
-      onCancel={() => conflict.resolve(null)}
-    />
-  ) : null;
+  const conflictDialog = (
+    <>
+      {conflict ? (
+        <KbNameConflictDialog
+          open
+          title="名称已存在"
+          message={conflict.message}
+          filename={conflict.filename}
+          onFilenameChange={(filename) =>
+            setConflict((c) => (c ? { ...c, filename } : c))
+          }
+          onConfirm={() => conflict.resolve(conflict.filename)}
+          onCancel={() => conflict.resolve(null)}
+        />
+      ) : null}
+      {packChoice ? (
+        <PackPathChoiceDialog
+          open
+          detail={packChoice.detail}
+          onConfirm={(path) => packChoice.resolve(path)}
+          onCancel={() => packChoice.resolve(null)}
+        />
+      ) : null}
+    </>
+  );
 
   return {
     busy,

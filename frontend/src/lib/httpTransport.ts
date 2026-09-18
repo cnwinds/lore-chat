@@ -7,6 +7,7 @@ const BASE = import.meta.env.VITE_API_BASE ?? "";
 export type ApiError = Error & {
   status?: number;
   pathExists?: PathExistsDetail;
+  packPathChoice?: PackPathChoiceDetail;
 };
 
 export type PathExistsDetail = {
@@ -14,6 +15,17 @@ export type PathExistsDetail = {
   path: string;
   message: string;
   suggested_filename: string;
+};
+
+export type PackPathChoiceDetail = {
+  code: "PACK_PATH_CHOICE";
+  message: string;
+  kind: "skill" | "directory";
+  original_path: string;
+  upload_path: string;
+  default_path: string;
+  skills_dir: string;
+  upload_outside_skills: boolean;
 };
 
 export function apiBase(): string {
@@ -34,6 +46,7 @@ export async function openJson<T>(path: string, init?: RequestInit): Promise<T> 
   if (!r.ok) {
     let detail = r.statusText;
     let pathExists: PathExistsDetail | undefined;
+    let packPathChoice: PackPathChoiceDetail | undefined;
     try {
       const body = await r.json();
       if (
@@ -44,6 +57,14 @@ export async function openJson<T>(path: string, init?: RequestInit): Promise<T> 
       ) {
         pathExists = body.detail as PathExistsDetail;
         detail = pathExists.message;
+      } else if (
+        r.status === 409 &&
+        body.detail &&
+        typeof body.detail === "object" &&
+        body.detail.code === "PACK_PATH_CHOICE"
+      ) {
+        packPathChoice = body.detail as PackPathChoiceDetail;
+        detail = packPathChoice.message;
       } else {
         detail =
           typeof body.detail === "string"
@@ -64,6 +85,7 @@ export async function openJson<T>(path: string, init?: RequestInit): Promise<T> 
     const err = new Error(detail || `请求失败 (${r.status})`) as ApiError;
     err.status = r.status;
     err.pathExists = pathExists;
+    err.packPathChoice = packPathChoice;
     raiseUnauthorized(r.status);
     throw err;
   }

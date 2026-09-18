@@ -13,6 +13,7 @@ from app.api.http_deps import (
     UpdateDocBody,
     container,
     kb_path_exists_detail,
+    pack_path_choice_detail,
     kb_tree_service,
 )
 from app.engine.memory.constants import (
@@ -140,7 +141,9 @@ async def download_zip(path: str, request: Request):
         raise HTTPException(403, "禁止下载该目录")
     try:
         buf = io.BytesIO()
-        base_name = build_directory_zip(c.repo.root, norm, buf)
+        base_name = build_directory_zip(
+            c.repo.root, norm, buf, skills_dir=c.settings.skills_dir
+        )
         buf.seek(0)
     except FileNotFoundError:
         raise HTTPException(404, "目录不存在")
@@ -196,7 +199,9 @@ async def kb_import(
     file: UploadFile = File(...),
     directory: str = Form(""),
     filename: str | None = Form(None),
+    dest_root: str | None = Form(None),
 ):
+    from app.engine.kb_pack import PackPathChoiceError
     from app.engine.kb_tree_service import (
         KbPathExistsError,
         suggest_alternate_filename,
@@ -211,12 +216,26 @@ async def kb_import(
         limit_mb = MAX_VIDEO_UPLOAD_BYTES // (1024 * 1024)
         raise HTTPException(400, f"视频超过 {limit_mb}MB 上限")
     try:
-        return svc.import_upload(directory=directory, filename=name, data=data)
+        return svc.import_upload(
+            directory=directory, filename=name, data=data, dest_root=dest_root
+        )
     except KbPathExistsError as e:
         raise HTTPException(
             409,
             detail=kb_path_exists_detail(
                 e.rel_path, str(e), suggest_alternate_filename(name)
+            ),
+        ) from e
+    except PackPathChoiceError as e:
+        raise HTTPException(
+            409,
+            detail=pack_path_choice_detail(
+                kind=e.kind,
+                original_path=e.original_path,
+                upload_path=e.upload_path,
+                default_path=e.default_path,
+                skills_dir=e.skills_dir,
+                message=str(e),
             ),
         ) from e
     except PermissionError as e:

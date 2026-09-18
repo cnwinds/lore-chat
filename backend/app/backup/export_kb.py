@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import BinaryIO
 
 from app.backup.manifest import build_manifest, manifest_json
+from app.engine.kb_pack import dump_pack_meta, pack_meta_for_directory
 
 
 def _normalize_rel(rel: str) -> str:
@@ -91,7 +92,13 @@ def _kb_user_file(rel: str, path: Path) -> bool:
     return True
 
 
-def build_directory_zip(kb_path: Path, dir_rel: str, dest: Path | BinaryIO) -> str:
+def build_directory_zip(
+    kb_path: Path,
+    dir_rel: str,
+    dest: Path | BinaryIO,
+    *,
+    skills_dir: str = "技能",
+) -> str:
     """Pack one knowledge-base directory; zip entries are `{folder_name}/…`. Returns base filename."""
     root = Path(kb_path)
     norm = _normalize_rel(dir_rel).strip("/")
@@ -115,7 +122,9 @@ def build_directory_zip(kb_path: Path, dir_rel: str, dest: Path | BinaryIO) -> s
         inner = path.relative_to(base).as_posix()
         entries.append((f"{folder_name}/{inner}", path))
 
+    pack_meta = pack_meta_for_directory(norm, skills_dir=skills_dir)
     with zipfile.ZipFile(dest, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("lorechat-pack.json", dump_pack_meta(pack_meta))
         if not entries:
             zf.writestr(f"{folder_name}/", b"")
         for arcname, path in entries:

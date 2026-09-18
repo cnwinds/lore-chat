@@ -75,12 +75,18 @@ def test_import_conflict(tmp_path):
 
 
 def test_import_skill_zip_unpacks(tmp_path):
+    from app.engine.kb_pack import dump_pack_meta, pack_meta_for_directory
+
     import io
     import zipfile
 
     svc, repo, _ = _svc(tmp_path)
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr(
+            "lorechat-pack.json",
+            dump_pack_meta(pack_meta_for_directory("技能/demo")),
+        )
         zf.writestr("demo/SKILL.md", b"# skill\n")
         zf.writestr("demo/extra.txt", b"hi\n")
     result = svc.import_upload(

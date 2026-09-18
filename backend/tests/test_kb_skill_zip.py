@@ -3,6 +3,11 @@ import zipfile
 
 import pytest
 
+from app.engine.kb_pack import (
+    PackPathChoiceError,
+    dump_pack_meta,
+    pack_meta_for_directory,
+)
 from app.engine.kb_skill_zip import (
     is_zip_filename,
     parse_skill_zip_entries,
@@ -22,6 +27,11 @@ def _zip_bytes(entries: dict[str, bytes]) -> bytes:
         for name, data in entries.items():
             zf.writestr(name, data)
     return buf.getvalue()
+
+
+def _pack_zip(entries: dict[str, bytes], dir_rel: str) -> bytes:
+    meta = pack_meta_for_directory(dir_rel)
+    return _zip_bytes({"lorechat-pack.json": dump_pack_meta(meta), **entries})
 
 
 def _writer(tmp_path):
@@ -88,6 +98,13 @@ def test_parse_rejects_zip_slip():
         parse_skill_zip_entries(buf.getvalue())
 
 
+def test_parse_skips_pack_meta():
+    data = _pack_zip({"demo/SKILL.md": b"# skill\n"}, "技能/demo")
+    entries = dict(parse_skill_zip_entries(data))
+    assert set(entries) == {"SKILL.md"}
+    assert "lorechat-pack.json" not in entries
+
+
 def test_parse_rejects_empty_and_garbage():
     with pytest.raises(ValueError, match="空"):
         parse_skill_zip_entries(b"")
@@ -100,13 +117,14 @@ def test_parse_rejects_empty_and_garbage():
 
 def test_import_skill_zip_under_skills_dir(tmp_path):
     writer, repo = _writer(tmp_path)
-    data = _zip_bytes(
+    data = _pack_zip(
         {
             "数数查询/SKILL.md": (
                 "---\nname: count\ndescription: 数数\n---\n\n# 数\n"
             ).encode(),
             "数数查询/scripts/run.py": b"print(1)\n",
-        }
+        },
+        "技能/数数查询",
     )
     result = writer.import_entry(
         directory="技能", filename="数数查询.zip", data=data
@@ -116,13 +134,14 @@ def test_import_skill_zip_under_skills_dir(tmp_path):
     assert "技能/数数查询/SKILL.md" in repo.list_tree()
     assert "技能/数数查询/scripts/run.py" in repo.list_tree()
     assert "技能/数数查询.zip" not in repo.list_tree()
+    assert "技能/数数查询/lorechat-pack.json" not in repo.list_tree()
     body = repo.read_doc("技能/数数查询/SKILL.md").body
     assert "name: count" in body
 
 
 def test_import_skill_zip_into_skills_subdir(tmp_path):
     writer, repo = _writer(tmp_path)
-    data = _zip_bytes({"pkg/SKILL.md": b"# skill\n"})
+    data = _pack_zip({"pkg/SKILL.md": b"# skill\n"}, "技能/职业规划/张雪峰")
     result = writer.import_entry(
         directory="技能/职业规划", filename="张雪峰.zip", data=data
     )
@@ -137,27 +156,107 @@ def test_import_skill_zip_conflict(tmp_path):
         filename="SKILL.md",
         data=b"# existing\n",
     )
-    data = _zip_bytes({"数数查询/SKILL.md": b"# new\n"})
+    data = _pack_zip({"数数查询/SKILL.md": b"# new\n"}, "技能/数数查询")
     with pytest.raises(KbPathExistsError) as ei:
         writer.import_entry(directory="技能", filename="数数查询.zip", data=data)
     assert ei.value.rel_path == "技能/数数查询"
     assert repo.read_doc("技能/数数查询/SKILL.md").body.startswith("# existing")
 
 
-def test_import_zip_outside_skills_stays_file(tmp_path):
+def test_import_zip_without_meta_stays_file(tmp_path):
     writer, repo = _writer(tmp_path)
-    data = _zip_bytes({"数数查询/SKILL.md": b"# skill\n"})
+    data = _zip_bytes({"readme.md": b"# hi\n"})
     result = writer.import_entry(
-        directory="技术", filename="数数查询.zip", data=data
+        directory="技术", filename="docs.zip", data=data
     )
     assert result["kind"] == "file"
-    assert result["rel_path"] == "技术/数数查询.zip"
-    assert repo.abs_path("技术/数数查询.zip").is_file()
+    assert result["rel_path"] == "技术/docs.zip"
+    assert repo.abs_path("技术/docs.zip").is_file()
+
+
+def test_import_zip_without_meta_under_skills_stays_file(tmp_path):
+    writer, repo = _writer(tmp_path)
+    data = _zip_bytes(
+        {
+            "数数查询/SKILL.md": b"# skill\n",
+            "readme.md": b"# hi\n",
+        }
+    )
+    result = writer.import_entry(
+        directory="技能", filename="数数查询.zip", data=data
+    )
+    assert result["kind"] == "file"
+    assert result["rel_path"] == "技能/数数查询.zip"
+    assert repo.abs_path("技能/数数查询.zip").is_file()
     assert "技能/数数查询/SKILL.md" not in repo.list_tree()
 
 
-def test_import_non_skill_zip_into_skills_rejected(tmp_path):
-    writer, _repo = _writer(tmp_path)
-    data = _zip_bytes({"readme.md": b"# hi\n"})
-    with pytest.raises(ValueError, match="SKILL.md"):
-        writer.import_entry(directory="技能", filename="docs.zip", data=data)
+def test_import_directory_pack_unpacks_to_drop_dir(tmp_path):
+    writer, repo = _writer(tmp_path)
+    data = _pack_zip({"文档/a.md": b"# a\n"}, "技术/文档")
+    result = writer.import_entry(
+        directory="技术", filename="文档.zip", data=data
+    )
+    assert result["kind"] == "directory_package"
+    assert result["rel_path"] == "技术/文档"
+    assert "技术/文档/a.md" in repo.list_tree()
+    assert "技术/文档.zip" not in repo.list_tree()
+    assert "技术/文档/lorechat-pack.json" not in repo.list_tree()
+
+
+def test_import_pack_path_mismatch_asks_choice(tmp_path):
+    writer, repo = _writer(tmp_path)
+    data = _pack_zip({"数数查询/SKILL.md": b"# skill\n"}, "技能/数数查询")
+    with pytest.raises(PackPathChoiceError) as ei:
+        writer.import_entry(directory="技术", filename="数数查询.zip", data=data)
+    assert ei.value.kind == "skill"
+    assert ei.value.original_path == "技能/数数查询"
+    assert ei.value.upload_path == "技术/数数查询"
+    assert ei.value.default_path == "技术/数数查询"
+    assert "技能/数数查询/SKILL.md" not in repo.list_tree()
+    assert "技术/数数查询.zip" not in repo.list_tree()
+
+
+def test_import_directory_pack_path_mismatch_asks_choice(tmp_path):
+    writer, repo = _writer(tmp_path)
+    data = _pack_zip({"文档/a.md": b"# a\n"}, "技术/文档")
+    with pytest.raises(PackPathChoiceError) as ei:
+        writer.import_entry(directory="笔记", filename="文档.zip", data=data)
+    assert ei.value.kind == "directory"
+    assert ei.value.original_path == "技术/文档"
+    assert ei.value.upload_path == "笔记/文档"
+    assert ei.value.default_path == "笔记/文档"
+    result = writer.import_entry(
+        directory="笔记",
+        filename="文档.zip",
+        data=data,
+        dest_root="笔记/文档",
+    )
+    assert result["rel_path"] == "笔记/文档"
+    assert "笔记/文档/a.md" in repo.list_tree()
+
+
+def test_import_pack_dest_root_skips_choice(tmp_path):
+    writer, repo = _writer(tmp_path)
+    data = _pack_zip({"数数查询/SKILL.md": b"# skill\n"}, "技能/数数查询")
+    result = writer.import_entry(
+        directory="技术",
+        filename="数数查询.zip",
+        data=data,
+        dest_root="技能/数数查询",
+    )
+    assert result["rel_path"] == "技能/数数查询"
+    assert "技能/数数查询/SKILL.md" in repo.list_tree()
+
+
+def test_import_skill_pack_dest_outside_skills_rejected(tmp_path):
+    writer, repo = _writer(tmp_path)
+    data = _pack_zip({"数数查询/SKILL.md": b"# skill\n"}, "技能/数数查询")
+    with pytest.raises(ValueError, match="技能"):
+        writer.import_entry(
+            directory="技术",
+            filename="数数查询.zip",
+            data=data,
+            dest_root="技术/数数查询",
+        )
+    assert "技术/数数查询/SKILL.md" not in repo.list_tree()

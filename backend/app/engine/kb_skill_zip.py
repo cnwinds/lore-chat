@@ -78,8 +78,10 @@ def _canonicalize_inner(rel: str) -> str:
     return "/".join(parts)
 
 
-def parse_skill_zip_entries(data: bytes) -> list[tuple[str, bytes]]:
-    """读取 Skill zip：剥包装目录、跳过垃圾文件、拒绝路径穿越。
+def parse_skill_zip_entries(
+    data: bytes, *, require_skill_md: bool = True
+) -> list[tuple[str, bytes]]:
+    """读取目录 zip：剥包装目录、跳过垃圾与打包 meta、拒绝路径穿越。
 
     返回 ``(包内相对路径, 字节)``，其中 SKILL.md 文件名已规范。
     """
@@ -92,13 +94,15 @@ def parse_skill_zip_entries(data: bytes) -> list[tuple[str, bytes]]:
     except (zipfile.BadZipFile, OSError) as e:
         raise ValueError("不是有效的 zip 压缩包") from e
 
+    from app.engine.kb_pack import is_pack_meta_name
+
     members: list[tuple[str, zipfile.ZipInfo]] = []
     for info in zf.infolist():
         filename = info.filename.replace("\\", "/")
         if info.is_dir() or filename.endswith("/"):
             continue
         rel = _normalize_member(filename)
-        if rel is None:
+        if rel is None or is_pack_meta_name(rel):
             continue
         members.append((rel, info))
 
@@ -133,6 +137,8 @@ def parse_skill_zip_entries(data: bytes) -> list[tuple[str, bytes]]:
             raise ValueError("技能压缩包过大")
         out.append((inner, payload))
 
-    if not any(_is_skill_md_name(path) for path, _ in out):
+    if not out:
+        raise ValueError("压缩包内没有可导入的文件")
+    if require_skill_md and not any(_is_skill_md_name(path) for path, _ in out):
         raise ValueError("技能压缩包须包含 SKILL.md")
     return out

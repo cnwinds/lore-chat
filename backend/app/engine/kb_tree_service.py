@@ -27,7 +27,12 @@ class KbTreeService:
         self.skills_dir = norm_dir(skills_dir) or "技能"
 
     def import_upload(
-        self, *, directory: str, filename: str, data: bytes
+        self,
+        *,
+        directory: str,
+        filename: str,
+        data: bytes,
+        dest_root: str | None = None,
     ) -> dict:
         d = directory.strip()
         if d and self.repo.is_protected(f"{d}/.md"):
@@ -37,6 +42,7 @@ class KbTreeService:
             filename=filename.strip(),
             data=data,
             allow_binary=True,
+            dest_root=dest_root,
         )
         self.index_revision.bump()
         return result

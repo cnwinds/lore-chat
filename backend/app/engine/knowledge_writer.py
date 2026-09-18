@@ -323,35 +323,30 @@ class KnowledgeWriter:
         meta["updated"] = now
         return frontmatter.dump(meta, body).encode("utf-8")
 
-    def import_skill_archive(
+    def _import_zip_tree(
         self,
         *,
-        directory: str,
-        filename: str,
+        dest_root: str,
         data: bytes,
-        allow_binary: bool = True,
+        kind: str,
+        require_skill_md: bool,
+        allow_binary: bool,
     ) -> dict:
-        """把 Skill zip 解到技能目录下的包文件夹，不把 .zip 留在树上。"""
-        from app.engine.kb_skill_zip import (
-            parse_skill_zip_entries,
-            skill_zip_package_name,
-        )
+        from app.engine.kb_skill_zip import parse_skill_zip_entries
         from app.engine.skills_dir import (
             is_skill_md_path,
             require_skill_md_in_skills_dir,
             require_skill_root_in_skills_dir,
         )
 
-        name = skill_zip_package_name(filename)
-        try:
-            dest_root = join_kb_directory(directory, name)
-        except KbPathError as e:
-            raise ValueError(str(e)) from e
-        require_skill_root_in_skills_dir(dest_root, self.skills_dir)
+        if kind == "skill_package":
+            require_skill_root_in_skills_dir(dest_root, self.skills_dir)
+        if self.repo.is_protected(dest_root):
+            raise PermissionError("禁止写入该目录")
         if self.repo.abs_path(dest_root).exists():
             raise KbPathExistsError(dest_root)
 
-        entries = parse_skill_zip_entries(data)
+        entries = parse_skill_zip_entries(data, require_skill_md=require_skill_md)
         prepared: list[tuple[str, bytes]] = []
         for inner, raw in entries:
             rel = f"{dest_root}/{inner}"
@@ -371,7 +366,7 @@ class KnowledgeWriter:
         dest_abs = self.repo.abs_path(dest_root)
         try:
             written = self.repo.write_files(
-                prepared, commit_msg=f"import skill: {dest_root}"
+                prepared, commit_msg=f"import pack: {dest_root}"
             )
         except Exception:
             if dest_abs.exists():
@@ -389,13 +384,14 @@ class KnowledgeWriter:
                 extracted = extract_text(self.repo.abs_path(rel))
                 if self.index_extracted_text(rel, extracted):
                     indexed_any = True
+        label = "Skill 包" if kind == "skill_package" else "文件夹"
         self.repo.log_change(
-            f"导入 Skill 包 {dest_root}（{len(written)} 个文件）",
-            commit_msg=f"chore: changelog import skill {dest_root}",
+            f"导入{label} {dest_root}（{len(written)} 个文件）",
+            commit_msg=f"chore: changelog import pack {dest_root}",
         )
         return {
             "rel_path": dest_root,
-            "kind": "skill_package",
+            "kind": kind,
             "indexed": indexed_any,
             "files": written,
         }
@@ -407,22 +403,65 @@ class KnowledgeWriter:
         filename: str,
         data: bytes,
         allow_binary: bool = True,
+        dest_root: str | None = None,
     ) -> dict:
         from app.engine.kb_skill import is_under_dir
         from app.engine.kb_skill_zip import is_zip_filename
+        from app.engine.kb_pack import (
+            PackPathChoiceError,
+            original_unpack_path,
+            read_pack_meta,
+            upload_unpack_path,
+        )
 
         fn = _safe_basename(filename)
         try:
             dest_dir = normalize_directory(directory)
         except KbPathError as e:
             raise ValueError(str(e)) from e
-        if is_zip_filename(fn) and is_under_dir(dest_dir, self.skills_dir):
-            return self.import_skill_archive(
-                directory=dest_dir,
-                filename=fn,
-                data=data,
-                allow_binary=allow_binary,
-            )
+        if is_zip_filename(fn):
+            meta = read_pack_meta(data)
+            if meta is not None:
+                chosen = (dest_root or "").strip()
+                if chosen:
+                    try:
+                        dest = normalize_directory(chosen)
+                    except KbPathError as e:
+                        raise ValueError(str(e)) from e
+                    if not dest:
+                        raise ValueError("解压路径无效")
+                else:
+                    upload_path = upload_unpack_path(
+                        drop_dir=dest_dir, filename=fn
+                    )
+                    original_path = original_unpack_path(
+                        meta, skills_dir=self.skills_dir
+                    )
+                    if original_path != upload_path:
+                        raise PackPathChoiceError(
+                            kind=meta.kind,
+                            original_path=original_path,
+                            upload_path=upload_path,
+                            skills_dir=self.skills_dir,
+                        )
+                    dest = upload_path
+                if meta.kind == "skill" and not is_under_dir(
+                    dest, self.skills_dir
+                ):
+                    raise ValueError(
+                        f"这是 Skill 压缩包，必须解压到「{self.skills_dir}」目录下"
+                    )
+                return self._import_zip_tree(
+                    dest_root=dest,
+                    data=data,
+                    kind=(
+                        "skill_package"
+                        if meta.kind == "skill"
+                        else "directory_package"
+                    ),
+                    require_skill_md=meta.kind == "skill",
+                    allow_binary=allow_binary,
+                )
         if is_markdown_path(fn):
             try:
                 rel = join_kb_path(directory, fn)

@@ -1,3 +1,4 @@
+import json
 import zipfile
 from pathlib import Path
 
@@ -50,7 +51,11 @@ def test_directory_zip_contains_folder_prefix(tmp_path: Path):
     assert name == "导入测试"
     with zipfile.ZipFile(out) as z:
         names = sorted(z.namelist())
-    assert names == ["导入测试/a.md", "导入测试/子/b.txt"]
+        meta = json.loads(z.read("lorechat-pack.json"))
+    assert names == ["lorechat-pack.json", "导入测试/a.md", "导入测试/子/b.txt"]
+    assert meta["format"] == "lorechat.kb-pack"
+    assert meta["kind"] == "directory"
+    assert meta["rel_path"] == "导入测试"
 
 
 def test_export_api_requires_auth_and_returns_zip(client, tmp_path):

@@ -31,6 +31,30 @@ def kb_path_exists_detail(rel_path: str, message: str, suggested_filename: str) 
     }
 
 
+def pack_path_choice_detail(
+    *,
+    kind: str,
+    original_path: str,
+    upload_path: str,
+    default_path: str,
+    skills_dir: str,
+    message: str,
+) -> dict:
+    from app.engine.kb_skill import is_under_dir
+
+    return {
+        "code": "PACK_PATH_CHOICE",
+        "kind": kind,
+        "original_path": original_path,
+        "upload_path": upload_path,
+        "default_path": default_path,
+        "skills_dir": skills_dir,
+        "upload_outside_skills": kind == "skill"
+        and not is_under_dir(upload_path, skills_dir),
+        "message": message,
+    }
+
+
 class IngestBody(BaseModel):
     text: str
 

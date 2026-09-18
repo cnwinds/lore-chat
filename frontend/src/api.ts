@@ -21,11 +21,12 @@ import {
   readSseResponse,
   type ApiError,
   type PathExistsDetail,
+  type PackPathChoiceDetail,
 } from "./lib/httpTransport";
 import { messageFromImportErrorBody } from "./utils/importKbError";
 import type { ScheduleTiming } from "./utils/scheduleTiming";
 
-export type { ApiError, PathExistsDetail, ActiveTurnStatus };
+export type { ApiError, PathExistsDetail, PackPathChoiceDetail, ActiveTurnStatus };
 
 export type AuthStatus = {
   setup_required: boolean;
@@ -681,11 +682,13 @@ export async function kbImport(
   file: File,
   directory: string,
   filename?: string,
+  destRoot?: string,
 ) {
   const fd = new FormData();
   fd.append("file", file);
   fd.append("directory", directory);
   if (filename) fd.append("filename", filename);
+  if (destRoot) fd.append("dest_root", destRoot);
   return apiFetch<{
     rel_path: string;
     kind: string;
