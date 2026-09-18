@@ -401,6 +401,111 @@ body {
   color: var(--text-muted);
 }
 
+/* —— 通道卡：平整瓷面 + 内嵌钥匙字段，去掉高光渐变与双层盒 —— */
+.channel-card {
+  background: var(--bg-surface);
+  box-shadow: none;
+}
+
+.channel-card::before {
+  opacity: 0.5;
+}
+
+.channel-card-main {
+  gap: 10px;
+  padding: 13px 14px 13px 16px;
+}
+
+.channel-card-title {
+  font-size: 14px;
+  letter-spacing: 0;
+}
+
+/* KEY 字段：深一档内衬替代「盒中盒」，复制钮改安静幽灵 */
+.channel-vault {
+  background: color-mix(in srgb, var(--bg-app) 55%, var(--bg-surface));
+  border-color: color-mix(in srgb, var(--border) 55%, transparent);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.channel-vault-copy {
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 6px;
+  background: transparent;
+  font-weight: 500;
+}
+
+.channel-vault-copy:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
+}
+
+/* 角色行：统一 select 皮肤（自绘箭头），编辑改安静幽灵 */
+.channel-role-label {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.channel-role-select {
+  appearance: none;
+  padding: 6px 26px 6px 10px;
+  border-radius: 8px;
+  font-size: var(--text-xs);
+  background-image: linear-gradient(45deg, transparent 50%, var(--text-muted) 50%),
+    linear-gradient(135deg, var(--text-muted) 50%, transparent 50%);
+  background-position:
+    calc(100% - 13px) calc(50% - 2px),
+    calc(100% - 8px) calc(50% - 2px);
+  background-size:
+    4px 4px,
+    4px 4px;
+  background-repeat: no-repeat;
+  cursor: pointer;
+}
+
+.channel-role-edit {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-muted);
+}
+
+.channel-role-edit:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text);
+  border-color: var(--border);
+}
+
+/* 详情 tabs：安静下划线式，去胶囊组外框 */
+.channel-details-tabs {
+  border: none;
+  background: transparent;
+  padding: 0;
+  gap: 2px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+  border-radius: 0;
+}
+
+.channel-details-tabs .settings-tab {
+  border-radius: 6px 6px 0 0;
+  padding: 5px 10px 6px;
+}
+
+.channel-details-tabs .settings-tab--active {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: inset 0 -2px 0 var(--glaze);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.channel-details-body {
+  border: none;
+  background: transparent;
+  padding: 8px 2px;
+}
+
 /* —— 角色栏：印章方印 —— */
 .role-avatar {
   border-radius: 26%;
