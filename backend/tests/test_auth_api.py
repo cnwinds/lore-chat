@@ -17,6 +17,11 @@ def test_health_public(tmp_path):
         assert r.status_code == 200
         body = r.json()
         assert body["status"] == "ok"
+        product = body["product"]
+        assert product["version"]
+        assert product["channel"] in ("release", "development")
+        assert product["display"]
+        assert "commits_ahead" in product
         assert body["capabilities"]["sandbox"] is False
         pool = body["capabilities"]["sandbox_pool"]
         assert pool["max"] == 4

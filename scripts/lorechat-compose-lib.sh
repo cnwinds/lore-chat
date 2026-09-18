@@ -144,9 +144,22 @@ lorechat_prepare_data_dir() {
 # $1 = chat|work；其余为 compose 参数。
 # LORECHAT_COMPOSE_DEV=1 叠加 docker-compose.dev.yml
 # LORECHAT_COMPOSE_PREBUILT=1 叠加 docker-compose.prebuilt.yml（须在 sandbox 之后，以覆盖本地 SANDBOX_IMAGE 默认）
+lorechat_export_product_version() {
+  local script root
+  root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+  script="${root}/scripts/build_info.py"
+  [[ -f "${script}" ]] || return 0
+  command -v python3 >/dev/null 2>&1 || return 0
+  eval "$(python3 "${script}" --export-env)"
+}
+
 lorechat_compose() {
   local mode="$1"
   shift
+  # 本地 build / --dev 需要主机 git 算出的版本；预构建镜像已烘在 ENV 里，不要覆盖。
+  if [[ "${LORECHAT_COMPOSE_PREBUILT:-}" != "1" ]]; then
+    lorechat_export_product_version
+  fi
   local -a files=(-f "${LORECHAT_COMPOSE_BASE}")
   if [[ "${mode}" == "work" ]]; then
     files+=(-f "${LORECHAT_COMPOSE_SANDBOX}")

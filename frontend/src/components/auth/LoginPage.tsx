@@ -1,6 +1,8 @@
 import { useState, type FormEvent } from "react";
 import { login } from "../../api";
+import { useProductVersion } from "../../hooks/useProductVersion";
 import { LoreLogo } from "../LoreLogo";
+import { ProductVersionLine } from "../app/ProductVersionLine";
 
 type Props = {
   onDone: () => void;
@@ -12,6 +14,7 @@ export function LoginPage({ onDone }: Props) {
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const product = useProductVersion();
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -35,30 +38,33 @@ export function LoginPage({ onDone }: Props) {
 
   return (
     <div className="auth-gate">
-      <div className="auth-gate-card">
-        <LoreLogo variant="wordmark" className="auth-gate-logo" />
-        <h1 className="auth-gate-title">登录</h1>
-        <p className="auth-gate-subtitle">请输入管理员密码以继续使用。</p>
-        <form className="auth-gate-form" onSubmit={handleSubmit}>
-          <div className="auth-gate-field">
-            <label htmlFor="login-password">密码</label>
-            <input
-              id="login-password"
-              type="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              disabled={submitting}
-              required
-              minLength={MIN_PASSWORD_LENGTH}
-              autoFocus
-            />
-          </div>
-          {error ? <p className="auth-gate-error">{error}</p> : null}
-          <button type="submit" className="auth-gate-submit" disabled={submitting}>
-            {submitting ? "登录中…" : "登录"}
-          </button>
-        </form>
+      <div className="auth-gate-stack">
+        <div className="auth-gate-card">
+          <LoreLogo variant="wordmark" className="auth-gate-logo" />
+          <h1 className="auth-gate-title">登录</h1>
+          <p className="auth-gate-subtitle">请输入管理员密码以继续使用。</p>
+          <form className="auth-gate-form" onSubmit={handleSubmit}>
+            <div className="auth-gate-field">
+              <label htmlFor="login-password">密码</label>
+              <input
+                id="login-password"
+                type="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                disabled={submitting}
+                required
+                minLength={MIN_PASSWORD_LENGTH}
+                autoFocus
+              />
+            </div>
+            {error ? <p className="auth-gate-error">{error}</p> : null}
+            <button type="submit" className="auth-gate-submit" disabled={submitting}>
+              {submitting ? "登录中…" : "登录"}
+            </button>
+          </form>
+        </div>
+        <ProductVersionLine product={product} className="product-version-line--gate" />
       </div>
     </div>
   );

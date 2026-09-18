@@ -17,6 +17,8 @@ import {
   type SettingsTab,
 } from "../../hooks/settings/settingsTabStorage";
 import { useSettingsSession } from "../../hooks/settings/useSettingsSession";
+import { useProductVersion } from "../../hooks/useProductVersion";
+import { ProductVersionLine } from "../app/ProductVersionLine";
 
 export type { SettingsTab };
 
@@ -54,6 +56,7 @@ export function SettingsPanel({
     onAttentionChange,
     onLiveAttentionChange,
   });
+  const product = useProductVersion();
 
   if (!open) return null;
 
@@ -322,6 +325,10 @@ export function SettingsPanel({
             </>
           )}
         </div>
+        <ProductVersionLine
+          product={product}
+          className="product-version-line--settings"
+        />
       </aside>
     </div>
   );

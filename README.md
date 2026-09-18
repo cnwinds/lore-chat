@@ -167,7 +167,7 @@ cp .env.docker.example .env
 | | |
 |--|--|
 | 环境变量 | [`backend/.env.example`](backend/.env.example) |
-| 版本与变更 | [`VERSION`](VERSION) · [CHANGELOG.md](CHANGELOG.md) |
+| 版本与变更 | [`VERSION`](VERSION) · [CHANGELOG.md](CHANGELOG.md)（界面设置 / 登录页也会显示发行或开发版本） |
 | 模块地图 | [CONTEXT.md](CONTEXT.md) |
 | 架构决策 | [docs/adr/](docs/adr/) |
 | 产品规格 | [docs/product/](docs/product/) |

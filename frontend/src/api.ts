@@ -56,6 +56,26 @@ export function logout() {
   return apiFetch<{ ok: boolean }>("/api/auth/logout", { method: "POST" });
 }
 
+export type ProductChannel = "release" | "development";
+
+export type ProductVersion = {
+  version: string;
+  revision: string | null;
+  commits_ahead: number;
+  channel: ProductChannel;
+  display: string;
+};
+
+export type HealthStatus = {
+  status: string;
+  product?: ProductVersion;
+  capabilities?: Record<string, unknown>;
+};
+
+export function getHealth() {
+  return apiFetch<HealthStatus>("/api/health");
+}
+
 export function getSettings() {
   return apiFetch<Record<string, unknown>>("/api/admin/settings");
 }

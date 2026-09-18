@@ -2519,6 +2519,37 @@ a:hover {
   min-width: 0;
 }
 
+.product-version-line {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 0.45em;
+  font-size: var(--text-xs);
+  line-height: var(--leading-tight);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.product-version-kind {
+  color: var(--text-secondary);
+}
+
+.product-version-value {
+  font-variant-numeric: tabular-nums;
+  user-select: text;
+}
+
+.product-version-line--gate {
+  justify-content: center;
+  margin-top: 16px;
+}
+
+.product-version-line--settings {
+  flex-shrink: 0;
+  padding: 8px 18px 12px;
+  border-top: 1px solid var(--border);
+}
+
 .settings-panel-header h2 {
   margin: 0;
   font-size: var(--font-h3);
@@ -9879,8 +9910,12 @@ button.source-link--inline.conversation-md-link {
   background: var(--bg-app);
 }
 
-.auth-gate-card {
+.auth-gate-stack {
   width: min(380px, 100%);
+}
+
+.auth-gate-card {
+  width: 100%;
   padding: 28px 24px;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);

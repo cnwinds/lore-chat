@@ -5,6 +5,12 @@ services:
     build:
       context: ../backend
       dockerfile: Dockerfile
+      args:
+        LORECHAT_VERSION: ${LORECHAT_VERSION:-0.0.0}
+        LORECHAT_REVISION: ${LORECHAT_REVISION:-}
+        LORECHAT_COMMITS_AHEAD: ${LORECHAT_COMMITS_AHEAD:-0}
+        LORECHAT_CHANNEL: ${LORECHAT_CHANNEL:-development}
+        LORECHAT_DIRTY: ${LORECHAT_DIRTY:-0}
     container_name: lorechat-backend
     env_file:
       - ../.env
@@ -39,6 +45,12 @@ services:
     build:
       context: ..
       dockerfile: frontend/Dockerfile
+      args:
+        LORECHAT_VERSION: ${LORECHAT_VERSION:-0.0.0}
+        LORECHAT_REVISION: ${LORECHAT_REVISION:-}
+        LORECHAT_COMMITS_AHEAD: ${LORECHAT_COMMITS_AHEAD:-0}
+        LORECHAT_CHANNEL: ${LORECHAT_CHANNEL:-development}
+        LORECHAT_DIRTY: ${LORECHAT_DIRTY:-0}
     container_name: lorechat-web
     ports:
       - "${WEB_PORT:-8080}:80"

@@ -10,9 +10,17 @@ services:
   backend:
     volumes:
       - ../backend/app:/app/app
+      - ../VERSION:/app/VERSION:ro
     environment:
       # WSL / bind mount 下 inotify 常不可靠，强制轮询
       WATCHFILES_FORCE_POLLING: "true"
+      # --dev 运行时用主机 git 覆盖镜像内烘制值；须由 lorechat.sh 先 export。
+      # 空字符串会盖掉 Dockerfile ENV，Python 侧会忽略后回退到 /app/VERSION。
+      LORECHAT_VERSION: ${LORECHAT_VERSION:-}
+      LORECHAT_REVISION: ${LORECHAT_REVISION:-}
+      LORECHAT_COMMITS_AHEAD: ${LORECHAT_COMMITS_AHEAD:-}
+      LORECHAT_CHANNEL: ${LORECHAT_CHANNEL:-}
+      LORECHAT_DIRTY: ${LORECHAT_DIRTY:-}
     command:
       - uvicorn
       - app.main:app

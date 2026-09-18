@@ -22,6 +22,7 @@ from app.api.admin_routes import router as admin_router
 from app.api.usage_routes import router as usage_router
 from app.api.routes import router
 from app.engine.sandbox.mirrors import normalize_mirror_region
+from app.product_version import get_product_version
 from app.engine.role_schedule_worker import (
     _SCHEDULE_WORKER_INTERVAL_SECONDS,
     drain_due_role_schedules,
@@ -199,7 +200,11 @@ def create_app(settings: Settings | None = None, llm: LLMClient | None = None) -
             if schedule_thread is not None:
                 schedule_thread.join(timeout=2)
 
-    app = FastAPI(title="Lore Chat", lifespan=lifespan)
+    app = FastAPI(
+        title="Lore Chat",
+        version=get_product_version().display,
+        lifespan=lifespan,
+    )
     app.state.settings_store = SettingsStore(base_settings.kb_path, base_settings)
     app.state.auth_store = AuthStore(base_settings.kb_path)
     app.state.session_store = SessionStore(base_settings.kb_path)
@@ -215,6 +220,7 @@ def create_app(settings: Settings | None = None, llm: LLMClient | None = None) -
         settings = request.app.state.settings_store.get()
         return {
             "status": "ok",
+            "product": get_product_version().as_health(),
             "capabilities": {
                 "sandbox": bool(settings.sandbox_enabled),
                 "sandbox_trust_mode": bool(

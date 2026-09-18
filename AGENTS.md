@@ -228,6 +228,8 @@ LORECHAT_IMAGE_TAG=0.1.0
 
 然后 `./lorechat.sh update`（或 `start`）。详见 README「使用发布镜像」。
 
+设置、登录和初始设置页会显示当前产品版本：恰好打在 `vX.Y.Z` 上的构建是「发行 X.Y.Z」；该 tag 之后尚未发版的提交是「开发 X.Y.Z+N.gSHA」（PEP 440 本地版本）。数据来自 `GET /api/health` 的 `product`。版本在镜像构建时写入 `LORECHAT_VERSION` 等 ENV；根目录 `./lorechat.sh start`（含 `--dev`）会先跑 `scripts/build_info.py`。`--prebuilt` 不要用主机 git 覆盖镜像里已烘制的版本。
+
 ## 2.5 失败与更正
 
 | 情况 | 做法 |

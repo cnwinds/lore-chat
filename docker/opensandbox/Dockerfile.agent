@@ -112,4 +112,12 @@ RUN npm config set registry https://registry.npmmirror.com \
 RUN mkdir -p /workspace
 
 WORKDIR /workspace
+ARG LORECHAT_VERSION=0.0.0
+ARG LORECHAT_REVISION=""
+ARG LORECHAT_COMMITS_AHEAD=0
+ARG LORECHAT_CHANNEL=development
+ARG LORECHAT_DIRTY=0
+LABEL org.opencontainers.image.title="Lore Chat sandbox agent" \
+      org.opencontainers.image.version="$LORECHAT_VERSION" \
+      org.opencontainers.image.revision="$LORECHAT_REVISION"
 CMD ["sleep", "infinity"]
