@@ -23,9 +23,33 @@ class _FakeLLM:
 def test_owner_gate_shared_by_extractors():
     assert "删掉该句后主人画像是否变少" in OWNER_MEMORY_GATE
     assert "制度、常识" in OWNER_MEMORY_GATE
+    assert "助手怎么做事" in OWNER_MEMORY_GATE
+    assert "主人是谁" in OWNER_MEMORY_GATE
     assert OWNER_MEMORY_GATE in SESSION_PROMPT
     assert NON_DURABLE_IGNORE in SESSION_PROMPT
     assert SCOPE_FIDELITY_GATE in SESSION_PROMPT
+
+
+def test_assistant_house_rules_are_owner_gate_not_keyword_ban():
+    """助手怎么做事 ≠ 主人是谁；换措辞仍属同一根因，禁止用产品名黑名单。"""
+    assert "skill" not in OWNER_MEMORY_GATE.lower()
+    paraphrases = [
+        "以后写可复用包都不要把落库规矩抄进去",
+        "我希望你之后生成可复用包时只写本包步骤",
+        "从今往后往知识库记东西都要先征求确认",
+        "以后检索之前必须先列目录",
+    ]
+    # 有主人指称的家规句过表面门禁；是否入画像靠归属原则，不靠专名丢弃
+    assert passes_owner_surface_gate(paraphrases[1])
+    assert not passes_owner_surface_gate(paraphrases[0])
+    from app.engine.agent.tool_catalog import TOOL_DEFINITIONS
+
+    desc = next(
+        t["function"]["description"]
+        for t in TOOL_DEFINITIONS
+        if t["function"]["name"] == "manage_memory"
+    )
+    assert "家规" in desc and "戒律" in desc
 
 
 def test_world_knowledge_paraphrase_fails_surface_gate():

@@ -69,7 +69,19 @@ def test_precepts_align_with_runtime_tools(tmp_path):
     assert "不得自行删除或绕过" not in body
     assert "## 六、文档编辑" in body
     assert "## 七、目录规划" in body
-    assert re.search(r"^## 八、", body, re.M) is None
+    assert "## 八、用户生成 Skill" in body
+    assert "写库与生成 Skill 的规矩写在本文件" in body
+    assert "助手怎么做事" in body
+    assert "不要抄进每个 SKILL.md" in body
+    from app.engine.agent.system_layer import _SUPERSEDED_PRECEPTS_HASHES
+
+    assert (
+        "f2af62e39cc708b42a2520891bfb313b9f66e562d78c954306466bd6183dd26a"
+        in _SUPERSEDED_PRECEPTS_HASHES
+    )
+    # YAML 触发头是 write_doc 契约，不进戒律
+    assert "--- YAML" not in body
+    assert "勿放进 meta" not in body
     assert "若本轮提供了沙箱工具" in body
     assert "跨段接续" in body
     assert "用户所指的那段" in body
@@ -128,6 +140,15 @@ def test_build_system_prompt_injects_layer():
     prompt = build_system_prompt("default", "【系统控制层内容XYZ】")
     assert "【系统控制层内容XYZ】" in prompt
     assert prompt.index("【系统控制层内容XYZ】") < prompt.index("lorechat")
+
+
+def test_system_prompt_defers_skill_house_rules_to_precepts():
+    from app.engine.agent.prompts import SYSTEM_PROMPT
+
+    assert "生成与家规见《戒律》" in SYSTEM_PROMPT
+    assert "[Skill 目录]" in SYSTEM_PROMPT
+    # 格式契约不在 SYSTEM 复述
+    assert "--- YAML" not in SYSTEM_PROMPT
 
 
 def test_build_system_prompt_web_on_affirms_search():

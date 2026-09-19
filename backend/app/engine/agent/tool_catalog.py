@@ -724,7 +724,10 @@ TOOL_DEFINITIONS: list[dict] = [
         "type": "function",
         "function": {
             "name": "manage_memory",
-            "description": "记住、更正或遗忘关于用户自身的长期画像事实（不是话题知识）",
+            "description": (
+                "记住、更正或遗忘关于用户自身的长期画像事实。"
+                "不是话题知识；规范助手怎么做事的家规不写这里，应修订《戒律》。"
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
