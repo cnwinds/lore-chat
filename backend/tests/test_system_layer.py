@@ -73,10 +73,27 @@ def test_precepts_align_with_runtime_tools(tmp_path):
     assert "写库与生成 Skill 的规矩写在本文件" in body
     assert "助手怎么做事" in body
     assert "不要抄进每个 SKILL.md" in body
+    assert "不视为零散沉淀" in gate
+    skill = re.search(r"## 八、用户生成 Skill\n(.*)\Z", body, re.S)
+    assert skill is not None
+    skill_items = re.findall(
+        r"(?ms)^(\d+)\. (.+?)(?=\n\d+\. |\Z)", skill.group(1)
+    )
+    assert [n for n, _ in skill_items] == ["1", "2", "3", "4", "5"]
+    assert "使用中自改进" in skill_items[3][1]
+    assert "下一次按这个包做是否还会踩同一坑" in skill_items[3][1]
+    assert "不要记成主人画像" in skill_items[3][1]
+    assert "另写一篇知识" in skill_items[3][1]
+    assert "本轮流水账" in skill_items[4][1]
+    assert "一次失败不得重写整包" in skill_items[4][1]
     from app.engine.agent.system_layer import _SUPERSEDED_PRECEPTS_HASHES
 
     assert (
         "f2af62e39cc708b42a2520891bfb313b9f66e562d78c954306466bd6183dd26a"
+        in _SUPERSEDED_PRECEPTS_HASHES
+    )
+    assert (
+        "6162e468eee05fbd613ef958cadca45872cad1b2ebdf503bfd1dcc1fca3fb737"
         in _SUPERSEDED_PRECEPTS_HASHES
     )
     # YAML 触发头是 write_doc 契约，不进戒律
@@ -145,7 +162,7 @@ def test_build_system_prompt_injects_layer():
 def test_system_prompt_defers_skill_house_rules_to_precepts():
     from app.engine.agent.prompts import SYSTEM_PROMPT
 
-    assert "生成与家规见《戒律》" in SYSTEM_PROMPT
+    assert "生成、改进与家规见《戒律》" in SYSTEM_PROMPT
     assert "[Skill 目录]" in SYSTEM_PROMPT
     # 格式契约不在 SYSTEM 复述
     assert "--- YAML" not in SYSTEM_PROMPT
