@@ -279,6 +279,7 @@ export function DocViewerHeader({
             )}
             {!docFocus && onToggleWidth && (
               <DocIconBtn
+                className="doc-toolbar-wide-only"
                 label={docWidth === "wide" ? "收窄阅读区" : "加宽阅读区"}
                 active={docWidth === "wide"}
                 onClick={onToggleWidth}
@@ -288,6 +289,7 @@ export function DocViewerHeader({
             )}
             {onToggleFocus && (
               <DocIconBtn
+                className="doc-toolbar-wide-only"
                 label={docFocus ? "退出专注" : "专注阅读"}
                 active={docFocus}
                 onClick={onToggleFocus}

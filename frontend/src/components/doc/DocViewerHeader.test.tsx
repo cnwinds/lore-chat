@@ -32,10 +32,18 @@ describe("DocViewerHeader", () => {
         onOutlineJump={() => undefined}
         docWidth="wide"
         docFocus={false}
+        onToggleWidth={() => undefined}
+        onToggleFocus={() => undefined}
         onMergeEditingToggle={() => undefined}
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: "修订" }));
     expect(onViewHistory).toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "收窄阅读区" })).toHaveClass(
+      "doc-toolbar-wide-only",
+    );
+    expect(screen.getByRole("button", { name: "专注阅读" })).toHaveClass(
+      "doc-toolbar-wide-only",
+    );
   });
 });
