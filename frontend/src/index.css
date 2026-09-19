@@ -95,10 +95,11 @@
 
   --system-layer: #8a5a21;
   --system-layer-soft: rgba(138, 90, 33, 0.12);
-  /* 会话统计分项色：工具=青花钴蓝、附件=藕紫（与青釉/琥珀构成四色组） */
+  /* 会话统计分项色：工具=青花钴蓝、附件=藕紫、记忆=绛红 */
   --ctx-tools: #3e6da3;
   --ctx-att: #8a6fc0;
   --ctx-skill: #a98a2e;
+  --ctx-memory: #a24b4b;
   /* 知识库特殊目录（系统/技能/记忆/媒体）统一底色，不用黄字 */
   --kb-special-bg: rgba(63, 111, 92, 0.1);
   --kb-special-bg-hover: rgba(63, 111, 92, 0.16);
@@ -175,6 +176,7 @@
   --ctx-tools: #7ba7d4;
   --ctx-att: #b294cc;
   --ctx-skill: #c9b45a;
+  --ctx-memory: #d48989;
   --kb-special-bg: rgba(127, 168, 148, 0.12);
   --kb-special-bg-hover: rgba(127, 168, 148, 0.2);
 
@@ -247,6 +249,7 @@
   --ctx-tools: #0e7f8c;
   --ctx-att: #c2587d;
   --ctx-skill: #7ba05a;
+  --ctx-memory: #b45353;
   --kb-special-bg: rgba(71, 85, 105, 0.09);
   --kb-special-bg-hover: rgba(71, 85, 105, 0.14);
 
@@ -319,6 +322,7 @@
   --ctx-tools: #4f7d99;
   --ctx-att: #a34a5e;
   --ctx-skill: #5a8a8a;
+  --ctx-memory: #8b4a4a;
   --kb-special-bg: rgba(106, 90, 60, 0.12);
   --kb-special-bg-hover: rgba(106, 90, 60, 0.2);
 
@@ -391,6 +395,7 @@
   --ctx-tools: #2aa198;
   --ctx-att: #d45a8a;
   --ctx-skill: #8a6fc0;
+  --ctx-memory: #e08a8a;
   --kb-special-bg: rgba(148, 163, 184, 0.12);
   --kb-special-bg-hover: rgba(148, 163, 184, 0.18);
 
@@ -10104,6 +10109,37 @@ button.source-link--inline.conversation-md-link {
 .ctxstats-row-value {
   color: var(--text);
   font-variant-numeric: tabular-nums;
+}
+
+button.ctxstats-row--peek {
+  width: 100%;
+  margin: 0;
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.ctxstats-row--peek:hover,
+.ctxstats-row--peek:focus-visible {
+  background: var(--bg-hover);
+}
+
+.ctxstats-preview {
+  margin: 2px 0 4px 13px;
+  padding: 6px 8px;
+  max-height: 160px;
+  overflow: auto;
+  font-size: 10px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--bg-muted);
+  border-radius: 6px;
+  color: var(--text-secondary);
 }
 
 .ctxstats-footnote {

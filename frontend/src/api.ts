@@ -1290,6 +1290,7 @@ export type ContextStatsSegment = {
   key: string;
   label: string;
   tokens: number;
+  preview?: string | null;
 };
 
 export type ContextStats = {

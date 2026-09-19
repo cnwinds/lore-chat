@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   getContextStats,
   type ContextStats,
+  type ContextStatsSegment,
 } from "../../api";
 import { FixedOverflowMenu } from "../FixedOverflowMenu";
 import { compactTokenCount } from "../../utils/chatMessageFormat";
@@ -10,12 +11,13 @@ type Props = {
   conversationId: string | null;
 };
 
-/** 分项配色（与后端 segments 顺序对应）：系统=琥珀、历史=青釉、工具=钴蓝、Skill=金、附件=藕紫。 */
+/** 分项配色（与后端 segments 顺序对应）：系统=琥珀、记忆=绛红、Skill=金、历史=青釉、工具=钴蓝、附件=藕紫。 */
 const SEGMENT_COLORS: Record<string, string> = {
   system: "var(--system-layer)",
+  memory: "var(--ctx-memory)",
+  skill: "var(--ctx-skill)",
   history: "var(--glaze)",
   tools: "var(--ctx-tools)",
-  skill: "var(--ctx-skill)",
   attachments: "var(--ctx-att)",
 };
 
@@ -67,6 +69,7 @@ export function ContextStatsButton({ conversationId }: Props) {
   const [stats, setStats] = useState<ContextStats | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [peekKey, setPeekKey] = useState<string | null>(null);
   const anchorRef = useRef<HTMLButtonElement>(null);
 
   const load = useCallback(async () => {
@@ -125,7 +128,10 @@ export function ContextStatsButton({ conversationId }: Props) {
         align="end"
         label="会话统计"
         className="ctxstats-menu"
-        onDismiss={() => setOpen(false)}
+        onDismiss={() => {
+          setOpen(false);
+          setPeekKey(null);
+        }}
       >
         {loading && !stats ? (
           <p className="ctxstats-hint">统计中…</p>
@@ -170,27 +176,17 @@ export function ContextStatsButton({ conversationId }: Props) {
                 : "暂无用量的模型调用"}
             </div>
             <div className="ctxstats-section">
-              {stats.segments.map((seg) => {
-                const segPct =
-                  used != null && used > 0
-                    ? (seg.tokens / used) * 100
-                    : null;
-                return (
-                  <div key={seg.key} className="ctxstats-row">
-                    <span className="ctxstats-row-label">
-                      <span
-                        className="ctxstats-dot"
-                        style={{ background: segmentColor(seg.key) }}
-                      />
-                      {seg.label}
-                    </span>
-                    <span className="ctxstats-row-value">
-                      {compactTokenCount(seg.tokens)}
-                      {segPct != null ? ` · ${segPct.toFixed(1)}%` : ""}
-                    </span>
-                  </div>
-                );
-              })}
+              {stats.segments.map((seg) => (
+                <SegmentRow
+                  key={seg.key}
+                  seg={seg}
+                  used={used}
+                  peeked={peekKey === seg.key}
+                  onTogglePeek={() =>
+                    setPeekKey((k) => (k === seg.key ? null : seg.key))
+                  }
+                />
+              ))}
             </div>
             <div className="ctxstats-section ctxstats-rows">
               {stats.cache_hit_rate != null && (
@@ -222,10 +218,73 @@ export function ContextStatsButton({ conversationId }: Props) {
                 </div>
               )}
             </div>
-            <div className="ctxstats-footnote">分项为估算值，用于观察占比</div>
+            <div className="ctxstats-footnote">
+              分项按实际注入文本估算；圆环为上次调用实测。点「记忆」可看注入正文。
+            </div>
           </>
         ) : null}
       </FixedOverflowMenu>
     </>
+  );
+}
+
+function SegmentRow({
+  seg,
+  used,
+  peeked,
+  onTogglePeek,
+}: {
+  seg: ContextStatsSegment;
+  used: number | null;
+  peeked: boolean;
+  onTogglePeek: () => void;
+}) {
+  const segPct =
+    used != null && used > 0 ? (seg.tokens / used) * 100 : null;
+  const canPeek = seg.key === "memory";
+  const preview = (seg.preview || "").trim();
+  return (
+    <div>
+      {canPeek ? (
+        <button
+          type="button"
+          className="ctxstats-row ctxstats-row--peek"
+          onClick={onTogglePeek}
+          aria-expanded={peeked}
+          title={peeked ? "收起记忆正文" : "查看注入的记忆正文"}
+        >
+          <span className="ctxstats-row-label">
+            <span
+              className="ctxstats-dot"
+              style={{ background: segmentColor(seg.key) }}
+            />
+            {seg.label}
+          </span>
+          <span className="ctxstats-row-value">
+            {compactTokenCount(seg.tokens)}
+            {segPct != null ? ` · ${segPct.toFixed(1)}%` : ""}
+          </span>
+        </button>
+      ) : (
+        <div className="ctxstats-row">
+          <span className="ctxstats-row-label">
+            <span
+              className="ctxstats-dot"
+              style={{ background: segmentColor(seg.key) }}
+            />
+            {seg.label}
+          </span>
+          <span className="ctxstats-row-value">
+            {compactTokenCount(seg.tokens)}
+            {segPct != null ? ` · ${segPct.toFixed(1)}%` : ""}
+          </span>
+        </div>
+      )}
+      {canPeek && peeked ? (
+        <pre className="ctxstats-preview">
+          {preview || "本轮未注入记忆"}
+        </pre>
+      ) : null}
+    </div>
   );
 }

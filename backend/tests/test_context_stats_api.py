@@ -28,8 +28,18 @@ def test_context_stats_shape(client):
     r = client.get(f"/api/conversations/{cid}/context-stats")
     assert r.status_code == 200
     body = r.json()
-    keys = {seg["key"] for seg in body["segments"]}
-    assert keys == {"history", "system", "tools", "skill", "attachments"}
+    keys = [seg["key"] for seg in body["segments"]]
+    assert keys == [
+        "system",
+        "memory",
+        "skill",
+        "history",
+        "tools",
+        "attachments",
+    ]
+    memory = next(s for s in body["segments"] if s["key"] == "memory")
+    assert "preview" in memory
+    assert isinstance(memory["tokens"], int)
     assert body["tool_calls"] == 0
     assert body["cache_hit_rate"] is None
     # FakeLLM 不产生真实用量事件 → used_tokens 允许为 None
