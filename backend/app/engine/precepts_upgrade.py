@@ -74,9 +74,6 @@ class PreceptsUpgrade:
     def path(self) -> str:
         return self.system_layer.precepts_rel
 
-    def _kb(self) -> Path:
-        return self.repo.root / ".kb" / "precepts"
-
     def _stock_path(self) -> Path:
         return self.repo.root / STOCK_REL
 

@@ -51,6 +51,9 @@ export function usePreceptsUpgrade({ path, onApplied }: Args) {
       .then(async (data) => {
         if (cancelled) return;
         applyStatus(data);
+        if (data.applied && data.path === path) {
+          onApplied?.();
+        }
         if (
           data.path === path &&
           data.pending &&
