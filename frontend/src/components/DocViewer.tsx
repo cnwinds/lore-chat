@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DocDiffModal } from "./DocDiffModal";
+import { DocHistoryModal } from "./DocHistoryModal";
 import { type DocSelection } from "./DocLivePreview";
 import { DocMergeReviewBar } from "./doc/DocMergeReviewBar";
 import { DocViewerBody } from "./doc/DocViewerBody";
@@ -80,6 +81,7 @@ export function DocViewer({
   const [saveError, setSaveError] = useState<string | null>(null);
   const [mergeEditing, setMergeEditing] = useState(false);
   const [outlineOpen, setOutlineOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const bodyRef = useRef<HTMLDivElement>(null);
   const markdownSourceRef = useRef<HTMLTextAreaElement>(null);
   const mergeSourceRef = useRef<HTMLTextAreaElement>(null);
@@ -260,6 +262,7 @@ export function DocViewer({
           await handleMergeSave();
         }}
         onViewDiff={() => setUnsavedPrompt("view")}
+        onViewHistory={() => setHistoryOpen(true)}
         outlineOpen={outlineOpen}
         onOutlineToggle={() => setOutlineOpen((v) => !v)}
         onOutlineClose={() => setOutlineOpen(false)}
@@ -308,6 +311,11 @@ export function DocViewer({
           onMergeReject={onMergeReject}
         />
       )}
+      <DocHistoryModal
+        open={historyOpen}
+        path={path}
+        onClose={() => setHistoryOpen(false)}
+      />
       <DocDiffModal
         open={unsavedPrompt !== null}
         variant={unsavedPrompt === "view" ? "view" : "confirm"}

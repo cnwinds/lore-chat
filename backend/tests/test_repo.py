@@ -73,6 +73,48 @@ def test_write_and_read_bytes(repo):
     assert repo.read_bytes(p) == b"%PDF-1.4 fake"
 
 
+def test_list_and_read_revisions(repo):
+    from app.storage.repo import revision_summary
+
+    repo.write_doc("笔记/a.md", {"title": "A"}, "第一版\n", commit_msg="edit: 笔记/a.md")
+    repo.write_doc("笔记/a.md", {"title": "A"}, "第二版\n", commit_msg="edit: 笔记/a.md")
+    revs = repo.list_revisions("笔记/a.md")
+    assert len(revs) >= 2
+    assert revs[0]["message"] == "编辑"
+    latest = repo.read_revision("笔记/a.md", revs[0]["sha"])
+    older = repo.read_revision("笔记/a.md", revs[1]["sha"])
+    assert latest["text"] == "第二版\n"
+    assert older["text"] == "第一版\n"
+    assert latest["binary"] is False
+    assert revision_summary("refresh stock precepts", "系统/戒律.md") == "官方稿更新"
+
+
+def test_list_revisions_skips_identical_blob(repo):
+    repo.write_doc("n.md", {"title": "N"}, "same\n", commit_msg="c1")
+    repo.write_doc("n.md", {"title": "N"}, "same\n", commit_msg="c2")
+    revs = repo.list_revisions("n.md")
+    assert len(revs) == 1
+
+
+def test_read_revision_rejects_internal_and_bad_sha(repo):
+    repo.write_bytes("脚本/run.py", b"print(1)\n", commit_msg="add")
+    with pytest.raises(PermissionError):
+        repo.list_revisions(".kb/changelog.md")
+    with pytest.raises(ValueError, match="无效版本"):
+        repo.read_revision("脚本/run.py", "../HEAD")
+    py = repo.list_revisions("脚本/run.py")
+    got = repo.read_revision("脚本/run.py", py[0]["short_sha"])
+    assert got["text"] == "print(1)\n"
+
+
+def test_read_revision_binary(repo):
+    repo.write_bytes("图/a.bin", b"\x00\xff", commit_msg="bin")
+    rev = repo.list_revisions("图/a.bin")[0]
+    got = repo.read_revision("图/a.bin", rev["sha"])
+    assert got["binary"] is True
+    assert got["text"] is None
+
+
 def test_log_change_appends_changelog(repo):
     repo.log_change("创建 技术/x.md：docker 笔记", commit_msg="log")
     doc_text = (repo.root / ".kb" / "changelog.md").read_text(encoding="utf-8")

@@ -1,13 +1,29 @@
 from __future__ import annotations
 
+import re
 import shutil
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
-from git import Repo
+from git import Blob, Repo
 
 from app.storage import frontmatter
 from app.time import DISPLAY_TZ, now_wall_clock
+
+_REV_SHA_RE = re.compile(r"^[0-9a-fA-F]{7,40}$")
+_MAX_REVISIONS = 200
+
+
+def revision_summary(message: str, rel_path: str) -> str:
+    """把 git 提交首行收成给用户看的短说明。"""
+    line = (message or "").strip().split("\n", 1)[0].strip()
+    if line in {f"edit: {rel_path}", f"用户编辑 {rel_path}"}:
+        return "编辑"
+    if line.startswith("seed system layer:"):
+        return "初次写入"
+    if line == "refresh stock precepts":
+        return "官方稿更新"
+    return line or "修订"
 
 
 @dataclass
@@ -15,6 +31,21 @@ class Document:
     rel_path: str
     meta: dict
     body: str
+
+
+def _decode_revision_text(rel_path: str, data: bytes) -> tuple[str | None, bool]:
+    if not data:
+        return "", False
+    if b"\x00" in data:
+        return None, True
+    try:
+        raw = data.decode("utf-8")
+    except UnicodeDecodeError:
+        return None, True
+    if rel_path.endswith(".md"):
+        _meta, body = frontmatter.parse(raw)
+        return body, False
+    return raw, False
 
 
 class KnowledgeRepo:
@@ -157,6 +188,84 @@ class KnowledgeRepo:
         if not abs_p.exists():
             raise FileNotFoundError(rel_path)
         return abs_p.read_bytes()
+
+    def _norm_user_path(self, rel_path: str) -> str:
+        norm = rel_path.replace("\\", "/").lstrip("/")
+        if not norm or ".." in PurePosixPath(norm).parts:
+            raise ValueError(f"路径越界: {rel_path}")
+        if self._is_internal(norm):
+            raise PermissionError("禁止访问内部路径")
+        self._abs(norm)
+        return norm
+
+    def _blob_at(self, commit, rel_path: str) -> Blob | None:
+        try:
+            item = commit.tree / rel_path
+        except KeyError:
+            return None
+        return item if isinstance(item, Blob) else None
+
+    def list_revisions(self, rel_path: str, *, limit: int = 80) -> list[dict]:
+        """某文件内容发生变化的提交，新的在前；连续相同正文会并成一条。"""
+        norm = self._norm_user_path(rel_path)
+        cap = max(1, min(int(limit), _MAX_REVISIONS))
+        exists = self._abs(norm).is_file()
+        out: list[dict] = []
+        prev_blob: str | None = None
+        try:
+            commits = self.repo.iter_commits(paths=norm, max_count=cap * 2)
+        except Exception:
+            commits = []
+        for commit in commits:
+            blob = self._blob_at(commit, norm)
+            if blob is None:
+                continue
+            if blob.hexsha == prev_blob:
+                continue
+            prev_blob = blob.hexsha
+            out.append(
+                {
+                    "sha": commit.hexsha,
+                    "short_sha": commit.hexsha[:7],
+                    "message": revision_summary(commit.message, norm),
+                    "committed_at": commit.committed_datetime.astimezone(
+                        DISPLAY_TZ
+                    ).strftime("%Y-%m-%d %H:%M:%S"),
+                }
+            )
+            if len(out) >= cap:
+                break
+        if not out and not exists:
+            raise FileNotFoundError(rel_path)
+        return out
+
+    def read_revision(self, rel_path: str, sha: str) -> dict:
+        """读取某次提交里该文件的正文（Markdown 去掉库头）。"""
+        norm = self._norm_user_path(rel_path)
+        token = (sha or "").strip()
+        if not _REV_SHA_RE.fullmatch(token):
+            raise ValueError("无效版本")
+        try:
+            commit = self.repo.commit(token)
+        except Exception as exc:
+            raise FileNotFoundError(rel_path) from exc
+        blob = self._blob_at(commit, norm)
+        if blob is None:
+            raise FileNotFoundError(rel_path)
+        data = blob.data_stream.read()
+        text, binary = _decode_revision_text(norm, data)
+        return {
+            "path": norm,
+            "sha": commit.hexsha,
+            "short_sha": commit.hexsha[:7],
+            "message": revision_summary(commit.message, norm),
+            "committed_at": commit.committed_datetime.astimezone(DISPLAY_TZ).strftime(
+                "%Y-%m-%d %H:%M:%S"
+            ),
+            "text": text,
+            "binary": binary,
+            "size": len(data),
+        }
 
     def _is_internal(self, rel_path: str) -> bool:
         """`.kb/`、`.git/` 等内部路径，禁止读写与删除。"""

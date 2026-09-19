@@ -12,6 +12,7 @@ import { useDragAutoScroll } from "../hooks/useDragAutoScroll";
 import { useDismissOnOutsideClick } from "../hooks/useDismissOnOutsideClick";
 import { useKbTreeViewportUi } from "../hooks/useKbTreeViewportUi";
 import { isProtectedKbPath, SKILLS_DIR } from "../utils/fileTree";
+import { DocHistoryModal } from "./DocHistoryModal";
 
 /** 与 portal style / CSS 共用：知识库 tip 最大高度上限（px） */
 const KB_HINT_POPOVER_MAX_PX = 420;
@@ -44,6 +45,7 @@ export function KbSidebar({
   onBindLocateKbPath,
 }: Props) {
   const [docs, setDocs] = useState<string[]>([]);
+  const [historyPath, setHistoryPath] = useState<string | null>(null);
   const [kbHintOpen, setKbHintOpen] = useState(false);
   const [kbHintPos, setKbHintPos] = useState<{ top: number; left: number } | null>(null);
   const kbHintRef = useRef<HTMLDivElement>(null);
@@ -68,6 +70,7 @@ export function KbSidebar({
     kb,
     onKbPathChanged,
     onKbPathsDeleted,
+    onOpenHistory: setHistoryPath,
   });
 
   const { tree: kbTree, expanded, toggleFolder, revealPath } = viewport;
@@ -145,6 +148,11 @@ export function KbSidebar({
 
   return (
     <div className="kb-sidebar">
+      <DocHistoryModal
+        open={!!historyPath}
+        path={historyPath}
+        onClose={() => setHistoryPath(null)}
+      />
       {kb.conflictDialog}
       {treeInteraction.menu && (
         <div
@@ -153,6 +161,15 @@ export function KbSidebar({
           style={{ left: treeInteraction.menu.x, top: treeInteraction.menu.y }}
           role="menu"
         >
+          {treeInteraction.menu.ctx.kind === "file" && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => void treeInteraction.handleMenuAction("history")}
+            >
+              修订
+            </button>
+          )}
           {(treeInteraction.menu.ctx.kind === "file" ||
             (treeInteraction.menu.ctx.kind === "folder" &&
               !isProtectedKbPath(treeInteraction.menu.ctx.path))) && (

@@ -7,6 +7,7 @@ import { DocOverflowMenu, type OverflowItem } from "../DocOverflowMenu";
 import {
   DocIconBtn,
   DiffIcon,
+  HistoryIcon,
   DiscardIcon,
   FocusEnterIcon,
   FocusExitIcon,
@@ -36,6 +37,7 @@ type Props = {
   onSave: () => void | Promise<boolean | void>;
   onMergeSave: () => void | Promise<void>;
   onViewDiff: () => void;
+  onViewHistory: () => void;
   outlineOpen: boolean;
   onOutlineToggle: () => void;
   onOutlineClose: () => void;
@@ -71,6 +73,7 @@ export function DocViewerHeader({
   onSave,
   onMergeSave,
   onViewDiff,
+  onViewHistory,
   outlineOpen,
   onOutlineToggle,
   onOutlineClose,
@@ -94,6 +97,12 @@ export function DocViewerHeader({
       : null;
 
   const overflowItems: OverflowItem[] = [
+    {
+      id: "view-history",
+      label: "修订",
+      icon: "history" as const,
+      onClick: onViewHistory,
+    },
     ...(dirty && !readOnly
       ? [
           {
@@ -243,6 +252,13 @@ export function DocViewerHeader({
             )}
           </>
         )}
+        <DocIconBtn
+          label="修订"
+          onClick={onViewHistory}
+          disabled={loading}
+        >
+          <HistoryIcon />
+        </DocIconBtn>
         {showLayoutActions && (
           <>
             <span className="doc-toolbar-divider" aria-hidden />

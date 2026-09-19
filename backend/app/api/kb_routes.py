@@ -359,6 +359,37 @@ async def doc(path: str, request: Request):
     return {"rel_path": d.rel_path, "meta": d.meta, "body": d.body}
 
 
+@router.get("/doc/revisions")
+async def doc_revisions(
+    path: str,
+    request: Request,
+    limit: int = Query(80, ge=1, le=200),
+):
+    repo = container(request).repo
+    try:
+        revisions = repo.list_revisions(path, limit=limit)
+    except FileNotFoundError:
+        raise HTTPException(404, "文件不存在")
+    except PermissionError as e:
+        raise HTTPException(403, str(e)) from e
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    return {"path": path, "revisions": revisions}
+
+
+@router.get("/doc/revision")
+async def doc_revision(path: str, sha: str, request: Request):
+    repo = container(request).repo
+    try:
+        return repo.read_revision(path, sha)
+    except FileNotFoundError:
+        raise HTTPException(404, "该版本不存在")
+    except PermissionError as e:
+        raise HTTPException(403, str(e)) from e
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
 @router.put("/doc")
 async def update_doc(body: UpdateDocBody, request: Request):
     c = container(request)

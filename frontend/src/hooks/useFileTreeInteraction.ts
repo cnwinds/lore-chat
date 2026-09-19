@@ -21,6 +21,7 @@ type Options = {
   kb: KbActions;
   onKbPathChanged?: (fromPath: string, toPath: string) => void;
   onKbPathsDeleted?: (paths: string[]) => void;
+  onOpenHistory?: (path: string) => void;
 };
 
 /**
@@ -30,6 +31,7 @@ export function useFileTreeInteraction({
   kb,
   onKbPathChanged,
   onKbPathsDeleted,
+  onOpenHistory,
 }: Options) {
   const [dropHighlightDir, setDropHighlightDir] = useState<string | null>(null);
   const [externalFileDrag, setExternalFileDrag] = useState(false);
@@ -73,6 +75,10 @@ export function useFileTreeInteraction({
       setMenu(null);
       const path = ctx.path;
 
+      if (action === "history") {
+        if (ctx.kind === "file") onOpenHistory?.(path);
+        return;
+      }
       if (action === "download") {
         if (ctx.kind === "file") {
           window.open(
@@ -103,7 +109,7 @@ export function useFileTreeInteraction({
         onKbPathsDeleted?.(deleted);
       }
     },
-    [kb, menu, onKbPathsDeleted, startRename],
+    [kb, menu, onKbPathsDeleted, onOpenHistory, startRename],
   );
 
   const clearExternalDrag = useCallback(() => {

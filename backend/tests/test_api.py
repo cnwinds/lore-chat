@@ -669,6 +669,34 @@ def test_put_doc_updates_body(client):
     assert r2.json()["body"] == new_body
 
 
+def test_doc_revisions_roundtrip(client):
+    client.post("/api/ingest", json={"text": "修订历史甲"})
+    path = client.get("/api/tree").json()["docs"][0]
+    client.put("/api/doc", json={"path": path, "body": "修订历史乙\n"})
+    listed = client.get("/api/doc/revisions", params={"path": path})
+    assert listed.status_code == 200
+    revs = listed.json()["revisions"]
+    assert len(revs) >= 2
+    old = client.get(
+        "/api/doc/revision", params={"path": path, "sha": revs[-1]["sha"]}
+    )
+    assert old.status_code == 200
+    assert "修订历史甲" in (old.json()["text"] or "")
+    newest = client.get(
+        "/api/doc/revision", params={"path": path, "sha": revs[0]["short_sha"]}
+    )
+    assert newest.json()["text"] == "修订历史乙\n"
+
+
+def test_doc_revisions_rejects_internal(client):
+    r = client.get("/api/doc/revisions", params={"path": ".kb/changelog.md"})
+    assert r.status_code == 403
+    r2 = client.get(
+        "/api/doc/revision", params={"path": "nope.md", "sha": "not-a-sha"}
+    )
+    assert r2.status_code == 400
+
+
 def test_put_doc_not_found(client):
     r = client.put("/api/doc", json={"path": "不存在/文档.md", "body": "x"})
     assert r.status_code == 404

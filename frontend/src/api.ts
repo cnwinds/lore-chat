@@ -773,6 +773,32 @@ export async function getDoc(path: string) {
   return apiFetch<DocContent>(`/api/doc?path=${encodeURIComponent(path)}`);
 }
 
+export type DocRevisionInfo = {
+  sha: string;
+  short_sha: string;
+  message: string;
+  committed_at: string;
+};
+
+export type DocRevisionBody = DocRevisionInfo & {
+  path: string;
+  text: string | null;
+  binary: boolean;
+  size: number;
+};
+
+export async function listDocRevisions(path: string, limit = 80) {
+  return apiFetch<{ path: string; revisions: DocRevisionInfo[] }>(
+    `/api/doc/revisions?path=${encodeURIComponent(path)}&limit=${limit}`,
+  );
+}
+
+export async function getDocRevision(path: string, sha: string) {
+  return apiFetch<DocRevisionBody>(
+    `/api/doc/revision?path=${encodeURIComponent(path)}&sha=${encodeURIComponent(sha)}`,
+  );
+}
+
 export async function saveDoc(path: string, body: string) {
   return apiFetch<DocContent>("/api/doc", {
     method: "PUT",
