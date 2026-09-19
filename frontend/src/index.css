@@ -5985,6 +5985,10 @@ button.memory-fact-statement--jump:focus-visible {
 }
 
 .doc-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
   flex-shrink: 0;
   height: 28px;
   padding: 0 8px;
@@ -5997,6 +6001,11 @@ button.memory-fact-statement--jump:focus-visible {
   box-shadow: var(--shadow-sm);
   cursor: pointer;
   white-space: nowrap;
+}
+
+.doc-history-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .doc-action-btn:hover {

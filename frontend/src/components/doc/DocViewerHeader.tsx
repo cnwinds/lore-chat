@@ -252,13 +252,17 @@ export function DocViewerHeader({
             )}
           </>
         )}
-        <DocIconBtn
-          label="修订"
+        <button
+          type="button"
+          className="doc-action-btn doc-history-btn"
+          title="修订"
+          aria-label="修订"
           onClick={onViewHistory}
           disabled={loading}
         >
-          <HistoryIcon />
-        </DocIconBtn>
+          <HistoryIcon size={14} />
+          修订
+        </button>
         {showLayoutActions && (
           <>
             <span className="doc-toolbar-divider" aria-hidden />

@@ -72,8 +72,9 @@ export function HistoryIcon({ size = 16 }: IconProps) {
       strokeLinejoin="round"
       aria-hidden
     >
-      <circle cx="12" cy="12" r="9" />
-      <polyline points="12 7 12 12 15 14" />
+      <path d="M3 12a9 9 0 1 0 3-6.7" />
+      <polyline points="3 4 3 9 8 9" />
+      <polyline points="12 7 12 12 16 14" />
     </svg>
   );
 }
