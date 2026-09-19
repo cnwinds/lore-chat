@@ -109,7 +109,7 @@ def test_precepts_align_with_runtime_tools(tmp_path):
     assert "先消解，仍不够再问" in soul
 
 
-def test_stock_precepts_refresh_unmodified_and_preserve_edits(tmp_path, monkeypatch):
+def test_system_layer_seeds_only_and_does_not_overwrite(tmp_path, monkeypatch):
     from app.engine.agent import system_layer as sl
 
     repo = _repo(tmp_path)
@@ -124,9 +124,7 @@ def test_stock_precepts_refresh_unmodified_and_preserve_edits(tmp_path, monkeypa
         sl, "_SUPERSEDED_PRECEPTS_HASHES", frozenset({sl._seed_hash(old)})
     )
     SystemLayer(repo)
-    upgraded = repo.read_doc("系统/戒律.md").body
-    assert "旧官方播种稿" not in upgraded
-    assert "口令不限字面" in upgraded
+    assert "旧官方播种稿" in repo.read_doc("系统/戒律.md").body
 
     repo.write_doc(
         "系统/戒律.md",

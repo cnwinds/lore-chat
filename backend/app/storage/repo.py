@@ -23,6 +23,12 @@ def revision_summary(message: str, rel_path: str) -> str:
         return "初次写入"
     if line == "refresh stock precepts":
         return "官方稿更新"
+    if line == "merge official precepts":
+        return "官方稿合并"
+    if line == "confirm precepts merge":
+        return "确认官方合并"
+    if line == "apply official precepts":
+        return "采用官方稿"
     return line or "修订"
 
 

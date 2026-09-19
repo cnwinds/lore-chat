@@ -10,6 +10,12 @@ def _seed_hash(body: str) -> str:
     return hashlib.sha256(body.strip().encode("utf-8")).hexdigest()
 
 
+def is_unmodified_official(body: str) -> bool:
+    """现行正文仍是某一版官方播种稿（含已被代码取代的旧稿）。"""
+    current = _seed_hash(body)
+    return current == _seed_hash(_PRECEPTS_BODY) or current in _SUPERSEDED_PRECEPTS_HASHES
+
+
 # 从未改过的官方播种稿可随代码升级；用户改过的正文哈希对不上则保留。
 # 5938a506… = git HEAD 67bc03d 时的《戒律》播种稿。
 # 628f5da0… = 补「跨段接续」之前的播种稿。
@@ -133,7 +139,7 @@ class SystemLayer:
     - 文件驻留在 kb 的 system_layer_dir 目录，普通 .md，前端可见、可编辑。
     - 不参与检索（不走 indexer；retriever 亦按前缀过滤兜底）。
     - 首次访问时若缺失自动播种默认内容。
-    - 正文仍是未改过的官方播种稿时，随代码刷新；用户改过的保留。
+    - 缺失时播种；官方升级与本地修订的三路合并见 PreceptsUpgrade。
     - 按文件 mtime 缓存正文，编辑后自动生效，避免每轮读盘。
     """
 
@@ -173,28 +179,12 @@ class SystemLayer:
             {"title": "戒律 · 行为规约", "source": "system"},
             _PRECEPTS_BODY,
         )
-        self._refresh_stock_precepts_if_unmodified()
 
-    def _refresh_stock_precepts_if_unmodified(self) -> None:
-        try:
-            doc = self.repo.read_doc(self.precepts_rel)
-        except FileNotFoundError:
+    def invalidate(self, rel: str | None = None) -> None:
+        if rel is None:
+            self._cache.clear()
             return
-        current = _seed_hash(doc.body)
-        if current == _seed_hash(_PRECEPTS_BODY):
-            return
-        if current not in _SUPERSEDED_PRECEPTS_HASHES:
-            return
-        meta = dict(doc.meta)
-        meta.setdefault("title", "戒律 · 行为规约")
-        meta["source"] = "system"
-        self.repo.write_doc(
-            self.precepts_rel,
-            meta,
-            _PRECEPTS_BODY,
-            commit_msg="refresh stock precepts",
-        )
-        self._cache.pop(self.precepts_rel, None)
+        self._cache.pop(rel, None)
 
     def _seed_if_missing(self, rel: str, meta: dict, body: str) -> None:
         try:

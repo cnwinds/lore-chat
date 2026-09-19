@@ -3,9 +3,12 @@ import { DocDiffModal } from "./DocDiffModal";
 import { DocHistoryModal } from "./DocHistoryModal";
 import { type DocSelection } from "./DocLivePreview";
 import { DocMergeReviewBar } from "./doc/DocMergeReviewBar";
+import { PreceptsUpgradeBar } from "./doc/PreceptsUpgradeBar";
+import { PreceptsUpgradeModal } from "./doc/PreceptsUpgradeModal";
 import { DocViewerBody } from "./doc/DocViewerBody";
 import { DocViewerHeader } from "./doc/DocViewerHeader";
 import { useDocLoader } from "../hooks/doc/useDocLoader";
+import { usePreceptsUpgrade } from "../hooks/doc/usePreceptsUpgrade";
 import {
   useDocDirtyPrompt,
   type MergeReviewInfo,
@@ -150,6 +153,14 @@ export function DocViewer({
     saving,
     setSaving,
     setSaveError,
+  });
+  const precepts = usePreceptsUpgrade({
+    path,
+    onApplied: () => {
+      const gen = ++loadGenRef.current;
+      void loadDoc(path, gen);
+      onSaved?.(path);
+    },
   });
   const outlineItems = useMemo(() => parseDocOutline(body), [body]);
   const outlineInSource =
@@ -303,12 +314,34 @@ export function DocViewer({
         selection={selection}
         onSelectionChange={setSelection}
       />
+      {precepts.visible && precepts.pending && (
+        <PreceptsUpgradeBar
+          proposing={precepts.proposing}
+          busy={precepts.busy}
+          onReview={() => precepts.setReviewOpen(true)}
+          onConfirm={() => void precepts.confirm()}
+          onDismiss={() => void precepts.dismiss()}
+        />
+      )}
       {mergeReview && (
         <DocMergeReviewBar
           mergeReview={mergeReview}
           onMergeAccept={onMergeAccept}
           onMergeRegenerate={onMergeRegenerate}
           onMergeReject={onMergeReject}
+        />
+      )}
+      {precepts.visible && precepts.pending && (
+        <PreceptsUpgradeModal
+          open={precepts.reviewOpen}
+          pending={precepts.pending}
+          proposing={precepts.proposing}
+          busy={precepts.busy}
+          error={precepts.error}
+          onClose={() => precepts.setReviewOpen(false)}
+          onConfirm={(body) => void precepts.confirm(body)}
+          onDismiss={() => void precepts.dismiss()}
+          onUseOfficial={() => void precepts.useOfficial()}
         />
       )}
       <DocHistoryModal

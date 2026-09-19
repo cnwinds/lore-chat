@@ -807,6 +807,61 @@ export async function saveDoc(path: string, body: string) {
   });
 }
 
+export type PreceptsConflictHunk = {
+  base: string;
+  ours: string;
+  theirs: string;
+};
+
+export type PreceptsUpgradePending = {
+  official_hash: string;
+  ours: string;
+  theirs: string;
+  base: string;
+  proposed: string;
+  proposed_source: "fallback" | "ai" | string;
+  conflicts: PreceptsConflictHunk[];
+  created_at: string;
+};
+
+export type PreceptsUpgradeStatus = {
+  status: "current" | "applied" | "pending_review" | string;
+  path: string;
+  pending: PreceptsUpgradePending | null;
+  applied: boolean;
+  message: string;
+};
+
+export function getPreceptsUpgrade() {
+  return apiFetch<PreceptsUpgradeStatus>("/api/precepts/upgrade");
+}
+
+export function proposePreceptsUpgrade() {
+  return apiFetch<PreceptsUpgradeStatus>("/api/precepts/upgrade/propose", {
+    method: "POST",
+  });
+}
+
+export function confirmPreceptsUpgrade(body?: string) {
+  return apiFetch<PreceptsUpgradeStatus>("/api/precepts/upgrade/confirm", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ body: body ?? null }),
+  });
+}
+
+export function dismissPreceptsUpgrade() {
+  return apiFetch<PreceptsUpgradeStatus>("/api/precepts/upgrade/dismiss", {
+    method: "POST",
+  });
+}
+
+export function useOfficialPrecepts() {
+  return apiFetch<PreceptsUpgradeStatus>("/api/precepts/upgrade/use-official", {
+    method: "POST",
+  });
+}
+
 export async function getQuestions() {
   return apiFetch<{ questions: Question[] }>("/api/questions");
 }

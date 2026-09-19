@@ -12,6 +12,7 @@ from app.api import (
     kb_routes,
     memory_routes,
     merge_routes,
+    precepts_routes,
     open_api_routes,
     role_routes,
     room_routes,
@@ -23,6 +24,7 @@ router = APIRouter(prefix="/api")
 router.include_router(chat_routes.router)
 router.include_router(kb_routes.router)
 router.include_router(merge_routes.router)
+router.include_router(precepts_routes.router)
 router.include_router(conversation_routes.router)
 router.include_router(role_routes.router)
 router.include_router(memory_routes.router)

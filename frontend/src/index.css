@@ -8271,6 +8271,80 @@ button.source-link--inline.conversation-md-link {
   cursor: not-allowed;
 }
 
+.doc-precepts-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-shrink: 0;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-muted);
+  font-size: var(--font-ui-sm);
+}
+
+.doc-precepts-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.doc-precepts-bar-actions button {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-size: var(--font-ui-sm);
+  cursor: pointer;
+}
+
+.doc-precepts-bar-actions button:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.doc-precepts-bar-accept {
+  background: var(--accent) !important;
+  border-color: var(--accent) !important;
+  color: var(--text-on-accent) !important;
+}
+
+.doc-precepts-bar-actions button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.doc-precepts-hunks {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 0 4px;
+}
+
+.doc-precepts-hunk-label {
+  padding: 0 16px;
+  font-size: var(--font-ui-sm);
+  color: var(--text-muted);
+}
+
+.doc-precepts-draft {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 100%;
+  margin: 0;
+  padding: 0 16px;
+  border: none;
+  resize: none;
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
 .skill-header-panel {
   flex: 0 0 auto;
   margin: 0 0 16px;

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 
 from app.config import Settings
@@ -41,6 +42,7 @@ from app.engine.chat.send_queue_drain import SendQueueDrainer
 from app.engine.chat.send_queue_store import SendQueueStore
 from app.engine.agent.orchestrator import AgentOrchestrator
 from app.engine.agent.system_layer import SystemLayer
+from app.engine.precepts_upgrade import PreceptsUpgrade
 from app.engine.memory.service import MemoryService
 from app.engine.memory.store import MemoryStore
 from app.engine.workspace import ensure_workspace_id
@@ -93,6 +95,7 @@ class Container:
     chat_runner: ChatSessionRunner
     queue_drainer: SendQueueDrainer
     system_layer: SystemLayer
+    precepts_upgrade: PreceptsUpgrade
     memory_service: MemoryService
     enabled_skills: EnabledSkillsStore
     api_keys: ApiKeyStore
@@ -158,6 +161,16 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
         skills_dir=settings.skills_dir,
         enabled_skills=enabled_skills,
     )
+    precepts_upgrade = PreceptsUpgrade(
+        repo,
+        knowledge_writer,
+        system_layer,
+        llm=llm,
+    )
+    try:
+        precepts_upgrade.sync()
+    except Exception:
+        logging.getLogger(__name__).exception("precepts upgrade sync failed")
     memory_service = MemoryService(
         memory_store,
         repo,
@@ -290,6 +303,7 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
         chat_runner=agent.chat_runner,
         room_delivery=getattr(agent, "room_delivery", None),
         system_layer=system_layer,
+        precepts_upgrade=precepts_upgrade,
         memory_service=memory.service,
         enabled_skills=enabled_skills,
         api_keys=api_keys,
@@ -412,6 +426,8 @@ def apply_settings(
                 new_llm.usage_recorder = recorder
             new_llm.cooldown = cooldown
     container.llm = new_llm
+    if getattr(container, "precepts_upgrade", None) is not None:
+        container.precepts_upgrade.llm = new_llm
     if container._index_subgraph is not None:
         container._index_subgraph.apply_settings(settings)
         container._index_subgraph.rebind_llm(

@@ -87,6 +87,9 @@ def test_list_and_read_revisions(repo):
     assert older["text"] == "第一版\n"
     assert latest["binary"] is False
     assert revision_summary("refresh stock precepts", "系统/戒律.md") == "官方稿更新"
+    assert revision_summary("merge official precepts", "系统/戒律.md") == "官方稿合并"
+    assert revision_summary("confirm precepts merge", "系统/戒律.md") == "确认官方合并"
+    assert revision_summary("apply official precepts", "系统/戒律.md") == "采用官方稿"
 
 
 def test_list_revisions_skips_identical_blob(repo):
