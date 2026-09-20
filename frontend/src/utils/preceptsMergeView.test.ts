@@ -7,6 +7,12 @@ import {
   foldUnchanged,
   hunkTitle,
   initialMergeDraft,
+  firstEdit,
+  hunkIndexAtLine,
+  lineRange,
+  locateHunkSpans,
+  replaceSpan,
+  shiftSpans,
   type ConflictSides,
 } from "./preceptsMergeView";
 
@@ -99,6 +105,33 @@ describe("preceptsMergeView", () => {
     );
     expect(extra.ours).toEqual(["附录"]);
     expect(extra.theirs).toEqual([]);
+  });
+
+  it("maps a conflict snippet to document lines", () => {
+    const range = lineRange(
+      "# 戒律\n## 九、无痕教学（陪伴学习）\n建构优先。\n尾\n",
+      "## 九、无痕教学（陪伴学习）\n建构优先。\n",
+    );
+    expect(range).toEqual({ start: 1, end: 3 });
+    expect(hunkIndexAtLine([range], 0)).toBe(-1);
+    expect(hunkIndexAtLine([range], 1)).toBe(0);
+    expect(hunkIndexAtLine([range], 2)).toBe(0);
+    expect(hunkIndexAtLine([range], 3)).toBe(-1);
+  });
+
+  it("keeps a hunk span through an edit so a later pick still replaces it", () => {
+    const both = combineHunk(OURS, THEIRS);
+    const draft = `# 戒律\n${both}尾\n`;
+    const spans = locateHunkSpans(draft, [both]);
+    expect(spans[0]).not.toBeNull();
+    const nextDraft = draft.replace("建构优先。", "建构优先。改。");
+    const edit = firstEdit(draft, nextDraft);
+    expect(edit).not.toBeNull();
+    const moved = shiftSpans(spans, edit!.at, edit!.oldLen, edit!.newLen);
+    const replaced = replaceSpan(nextDraft, moved[0]!, THEIRS);
+    expect(replaced).toContain("用户生成 Skill");
+    expect(replaced).not.toContain("无痕教学");
+    expect(replaced).toContain("尾");
   });
 
   it("folds a long unchanged run", () => {

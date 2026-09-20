@@ -61,7 +61,7 @@ describe("PreceptsUpgradeModal", () => {
     cleanup();
   });
 
-  it("shows a git-style hunk instead of tabs", () => {
+  it("shows current, result, and official side by side", () => {
     render(
       <PreceptsUpgradeModal
         open
@@ -76,50 +76,27 @@ describe("PreceptsUpgradeModal", () => {
       />,
     );
     expect(screen.getByRole("dialog", { name: "戒律更新" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "合一" })).toHaveAttribute(
+    expect(screen.getByText("现行")).toBeInTheDocument();
+    expect(screen.getByText("官方")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "两边都留" })).toHaveAttribute(
       "aria-pressed",
       "true",
     );
-    expect(screen.getByRole("button", { name: "两段都留" })).toHaveAttribute(
-      "aria-pressed",
+    expect(screen.getByRole("tab", { name: /无痕教学/ })).toHaveAttribute(
+      "aria-selected",
       "true",
     );
-    expect(screen.getByText(/现行多了「附录」/)).toBeInTheDocument();
-    expect(screen.getAllByText("现行").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("官方").length).toBeGreaterThan(0);
     expect(screen.getAllByText(/无痕教学/).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/用户生成 Skill/).length).toBeGreaterThan(0);
-    expect(screen.queryByRole("button", { name: "合并稿" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "对照" })).toBeNull();
-    const draft = screen.getByLabelText(/将写入/) as HTMLTextAreaElement;
+    expect(screen.queryByRole("button", { name: "合一" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "并排" })).toBeNull();
+    const draft = screen.getByLabelText(/结果/) as HTMLTextAreaElement;
     expect(draft.value).toContain("无痕教学");
     expect(draft.value).toContain("用户生成 Skill");
     expect(draft.value).toContain("附录");
   });
 
-  it("can switch to a side-by-side hunk", () => {
-    render(
-      <PreceptsUpgradeModal
-        open
-        pending={pending}
-        proposing={false}
-        busy={null}
-        error={null}
-        onClose={() => undefined}
-        onConfirm={() => undefined}
-        onDismiss={() => undefined}
-        onUseOfficial={() => undefined}
-      />,
-    );
-    fireEvent.click(screen.getByRole("button", { name: "并排" }));
-    expect(screen.getByRole("button", { name: "并排" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
-    expect(screen.getAllByText("现行").length).toBeGreaterThan(0);
-  });
-
-  it("writes the merge result, not a hidden tab", () => {
+  it("jumps conflicts and writes the edited result", () => {
     const onConfirm = vi.fn();
     render(
       <PreceptsUpgradeModal
@@ -134,8 +111,9 @@ describe("PreceptsUpgradeModal", () => {
         onUseOfficial={() => undefined}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "用官方" }));
-    expect(screen.getByRole("button", { name: "用官方" })).toHaveAttribute(
+    expect(screen.getByRole("button", { name: "下一处冲突" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "用右边" }));
+    expect(screen.getByRole("button", { name: "用右边" })).toHaveAttribute(
       "aria-pressed",
       "true",
     );
@@ -145,5 +123,63 @@ describe("PreceptsUpgradeModal", () => {
     expect(body).toContain("用户生成 Skill");
     expect(body).not.toContain("无痕教学");
     expect(body).toContain("附录");
+  });
+
+  it("still applies a side pick after the result is edited", () => {
+    render(
+      <PreceptsUpgradeModal
+        open
+        pending={pending}
+        proposing={false}
+        busy={null}
+        error={null}
+        onClose={() => undefined}
+        onConfirm={() => undefined}
+        onDismiss={() => undefined}
+        onUseOfficial={() => undefined}
+      />,
+    );
+    const draft = screen.getByLabelText(/结果/) as HTMLTextAreaElement;
+    fireEvent.change(draft, {
+      target: { value: draft.value.replace("建构优先。", "建构优先。改。") },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "用右边" }));
+    expect(draft.value).toContain("用户生成 Skill");
+    expect(draft.value).not.toContain("无痕教学");
+    expect(draft.value).toContain("附录");
+  });
+
+  it("jumps to the next conflict from the header", () => {
+    const two: PreceptsUpgradePending = {
+      ...pending,
+      conflicts: [
+        pending.conflicts[0],
+        {
+          base: "",
+          ours: "## 附录\n只在现行。\n",
+          theirs: "## 附录\n官方附录。\n",
+        },
+      ],
+    };
+    render(
+      <PreceptsUpgradeModal
+        open
+        pending={two}
+        proposing={false}
+        busy={null}
+        error={null}
+        onClose={() => undefined}
+        onConfirm={() => undefined}
+        onDismiss={() => undefined}
+        onUseOfficial={() => undefined}
+      />,
+    );
+    expect(screen.getByText("1/2")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "下一处冲突" }));
+    expect(screen.getByRole("tab", { name: /附录/ })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(screen.getByText("2/2")).toBeInTheDocument();
   });
 });

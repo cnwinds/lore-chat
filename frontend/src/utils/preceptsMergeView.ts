@@ -214,6 +214,108 @@ function unique(items: string[]): string[] {
   return out;
 }
 
+export function lineRange(
+  doc: string,
+  snippet: string,
+): { start: number; end: number } | null {
+  const needle = snippet || "";
+  if (!needle.trim()) return null;
+  let at = doc.indexOf(needle);
+  let len = needle.length;
+  if (at < 0) {
+    const trimmed = needle.trim();
+    at = doc.indexOf(trimmed);
+    len = trimmed.length;
+    if (at < 0) return null;
+  }
+  const start = doc.slice(0, at).split("\n").length - 1;
+  let last = at + len;
+  if (last > 0 && doc[last - 1] === "\n") last -= 1;
+  const end = doc.slice(0, last).split("\n").length;
+  return { start, end: Math.max(start + 1, end) };
+}
+
+export function hunkIndexAtLine(
+  ranges: Array<{ start: number; end: number } | null>,
+  line: number,
+): number {
+  return ranges.findIndex(
+    (range) => range != null && line >= range.start && line < range.end,
+  );
+}
+
+export type HunkSpan = { start: number; end: number };
+
+export function locateHunkSpans(
+  draft: string,
+  bodies: string[],
+): Array<HunkSpan | null> {
+  const out: Array<HunkSpan | null> = [];
+  let from = 0;
+  for (const body of bodies) {
+    if (!body) {
+      out.push(null);
+      continue;
+    }
+    const at = draft.indexOf(body, from);
+    if (at < 0) {
+      out.push(null);
+      continue;
+    }
+    out.push({ start: at, end: at + body.length });
+    from = at + body.length;
+  }
+  return out;
+}
+
+export function firstEdit(
+  prev: string,
+  next: string,
+): { at: number; oldLen: number; newLen: number } | null {
+  if (prev === next) return null;
+  let i = 0;
+  const limit = Math.min(prev.length, next.length);
+  while (i < limit && prev[i] === next[i]) i += 1;
+  let a = prev.length;
+  let b = next.length;
+  while (a > i && b > i && prev[a - 1] === next[b - 1]) {
+    a -= 1;
+    b -= 1;
+  }
+  return { at: i, oldLen: a - i, newLen: b - i };
+}
+
+function mapPos(
+  pos: number,
+  at: number,
+  oldLen: number,
+  newLen: number,
+  after: boolean,
+): number {
+  const oldEnd = at + oldLen;
+  if (pos < at || (pos === at && !after)) return pos;
+  if (pos > oldEnd || (pos === oldEnd && after)) return pos + (newLen - oldLen);
+  return after ? at + newLen : at;
+}
+
+export function shiftSpans(
+  spans: Array<HunkSpan | null>,
+  at: number,
+  oldLen: number,
+  newLen: number,
+): Array<HunkSpan | null> {
+  return spans.map((span) => {
+    if (!span) return span;
+    const start = mapPos(span.start, at, oldLen, newLen, false);
+    const end = mapPos(span.end, at, oldLen, newLen, true);
+    return { start, end: Math.max(start, end) };
+  });
+}
+
+export function replaceSpan(draft: string, span: HunkSpan, next: string): string {
+  return draft.slice(0, span.start) + next + draft.slice(span.end);
+}
+
 function replaceOnce(haystack: string, needle: string, next: string): string {
   if (!needle) return haystack + (haystack.endsWith("\n") ? "" : "\n") + next;
   const at = haystack.indexOf(needle);
