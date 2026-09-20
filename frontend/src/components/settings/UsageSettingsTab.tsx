@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { displayModelName, refreshModelProviderMap } from "../../utils/modelDisplay";
 import {
   clearUsage,
@@ -15,6 +15,13 @@ import {
 } from "../../api";
 import { listChannelInstances, type ChannelInstance } from "../../api/channelPlugins";
 import { FoldChevron } from "../FoldChevron";
+import {
+  bucketLabel,
+  defaultTrendIndex,
+  sortModelsByUsage,
+  stepTrendIndex,
+  trendAxisEnds,
+} from "../../utils/usageChart";
 import { priceRowNeedsSetup } from "./settingsAttention";
 import { SettingsAttentionDot } from "./SettingsAttentionDot";
 
@@ -61,19 +68,6 @@ function kindLabel(kind: string): string {
   }
 }
 
-function bucketLabel(bucket: string | undefined, granularity: string): string {
-  if (!bucket) return "—";
-  if (granularity === "hour" && bucket.length >= 13) {
-    return `${bucket.slice(5, 10)} ${bucket.slice(11, 13)}时`;
-  }
-  if (granularity === "day" && bucket.length >= 10) {
-    return bucket.slice(5, 10);
-  }
-  if (granularity === "week") return bucket;
-  if (granularity === "month" && bucket.length >= 7) return bucket.slice(0, 7);
-  return bucket;
-}
-
 function priceKey(p: UsagePrice): string {
   return `${p.prompt_per_1m ?? ""}|${p.completion_per_1m ?? ""}|${p.cache_input_per_1m ?? ""}|${p.embed_per_1m ?? ""}`;
 }
@@ -113,6 +107,10 @@ function MetricCard({
   );
 }
 
+function bucketValue(b: UsageAgg): number {
+  return b.total_tokens || b.calls || 0;
+}
+
 function TrendChart({
   buckets,
   granularity,
@@ -120,41 +118,117 @@ function TrendChart({
   buckets: UsageAgg[];
   granularity: string;
 }) {
-  const max = Math.max(1, ...buckets.map((b) => b.total_tokens || b.calls || 0));
+  const seriesKey = `${granularity}:${buckets.map((b) => b.bucket).join(",")}`;
+  const [active, setActive] = useState(() => defaultTrendIndex(buckets));
+  const prevKey = useRef(seriesKey);
+  let index = active;
+  if (prevKey.current !== seriesKey) {
+    prevKey.current = seriesKey;
+    index = defaultTrendIndex(buckets);
+    setActive(index);
+  }
+
+  const max = Math.max(1, ...buckets.map(bucketValue));
+  const axis = trendAxisEnds(buckets, granularity);
+  const safeActive =
+    buckets.length === 0 ? 0 : Math.min(Math.max(0, index), buckets.length - 1);
+  const current = buckets[safeActive];
+  const when = bucketLabel(current?.bucket, granularity);
+
   if (buckets.length === 0) {
     return <p className="usage-empty">当前区间暂无趋势数据</p>;
   }
+
+  function move(delta: number) {
+    setActive((i) => stepTrendIndex(i, delta, buckets.length));
+  }
+
   return (
-    <div className="usage-trend" role="img" aria-label="用量趋势">
-      {buckets.map((b) => {
-        const height = Math.max(
-          4,
-          Math.round(((b.total_tokens || b.calls || 0) / max) * 100),
-        );
-        const title = `${bucketLabel(b.bucket, granularity)} · ${fmtInt(b.calls)} 次 · ${fmtInt(b.total_tokens)} tokens`;
-        return (
-          <div key={b.bucket ?? title} className="usage-trend-col" title={title}>
-            <div className="usage-trend-bar-track">
-              <div className="usage-trend-bar" style={{ height: `${height}%` }} />
-            </div>
-            <span className="usage-trend-label">
-              {bucketLabel(b.bucket, granularity)}
-            </span>
+    <div className="usage-trend-card">
+      <div className="usage-trend-readout" aria-live="polite">
+        <span className="usage-trend-readout-when">{when}</span>
+        <span className="usage-trend-readout-nums">
+          <span className="usage-trend-readout-tokens">
+            {fmtInt(current?.total_tokens ?? 0)} tokens
+          </span>
+          <span className="usage-trend-readout-calls">
+            {fmtInt(current?.calls ?? 0)} 次
+          </span>
+        </span>
+      </div>
+      <div className="usage-trend-plot">
+        <div
+          className="usage-trend"
+          role="listbox"
+          tabIndex={0}
+          aria-label="用量趋势，左右方向键切换日期"
+          aria-activedescendant={`usage-trend-${safeActive}`}
+          onKeyDown={(e) => {
+            if (e.key === "ArrowLeft") {
+              e.preventDefault();
+              move(-1);
+            } else if (e.key === "ArrowRight") {
+              e.preventDefault();
+              move(1);
+            } else if (e.key === "Home") {
+              e.preventDefault();
+              setActive(0);
+            } else if (e.key === "End") {
+              e.preventDefault();
+              setActive(buckets.length - 1);
+            }
+          }}
+        >
+          {buckets.map((b, i) => {
+            const value = bucketValue(b);
+            const height =
+              value > 0 ? Math.max(4, Math.round((value / max) * 100)) : 0;
+            const label = `${bucketLabel(b.bucket, granularity)}，${fmtInt(b.calls)} 次，${fmtInt(b.total_tokens)} tokens`;
+            const selected = i === safeActive;
+            return (
+              <button
+                key={b.bucket ?? label}
+                id={`usage-trend-${i}`}
+                type="button"
+                role="option"
+                tabIndex={-1}
+                aria-selected={selected}
+                aria-label={label}
+                className={`usage-trend-col${selected ? " usage-trend-col--active" : ""}${value === 0 ? " usage-trend-col--empty" : ""}`}
+                onMouseEnter={() => setActive(i)}
+                onFocus={() => setActive(i)}
+                onClick={() => setActive(i)}
+              >
+                <span className="usage-trend-bar-track">
+                  <span
+                    className="usage-trend-bar"
+                    style={{ height: height ? `${height}%` : undefined }}
+                  />
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        {axis ? (
+          <div className="usage-trend-axis">
+            <span>{axis.start}</span>
+            {axis.end !== axis.start ? <span>{axis.end}</span> : null}
           </div>
-        );
-      })}
+        ) : null}
+      </div>
     </div>
   );
 }
 
 function ModelBreakdown({ rows }: { rows: Array<UsageAgg & { model: string }> }) {
-  if (rows.length === 0) {
+  const sorted = useMemo(() => sortModelsByUsage(rows), [rows]);
+  if (sorted.length === 0) {
     return <p className="usage-empty">暂无模型用量</p>;
   }
-  const maxTokens = Math.max(1, ...rows.map((r) => r.total_tokens));
+  const maxTokens = Math.max(1, ...sorted.map((r) => r.total_tokens));
   return (
     <ul className="usage-model-list">
-      {rows.map((row) => {
+      {sorted.map((row) => {
         const pct = Math.round((row.total_tokens / maxTokens) * 100);
         const costKnown = row.cost_known_calls > 0;
         return (
@@ -174,8 +248,11 @@ function ModelBreakdown({ rows }: { rows: Array<UsageAgg & { model: string }> })
               <div className="usage-model-bar" style={{ width: `${pct}%` }} />
             </div>
             <div className="usage-model-meta">
+              <span>{fmtInt(row.total_tokens)} tokens</span>
               <span>{fmtInt(row.calls)} 次</span>
-              <span>{fmtInt(row.prompt_tokens)} / {fmtInt(row.completion_tokens)}</span>
+              <span>
+                {fmtInt(row.prompt_tokens)} / {fmtInt(row.completion_tokens)}
+              </span>
               {row.unpriced_calls > 0 ? (
                 <span className="usage-warn">{row.unpriced_calls} 未定价</span>
               ) : null}
@@ -523,7 +600,6 @@ export function UsageSettingsTab({
 
       <section className="usage-section">
         <h3 className="usage-section-title">按模型</h3>
-        <p className="usage-section-sub">条长度表示相对 Token 占比</p>
         <ModelBreakdown rows={summary?.by_model ?? []} />
       </section>
 

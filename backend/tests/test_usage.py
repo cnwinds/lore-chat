@@ -281,6 +281,59 @@ def test_model_kinds_separate_chat_and_embed(tmp_path):
     assert by_model["emb-m"] == ["embed"]
 
 
+def test_summarize_models_ordered_by_usage(tmp_path):
+    store = UsageStore(tmp_path / "usage.db")
+    rec = UsageRecorder(store)
+    rec.record(
+        model="alpha-low",
+        kind="chat",
+        status="ok",
+        tokens_known=True,
+        total_tokens=10,
+        prompt_tokens=10,
+        completion_tokens=0,
+    )
+    rec.record(
+        model="beta-high",
+        kind="chat",
+        status="ok",
+        tokens_known=True,
+        total_tokens=80,
+        prompt_tokens=40,
+        completion_tokens=40,
+    )
+    rec.record(
+        model="beta-high",
+        kind="chat",
+        status="ok",
+        tokens_known=True,
+        total_tokens=20,
+        prompt_tokens=20,
+        completion_tokens=0,
+    )
+    rec.record(
+        model="mid",
+        kind="chat",
+        status="ok",
+        tokens_known=True,
+        total_tokens=50,
+        prompt_tokens=50,
+        completion_tokens=0,
+    )
+    summary = store.summarize(
+        granularity="month",
+        start="2000-01-01T00:00:00+00:00",
+        end="2100-01-01T00:00:00+00:00",
+    )
+    assert [m["model"] for m in summary["by_model"]] == [
+        "beta-high",
+        "mid",
+        "alpha-low",
+    ]
+    assert summary["by_model"][0]["total_tokens"] == 100
+    assert summary["by_model"][0]["calls"] == 2
+
+
 def test_bucket_week_monday(tmp_path):
     store = UsageStore(tmp_path / "usage.db")
     # 2026-08-07 is Friday → ISO week 32

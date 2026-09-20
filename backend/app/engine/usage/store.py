@@ -576,7 +576,14 @@ class UsageStore:
             _accumulate(totals, row)
 
         bucket_list = [{"bucket": k, **v} for k, v in sorted(buckets.items())]
-        model_list = sorted(by_model.values(), key=lambda x: x["model"])
+        model_list = sorted(
+            by_model.values(),
+            key=lambda x: (
+                -int(x.get("total_tokens") or 0),
+                -int(x.get("calls") or 0),
+                str(x.get("model") or ""),
+            ),
+        )
         return {
             "timezone": tz_name,
             "granularity": granularity,

@@ -96,6 +96,9 @@ _Avoid_: 把通道再塞回设置页签；用「详情」手风琴包住页签�
 **模型设置页签**：`ModelSettingsTab` 只装配；有序链 UI 在 `CandidateChainEditor` / `EmbedChainEditor`；draft 解析在 `modelChainDrafts`；能力 lookup 在 `modelCapabilities`；设置 hydrate/serialize 在 `settingsDrafts`（Panel 只接线与副作用）。
 _Avoid_: 经 ModelSettingsTab barrel re-export Search/Image 类型或 providerPresets；在页签壳里再堆 ChainEditor；在 SettingsPanel 再堆 parse/put patch 拼装
 
+**设置 → 用量**：趋势图不在每根柱下写日期；上方读数显示当前柱（悬停或左右键切换），轴两端标起止。按模型按 Token、再按次数从多到少。
+_Avoid_: 柱下逐根 `09-01` 被挤成省略号；按模型按名字排序
+
 **模型能力（caps）**：thinking / image / image_wire / video / video_wire / max_videos / max_images / thinking_protocol / effort_options 的权威解析在 `catalog.lookup_capabilities`；设置页经 `GET /api/admin/model-capabilities`（`resolveModelCaps`）。lookup 失败用保守默认。
 _Avoid_: 在前端再写一份前缀启发表；用本地 `supportedEfforts` 臆造档位
 
