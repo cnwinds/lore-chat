@@ -132,8 +132,8 @@ _Avoid_: 挂载即灌入 SKILL.md 全文；子文件夹 Ctrl+单击打开启用�
 **Skill 正文头**：每个 `SKILL.md` 正文开头须有 `---` YAML，含非空 `name` 与 `description`（何时使用，语言不限）。缺头时启用/对话返回可读错误，引导用户改文件。KB 文档元数据只用 `<<<LORE_META`；正文 `---` 不作库头解析。文档预览模式将触发头拆成表格展示，正文交给编辑器；源码模式仍编辑原始 YAML；落盘保留原 header 块。
 _Avoid_: 无触发头的 Skill 包；用关键词黑名单代替 description；预览里把 YAML 当普通 Markdown 渲染；用 Crepe 序列化结果覆盖掉触发头
 
-**用户生成 Skill 的家规**：何时写包、正文写什么、使用中自改进、立规矩走《戒律》第八节；YAML `name`/`description` 在 `write_doc` 契约；本轮用哪个包看 `[Skill 目录]`；主人是谁才进记忆。
-_Avoid_: 把作业家规写成主人画像；用 Skill 专名黑名单代替「助手怎么做事 ≠ 主人是谁」；在 SYSTEM_PROMPT 或每个 SKILL.md 复述落库/检索家规；在《戒律》堆 YAML 触发头 schema；把本轮流水账写进 SKILL.md；一次失败重写整包；使用中改进写进主人画像
+**用户生成 Skill 的家规**：何时写包、正文写什么、流程先固化（脚本/模板/显式工作流，模型只做必要判断）、创建时与用户划界、使用中自改进、立规矩走《戒律》第八节；YAML `name`/`description` 在 `write_doc` 契约；本轮用哪个包看 `[Skill 目录]`；主人是谁才进记忆。
+_Avoid_: 把作业家规写成主人画像；用 Skill 专名黑名单代替「助手怎么做事 ≠ 主人是谁」；在 SYSTEM_PROMPT 或每个 SKILL.md 复述落库/检索家规；在《戒律》堆 YAML 触发头 schema；把整包写成只靠模型临场发挥的提示词；在《戒律》点名必须有某个脚本文件；把本轮流水账写进 SKILL.md；一次失败重写整包；使用中改进写进主人画像
 
 **知识库树 viewport UI**：侧栏目录的展开态与滚动位置（hydrate / 临时露出 / 恢复 / 落盘）收在 `useKbTreeViewportUi`；`FileTree` 只渲染受控展开；存储细节在 `kbTreeUiStorage`。
 _Avoid_: 用 `onExpandReady` 跨组件握手；在 `FileTree` / `Sidebar` 再拆一套展开或滚动状态机
