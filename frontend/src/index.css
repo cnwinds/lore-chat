@@ -437,9 +437,12 @@
 
 .lore-scroll-rail {
   position: fixed;
+  top: -80px;
+  left: -80px;
   z-index: 3600;
   pointer-events: none;
   opacity: 0;
+  visibility: hidden;
   transition: opacity 0.14s linear;
   padding: 0;
   box-sizing: border-box;
@@ -447,6 +450,7 @@
 
 .lore-scroll-rail.is-visible {
   opacity: 1;
+  visibility: visible;
   pointer-events: auto;
 }
 

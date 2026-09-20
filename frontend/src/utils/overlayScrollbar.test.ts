@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  findScrollableAncestor,
   initOverlayScrollbar,
   intersectBoxes,
   overlayPageJump,
@@ -78,10 +79,25 @@ describe("resolveScrollTarget", () => {
   });
 });
 
+describe("findScrollableAncestor", () => {
+  it("walks from inner text to the overflow panel", () => {
+    const scroller = document.createElement("div");
+    scroller.style.overflowY = "auto";
+    Object.defineProperty(scroller, "scrollHeight", { value: 800, configurable: true });
+    Object.defineProperty(scroller, "clientHeight", { value: 200, configurable: true });
+    const inner = document.createElement("p");
+    scroller.appendChild(inner);
+    document.body.appendChild(scroller);
+    expect(findScrollableAncestor(inner)).toBe(scroller);
+    scroller.remove();
+  });
+});
+
 describe("initOverlayScrollbar", () => {
   afterEach(() => {
     resetOverlayScrollbarForTests();
     vi.useRealTimers();
+    vi.unstubAllGlobals();
   });
 
   it("shows a vertical rail after a scrollable panel scrolls", () => {
@@ -178,6 +194,47 @@ describe("initOverlayScrollbar", () => {
     );
     expect(scrollTop).toBeLessThan(400);
 
+    scroller.remove();
+  });
+
+  it("shows the rail when wheeling over inner content", () => {
+    vi.stubGlobal("innerWidth", 800);
+    vi.stubGlobal("innerHeight", 600);
+    vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => {
+      cb(0);
+      return 0;
+    });
+    initOverlayScrollbar();
+
+    const scroller = document.createElement("div");
+    scroller.style.overflowY = "auto";
+    Object.defineProperty(scroller, "scrollHeight", { value: 2000, configurable: true });
+    Object.defineProperty(scroller, "clientHeight", { value: 400, configurable: true });
+    Object.defineProperty(scroller, "scrollTop", { value: 80, writable: true, configurable: true });
+    Object.defineProperty(scroller, "scrollWidth", { value: 400, configurable: true });
+    Object.defineProperty(scroller, "clientWidth", { value: 400, configurable: true });
+    scroller.getBoundingClientRect = () =>
+      ({
+        top: 0,
+        left: 0,
+        right: 400,
+        bottom: 400,
+        width: 400,
+        height: 400,
+        x: 0,
+        y: 0,
+        toJSON() {
+          return {};
+        },
+      }) as DOMRect;
+    const inner = document.createElement("p");
+    inner.textContent = "inner";
+    scroller.appendChild(inner);
+    document.body.appendChild(scroller);
+    inner.dispatchEvent(new WheelEvent("wheel", { deltaY: 80, bubbles: true }));
+
+    const rail = document.querySelector(".lore-scroll-rail--y");
+    expect(rail?.classList.contains("is-visible")).toBe(true);
     scroller.remove();
   });
 });

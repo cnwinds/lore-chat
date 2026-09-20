@@ -81,6 +81,7 @@ describe("overlay scrollbars", () => {
 
   it("paints an overlay rail only while visible", () => {
     expect(css).toMatch(/\.lore-scroll-rail\s*\{[^}]*pointer-events:\s*none;/);
+    expect(css).toMatch(/\.lore-scroll-rail\s*\{[^}]*visibility:\s*hidden;/);
     expect(css).toMatch(
       /\.lore-scroll-rail\.is-visible\s*\{[^}]*pointer-events:\s*auto;/,
     );

@@ -74,12 +74,44 @@ export function intersectBoxes(a: Box, b: Box): Box | null {
 export function resolveScrollTarget(target: EventTarget | null): HTMLElement | null {
   if (target === document) return document.documentElement;
   if (target instanceof HTMLElement) return target;
+  if (target instanceof Node) return target.parentElement;
   return null;
 }
 
 function axisCanOverflow(style: CSSStyleDeclaration, axis: OverlayAxis): boolean {
   const value = axis === "y" ? style.overflowY : style.overflowX;
   return value === "auto" || value === "scroll" || value === "overlay";
+}
+
+function elementHasOverflow(el: HTMLElement, style: CSSStyleDeclaration): boolean {
+  const y =
+    (isDocumentScroller(el) || axisCanOverflow(style, "y")) &&
+    el.scrollHeight > el.clientHeight + 1;
+  const x =
+    (isDocumentScroller(el) || axisCanOverflow(style, "x")) &&
+    el.scrollWidth > el.clientWidth + 1;
+  return y || x;
+}
+
+/** 从事件目标向上找到正在滚的 overflow 容器。 */
+export function findScrollableAncestor(start: EventTarget | null): HTMLElement | null {
+  let node: HTMLElement | null = resolveScrollTarget(start);
+  while (node) {
+    if (
+      node.classList.contains("lore-scroll-rail") ||
+      node.classList.contains("lore-scroll-thumb")
+    ) {
+      node = node.parentElement;
+      continue;
+    }
+    const style = getComputedStyle(node);
+    if (elementHasOverflow(node, style)) {
+      return node === document.body ? document.documentElement : node;
+    }
+    if (node === document.documentElement) break;
+    node = node.parentElement;
+  }
+  return null;
 }
 
 function isDocumentScroller(el: HTMLElement): boolean {
@@ -241,15 +273,17 @@ function paint(el: HTMLElement) {
   if (!dragging && !hoverRail) scheduleHide();
 }
 
+function revealFromEvent(event: Event) {
+  const el = findScrollableAncestor(event.target);
+  if (!el || !rails) return;
+  requestAnimationFrame(() => paint(el));
+}
+
 function onScroll(event: Event) {
-  const el = resolveScrollTarget(event.target);
+  const el = findScrollableAncestor(event.target) ?? resolveScrollTarget(event.target);
   if (!el || !rails) return;
   if (el.classList.contains("lore-scroll-rail") || el.classList.contains("lore-scroll-thumb")) {
     return;
-  }
-  if (!isDocumentScroller(el)) {
-    const style = getComputedStyle(el);
-    if (!axisCanOverflow(style, "y") && !axisCanOverflow(style, "x")) return;
   }
   paint(el);
 }
@@ -353,6 +387,8 @@ function onResize() {
 function mount() {
   rails = { y: makeRail("y"), x: makeRail("x") };
   document.addEventListener("scroll", onScroll, true);
+  document.addEventListener("wheel", revealFromEvent, { capture: true, passive: true });
+  document.addEventListener("touchmove", revealFromEvent, { capture: true, passive: true });
   window.addEventListener("resize", onResize);
   for (const rail of [rails.y, rails.x]) {
     rail.root.addEventListener("pointerdown", onPointerDown);
@@ -367,6 +403,8 @@ function mount() {
 function unmount() {
   clearHideTimer();
   document.removeEventListener("scroll", onScroll, true);
+  document.removeEventListener("wheel", revealFromEvent, true);
+  document.removeEventListener("touchmove", revealFromEvent, true);
   window.removeEventListener("resize", onResize);
   document.removeEventListener("pointermove", onPointerMove);
   document.removeEventListener("pointerup", onPointerUp);
