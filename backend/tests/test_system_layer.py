@@ -79,13 +79,23 @@ def test_precepts_align_with_runtime_tools(tmp_path):
     skill_items = re.findall(
         r"(?ms)^(\d+)\. (.+?)(?=\n\d+\. |\Z)", skill.group(1)
     )
-    assert [n for n, _ in skill_items] == ["1", "2", "3", "4", "5"]
-    assert "使用中自改进" in skill_items[3][1]
-    assert "下一次按这个包做是否还会踩同一坑" in skill_items[3][1]
-    assert "不要记成主人画像" in skill_items[3][1]
-    assert "另写一篇知识" in skill_items[3][1]
-    assert "本轮流水账" in skill_items[4][1]
-    assert "一次失败不得重写整包" in skill_items[4][1]
+    assert [n for n, _ in skill_items] == ["1", "2", "3", "4", "5", "6", "7"]
+    assert "能固化则固化" in skill_items[2][1]
+    assert "一套或有限几套可遵循的工作流程" in skill_items[2][1]
+    assert "优先写成脚本" in skill_items[2][1]
+    assert "输出用模板或结构约束" in skill_items[2][1]
+    assert "若把这一步换成脚本或模板" in skill_items[2][1]
+    assert "创建时划界" in skill_items[3][1]
+    assert "哪些步骤可固化、哪些必须智能" in skill_items[3][1]
+    assert "只靠模型发挥的提示词" in skill_items[3][1]
+    assert "使用中自改进" in skill_items[5][1]
+    assert "下一次按这个包做是否还会踩同一坑" in skill_items[5][1]
+    assert "不要记成主人画像" in skill_items[5][1]
+    assert "另写一篇知识" in skill_items[5][1]
+    assert "多次结果漂移" in skill_items[5][1]
+    assert "本轮流水账" in skill_items[6][1]
+    assert "输出模板" in skill_items[6][1]
+    assert "一次失败不得重写整包" in skill_items[6][1]
     from app.engine.agent.system_layer import _SUPERSEDED_PRECEPTS_HASHES
 
     assert (
@@ -94,6 +104,10 @@ def test_precepts_align_with_runtime_tools(tmp_path):
     )
     assert (
         "6162e468eee05fbd613ef958cadca45872cad1b2ebdf503bfd1dcc1fca3fb737"
+        in _SUPERSEDED_PRECEPTS_HASHES
+    )
+    assert (
+        "bb90720c7925eaae9c235d25a0daa5b6337faa86024046151491ab0a17886373"
         in _SUPERSEDED_PRECEPTS_HASHES
     )
     # YAML 触发头是 write_doc 契约，不进戒律
