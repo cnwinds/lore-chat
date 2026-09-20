@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  assembleMergeDraft,
   applyHunkPick,
+  buildMergeView,
   changeCounts,
   combineHunk,
   exclusiveHeadings,
@@ -46,7 +48,9 @@ describe("preceptsMergeView", () => {
 
   it("builds a draft that keeps local and official additions", () => {
     const draft = initialMergeDraft({
+      base: "# 戒律\n5. **受保护区域**：见第七节。\n",
       ours: "# 戒律\n" + OURS,
+      theirs: "# 戒律\n" + THEIRS,
       proposed: "# 戒律\n" + OURS,
       conflicts: [{ base: "5. **受保护区域**：见第七节。\n", ours: OURS, theirs: THEIRS }],
     });
@@ -54,17 +58,27 @@ describe("preceptsMergeView", () => {
     expect(draft).toContain("用户生成 Skill");
   });
 
-  it("keeps auto-merged official text outside the conflict", () => {
-    const draft = initialMergeDraft({
-      base: "# 戒律\n",
-      ours: `# 戒律\n${OURS}`,
-      theirs: `# 戒律\n官方独有段\n${THEIRS}`,
-      proposed: `# 戒律\n官方独有段\n${OURS}`,
-      conflicts: [{ base: "", ours: OURS, theirs: THEIRS }],
-    });
+  it("keeps auto-merged official text and highlights it", () => {
+    const base = "# 戒律\n旧句。\n## 目录\n保护。\n";
+    const ours = "# 戒律\n旧句。\n## 目录\n保护。\n## 九、无痕教学\n本地。\n";
+    const theirs = "# 戒律\n新句。\n## 目录\n保护。\n## 八、Skill\n官方。\n";
+    const view = buildMergeView(base, ours, theirs);
+    expect(view.hunks.some((hunk) => hunk.theirs.includes("新句"))).toBe(true);
+    expect(
+      view.hunks.some((hunk) => hunk.theirsRange != null && hunk.theirs.includes("新句")),
+    ).toBe(true);
+    const draft = assembleMergeDraft(view.regions);
+    expect(draft).toContain("新句");
     expect(draft).toContain("无痕教学");
-    expect(draft).toContain("用户生成 Skill");
-    expect(draft).toContain("官方独有段");
+    expect(draft).toContain("Skill");
+  });
+
+  it("taking the right side of every hunk yields the official document", () => {
+    const ours = "# 戒律\n本地A\n本地B\n尾\n";
+    const theirs = "# 戒律\n官方A\n官方B\n官方C\n尾\n";
+    const view = buildMergeView("", ours, theirs);
+    const picks = view.hunks.map(() => "theirs" as const);
+    expect(assembleMergeDraft(view.regions, picks)).toBe(theirs);
   });
 
   it("does not replace the whole draft when the hunk is gone", () => {

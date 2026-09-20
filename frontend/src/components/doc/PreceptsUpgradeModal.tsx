@@ -1,18 +1,16 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import type { PreceptsUpgradePending } from "../../api";
 import {
-  applyHunkPick,
-  firstEdit,
+  assembleMergeDraft,
+  assembleMergeSegments,
+  buildMergeView,
+  defaultHunkPick,
   hunkIndexAtLine,
   hunkTitle,
-  initialMergeDraft,
-  lineRange,
-  locateHunkSpans,
   pickedHunkText,
-  replaceSpan,
-  shiftSpans,
-  type HunkSpan,
   type MergePick,
+  type MergeSegment,
+  type ViewHunk,
 } from "../../utils/preceptsMergeView";
 
 type Props = {
@@ -38,34 +36,30 @@ export function PreceptsUpgradeModal({
   onDismiss,
   onUseOfficial,
 }: Props) {
+  const view = useMemo(
+    () => buildMergeView(pending.base, pending.ours, pending.theirs),
+    [pending.base, pending.ours, pending.theirs],
+  );
   const [selected, setSelected] = useState(0);
-  const [draft, setDraft] = useState(() => initialMergeDraft(pending));
   const [picks, setPicks] = useState<MergePick[]>(() =>
-    pending.conflicts.map(() => "both"),
+    view.hunks.map(defaultHunkPick),
   );
-  const [hunkBody, setHunkBody] = useState<string[]>(() =>
-    pending.conflicts.map((hunk) => pickedHunkText(hunk, "both")),
-  );
-  const [spans, setSpans] = useState<Array<HunkSpan | null>>(() =>
-    locateHunkSpans(
-      initialMergeDraft(pending),
-      pending.conflicts.map((hunk) => pickedHunkText(hunk, "both")),
-    ),
-  );
+  const [draft, setDraft] = useState(() => assembleMergeDraft(view.regions));
   const draftRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     if (!open) return;
-    const nextDraft = initialMergeDraft(pending);
-    const bodies = pending.conflicts.map((hunk) => pickedHunkText(hunk, "both"));
+    const nextPicks = view.hunks.map(defaultHunkPick);
     setSelected(0);
-    setDraft(nextDraft);
-    setPicks(pending.conflicts.map(() => "both"));
-    setHunkBody(bodies);
-    setSpans(locateHunkSpans(nextDraft, bodies));
+    setPicks(nextPicks);
+    setDraft(
+      pending.proposed_source === "ai" && pending.proposed?.trim()
+        ? pending.proposed
+        : assembleMergeDraft(view.regions, nextPicks),
+    );
     // pending 轮询会换新对象，同一待确认用 created_at
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, pending.created_at]);
+  }, [open, pending.created_at, view]);
 
   useEffect(() => {
     if (!open) return;
@@ -91,97 +85,49 @@ export function PreceptsUpgradeModal({
       setSelected((i) =>
         prev
           ? Math.max(0, i - 1)
-          : Math.min(Math.max(pending.conflicts.length - 1, 0), i + 1),
+          : Math.min(Math.max(view.hunks.length - 1, 0), i + 1),
       );
     }
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [open, onClose, pending.conflicts.length]);
+  }, [open, onClose, view.hunks.length]);
 
   useEffect(() => {
     if (!open) return;
     const el = draftRef.current;
-    const span = spans[selected];
-    if (!el || !span) return;
+    const hunk = view.hunks[selected];
+    const pick = picks[selected] ?? (hunk ? defaultHunkPick(hunk) : "both");
+    const needle = hunk ? pickedHunkText(hunk, pick) : "";
+    if (!el || !needle) return;
+    const at = el.value.indexOf(needle);
+    if (at < 0) return;
     const lh = Number.parseFloat(getComputedStyle(el).lineHeight) || 20;
-    const line = el.value.slice(0, span.start).split("\n").length;
+    const line = el.value.slice(0, at).split("\n").length;
     el.scrollTop = Math.max(0, (line - 3) * lh);
-  }, [open, selected, spans]);
+  }, [open, selected, picks, view.hunks]);
 
-  const oursRanges = useMemo(
-    () => pending.conflicts.map((hunk) => lineRange(pending.ours, hunk.ours)),
-    [pending.conflicts, pending.ours],
-  );
-  const theirsRanges = useMemo(
-    () =>
-      pending.conflicts.map((hunk) => lineRange(pending.theirs, hunk.theirs)),
-    [pending.conflicts, pending.theirs],
+  const segments = useMemo(
+    () => assembleMergeSegments(view.regions, picks),
+    [view.regions, picks],
   );
 
   if (!open) return null;
   const locked = busy !== null;
-  const conflictCount = pending.conflicts.length;
-  const hunk = pending.conflicts[selected];
-  const pick = picks[selected] ?? "both";
+  const hunkCount = view.hunks.length;
+  const hunk = view.hunks[selected];
+  const pick = picks[selected] ?? (hunk ? defaultHunkPick(hunk) : "both");
 
   function pickHunk(nextPick: MergePick) {
     if (!hunk) return;
-    const nextText = pickedHunkText(hunk, nextPick);
-    const span = spans[selected];
-    let nextDraft: string;
-    let nextSpans = spans;
-    if (span) {
-      nextDraft = replaceSpan(draft, span, nextText);
-      const delta = nextText.length - (span.end - span.start);
-      nextSpans = spans.map((item, i) => {
-        if (!item) return item;
-        if (i === selected) {
-          return { start: span.start, end: span.start + nextText.length };
-        }
-        if (item.start >= span.end) {
-          return { start: item.start + delta, end: item.end + delta };
-        }
-        return item;
-      });
-    } else {
-      nextDraft = applyHunkPick(draft, hunk, hunkBody[selected] ?? "", nextPick);
-      nextSpans = locateHunkSpans(
-        nextDraft,
-        hunkBody.map((body, i) => (i === selected ? nextText : body)),
-      );
-    }
-    const nextBodies = nextSpans.map((item, i) =>
-      item
-        ? nextDraft.slice(item.start, item.end)
-        : i === selected
-          ? nextText
-          : hunkBody[i] ?? "",
-    );
     const nextPicks = picks.slice();
     nextPicks[selected] = nextPick;
-    setSpans(nextSpans);
-    setHunkBody(nextBodies);
     setPicks(nextPicks);
-    setDraft(nextDraft);
-  }
-
-  function onDraftChange(next: string) {
-    const edit = firstEdit(draft, next);
-    const nextSpans = edit
-      ? shiftSpans(spans, edit.at, edit.oldLen, edit.newLen)
-      : spans;
-    setDraft(next);
-    setSpans(nextSpans);
-    setHunkBody(
-      nextSpans.map((item, i) =>
-        item ? next.slice(item.start, item.end) : hunkBody[i] ?? "",
-      ),
-    );
+    setDraft(assembleMergeDraft(view.regions, nextPicks));
   }
 
   function jump(delta: number) {
-    if (!conflictCount) return;
-    setSelected((i) => Math.min(conflictCount - 1, Math.max(0, i + delta)));
+    if (!hunkCount) return;
+    setSelected((i) => Math.min(hunkCount - 1, Math.max(0, i + delta)));
   }
 
   return (
@@ -195,24 +141,24 @@ export function PreceptsUpgradeModal({
       >
         <header className="doc-diff-header precepts-merge-top">
           <h3 id="precepts-upgrade-title">戒律更新</h3>
-          {conflictCount > 0 ? (
+          {hunkCount > 0 ? (
             <div className="precepts-merge-nav">
               <button
                 type="button"
                 className="doc-diff-btn"
-                aria-label="上一处冲突"
+                aria-label="上一处改动"
                 disabled={selected === 0}
                 onClick={() => jump(-1)}
               >
                 上一处
               </button>
               <span className="precepts-merge-pos" aria-live="polite">
-                {selected + 1}/{conflictCount}
+                {selected + 1}/{hunkCount}
               </span>
-              <div className="precepts-merge-jumps" role="tablist" aria-label="冲突">
-                {pending.conflicts.map((item, i) => (
+              <div className="precepts-merge-jumps" role="tablist" aria-label="改动">
+                {view.hunks.map((item, i) => (
                   <button
-                    key={`${item.ours}:${i}`}
+                    key={`${item.kind}:${item.ours}:${item.theirs}:${i}`}
                     type="button"
                     role="tab"
                     aria-selected={selected === i}
@@ -227,15 +173,15 @@ export function PreceptsUpgradeModal({
               <button
                 type="button"
                 className="doc-diff-btn"
-                aria-label="下一处冲突"
-                disabled={selected >= conflictCount - 1}
+                aria-label="下一处改动"
+                disabled={selected >= hunkCount - 1}
                 onClick={() => jump(1)}
               >
                 下一处
               </button>
             </div>
           ) : (
-            <p className="precepts-merge-nav-empty">没有重叠改动，中间已是合并结果。</p>
+            <p className="precepts-merge-nav-empty">两边已经一样，中间即结果。</p>
           )}
           <button
             type="button"
@@ -251,7 +197,7 @@ export function PreceptsUpgradeModal({
             kind="ours"
             title="现行"
             text={pending.ours}
-            ranges={oursRanges}
+            hunks={view.hunks}
             selected={selected}
             onSelect={setSelected}
           />
@@ -267,6 +213,10 @@ export function PreceptsUpgradeModal({
                   </span>
                 ) : null}
               </label>
+              <span className="precepts-merge-legend" aria-hidden>
+                <span className="precepts-merge-legend-item is-ours">左</span>
+                <span className="precepts-merge-legend-item is-theirs">右</span>
+              </span>
               {hunk ? (
                 <div className="precepts-merge-picks" role="group" aria-label="这块怎么收">
                   <PickBtn
@@ -294,20 +244,20 @@ export function PreceptsUpgradeModal({
               ) : null}
             </header>
             {error ? <p className="doc-diff-empty">{error}</p> : null}
-            <textarea
-              id="precepts-merge-draft"
-              ref={draftRef}
-              className="doc-precepts-draft precepts-merge-draft"
-              value={draft}
-              onChange={(e) => onDraftChange(e.target.value)}
-              spellCheck={false}
+            <ResultEditor
+              draft={draft}
+              segments={segments}
+              selected={selected}
+              locked={locked}
+              textareaRef={draftRef}
+              onChange={setDraft}
             />
           </section>
           <SideDoc
             kind="theirs"
             title="官方"
             text={pending.theirs}
-            ranges={theirsRanges}
+            hunks={view.hunks}
             selected={selected}
             onSelect={setSelected}
           />
@@ -344,23 +294,97 @@ export function PreceptsUpgradeModal({
   );
 }
 
+function ResultEditor({
+  draft,
+  segments,
+  selected,
+  locked,
+  textareaRef,
+  onChange,
+}: {
+  draft: string;
+  segments: MergeSegment[];
+  selected: number;
+  locked: boolean;
+  textareaRef: RefObject<HTMLTextAreaElement | null>;
+  onChange: (next: string) => void;
+}) {
+  const paintRef = useRef<HTMLPreElement>(null);
+  const assembled = useMemo(
+    () => segments.map((segment) => segment.text).join(""),
+    [segments],
+  );
+  const paint = draft === assembled
+    ? segments
+    : [{ origin: "equal" as const, text: draft, hunkIndex: null }];
+
+  useEffect(() => {
+    const src = textareaRef.current;
+    const dst = paintRef.current;
+    if (!src || !dst) return;
+    dst.scrollTop = src.scrollTop;
+    dst.scrollLeft = src.scrollLeft;
+  }, [draft, selected, assembled, textareaRef]);
+
+  return (
+    <div className="precepts-merge-result-stack">
+      <pre
+        ref={paintRef}
+        className="precepts-merge-result-paint"
+        aria-hidden
+      >
+        {paint.map((segment, i) => (
+          <span
+            key={i}
+            className={`precepts-merge-origin precepts-merge-origin--${segment.origin}${
+              segment.hunkIndex === selected ? " is-active" : ""
+            }`}
+          >
+            {segment.text}
+          </span>
+        ))}
+      </pre>
+      <textarea
+        id="precepts-merge-draft"
+        ref={textareaRef}
+        className="doc-precepts-draft precepts-merge-draft"
+        value={draft}
+        onChange={(e) => onChange(e.target.value)}
+        onScroll={() => {
+          const src = textareaRef.current;
+          const dst = paintRef.current;
+          if (!src || !dst) return;
+          dst.scrollTop = src.scrollTop;
+          dst.scrollLeft = src.scrollLeft;
+        }}
+        spellCheck={false}
+        disabled={locked}
+      />
+    </div>
+  );
+}
+
 function SideDoc({
   kind,
   title,
   text,
-  ranges,
+  hunks,
   selected,
   onSelect,
 }: {
   kind: "ours" | "theirs";
   title: string;
   text: string;
-  ranges: Array<{ start: number; end: number } | null>;
+  hunks: ViewHunk[];
   selected: number;
   onSelect: (index: number) => void;
 }) {
   const scroller = useRef<HTMLPreElement>(null);
   const lines = useMemo(() => (text || "").split("\n"), [text]);
+  const ranges = useMemo(
+    () => hunks.map((hunk) => (kind === "ours" ? hunk.oursRange : hunk.theirsRange)),
+    [hunks, kind],
+  );
 
   useEffect(() => {
     const el = scroller.current?.querySelector("[data-active-conflict]");

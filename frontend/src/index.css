@@ -8458,6 +8458,84 @@ button.source-link--inline.conversation-md-link {
   white-space: nowrap;
 }
 
+.precepts-merge-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 4px;
+}
+
+.precepts-merge-legend-item {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}
+
+.precepts-merge-legend-item.is-ours {
+  background: rgba(239, 68, 68, 0.14);
+  color: #b91c1c;
+}
+
+.precepts-merge-legend-item.is-theirs {
+  background: rgba(34, 197, 94, 0.16);
+  color: #15803d;
+}
+
+.precepts-merge-result-stack {
+  position: relative;
+  flex: 1;
+  min-height: 8em;
+  min-width: 0;
+}
+
+.precepts-merge-result-stack .precepts-merge-result-paint,
+.precepts-merge-result-stack .precepts-merge-draft {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 8px 12px 16px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.precepts-merge-result-stack .precepts-merge-result-paint {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+  pointer-events: none;
+  color: var(--text);
+}
+
+.precepts-merge-origin--ours {
+  background: rgba(239, 68, 68, 0.14);
+}
+
+.precepts-merge-origin--theirs {
+  background: rgba(34, 197, 94, 0.16);
+}
+
+.precepts-merge-origin.is-active {
+  box-shadow: inset 3px 0 0 currentColor;
+}
+
+.precepts-merge-origin--ours.is-active {
+  color: #b91c1c;
+}
+
+.precepts-merge-origin--theirs.is-active {
+  color: #15803d;
+}
+
 .precepts-merge-doc {
   flex: 1;
   min-height: 0;
@@ -8521,11 +8599,19 @@ button.source-link--inline.conversation-md-link {
   word-break: break-word;
 }
 
-.precepts-merge-draft {
-  flex: 1;
-  min-height: 8em;
-  height: auto;
-  padding: 8px 12px 16px;
+.precepts-merge-result-stack .precepts-merge-draft {
+  position: relative;
+  z-index: 1;
+  display: block;
+  flex: none;
+  min-height: 100%;
+  height: 100%;
+  overflow: auto;
+  resize: none;
+  border: none;
+  background: transparent;
+  color: transparent;
+  caret-color: var(--text);
 }
 
 .precepts-merge-footer {

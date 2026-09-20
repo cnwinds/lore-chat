@@ -1,5 +1,9 @@
-import { diffLines } from "diff";
 import { buildDocDiff, type DiffLine } from "./docDiff";
+import {
+  merge3Regions,
+  type Merge3Hunk,
+  type Merge3Region,
+} from "./textMerge3";
 
 export type MergePick = "ours" | "theirs" | "both";
 
@@ -7,6 +11,24 @@ export type ConflictSides = {
   base: string;
   ours: string;
   theirs: string;
+};
+
+export type ViewHunk = Merge3Hunk & {
+  oursRange: { start: number; end: number } | null;
+  theirsRange: { start: number; end: number } | null;
+};
+
+export type MergeView = {
+  regions: Merge3Region[];
+  hunks: ViewHunk[];
+};
+
+export type SegmentOrigin = "equal" | "ours" | "theirs";
+
+export type MergeSegment = {
+  origin: SegmentOrigin;
+  text: string;
+  hunkIndex: number | null;
 };
 
 export type FoldedDiffRow =
@@ -35,11 +57,8 @@ export function combineHunk(ours: string, theirs: string): string {
   if (!a.trim()) return b;
   if (!b.trim()) return a;
   if (a === b) return a;
-  let out = "";
-  for (const change of diffLines(a, b)) {
-    out += change.value;
-  }
-  return out.endsWith("\n") || out.length === 0 ? out : `${out}\n`;
+  const left = a.endsWith("\n") || a.length === 0 ? a : `${a}\n`;
+  return left + b;
 }
 
 export function pickedHunkText(hunk: ConflictSides, pick: MergePick): string {
@@ -48,37 +67,124 @@ export function pickedHunkText(hunk: ConflictSides, pick: MergePick): string {
   return combineHunk(hunk.ours, hunk.theirs);
 }
 
+export function defaultHunkPick(hunk: Merge3Hunk): MergePick {
+  if (hunk.kind === "ours") return "ours";
+  if (hunk.kind === "theirs") return "theirs";
+  return "both";
+}
+
+function bothSegments(hunk: Merge3Hunk, hunkIndex: number): MergeSegment[] {
+  const a = hunk.ours ?? "";
+  const b = hunk.theirs ?? "";
+  if (!a.trim()) {
+    return b ? [{ origin: "theirs", text: b, hunkIndex }] : [];
+  }
+  if (!b.trim()) {
+    return [{ origin: "ours", text: a, hunkIndex }];
+  }
+  if (a === b) return [{ origin: "ours", text: a, hunkIndex }];
+  const left = a.endsWith("\n") || a.length === 0 ? a : `${a}\n`;
+  return [
+    { origin: "ours", text: left, hunkIndex },
+    { origin: "theirs", text: b, hunkIndex },
+  ];
+}
+
+export function assembleMergeSegments(
+  regions: Merge3Region[],
+  picks?: MergePick[],
+): MergeSegment[] {
+  let index = 0;
+  const out: MergeSegment[] = [];
+  for (const region of regions) {
+    if (region.type === "equal") {
+      if (region.text) {
+        out.push({ origin: "equal", text: region.text, hunkIndex: null });
+      }
+      continue;
+    }
+    const pick = picks?.[index] ?? defaultHunkPick(region.hunk);
+    if (pick === "both") {
+      out.push(...bothSegments(region.hunk, index));
+    } else if (pick === "ours") {
+      if (region.hunk.ours) {
+        out.push({ origin: "ours", text: region.hunk.ours, hunkIndex: index });
+      }
+    } else if (region.hunk.theirs) {
+      out.push({ origin: "theirs", text: region.hunk.theirs, hunkIndex: index });
+    }
+    index += 1;
+  }
+  return out;
+}
+
+export function assembleMergeDraft(
+  regions: Merge3Region[],
+  picks?: MergePick[],
+): string {
+  return assembleMergeSegments(regions, picks)
+    .map((segment) => segment.text)
+    .join("");
+}
+
+function spanToLineRange(
+  doc: string,
+  span: HunkSpan,
+): { start: number; end: number } {
+  const start = doc.slice(0, span.start).split("\n").length - 1;
+  let last = span.end;
+  if (last > span.start && doc[last - 1] === "\n") last -= 1;
+  const end = doc.slice(0, last).split("\n").length;
+  return { start, end: Math.max(start + 1, end) };
+}
+
+export function buildMergeView(
+  base: string,
+  ours: string,
+  theirs: string,
+): MergeView {
+  const regions = merge3Regions(base || "", ours || "", theirs || "");
+  const raw = regions
+    .filter((region): region is { type: "change"; hunk: Merge3Hunk } =>
+      region.type === "change",
+    )
+    .map((region) => region.hunk);
+  const oursSpans = locateHunkSpans(
+    ours || "",
+    raw.map((hunk) => hunk.ours),
+  );
+  const theirsSpans = locateHunkSpans(
+    theirs || "",
+    raw.map((hunk) => hunk.theirs),
+  );
+  const hunks: ViewHunk[] = raw.map((hunk, i) => ({
+    ...hunk,
+    oursRange: oursSpans[i] ? spanToLineRange(ours || "", oursSpans[i]!) : null,
+    theirsRange: theirsSpans[i]
+      ? spanToLineRange(theirs || "", theirsSpans[i]!)
+      : null,
+  }));
+  return { regions, hunks };
+}
+
 export function initialMergeDraft(pending: {
   ours?: string;
   theirs?: string;
   base?: string;
   proposed: string;
+  proposed_source?: string;
   conflicts: ConflictSides[];
 }): string {
-  const ours = pending.ours || pending.proposed || "";
-  const fromProposed = applyAllBoth(pending.proposed || ours, pending.conflicts);
-  const fromOurs = applyAllBoth(ours, pending.conflicts);
-  const extra = exclusiveHeadings(
+  if (pending.proposed_source === "ai" && pending.proposed?.trim()) {
+    return pending.proposed;
+  }
+  const view = buildMergeView(
     pending.base || "",
-    pending.ours || "",
+    pending.ours || pending.proposed || "",
     pending.theirs || "",
-    pending.conflicts,
   );
-  const score = (text: string) =>
-    extra.ours.filter((name) => text.includes(name)).length +
-    extra.theirs.filter((name) => text.includes(name)).length;
-  if (score(fromProposed) >= score(fromOurs) && fromProposed.trim()) {
-    return fromProposed;
-  }
-  return fromOurs;
-}
-
-function applyAllBoth(seed: string, conflicts: ConflictSides[]): string {
-  let draft = seed;
-  for (const hunk of conflicts) {
-    draft = applyHunkPick(draft, hunk, hunk.ours, "both");
-  }
-  return draft;
+  if (view.hunks.length) return assembleMergeDraft(view.regions);
+  return pending.proposed || pending.ours || "";
 }
 
 export function applyHunkPick(

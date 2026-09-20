@@ -1,3 +1,5 @@
+import shutil
+
 import pytest
 from app.storage.repo import KnowledgeRepo, Document
 
@@ -5,6 +7,14 @@ from app.storage.repo import KnowledgeRepo, Document
 @pytest.fixture
 def repo(tmp_path):
     return KnowledgeRepo(tmp_path / "knowledge")
+
+
+def test_unquote_git_path_decodes_cjk():
+    from app.storage.repo import unquote_git_path
+
+    quoted = '"\\346\\212\\200\\350\\203\\275/douyin-transcript/SKILL.md"'
+    assert unquote_git_path(quoted) == "技能/douyin-transcript/SKILL.md"
+    assert unquote_git_path("技能/plain.md") == "技能/plain.md"
 
 
 def test_write_and_read_doc(repo):
@@ -219,6 +229,54 @@ def test_move_file(repo):
     )
     assert new == "d/renamed.txt"
     assert repo.read_bytes(new) == b"hi"
+
+
+def test_move_directory_allows_untracked_sidecar(repo):
+    repo.write_doc("技能/pkg/SKILL.md", {"title": "S"}, "s\n", commit_msg="add")
+    (repo.root / "技能" / "pkg" / "notes.txt").write_text("local\n", encoding="utf-8")
+    old, new = repo.move_directory("技能/pkg", "技能/pkg2", commit_msg="rename pkg")
+    assert "技能/pkg/SKILL.md" in old
+    assert "技能/pkg2/SKILL.md" in new
+    assert (repo.root / "技能" / "pkg2" / "SKILL.md").is_file()
+    assert (repo.root / "技能" / "pkg2" / "notes.txt").is_file()
+    assert not (repo.root / "技能" / "pkg").exists()
+
+
+def test_list_revisions_follows_directory_rename(repo):
+    repo.write_doc("技能/old-pkg/SKILL.md", {"title": "S"}, "第一版\n", commit_msg="c1")
+    repo.write_doc("技能/old-pkg/SKILL.md", {"title": "S"}, "第二版\n", commit_msg="c2")
+    repo.move_directory("技能/old-pkg", "技能/new-pkg", commit_msg="move dir")
+    revs = repo.list_revisions("技能/new-pkg/SKILL.md")
+    texts = [repo.read_revision("技能/new-pkg/SKILL.md", item["sha"])["text"] for item in revs]
+    assert "第二版\n" in texts
+    assert "第一版\n" in texts
+
+
+def test_list_revisions_heals_uncommitted_directory_rename(repo):
+    repo.write_doc(
+        "技能/douyin-transcript/SKILL.md",
+        {"title": "S"},
+        "第一版\n",
+        commit_msg="add skill",
+    )
+    repo.write_doc(
+        "技能/douyin-transcript/SKILL.md",
+        {"title": "S"},
+        "第二版\n",
+        commit_msg="edit skill",
+    )
+    shutil.move(
+        str(repo.root / "技能" / "douyin-transcript"),
+        str(repo.root / "技能" / "video-transcript"),
+    )
+    revs = repo.list_revisions("技能/video-transcript/SKILL.md")
+    assert revs
+    texts = [
+        repo.read_revision("技能/video-transcript/SKILL.md", item["sha"])["text"]
+        for item in revs
+    ]
+    assert "第二版\n" in texts
+    assert "第一版\n" in texts
 
 
 def test_move_file_untracked(repo):
