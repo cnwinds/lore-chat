@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import {
+  applyOfficialPrecepts,
   confirmPreceptsUpgrade,
   dismissPreceptsUpgrade,
   getPreceptsUpgrade,
   proposePreceptsUpgrade,
-  useOfficialPrecepts,
   type PreceptsUpgradePending,
 } from "../../api";
 
@@ -109,8 +109,8 @@ export function usePreceptsUpgrade({ path, onApplied }: Args) {
     () => run("dismiss", () => dismissPreceptsUpgrade()),
     [run],
   );
-  const useOfficial = useCallback(
-    () => run("official", () => useOfficialPrecepts()),
+  const applyOfficial = useCallback(
+    () => run("official", () => applyOfficialPrecepts()),
     [run],
   );
 
@@ -126,6 +126,6 @@ export function usePreceptsUpgrade({ path, onApplied }: Args) {
     error,
     confirm,
     dismiss,
-    useOfficial,
+    applyOfficial,
   };
 }

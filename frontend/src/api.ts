@@ -856,7 +856,7 @@ export function dismissPreceptsUpgrade() {
   });
 }
 
-export function useOfficialPrecepts() {
+export function applyOfficialPrecepts() {
   return apiFetch<PreceptsUpgradeStatus>("/api/precepts/upgrade/use-official", {
     method: "POST",
   });

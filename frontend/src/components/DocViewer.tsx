@@ -341,7 +341,7 @@ export function DocViewer({
           onClose={() => precepts.setReviewOpen(false)}
           onConfirm={(body) => void precepts.confirm(body)}
           onDismiss={() => void precepts.dismiss()}
-          onUseOfficial={() => void precepts.useOfficial()}
+          onUseOfficial={() => void precepts.applyOfficial()}
         />
       )}
       <DocHistoryModal
