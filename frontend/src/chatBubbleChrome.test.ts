@@ -85,6 +85,9 @@ describe("overlay scrollbars", () => {
     expect(css).toMatch(
       /\.lore-scroll-rail\.is-visible\s*\{[^}]*pointer-events:\s*auto;/,
     );
+    expect(css).toMatch(
+      /\.lore-scroll-thumb\s*\{[^}]*color-mix\(in srgb,\s*var\(--text\)/,
+    );
   });
 });
 

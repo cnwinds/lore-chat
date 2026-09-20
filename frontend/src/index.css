@@ -464,7 +464,7 @@
 
 .lore-scroll-thumb {
   position: absolute;
-  background: var(--scrollbar-thumb);
+  background: color-mix(in srgb, var(--text) 34%, transparent);
   border-radius: 99px;
   min-width: 6px;
   min-height: 6px;
