@@ -4,6 +4,7 @@ import {
   initOverlayScrollbar,
   intersectBoxes,
   overlayPageJump,
+  overlayScrollerViewport,
   overlayThumbLayout,
   resetOverlayScrollbarForTests,
   resolveScrollTarget,
@@ -76,6 +77,41 @@ describe("intersectBoxes", () => {
 describe("resolveScrollTarget", () => {
   it("uses the document element for document-level scroll", () => {
     expect(resolveScrollTarget(document)).toBe(document.documentElement);
+  });
+});
+
+describe("overlayScrollerViewport", () => {
+  it("does not let html/body overflow:hidden collapse the scroller box", () => {
+    vi.stubGlobal("innerWidth", 800);
+    vi.stubGlobal("innerHeight", 600);
+    document.documentElement.style.overflow = "hidden";
+    document.body.style.overflow = "hidden";
+    const el = document.createElement("div");
+    el.style.overflowY = "auto";
+    el.getBoundingClientRect = () =>
+      ({
+        top: 10,
+        left: 20,
+        right: 420,
+        bottom: 410,
+        width: 400,
+        height: 400,
+        x: 20,
+        y: 10,
+        toJSON() {
+          return {};
+        },
+      }) as DOMRect;
+    document.body.appendChild(el);
+    expect(overlayScrollerViewport(el)).toEqual({
+      top: 10,
+      left: 20,
+      right: 420,
+      bottom: 410,
+    });
+    el.remove();
+    document.documentElement.style.overflow = "";
+    document.body.style.overflow = "";
   });
 });
 

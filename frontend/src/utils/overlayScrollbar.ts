@@ -122,7 +122,7 @@ function boxFromRect(r: DOMRectReadOnly): Box {
   return { top: r.top, left: r.left, right: r.right, bottom: r.bottom };
 }
 
-function visibleScrollerBox(el: HTMLElement): Box | null {
+export function overlayScrollerViewport(el: HTMLElement): Box | null {
   if (isDocumentScroller(el)) {
     return {
       top: 0,
@@ -131,9 +131,10 @@ function visibleScrollerBox(el: HTMLElement): Box | null {
       bottom: window.innerHeight,
     };
   }
-  let box: Box | null = boxFromRect(el.getBoundingClientRect());
+  const raw = boxFromRect(el.getBoundingClientRect());
+  let box: Box | null = raw;
   let node = el.parentElement;
-  while (box && node) {
+  while (box && node && node !== document.body && node !== document.documentElement) {
     const style = getComputedStyle(node);
     if (
       axisCanOverflow(style, "y") ||
@@ -147,13 +148,13 @@ function visibleScrollerBox(el: HTMLElement): Box | null {
     }
     node = node.parentElement;
   }
-  if (!box) return null;
-  return intersectBoxes(box, {
+  const viewport = {
     top: 0,
     left: 0,
     right: window.innerWidth,
     bottom: window.innerHeight,
-  });
+  };
+  return intersectBoxes(box ?? raw, viewport) ?? intersectBoxes(raw, viewport);
 }
 
 type Rail = {
@@ -173,7 +174,10 @@ let dragThumbOrigin = 0;
 let rails: { y: Rail; x: Rail } | null = null;
 
 function makeRail(axis: OverlayAxis): Rail {
+  const id = `lore-scroll-rail-${axis}`;
+  document.getElementById(id)?.remove();
   const root = document.createElement("div");
+  root.id = id;
   root.className = `lore-scroll-rail lore-scroll-rail--${axis}`;
   root.setAttribute("aria-hidden", "true");
   const thumb = document.createElement("div");
@@ -258,7 +262,7 @@ function paintRail(el: HTMLElement, rail: Rail, box: Box): boolean {
 
 function paint(el: HTMLElement) {
   if (!rails) return;
-  const box = visibleScrollerBox(el);
+  const box = overlayScrollerViewport(el);
   if (!box) {
     hideRails();
     return;
@@ -276,6 +280,7 @@ function paint(el: HTMLElement) {
 function revealFromEvent(event: Event) {
   const el = findScrollableAncestor(event.target);
   if (!el || !rails) return;
+  paint(el);
   requestAnimationFrame(() => paint(el));
 }
 
@@ -420,7 +425,8 @@ function unmount() {
 }
 
 export function initOverlayScrollbar(): void {
-  if (started || typeof document === "undefined") return;
+  if (typeof document === "undefined") return;
+  if (started && rails && document.body.contains(rails.y.root)) return;
   started = true;
   if (document.body) mount();
   else document.addEventListener("DOMContentLoaded", mount, { once: true });
