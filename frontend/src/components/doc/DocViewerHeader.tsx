@@ -11,7 +11,9 @@ import {
   DiscardIcon,
   MarkdownIcon,
   PinIcon,
+  QuietReadingIcon,
   SaveIcon,
+  ShareIcon,
 } from "../DocToolbarIcons";
 import { type OutlineItem } from "../../utils/docOutline";
 
@@ -110,16 +112,6 @@ export function DocViewerHeader({
             icon: "edit" as const,
             active: mergeEditing,
             onClick: onMergeEditingToggle,
-          },
-        ]
-      : []),
-    ...(onShareDoc
-      ? [
-          {
-            id: "share",
-            label: "分享",
-            icon: "chat" as const,
-            onClick: () => onShareDoc(path, path.split("/").pop() || path),
           },
         ]
       : []),
@@ -254,37 +246,36 @@ export function DocViewerHeader({
                 />
               </div>
             )}
+            {onShareDoc ? (
+              <DocIconBtn
+                label="分享"
+                disabled={loading}
+                onClick={() =>
+                  onShareDoc(path, path.split("/").pop() || path)
+                }
+              >
+                <ShareIcon />
+              </DocIconBtn>
+            ) : null}
             {showLayoutActions && (
               <>
-                {(onToggleWidth || onToggleFocus) && (
-                  <div
-                    className="doc-toolbar-cluster doc-reading-mode doc-toolbar-wide-only"
-                    role="group"
-                    aria-label="阅读版式"
-                  >
-                    <button
-                      type="button"
-                      className={`doc-reading-mode-btn${!docFocus ? " is-active" : ""}`}
-                      aria-pressed={!docFocus}
-                      onClick={() => {
-                        if (docFocus) onToggleFocus?.();
+                {onToggleFocus && (
+                  <DocIconBtn
+                    className="doc-toolbar-wide-only"
+                    label="沉静阅读"
+                    active={docFocus}
+                    aria-pressed={docFocus}
+                    onClick={() => {
+                      if (docFocus) {
+                        onToggleFocus();
                         if (docWidth !== "wide") onToggleWidth?.();
-                      }}
-                    >
-                      宽
-                    </button>
-                    <button
-                      type="button"
-                      className={`doc-reading-mode-btn${docFocus ? " is-active" : ""}`}
-                      aria-pressed={docFocus}
-                      disabled={!onToggleFocus}
-                      onClick={() => {
-                        if (!docFocus) onToggleFocus?.();
-                      }}
-                    >
-                      沉静阅读
-                    </button>
-                  </div>
+                      } else {
+                        onToggleFocus();
+                      }
+                    }}
+                  >
+                    <QuietReadingIcon />
+                  </DocIconBtn>
                 )}
                 <DocOverflowMenu items={overflowItems} disabled={loading} />
                 {mode === "float" && onPin && (

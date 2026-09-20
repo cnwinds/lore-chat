@@ -127,6 +127,45 @@ export function OutlineIcon({ size = 16 }: IconProps) {
   );
 }
 
+export function ShareIcon({ size = 16 }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M12 3v12M8 6l4-3 4 3M5 11v8a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-8" />
+    </svg>
+  );
+}
+
+export function QuietReadingIcon({ size = 16 }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M8 3H5a2 2 0 0 0-2 2v3" />
+      <path d="M21 8V5a2 2 0 0 0-2-2h-3" />
+      <path d="M3 16v3a2 2 0 0 0 2 2h3" />
+      <path d="M16 21h3a2 2 0 0 0 2-2v-3" />
+    </svg>
+  );
+}
+
 export function PinIcon({ filled = false, size = 16 }: IconProps & { filled?: boolean }) {
   return (
     <svg
