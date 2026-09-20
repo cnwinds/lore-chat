@@ -792,9 +792,11 @@ export type DocRevisionBody = DocRevisionInfo & {
 };
 
 export async function listDocRevisions(path: string, limit = 80) {
-  return apiFetch<{ path: string; revisions: DocRevisionInfo[] }>(
-    `/api/doc/revisions?path=${encodeURIComponent(path)}&limit=${limit}`,
-  );
+  return apiFetch<{
+    path: string;
+    revisions: DocRevisionInfo[];
+    bodies?: Record<string, DocRevisionBody>;
+  }>(`/api/doc/revisions?path=${encodeURIComponent(path)}&limit=${limit}`);
 }
 
 export async function getDocRevision(path: string, sha: string) {
@@ -825,6 +827,7 @@ export type PreceptsUpgradePending = {
   proposed: string;
   proposed_source: "fallback" | "ai" | string;
   conflicts: PreceptsConflictHunk[];
+  marked?: string;
   created_at: string;
 };
 

@@ -108,12 +108,38 @@ def test_conflict_does_not_write_markers_and_keeps_live(tmp_path, monkeypatch):
     assert st.status == "pending_review"
     assert st.pending
     assert st.pending["conflicts"]
+    assert "<<<<<<<" in (st.pending.get("marked") or "")
     current = repo.read_doc("系统/戒律.md").body
     assert current == live
     assert not has_conflict_markers(current)
     assert "必须先问用户" in current
     assert "宁可先不记" not in current
     assert "必须先问用户" in st.pending["proposed"]
+
+
+def test_pending_without_marked_is_rebuilt(tmp_path, monkeypatch):
+    import json
+    from app.engine.agent import system_layer as sl
+
+    repo, writer, _layer, up = _upgrade(tmp_path)
+    up.sync()
+    live = repo.read_doc("系统/戒律.md").body.replace("宁可不记", "必须先问用户", 1)
+    _persist(writer, repo, live)
+    monkeypatch.setattr(
+        sl, "_PRECEPTS_BODY", sl._PRECEPTS_BODY.replace("宁可不记", "宁可先不记", 1)
+    )
+    st = up.sync()
+    assert st.status == "pending_review"
+    pending = dict(st.pending)
+    pending.pop("marked", None)
+    state_path = repo.root / ".kb/precepts/state.json"
+    state_path.write_text(
+        json.dumps({"pending": pending}, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    again = up.sync()
+    assert again.status == "pending_review"
+    assert "<<<<<<<" in (again.pending.get("marked") or "")
 
 
 def test_no_stock_customized_is_two_way_review(tmp_path):

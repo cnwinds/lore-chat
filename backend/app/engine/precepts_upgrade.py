@@ -149,6 +149,7 @@ class PreceptsUpgrade:
         conflicts: list[ConflictHunk] | list[dict],
         official_hash: str,
         created_at: str | None = None,
+        marked: str = "",
     ) -> dict:
         hunks = []
         for item in conflicts:
@@ -170,6 +171,7 @@ class PreceptsUpgrade:
             "proposed": proposed,
             "proposed_source": proposed_source,
             "conflicts": hunks,
+            "marked": marked,
             "created_at": created_at or now_iso_seconds(),
         }
 
@@ -209,7 +211,12 @@ class PreceptsUpgrade:
         if sl._seed_hash(pending.get("ours", "")) != live_hash:
             return False
         # 无祖先的整篇对照可在找回 stock 后重算
-        return bool(str(pending.get("base") or "").strip())
+        if not str(pending.get("base") or "").strip():
+            return False
+        # 缺 marked 的旧待确认要重算，合并界面才能按块对照
+        if pending.get("conflicts") and not str(pending.get("marked") or "").strip():
+            return False
+        return True
 
     def _status_from_state(
         self, *, applied: bool = False, message: str = ""
@@ -349,6 +356,7 @@ class PreceptsUpgrade:
             proposed_source="fallback",
             conflicts=result.conflicts,
             official_hash=official_hash,
+            marked=result.marked,
         )
         state = self._read_state()
         state["pending"] = pending

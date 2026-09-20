@@ -4,6 +4,7 @@ import re
 import shutil
 import threading
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 
 from git import Blob, Repo
@@ -14,6 +15,10 @@ from app.time import DISPLAY_TZ, now_wall_clock
 
 _REV_SHA_RE = re.compile(r"^[0-9a-fA-F]{7,40}$")
 _MAX_REVISIONS = 200
+_LOG_PRETTY_RE = re.compile(r"^([0-9a-f]{40})\t(\d+)\t(.*)$")
+_LOG_RAW_BLOB_RE = re.compile(
+    r"^:\d+ \d+ [0-9a-f]{40} ([0-9a-f]{40}) [A-Z]\d*"
+)
 
 
 def revision_summary(message: str, rel_path: str) -> str:
@@ -32,6 +37,49 @@ def revision_summary(message: str, rel_path: str) -> str:
     if line == "apply official precepts":
         return "采用官方稿"
     return line or "修订"
+
+
+def parse_file_revision_log(raw: str, *, rel_path: str, cap: int) -> list[dict]:
+    """解析 `git log --pretty --raw`：一次进程列出版本，用 blob 去重而不逐条读 tree。"""
+    out: list[dict] = []
+    prev_blob: str | None = None
+    for block in (raw or "").split("\n\n"):
+        lines = [ln for ln in block.splitlines() if ln]
+        if not lines:
+            continue
+        pretty = _LOG_PRETTY_RE.match(lines[0])
+        if not pretty:
+            continue
+        sha, ct, subject = pretty.group(1), pretty.group(2), pretty.group(3)
+        blob: str | None = None
+        for line in lines[1:]:
+            raw_m = _LOG_RAW_BLOB_RE.match(line)
+            if raw_m:
+                blob = raw_m.group(1)
+                break
+        if blob is not None and blob == prev_blob:
+            continue
+        if blob is not None:
+            prev_blob = blob
+        try:
+            committed_at = (
+                datetime.fromtimestamp(int(ct), tz=timezone.utc)
+                .astimezone(DISPLAY_TZ)
+                .strftime("%Y-%m-%d %H:%M:%S")
+            )
+        except (OverflowError, OSError, ValueError):
+            continue
+        out.append(
+            {
+                "sha": sha,
+                "short_sha": sha[:7],
+                "message": revision_summary(subject, rel_path),
+                "committed_at": committed_at,
+            }
+        )
+        if len(out) >= cap:
+            break
+    return out
 
 
 @dataclass
@@ -223,32 +271,20 @@ class KnowledgeRepo:
         norm = self._norm_user_path(rel_path)
         cap = max(1, min(int(limit), _MAX_REVISIONS))
         exists = self._abs(norm).is_file()
-        out: list[dict] = []
-        prev_blob: str | None = None
+        fetch = min(_MAX_REVISIONS * 2, cap * 2)
         with self._git_lock:
             try:
-                commits = list(self.repo.iter_commits(paths=norm, max_count=cap * 2))
-            except Exception:
-                commits = []
-            for commit in commits:
-                blob = self._blob_at(commit, norm)
-                if blob is None:
-                    continue
-                if blob.hexsha == prev_blob:
-                    continue
-                prev_blob = blob.hexsha
-                out.append(
-                    {
-                        "sha": commit.hexsha,
-                        "short_sha": commit.hexsha[:7],
-                        "message": revision_summary(commit.message, norm),
-                        "committed_at": commit.committed_datetime.astimezone(
-                            DISPLAY_TZ
-                        ).strftime("%Y-%m-%d %H:%M:%S"),
-                    }
+                raw = self.repo.git.log(
+                    f"--max-count={fetch}",
+                    "--pretty=format:%H%x09%ct%x09%s",
+                    "--raw",
+                    "--no-abbrev",
+                    "--",
+                    norm,
                 )
-                if len(out) >= cap:
-                    break
+            except Exception:
+                raw = ""
+        out = parse_file_revision_log(raw or "", rel_path=norm, cap=cap)
         if not out and not exists:
             raise FileNotFoundError(rel_path)
         return out

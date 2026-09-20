@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   getDocRevision,
   listDocRevisions,
@@ -12,10 +12,29 @@ import { DiffIcon, DocIconBtn } from "./DocToolbarIcons";
 type Props = {
   open: boolean;
   path: string | null;
+  previewText?: string | null;
   onClose: () => void;
 };
 
-export function DocHistoryModal({ open, path, onClose }: Props) {
+function previewAsBody(path: string, text: string): DocRevisionBody {
+  return {
+    path,
+    sha: "",
+    short_sha: "",
+    message: "",
+    committed_at: "",
+    text,
+    binary: false,
+    size: text.length,
+  };
+}
+
+export function DocHistoryModal({
+  open,
+  path,
+  previewText = null,
+  onClose,
+}: Props) {
   const [revisions, setRevisions] = useState<DocRevisionInfo[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [current, setCurrent] = useState<DocRevisionBody | null>(null);
@@ -24,26 +43,50 @@ export function DocHistoryModal({ open, path, onClose }: Props) {
   const [loadingList, setLoadingList] = useState(false);
   const [loadingBody, setLoadingBody] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const bodyCacheRef = useRef<Record<string, DocRevisionBody>>({});
+  const previewRef = useRef(previewText);
+  previewRef.current = previewText;
 
   useEffect(() => {
     if (!open || !path) return;
     let cancelled = false;
+    bodyCacheRef.current = {};
     setLoadingList(true);
     setError(null);
     setRevisions([]);
     setSelected(null);
-    setCurrent(null);
     setOlderText(null);
     setComparePrev(true);
+    const preview = previewRef.current;
+    if (preview != null) {
+      setCurrent(previewAsBody(path, preview));
+      setLoadingBody(false);
+    } else {
+      setCurrent(null);
+      setLoadingBody(true);
+    }
     void listDocRevisions(path)
       .then((data) => {
         if (cancelled) return;
+        const bodies = data.bodies ?? {};
+        bodyCacheRef.current = { ...bodies };
         setRevisions(data.revisions);
-        setSelected(data.revisions[0]?.sha ?? null);
+        const first = data.revisions[0];
+        setSelected(first?.sha ?? null);
+        if (first && bodies[first.sha]) {
+          setCurrent(bodies[first.sha]);
+          const second = data.revisions[1];
+          const prev = second ? bodies[second.sha] : undefined;
+          if (!second) setOlderText(null);
+          else if (prev) setOlderText(prev.binary ? null : prev.text);
+          setLoadingBody(false);
+        }
       })
       .catch((e: unknown) => {
         if (!cancelled) {
           setError(e instanceof Error ? e.message : "无法读取修订");
+          setLoadingList(false);
+          setLoadingBody(false);
         }
       })
       .finally(() => {
@@ -57,26 +100,54 @@ export function DocHistoryModal({ open, path, onClose }: Props) {
   useEffect(() => {
     if (!open || !path || !selected) return;
     let cancelled = false;
-    setLoadingBody(true);
+    const cache = bodyCacheRef.current;
     const index = revisions.findIndex((r) => r.sha === selected);
     const olderSha = index >= 0 ? revisions[index + 1]?.sha : undefined;
+    const cached = cache[selected];
+    const cachedOlder = olderSha ? cache[olderSha] : undefined;
+
+    if (cached) {
+      setCurrent(cached);
+      setLoadingBody(false);
+      if (!olderSha) {
+        setOlderText(null);
+        return;
+      }
+      if (cachedOlder) {
+        setOlderText(cachedOlder.binary ? null : cachedOlder.text);
+        return;
+      }
+    } else {
+      setLoadingBody(true);
+    }
+
     void (async () => {
       try {
-        const body = await getDocRevision(path, selected);
-        let prevText: string | null = null;
-        if (olderSha) {
-          const prev = await getDocRevision(path, olderSha);
-          prevText = prev.binary ? null : prev.text;
-        }
+        const body = cached ?? (await getDocRevision(path, selected));
         if (cancelled) return;
+        cache[body.sha] = body;
+        cache[selected] = body;
         setCurrent(body);
-        setOlderText(prevText);
+        setLoadingBody(false);
       } catch (e: unknown) {
         if (!cancelled) {
           setError(e instanceof Error ? e.message : "无法读取这一版");
+          setLoadingBody(false);
         }
-      } finally {
-        if (!cancelled) setLoadingBody(false);
+        return;
+      }
+      if (!olderSha) {
+        if (!cancelled) setOlderText(null);
+        return;
+      }
+      try {
+        const prev = cachedOlder ?? (await getDocRevision(path, olderSha));
+        if (cancelled) return;
+        cache[prev.sha] = prev;
+        cache[olderSha] = prev;
+        setOlderText(prev.binary ? null : prev.text);
+      } catch {
+        if (!cancelled) setOlderText(null);
       }
     })();
     return () => {
@@ -159,10 +230,7 @@ export function DocHistoryModal({ open, path, onClose }: Props) {
                 <DiffIcon />
               </DocIconBtn>
             </div>
-            <div
-              className="doc-history-pane-body"
-              aria-busy={loadingBody}
-            >
+            <div className="doc-history-pane-body" aria-busy={loadingBody}>
               {error ? (
                 <p className="doc-diff-empty">{error}</p>
               ) : !current && loadingBody ? (

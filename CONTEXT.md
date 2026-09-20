@@ -120,10 +120,10 @@ _Avoid_: 附件托盘；用托盘表达 Skill 启用；Ctrl+单击非「技能�
 **主文档**：托盘内用于默认 `edit_doc` 目标的普通 Markdown 文档。文档元数据用 `write_doc.meta` / `read_doc_meta` / `update_doc_meta`，调用方不感知磁盘定界。
 _Avoid_: 在正文伪造 KB 元数据头
 
-**知识库修订**：任意 KB 文件的版本列表与某版正文来自知识库 git（`KnowledgeRepo.list_revisions` / `read_revision`）；HTTP 为 `GET /api/doc/revisions`、`GET /api/doc/revision`。界面 `DocHistoryModal`：文档头栏时钟图标（悬停「修订」）与目录右键「修订」。Markdown 展示去掉库头后的正文；连续相同 blob 合并。窗口固定大小；默认与上一版对照，开关状态不随换版本重置。
+**知识库修订**：任意 KB 文件的版本列表与某版正文来自知识库 git（`KnowledgeRepo.list_revisions` / `read_revision`）；HTTP 为 `GET /api/doc/revisions`、`GET /api/doc/revision`。列表一次 `git log` 取出，并附带最近两版正文。界面 `DocHistoryModal`：文档头栏时钟图标（悬停「修订」）与目录右键「修订」。点开先出窗口和当前正文，对照随后补上。Markdown 展示去掉库头后的正文；连续相同 blob 合并。窗口固定大小；默认与上一版对照，开关状态不随换版本重置。
 _Avoid_: 在 HTTP 里直接跑 git；把冲突标记写进活文件；修订面板只服务《戒律》；在标题下再写路径说明
 
-**官方《戒律》升级**：`PreceptsUpgrade` 用上次同步的官方稿做祖先，与现行正文、新官方稿三路合并（见 [ADR 2026-09-19](docs/adr/2026-09-19-precepts-three-way-upgrade.md)）。无冲突则经 `KnowledgeWriter` 写回并更新祖先；有冲突则活文件不动，打开《戒律》见「戒律更新」：冲突块 + 合并稿，确认后落盘。待确认时知识库「系统」与《戒律》打红点。AI 只填冲突块，不得削弱硬规则；失败则冲突处留当前。`stock.md` 缺失时从该文件 git 历史找回最近一次官方播种稿再三路；仍找不到且正文已本地化时才两路审阅，不覆盖。
+**官方《戒律》升级**：`PreceptsUpgrade` 用上次同步的官方稿做祖先，与现行正文、新官方稿三路合并（见 [ADR 2026-09-19](docs/adr/2026-09-19-precepts-three-way-upgrade.md)）。无冲突则经 `KnowledgeWriter` 写回并更新祖先；有冲突则活文件不动，打开《戒律》见「戒律更新」：按 git diff 分块对照（现行 / 官方都相对上次官方，合一或并排），冲突可留现行 / 用官方 / 两段都留，确认后把下面的全文落盘。待确认时知识库「系统」与《戒律》打红点。AI 只填冲突块，不得削弱硬规则；失败则冲突处留当前。`stock.md` 缺失时从该文件 git 历史找回最近一次官方播种稿再三路；仍找不到且正文已本地化时才两路审阅，不覆盖。
 _Avoid_: 官方/本库分区；把 `<<<<<<<` 写进现行戒律；启动时静默覆盖已演化的正文；用关键词名单决定保哪一段；绕过 KnowledgeWriter 写《戒律》
 
 **Skill 启用集（catalog）**：跨会话保存在 `.kb/enabled_skills.json`；编排在 `useEnabledSkillsAttach`。**仅** Ctrl+单击顶层「技能」目录（或该目录右键「启用 Skill…」）→ 发现全部包 → 勾选维护默认启用集（首次无启用则默认全选，否则预勾选「候选 ∩ 已启用」）。确认后 `PUT /api/enabled-skills` **整表重写** `roots`。新建或导入 Skill 包（含触发头）时由 `KnowledgeWriter` 默认追加进启用集；改已有 `SKILL.md` 不会把用户关掉的包再打开。删除 Skill 包（或包内 `SKILL.md`）经 `KnowledgeWriter.delete_entry`（界面删除与 Agent `delete_kb` 同一 seam）从启用集去掉该根；目录搬家则 `remap_roots`。每轮注入 name/description（见 `[Skill 目录]`）；命中后再 `read_doc`。启用集**不进**托盘；要对某包改内容，Ctrl+单击该包目录/文件加入托盘即可。Skill 包（含 `SKILL.md`）**必须**落在「技能」目录下（发现 / 启用 / 写入硬约束）；对话 catalog 由 `ChatSessionRunner.resolve_skill_catalog` 装配。对话装配时仍跳过启用集里已删/越界的包（绕过写入 seam 的脏名单），缺触发头的现存包仍 400。

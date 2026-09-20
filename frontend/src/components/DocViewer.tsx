@@ -322,7 +322,6 @@ export function DocViewer({
           proposing={precepts.proposing}
           busy={precepts.busy}
           onReview={() => precepts.setReviewOpen(true)}
-          onConfirm={() => void precepts.confirm()}
           onDismiss={() => void precepts.dismiss()}
         />
       )}
@@ -350,6 +349,7 @@ export function DocViewer({
       <DocHistoryModal
         open={historyOpen}
         path={path}
+        previewText={savedBody || null}
         onClose={() => setHistoryOpen(false)}
       />
       <DocDiffModal

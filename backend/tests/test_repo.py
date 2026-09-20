@@ -92,6 +92,29 @@ def test_list_and_read_revisions(repo):
     assert revision_summary("apply official precepts", "系统/戒律.md") == "采用官方稿"
 
 
+def test_parse_file_revision_log_skips_consecutive_blob():
+    from app.storage.repo import parse_file_revision_log
+
+    a = "a" * 40
+    b = "b" * 40
+    c = "c" * 40
+    z = "0" * 40
+    raw = (
+        f"{a}\t1787838092\tedit: n.md\n"
+        f":100644 100644 {z} {b} M\tn.md\n"
+        f"\n"
+        f"{'d' * 40}\t1787838093\tedit: n.md\n"
+        f":100644 100644 {b} {b} M\tn.md\n"
+        f"\n"
+        f"{c}\t1787838094\tc3\n"
+        f":100644 100644 {b} {'e' * 40} M\tn.md\n"
+    )
+    out = parse_file_revision_log(raw, rel_path="n.md", cap=80)
+    assert [item["sha"] for item in out] == [a, c]
+    assert out[0]["message"] == "编辑"
+    assert out[0]["committed_at"] == "2026-08-27 21:41:32"
+
+
 def test_list_revisions_skips_identical_blob(repo):
     repo.write_doc("n.md", {"title": "N"}, "same\n", commit_msg="c1")
     repo.write_doc("n.md", {"title": "N"}, "same\n", commit_msg="c2")

@@ -61,12 +61,69 @@ describe("DocViewerHeader", () => {
     expect(inspect).toContainElement(
       screen.getByRole("button", { name: "文档目录" }),
     );
-    expect(screen.getByRole("button", { name: "收窄阅读区" })).toHaveClass(
-      "doc-toolbar-wide-only",
+    const reading = screen.getByRole("group", { name: "阅读版式" });
+    expect(reading).toHaveClass("doc-toolbar-wide-only");
+    expect(reading).toContainElement(screen.getByRole("button", { name: "宽" }));
+    expect(reading).toContainElement(
+      screen.getByRole("button", { name: "沉静阅读" }),
     );
-    expect(screen.getByRole("button", { name: "专注阅读" })).toHaveClass(
-      "doc-toolbar-wide-only",
+    expect(screen.getByRole("button", { name: "宽" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
     );
+    expect(screen.queryByRole("button", { name: "收窄阅读区" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "专注阅读" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "沉浸阅读" })).toBeNull();
+  });
+
+  it("switches wide and quiet reading as one control", () => {
+    const onToggleWidth = vi.fn();
+    const onToggleFocus = vi.fn();
+    const { rerender } = render(
+      <DocViewerHeader
+        {...baseProps}
+        editMode="preview"
+        onEditModeChange={() => undefined}
+        onViewHistory={() => undefined}
+        onToggleWidth={onToggleWidth}
+        onToggleFocus={onToggleFocus}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "沉静阅读" }));
+    expect(onToggleFocus).toHaveBeenCalledTimes(1);
+    expect(onToggleWidth).not.toHaveBeenCalled();
+
+    rerender(
+      <DocViewerHeader
+        {...baseProps}
+        editMode="preview"
+        onEditModeChange={() => undefined}
+        onViewHistory={() => undefined}
+        docFocus
+        onToggleWidth={onToggleWidth}
+        onToggleFocus={onToggleFocus}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "沉静阅读" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "宽" }));
+    expect(onToggleFocus).toHaveBeenCalledTimes(2);
+
+    rerender(
+      <DocViewerHeader
+        {...baseProps}
+        editMode="preview"
+        onEditModeChange={() => undefined}
+        onViewHistory={() => undefined}
+        docWidth="narrow"
+        onToggleWidth={onToggleWidth}
+        onToggleFocus={onToggleFocus}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "宽" }));
+    expect(onToggleWidth).toHaveBeenCalledTimes(1);
   });
 
   it("toggles preview and source with one development button", () => {

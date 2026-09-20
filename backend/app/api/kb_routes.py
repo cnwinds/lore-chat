@@ -359,26 +359,37 @@ async def doc(path: str, request: Request):
     return {"rel_path": d.rel_path, "meta": d.meta, "body": d.body}
 
 
+def _revision_list_payload(repo, path: str, limit: int) -> dict:
+    revisions = repo.list_revisions(path, limit=limit)
+    bodies: dict[str, dict] = {}
+    for rev in revisions[:2]:
+        try:
+            bodies[rev["sha"]] = repo.read_revision(path, rev["sha"])
+        except FileNotFoundError:
+            continue
+    return {"path": path, "revisions": revisions, "bodies": bodies}
+
+
 @router.get("/doc/revisions")
-async def doc_revisions(
+def doc_revisions(
     path: str,
     request: Request,
     limit: int = Query(80, ge=1, le=200),
 ):
+    # 同步路由进线程池，避免 git log 堵住事件循环；顺带带上最近两版正文，少两次往返。
     repo = container(request).repo
     try:
-        revisions = repo.list_revisions(path, limit=limit)
+        return _revision_list_payload(repo, path, limit)
     except FileNotFoundError:
         raise HTTPException(404, "文件不存在")
     except PermissionError as e:
         raise HTTPException(403, str(e)) from e
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
-    return {"path": path, "revisions": revisions}
 
 
 @router.get("/doc/revision")
-async def doc_revision(path: str, sha: str, request: Request):
+def doc_revision(path: str, sha: str, request: Request):
     repo = container(request).repo
     try:
         return repo.read_revision(path, sha)

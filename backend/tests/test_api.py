@@ -686,6 +686,10 @@ def test_doc_revisions_roundtrip(client):
         "/api/doc/revision", params={"path": path, "sha": revs[0]["short_sha"]}
     )
     assert newest.json()["text"] == "修订历史乙\n"
+    bodies = listed.json()["bodies"]
+    assert revs[0]["sha"] in bodies
+    assert bodies[revs[0]["sha"]]["text"] == "修订历史乙\n"
+    assert revs[1]["sha"] in bodies
 
 
 def test_doc_revisions_rejects_internal(client):

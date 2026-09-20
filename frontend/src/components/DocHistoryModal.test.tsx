@@ -118,4 +118,109 @@ describe("DocHistoryModal", () => {
     );
     expect(document.querySelector(".doc-diff-line--added")).toBeNull();
   });
+
+  it("shows preview text before the revision list returns", async () => {
+    let resolveList: (value: unknown) => void = () => undefined;
+    listDocRevisions.mockReturnValue(
+      new Promise((resolve) => {
+        resolveList = resolve;
+      }),
+    );
+    render(
+      <DocHistoryModal
+        open
+        path="笔记/a.md"
+        previewText="当前打开的正文"
+        onClose={() => undefined}
+      />,
+    );
+    expect(screen.getByRole("dialog", { name: "修订" })).toBeInTheDocument();
+    expect(screen.getByText("当前打开的正文")).toBeInTheDocument();
+    expect(screen.getByText("正在读取…")).toBeInTheDocument();
+    resolveList({
+      path: "笔记/a.md",
+      revisions: [
+        {
+          sha: "aaa1111aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          short_sha: "aaa1111",
+          message: "编辑",
+          committed_at: "2026-09-19 16:00:00",
+        },
+      ],
+      bodies: {
+        aaa1111aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa: {
+          path: "笔记/a.md",
+          sha: "aaa1111aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          short_sha: "aaa1111",
+          message: "编辑",
+          committed_at: "2026-09-19 16:00:00",
+          text: "仓库里的这一版\n",
+          binary: false,
+          size: 8,
+        },
+      },
+    });
+    await waitFor(() => {
+      expect(screen.getByText("仓库里的这一版")).toBeInTheDocument();
+    });
+    expect(getDocRevision).not.toHaveBeenCalled();
+  });
+
+  it("shows this version before the previous version arrives", async () => {
+    let resolveOlder: (value: unknown) => void = () => undefined;
+    listDocRevisions.mockResolvedValue({
+      path: "笔记/a.md",
+      revisions: [
+        {
+          sha: "aaa1111",
+          short_sha: "aaa1111",
+          message: "编辑",
+          committed_at: "2026-09-19 16:00:00",
+        },
+        {
+          sha: "bbb2222",
+          short_sha: "bbb2222",
+          message: "初次写入",
+          committed_at: "2026-09-18 09:00:00",
+        },
+      ],
+    });
+    getDocRevision.mockImplementation(async (_path: string, sha: string) => {
+      if (sha === "aaa1111") {
+        return {
+          path: "笔记/a.md",
+          sha,
+          short_sha: sha,
+          message: "编辑",
+          committed_at: "2026-09-19 16:00:00",
+          text: "第二版\n",
+          binary: false,
+          size: 8,
+        };
+      }
+      return new Promise((resolve) => {
+        resolveOlder = resolve;
+      });
+    });
+    render(
+      <DocHistoryModal open path="笔记/a.md" onClose={() => undefined} />,
+    );
+    await waitFor(() => {
+      expect(screen.getByText("第二版")).toBeInTheDocument();
+    });
+    expect(document.querySelector(".doc-diff-line--added")).toBeNull();
+    resolveOlder({
+      path: "笔记/a.md",
+      sha: "bbb2222",
+      short_sha: "bbb2222",
+      message: "初次写入",
+      committed_at: "2026-09-18 09:00:00",
+      text: "第一版\n",
+      binary: false,
+      size: 8,
+    });
+    await waitFor(() => {
+      expect(document.querySelector(".doc-diff-line--added")).not.toBeNull();
+    });
+  });
 });
