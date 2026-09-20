@@ -435,6 +435,66 @@
   background: transparent;
 }
 
+.lore-scroll-rail {
+  position: fixed;
+  z-index: 3600;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.14s linear;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+.lore-scroll-rail.is-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.lore-scroll-rail--y {
+  cursor: default;
+}
+
+.lore-scroll-rail--x {
+  cursor: default;
+}
+
+.lore-scroll-thumb {
+  position: absolute;
+  background: var(--scrollbar-thumb);
+  border-radius: 99px;
+  min-width: 6px;
+  min-height: 6px;
+}
+
+.lore-scroll-rail--y .lore-scroll-thumb {
+  left: 2px;
+  right: 2px;
+  width: auto;
+  cursor: grab;
+}
+
+.lore-scroll-rail--x .lore-scroll-thumb {
+  top: 2px;
+  bottom: 2px;
+  height: auto;
+  cursor: grab;
+}
+
+.lore-scroll-thumb:hover,
+.lore-scroll-rail.is-dragging .lore-scroll-thumb {
+  background: var(--scrollbar-thumb-hover);
+}
+
+.lore-scroll-rail.is-dragging .lore-scroll-thumb {
+  cursor: grabbing;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lore-scroll-rail {
+    transition: none;
+  }
+}
+
 body {
   margin: 0;
   min-width: 320px;
