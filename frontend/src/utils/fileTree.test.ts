@@ -15,6 +15,7 @@ import {
   resolveExpandedFolderPaths,
   SKILLS_DIR,
   SYSTEM_LAYER_DIR,
+  showsPreceptsAttention,
 } from "./fileTree";
 
 describe("partitionFileTreeRoot", () => {
@@ -62,6 +63,16 @@ describe("isSpecialKbPath", () => {
     expect(isSpecialKbPath(MEDIA_DIR)).toBe(true);
     expect(isSpecialKbPath(`${MEDIA_DIR}/生成/2026-08`)).toBe(true);
     expect(isSpecialKbPath("笔记/a.md")).toBe(false);
+  });
+});
+
+describe("showsPreceptsAttention", () => {
+  it("marks the precepts file and its ancestor folders", () => {
+    expect(showsPreceptsAttention("系统/戒律.md", "系统/戒律.md")).toBe(true);
+    expect(showsPreceptsAttention("系统", "系统/戒律.md")).toBe(true);
+    expect(showsPreceptsAttention("系统/心法.md", "系统/戒律.md")).toBe(false);
+    expect(showsPreceptsAttention("技能", "系统/戒律.md")).toBe(false);
+    expect(showsPreceptsAttention("系统", null)).toBe(false);
   });
 });
 

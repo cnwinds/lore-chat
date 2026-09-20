@@ -9,6 +9,7 @@ const EMPTY: SettingsAttention = {
   model: { any: false, chat: false, utility: false, embed: false },
   memory: { any: false, pending_count: 0 },
   usage: { any: false, incomplete_price_count: 0 },
+  precepts: { any: false, path: "" },
 };
 
 /** 拉取设置红点；由调用方在打开/关闭设置、保存后主动 refresh。 */
@@ -21,7 +22,13 @@ export function useSettingsAttention(): {
   const refreshAttention = useCallback(() => {
     getSettingsAttention()
       .then((res) => {
-        if (res?.attention) setAttention(res.attention);
+        if (res?.attention) {
+          setAttention({
+            ...EMPTY,
+            ...res.attention,
+            precepts: res.attention.precepts ?? EMPTY.precepts,
+          });
+        }
       })
       .catch(() => {
         /* 红点失败不阻断主界面 */

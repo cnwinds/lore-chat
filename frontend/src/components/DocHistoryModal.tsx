@@ -7,8 +7,7 @@ import {
 } from "../api";
 import { buildDocDiff } from "../utils/docDiff";
 import { formatRoutineRunTime } from "../utils/displayTime";
-
-type ViewMode = "text" | "diff";
+import { DiffIcon, DocIconBtn } from "./DocToolbarIcons";
 
 type Props = {
   open: boolean;
@@ -21,7 +20,7 @@ export function DocHistoryModal({ open, path, onClose }: Props) {
   const [selected, setSelected] = useState<string | null>(null);
   const [current, setCurrent] = useState<DocRevisionBody | null>(null);
   const [olderText, setOlderText] = useState<string | null>(null);
-  const [view, setView] = useState<ViewMode>("text");
+  const [comparePrev, setComparePrev] = useState(true);
   const [loadingList, setLoadingList] = useState(false);
   const [loadingBody, setLoadingBody] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -35,7 +34,7 @@ export function DocHistoryModal({ open, path, onClose }: Props) {
     setSelected(null);
     setCurrent(null);
     setOlderText(null);
-    setView("text");
+    setComparePrev(true);
     void listDocRevisions(path)
       .then((data) => {
         if (cancelled) return;
@@ -61,25 +60,25 @@ export function DocHistoryModal({ open, path, onClose }: Props) {
     setLoadingBody(true);
     const index = revisions.findIndex((r) => r.sha === selected);
     const olderSha = index >= 0 ? revisions[index + 1]?.sha : undefined;
-    void getDocRevision(path, selected)
-      .then(async (body) => {
-        if (cancelled) return;
-        setCurrent(body);
+    void (async () => {
+      try {
+        const body = await getDocRevision(path, selected);
+        let prevText: string | null = null;
         if (olderSha) {
           const prev = await getDocRevision(path, olderSha);
-          if (!cancelled) setOlderText(prev.binary ? null : prev.text);
-        } else {
-          setOlderText(null);
+          prevText = prev.binary ? null : prev.text;
         }
-      })
-      .catch((e: unknown) => {
+        if (cancelled) return;
+        setCurrent(body);
+        setOlderText(prevText);
+      } catch (e: unknown) {
         if (!cancelled) {
           setError(e instanceof Error ? e.message : "无法读取这一版");
         }
-      })
-      .finally(() => {
+      } finally {
         if (!cancelled) setLoadingBody(false);
-      });
+      }
+    })();
     return () => {
       cancelled = true;
     };
@@ -97,19 +96,20 @@ export function DocHistoryModal({ open, path, onClose }: Props) {
     return () => window.removeEventListener("keydown", onKeyDown, true);
   }, [open, onClose]);
 
+  const canDiff = !current?.binary && current?.text != null && olderText != null;
+  const showDiff = comparePrev && canDiff;
+
   const diffLines = useMemo(() => {
-    if (view !== "diff" || current?.binary || current?.text == null) return [];
+    if (!showDiff || current?.text == null) return [];
     return buildDocDiff(olderText ?? "", current.text);
-  }, [view, current, olderText]);
+  }, [showDiff, current, olderText]);
 
   if (!open || !path) return null;
-
-  const canDiff = !current?.binary && current?.text != null && olderText != null;
 
   return (
     <div className="doc-diff-overlay" role="presentation" onClick={onClose}>
       <div
-        className="doc-history-modal"
+        className="doc-history-modal doc-history-modal--frame"
         role="dialog"
         aria-modal="true"
         aria-labelledby="doc-history-title"
@@ -138,10 +138,7 @@ export function DocHistoryModal({ open, path, onClose }: Props) {
                   key={rev.sha}
                   type="button"
                   className={`doc-history-item${selected === rev.sha ? " is-active" : ""}`}
-                  onClick={() => {
-                    setView("text");
-                    setSelected(rev.sha);
-                  }}
+                  onClick={() => setSelected(rev.sha)}
                 >
                   <span className="doc-history-item-time">
                     {i === 0 ? "现在" : formatRoutineRunTime(rev.committed_at)}
@@ -153,32 +150,26 @@ export function DocHistoryModal({ open, path, onClose }: Props) {
           </aside>
           <section className="doc-history-pane">
             <div className="doc-history-pane-bar">
-              <div className="doc-history-switch" role="group" aria-label="查看方式">
-                <button
-                  type="button"
-                  className={view === "text" ? "is-active" : undefined}
-                  onClick={() => setView("text")}
-                >
-                  这一版
-                </button>
-                <button
-                  type="button"
-                  className={view === "diff" ? "is-active" : undefined}
-                  onClick={() => setView("diff")}
-                  disabled={!canDiff}
-                >
-                  和上一版比
-                </button>
-              </div>
+              <DocIconBtn
+                label="和上一版比"
+                active={comparePrev}
+                aria-pressed={comparePrev}
+                onClick={() => setComparePrev((on) => !on)}
+              >
+                <DiffIcon />
+              </DocIconBtn>
             </div>
-            <div className="doc-history-pane-body">
+            <div
+              className="doc-history-pane-body"
+              aria-busy={loadingBody}
+            >
               {error ? (
                 <p className="doc-diff-empty">{error}</p>
-              ) : loadingBody ? (
+              ) : !current && loadingBody ? (
                 <p className="doc-diff-empty">正在打开这一版…</p>
               ) : current?.binary ? (
                 <p className="doc-diff-empty">这一版是二进制，不能在这里预览。</p>
-              ) : view === "diff" && canDiff ? (
+              ) : showDiff ? (
                 <pre className="doc-diff-lines">
                   {diffLines.map((line, i) => (
                     <div

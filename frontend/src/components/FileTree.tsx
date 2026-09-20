@@ -3,6 +3,7 @@ import {
   fileTreeFileIcon,
   isProtectedKbPath,
   isSpecialKbPath,
+  showsPreceptsAttention,
   MEMORY_DIR,
   opensKbFloatInsteadOfExpand,
   partitionFileTreeRoot,
@@ -65,6 +66,9 @@ type Props = {
   onToggleFolder: (path: string) => void;
   /** 记忆目录待确认红点 */
   memoryAttention?: boolean;
+  /** 待确认戒律更新：红点打在文件及其祖先目录 */
+  preceptsAttention?: boolean;
+  preceptsPath?: string | null;
 };
 
 export function FileTree({
@@ -89,6 +93,8 @@ export function FileTree({
   expanded,
   onToggleFolder,
   memoryAttention = false,
+  preceptsAttention = false,
+  preceptsPath = null,
 }: Props) {
   const activePathSet = useMemo(() => new Set(activePaths), [activePaths]);
   const [dragPath, setDragPath] = useState<string | null>(null);
@@ -171,6 +177,8 @@ export function FileTree({
         onStartRename={onStartRename}
         disabled={disabled}
         memoryAttention={memoryAttention}
+        preceptsAttention={preceptsAttention}
+        preceptsPath={preceptsPath}
       />
     );
   }
@@ -222,6 +230,8 @@ function TreeItem({
   onStartRename,
   disabled,
   memoryAttention = false,
+  preceptsAttention = false,
+  preceptsPath = null,
 }: {
   node: TreeNode;
   depth: number;
@@ -249,6 +259,8 @@ function TreeItem({
   onStartRename: (path: string, name: string) => void;
   disabled?: boolean;
   memoryAttention?: boolean;
+  preceptsAttention?: boolean;
+  preceptsPath?: string | null;
 }) {
   const pad = 8 + depth * 16;
   const protectedKb = isProtectedKbPath(node.path);
@@ -262,6 +274,8 @@ function TreeItem({
     const hasChildFolders = node.children.some((c) => c.type === "folder");
     const opensFloat = opensKbFloatInsteadOfExpand(node.path, hasChildFolders);
     const showMemoryDot = node.path === MEMORY_DIR && memoryAttention;
+    const showPreceptsDot =
+      preceptsAttention && showsPreceptsAttention(node.path, preceptsPath);
     return (
       <>
         <div
@@ -325,6 +339,9 @@ function TreeItem({
               {showMemoryDot ? (
                 <SettingsAttentionDot title="有待确认记忆" />
               ) : null}
+              {showPreceptsDot ? (
+                <SettingsAttentionDot title="有待确认的戒律更新" />
+              ) : null}
             </span>
           )}
         </div>
@@ -358,6 +375,8 @@ function TreeItem({
               onStartRename={onStartRename}
               disabled={disabled}
               memoryAttention={memoryAttention}
+              preceptsAttention={preceptsAttention}
+              preceptsPath={preceptsPath}
             />
           ))}
       </>
@@ -441,7 +460,12 @@ function TreeItem({
           <span className="file-tree-icon">
             <FileTypeGlyph path={node.path} />
           </span>
-          <span className="file-tree-label">{node.name}</span>
+          <span className="file-tree-label">
+            {node.name}
+            {preceptsAttention && showsPreceptsAttention(node.path, preceptsPath) ? (
+              <SettingsAttentionDot title="有待确认的戒律更新" />
+            ) : null}
+          </span>
         </button>
       )}
     </div>

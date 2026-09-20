@@ -61,3 +61,73 @@ describe("FileTree special group", () => {
     expect(group?.contains(business)).toBe(false);
   });
 });
+
+describe("FileTree precepts attention", () => {
+  const preceptsTree = buildFileTree([`${SYSTEM_LAYER_DIR}/戒律.md`]);
+
+  it("marks 系统 when collapsed", () => {
+    render(
+      <FileTree
+        tree={preceptsTree}
+        onSelectFile={noop}
+        dropHighlightDir={null}
+        onDropHighlightDir={noop}
+        onDropFiles={noop}
+        onMovePath={noop}
+        onContextMenu={noop}
+        renamingPath={null}
+        renamingValue=""
+        onRenamingValueChange={noop}
+        onRenameCommit={noop}
+        onRenameCancel={noop}
+        onStartRename={noop}
+        expanded={new Set()}
+        onToggleFolder={noop}
+        preceptsAttention
+        preceptsPath={`${SYSTEM_LAYER_DIR}/戒律.md`}
+      />,
+    );
+    const folder = document.querySelector(
+      `[data-kb-path="${SYSTEM_LAYER_DIR}"]`,
+    );
+    expect(folder?.querySelector(".settings-attention-dot")).toBeTruthy();
+    expect(
+      document.querySelector(`[data-kb-path="${SYSTEM_LAYER_DIR}/戒律.md"]`),
+    ).toBeNull();
+  });
+
+  it("marks 系统 and 戒律.md when expanded", () => {
+    render(
+      <FileTree
+        tree={preceptsTree}
+        onSelectFile={noop}
+        dropHighlightDir={null}
+        onDropHighlightDir={noop}
+        onDropFiles={noop}
+        onMovePath={noop}
+        onContextMenu={noop}
+        renamingPath={null}
+        renamingValue=""
+        onRenamingValueChange={noop}
+        onRenameCommit={noop}
+        onRenameCancel={noop}
+        onStartRename={noop}
+        expanded={new Set([SYSTEM_LAYER_DIR])}
+        onToggleFolder={noop}
+        preceptsAttention
+        preceptsPath={`${SYSTEM_LAYER_DIR}/戒律.md`}
+      />,
+    );
+    expect(
+      document.querySelector(
+        `[data-kb-path="${SYSTEM_LAYER_DIR}"] .settings-attention-dot`,
+      ),
+    ).toBeTruthy();
+    expect(
+      document.querySelector(
+        `[data-kb-path="${SYSTEM_LAYER_DIR}/戒律.md"] .settings-attention-dot`,
+      ),
+    ).toBeTruthy();
+    expect(screen.getAllByTitle("有待确认的戒律更新")).toHaveLength(2);
+  });
+});

@@ -114,6 +114,8 @@ export function useWorkspaceShell({
       settingsAttention:
         displayAttention.model.any || displayAttention.usage.any,
       memoryAttention: displayAttention.memory.any,
+      preceptsAttention: displayAttention.precepts.any,
+      preceptsPath: displayAttention.precepts.path || null,
       onDocsChange: setKbPaths,
     };
   }, [
@@ -123,6 +125,8 @@ export function useWorkspaceShell({
     displayAttention.model.any,
     displayAttention.usage.any,
     displayAttention.memory.any,
+    displayAttention.precepts.any,
+    displayAttention.precepts.path,
     setSettingsOpen,
     setShareTarget,
     setKbPaths,

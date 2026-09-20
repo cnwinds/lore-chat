@@ -23,6 +23,8 @@ type Props = {
   refreshKey?: number;
   activePaths?: string[];
   memoryAttention?: boolean;
+  preceptsAttention?: boolean;
+  preceptsPath?: string | null;
   onSelectFile: (path: string, mods?: SelectMods) => void;
   onSelectFolder?: (path: string, mods?: SelectMods) => void;
   onOpenEnabledSkills?: () => void;
@@ -36,6 +38,8 @@ export function KbSidebar({
   refreshKey = 0,
   activePaths = [],
   memoryAttention = false,
+  preceptsAttention = false,
+  preceptsPath = null,
   onSelectFile,
   onSelectFolder,
   onOpenEnabledSkills,
@@ -291,6 +295,8 @@ export function KbSidebar({
               expanded={expanded}
               onToggleFolder={toggleFolder}
               memoryAttention={memoryAttention}
+              preceptsAttention={preceptsAttention}
+              preceptsPath={preceptsPath}
               {...treeInteraction.fileTreeProps}
             />
           </div>

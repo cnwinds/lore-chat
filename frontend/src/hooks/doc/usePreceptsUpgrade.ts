@@ -15,9 +15,10 @@ function looksLikePrecepts(path: string) {
 type Args = {
   path: string;
   onApplied?: () => void;
+  onAttentionChange?: () => void;
 };
 
-export function usePreceptsUpgrade({ path, onApplied }: Args) {
+export function usePreceptsUpgrade({ path, onApplied, onAttentionChange }: Args) {
   const [pending, setPending] = useState<PreceptsUpgradePending | null>(null);
   const [preceptsPath, setPreceptsPath] = useState<string | null>(null);
   const [reviewOpen, setReviewOpen] = useState(false);
@@ -35,8 +36,9 @@ export function usePreceptsUpgrade({ path, onApplied }: Args) {
         return;
       }
       setPending(data.pending);
+      onAttentionChange?.();
     },
-    [path],
+    [onAttentionChange, path],
   );
 
   useEffect(() => {

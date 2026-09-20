@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import re
 import shutil
+import threading
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 from git import Blob, Repo
+from git.db import GitDB
 
 from app.storage import frontmatter
 from app.time import DISPLAY_TZ, now_wall_clock
@@ -62,11 +64,14 @@ class KnowledgeRepo:
             d.replace("\\", "/").strip("/") for d in protected_dirs if d.strip()
         )
         self.root.mkdir(parents=True, exist_ok=True)
+        # GitPython 默认 GitCmdObjectDB 会常驻 git cat-file --batch；
+        # FastAPI 同步路由在线程池并发读时会把管道卡死，整站 /health 跟着超时。
+        self._git_lock = threading.RLock()
         git_dir = self.root / ".git"
         if git_dir.exists():
-            self.repo = Repo(self.root)
+            self.repo = Repo(self.root, odbt=GitDB)
         else:
-            self.repo = Repo.init(self.root)
+            self.repo = Repo.init(self.root, odbt=GitDB)
         with self.repo.config_writer() as cw:
             if not cw.has_option("user", "email"):
                 cw.set_value("user", "email", "kb@localhost")
@@ -84,8 +89,9 @@ class KnowledgeRepo:
         return self._abs(rel_path)
 
     def _commit(self, rel_paths: list[str], msg: str) -> None:
-        self.repo.index.add(rel_paths)
-        self.repo.index.commit(msg)
+        with self._git_lock:
+            self.repo.index.add(rel_paths)
+            self.repo.index.commit(msg)
 
     def read_doc(self, rel_path: str) -> Document:
         abs_p = self._abs(rel_path)
@@ -97,9 +103,10 @@ class KnowledgeRepo:
 
     def _first_commit_time(self, rel_path: str) -> str | None:
         try:
-            commits = list(
-                self.repo.iter_commits(paths=rel_path, max_count=1, reverse=True)
-            )
+            with self._git_lock:
+                commits = list(
+                    self.repo.iter_commits(paths=rel_path, max_count=1, reverse=True)
+                )
             if commits:
                 return (
                     commits[0]
@@ -218,29 +225,30 @@ class KnowledgeRepo:
         exists = self._abs(norm).is_file()
         out: list[dict] = []
         prev_blob: str | None = None
-        try:
-            commits = self.repo.iter_commits(paths=norm, max_count=cap * 2)
-        except Exception:
-            commits = []
-        for commit in commits:
-            blob = self._blob_at(commit, norm)
-            if blob is None:
-                continue
-            if blob.hexsha == prev_blob:
-                continue
-            prev_blob = blob.hexsha
-            out.append(
-                {
-                    "sha": commit.hexsha,
-                    "short_sha": commit.hexsha[:7],
-                    "message": revision_summary(commit.message, norm),
-                    "committed_at": commit.committed_datetime.astimezone(
-                        DISPLAY_TZ
-                    ).strftime("%Y-%m-%d %H:%M:%S"),
-                }
-            )
-            if len(out) >= cap:
-                break
+        with self._git_lock:
+            try:
+                commits = list(self.repo.iter_commits(paths=norm, max_count=cap * 2))
+            except Exception:
+                commits = []
+            for commit in commits:
+                blob = self._blob_at(commit, norm)
+                if blob is None:
+                    continue
+                if blob.hexsha == prev_blob:
+                    continue
+                prev_blob = blob.hexsha
+                out.append(
+                    {
+                        "sha": commit.hexsha,
+                        "short_sha": commit.hexsha[:7],
+                        "message": revision_summary(commit.message, norm),
+                        "committed_at": commit.committed_datetime.astimezone(
+                            DISPLAY_TZ
+                        ).strftime("%Y-%m-%d %H:%M:%S"),
+                    }
+                )
+                if len(out) >= cap:
+                    break
         if not out and not exists:
             raise FileNotFoundError(rel_path)
         return out
@@ -251,27 +259,28 @@ class KnowledgeRepo:
         token = (sha or "").strip()
         if not _REV_SHA_RE.fullmatch(token):
             raise ValueError("无效版本")
-        try:
-            commit = self.repo.commit(token)
-        except Exception as exc:
-            raise FileNotFoundError(rel_path) from exc
-        blob = self._blob_at(commit, norm)
-        if blob is None:
-            raise FileNotFoundError(rel_path)
-        data = blob.data_stream.read()
-        text, binary = _decode_revision_text(norm, data)
-        return {
-            "path": norm,
-            "sha": commit.hexsha,
-            "short_sha": commit.hexsha[:7],
-            "message": revision_summary(commit.message, norm),
-            "committed_at": commit.committed_datetime.astimezone(DISPLAY_TZ).strftime(
-                "%Y-%m-%d %H:%M:%S"
-            ),
-            "text": text,
-            "binary": binary,
-            "size": len(data),
-        }
+        with self._git_lock:
+            try:
+                commit = self.repo.commit(token)
+            except Exception as exc:
+                raise FileNotFoundError(rel_path) from exc
+            blob = self._blob_at(commit, norm)
+            if blob is None:
+                raise FileNotFoundError(rel_path)
+            data = blob.data_stream.read()
+            text, binary = _decode_revision_text(norm, data)
+            return {
+                "path": norm,
+                "sha": commit.hexsha,
+                "short_sha": commit.hexsha[:7],
+                "message": revision_summary(commit.message, norm),
+                "committed_at": commit.committed_datetime.astimezone(
+                    DISPLAY_TZ
+                ).strftime("%Y-%m-%d %H:%M:%S"),
+                "text": text,
+                "binary": binary,
+                "size": len(data),
+            }
 
     def _is_internal(self, rel_path: str) -> bool:
         """`.kb/`、`.git/` 等内部路径，禁止读写与删除。"""
@@ -336,8 +345,9 @@ class KnowledgeRepo:
             return False
         abs_p.unlink()
         try:
-            self.repo.index.remove([norm])
-            self.repo.index.commit(commit_msg)
+            with self._git_lock:
+                self.repo.index.remove([norm])
+                self.repo.index.commit(commit_msg)
         except Exception:
             # 未跟踪文件：工作区已删即可
             pass
@@ -374,8 +384,9 @@ class KnowledgeRepo:
             shutil.rmtree(abs_p)
 
         if deleted:
-            self.repo.index.remove(deleted)
-            self.repo.index.commit(commit_msg)
+            with self._git_lock:
+                self.repo.index.remove(deleted)
+                self.repo.index.commit(commit_msg)
         return deleted
 
     def move_doc(self, from_path: str, to_path: str, *, commit_msg: str) -> str:
@@ -399,8 +410,9 @@ class KnowledgeRepo:
         parent = PurePosixPath(from_norm).parent.as_posix()
         if parent not in ("", "."):
             self._prune_empty_directories(parent)
-        self.repo.index.remove([from_norm])
-        self.repo.index.commit(commit_msg)
+        with self._git_lock:
+            self.repo.index.remove([from_norm])
+            self.repo.index.commit(commit_msg)
         return to_norm
 
     def move_file(self, from_path: str, to_path: str, *, commit_msg: str) -> str:
@@ -422,12 +434,13 @@ class KnowledgeRepo:
         if parent not in ("", "."):
             self._prune_empty_directories(parent)
         # 源可能未跟踪（list_tree 含工作区文件）；remove 失败仍须 add 目标
-        try:
-            self.repo.index.remove([from_norm])
-        except Exception:
-            pass
-        self.repo.index.add([to_norm])
-        self.repo.index.commit(commit_msg)
+        with self._git_lock:
+            try:
+                self.repo.index.remove([from_norm])
+            except Exception:
+                pass
+            self.repo.index.add([to_norm])
+            self.repo.index.commit(commit_msg)
         return to_norm
 
     def move_directory(self, from_dir: str, to_dir: str, *, commit_msg: str) -> tuple[list[str], list[str]]:
@@ -473,9 +486,10 @@ class KnowledgeRepo:
                 new_paths.append(to_norm)
 
         if old_paths:
-            self.repo.index.remove(old_paths)
-            self.repo.index.add(new_paths)
-            self.repo.index.commit(commit_msg)
+            with self._git_lock:
+                self.repo.index.remove(old_paths)
+                self.repo.index.add(new_paths)
+                self.repo.index.commit(commit_msg)
         return old_paths, new_paths
 
     def log_change(

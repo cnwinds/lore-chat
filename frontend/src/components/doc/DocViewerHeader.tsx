@@ -13,7 +13,6 @@ import {
   FocusExitIcon,
   MarkdownIcon,
   PinIcon,
-  PreviewIcon,
   SaveIcon,
   WidthExpandIcon,
   WidthNarrowIcon,
@@ -97,12 +96,6 @@ export function DocViewerHeader({
       : null;
 
   const overflowItems: OverflowItem[] = [
-    {
-      id: "view-history",
-      label: "修订",
-      icon: "history" as const,
-      onClick: onViewHistory,
-    },
     ...(dirty && !readOnly
       ? [
           {
@@ -198,27 +191,16 @@ export function DocViewerHeader({
         )}
       </div>
       <div className="doc-viewer-toolbar">
-        {doc?.meta && <DocMetaPopover meta={doc.meta} />}
-        <div className="doc-mode-toggle" role="group" aria-label="编辑模式">
-          <DocIconBtn
-            className="doc-mode-toggle-btn"
-            label="预览模式"
-            active={editMode === "preview"}
-            onClick={() => onEditModeChange("preview")}
-            disabled={loading || mergeEditing}
-          >
-            <PreviewIcon />
-          </DocIconBtn>
-          <DocIconBtn
-            className="doc-mode-toggle-btn"
-            label="Markdown 源码"
-            active={editMode === "markdown"}
-            onClick={() => onEditModeChange("markdown")}
-            disabled={loading || mergeEditing}
-          >
-            <MarkdownIcon />
-          </DocIconBtn>
-        </div>
+        <DocIconBtn
+          label={editMode === "markdown" ? "退出开发" : "开发"}
+          active={editMode === "markdown"}
+          onClick={() =>
+            onEditModeChange(editMode === "markdown" ? "preview" : "markdown")
+          }
+          disabled={loading || mergeEditing}
+        >
+          <MarkdownIcon />
+        </DocIconBtn>
         {!readOnly && (
           <>
             {dirty && (
@@ -252,77 +234,76 @@ export function DocViewerHeader({
             )}
           </>
         )}
-        <button
-          type="button"
-          className="doc-action-btn doc-history-btn"
-          title="修订"
-          aria-label="修订"
+        <DocIconBtn
+          label="修订"
           onClick={onViewHistory}
           disabled={loading}
         >
-          <HistoryIcon size={14} />
-          修订
-        </button>
-        {showLayoutActions && (
+          <HistoryIcon />
+        </DocIconBtn>
+        {(showLayoutActions || mode === "page") && (
           <>
             <span className="doc-toolbar-divider" aria-hidden />
             {doc && (
-              <DocOutlineMenu
-                open={outlineOpen}
-                onToggle={onOutlineToggle}
-                onClose={onOutlineClose}
-                items={outlineItems}
-                activeIndex={outlineActiveIndex}
-                onJump={onOutlineJump}
-                disabled={loading}
-              />
+              <div className="doc-toolbar-cluster" role="group" aria-label="文档查阅">
+                {doc.meta ? <DocMetaPopover meta={doc.meta} /> : null}
+                <DocOutlineMenu
+                  open={outlineOpen}
+                  onToggle={onOutlineToggle}
+                  onClose={onOutlineClose}
+                  items={outlineItems}
+                  activeIndex={outlineActiveIndex}
+                  onJump={onOutlineJump}
+                  disabled={loading}
+                />
+              </div>
             )}
-            {!docFocus && onToggleWidth && (
-              <DocIconBtn
-                className="doc-toolbar-wide-only"
-                label={docWidth === "wide" ? "收窄阅读区" : "加宽阅读区"}
-                active={docWidth === "wide"}
-                onClick={onToggleWidth}
-              >
-                {docWidth === "wide" ? <WidthNarrowIcon /> : <WidthExpandIcon />}
-              </DocIconBtn>
+            {showLayoutActions && (
+              <>
+                {!docFocus && onToggleWidth && (
+                  <DocIconBtn
+                    className="doc-toolbar-wide-only"
+                    label={docWidth === "wide" ? "收窄阅读区" : "加宽阅读区"}
+                    active={docWidth === "wide"}
+                    onClick={onToggleWidth}
+                  >
+                    {docWidth === "wide" ? (
+                      <WidthNarrowIcon />
+                    ) : (
+                      <WidthExpandIcon />
+                    )}
+                  </DocIconBtn>
+                )}
+                {onToggleFocus && (
+                  <DocIconBtn
+                    className="doc-toolbar-wide-only"
+                    label={docFocus ? "退出专注" : "专注阅读"}
+                    active={docFocus}
+                    onClick={onToggleFocus}
+                  >
+                    {docFocus ? <FocusExitIcon /> : <FocusEnterIcon />}
+                  </DocIconBtn>
+                )}
+                <DocOverflowMenu items={overflowItems} disabled={loading} />
+                {mode === "float" && onPin && (
+                  <DocIconBtn label="固定到右侧栏" onClick={onPin}>
+                    <PinIcon />
+                  </DocIconBtn>
+                )}
+                {mode === "panel" && onUnpin && (
+                  <DocIconBtn
+                    label="取消固定，回到浮窗预览"
+                    active
+                    onClick={onUnpin}
+                  >
+                    <PinIcon filled />
+                  </DocIconBtn>
+                )}
+              </>
             )}
-            {onToggleFocus && (
-              <DocIconBtn
-                className="doc-toolbar-wide-only"
-                label={docFocus ? "退出专注" : "专注阅读"}
-                active={docFocus}
-                onClick={onToggleFocus}
-              >
-                {docFocus ? <FocusExitIcon /> : <FocusEnterIcon />}
-              </DocIconBtn>
+            {mode === "page" && (
+              <DocOverflowMenu items={overflowItems} disabled={loading} />
             )}
-            <DocOverflowMenu items={overflowItems} disabled={loading} />
-            {mode === "float" && onPin && (
-              <DocIconBtn label="固定到右侧栏" onClick={onPin}>
-                <PinIcon />
-              </DocIconBtn>
-            )}
-            {mode === "panel" && onUnpin && (
-              <DocIconBtn label="取消固定，回到浮窗预览" active onClick={onUnpin}>
-                <PinIcon filled />
-              </DocIconBtn>
-            )}
-          </>
-        )}
-        {mode === "page" && doc && (
-          <>
-            <span className="doc-toolbar-divider" aria-hidden />
-            <DocOutlineMenu
-              open={outlineOpen}
-              onToggle={onOutlineToggle}
-              onClose={onOutlineClose}
-              items={outlineItems}
-              activeIndex={outlineActiveIndex}
-              onJump={onOutlineJump}
-              disabled={loading}
-            />
-            <DocOverflowMenu items={overflowItems} disabled={loading} />
           </>
         )}
       </div>

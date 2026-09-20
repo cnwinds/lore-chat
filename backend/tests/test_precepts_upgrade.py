@@ -28,6 +28,15 @@ def _persist(writer, repo, body: str, msg: str = "edit precepts") -> None:
     )
 
 
+def _bump_official(monkeypatch, sl, old_body: str, new_body: str) -> None:
+    monkeypatch.setattr(sl, "_PRECEPTS_BODY", new_body)
+    monkeypatch.setattr(
+        sl,
+        "_SUPERSEDED_PRECEPTS_HASHES",
+        frozenset(set(sl._SUPERSEDED_PRECEPTS_HASHES) | {sl._seed_hash(old_body)}),
+    )
+
+
 def test_sync_writes_stock_when_live_is_official(tmp_path):
     repo, _writer, _layer, up = _upgrade(tmp_path)
     st = up.sync()
@@ -122,6 +131,99 @@ def test_no_stock_customized_is_two_way_review(tmp_path):
     assert st.status == "pending_review"
     assert "用户自己的家规" in repo.read_doc("系统/戒律.md").body
     assert not has_conflict_markers(repo.read_doc("系统/戒律.md").body)
+
+
+def test_missing_stock_file_recovers_official_from_git(tmp_path, monkeypatch):
+    from app.engine.agent import system_layer as sl
+
+    repo, writer, _layer, up = _upgrade(tmp_path)
+    up.sync()
+    seed = repo.read_doc("系统/戒律.md").body
+    live = seed + "\n## 九、本地试验\n只说中文。\n"
+    _persist(writer, repo, live)
+    (repo.root / ".kb/precepts/stock.md").unlink()
+    _bump_official(
+        monkeypatch,
+        sl,
+        seed,
+        sl._PRECEPTS_BODY.replace("宁可不记", "宁可先不记", 1),
+    )
+    st = up.sync()
+    assert st.status == "applied"
+    body = repo.read_doc("系统/戒律.md").body
+    assert "只说中文" in body
+    assert "宁可先不记" in body
+    assert "宁可不记" not in body
+    assert sl._seed_hash(
+        (repo.root / ".kb/precepts/stock.md").read_text(encoding="utf-8")
+    ) == sl._seed_hash(sl._PRECEPTS_BODY)
+
+
+def test_missing_stock_overlapping_edit_is_localized_conflict(tmp_path, monkeypatch):
+    from app.engine.agent import system_layer as sl
+
+    repo, writer, _layer, up = _upgrade(tmp_path)
+    up.sync()
+    seed = repo.read_doc("系统/戒律.md").body
+    live = seed.replace("宁可不记", "必须先问用户", 1)
+    _persist(writer, repo, live)
+    (repo.root / ".kb/precepts/stock.md").unlink()
+    _bump_official(
+        monkeypatch,
+        sl,
+        seed,
+        sl._PRECEPTS_BODY.replace("宁可不记", "宁可先不记", 1),
+    )
+    st = up.sync()
+    assert st.status == "pending_review"
+    assert st.pending["base"]
+    hunks = st.pending["conflicts"]
+    assert hunks
+    assert hunks[0]["ours"] != st.pending["ours"]
+    assert "必须先问用户" in hunks[0]["ours"]
+
+
+def test_empty_base_pending_is_rebuilt_from_git_stock(tmp_path, monkeypatch):
+    from app.engine.agent import system_layer as sl
+    import json
+
+    repo, writer, _layer, up = _upgrade(tmp_path)
+    up.sync()
+    seed = repo.read_doc("系统/戒律.md").body
+    live = seed.replace("宁可不记", "必须先问用户", 1)
+    _persist(writer, repo, live)
+    (repo.root / ".kb/precepts/stock.md").unlink()
+    _bump_official(
+        monkeypatch,
+        sl,
+        seed,
+        sl._PRECEPTS_BODY.replace("宁可不记", "宁可先不记", 1),
+    )
+    # 模拟旧逻辑：无祖先时把整篇当成一块冲突
+    (repo.root / ".kb/precepts").mkdir(parents=True, exist_ok=True)
+    (repo.root / ".kb/precepts/state.json").write_text(
+        json.dumps(
+            {
+                "pending": {
+                    "official_hash": sl._seed_hash(sl._PRECEPTS_BODY),
+                    "ours": live,
+                    "theirs": sl._PRECEPTS_BODY,
+                    "base": "",
+                    "proposed": live,
+                    "proposed_source": "fallback",
+                    "conflicts": [{"base": "", "ours": live, "theirs": sl._PRECEPTS_BODY}],
+                    "created_at": "2026-09-20T00:00:00+08:00",
+                }
+            },
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    st = up.sync()
+    assert st.status == "pending_review"
+    assert st.pending["base"]
+    assert st.pending["conflicts"][0]["ours"] != live
 
 
 def test_confirm_writes_via_writer_and_updates_stock(tmp_path, monkeypatch):

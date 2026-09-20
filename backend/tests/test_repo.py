@@ -118,6 +118,25 @@ def test_read_revision_binary(repo):
     assert got["text"] is None
 
 
+def test_concurrent_revision_reads_do_not_hang(repo):
+    """FastAPI 线程池会并发打 git；GitPython cat-file 管道不能并行。"""
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    repo.write_doc("n.md", {"title": "N"}, "第一版\n", commit_msg="c1")
+    repo.write_doc("n.md", {"title": "N"}, "第二版\n", commit_msg="c2")
+
+    def work():
+        revs = repo.list_revisions("n.md")
+        latest = repo.read_revision("n.md", revs[0]["sha"])
+        older = repo.read_revision("n.md", revs[1]["sha"])
+        return latest["text"], older["text"]
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        futs = [pool.submit(work) for _ in range(24)]
+        for fut in as_completed(futs, timeout=15):
+            assert fut.result() == ("第二版\n", "第一版\n")
+
+
 def test_log_change_appends_changelog(repo):
     repo.log_change("创建 技术/x.md：docker 笔记", commit_msg="log")
     doc_text = (repo.root / ".kb" / "changelog.md").read_text(encoding="utf-8")

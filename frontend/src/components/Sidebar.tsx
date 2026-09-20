@@ -48,6 +48,9 @@ type Props = {
   settingsAttention?: boolean;
   /** 待确认记忆：侧栏「记忆」目录红点 */
   memoryAttention?: boolean;
+  /** 待确认戒律更新：侧栏「系统」与《戒律》红点 */
+  preceptsAttention?: boolean;
+  preceptsPath?: string | null;
   onSelectFile: (path: string, mods?: SelectMods) => void;
   onSelectFolder?: (path: string, mods?: SelectMods) => void;
   onOpenEnabledSkills?: () => void;
@@ -80,6 +83,8 @@ export function Sidebar({
   onOpenSettings,
   settingsAttention = false,
   memoryAttention = false,
+  preceptsAttention = false,
+  preceptsPath = null,
   onSelectFile,
   onSelectFolder,
   onOpenEnabledSkills,
@@ -616,6 +621,8 @@ export function Sidebar({
                   expanded={expanded}
                   onToggleFolder={toggleFolder}
                   memoryAttention={memoryAttention}
+                  preceptsAttention={preceptsAttention}
+                  preceptsPath={preceptsPath}
                   {...treeInteraction.fileTreeProps}
                 />
               </div>

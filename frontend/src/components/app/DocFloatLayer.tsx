@@ -26,6 +26,7 @@ type Props = {
   onMergeReject: () => void | Promise<void>;
   onLocateInTree?: (path: string) => void;
   onShareDoc?: (path: string, title: string) => void;
+  onAttentionChange?: () => void;
 };
 
 export function DocFloatLayer({
@@ -51,6 +52,7 @@ export function DocFloatLayer({
   onMergeReject,
   onLocateInTree,
   onShareDoc,
+  onAttentionChange,
 }: Props) {
   return (
     <KbFloatLayer onClose={onRequestClose} showBackdrop={showBackdrop}>
@@ -76,6 +78,7 @@ export function DocFloatLayer({
         onMergeReject={onMergeReject}
         onLocateInTree={onLocateInTree}
         onShareDoc={onShareDoc}
+        onAttentionChange={onAttentionChange}
       />
     </KbFloatLayer>
   );

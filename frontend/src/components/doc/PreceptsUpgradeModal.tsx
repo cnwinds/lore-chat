@@ -68,7 +68,7 @@ export function PreceptsUpgradeModal({
   return (
     <div className="doc-diff-overlay" role="presentation" onClick={onClose}>
       <div
-        className="doc-history-modal"
+        className="doc-history-modal doc-history-modal--frame"
         role="dialog"
         aria-modal="true"
         aria-labelledby="precepts-upgrade-title"

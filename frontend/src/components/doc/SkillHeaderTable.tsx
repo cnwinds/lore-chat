@@ -26,7 +26,7 @@ export function SkillHeaderTable({ entries }: Props) {
     return (
       <div className="skill-header-panel" aria-label="Skill 触发头">
         <p className="skill-header-empty">
-          触发头无法解析为字段，请切换到源码模式查看或修改。
+          触发头无法解析为字段，请点头栏「开发」查看或修改。
         </p>
       </div>
     );

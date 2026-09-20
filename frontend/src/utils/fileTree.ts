@@ -47,6 +47,16 @@ export function isMemoryDirPath(path: string): boolean {
   return path === MEMORY_DIR || path.startsWith(`${MEMORY_DIR}/`);
 }
 
+/** 待确认戒律更新：文件本身及其祖先目录显示红点。 */
+export function showsPreceptsAttention(
+  nodePath: string,
+  preceptsPath: string | null | undefined,
+): boolean {
+  if (!preceptsPath) return false;
+  const path = preceptsPath.replace(/\\/g, "/");
+  return nodePath === path || path.startsWith(`${nodePath}/`);
+}
+
 /** 单击直接开浮窗、不展开空壳：记忆根、媒体末级目录。 */
 export function opensKbFloatInsteadOfExpand(
   path: string,

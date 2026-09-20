@@ -173,6 +173,44 @@ class PreceptsUpgrade:
             "created_at": created_at or now_iso_seconds(),
         }
 
+    def pending_review_path(self) -> str | None:
+        """只读：有待用户确认的戒律更新时返回活文件路径，不跑 sync。"""
+        pending = self._read_state().get("pending")
+        if isinstance(pending, dict) and pending.get("official_hash"):
+            return self.path
+        return None
+
+    def _last_official_snapshot(self) -> str | None:
+        """stock 文件缺失时，从 git 历史找回最近一次仍是官方播种稿的正文。"""
+        try:
+            revs = self.repo.list_revisions(self.path, limit=80)
+        except Exception:
+            _log.exception("list precepts revisions for stock recovery failed")
+            return None
+        for rev in revs:
+            try:
+                data = self.repo.read_revision(self.path, rev["sha"])
+            except Exception:
+                continue
+            if data.get("binary") or not isinstance(data.get("text"), str):
+                continue
+            body = data["text"]
+            if sl.is_unmodified_official(body):
+                return body
+        return None
+
+    def _pending_is_reusable(
+        self, pending: dict | None, *, official_hash: str, live_hash: str
+    ) -> bool:
+        if not isinstance(pending, dict):
+            return False
+        if pending.get("official_hash") != official_hash:
+            return False
+        if sl._seed_hash(pending.get("ours", "")) != live_hash:
+            return False
+        # 无祖先的整篇对照可在找回 stock 后重算
+        return bool(str(pending.get("base") or "").strip())
+
     def _status_from_state(
         self, *, applied: bool = False, message: str = ""
     ) -> UpgradeStatus:
@@ -214,10 +252,8 @@ class PreceptsUpgrade:
         skipped = state.get("skipped_official_hash")
         stock = self._read_stock()
 
-        if (
-            isinstance(pending, dict)
-            and pending.get("official_hash") == official_hash
-            and sl._seed_hash(pending.get("ours", "")) == live_hash
+        if self._pending_is_reusable(
+            pending, official_hash=official_hash, live_hash=live_hash
         ):
             return self._status_from_state()
 
@@ -251,15 +287,20 @@ class PreceptsUpgrade:
                     applied=True,
                     message="未改过的官方稿已刷新",
                 )
-            merged = merge3("", live, official)
-            return self._store_pending(
-                ours=live,
-                theirs=official,
-                base="",
-                result=merged,
-                official_hash=official_hash,
-                message="没有上次官方快照，请确认与新官方稿的差异",
-            )
+            recovered = self._last_official_snapshot()
+            if recovered:
+                self._write_stock(recovered)
+                stock = recovered
+            else:
+                merged = merge3("", live, official)
+                return self._store_pending(
+                    ours=live,
+                    theirs=official,
+                    base="",
+                    result=merged,
+                    official_hash=official_hash,
+                    message="没有上次官方快照，请确认与新官方稿的差异",
+                )
 
         if sl._seed_hash(stock) == official_hash:
             return UpgradeStatus("current", self.path, None)

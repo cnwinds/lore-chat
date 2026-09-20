@@ -1,4 +1,4 @@
-"""主界面「需要处理」红点：模型必填链、记忆待确认、未填价目。"""
+"""主界面「需要处理」红点：模型必填链、记忆待确认、未填价目、戒律待确认。"""
 
 from __future__ import annotations
 
@@ -50,6 +50,8 @@ def build_settings_attention(
     settings: Any,
     memory_pending_count: int = 0,
     incomplete_price_count: int = 0,
+    precepts_pending: bool = False,
+    precepts_path: str = "",
 ) -> dict[str, Any]:
     chat = chain_needs_setup(settings, "chat")
     utility = chain_needs_setup(settings, "utility")
@@ -57,6 +59,7 @@ def build_settings_attention(
     model_any = chat or utility or embed
     memory_any = memory_pending_count > 0
     usage_any = incomplete_price_count > 0
+    precepts_any = bool(precepts_pending)
     return {
         "any": model_any or memory_any or usage_any,
         "model": {
@@ -72,5 +75,9 @@ def build_settings_attention(
         "usage": {
             "any": usage_any,
             "incomplete_price_count": int(incomplete_price_count),
+        },
+        "precepts": {
+            "any": precepts_any,
+            "path": precepts_path if precepts_any else "",
         },
     }

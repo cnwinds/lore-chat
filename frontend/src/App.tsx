@@ -311,6 +311,8 @@ function AppMain() {
           refreshKey: sidebarRefreshKey,
           activePaths: kbActivePaths,
           memoryAttention: displayAttention.memory.any,
+          preceptsAttention: displayAttention.precepts.any,
+          preceptsPath: displayAttention.precepts.path || null,
           onSelectFile: bridge.handleSelectFile,
           onSelectFolder: bridge.handleSelectFolder,
           onOpenEnabledSkills: openEnabledSkillsModal,
@@ -447,6 +449,7 @@ function AppMain() {
               showBackdrop={!doc.floatFocus}
               onRequestClose={doc.requestCloseFloatPreview}
               onPin={bridge.handlePinDoc}
+              onAttentionChange={refreshAttention}
               {...floatDocHandlers}
             />
           ) : doc.showChannelPanel ? (
@@ -465,6 +468,7 @@ function AppMain() {
               docWidth={doc.pinnedWidth}
               docFocus={doc.pinnedFocus}
               onUnpin={bridge.handleUnpinDoc}
+              onAttentionChange={refreshAttention}
               {...pinnedDocHandlers}
             />
           ) : null

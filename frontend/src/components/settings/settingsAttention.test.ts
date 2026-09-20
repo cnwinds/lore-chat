@@ -110,4 +110,16 @@ describe("mergeSettingsAttention", () => {
     expect(merged.usage.any).toBe(true);
     expect(merged.usage.incomplete_price_count).toBe(3);
   });
+
+  it("keeps precepts attention from the server", () => {
+    const merged = mergeSettingsAttention(
+      {
+        ...server,
+        precepts: { any: true, path: "系统/戒律.md" },
+      },
+      { model: { chat: false, utility: false, embed: false } },
+    );
+    expect(merged.precepts).toEqual({ any: true, path: "系统/戒律.md" });
+    expect(merged.any).toBe(true);
+  });
 });
