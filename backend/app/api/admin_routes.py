@@ -73,7 +73,7 @@ def get_settings(request: Request) -> dict[str, Any]:
 
 @router.get("/settings-attention")
 def get_settings_attention(request: Request) -> dict[str, Any]:
-    """主界面红点：未配模型链、记忆待确认、价目表缺单价。"""
+    """主界面红点：未配模型链、记忆待确认、价目表缺单价、戒律待确认。"""
     from app.settings_attention import (
         build_settings_attention,
         count_incomplete_prices,
@@ -83,6 +83,8 @@ def get_settings_attention(request: Request) -> dict[str, Any]:
     container = getattr(request.app.state, "container", None)
     pending = 0
     incomplete_prices = 0
+    precepts_pending = False
+    precepts_path = ""
     if container is not None:
         mem = getattr(container, "memory_service", None)
         if mem is not None:
@@ -96,12 +98,23 @@ def get_settings_attention(request: Request) -> dict[str, Any]:
                 incomplete_prices = count_incomplete_prices(usage.prices())
             except Exception:
                 incomplete_prices = 0
+        precepts = getattr(container, "precepts_upgrade", None)
+        if precepts is not None:
+            try:
+                path = precepts.pending_review_path()
+            except Exception:
+                path = None
+            if path:
+                precepts_pending = True
+                precepts_path = path
     return {
         "ok": True,
         "attention": build_settings_attention(
             settings=settings,
             memory_pending_count=pending,
             incomplete_price_count=incomplete_prices,
+            precepts_pending=precepts_pending,
+            precepts_path=precepts_path,
         ),
     }
 

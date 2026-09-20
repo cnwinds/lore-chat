@@ -97,6 +97,10 @@ export type SettingsAttention = {
     any: boolean;
     incomplete_price_count: number;
   };
+  precepts: {
+    any: boolean;
+    path: string;
+  };
 };
 
 export function getSettingsAttention() {

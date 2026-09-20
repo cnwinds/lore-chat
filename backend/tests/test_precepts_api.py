@@ -59,3 +59,19 @@ def test_precepts_upgrade_dismiss_api(client, monkeypatch):
     assert "必须先问用户" in live
     again = client.get("/api/precepts/upgrade")
     assert again.json()["status"] == "current"
+
+
+def test_settings_attention_flags_precepts_pending(client, monkeypatch):
+    before = client.get("/api/admin/settings-attention")
+    assert before.status_code == 200, before.text
+    assert before.json()["attention"]["precepts"]["any"] is False
+
+    _conflict_pending(client, monkeypatch)
+    att = client.get("/api/admin/settings-attention").json()["attention"]
+    assert att["precepts"]["any"] is True
+    assert att["precepts"]["path"] == "系统/戒律.md"
+
+    client.post("/api/precepts/upgrade/dismiss")
+    after = client.get("/api/admin/settings-attention").json()["attention"]
+    assert after["precepts"]["any"] is False
+    assert after["precepts"]["path"] == ""

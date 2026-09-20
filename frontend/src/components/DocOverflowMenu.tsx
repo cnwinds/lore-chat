@@ -5,7 +5,6 @@ import {
   DiffIcon,
   DocIconBtn,
   EditIcon,
-  HistoryIcon,
   MoreIcon,
 } from "./DocToolbarIcons";
 
@@ -13,7 +12,7 @@ export type OverflowItem =
   | {
       id: string;
       label: string;
-      icon: "edit" | "chat" | "diff" | "history";
+      icon: "edit" | "chat" | "diff";
       active?: boolean;
       onClick: () => void;
     };
@@ -23,9 +22,8 @@ type Props = {
   disabled?: boolean;
 };
 
-function ItemIcon({ type }: { type: "edit" | "chat" | "diff" | "history" }) {
+function ItemIcon({ type }: { type: "edit" | "chat" | "diff" }) {
   if (type === "diff") return <DiffIcon size={14} />;
-  if (type === "history") return <HistoryIcon size={14} />;
   return type === "edit" ? <EditIcon size={14} /> : <ChatIcon size={14} />;
 }
 

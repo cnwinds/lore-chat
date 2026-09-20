@@ -133,3 +133,41 @@ def test_build_settings_attention_flags(tmp_path):
     assert att["memory"]["pending_count"] == 2
     assert att["usage"]["any"] is True
     assert att["any"] is True
+    assert att["precepts"]["any"] is False
+    assert att["precepts"]["path"] == ""
+
+    ready = Settings(
+        kb_path=tmp_path,
+        chat_models=[
+            {
+                "id": "c1",
+                "model": "gpt-4o",
+                "base_url": "https://api.openai.com/v1",
+                "api_key": "sk-real",
+            }
+        ],
+        utility_models=[
+            {
+                "id": "u1",
+                "model": "mini",
+                "base_url": "https://api.openai.com/v1",
+                "api_key": "sk-real",
+            }
+        ],
+        embed_models=[
+            {
+                "id": "e1",
+                "model": "text-embedding-3-small",
+                "base_url": "https://api.openai.com/v1",
+                "api_key": "sk-real",
+            }
+        ],
+    )
+    only_precepts = build_settings_attention(
+        settings=ready,
+        precepts_pending=True,
+        precepts_path="系统/戒律.md",
+    )
+    assert only_precepts["precepts"]["any"] is True
+    assert only_precepts["precepts"]["path"] == "系统/戒律.md"
+    assert only_precepts["any"] is False

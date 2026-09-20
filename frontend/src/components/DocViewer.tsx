@@ -51,6 +51,7 @@ type Props = {
   onMergeReject?: () => void | Promise<void>;
   onLocateInTree?: (path: string) => void;
   onShareDoc?: (path: string, title: string) => void;
+  onAttentionChange?: () => void;
 };
 
 export function DocViewer({
@@ -77,6 +78,7 @@ export function DocViewer({
   onMergeReject,
   onLocateInTree,
   onShareDoc,
+  onAttentionChange,
 }: Props) {
   const [editMode, setEditMode] = useState<EditMode>(getStoredEditMode);
   const [selection, setSelection] = useState<DocSelection>({ start: 0, end: 0 });
@@ -161,6 +163,7 @@ export function DocViewer({
       void loadDoc(path, gen);
       onSaved?.(path);
     },
+    onAttentionChange,
   });
   const outlineItems = useMemo(() => parseDocOutline(body), [body]);
   const outlineInSource =

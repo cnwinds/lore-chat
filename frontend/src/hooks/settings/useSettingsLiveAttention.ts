@@ -11,6 +11,7 @@ const EMPTY_ATTENTION: SettingsAttention = {
   model: { any: false, chat: false, utility: false, embed: false },
   memory: { any: false, pending_count: 0 },
   usage: { any: false, incomplete_price_count: 0 },
+  precepts: { any: false, path: "" },
 };
 
 type Options = {

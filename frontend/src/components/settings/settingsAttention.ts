@@ -79,13 +79,20 @@ export function mergeSettingsAttention(
     model: { any: boolean; chat: boolean; utility: boolean; embed: boolean };
     memory: { any: boolean; pending_count: number };
     usage: { any: boolean; incomplete_price_count: number };
+    precepts?: { any: boolean; path: string };
   },
   overlay?: {
     model?: { chat: boolean; utility: boolean; embed: boolean } | null;
     memoryPending?: number | null;
     usageIncomplete?: number | null;
   } | null,
-): typeof server {
+): {
+  any: boolean;
+  model: { any: boolean; chat: boolean; utility: boolean; embed: boolean };
+  memory: { any: boolean; pending_count: number };
+  usage: { any: boolean; incomplete_price_count: number };
+  precepts: { any: boolean; path: string };
+} {
   const model = overlay?.model
     ? {
         chat: overlay.model.chat,
@@ -111,10 +118,12 @@ export function mergeSettingsAttention(
     any: incomplete > 0,
     incomplete_price_count: incomplete,
   };
+  const precepts = server.precepts ?? { any: false, path: "" };
   return {
     any: model.any || memory.any || usage.any,
     model,
     memory,
     usage,
+    precepts,
   };
 }
