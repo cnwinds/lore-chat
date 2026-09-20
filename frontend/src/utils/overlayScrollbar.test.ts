@@ -273,4 +273,15 @@ describe("initOverlayScrollbar", () => {
     expect(rail?.classList.contains("is-visible")).toBe(true);
     scroller.remove();
   });
+
+  it("re-init after rails are detached does not leave duplicate rails", () => {
+    vi.stubGlobal("innerWidth", 800);
+    vi.stubGlobal("innerHeight", 600);
+    initOverlayScrollbar();
+    document.getElementById("lore-scroll-rail-y")?.remove();
+    document.getElementById("lore-scroll-rail-x")?.remove();
+    initOverlayScrollbar();
+    expect(document.querySelectorAll(".lore-scroll-rail--y")).toHaveLength(1);
+    expect(document.querySelectorAll(".lore-scroll-rail--x")).toHaveLength(1);
+  });
 });

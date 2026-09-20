@@ -427,6 +427,7 @@ function unmount() {
 export function initOverlayScrollbar(): void {
   if (typeof document === "undefined") return;
   if (started && rails && document.body.contains(rails.y.root)) return;
+  unmount();
   started = true;
   if (document.body) mount();
   else document.addEventListener("DOMContentLoaded", mount, { once: true });
