@@ -67,10 +67,12 @@ def test_precepts_align_with_runtime_tools(tmp_path):
     assert "系统控制层自身" not in body
     assert "不参与检索" not in body
     assert "不得自行删除或绕过" not in body
-    assert "## 六、文档编辑" in body
-    assert "## 七、目录规划" in body
-    assert "## 八、用户生成 Skill" in body
-    assert "## 九、无痕教学（陪伴学习）" in body
+    assert "## 二、检索与读取" in body
+    assert "web_search" in body
+    assert "## 五、文档编辑" in body
+    assert "## 六、目录规划" in body
+    assert "## 七、用户生成 Skill" in body
+    assert "## 八、无痕教学（陪伴学习）" in body
     assert "建构优先" in body
     assert "用户意愿最高" in body
     assert "纯事实查询、版本核实、故障排查" in body
@@ -79,7 +81,7 @@ def test_precepts_align_with_runtime_tools(tmp_path):
     assert "不要抄进每个 SKILL.md" in body
     assert "不视为零散沉淀" in gate
     skill = re.search(
-        r"## 八、用户生成 Skill\n(.*?)(?=\n## 九、|\Z)", body, re.S
+        r"## 七、用户生成 Skill\n(.*?)(?=\n## 八、|\Z)", body, re.S
     )
     assert skill is not None
     skill_items = re.findall(
@@ -87,7 +89,7 @@ def test_precepts_align_with_runtime_tools(tmp_path):
     )
     assert [n for n, _ in skill_items] == ["1", "2", "3", "4", "5", "6", "7"]
     teaching = re.search(
-        r"## 九、无痕教学（陪伴学习）\n(.*?)\Z", body, re.S
+        r"## 八、无痕教学（陪伴学习）\n(.*?)\Z", body, re.S
     )
     assert teaching is not None
     teaching_items = re.findall(
@@ -197,7 +199,7 @@ def test_system_prompt_defers_skill_house_rules_to_precepts(tmp_path):
     repo = _repo(tmp_path)
     SystemLayer(repo)
     precepts = repo.read_doc("系统/戒律.md").body
-    assert "用户生成 Skill" in precepts or "## 八、用户生成 Skill" in precepts
+    assert "用户生成 Skill" in precepts or "## 七、用户生成 Skill" in precepts
     prompt = build_system_prompt("default")
     assert "事实铁律" not in prompt or "事实铁律（证据）" in precepts
     assert "[Skill 目录]" not in prompt
