@@ -39,7 +39,7 @@ _SEGMENTS = (
     ("memory", "记忆"),
     ("skill", "Skill"),
     ("history", "历史消息"),
-    ("tools", "工具与检索结果"),
+    ("tools", "工具定义"),
     ("attachments", "附件与文档"),
 )
 
