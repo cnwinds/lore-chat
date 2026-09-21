@@ -364,3 +364,24 @@ export function DocIconBtn({
     </button>
   );
 }
+
+/** 警示三角：有冲突待人工确认。 */
+export function AlertIcon({ size = 16 }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M8 2.2 14.4 13.2H1.6L8 2.2Z" />
+      <path d="M8 6.4v3.2" />
+      <circle cx="8" cy="11.6" r="0.2" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}

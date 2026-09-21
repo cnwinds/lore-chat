@@ -3,7 +3,6 @@ import { DocDiffModal } from "./DocDiffModal";
 import { DocHistoryModal } from "./DocHistoryModal";
 import { type DocSelection } from "./DocLivePreview";
 import { DocMergeReviewBar } from "./doc/DocMergeReviewBar";
-import { PreceptsUpgradeBar } from "./doc/PreceptsUpgradeBar";
 import { PreceptsUpgradeModal } from "./doc/PreceptsUpgradeModal";
 import { DocViewerBody } from "./doc/DocViewerBody";
 import { DocViewerHeader } from "./doc/DocViewerHeader";
@@ -277,6 +276,14 @@ export function DocViewer({
         }}
         onViewDiff={() => setUnsavedPrompt("view")}
         onViewHistory={() => setHistoryOpen(true)}
+        preceptsAlert={
+          precepts.visible && precepts.pending
+            ? {
+                conflicts: precepts.pending.conflicts.length,
+                onReview: () => precepts.setReviewOpen(true),
+              }
+            : null
+        }
         outlineOpen={outlineOpen}
         onOutlineToggle={() => setOutlineOpen((v) => !v)}
         onOutlineClose={() => setOutlineOpen(false)}
@@ -317,14 +324,6 @@ export function DocViewer({
         selection={selection}
         onSelectionChange={setSelection}
       />
-      {precepts.visible && precepts.pending && (
-        <PreceptsUpgradeBar
-          proposing={precepts.proposing}
-          busy={precepts.busy}
-          onReview={() => precepts.setReviewOpen(true)}
-          onDismiss={() => void precepts.dismiss()}
-        />
-      )}
       {mergeReview && (
         <DocMergeReviewBar
           mergeReview={mergeReview}

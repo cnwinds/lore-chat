@@ -6189,6 +6189,43 @@ button.memory-fact-statement--jump:focus-visible {
   box-shadow: var(--shadow-md);
 }
 
+/* 戒律官方更新待确认：工具栏红色警示 + 角标 */
+.doc-icon-btn--alert {
+  position: relative;
+  color: var(--accent);
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+}
+
+.doc-icon-btn--alert:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.doc-icon-btn--alert .doc-icon-btn-dot {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: ctxstats-warn-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes ctxstats-warn-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.35);
+    opacity: 0.55;
+  }
+}
+
 .doc-overflow-menu--fixed {
   position: fixed;
   right: auto;
