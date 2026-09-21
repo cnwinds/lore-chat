@@ -333,9 +333,11 @@ TOOL_DEFINITIONS: list[dict] = [
         "function": {
             "name": "read_conversation_context",
             "description": (
-                "读取会话原文。省略 conversation_id 时读取本角色上一会话段；"
+                "读取会话原文。跨段接续时：本段 history 没有用户所指对话须先取回；"
+                "未点明是哪一段时可省略 conversation_id（默认本角色上一会话段）；"
                 "省略 message_id 时读取该段尾部。"
-                "用于消解新段中的指代与接续，或核验检索命中的邻近上下文。"
+                "已给出时间、主题、标题时，先用 search_kb(scope=conversations) 定位，"
+                "再按命中调用本工具核验邻近上下文。不得用最近一段交差或丢掉限定全库碰运气。"
             ),
             "parameters": {
                 "type": "object",
@@ -721,7 +723,10 @@ TOOL_DEFINITIONS: list[dict] = [
         "type": "function",
         "function": {
             "name": "delete_kb",
-            "description": "删除知识库中的文档或目录（含目录下所有文件）",
+            "description": (
+                "删除知识库中的文档或目录（含目录下所有文件）。"
+                "仅当用户明确要求删除时调用。"
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {

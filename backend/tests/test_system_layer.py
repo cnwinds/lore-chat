@@ -198,11 +198,19 @@ def test_system_prompt_defers_skill_house_rules_to_precepts():
     assert "--- YAML" not in SYSTEM_PROMPT
 
 
+def test_system_prompt_does_not_duplicate_tool_parameter_table():
+    from app.engine.agent.prompts import SYSTEM_PROMPT
+
+    assert "工具参数契约" not in SYSTEM_PROMPT
+    assert "| write_doc |" not in SYSTEM_PROMPT
+    assert "仅以本轮下发的 function 定义为准" in SYSTEM_PROMPT
+
+
 def test_build_system_prompt_web_on_affirms_search():
     prompt = build_system_prompt("default", web_enabled=True, search_configured=True)
     assert "本轮已开启联网搜索" in prompt
     assert "本轮未开启联网搜索" not in prompt
-    assert "禁止凭印象声称不可用" in prompt
+    assert "不要把单次失败或没有结果说成搜索未开启或功能不可用" in prompt
 
 
 def test_build_system_prompt_web_off_denies_search():

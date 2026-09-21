@@ -17,7 +17,7 @@ const stats = {
     },
     { key: "skill", label: "Skill", tokens: 0 },
     { key: "history", label: "历史消息", tokens: 300 },
-    { key: "tools", label: "工具与检索结果", tokens: 180 },
+    { key: "tools", label: "工具定义", tokens: 180 },
     { key: "attachments", label: "附件与文档", tokens: 0 },
   ],
   cache_hit_rate: null,
@@ -99,7 +99,7 @@ describe("ContextStatsButton", () => {
     await user.click(screen.getByRole("button", { name: "全文" }));
     expect(await screen.findByText(/用户：你好/)).toBeInTheDocument();
     expect(
-      screen.getByText(/Skill、工具与检索结果、附件与文档：本轮未注入/),
+      screen.getByText(/Skill、工具定义、附件与文档：本轮未注入/),
     ).toBeInTheDocument();
   });
 
