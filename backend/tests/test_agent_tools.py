@@ -781,8 +781,8 @@ def test_cross_segment_continuity_contract():
     from app.engine.agent.prompts import SYSTEM_PROMPT
     from app.engine.agent.tool_catalog import TOOL_DEFINITIONS
 
-    assert "跨段接续" in SYSTEM_PROMPT
     assert "《戒律》三" in SYSTEM_PROMPT
+    assert "会话段" in SYSTEM_PROMPT
     defs = {d["function"]["name"]: d["function"] for d in TOOL_DEFINITIONS}
     ctx = defs["read_conversation_context"]
     assert ctx["parameters"]["required"] == []

@@ -133,6 +133,8 @@ def test_precepts_align_with_runtime_tools(tmp_path):
     assert "勿放进 meta" not in body
     assert "若本轮提供了沙箱工具" in body
     assert "跨段接续" in body
+    assert "事实铁律（证据）" in body
+    assert "详见事实铁律" not in body
     assert "用户所指的那段" in body
     assert "已给出时间、主题、标题" in body
     assert "不得改成「最近一段」交差" in body
@@ -189,13 +191,16 @@ def test_build_system_prompt_injects_layer():
     assert prompt.index("【系统控制层内容XYZ】") < prompt.index("lorechat")
 
 
-def test_system_prompt_defers_skill_house_rules_to_precepts():
+def test_system_prompt_defers_skill_house_rules_to_precepts(tmp_path):
     from app.engine.agent.prompts import SYSTEM_PROMPT
 
-    assert "生成、改进与家规见《戒律》" in SYSTEM_PROMPT
-    assert "[Skill 目录]" in SYSTEM_PROMPT
-    # 格式契约不在 SYSTEM 复述
-    assert "--- YAML" not in SYSTEM_PROMPT
+    repo = _repo(tmp_path)
+    SystemLayer(repo)
+    precepts = repo.read_doc("系统/戒律.md").body
+    assert "用户生成 Skill" in precepts or "## 八、用户生成 Skill" in precepts
+    assert "事实铁律" not in SYSTEM_PROMPT
+    assert "[Skill 目录]" not in SYSTEM_PROMPT
+    assert "conversation://" in SYSTEM_PROMPT
 
 
 def test_system_prompt_does_not_duplicate_tool_parameter_table():
@@ -203,7 +208,8 @@ def test_system_prompt_does_not_duplicate_tool_parameter_table():
 
     assert "工具参数契约" not in SYSTEM_PROMPT
     assert "| write_doc |" not in SYSTEM_PROMPT
-    assert "仅以本轮下发的 function 定义为准" in SYSTEM_PROMPT
+    assert "function 定义为准" in SYSTEM_PROMPT
+    assert "## 事实铁律" not in SYSTEM_PROMPT
 
 
 def test_build_system_prompt_web_on_affirms_search():
