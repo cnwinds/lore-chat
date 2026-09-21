@@ -7,6 +7,7 @@ from app.engine.agent.prompts import MODE_DEFAULT, MODE_FORCE_WRITE, MODE_NO_WRI
 from app.engine.chat.sse import parse_agent_sse_event
 from app.engine.chat.turn_hub import TurnExecutionHub
 from app.engine.chat.turn_inject import PendingInject, TurnInjectBroker
+from app.engine.intent import is_question_only
 from app.engine.knowledge_writer import is_markdown_path
 from app.engine.enabled_skills import SkillCatalogEntry
 
@@ -214,6 +215,13 @@ def ingest_from_write_doc_result(data: dict) -> dict:
 
 
 async def consume_agent_ingest(agent, text: str) -> dict:
+    if is_question_only(text):
+        return {
+            "status": "rejected",
+            "rel_path": None,
+            "question_id": None,
+            "message": "这是提问而非资料，未写入知识库。",
+        }
     result: dict | None = None
     async for ev in agent.run(text, mode=MODE_FORCE_WRITE):
         parsed = parse_agent_sse_event(ev)
