@@ -81,6 +81,7 @@ class TurnRunSpec:
     responding_role_id: str | None = None
     extra_system: list[dict] | None = None
     sandbox_enabled: bool | None = None
+    client_message_id: str | None = None
 
 
 @dataclass
@@ -142,7 +143,11 @@ class TurnExecutionHub:
             return None
 
     def _role_system_prompt_for(
-        self, cid: str, responding_role_id: str | None = None
+        self,
+        cid: str,
+        responding_role_id: str | None = None,
+        *,
+        client_message_id: str | None = None,
     ) -> str:
         if self.roles is None:
             return ""
@@ -163,11 +168,24 @@ class TurnExecutionHub:
                     avatar = persona.get("avatar") or avatar
                 except KeyError:
                     pass
+            messages: list[dict] = []
+            try:
+                conv = self.conversations.get(cid)
+                messages = conv.get("messages") or []
+            except Exception:
+                messages = []
             onboarding_layer = ""
-            if role.get("onboarding_status", "none") == "active":
-                onboarding_layer = self._build_onboarding_layer(
-                    role.get("name", "角色")
-                )
+            from app.engine.role_onboarding import (
+                build_onboarding_layer,
+                should_inject_onboarding_layer,
+            )
+
+            if should_inject_onboarding_layer(
+                role,
+                messages,
+                client_message_id=client_message_id,
+            ):
+                onboarding_layer = build_onboarding_layer(role.get("name", "角色"))
             return build_role_identity_block(
                 name=name,
                 system_prompt=prompt,
@@ -179,30 +197,6 @@ class TurnExecutionHub:
         except Exception:
             _log.exception("role prompt lookup failed cid=%s", cid)
             return ""
-
-    def _build_onboarding_layer(self, role_name: str) -> str:
-        return f"""[角色引导]
-
-你正在协助用户完成角色「{role_name}」的职责与人设定义。
-
-引导原则：
-- 角色先开口：新角色创建后不要空等主人先说话，立刻简短自我介绍并问第一个问题
-- 每次只问一个问题，保持简短；若提供选项，必须调用 ask_user，不要把选项写进正文
-- 选项若不是完整答案、需要主人写出具体内容，将该项 input 设为 true；主人会在卡片里写完再提交。已写在卡片里的内容就是答案，不要再为同一问题追问一遍
-- 逐步了解：职责范围、典型输出、边界约束、语气风格
-- 询问是否需要定时任务（例如每日总结、周报提醒等）
-- 根据对话整理出一份人设草案（system_prompt）
-- 向用户展示草案，待确认后调用 finalize_role_onboarding 完成引导（写入角色设置中的人设）
-- 在用户确认前，不要擅自调用 update_role 修改 system_prompt
-
-示例流程：
-1. 用 ask_user 问职责方向（研究分析 / 内容创作 / 任务管理）
-2. 用 ask_user 问输出形式（简报 / 详细报告 / 对话式建议）
-3. "有什么明确的边界或不做的事吗？"
-4. 用 ask_user 问是否需要定时任务（每天提醒 / 周总结 / 暂不需要）
-5. 整理草案 → 展示 → 确认 → finalize_role_onboarding
-
-若用户要求跳过引导，告知可以随时在设置中配置，并询问是否调用 update_role(..., onboarding_status="skipped")。"""
 
     def _prefetch_context_for(
         self, cid: str, text: str, history: list[dict] | None
@@ -445,6 +439,7 @@ class TurnExecutionHub:
                     responding_role_id=responding,
                     extra_system=extra_system,
                     sandbox_enabled=sandbox_enabled,
+                    client_message_id=client_message_id,
                 ),
             )
         return turn
@@ -600,7 +595,9 @@ class TurnExecutionHub:
                 on_inject_applied=_on_inject_applied,
                 attachments=spec.attachments,
                 role_system_prompt=self._role_system_prompt_for(
-                    cid, spec.responding_role_id
+                    cid,
+                    spec.responding_role_id,
+                    client_message_id=spec.client_message_id,
                 ),
                 prefetch_context=prefetch,
                 current_role_id=spec.responding_role_id
