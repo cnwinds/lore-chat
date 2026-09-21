@@ -496,7 +496,7 @@ def test_turn_hub_identity_includes_onboarding_layer(tmp_path):
     assert "你当前就是这个角色" not in block
     assert "`ask_user`" in block
     assert "input" in block
-    assert "不要再为同一问题追问一遍" in block
+    assert "勿重复追问" in block
 
 
 def test_turn_hub_omits_onboarding_layer_after_real_user_message(tmp_path):
