@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from pathlib import PurePosixPath
 
-from app.engine.agent.prompts import build_system_prompt, current_time_block
+from app.engine.agent.prompts import (
+    build_system_prompt,
+    current_time_block,
+    resolve_builtin_ui_context,
+)
 from app.engine.knowledge_writer import is_markdown_path
 from app.storage.kb_text_files import is_kb_text_file
 
@@ -38,7 +42,18 @@ def build_agent_messages(
     attachments: list[str] | None = None,
     role_system_prompt: str = "",
     search_configured: bool = True,
+    imagegen_configured: bool = True,
+    sandbox_enabled: bool = False,
+    role_messaging: bool = False,
 ) -> list[dict]:
+    builtin_ui = resolve_builtin_ui_context(
+        mode,
+        web_enabled,
+        search_configured=search_configured,
+        imagegen_configured=imagegen_configured,
+        sandbox_enabled=sandbox_enabled,
+        role_messaging=role_messaging,
+    )
     messages: list[dict] = [
         {
             "role": "system",
@@ -49,6 +64,7 @@ def build_agent_messages(
                 user_memory,
                 role_system_prompt=role_system_prompt,
                 search_configured=search_configured,
+                builtin_ui_context=builtin_ui,
             ),
         },
     ]

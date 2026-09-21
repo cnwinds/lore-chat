@@ -15,17 +15,51 @@ _WEEKDAY_ZH = "一二三四五六日"
 # 内置 system 文案定位（与 系统/戒律.md、系统/心法.md 分工）：
 # - 《心法》《戒律》：用户可在知识库编辑的产品行为规约（何时落库、如何归档、
 #   检索态度、目录规划、文档编辑、用户生成 Skill 等），由 SystemLayer 注入在本文案之前。
-# - SYSTEM_PROMPT（本文）：随代码发布的极简层——仅 UI/上下文代码事实（段界、链接协议等），
-#   不重复身份（见【当前角色】）、行为（见《心法》《戒律》）或工具 function 描述。
+# - 内置 UI 机制：按需注入（见 resolve_builtin_ui_context）；段界/跨段/链接/托盘/征询
+#   等已在《戒律》、工作托盘 system 消息、read_conversation_context / ask_user 工具描述中写过的，
+#   不在此重复。
 # - 工具 function 的 description / parameters：唯一工具规格来源，以 tool_catalog 为准。
 # ---------------------------------------------------------------------------
 
-SYSTEM_PROMPT = """## 界面与上下文（代码事实）
+_BUILTIN_UI_HEADER = "## 界面与上下文（代码事实）"
+_ASK_USER_UI_HINT = (
+    "结构化选项须经 ask_user 提交才有可点卡片；"
+    "正文编号列表或【征询】不会出现按钮。"
+)
 
-1. **会话段**：注入的 history 仅含当前会话段；UI 段间分隔线表示新段，线前原文不在 history 中，禁止假装记得。跨段取回见《戒律》三。
-2. **会话链接**：`[标题](conversation://{cid})` 或 `conversation://{cid}/{message_id}`；标题供人读，勿把裸会话 id 当唯一导航文案。
-3. **工作托盘**：若 system 注入「用户当前工作托盘」，未指定路径的小改默认主文档；目录型条目优先在该目录内读写。
-4. **征询 UI**：结构化选项须经工具提交才有可点卡片；正文编号列表或【征询】不会出现按钮。"""
+
+def build_builtin_ui_context_for_tool_names(tool_names: set[str]) -> str:
+    """本轮未下发 ask_user 时补一句征询 UI 机制（正常 /api/chat 通常为空）。"""
+    if "ask_user" in tool_names:
+        return ""
+    return f"{_BUILTIN_UI_HEADER}\n\n{_ASK_USER_UI_HINT}"
+
+
+def resolve_builtin_ui_context(
+    mode: str,
+    web_enabled: bool,
+    *,
+    search_configured: bool = True,
+    imagegen_configured: bool = True,
+    sandbox_enabled: bool = False,
+    role_messaging: bool = False,
+    disclosure_windows=None,
+) -> str:
+    from app.engine.agent.tool_catalog import select_tools
+    from app.engine.disclosure import DisclosureWindows
+
+    windows = disclosure_windows or DisclosureWindows()
+    selected = select_tools(
+        mode,
+        web_enabled,
+        search_configured=search_configured,
+        imagegen_configured=imagegen_configured,
+        sandbox_enabled=sandbox_enabled,
+        disclosure_windows=windows,
+        role_messaging=role_messaging,
+    )
+    names = {d["function"]["name"] for d in selected}
+    return build_builtin_ui_context_for_tool_names(names)
 
 
 def current_time_block() -> str:
@@ -151,13 +185,14 @@ def build_system_prompt(
     user_memory: str = "",
     role_system_prompt: str = "",
     search_configured: bool = True,
+    builtin_ui_context: str = "",
 ) -> str:
     """构建 system prompt。
 
     注入顺序（前 → 后，冲突时《戒律》优先于内置层）：
       1. 系统控制层：知识库 系统/心法.md + 系统/戒律.md（用户可编辑）
       2. 角色身份卡（名称恒注入；人设/引导层若有则叠加）
-      3. SYSTEM_PROMPT：UI/上下文代码事实（身份在【当前角色】；行为在《心法》《戒律》；工具在 function）
+      3. 按需内置 UI 机制（builtin_ui_context；默认空，见 resolve_builtin_ui_context）
       4. user_memory（若有）
       5. 本轮 mode / 联网开关后缀
 
@@ -201,13 +236,10 @@ def build_system_prompt(
             f"{current_role_header()}\n"
             f"{role_system_prompt.strip()}\n\n"
         )
-    return (
-        prefix
-        + role_block
-        + SYSTEM_PROMPT
-        + wrap_user_memory(user_memory)
-        + suffix
-    )
+    ui_block = (builtin_ui_context or "").strip()
+    if ui_block:
+        ui_block = ui_block if ui_block.endswith("\n") else ui_block + "\n"
+    return prefix + role_block + ui_block + wrap_user_memory(user_memory) + suffix
 
 
 def wrap_user_memory(user_memory: str) -> str:
