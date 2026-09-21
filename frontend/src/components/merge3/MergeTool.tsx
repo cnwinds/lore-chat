@@ -28,6 +28,10 @@ import {
   type MergePick,
 } from "../../utils/mergeModel";
 import { MERGE_LINE_HEIGHT, MERGE_PAD_Y, type PaneKey } from "./constants";
+import {
+  centerLineOf,
+  scrollTopForLine,
+} from "./geometry";
 import { MergeResultPane } from "./MergeResultPane";
 import { MergeSidePane } from "./MergeSidePane";
 
@@ -61,10 +65,6 @@ type PaneBox = { el: HTMLDivElement; box: DOMRect };
 
 function mapFor(maps: number[][], key: PaneKey): number[] {
   return key === "ours" ? maps[0] : key === "result" ? maps[1] : maps[2];
-}
-
-function visibleLines(el: HTMLDivElement): number {
-  return Math.max(1, Math.floor(el.clientHeight / MERGE_LINE_HEIGHT));
 }
 
 export const MergeTool = forwardRef<MergeToolHandle, Props>(function MergeTool(
@@ -126,7 +126,9 @@ export const MergeTool = forwardRef<MergeToolHandle, Props>(function MergeTool(
     [],
   );
   const tripleRef = useRef<HTMLDivElement | null>(null);
-  const syncingRef = useRef(false);
+  // 程序化写入的 scrollTop 回执：回声事件的 scrollTop 与写入值相等时视为
+  // 自己触发的，不再二次同步——否则三栏互相 chase 会一直滚到底
+  const programmaticRef = useRef<Map<PaneKey, number>>(new Map());
   const [connectorTick, setConnectorTick] = useState(0);
   const tickScheduled = useRef(false);
 
@@ -144,9 +146,7 @@ export const MergeTool = forwardRef<MergeToolHandle, Props>(function MergeTool(
       const el = scrollers[key].current;
       const map = mapFor(globalMaps, key);
       if (!el || !map.length) return 0;
-      const centerLine = Math.round(
-        el.scrollTop / MERGE_LINE_HEIGHT + visibleLines(el) / 2,
-      );
+      const centerLine = centerLineOf(el.scrollTop, el.clientHeight);
       const clamped = Math.min(map.length - 1, Math.max(0, centerLine));
       return map[clamped];
     },
@@ -159,25 +159,19 @@ export const MergeTool = forwardRef<MergeToolHandle, Props>(function MergeTool(
       const map = mapFor(globalMaps, key);
       if (!el || !map.length) return;
       const line = closestLineToGlobal(map, globalLine);
-      el.scrollTop = Math.max(
-        0,
-        line * MERGE_LINE_HEIGHT - (visibleLines(el) / 2 - 0.5) * MERGE_LINE_HEIGHT,
-      );
+      const top = scrollTopForLine(line, el.clientHeight);
+      programmaticRef.current.set(key, top);
+      el.scrollTop = top;
     },
     [globalMaps, scrollers],
   );
 
   const syncFrom = useCallback(
     (key: PaneKey) => {
-      if (syncingRef.current) return;
-      syncingRef.current = true;
       const g = centerGlobalOf(key);
       for (const other of ["ours", "result", "theirs"] as PaneKey[]) {
         if (other !== key) alignPaneTo(other, g);
       }
-      requestAnimationFrame(() => {
-        syncingRef.current = false;
-      });
       scheduleConnectorRedraw();
     },
     [alignPaneTo, centerGlobalOf, scheduleConnectorRedraw],
@@ -186,7 +180,6 @@ export const MergeTool = forwardRef<MergeToolHandle, Props>(function MergeTool(
   const scrollToChunk = useCallback(
     (chunk: { oursLine: number; resultLine: number; theirsLine: number } | null) => {
       if (!chunk) return;
-      syncingRef.current = true;
       for (const key of ["ours", "result", "theirs"] as PaneKey[]) {
         const el = scrollers[key].current;
         if (!el) continue;
@@ -196,17 +189,13 @@ export const MergeTool = forwardRef<MergeToolHandle, Props>(function MergeTool(
             : key === "theirs"
               ? chunk.theirsLine
               : chunk.resultLine;
-        el.scrollTop = Math.max(
-          0,
-          line * MERGE_LINE_HEIGHT - (visibleLines(el) / 2 - 1) * MERGE_LINE_HEIGHT,
-        );
+        const top = scrollTopForLine(line, el.clientHeight);
+        programmaticRef.current.set(key, top);
+        el.scrollTop = top;
         // 不依赖 scroll 事件：同步刷新按钮层位移（隐藏环境下事件不派发）
         const mover = buttonMovers[key].current;
         if (mover) mover.style.transform = `translateY(${-el.scrollTop}px)`;
       }
-      requestAnimationFrame(() => {
-        syncingRef.current = false;
-      });
       scheduleConnectorRedraw();
     },
     [buttonMovers, scheduleConnectorRedraw, scrollers],
@@ -239,6 +228,13 @@ export const MergeTool = forwardRef<MergeToolHandle, Props>(function MergeTool(
       if (key !== "ours" && key !== "result" && key !== "theirs") return;
       const mover = buttonMovers[key].current;
       if (mover) mover.style.transform = `translateY(${-scroller.scrollTop}px)`;
+      // 同步引发的回声事件不再反向同步，否则三栏互相 chase 滚到底
+      const expected = programmaticRef.current.get(key);
+      if (expected != null && Math.abs(expected - scroller.scrollTop) < 0.5) {
+        programmaticRef.current.delete(key);
+        return;
+      }
+      programmaticRef.current.delete(key);
       syncFrom(key);
     };
     root.addEventListener("scroll", handle, true);
