@@ -8569,21 +8569,25 @@ button.source-link--inline.conversation-md-link {
 
 .merge3-ln.tone-pending {
   color: var(--accent);
+  background: rgba(188, 64, 51, 0.14);
   font-weight: 600;
 }
 
 .merge3-ln.tone-resolved {
   color: var(--glaze);
+  background: rgba(61, 107, 88, 0.14);
   font-weight: 600;
 }
 
 .merge3-ln.tone-ignored,
 .merge3-ln.tone-rejected {
   color: var(--text-muted);
+  background: rgba(108, 127, 115, 0.12);
 }
 
 .merge3-ln.tone-custom {
   color: var(--seal-gold);
+  background: rgba(201, 162, 74, 0.14);
   font-weight: 600;
 }
 
@@ -8599,6 +8603,13 @@ button.source-link--inline.conversation-md-link {
   tab-size: 4;
 }
 
+/* 文本区撑满栏宽：高亮底色整行到边，不随行内容截断 */
+.merge3-doc,
+.merge3-text {
+  flex: 1 1 auto;
+  min-width: max-content;
+}
+
 .merge3-doc {
   color: var(--text-secondary);
 }
@@ -8609,28 +8620,28 @@ button.source-link--inline.conversation-md-link {
 }
 
 .merge3-line.tone-pending {
-  background: rgba(188, 64, 51, 0.14);
+  background: rgba(188, 64, 51, 0.38);
 }
 
 .merge3-line.tone-resolved {
-  background: rgba(61, 107, 88, 0.13);
+  background: rgba(61, 107, 88, 0.34);
 }
 
 .merge3-line.tone-context {
-  background: rgba(61, 107, 88, 0.06);
+  background: rgba(61, 107, 88, 0.14);
 }
 
 .merge3-line.tone-ignored {
-  background: rgba(108, 127, 115, 0.14);
+  background: rgba(108, 127, 115, 0.22);
 }
 
 .merge3-line.tone-rejected {
-  background: rgba(108, 127, 115, 0.08);
+  background: rgba(108, 127, 115, 0.16);
   color: var(--text-muted);
 }
 
 .merge3-line.tone-custom {
-  background: rgba(201, 162, 74, 0.16);
+  background: rgba(201, 162, 74, 0.3);
 }
 
 .merge3-line.is-active {
@@ -8742,13 +8753,13 @@ button.source-link--inline.conversation-md-link {
 }
 
 .merge3-band.band-resolved {
-  fill: rgba(61, 107, 88, 0.3);
-  stroke: rgba(61, 107, 88, 0.6);
+  fill: rgba(61, 107, 88, 0.4);
+  stroke: rgba(61, 107, 88, 0.7);
 }
 
 .merge3-band.band-pending {
-  fill: rgba(188, 64, 51, 0.28);
-  stroke: rgba(188, 64, 51, 0.65);
+  fill: rgba(188, 64, 51, 0.38);
+  stroke: rgba(188, 64, 51, 0.75);
 }
 
 .merge3-band.band-ignored {
