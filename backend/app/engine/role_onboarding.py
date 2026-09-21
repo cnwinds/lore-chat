@@ -108,12 +108,21 @@ def should_inject_onboarding_layer(
     *,
     client_message_id: str | None = None,
 ) -> bool:
-    """引导长提示只在 kickoff 或尚无主人真实发言时注入，不跟每条后续消息重复。"""
+    """引导长提示只在系统 kickoff 回合注入；主人开口或 kickoff 已答完即走正常流程。"""
     if role.get("onboarding_status") != "active":
         return False
     if is_onboarding_kickoff_id(client_message_id):
         return True
-    return not _has_real_user_message(messages)
+    if client_message_id is not None:
+        return False
+    # 上下文统计等无当前 turn：仅 kickoff 已写入、助手尚未落盘时仍算「引导回合中」
+    if _has_real_user_message(messages):
+        return False
+    users = [m for m in messages if m.get("role") == "user"]
+    if len(users) == 1 and is_onboarding_kickoff_id(users[0].get("client_message_id")):
+        assistants = [m for m in messages if m.get("role") == "assistant"]
+        return len(assistants) == 0
+    return False
 
 
 def build_onboarding_layer(role_name: str) -> str:
