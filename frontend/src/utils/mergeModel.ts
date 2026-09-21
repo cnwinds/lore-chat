@@ -441,41 +441,6 @@ export function resultLayout(blocks: MergeBlock[]): ResultLayout {
   return { lines, lineBlock, blockStart, total: lines.length };
 }
 
-/**
- * 三栏各自的「全局行号」数组：同一块的三栏行共享一段全局区间，
- * 块的区间宽度取三栏行数的最大值，保证不同行数的块仍能跨栏对齐。
- */
-export function globalLineMaps(...panes: number[][]): number[][] {
-  const blockCount = panes[0]?.length ?? 0;
-  const strides: number[] = [];
-  for (let i = 0; i < blockCount; i++) {
-    strides.push(Math.max(1, ...panes.map((counts) => counts[i] ?? 0)));
-  }
-  return panes.map((counts) => {
-    const out: number[] = [];
-    let g = 0;
-    for (let i = 0; i < counts.length; i++) {
-      for (let line = 0; line < counts[i]; line++) out.push(g + line);
-      g += strides[i];
-    }
-    return out;
-  });
-}
-
-export function closestLineToGlobal(map: number[], target: number): number {
-  if (!map.length) return 0;
-  let lo = 0;
-  let hi = map.length - 1;
-  while (lo < hi) {
-    const mid = (lo + hi) >> 1;
-    if (map[mid] < target) lo = mid + 1;
-    else hi = mid;
-  }
-  if (lo > 0 && Math.abs(map[lo - 1] - target) <= Math.abs(map[lo] - target)) {
-    return lo - 1;
-  }
-  return lo;
-}
 
 /**
  * 结果稿的手工编辑回到块模型：找出受影响行区间，把涉及的块并成一个
@@ -593,4 +558,172 @@ function headingOf(lines: string[]): string {
 function firstMeaningful(lines: string[]): string {
   const line = lines.find((item) => item.trim().length > 0);
   return line ? line.trim().slice(0, 24) : "";
+}
+
+/* ===== 三栏填充行：插行使各改动就近对齐，连接线不交叉 ===== */
+
+export type MergePaneKey = "ours" | "result" | "theirs";
+
+/** 栏中某块展示的正文行（side 忽略时本侧仍显示自己的行）。 */
+export function paneContentLines(
+  block: MergeBlock,
+  pane: MergePaneKey,
+): string[] {
+  if (block.kind === "equal") return block.lines;
+  if (block.kind === "side") {
+    if (block.side === pane) return block.lines;
+    return block.baseLines;
+  }
+  if (block.kind === "conflict") {
+    if (pane === "ours") return block.oursLines;
+    if (pane === "theirs") return block.theirsLines;
+    return block.resolution === "ignored" ? block.baseLines : block.lines;
+  }
+  return []; // 手改块只存在于结果稿
+}
+
+/** 单个间隔最多插多少填充行，超出就让该处保持错位（避免版面被撑爆）。 */
+export const MAX_ROW_FILLER = 12;
+
+export type PaneFillers = {
+  /** 每块之前插入的填充行数（按块下标）。 */
+  before: Record<MergePaneKey, number[]>;
+  /** 文末对齐的填充行数。 */
+  end: Record<MergePaneKey, number>;
+};
+
+/**
+ * 计算三栏各自的填充行：每个非相同块的起始行插齐到三栏一致，
+ * 文末也对齐，于是三栏可以用同一 scrollTop 滚动、连接线保持水平。
+ */
+export function computePaneFillers(blocks: MergeBlock[]): PaneFillers {
+  const cursors: Record<MergePaneKey, number> = { ours: 0, result: 0, theirs: 0 };
+  const before: Record<MergePaneKey, number[]> = { ours: [], result: [], theirs: [] };
+  const panes: MergePaneKey[] = ["ours", "result", "theirs"];
+  for (const block of blocks) {
+    if (block.kind !== "equal") {
+      const target = Math.max(cursors.ours, cursors.result, cursors.theirs);
+      for (const pane of panes) {
+        const filler = Math.min(target - cursors[pane], MAX_ROW_FILLER);
+        before[pane].push(filler);
+        cursors[pane] += filler;
+      }
+    }
+    for (const pane of panes) {
+      cursors[pane] += paneContentLines(block, pane).length;
+    }
+  }
+  const end: Record<MergePaneKey, number> = { ours: 0, result: 0, theirs: 0 };
+  const tail = Math.max(cursors.ours, cursors.result, cursors.theirs);
+  for (const pane of panes) {
+    end[pane] = Math.min(tail - cursors[pane], MAX_ROW_FILLER);
+  }
+  return { before, end };
+}
+
+export type PaneRowTone =
+  | "pending"
+  | "resolved"
+  | "ignored"
+  | "rejected"
+  | "custom"
+  | "context";
+
+export type PaneRow =
+  | { kind: "filler" }
+  | {
+      kind: "line";
+      text: string;
+      tone: PaneRowTone | null;
+      chunkId: number | null;
+      segs: WordSeg[] | null;
+      clickable: boolean;
+    };
+
+function sidePaneRowTone(
+  block: SideBlock | ConflictBlock,
+  pane: "ours" | "theirs",
+): PaneRowTone | null {
+  if (block.kind === "side") {
+    if (block.side === pane) {
+      return block.state === "applied" ? "resolved" : "ignored";
+    }
+    return block.state === "applied" ? "context" : null;
+  }
+  if (block.resolution === "pending") return "pending";
+  if (block.resolution === "both") return "resolved";
+  if (block.resolution === "custom") return null;
+  const shown = conflictSide(block);
+  return shown === pane ? "resolved" : "rejected";
+}
+
+function resultPaneRowTone(
+  block: MergeBlock,
+): { tone: PaneRowTone | null; segs: WordSeg[][] | null } {
+  if (block.kind === "equal") return { tone: null, segs: null };
+  if (block.kind === "side") {
+    return {
+      tone: block.state === "applied" ? "resolved" : "ignored",
+      segs: null,
+    };
+  }
+  if (block.kind === "conflict") {
+    if (block.resolution === "pending") {
+      return { tone: "pending", segs: block.wordSegs };
+    }
+    if (block.resolution === "ignored") return { tone: "ignored", segs: null };
+    if (block.resolution === "custom") return { tone: "custom", segs: null };
+    return {
+      tone: "resolved",
+      segs: block.resolution === "theirs" ? block.wordSegsTheirs : block.wordSegs,
+    };
+  }
+  return { tone: "custom", segs: null };
+}
+
+/**
+ * 栏的渲染行模型：块正文行 + 填充行。行描述符带语气与词级分段，
+ * 渲染层只负责画。
+ */
+export function buildPaneRows(
+  pane: MergePaneKey,
+  blocks: MergeBlock[],
+  fillers: PaneFillers,
+): PaneRow[] {
+  const rows: PaneRow[] = [];
+  blocks.forEach((block, index) => {
+    for (let i = 0; i < fillers.before[pane][index]; i++) {
+      rows.push({ kind: "filler" });
+    }
+    const lines = paneContentLines(block, pane);
+    let tone: PaneRowTone | null = null;
+    let segs: WordSeg[][] | null = null;
+    if (pane === "result") {
+      const meta = resultPaneRowTone(block);
+      tone = meta.tone;
+      segs = meta.segs;
+    } else if (block.kind === "side" || block.kind === "conflict") {
+      tone = sidePaneRowTone(block, pane);
+      segs =
+        block.kind === "side"
+          ? block.side === pane
+            ? block.wordSegs
+            : null
+          : pane === "ours"
+            ? block.wordSegs
+            : block.wordSegsTheirs;
+    }
+    lines.forEach((text, li) => {
+      rows.push({
+        kind: "line",
+        text,
+        tone,
+        chunkId: tone ? block.id : null,
+        segs: segs ? segs[li] ?? null : null,
+        clickable: tone != null,
+      });
+    });
+  });
+  for (let i = 0; i < fillers.end[pane]; i++) rows.push({ kind: "filler" });
+  return rows;
 }

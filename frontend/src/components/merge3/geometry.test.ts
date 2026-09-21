@@ -1,29 +1,13 @@
 import { describe, expect, it } from "vitest";
-import {
-  centerLineOf,
-  scrollTopForLine,
-  visibleLinesOf,
-} from "./geometry";
+import { scrollTopForLine, visibleLinesOf } from "./geometry";
 
 describe("merge3 滚动几何", () => {
-  const heights = [400, 600, 781];
-
-  it("写读严格互逆：对齐后反查中心行不漂移", () => {
-    for (const height of heights) {
-      const v = visibleLinesOf(height);
-      // 顶部/底部钳制区无法居中，互逆只在非钳制区间成立
-      for (let line = Math.ceil(v / 2); line < 400; line++) {
-        const top = scrollTopForLine(line, height);
-        expect(centerLineOf(top, height)).toBe(line);
-      }
-    }
-  });
-
-  it("滚动位置单调不减", () => {
-    for (const height of heights) {
+  it("行 → 滚动位置单调不减且不越界", () => {
+    for (const height of [400, 600, 781]) {
       let prev = -Infinity;
       for (let line = 0; line < 400; line++) {
         const top = scrollTopForLine(line, height);
+        expect(top).toBeGreaterThanOrEqual(0);
         expect(top).toBeGreaterThanOrEqual(prev);
         prev = top;
       }

@@ -7,18 +7,18 @@ import {
   useRef,
   useState,
   type ReactNode,
-  type RefObject,
 } from "react";
 import {
   applyResultEdit,
   buildMergeBlocks,
   chunkTitle,
-  closestLineToGlobal,
-  globalLineMaps,
+  computePaneFillers,
   ignoreConflict,
   isChangeChunk,
   isUnresolved,
   linesText,
+  paneContentLines,
+  buildPaneRows,
   resolveConflict,
   resultLayout,
   resultText,
@@ -27,11 +27,8 @@ import {
   type MergeBlock,
   type MergePick,
 } from "../../utils/mergeModel";
+import { scrollTopForLine } from "./geometry";
 import { MERGE_LINE_HEIGHT, MERGE_PAD_Y, type PaneKey } from "./constants";
-import {
-  centerLineOf,
-  scrollTopForLine,
-} from "./geometry";
 import { MergeResultPane } from "./MergeResultPane";
 import { MergeSidePane } from "./MergeSidePane";
 
@@ -55,17 +52,7 @@ type Props = {
   onStats?: (stats: MergeToolStats) => void;
 };
 
-type PaneRefs = {
-  ours: RefObject<HTMLDivElement | null>;
-  result: RefObject<HTMLDivElement | null>;
-  theirs: RefObject<HTMLDivElement | null>;
-};
-
-type PaneBox = { el: HTMLDivElement; box: DOMRect };
-
-function mapFor(maps: number[][], key: PaneKey): number[] {
-  return key === "ours" ? maps[0] : key === "result" ? maps[1] : maps[2];
-}
+const PANES: PaneKey[] = ["ours", "result", "theirs"];
 
 export const MergeTool = forwardRef<MergeToolHandle, Props>(function MergeTool(
   { base, ours, theirs, oursTitle, theirsTitle, className, footer, onStats },
@@ -83,6 +70,15 @@ export const MergeTool = forwardRef<MergeToolHandle, Props>(function MergeTool(
 
   const layout = useMemo(() => resultLayout(blocks), [blocks]);
   const resultValue = useMemo(() => linesText(layout.lines), [layout]);
+  const fillers = useMemo(() => computePaneFillers(blocks), [blocks]);
+  const paneRows = useMemo(
+    () => ({
+      ours: buildPaneRows("ours", blocks, fillers),
+      result: buildPaneRows("result", blocks, fillers),
+      theirs: buildPaneRows("theirs", blocks, fillers),
+    }),
+    [blocks, fillers],
+  );
   const chunks = useMemo(
     () =>
       blocks
@@ -90,11 +86,12 @@ export const MergeTool = forwardRef<MergeToolHandle, Props>(function MergeTool(
         .filter(({ block }) => isChangeChunk(block))
         .map(({ block, index }) => ({
           id: block.id,
-          oursLine: block.oursRange.start,
-          resultLine: layout.blockStart[index],
-          theirsLine: block.theirsRange.start,
+          oursVirtual: block.oursRange.start + fillers.before.ours[index],
+          resultVirtual: layout.blockStart[index] + fillers.before.result[index],
+          theirsVirtual:
+            block.theirsRange.start + fillers.before.theirs[index],
         })),
-    [blocks, layout],
+    [blocks, fillers, layout],
   );
   const pendingCount = useMemo(() => blocks.filter(isUnresolved).length, [blocks]);
 
@@ -103,32 +100,33 @@ export const MergeTool = forwardRef<MergeToolHandle, Props>(function MergeTool(
     : 0;
   const activeChunk = chunks.length ? chunks[safeChunkIndex] : null;
 
-  const paneCounts = useMemo(
+  const scrollers = useMemo(
     () => ({
-      ours: blocks.map((b) => b.oursRange.end - b.oursRange.start),
-      result: blocks.map(resultRowLength),
-      theirs: blocks.map((b) => b.theirsRange.end - b.theirsRange.start),
+      ours: { current: null },
+      result: { current: null },
+      theirs: { current: null },
     }),
-    [blocks],
-  );
-  const globalMaps = useMemo(
-    () => globalLineMaps(paneCounts.ours, paneCounts.result, paneCounts.theirs),
-    [paneCounts],
-  );
-
-  // ref-like 对象即可：固定身份，避免每轮渲染换引用打断回调依赖
-  const scrollers = useMemo<PaneRefs>(
-    () => ({ ours: { current: null }, result: { current: null }, theirs: { current: null } }),
     [],
-  );
-  const buttonMovers = useMemo<PaneRefs>(
-    () => ({ ours: { current: null }, result: { current: null }, theirs: { current: null } }),
+  ) as {
+    ours: { current: HTMLDivElement | null };
+    result: { current: HTMLDivElement | null };
+    theirs: { current: HTMLDivElement | null };
+  };
+  const buttonMovers = useMemo(
+    () => ({
+      ours: { current: null },
+      result: { current: null },
+      theirs: { current: null },
+    }),
     [],
-  );
+  ) as {
+    ours: { current: HTMLDivElement | null };
+    result: { current: HTMLDivElement | null };
+    theirs: { current: HTMLDivElement | null };
+  };
   const tripleRef = useRef<HTMLDivElement | null>(null);
-  // 程序化写入的 scrollTop 回执：回声事件的 scrollTop 与写入值相等时视为
-  // 自己触发的，不再二次同步——否则三栏互相 chase 会一直滚到底
-  const programmaticRef = useRef<Map<PaneKey, number>>(new Map());
+  // 程序化写入的 scrollTop 回执：回声事件与写入值一致时不再反向同步
+  const programmaticRef = useRef(new Map<PaneKey, number>());
   const [connectorTick, setConnectorTick] = useState(0);
   const tickScheduled = useRef(false);
 
@@ -141,64 +139,52 @@ export const MergeTool = forwardRef<MergeToolHandle, Props>(function MergeTool(
     });
   }, []);
 
-  const centerGlobalOf = useCallback(
-    (key: PaneKey) => {
-      const el = scrollers[key].current;
-      const map = mapFor(globalMaps, key);
-      if (!el || !map.length) return 0;
-      const centerLine = centerLineOf(el.scrollTop, el.clientHeight);
-      const clamped = Math.min(map.length - 1, Math.max(0, centerLine));
-      return map[clamped];
-    },
-    [globalMaps, scrollers],
-  );
-
-  const alignPaneTo = useCallback(
-    (key: PaneKey, globalLine: number) => {
-      const el = scrollers[key].current;
-      const map = mapFor(globalMaps, key);
-      if (!el || !map.length) return;
-      const line = closestLineToGlobal(map, globalLine);
-      const top = scrollTopForLine(line, el.clientHeight);
-      programmaticRef.current.set(key, top);
-      el.scrollTop = top;
-    },
-    [globalMaps, scrollers],
-  );
-
   const syncFrom = useCallback(
     (key: PaneKey) => {
-      const g = centerGlobalOf(key);
-      for (const other of ["ours", "result", "theirs"] as PaneKey[]) {
-        if (other !== key) alignPaneTo(other, g);
+      const source = scrollers[key].current;
+      if (!source) return;
+      for (const other of PANES) {
+        if (other === key) continue;
+        const el = scrollers[other].current;
+        if (!el) continue;
+        const max = el.scrollHeight - el.clientHeight;
+        const top = Math.min(source.scrollTop, Math.max(0, max));
+        programmaticRef.current.set(other, top);
+        el.scrollTop = top;
+        const mover = buttonMovers[other].current;
+        if (mover) mover.style.transform = `translateY(${-top}px)`;
       }
       scheduleConnectorRedraw();
     },
-    [alignPaneTo, centerGlobalOf, scheduleConnectorRedraw],
+    [buttonMovers, scrollers, scheduleConnectorRedraw],
   );
 
   const scrollToChunk = useCallback(
-    (chunk: { oursLine: number; resultLine: number; theirsLine: number } | null) => {
+    (
+      chunk: { oursVirtual: number; resultVirtual: number; theirsVirtual: number } | null,
+    ) => {
       if (!chunk) return;
-      for (const key of ["ours", "result", "theirs"] as PaneKey[]) {
+      for (const key of PANES) {
         const el = scrollers[key].current;
         if (!el) continue;
         const line =
           key === "ours"
-            ? chunk.oursLine
+            ? chunk.oursVirtual
             : key === "theirs"
-              ? chunk.theirsLine
-              : chunk.resultLine;
-        const top = scrollTopForLine(line, el.clientHeight);
+              ? chunk.theirsVirtual
+              : chunk.resultVirtual;
+        const top = Math.min(
+          scrollTopForLine(Math.max(0, line - 2), el.clientHeight),
+          Math.max(0, el.scrollHeight - el.clientHeight),
+        );
         programmaticRef.current.set(key, top);
         el.scrollTop = top;
-        // 不依赖 scroll 事件：同步刷新按钮层位移（隐藏环境下事件不派发）
         const mover = buttonMovers[key].current;
-        if (mover) mover.style.transform = `translateY(${-el.scrollTop}px)`;
+        if (mover) mover.style.transform = `translateY(${-top}px)`;
       }
       scheduleConnectorRedraw();
     },
-    [buttonMovers, scheduleConnectorRedraw, scrollers],
+    [buttonMovers, scrollers, scheduleConnectorRedraw],
   );
 
   // 统一在捕获阶段接三栏滚动：滚动不冒泡，捕获监听可稳定命中后代元素
@@ -228,7 +214,6 @@ export const MergeTool = forwardRef<MergeToolHandle, Props>(function MergeTool(
       if (key !== "ours" && key !== "result" && key !== "theirs") return;
       const mover = buttonMovers[key].current;
       if (mover) mover.style.transform = `translateY(${-scroller.scrollTop}px)`;
-      // 同步引发的回声事件不再反向同步，否则三栏互相 chase 滚到底
       const expected = programmaticRef.current.get(key);
       if (expected != null && Math.abs(expected - scroller.scrollTop) < 0.5) {
         programmaticRef.current.delete(key);
@@ -252,7 +237,10 @@ export const MergeTool = forwardRef<MergeToolHandle, Props>(function MergeTool(
   const jump = useCallback(
     (delta: number) => {
       if (!chunks.length) return;
-      selectChunk(Math.min(chunks.length - 1, Math.max(0, safeChunkIndex + delta)), true);
+      selectChunk(
+        Math.min(chunks.length - 1, Math.max(0, safeChunkIndex + delta)),
+        true,
+      );
     },
     [chunks.length, safeChunkIndex, selectChunk],
   );
@@ -374,18 +362,17 @@ export const MergeTool = forwardRef<MergeToolHandle, Props>(function MergeTool(
     () =>
       buildBands({
         blocks,
+        fillers,
         layout,
         scrollers,
         triple: tripleRef.current,
         activeId: activeChunk?.id ?? null,
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [blocks, layout, connectorTick, activeChunk?.id],
+    [blocks, fillers, layout, connectorTick, activeChunk?.id],
   );
 
-  const activeTitle = activeChunk
-    ? chunkTitleOf(blocks, activeChunk.id)
-    : null;
+  const activeTitle = activeChunk ? chunkTitleOf(blocks, activeChunk.id) : null;
 
   const selectByChunkId = useCallback(
     (chunkId: number) => {
@@ -469,16 +456,16 @@ export const MergeTool = forwardRef<MergeToolHandle, Props>(function MergeTool(
           </div>
         ) : null}
         <span className="merge3-stats" aria-live="polite">
-          {chunks.length} 处改动
-          {pendingCount > 0 ? `，${pendingCount} 处待定` : "，没有待定"}
+          {`${chunks.length} 处改动${pendingCount > 0 ? `，${pendingCount} 处待定` : "，没有待定"}`}
         </span>
       </div>
       <div className="merge3-triple" ref={tripleRef}>
         <MergeSidePane
           side="ours"
           title={oursTitle}
-          text={ours}
+          rows={paneRows.ours}
           blocks={blocks}
+          fillers={fillers}
           activeChunkId={activeChunk?.id ?? null}
           scrollerRef={scrollers.ours}
           moverRef={buttonMovers.ours}
@@ -488,8 +475,10 @@ export const MergeTool = forwardRef<MergeToolHandle, Props>(function MergeTool(
         />
         <MergeResultPane
           value={resultValue}
+          rows={paneRows.result}
           blocks={blocks}
           layout={layout}
+          fillers={fillers}
           activeChunkId={activeChunk?.id ?? null}
           activeTitle={activeTitle}
           pendingCount={pendingCount}
@@ -502,8 +491,9 @@ export const MergeTool = forwardRef<MergeToolHandle, Props>(function MergeTool(
         <MergeSidePane
           side="theirs"
           title={theirsTitle}
-          text={theirs}
+          rows={paneRows.theirs}
           blocks={blocks}
+          fillers={fillers}
           activeChunkId={activeChunk?.id ?? null}
           scrollerRef={scrollers.theirs}
           moverRef={buttonMovers.theirs}
@@ -521,6 +511,13 @@ export const MergeTool = forwardRef<MergeToolHandle, Props>(function MergeTool(
     </div>
   );
 });
+
+type PaneRefs = Record<
+  PaneKey,
+  { current: HTMLDivElement | null }
+>;
+
+type PaneBox = { el: HTMLDivElement; box: DOMRect };
 
 function resultRowLength(block: MergeBlock): number {
   if (block.kind === "side" && block.state === "ignored") {
@@ -563,12 +560,14 @@ type Band = {
 
 function buildBands({
   blocks,
+  fillers,
   layout,
   scrollers,
   triple,
   activeId,
 }: {
   blocks: MergeBlock[];
+  fillers: ReturnType<typeof computePaneFillers>;
   layout: ReturnType<typeof resultLayout>;
   scrollers: PaneRefs;
   triple: HTMLDivElement | null;
@@ -576,7 +575,7 @@ function buildBands({
 }): Band[] {
   if (!triple) return [];
   const containerBox = triple.getBoundingClientRect();
-  const paneBox = (key: PaneKey): PaneBox | null => {
+  const paneBox = (key: PaneKey): { el: HTMLDivElement; box: DOMRect } | null => {
     const el = scrollers[key].current;
     if (!el) return null;
     return { el, box: el.getBoundingClientRect() };
@@ -586,11 +585,11 @@ function buildBands({
   const theirsPane = paneBox("theirs");
   if (!oursPane || !resultPane || !theirsPane) return [];
 
-  const topIn = (pane: PaneBox, line: number) =>
-    line * MERGE_LINE_HEIGHT +
-    MERGE_PAD_Y -
-    pane.el.scrollTop +
-    (pane.box.top - containerBox.top);
+  const topIn = (
+    pane: PaneBox,
+    scrollTop: number,
+    virtualLine: number,
+  ) => virtualLine * MERGE_LINE_HEIGHT + MERGE_PAD_Y - scrollTop + (pane.box.top - containerBox.top);
   const inView = (top: number, bottom: number) =>
     bottom >= 0 && top <= containerBox.height;
 
@@ -598,27 +597,18 @@ function buildBands({
   const pushBand = (
     key: string,
     bandClass: string,
-    left: { pane: PaneBox; edge: number },
-    right: { pane: PaneBox; edge: number },
-    leftRange: { start: number; end: number } | null,
-    rightRange: { start: number; end: number } | null,
+    left: { pane: { el: HTMLDivElement; box: DOMRect }; edge: number; scroll: number },
+    right: { pane: { el: HTMLDivElement; box: DOMRect }; edge: number; scroll: number },
+    leftLine: number,
+    rightLine: number,
+    heightLines: number,
   ) => {
-    if (!leftRange || !rightRange) return;
-    const y1a = topIn(left.pane, leftRange.start);
-    const y1b = Math.max(y1a + 3, topIn(left.pane, leftRange.end));
-    const y2a = topIn(right.pane, rightRange.start);
-    const y2b = Math.max(y2a + 3, topIn(right.pane, rightRange.end));
+    const y1a = topIn(left.pane, left.scroll, leftLine);
+    const y1b = y1a + heightLines * MERGE_LINE_HEIGHT;
+    const y2a = topIn(right.pane, right.scroll, rightLine);
+    const y2b = y2a + Math.max(heightLines, 1) * MERGE_LINE_HEIGHT;
     if (!inView(y1a, y1b) && !inView(y2a, y2b)) return;
-    bands.push({
-      key,
-      className: bandClass,
-      x1: left.edge,
-      x2: right.edge,
-      y1a,
-      y1b,
-      y2a,
-      y2b,
-    });
+    bands.push({ key, className: bandClass, x1: left.edge, x2: right.edge, y1a, y1b, y2a, y2b });
   };
 
   const leftEdge = oursPane.box.right - containerBox.left + 1;
@@ -628,35 +618,45 @@ function buildBands({
 
   blocks.forEach((block, index) => {
     if (block.kind === "equal") return;
-    const resultRange = {
-      start: layout.blockStart[index],
-      end: layout.blockStart[index] + resultRowLength(block),
-    };
     const className = bandClassName(block, block.id === activeId);
-    const oursRange = rangeOrNull(block.oursRange);
-    const theirsRange = rangeOrNull(block.theirsRange);
+    const oursTop = block.oursRange.start + fillers.before.ours[index];
+    const resultTop = layout.blockStart[index] + fillers.before.result[index];
+    const theirsTop = block.theirsRange.start + fillers.before.theirs[index];
+    const oursHeight = Math.max(
+      1,
+      block.oursRange.end - block.oursRange.start ||
+        paneContentLines(block, "ours").length,
+    );
+    const theirsHeight = Math.max(
+      1,
+      block.theirsRange.end - block.theirsRange.start ||
+        paneContentLines(block, "theirs").length,
+    );
+    const resultHeight = Math.max(
+      1,
+      resultRowLength(block),
+    );
+
     pushBand(
       `lm-${block.id}`,
       className,
-      { pane: oursPane, edge: leftEdge },
-      { pane: resultPane, edge: midLeft },
-      oursRange,
-      resultRange,
+      { pane: oursPane, edge: leftEdge, scroll: oursPane.el.scrollTop },
+      { pane: resultPane, edge: midLeft, scroll: resultPane.el.scrollTop },
+      oursTop,
+      resultTop,
+      Math.min(oursHeight, resultHeight),
     );
     pushBand(
       `mr-${block.id}`,
       className,
-      { pane: resultPane, edge: midRight },
-      { pane: theirsPane, edge: rightEdge },
-      resultRange,
-      theirsRange,
+      { pane: resultPane, edge: midRight, scroll: resultPane.el.scrollTop },
+      { pane: theirsPane, edge: rightEdge, scroll: theirsPane.el.scrollTop },
+      resultTop,
+      theirsTop,
+      Math.min(resultHeight, theirsHeight),
     );
   });
   return bands;
-}
-
-function rangeOrNull(range: { start: number; end: number }) {
-  return range.end > range.start ? range : null;
 }
 
 function bandClassName(block: MergeBlock, active: boolean): string {

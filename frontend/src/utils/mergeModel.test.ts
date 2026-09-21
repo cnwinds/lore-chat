@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   applyResultEdit,
   buildMergeBlocks,
-  closestLineToGlobal,
+  buildPaneRows,
+  computePaneFillers,
   conflictSide,
-  globalLineMaps,
   ignoreConflict,
   isUnresolved,
   resolveConflict,
@@ -183,23 +183,6 @@ describe("resultLayout", () => {
   });
 });
 
-describe("globalLineMaps", () => {
-  it("is monotonic and aligns equal blocks", () => {
-    const [ours, result] = globalLineMaps([2, 1, 3], [2, 2, 3]);
-    expect(result).toEqual([0, 1, 2, 3, 4, 5, 6]);
-    expect(ours).toEqual([0, 1, 2, 4, 5, 6]);
-    expect(closestLineToGlobal(result, 3)).toBe(3);
-  });
-
-  it("finds the closest line on the other pane", () => {
-    // 第二块行数不同（ours 1 行、result 2 行），stride 取 2
-    const [ours] = globalLineMaps([3, 1, 4], [3, 2, 4]);
-    expect(closestLineToGlobal(ours, 4)).toBe(3);
-    expect(closestLineToGlobal(ours, 5)).toBe(4);
-    expect(closestLineToGlobal([], 5)).toBe(0);
-  });
-});
-
 describe("withDocumentEnding", () => {
   it("keeps the reference ending", () => {
     expect(withDocumentEnding("a\nb", "x\ny\n")).toBe("a\nb\n");
@@ -251,5 +234,38 @@ describe("戒律更新 fixture", () => {
     const body = withDocumentEnding(resultText(picked), theirs);
     expect(body).toContain("## 七、目录规划");
     expect(body.split("\n").length).toBeGreaterThan(5);
+  });
+});
+
+describe("computePaneFillers / buildPaneRows", () => {
+  // theirs 在文首比 ours 多 2 行 → 插 2 行填充后两栏的块起始对齐
+  const ours = ["# 标题", "", "正文第一段。"].join("\n");
+  const theirs = [
+    "# 标题",
+    "",
+    "开头引言。",
+    "开头引言二。",
+    "正文第一段。",
+  ].join("\n");
+  const blocks = buildMergeBlocks(ours, ours, theirs);
+
+  it("在较短的栏补齐填充行（文末对齐）", () => {
+    const fillers = computePaneFillers(blocks);
+    // 差异在文档尾部：块前无需填充，文末 ours 补 2 行对齐
+    expect(fillers.end.ours).toBe(2);
+    expect(fillers.end.theirs).toBe(0);
+  });
+
+  it("buildPaneRows 输出含填充行且正文行数与栏内容一致", () => {
+    const fillers = computePaneFillers(blocks);
+    const oursRows = buildPaneRows("ours", blocks, fillers);
+    const theirsRows = buildPaneRows("theirs", blocks, fillers);
+    const fillerRows = oursRows.filter((r) => r.kind === "filler").length;
+    expect(fillerRows).toBe(2);
+    expect(oursRows).toHaveLength(theirsRows.length);
+    expect(oursRows.some((r) => r.kind === "line" && r.text === "正文第一段。")).toBe(true);
+    // 相同行不得被标成 custom（回归：equal 落空曾全标金）
+    const resultRows = buildPaneRows("result", blocks, fillers);
+    expect(resultRows.some((r) => r.kind === "line" && r.tone === "custom")).toBe(false);
   });
 });

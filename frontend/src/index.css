@@ -8648,6 +8648,15 @@ button.source-link--inline.conversation-md-link {
   box-shadow: inset 2px 0 0 var(--accent);
 }
 
+/* 填充行：对齐用的空行，画成细密斜纹 */
+.merge3-line.is-filler {
+  background: repeating-linear-gradient(
+    45deg,
+    transparent 0 7px,
+    rgba(108, 127, 115, 0.07) 7px 14px
+  );
+}
+
 .merge3-word-changed {
   text-decoration: underline dotted;
   text-decoration-color: currentColor;

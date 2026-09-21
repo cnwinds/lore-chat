@@ -1,13 +1,19 @@
 import { useMemo, type RefObject } from "react";
-import { conflictSide, type MergeBlock } from "../../utils/mergeModel";
+import {
+  conflictSide,
+  type MergeBlock,
+  type MergePaneKey,
+  type PaneRow,
+} from "../../utils/mergeModel";
 import { MERGE_LINE_HEIGHT, MERGE_PAD_Y } from "./constants";
-import { segsToSpans, sideLineMeta } from "./lineMeta";
+import { segsToSpans } from "./lineMeta";
 
 type Props = {
   side: "ours" | "theirs";
   title: string;
-  text: string;
+  rows: PaneRow[];
   blocks: MergeBlock[];
+  fillers: { before: Record<MergePaneKey, number[]> };
   activeChunkId: number | null;
   scrollerRef: RefObject<HTMLDivElement | null>;
   moverRef: RefObject<HTMLDivElement | null>;
@@ -19,8 +25,9 @@ type Props = {
 export function MergeSidePane({
   side,
   title,
-  text,
+  rows,
   blocks,
+  fillers,
   activeChunkId,
   scrollerRef,
   moverRef,
@@ -28,14 +35,9 @@ export function MergeSidePane({
   onApplyChunk,
   onIgnoreChunk,
 }: Props) {
-  const lines = useMemo(() => text.split("\n"), [text]);
-  const meta = useMemo(
-    () => sideLineMeta(side, lines.length, blocks),
-    [side, lines.length, blocks],
-  );
   const chunkButtons = useMemo(
-    () => chunkButtonsFor(side, blocks),
-    [side, blocks],
+    () => chunkButtonsFor(side, blocks, fillers),
+    [side, blocks, fillers],
   );
 
   return (
@@ -50,47 +52,50 @@ export function MergeSidePane({
         <div className="merge3-scroller" ref={scrollerRef} data-pane={side}>
           <div className="merge3-row">
             <div className="merge3-gutter" aria-hidden>
-              {lines.map((_, i) => (
-                <div
-                  key={i}
-                  className={`merge3-ln${meta[i]?.tone ? ` tone-${meta[i].tone}` : ""}`}
-                >
-                  {i + 1}
-                </div>
-              ))}
+              {rows.map((row, i) => {
+                const tone = row.kind === "line" ? row.tone : null;
+                return (
+                  <div
+                    key={i}
+                    className={`merge3-ln${tone ? ` tone-${tone}` : ""}`}
+                  >
+                    {row.kind === "line" ? contentNumber(rows, i) : ""}
+                  </div>
+                );
+              })}
             </div>
             <pre className="merge3-doc">
-              {lines.map((line, i) => {
-                const info = meta[i];
+              {rows.map((row, i) => {
+                if (row.kind === "filler") {
+                  return <div key={i} className="merge3-line is-filler" />;
+                }
                 const classes = ["merge3-line"];
-                if (info?.tone) classes.push(`tone-${info.tone}`);
-                if (info?.chunkId != null && info.chunkId === activeChunkId) {
+                if (row.tone) classes.push(`tone-${row.tone}`);
+                if (row.chunkId != null && row.chunkId === activeChunkId) {
                   classes.push("is-active");
                 }
                 return (
                   <div
                     key={i}
                     className={classes.join(" ")}
-                    role={info?.chunkId != null ? "button" : undefined}
-                    tabIndex={info?.chunkId != null ? 0 : undefined}
+                    role={row.clickable ? "button" : undefined}
+                    tabIndex={row.clickable ? 0 : undefined}
                     onClick={
-                      info?.chunkId != null
-                        ? () => onSelectChunk(info.chunkId!)
-                        : undefined
+                      row.clickable ? () => onSelectChunk(row.chunkId!) : undefined
                     }
                     onKeyDown={
-                      info?.chunkId != null
+                      row.clickable
                         ? (e) => {
                             if (e.key === "Enter" || e.key === " ") {
                               e.preventDefault();
-                              onSelectChunk(info.chunkId!);
+                              onSelectChunk(row.chunkId!);
                             }
                           }
                         : undefined
                     }
                   >
                     <span className="merge3-line-text">
-                      {info?.segs ? segsToSpans(info.segs) : line || "\u200b"}
+                      {row.segs ? segsToSpans(row.segs) : row.text || "\u200b"}
                     </span>
                   </div>
                 );
@@ -130,6 +135,15 @@ export function MergeSidePane({
   );
 }
 
+/** 行号槽只给正文行编号，填充行不占行号。 */
+function contentNumber(rows: PaneRow[], index: number): string {
+  let count = 0;
+  for (let i = 0; i <= index; i++) {
+    if (rows[i].kind === "line") count += 1;
+  }
+  return String(count);
+}
+
 type SideChunkAction = {
   key: string;
   kind: "apply" | "ignore";
@@ -138,15 +152,19 @@ type SideChunkAction = {
   tone?: "apply" | "ignore";
 };
 
-function chunkButtonsFor(side: "ours" | "theirs", blocks: MergeBlock[]) {
+function chunkButtonsFor(
+  side: "ours" | "theirs",
+  blocks: MergeBlock[],
+  fillers: { before: Record<MergePaneKey, number[]> },
+) {
   const out: Array<{ chunkId: number; top: number; actions: SideChunkAction[] }> = [];
   const arrow = side === "ours" ? "»" : "«";
-  for (const block of blocks) {
+  blocks.forEach((block, index) => {
     const range = side === "ours" ? block.oursRange : block.theirsRange;
-    if (range.end <= range.start && block.kind !== "conflict") continue;
+    if (range.end <= range.start && block.kind !== "conflict") return;
     const actions: SideChunkAction[] = [];
     if (block.kind === "side") {
-      if (block.side !== side) continue;
+      if (block.side !== side) return;
       if (block.state === "applied") {
         actions.push({
           key: "ignore",
@@ -176,14 +194,16 @@ function chunkButtonsFor(side: "ours" | "theirs", blocks: MergeBlock[]) {
         });
       }
     } else {
-      continue;
+      return;
     }
-    if (!actions.length) continue;
+    if (!actions.length) return;
     out.push({
       chunkId: block.id,
-      top: range.start * MERGE_LINE_HEIGHT + MERGE_PAD_Y,
+      top:
+        (range.start + fillers.before[side][index]) * MERGE_LINE_HEIGHT +
+        MERGE_PAD_Y,
       actions,
     });
-  }
+  });
   return out;
 }
