@@ -549,7 +549,7 @@ async def test_edit_doc_system_precepts_allowed(tmp_path):
     cid = "conv-4"
     await registry.execute("read_doc", {"path": path}, conversation_id=cid)
     original = repo.read_doc(path).body
-    marker = "## 一、落库"
+    marker = "## 一、总原则"
     result = await registry.execute(
         "edit_doc",
         {
