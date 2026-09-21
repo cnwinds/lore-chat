@@ -3,6 +3,8 @@
 from types import SimpleNamespace
 
 from app.engine.agent.prompts import SYSTEM_PROMPT, wrap_user_memory
+from app.engine.conversations import ConversationStore
+from app.engine.roles import DEFAULT_ROLE_ID, RoleStore
 from app.engine.usage.context_stats import (
     build_context_stats,
     estimate_tokens,
@@ -182,6 +184,52 @@ def test_select_tools_includes_read_last_tool_results():
         for d in select_tools("default", web_enabled=False)
     }
     assert "read_last_tool_results" in names
+
+
+def test_owner_dm_context_stats_omit_role_collab(tmp_path):
+    """多角色实例下，主人单角色私聊不应在系统段估算里拼【角色协作】。"""
+    conv_store = ConversationStore(tmp_path / "conversations")
+    role_store = RoleStore(tmp_path / "roles")
+    role_store.create(name="协作角色", system_prompt="协助")
+    cid = conv_store.create()
+    conv = conv_store.get(cid)
+    tools = SimpleNamespace(conversations=conv_store)
+    body = build_context_stats(
+        conversation=conv,
+        roles=role_store,
+        system_layer=_Layer(""),
+        usage_store=_Usage(),
+        models_dev=_Models(),
+        chat_models=[],
+        tools=tools,
+        include_texts=True,
+    )
+    system_text = next(s for s in body["segments"] if s["key"] == "system")["text"]
+    assert "【角色协作】" not in system_text
+    assert "【角色名录】" not in system_text
+
+
+def test_group_context_stats_includes_role_collab(tmp_path):
+    conv_store = ConversationStore(tmp_path / "conversations")
+    role_store = RoleStore(tmp_path / "roles")
+    other = role_store.create(name="协作角色", system_prompt="协助")
+    group = conv_store.rooms.create_group(
+        title="测试群", role_ids=[DEFAULT_ROLE_ID, other["id"]]
+    )
+    conv = conv_store.get(group)
+    tools = SimpleNamespace(conversations=conv_store)
+    body = build_context_stats(
+        conversation=conv,
+        roles=role_store,
+        system_layer=_Layer(""),
+        usage_store=_Usage(),
+        models_dev=_Models(),
+        chat_models=[],
+        tools=tools,
+        include_texts=True,
+    )
+    system_text = next(s for s in body["segments"] if s["key"] == "system")["text"]
+    assert "【角色协作】" in system_text
 
 
 def test_skill_catalog_counts_injected_text():
