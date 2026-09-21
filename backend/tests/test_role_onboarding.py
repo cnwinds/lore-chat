@@ -16,17 +16,29 @@ def role_store():
 
 def test_should_inject_onboarding_layer_only_before_real_user():
     from app.engine.role_onboarding import (
+        ONBOARDING_KICKOFF_USER_TEXT,
         onboarding_kickoff_client_message_id,
         should_inject_onboarding_layer,
     )
 
     role = {"onboarding_status": "active", "name": "新角色"}
+    kid = onboarding_kickoff_client_message_id("r1")
+    assert should_inject_onboarding_layer(role, [], client_message_id=kid)
+    assert not should_inject_onboarding_layer(role, [])
+    assert not should_inject_onboarding_layer(
+        role, [], client_message_id="user-real-1"
+    )
     assert should_inject_onboarding_layer(
         role,
-        [],
-        client_message_id=onboarding_kickoff_client_message_id("r1"),
+        [{"role": "user", "text": ONBOARDING_KICKOFF_USER_TEXT, "client_message_id": kid}],
     )
-    assert should_inject_onboarding_layer(role, [])
+    assert not should_inject_onboarding_layer(
+        role,
+        [
+            {"role": "user", "text": ONBOARDING_KICKOFF_USER_TEXT, "client_message_id": kid},
+            {"role": "assistant", "text": "你好，我是新角色，主要负责什么？"},
+        ],
+    )
     assert not should_inject_onboarding_layer(
         role,
         [{"role": "user", "text": "主人说话了", "client_message_id": "u1"}],
