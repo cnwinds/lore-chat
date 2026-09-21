@@ -2,7 +2,6 @@ import { useMemo, type RefObject } from "react";
 import {
   conflictSide,
   type MergeBlock,
-  type PaneFillers,
   type PaneRow,
 } from "../../utils/mergeModel";
 import { MERGE_LINE_HEIGHT, MERGE_PAD_Y } from "./constants";
@@ -13,7 +12,6 @@ type Props = {
   title: string;
   rows: PaneRow[];
   blocks: MergeBlock[];
-  fillers: PaneFillers;
   activeChunkId: number | null;
   scrollerRef: RefObject<HTMLDivElement | null>;
   moverRef: RefObject<HTMLDivElement | null>;
@@ -27,7 +25,6 @@ export function MergeSidePane({
   title,
   rows,
   blocks,
-  fillers,
   activeChunkId,
   scrollerRef,
   moverRef,
@@ -36,8 +33,8 @@ export function MergeSidePane({
   onIgnoreChunk,
 }: Props) {
   const chunkButtons = useMemo(
-    () => chunkButtonsFor(side, blocks, fillers),
-    [side, blocks, fillers],
+    () => chunkButtonsFor(side, blocks),
+    [side, blocks],
   );
 
   return (
@@ -52,23 +49,14 @@ export function MergeSidePane({
         <div className="merge3-scroller" ref={scrollerRef} data-pane={side}>
           <div className="merge3-row">
             <div className="merge3-gutter" aria-hidden>
-              {rows.map((row, i) => {
-                const tone = row.kind === "line" ? row.tone : null;
-                return (
-                  <div
-                    key={i}
-                    className={`merge3-ln${tone ? ` tone-${tone}` : ""}`}
-                  >
-                    {row.kind === "line" ? contentNumber(rows, i) : ""}
-                  </div>
-                );
-              })}
+              {rows.map((row, i) => (
+                <div key={i} className={`merge3-ln${row.tone ? ` tone-${row.tone}` : ""}`}>
+                  {i + 1}
+                </div>
+              ))}
             </div>
             <pre className="merge3-doc">
               {rows.map((row, i) => {
-                if (row.kind === "filler") {
-                  return <div key={i} className="merge3-line is-filler" />;
-                }
                 const classes = ["merge3-line"];
                 if (row.tone) classes.push(`tone-${row.tone}`);
                 if (row.chunkId != null && row.chunkId === activeChunkId) {
@@ -135,15 +123,6 @@ export function MergeSidePane({
   );
 }
 
-/** 行号槽只给正文行编号，填充行不占行号。 */
-function contentNumber(rows: PaneRow[], index: number): string {
-  let count = 0;
-  for (let i = 0; i <= index; i++) {
-    if (rows[i].kind === "line") count += 1;
-  }
-  return String(count);
-}
-
 type SideChunkAction = {
   key: string;
   kind: "apply" | "ignore";
@@ -155,11 +134,10 @@ type SideChunkAction = {
 function chunkButtonsFor(
   side: "ours" | "theirs",
   blocks: MergeBlock[],
-  fillers: PaneFillers,
 ) {
   const out: Array<{ chunkId: number; top: number; actions: SideChunkAction[] }> = [];
   const arrow = side === "ours" ? "»" : "«";
-  blocks.forEach((block, index) => {
+  blocks.forEach((block) => {
     const range = side === "ours" ? block.oursRange : block.theirsRange;
     if (range.end <= range.start && block.kind !== "conflict") return;
     const actions: SideChunkAction[] = [];
@@ -199,7 +177,7 @@ function chunkButtonsFor(
     if (!actions.length) return;
     out.push({
       chunkId: block.id,
-      top: (range.start + fillers.offset[side][index]) * MERGE_LINE_HEIGHT + MERGE_PAD_Y,
+      top: range.start * MERGE_LINE_HEIGHT + MERGE_PAD_Y,
       actions,
     });
   });

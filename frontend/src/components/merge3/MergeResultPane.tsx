@@ -2,7 +2,6 @@ import { useLayoutEffect, useMemo, useRef, type RefObject } from "react";
 import {
   type MergeBlock,
   type MergePick,
-  type PaneFillers,
   type PaneRow,
   type ResultLayout,
 } from "../../utils/mergeModel";
@@ -14,7 +13,6 @@ type Props = {
   rows: PaneRow[];
   blocks: MergeBlock[];
   layout: ResultLayout;
-  fillers: PaneFillers;
   activeChunkId: number | null;
   activeTitle: string | null;
   pendingCount: number;
@@ -30,7 +28,6 @@ export function MergeResultPane({
   rows,
   blocks,
   layout,
-  fillers,
   activeChunkId,
   activeTitle,
   pendingCount,
@@ -62,14 +59,12 @@ export function MergeResultPane({
         tops.push({
           chunkId: block.id,
           top:
-            ((layout.blockStart[index] ?? 0) + fillers.offset.result[index]) *
-              MERGE_LINE_HEIGHT +
-            MERGE_PAD_Y,
+            (layout.blockStart[index] ?? 0) * MERGE_LINE_HEIGHT + MERGE_PAD_Y,
         });
       }
     });
     return tops;
-  }, [blocks, fillers, layout]);
+  }, [blocks, layout]);
 
   return (
     <section className="merge3-col merge3-col--result" aria-label="结果，可编辑">
@@ -86,24 +81,15 @@ export function MergeResultPane({
         <div className="merge3-scroller" ref={scrollerRef} data-pane="result">
           <div className="merge3-row">
             <div className="merge3-gutter" aria-hidden>
-              {rows.map((row, i) => {
-                const tone = row.kind === "line" ? row.tone : null;
-                return (
-                  <div
-                    key={i}
-                    className={`merge3-ln${tone ? ` tone-${tone}` : ""}`}
-                  >
-                    {row.kind === "line" ? contentNumber(rows, i) : ""}
-                  </div>
-                );
-              })}
+              {rows.map((row, i) => (
+                <div key={i} className={`merge3-ln${row.tone ? ` tone-${row.tone}` : ""}`}>
+                  {i + 1}
+                </div>
+              ))}
             </div>
             <div className="merge3-text">
               <pre className="merge3-backdrop" aria-hidden>
                 {rows.map((row, i) => {
-                  if (row.kind === "filler") {
-                    return <div key={i} className="merge3-line is-filler" />;
-                  }
                   const classes = ["merge3-line"];
                   if (row.tone) classes.push(`tone-${row.tone}`);
                   if (row.chunkId != null && row.chunkId === activeChunkId) {
@@ -177,13 +163,4 @@ export function MergeResultPane({
       </div>
     </section>
   );
-}
-
-/** 行号槽只给正文行编号，填充行不占行号。 */
-function contentNumber(rows: PaneRow[], index: number): string {
-  let count = 0;
-  for (let i = 0; i <= index; i++) {
-    if (rows[i].kind === "line") count += 1;
-  }
-  return String(count);
 }

@@ -4,6 +4,12 @@ export function visibleLinesOf(clientHeight: number): number {
   return Math.max(1, Math.floor(clientHeight / MERGE_LINE_HEIGHT));
 }
 
+export function centerLineOf(scrollTop: number, clientHeight: number): number {
+  return Math.round(
+    scrollTop / MERGE_LINE_HEIGHT + visibleLinesOf(clientHeight) / 2 - 0.5,
+  );
+}
+
 export function scrollTopForLine(line: number, clientHeight: number): number {
   return Math.max(
     0,

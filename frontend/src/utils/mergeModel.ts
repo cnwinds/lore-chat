@@ -156,7 +156,7 @@ function overlaps(a: LineRange, b: LineRange): boolean {
   return a.start < b.end && b.start < a.end;
 }
 
-/** base 上与 [blo,bhi) 对应的 side 行，起点处的插入计入，终点处不计。 */
+/** base 上与 [blo,bhi) 对应的 side 行：区间内的 equal 行照抄，插入行按锚点归属区间。 */
 function sideSpan(
   base: string[],
   side: string[],
@@ -164,8 +164,7 @@ function sideSpan(
   bhi: number,
 ): string[] {
   const lines: string[] = [];
-  const zero = blo === bhi;
-  for (const op of editRanges(base, side)) {
+  for (const op of opcodes(base, side)) {
     if (op.tag === "equal") {
       const lo = Math.max(op.baseStart, blo);
       const hi = Math.min(op.baseEnd, bhi);
@@ -176,15 +175,10 @@ function sideSpan(
       continue;
     }
     if (op.tag === "delete") continue;
-    if (op.tag === "insert") {
-      if (op.baseStart < blo || op.baseStart > bhi) continue;
-      if (op.baseStart === bhi && !zero) continue;
-      lines.push(...side.slice(op.sideStart, op.sideEnd));
-      continue;
-    }
-    const lo = Math.max(op.baseStart, blo);
-    const hi = Math.min(op.baseEnd, bhi);
-    if (lo < hi) lines.push(...side.slice(op.sideStart, op.sideEnd));
+    // insert：editRanges 已把同侧相邻编辑粘合，凡锚点落在本簇内的插入
+    // （含起终点锚）都只可能属于本簇，排除会在穿插场景丢行。
+    if (op.baseStart < blo || op.baseStart > bhi) continue;
+    lines.push(...side.slice(op.sideStart, op.sideEnd));
   }
   return lines;
 }
@@ -560,8 +554,6 @@ function firstMeaningful(lines: string[]): string {
   return line ? line.trim().slice(0, 24) : "";
 }
 
-/* ===== 三栏填充行：插行使各改动就近对齐，连接线不交叉 ===== */
-
 export type MergePaneKey = "ours" | "result" | "theirs";
 
 /** 栏中某块展示的正文行（side 忽略时本侧仍显示自己的行）。 */
@@ -571,6 +563,10 @@ export function paneContentLines(
 ): string[] {
   if (block.kind === "equal") return block.lines;
   if (block.kind === "side") {
+    // 结果栏：已采纳显示改动文本，忽略则回退基线；侧栏各显自己的文档
+    if (pane === "result") {
+      return block.state === "applied" ? block.lines : block.baseLines;
+    }
     if (block.side === pane) return block.lines;
     return block.baseLines;
   }
@@ -583,73 +579,40 @@ export function paneContentLines(
 }
 
 /**
- * 单个间隔的填充行上限：只防整篇重写之类的极端病态（数千填充行拖垮渲染）。
- * 正常文档的分段差异都应远小于此值——上限一旦触发，该处会保持错位，
- * 连接线随之偏斜，所以这个值必须足够大。
+ * 三栏各自的「全局行号」数组：同一块的三栏行共享一段全局区间，
+ * 块的区间宽度取三栏行数的最大值——滚动同步按中心行的全局号
+ * 在其它栏里取最近行，实现按块对齐的软同步。
  */
-export const MAX_ROW_FILLER = 400;
+export function globalLineMaps(...panes: number[][]): number[][] {
+  const blockCount = panes[0]?.length ?? 0;
+  const strides: number[] = [];
+  for (let i = 0; i < blockCount; i++) {
+    strides.push(Math.max(1, ...panes.map((counts) => counts[i] ?? 0)));
+  }
+  return panes.map((counts) => {
+    const out: number[] = [];
+    let g = 0;
+    for (let i = 0; i < counts.length; i++) {
+      for (let line = 0; line < counts[i]; line++) out.push(g + line);
+      g += strides[i];
+    }
+    return out;
+  });
+}
 
-export type PaneFillers = {
-  /** 每块之前插入的填充行数（按块下标）。 */
-  before: Record<MergePaneKey, number[]>;
-  /** 文末对齐的填充行数。 */
-  end: Record<MergePaneKey, number>;
-  /** 块起始的虚拟行 = 内容起始行 + offset（含本块与之前所有填充）。 */
-  offset: Record<MergePaneKey, number[]>;
-};
-
-/**
- * 计算三栏各自的填充行：每个非相同块的起始行插齐到三栏一致，
- * 文末也对齐，于是三栏可以用同一 scrollTop 滚动、连接线保持水平。
- * 填充行挂到间隔段开头（而非紧贴改动），避免劈开标题与正文。
- */
-export function computePaneFillers(blocks: MergeBlock[]): PaneFillers {
-  const cursors: Record<MergePaneKey, number> = { ours: 0, result: 0, theirs: 0 };
-  const before: Record<MergePaneKey, number[]> = { ours: [], result: [], theirs: [] };
-  const panes: MergePaneKey[] = ["ours", "result", "theirs"];
-  for (const block of blocks) {
-    if (block.kind !== "equal") {
-      const target = Math.max(cursors.ours, cursors.result, cursors.theirs);
-      for (const pane of panes) {
-        const filler = Math.min(target - cursors[pane], MAX_ROW_FILLER);
-        before[pane].push(filler);
-        cursors[pane] += filler;
-      }
-    } else {
-      for (const pane of panes) before[pane].push(0);
-    }
-    for (const pane of panes) {
-      cursors[pane] += paneContentLines(block, pane).length;
-    }
+export function closestLineToGlobal(map: number[], target: number): number {
+  if (!map.length) return 0;
+  let lo = 0;
+  let hi = map.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (map[mid] < target) lo = mid + 1;
+    else hi = mid;
   }
-  // 把填充行挪到前方相连相同块的开头，避免把标题与其正文劈开
-  for (const pane of panes) {
-    for (let i = 0; i < blocks.length; i++) {
-      const filler = before[pane][i];
-      if (!filler) continue;
-      let j = i - 1;
-      while (j >= 0 && blocks[j].kind === "equal") j--;
-      const attachAt = j + 1;
-      if (attachAt !== i) {
-        before[pane][attachAt] += filler;
-        before[pane][i] = 0;
-      }
-    }
+  if (lo > 0 && Math.abs(map[lo - 1] - target) <= Math.abs(map[lo] - target)) {
+    return lo - 1;
   }
-  const end: Record<MergePaneKey, number> = { ours: 0, result: 0, theirs: 0 };
-  const tail = Math.max(cursors.ours, cursors.result, cursors.theirs);
-  for (const pane of panes) {
-    end[pane] = Math.min(tail - cursors[pane], MAX_ROW_FILLER);
-  }
-  const offset: Record<MergePaneKey, number[]> = { ours: [], result: [], theirs: [] };
-  for (const pane of panes) {
-    let acc = 0;
-    for (let i = 0; i < blocks.length; i++) {
-      acc += before[pane][i];
-      offset[pane].push(acc);
-    }
-  }
-  return { before, end, offset };
+  return lo;
 }
 
 export type PaneRowTone =
@@ -660,10 +623,8 @@ export type PaneRowTone =
   | "custom"
   | "context";
 
-export type PaneRow =
-  | { kind: "filler" }
-  | {
-      kind: "line";
+export type PaneRow = {
+  kind: "line";
       text: string;
       tone: PaneRowTone | null;
       chunkId: number | null;
@@ -713,20 +674,29 @@ function resultPaneRowTone(
 }
 
 /**
- * 栏的渲染行模型：块正文行 + 填充行。行描述符带语气与词级分段，
+ * 冲突块的展示行：pending 且本侧为空时展示对侧内容（作为待选预览），
+ * 让「一方新增、另一方没有」的冲突在界面上可见、可决策。
+ */
+export function conflictDisplayLines(block: ConflictBlock): string[] {
+  if (block.resolution !== "pending") return block.lines;
+  if (block.lines.length) return block.lines;
+  return block.oursLines.length ? block.oursLines : block.theirsLines;
+}
+
+/**
+ * 栏的渲染行模型：块正文行。行描述符带语气与词级分段，
  * 渲染层只负责画。
  */
 export function buildPaneRows(
   pane: MergePaneKey,
   blocks: MergeBlock[],
-  fillers: PaneFillers,
 ): PaneRow[] {
   const rows: PaneRow[] = [];
-  blocks.forEach((block, index) => {
-    for (let i = 0; i < fillers.before[pane][index]; i++) {
-      rows.push({ kind: "filler" });
-    }
-    const lines = paneContentLines(block, pane);
+  blocks.forEach((block) => {
+    const lines =
+      pane === "result" && block.kind === "conflict"
+        ? conflictDisplayLines(block)
+        : paneContentLines(block, pane);
     let tone: PaneRowTone | null = null;
     let segs: WordSeg[][] | null = null;
     if (pane === "result") {
@@ -755,6 +725,5 @@ export function buildPaneRows(
       });
     });
   });
-  for (let i = 0; i < fillers.end[pane]; i++) rows.push({ kind: "filler" });
   return rows;
 }

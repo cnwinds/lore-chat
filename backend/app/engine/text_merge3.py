@@ -94,9 +94,8 @@ def _clusters(
 
 
 def _side_span(base: list[str], side: list[str], blo: int, bhi: int) -> list[str]:
-    """`side` 上对应 base[blo:bhi] 的行，含该区间起点的插入；终点插入只在零宽区间计入。"""
+    """`side` 上对应 base[blo:bhi] 的行：区间内 equal 行照抄，插入按锚点归属区间。"""
     lines: list[str] = []
-    zero = blo == bhi
     for tag, i1, i2, j1, j2 in SequenceMatcher(
         a=base, b=side, autojunk=False
     ).get_opcodes():
@@ -105,19 +104,16 @@ def _side_span(base: list[str], side: list[str], blo: int, bhi: int) -> list[str
             if olo < ohi:
                 off = j1 + (olo - i1)
                 lines.extend(side[off : off + (ohi - olo)])
-            continue
-        if tag == "delete":
-            continue
-        if tag == "insert":
-            if i1 < blo or i1 > bhi:
-                continue
-            if i1 == bhi and not zero:
-                continue
-            lines.extend(side[j1:j2])
-            continue
-        olo, ohi = max(i1, blo), min(i2, bhi)
-        if olo < ohi:
-            lines.extend(side[j1:j2])
+        elif tag == "insert":
+            # 锚点落在本簇内（含起终点锚）的插入都只可能属于本簇；
+            # 排除终点锚会在「一侧改行、另一侧在其后追加」时丢掉追加内容。
+            if blo <= i1 <= bhi:
+                lines.extend(side[j1:j2])
+        elif tag == "replace":
+            olo, ohi = max(i1, blo), min(i2, bhi)
+            if olo < ohi:
+                lines.extend(side[j1:j2])
+        # delete：base 行被该侧删除，不产出
     return lines
 
 
