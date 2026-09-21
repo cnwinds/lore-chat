@@ -5,7 +5,7 @@ from app.engine.agent.prompts import build_system_prompt
 
 
 def test_system_prompt_does_not_carry_time():
-    system = build_system_prompt(web_enabled=False)
+    system = build_system_prompt("default")
     # 规则文字可引用【当前时间】，但时间块本体（「当前时刻」）必须在用户消息里
     assert "当前时刻" not in system
 

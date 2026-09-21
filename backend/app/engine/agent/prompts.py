@@ -15,52 +15,10 @@ _WEEKDAY_ZH = "一二三四五六日"
 # 内置 system 文案定位（与 系统/戒律.md、系统/心法.md 分工）：
 # - 《心法》《戒律》：用户可在知识库编辑的产品行为规约（何时落库、如何归档、
 #   检索态度、目录规划、文档编辑、用户生成 Skill 等），由 SystemLayer 注入在本文案之前。
-# - 内置 UI 机制：按需注入（见 resolve_builtin_ui_context）；段界/跨段/链接/托盘/征询
-#   等已在《戒律》、工作托盘 system 消息、read_conversation_context / ask_user 工具描述中写过的，
-#   不在此重复。
+# - 内置 UI / 联网：不在 system 中按轮次拼接（避免前缀缓存被打穿）；段界/链接/托盘/征询
+#   见《戒律》、工作托盘 system 消息、工具 function；web_search 仅在下发 tools 中出现。
 # - 工具 function 的 description / parameters：唯一工具规格来源，以 tool_catalog 为准。
 # ---------------------------------------------------------------------------
-
-_BUILTIN_UI_HEADER = "## 界面与上下文（代码事实）"
-_ASK_USER_UI_HINT = (
-    "结构化选项须经 ask_user 提交才有可点卡片；"
-    "正文编号列表或【征询】不会出现按钮。"
-)
-
-
-def build_builtin_ui_context_for_tool_names(tool_names: set[str]) -> str:
-    """本轮未下发 ask_user 时补一句征询 UI 机制（正常 /api/chat 通常为空）。"""
-    if "ask_user" in tool_names:
-        return ""
-    return f"{_BUILTIN_UI_HEADER}\n\n{_ASK_USER_UI_HINT}"
-
-
-def resolve_builtin_ui_context(
-    mode: str,
-    web_enabled: bool,
-    *,
-    search_configured: bool = True,
-    imagegen_configured: bool = True,
-    sandbox_enabled: bool = False,
-    role_messaging: bool = False,
-    disclosure_windows=None,
-) -> str:
-    from app.engine.agent.tool_catalog import select_tools
-    from app.engine.disclosure import DisclosureWindows
-
-    windows = disclosure_windows or DisclosureWindows()
-    selected = select_tools(
-        mode,
-        web_enabled,
-        search_configured=search_configured,
-        imagegen_configured=imagegen_configured,
-        sandbox_enabled=sandbox_enabled,
-        disclosure_windows=windows,
-        role_messaging=role_messaging,
-    )
-    names = {d["function"]["name"] for d in selected}
-    return build_builtin_ui_context_for_tool_names(names)
-
 
 def current_time_block() -> str:
     """当前时间块：逐轮变化，注入在本轮用户消息最前（提示词最末），避免破坏前缀缓存。"""
@@ -156,45 +114,19 @@ def build_role_identity_block(
     return body
 
 
-def _web_capability_suffix(*, web_enabled: bool, search_configured: bool) -> str:
-    """本轮联网能力：只陈述当前门控结果，不让模型自行猜测是否可用。"""
-    if not web_enabled:
-        return (
-            "\n\n【联网】本轮未开启联网搜索，你没有 web_search 工具。"
-            "可检索本地知识库、读取用户提供的链接（fetch_url）。"
-            "若本地知识库无相关依据，如实说明「本地未找到，可开启联网搜索后重试」，"
-            "禁止凭记忆补全或假装已联网。"
-        )
-    if not search_configured:
-        return (
-            "\n\n【联网】用户已打开联网搜索，但未配置搜索提供商，你没有 web_search 工具。"
-            "可检索本地知识库、读取用户提供的链接（fetch_url）。"
-            "不要假装已经联网搜索。"
-        )
-    return (
-        "\n\n【联网】本轮已开启联网搜索，工具列表含 web_search。"
-        "需要网上的事实、新闻、版本时直接调用；"
-        "不要把单次失败或没有结果说成搜索未开启或功能不可用。"
-    )
-
-
 def build_system_prompt(
     mode: str = MODE_DEFAULT,
     system_layer_text: str = "",
-    web_enabled: bool = True,
     user_memory: str = "",
     role_system_prompt: str = "",
-    search_configured: bool = True,
-    builtin_ui_context: str = "",
 ) -> str:
     """构建 system prompt。
 
     注入顺序（前 → 后，冲突时《戒律》优先于内置层）：
       1. 系统控制层：知识库 系统/心法.md + 系统/戒律.md（用户可编辑）
       2. 角色身份卡（名称恒注入；人设/引导层若有则叠加）
-      3. 按需内置 UI 机制（builtin_ui_context；默认空，见 resolve_builtin_ui_context）
-      4. user_memory（若有）
-      5. 本轮 mode / 联网开关后缀
+      3. user_memory（若有）
+      4. 本轮 mode 后缀（ingest/ask 等；联网由 tools 是否含 web_search 表达）
 
     当前时间不在此处：它逐轮变化，放系统中段会把其后所有内容的前缀缓存
     打穿。由 message_builder 注入到本轮用户消息最前（整条提示词的末尾），
@@ -218,11 +150,6 @@ def build_system_prompt(
     else:
         suffix = ""
 
-    suffix += _web_capability_suffix(
-        web_enabled=web_enabled,
-        search_configured=search_configured,
-    )
-
     prefix = ""
     if system_layer_text and system_layer_text.strip():
         prefix = (
@@ -236,10 +163,7 @@ def build_system_prompt(
             f"{current_role_header()}\n"
             f"{role_system_prompt.strip()}\n\n"
         )
-    ui_block = (builtin_ui_context or "").strip()
-    if ui_block:
-        ui_block = ui_block if ui_block.endswith("\n") else ui_block + "\n"
-    return prefix + role_block + ui_block + wrap_user_memory(user_memory) + suffix
+    return prefix + role_block + wrap_user_memory(user_memory) + suffix
 
 
 def wrap_user_memory(user_memory: str) -> str:

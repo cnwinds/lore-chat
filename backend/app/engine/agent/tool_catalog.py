@@ -395,7 +395,11 @@ TOOL_DEFINITIONS: list[dict] = [
         "type": "function",
         "function": {
             "name": "web_search",
-            "description": "联网搜索，获取网页摘要。本轮已下发即表示可用，直接查询。",
+            "description": (
+                "联网搜索，获取网页摘要。"
+                "仅当本轮工具列表含本工具时可用；未下发时不要调用或假装已搜索。"
+                "未开启联网或未配置搜索提供商时列表中不会有本工具，可改用 search_kb、fetch_url。"
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {

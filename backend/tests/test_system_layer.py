@@ -220,36 +220,10 @@ def test_system_prompt_does_not_duplicate_tool_parameter_table():
     assert "界面与上下文" not in prompt
 
 
-def test_builtin_ui_context_only_when_ask_user_missing():
-    from app.engine.agent.prompts import (
-        build_builtin_ui_context_for_tool_names,
-        resolve_builtin_ui_context,
-    )
-
-    assert resolve_builtin_ui_context("default", True) == ""
-    hint = build_builtin_ui_context_for_tool_names({"search_kb"})
-    assert hint != ""
-    assert "ask_user" in hint
-
-
-def test_build_system_prompt_web_on_affirms_search():
-    prompt = build_system_prompt("default", web_enabled=True, search_configured=True)
-    assert "本轮已开启联网搜索" in prompt
-    assert "本轮未开启联网搜索" not in prompt
-    assert "不要把单次失败或没有结果说成搜索未开启或功能不可用" in prompt
-
-
-def test_build_system_prompt_web_off_denies_search():
-    prompt = build_system_prompt("default", web_enabled=False, search_configured=True)
-    assert "本轮未开启联网搜索" in prompt
-    assert "本轮已开启联网搜索" not in prompt
-
-
-def test_build_system_prompt_web_on_but_unconfigured():
-    prompt = build_system_prompt("default", web_enabled=True, search_configured=False)
-    assert "未配置搜索提供商" in prompt
-    assert "本轮未开启联网搜索" not in prompt
-    assert "本轮已开启联网搜索" not in prompt
+def test_build_system_prompt_has_no_web_or_builtin_ui_suffix():
+    prompt = build_system_prompt("default")
+    assert "【联网】" not in prompt
+    assert "界面与上下文" not in prompt
 
 
 def test_retriever_excludes_system_prefix(tmp_path):
