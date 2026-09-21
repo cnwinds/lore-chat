@@ -93,6 +93,13 @@ def build_context_stats(
     )
     role_list = _safe_sidebar_roles(roles)
     role_messaging = len(role_list) >= 2
+    convs = getattr(tools, "conversations", None)
+    if convs is not None and hasattr(convs, "is_group_conversation"):
+        try:
+            if not convs.is_group_conversation(conversation.get("id") or ""):
+                role_messaging = False
+        except Exception:
+            pass
 
     memory_body = ""
     if system_layer is not None and hasattr(system_layer, "memory_context"):

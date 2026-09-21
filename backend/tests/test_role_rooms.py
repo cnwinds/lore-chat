@@ -1183,3 +1183,23 @@ def test_group_receipt_after_overdue_still_closes_and_wakes(tmp_path):
     assert receipt["receipt_wake_status"] == "started"
     assert started[0]["stimulus"].responding_role_id == a
     assert delivery.assignments.list_active(group) == []
+
+
+def test_is_group_conversation(tmp_path):
+    """角色协作注入条件：群聊/角色私聊为真，owner 单角色私聊为假。"""
+    store = _conv(tmp_path)
+    roles = _roles(tmp_path)
+    other = roles.create(name="通用", system_prompt="")
+
+    owner_cid = store.create()
+    assert store.rooms.is_group_conversation(owner_cid) is False
+
+    group = store.rooms.create_group(
+        title="三角洲", role_ids=[DEFAULT_ROLE_ID, other["id"]]
+    )
+    assert store.rooms.is_group_conversation(group) is True
+
+    peer = store.rooms.find_or_create_peer_dm(
+        DEFAULT_ROLE_ID, other["id"], title="协作"
+    )
+    assert store.rooms.is_group_conversation(peer) is True
