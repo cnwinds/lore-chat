@@ -279,11 +279,15 @@ def _role_identity_text(roles, conversation: dict[str, Any]) -> str:
                 avatar = persona.get("avatar") or avatar
             except KeyError:
                 pass
+        from app.engine.role_onboarding import (
+            build_onboarding_layer,
+            should_inject_onboarding_layer,
+        )
+
+        messages = conversation.get("messages") or []
         onboarding = ""
-        if role.get("onboarding_status", "none") == "active":
-            onboarding = (
-                f"[角色引导]\n你正在协助用户完成角色「{name}」的职责与人设定义。"
-            )
+        if should_inject_onboarding_layer(role, messages):
+            onboarding = build_onboarding_layer(name)
         return build_role_identity_block(
             name=name,
             system_prompt=prompt,
