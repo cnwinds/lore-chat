@@ -70,16 +70,30 @@ def test_precepts_align_with_runtime_tools(tmp_path):
     assert "## 六、文档编辑" in body
     assert "## 七、目录规划" in body
     assert "## 八、用户生成 Skill" in body
+    assert "## 九、无痕教学（陪伴学习）" in body
+    assert "建构优先" in body
+    assert "用户意愿最高" in body
+    assert "纯事实查询、版本核实、故障排查" in body
     assert "写库与生成 Skill 的规矩写在本文件" in body
     assert "助手怎么做事" in body
     assert "不要抄进每个 SKILL.md" in body
     assert "不视为零散沉淀" in gate
-    skill = re.search(r"## 八、用户生成 Skill\n(.*)\Z", body, re.S)
+    skill = re.search(
+        r"## 八、用户生成 Skill\n(.*?)(?=\n## 九、|\Z)", body, re.S
+    )
     assert skill is not None
     skill_items = re.findall(
         r"(?ms)^(\d+)\. (.+?)(?=\n\d+\. |\Z)", skill.group(1)
     )
     assert [n for n, _ in skill_items] == ["1", "2", "3", "4", "5", "6", "7"]
+    teaching = re.search(
+        r"## 九、无痕教学（陪伴学习）\n(.*?)\Z", body, re.S
+    )
+    assert teaching is not None
+    teaching_items = re.findall(
+        r"(?ms)^(\d+)\. (.+?)(?=\n\d+\. |\Z)", teaching.group(1)
+    )
+    assert [n for n, _ in teaching_items] == ["1", "2", "3", "4", "5"]
     assert "能固化则固化" in skill_items[2][1]
     assert "一套或有限几套可遵循的工作流程" in skill_items[2][1]
     assert "优先写成脚本" in skill_items[2][1]
@@ -108,6 +122,10 @@ def test_precepts_align_with_runtime_tools(tmp_path):
     )
     assert (
         "bb90720c7925eaae9c235d25a0daa5b6337faa86024046151491ab0a17886373"
+        in _SUPERSEDED_PRECEPTS_HASHES
+    )
+    assert (
+        "14317525e79ab3791591e8ff6034c01d05dc2a49c18ac1cdb68d4ed0de5e4c0b"
         in _SUPERSEDED_PRECEPTS_HASHES
     )
     # YAML 触发头是 write_doc 契约，不进戒律
