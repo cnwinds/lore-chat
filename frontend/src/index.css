@@ -10566,11 +10566,11 @@ button.source-link--inline.conversation-md-link {
 button.ctxstats-row--peek {
   width: 100%;
   margin: 0;
-  padding: 2px 0;
+  padding: 0;
   border: 0;
   background: transparent;
-  font: inherit;
   color: inherit;
+  line-height: inherit;
   cursor: pointer;
   border-radius: 6px;
 }
