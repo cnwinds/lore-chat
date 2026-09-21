@@ -8177,6 +8177,73 @@ button.source-link--inline.conversation-md-link {
   flex-shrink: 0;
 }
 
+.doc-history-modal--compare {
+  width: min(1280px, calc(100vw - 48px));
+  height: min(860px, calc(100vh - 48px));
+}
+
+.doc-revision-compare {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.doc-revision-compare-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-subtle);
+}
+
+.doc-revision-compare-bar .precepts-merge-nav {
+  flex: 1;
+  min-width: 0;
+}
+
+.doc-revision-compare-stats {
+  margin-left: auto;
+  font-size: var(--font-ui-sm);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.doc-history-pane-body:has(.doc-revision-compare) {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+}
+
+.precepts-merge-doc-line.is-change,
+.precepts-merge-doc-line.is-change-theirs,
+.precepts-merge-doc-line.is-change-ours {
+  color: var(--text);
+}
+
+.precepts-merge-col--theirs .precepts-merge-doc-line.is-change,
+.precepts-merge-col--theirs .precepts-merge-doc-line.is-change-theirs {
+  background: rgba(34, 197, 94, 0.14);
+}
+
+.precepts-merge-col--ours .precepts-merge-doc-line.is-change,
+.precepts-merge-col--ours .precepts-merge-doc-line.is-change-ours {
+  background: rgba(34, 197, 94, 0.1);
+}
+
+.precepts-merge-col--theirs .is-change .precepts-merge-ln,
+.precepts-merge-col--theirs .is-change-theirs .precepts-merge-ln {
+  color: #16a34a;
+}
+
+.precepts-merge-col--ours .is-change .precepts-merge-ln,
+.precepts-merge-col--ours .is-change-ours .precepts-merge-ln {
+  color: #15803d;
+}
+
 .doc-history-main {
   display: flex;
   flex: 1;

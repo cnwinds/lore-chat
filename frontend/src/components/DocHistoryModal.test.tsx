@@ -51,11 +51,11 @@ describe("DocHistoryModal", () => {
     );
     expect(screen.getByRole("dialog", { name: "修订" })).toBeInTheDocument();
     await waitFor(() => {
-      expect(screen.getByText("第二版")).toBeInTheDocument();
+      expect(screen.getByText("这一版")).toBeInTheDocument();
     });
     const compare = screen.getByRole("button", { name: "和上一版比" });
     expect(compare).toHaveAttribute("aria-pressed", "true");
-    expect(document.querySelector(".doc-diff-line--added")).not.toBeNull();
+    expect(document.querySelector(".precepts-merge-triple")).not.toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: /初次写入/ }));
     await waitFor(() => {
@@ -102,11 +102,11 @@ describe("DocHistoryModal", () => {
     );
     const compare = await screen.findByRole("button", { name: "和上一版比" });
     await waitFor(() => {
-      expect(document.querySelector(".doc-diff-line--added")).not.toBeNull();
+      expect(document.querySelector(".precepts-merge-triple")).not.toBeNull();
     });
     fireEvent.click(compare);
     expect(compare).toHaveAttribute("aria-pressed", "false");
-    expect(document.querySelector(".doc-diff-line--added")).toBeNull();
+    expect(document.querySelector(".precepts-merge-triple")).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: /初次写入/ }));
     await waitFor(() => {
@@ -116,7 +116,7 @@ describe("DocHistoryModal", () => {
       "aria-pressed",
       "false",
     );
-    expect(document.querySelector(".doc-diff-line--added")).toBeNull();
+    expect(document.querySelector(".precepts-merge-triple")).toBeNull();
   });
 
   it("shows preview text before the revision list returns", async () => {
@@ -208,7 +208,7 @@ describe("DocHistoryModal", () => {
     await waitFor(() => {
       expect(screen.getByText("第二版")).toBeInTheDocument();
     });
-    expect(document.querySelector(".doc-diff-line--added")).toBeNull();
+    expect(document.querySelector(".precepts-merge-triple")).toBeNull();
     resolveOlder({
       path: "笔记/a.md",
       sha: "bbb2222",
@@ -220,7 +220,45 @@ describe("DocHistoryModal", () => {
       size: 8,
     });
     await waitFor(() => {
-      expect(document.querySelector(".doc-diff-line--added")).not.toBeNull();
+      expect(document.querySelector(".precepts-merge-triple")).not.toBeNull();
     });
+  });
+
+  it("shows conflict controls for replace hunks", async () => {
+    listDocRevisions.mockResolvedValue({
+      path: "笔记/a.md",
+      revisions: [
+        {
+          sha: "aaa1111",
+          short_sha: "aaa1111",
+          message: "编辑",
+          committed_at: "2026-09-19 16:00:00",
+        },
+        {
+          sha: "bbb2222",
+          short_sha: "bbb2222",
+          message: "初次写入",
+          committed_at: "2026-09-18 09:00:00",
+        },
+      ],
+    });
+    getDocRevision.mockImplementation(async (_path: string, sha: string) => ({
+      path: "笔记/a.md",
+      sha,
+      short_sha: sha,
+      message: "编辑",
+      committed_at: "2026-09-19 16:00:00",
+      text: sha === "aaa1111" ? "A\nnew\n" : "A\nold\n",
+      binary: false,
+      size: 8,
+    }));
+
+    render(
+      <DocHistoryModal open path="笔记/a.md" onClose={() => undefined} />,
+    );
+    await waitFor(() => {
+      expect(screen.getByText(/1 处冲突/)).toBeInTheDocument();
+    });
+    expect(screen.getByRole("button", { name: "用这一版" })).toBeInTheDocument();
   });
 });
