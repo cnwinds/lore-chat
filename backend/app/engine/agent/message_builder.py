@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import PurePosixPath
 
-from app.engine.agent.prompts import build_system_prompt
+from app.engine.agent.prompts import build_system_prompt, current_time_block
 from app.engine.knowledge_writer import is_markdown_path
 from app.storage.kb_text_files import is_kb_text_file
 
@@ -73,7 +73,9 @@ def build_agent_messages(
         messages.extend(extra_system_messages)
     if history:
         messages.extend(history)
-    user_msg: dict = {"role": "user", "content": user_text}
+    # 当前时间逐轮变化，放整条提示词最末（本轮用户消息最前），保住前缀缓存
+    user_content = f"{current_time_block()}\n\n{user_text}"
+    user_msg: dict = {"role": "user", "content": user_content}
     if attachments:
         user_msg["attachments"] = list(attachments)
     messages.append(user_msg)

@@ -85,12 +85,12 @@ SYSTEM_PROMPT = """你是 lorechat 上的助手运行时。对外身份以【当
 回答简洁清晰；时间线已展示工具结果，正文不必堆砌引用，但事实性结论须能在工具返回中找到依据。"""
 
 
-def _current_date_context() -> str:
+def current_time_block() -> str:
+    """当前时间块：逐轮变化，注入在本轮用户消息最前（提示词最末），避免破坏前缀缓存。"""
     now = now_display()
     wd = _WEEKDAY_ZH[now.weekday()]
     return (
-        f"\n\n## 当前时间\n"
-        f"今天是 {now.year} 年 {now.month} 月 {now.day} 日（星期{wd}），"
+        f"【当前时间】今天是 {now.year} 年 {now.month} 月 {now.day} 日（星期{wd}），"
         f"当前时刻 {now.strftime('%H:%M')}（{DISPLAY_TZ_LABEL}）。"
         f"用户提及「最近」「本周」「今天」「过去一年」等相对时间时，以此为准；"
         f"联网搜索新闻、版本、发布信息时，查询词中的年份与日期须与当前时间一致。"
@@ -210,8 +210,11 @@ def build_system_prompt(
       2. 角色身份卡（名称恒注入；人设/引导层若有则叠加）
       3. SYSTEM_PROMPT：事实铁律 + 工具契约 + 产品机制（代码内置，不重复戒律；人格以【当前角色】为准）
       4. user_memory（若有）
-      5. 当前时间
-      6. 本轮 mode / 联网开关后缀
+      5. 本轮 mode / 联网开关后缀
+
+    当前时间不在此处：它逐轮变化，放系统中段会把其后所有内容的前缀缓存
+    打穿。由 message_builder 注入到本轮用户消息最前（整条提示词的末尾），
+    见 current_time_block。
 
     mode:
       - default: /api/chat
@@ -256,7 +259,6 @@ def build_system_prompt(
         + bridge
         + SYSTEM_PROMPT
         + wrap_user_memory(user_memory)
-        + _current_date_context()
         + suffix
     )
 
