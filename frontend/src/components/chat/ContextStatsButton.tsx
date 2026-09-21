@@ -170,7 +170,10 @@ export function ContextStatsButton({ conversationId }: Props) {
                     key={seg.key}
                     type="button"
                     className="ctxstats-row ctxstats-row--peek"
-                    onClick={() => setInspecting(seg.key)}
+                    onClick={() => {
+                      setOpen(false);
+                      setInspecting(seg.key);
+                    }}
                     title={`查看${seg.label}的注入全文`}
                   >
                     <span className="ctxstats-row-label">
