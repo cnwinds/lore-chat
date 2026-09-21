@@ -82,6 +82,7 @@ def build_context_stats(
     settings=None,
     tools=None,
     role_system_prompt: str = "",
+    include_texts: bool = False,
 ) -> dict[str, Any]:
     messages = conversation.get("messages") or []
     last_user = _last_message(messages, "user")
@@ -173,6 +174,14 @@ def build_context_stats(
     )
 
     out_segments: list[dict[str, Any]] = []
+    segment_texts: dict[str, str] = {
+        "system": system_text,
+        "memory": memory_block,
+        "skill": skill_text,
+        "history": history_text,
+        "tools": tools_text,
+        "attachments": attach_text,
+    }
     for key, label in _SEGMENTS:
         item: dict[str, Any] = {
             "key": key,
@@ -181,6 +190,8 @@ def build_context_stats(
         }
         if key == "memory":
             item["preview"] = memory_body.strip()
+        if include_texts:
+            item["text"] = segment_texts.get(key, "")
         out_segments.append(item)
 
     return {

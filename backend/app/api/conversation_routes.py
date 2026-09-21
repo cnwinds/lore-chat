@@ -239,8 +239,15 @@ async def pause_send_queue(cid: str, request: Request):
 
 
 @router.get("/conversations/{cid}/context-stats")
-def get_conversation_context_stats(cid: str, request: Request):
-    """会话上下文统计：容量、分段占比、缓存命中率、工具调用、成本。"""
+def get_conversation_context_stats(
+    cid: str,
+    request: Request,
+    include: str = "",
+):
+    """会话上下文统计：容量、分段占比、缓存命中率、工具调用、成本。
+
+    `include=texts` 时附带各分段实际注入全文（检查器用，体积较大按需拉取）。
+    """
     from app.engine.usage.context_stats import build_context_stats
 
     c = container(request)
@@ -259,6 +266,7 @@ def get_conversation_context_stats(cid: str, request: Request):
         settings=c.settings,
         tools=c.agent.tools,
         role_system_prompt=c.chat_runner.turn_hub._role_system_prompt_for(cid),
+        include_texts=include == "texts",
     )
 
 

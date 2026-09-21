@@ -10473,7 +10473,7 @@ button.source-link--inline.conversation-md-link {
 
 /* 会话统计面板：容量条 + 分项占比 */
 .ctxstats-menu {
-  min-width: 300px;
+  width: 340px;
   padding: 12px 14px;
 }
 
@@ -10559,8 +10559,17 @@ button.source-link--inline.conversation-md-link {
 }
 
 .ctxstats-row-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   color: var(--text);
   font-variant-numeric: tabular-nums;
+}
+
+.ctxstats-row-chevron {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1;
 }
 
 button.ctxstats-row--peek {
@@ -10580,19 +10589,7 @@ button.ctxstats-row--peek {
   background: var(--bg-hover);
 }
 
-.ctxstats-preview {
-  margin: 2px 0 4px 13px;
-  padding: 6px 8px;
-  max-height: 160px;
-  overflow: auto;
-  font-size: 10px;
-  line-height: 1.45;
-  white-space: pre-wrap;
-  word-break: break-word;
-  background: var(--bg-muted);
-  border-radius: 6px;
-  color: var(--text-secondary);
-}
+
 
 .ctxstats-footnote {
   margin-top: 10px;
@@ -10605,6 +10602,181 @@ button.ctxstats-row--peek {
   margin: 0;
   padding: 8px 4px;
   font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+/* ===== 上下文构成检查器：全文按注入顺序分段配色 ===== */
+
+.ctxinspector-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(12, 18, 15, 0.45);
+}
+
+.ctxinspector {
+  display: flex;
+  flex-direction: column;
+  width: min(880px, 100%);
+  height: min(82vh, 900px);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-lg, 0 16px 48px rgba(0, 0, 0, 0.2));
+  overflow: hidden;
+}
+
+.ctxinspector-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-subtle);
+}
+
+.ctxinspector-head h3 {
+  margin: 0;
+  font-size: var(--font-h4);
+  font-weight: 650;
+}
+
+.ctxinspector-copy {
+  margin-left: auto;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.ctxinspector-copy:hover:not(:disabled) {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.ctxinspector-close {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.ctxinspector-close:hover {
+  color: var(--text);
+}
+
+.ctxinspector-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-muted);
+  overflow-x: auto;
+}
+
+.ctxinspector-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.ctxinspector-tab:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.ctxinspector-tab.is-active {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 650;
+}
+
+.ctxinspector-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px 14px;
+}
+
+.ctxinspector-section {
+  margin-bottom: 14px;
+}
+
+.ctxinspector-section-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.ctxinspector-section-label {
+  font-size: var(--text-sm);
+  font-weight: 650;
+  color: var(--text);
+}
+
+.ctxinspector-section-meta {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.ctxinspector-text {
+  margin: 0;
+  padding: 8px 12px;
+  border-left: 3px solid var(--border);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: var(--bg-muted);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.ctxinspector-empty {
+  margin: 24px 0;
+  text-align: center;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.ctxinspector-skipped {
+  margin: 4px 0 8px;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.ctxinspector-foot {
+  padding: 8px 14px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-subtle);
+  font-size: 10px;
   color: var(--text-muted);
 }
 

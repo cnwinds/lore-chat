@@ -1298,6 +1298,8 @@ export type ContextStatsSegment = {
   label: string;
   tokens: number;
   preview?: string | null;
+  /** include=texts 时附带的实际注入全文。 */
+  text?: string | null;
 };
 
 export type ContextStats = {
@@ -1310,9 +1312,12 @@ export type ContextStats = {
   turns_with_usage: number;
 };
 
-export function getContextStats(conversationId: string) {
+export function getContextStats(conversationId: string, options?: { includeTexts?: boolean }) {
+  const params = new URLSearchParams();
+  if (options?.includeTexts) params.set("include", "texts");
+  const query = params.toString();
   return apiFetch<ContextStats>(
-    `/api/conversations/${encodeURIComponent(conversationId)}/context-stats`,
+    `/api/conversations/${encodeURIComponent(conversationId)}/context-stats${query ? `?${query}` : ""}`,
   );
 }
 
