@@ -582,8 +582,12 @@ export function paneContentLines(
   return []; // 手改块只存在于结果稿
 }
 
-/** 单个间隔最多插多少填充行，超出就让该处保持错位（避免版面被撑爆）。 */
-export const MAX_ROW_FILLER = 12;
+/**
+ * 单个间隔的填充行上限：只防整篇重写之类的极端病态（数千填充行拖垮渲染）。
+ * 正常文档的分段差异都应远小于此值——上限一旦触发，该处会保持错位，
+ * 连接线随之偏斜，所以这个值必须足够大。
+ */
+export const MAX_ROW_FILLER = 400;
 
 export type PaneFillers = {
   /** 每块之前插入的填充行数（按块下标）。 */
