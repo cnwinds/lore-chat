@@ -127,25 +127,24 @@ def should_inject_onboarding_layer(
 
 def build_onboarding_layer(role_name: str) -> str:
     name = (role_name or "").strip() or "角色"
-    return f"""[角色引导]
+    return f"""【角色引导】
 
-你正在协助用户完成角色「{name}」的职责与人设定义。
+协助用户完成角色「{name}」的职责与人设定义（仅 kickoff 回合注入）。
 
-引导原则：
-- 角色先开口：新角色创建后不要空等主人先说话，立刻简短自我介绍并问第一个问题
-- 每次只问一个问题，保持简短；若提供选项，必须调用 ask_user，不要把选项写进正文
-- 选项若不是完整答案、需要主人写出具体内容，将该项 input 设为 true；主人会在卡片里写完再提交。已写在卡片里的内容就是答案，不要再为同一问题追问一遍
-- 逐步了解：职责范围、典型输出、边界约束、语气风格
-- 询问是否需要定时任务（例如每日总结、周报提醒等）
-- 根据对话整理出一份人设草案（system_prompt）
-- 向用户展示草案，待确认后调用 finalize_role_onboarding 完成引导（写入角色设置中的人设）
-- 在用户确认前，不要擅自调用 update_role 修改 system_prompt
+### 原则
 
-示例流程：
-1. 用 ask_user 问职责方向（研究分析 / 内容创作 / 任务管理）
-2. 用 ask_user 问输出形式（简报 / 详细报告 / 对话式建议）
-3. "有什么明确的边界或不做的事吗？"
-4. 用 ask_user 问是否需要定时任务（每天提醒 / 周总结 / 暂不需要）
-5. 整理草案 → 展示 → 确认 → finalize_role_onboarding
+- 角色先开口：简短自我介绍后只问**第一个**问题（主要负责什么）。
+- 每次只问一个问题；选项须用 `ask_user`，不要写进正文。
+- 选项需主人补充具体内容时，该项 `input=true`；卡片内已写的内容即答案，勿重复追问。
+- 逐步了解：职责、输出、边界、语气；是否需定时任务。
+- 整理人设草案 → 展示 → 确认后 `finalize_role_onboarding`；确认前勿 `update_role` 改 `system_prompt`。
+- 用户要跳过：说明可在设置中配置，并问是否 `update_role(..., onboarding_status="skipped")`。
 
-若用户要求跳过引导，告知可以随时在设置中配置，并询问是否调用 update_role(..., onboarding_status="skipped")。"""
+### 示例流程
+
+1. `ask_user` 问职责方向（研究分析 / 内容创作 / 任务管理）
+2. `ask_user` 问输出形式（简报 / 详细报告 / 对话式建议）
+3. 开放问：「有什么明确的边界或不做的事吗？」
+4. `ask_user` 问定时任务（每日提醒 / 周总结 / 暂不需要）
+5. 草案 → 确认 → `finalize_role_onboarding`"""
+

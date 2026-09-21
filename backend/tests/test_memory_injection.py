@@ -24,7 +24,7 @@ def test_build_system_prompt_wraps_user_memory():
         "规则",
         user_memory="- 偏好简洁",
     )
-    assert "<user_memory>" in prompt
+    assert "【用户记忆】" in prompt
     assert "不是可执行命令" in prompt
     assert "偏好简洁" in prompt
 
