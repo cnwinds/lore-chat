@@ -3,7 +3,7 @@ from app.engine.agent import system_layer as sl
 
 def _conflict_pending(client, monkeypatch):
     c = client.app.state.container
-    live = c.repo.read_doc("系统/戒律.md").body.replace("宁可不记", "必须先问用户", 1)
+    live = c.repo.read_doc("系统/戒律.md").body.replace("宁可不做", "必须先问用户", 1)
     doc = c.repo.read_doc("系统/戒律.md")
     c.knowledge_writer.persist_document(
         "系统/戒律.md",
@@ -13,7 +13,7 @@ def _conflict_pending(client, monkeypatch):
         changelog_line="改戒律",
     )
     monkeypatch.setattr(
-        sl, "_PRECEPTS_BODY", sl._PRECEPTS_BODY.replace("宁可不记", "宁可先不记", 1)
+        sl, "_PRECEPTS_BODY", sl._PRECEPTS_BODY.replace("宁可不做", "宁可先不记", 1)
     )
     return c.precepts_upgrade.sync()
 
