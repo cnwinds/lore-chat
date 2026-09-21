@@ -8633,9 +8633,7 @@ button.source-link--inline.conversation-md-link {
 }
 
 .merge3-doc,
-.merge3-text,
-.merge3-backdrop,
-.merge3-editor {
+.merge3-backdrop {
   margin: 0;
   padding: 8px 0;
   font-family: var(--font-mono);
@@ -8712,7 +8710,6 @@ button.source-link--inline.conversation-md-link {
 
 .merge3-backdrop {
   display: block;
-  min-height: 100%;
 }
 
 .merge3-editor {
