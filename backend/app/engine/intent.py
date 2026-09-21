@@ -13,9 +13,19 @@ def _looks_like_question(text: str) -> bool:
     return bool(_QUESTION_RE.search(text))
 
 
+def _strip_user_injections(text: str) -> str:
+    """去掉组装用户消息时注入的前缀（如【当前时间】块），再作意图/提问判定。"""
+    text = text.strip()
+    if text.startswith("【当前时间】"):
+        sep = text.find("\n\n")
+        if sep != -1:
+            return text[sep + 2 :].strip()
+    return text
+
+
 def is_question_only(text: str) -> bool:
     """短句、单行、无代码块且含疑问词 → 纯提问，不应写入知识库。"""
-    text = text.strip()
+    text = _strip_user_injections(text)
     if not text:
         return False
     short = len(text) <= 200
@@ -24,7 +34,7 @@ def is_question_only(text: str) -> bool:
 
 def classify_intent(text: str, llm: LLMClient) -> str:
     """返回 remember（记录）或 recall（提问）。"""
-    text = text.strip()
+    text = _strip_user_injections(text)
     if not text:
         return "remember"
 

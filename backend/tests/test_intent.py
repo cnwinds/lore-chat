@@ -8,9 +8,12 @@ def test_classify_recall_by_heuristic():
 
 
 def test_is_question_only():
+    from app.engine.agent.prompts import current_time_block
     from app.engine.intent import is_question_only
 
     assert is_question_only("windows终端怎么设置utf8编码")
+    prefixed = f"{current_time_block()}\n\nwindows终端怎么设置utf8编码"
+    assert is_question_only(prefixed)
     assert not is_question_only("kubectl get pods 列出所有 pod")
     assert not is_question_only("记录如下配置：\n```powershell\nchcp 65001\n```")
 
