@@ -55,7 +55,7 @@ describe("DocHistoryModal", () => {
     });
     const compare = screen.getByRole("button", { name: "和上一版比" });
     expect(compare).toHaveAttribute("aria-pressed", "true");
-    expect(document.querySelector(".precepts-merge-triple")).not.toBeNull();
+    expect(document.querySelector(".merge3-triple")).not.toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: /初次写入/ }));
     await waitFor(() => {
@@ -102,11 +102,11 @@ describe("DocHistoryModal", () => {
     );
     const compare = await screen.findByRole("button", { name: "和上一版比" });
     await waitFor(() => {
-      expect(document.querySelector(".precepts-merge-triple")).not.toBeNull();
+      expect(document.querySelector(".merge3-triple")).not.toBeNull();
     });
     fireEvent.click(compare);
     expect(compare).toHaveAttribute("aria-pressed", "false");
-    expect(document.querySelector(".precepts-merge-triple")).toBeNull();
+    expect(document.querySelector(".merge3-triple")).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: /初次写入/ }));
     await waitFor(() => {
@@ -116,7 +116,7 @@ describe("DocHistoryModal", () => {
       "aria-pressed",
       "false",
     );
-    expect(document.querySelector(".precepts-merge-triple")).toBeNull();
+    expect(document.querySelector(".merge3-triple")).toBeNull();
   });
 
   it("shows preview text before the revision list returns", async () => {
@@ -208,7 +208,7 @@ describe("DocHistoryModal", () => {
     await waitFor(() => {
       expect(screen.getByText("第二版")).toBeInTheDocument();
     });
-    expect(document.querySelector(".precepts-merge-triple")).toBeNull();
+    expect(document.querySelector(".merge3-triple")).toBeNull();
     resolveOlder({
       path: "笔记/a.md",
       sha: "bbb2222",
@@ -220,7 +220,7 @@ describe("DocHistoryModal", () => {
       size: 8,
     });
     await waitFor(() => {
-      expect(document.querySelector(".precepts-merge-triple")).not.toBeNull();
+      expect(document.querySelector(".merge3-triple")).not.toBeNull();
     });
   });
 
@@ -257,8 +257,9 @@ describe("DocHistoryModal", () => {
       <DocHistoryModal open path="笔记/a.md" onClose={() => undefined} />,
     );
     await waitFor(() => {
-      expect(screen.getByText(/1 处冲突/)).toBeInTheDocument();
+      expect(screen.getByText("1 处改动，没有待定")).toBeInTheDocument();
     });
-    expect(screen.getByRole("button", { name: "用这一版" })).toBeInTheDocument();
+    // 上一版=基线：差异全部成为「这一版」的已应用块，可逐块不采用回退
+    expect(screen.getByTitle("这块不采用")).toBeInTheDocument();
   });
 });
