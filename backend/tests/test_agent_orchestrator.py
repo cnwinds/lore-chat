@@ -360,11 +360,6 @@ async def test_run_web_enabled_affirms_search_when_configured(tmp_path):
     async for _ in orchestrator.run("你好", web_enabled=True):
         pass
     messages = orchestrator.llm.calls[-1]["messages"]
-    system_contents = "\n".join(
-        m["content"] for m in messages if m["role"] == "system"
-    )
-    assert "本轮已开启联网搜索" in system_contents
-    assert "本轮未开启联网搜索" not in system_contents
     names = _tool_names_from_defs(orchestrator.llm.calls[-1]["tools"])
     assert "web_search" in names
 
@@ -378,11 +373,6 @@ async def test_run_web_enabled_without_provider_does_not_say_toggle_off(tmp_path
     async for _ in orchestrator.run("你好", web_enabled=True):
         pass
     messages = orchestrator.llm.calls[-1]["messages"]
-    system_contents = "\n".join(
-        m["content"] for m in messages if m["role"] == "system"
-    )
-    assert "未配置搜索提供商" in system_contents
-    assert "本轮未开启联网搜索" not in system_contents
     names = _tool_names_from_defs(orchestrator.llm.calls[-1]["tools"])
     assert "web_search" not in names
 

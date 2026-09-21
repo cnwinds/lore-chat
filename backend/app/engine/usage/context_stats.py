@@ -19,7 +19,6 @@ from app.engine.agent.prompts import (
     build_role_collab_block,
     build_role_identity_block,
     build_system_prompt,
-    resolve_builtin_ui_context,
     wrap_user_memory,
 )
 from app.engine.agent.skill_activation import build_skill_catalog_system_messages
@@ -107,24 +106,12 @@ def build_context_stats(
         memory_body = system_layer.memory_context() or ""
     memory_block = wrap_user_memory(memory_body)
 
-    builtin_ui = resolve_builtin_ui_context(
-        MODE_DEFAULT,
-        web_enabled,
-        search_configured=search_configured,
-        imagegen_configured=imagegen_configured,
-        sandbox_enabled=sandbox_enabled,
-        role_messaging=role_messaging,
-        disclosure_windows=windows,
-    )
     system_text = build_system_prompt(
         MODE_DEFAULT,
         system_layer.compose_rules() if system_layer else "",
-        web_enabled,
         user_memory="",
         role_system_prompt=role_system_prompt
         or _role_identity_text(roles, conversation),
-        search_configured=search_configured,
-        builtin_ui_context=builtin_ui,
     )
     if role_messaging:
         busy: set[str] = set()
