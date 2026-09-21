@@ -469,7 +469,7 @@ def test_turn_hub_always_injects_role_identity(tmp_path):
     block = hub._role_system_prompt_for(cid)
     assert "svg大师" in block
     assert "你当前就是这个角色" not in block
-    assert "[角色引导]" not in block
+    assert "【角色引导】" not in block
 
     assembled = build_system_prompt(role_system_prompt=block)
     assert "【当前角色】" in assembled
@@ -491,10 +491,10 @@ def test_turn_hub_identity_includes_onboarding_layer(tmp_path):
     block = hub._role_system_prompt_for(
         cid, client_message_id=onboarding_kickoff_client_message_id(rid)
     )
-    assert "[角色引导]" in block
+    assert "【角色引导】" in block
     assert "新人设" in block
     assert "你当前就是这个角色" not in block
-    assert "必须调用 ask_user" in block
+    assert "`ask_user`" in block
     assert "input" in block
     assert "不要再为同一问题追问一遍" in block
 
@@ -515,7 +515,7 @@ def test_turn_hub_omits_onboarding_layer_after_real_user_message(tmp_path):
     hub = TurnExecutionHub(_FakeAgentForRole(), conv, roles=roles)
     block = hub._role_system_prompt_for(cid)
     assert roles.get(rid)["onboarding_status"] == "active"
-    assert "[角色引导]" not in block
+    assert "【角色引导】" not in block
     assert "引导中" in block
 
 
