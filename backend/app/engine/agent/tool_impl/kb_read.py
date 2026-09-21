@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from app.engine.conversation.transcript import ConversationTranscript
 from app.engine.conversation_context import read_conversation_context as load_conversation_context
 from app.engine.disclosure import DisclosureWindows, disclose, disclosure_summary
 from app.engine.kb_structure import summarize_kb_structure
@@ -192,6 +193,51 @@ class KbReadTools:
             "top_level_categories": data["top_level_categories"],
             "protected_paths": data["protected_paths"],
             "total_docs": data["total_docs"],
+        }
+
+    def read_last_tool_results(
+        self, args: dict, *, conversation_id: str | None = None
+    ) -> dict:
+        """上一轮工具与检索的原始结果，按需取回（不再每轮强行注入）。"""
+        del args
+        if not (self.conversations and conversation_id):
+            return {
+                "summary": "缺少会话上下文，无法定位上一轮工具结果",
+                "results": [],
+                "error": "not_configured",
+            }
+        try:
+            conv = self.conversations.get(conversation_id)
+        except KeyError:
+            return {"summary": "会话不存在", "results": [], "error": "not_found"}
+        blocks = ConversationTranscript.last_tool_blocks(conv)
+        if not blocks:
+            return {"summary": "上一轮没有工具调用或检索结果", "results": []}
+        results: list[dict] = []
+        total = 0
+        truncated = False
+        for block in blocks:
+            content = str(block.get("content") or block.get("summary") or "").strip()
+            if len(content) > 2400:
+                content = content[:2400] + "…（截断）"
+                truncated = True
+            total += len(content)
+            if total > 12000:
+                truncated = True
+                break
+            results.append(
+                {
+                    "tool": block.get("tool") or "",
+                    "label": block.get("label") or "",
+                    "query": block.get("query") or "",
+                    "content": content,
+                }
+            )
+        return {
+            "summary": f"上一轮共 {len(blocks)} 次工具调用"
+            + ("（内容已截断）" if truncated else ""),
+            "results": results,
+            "truncated": truncated,
         }
 
     def read_conversation_context(

@@ -148,8 +148,9 @@ def build_context_stats(
             role_messaging=role_messaging,
         )
         tool_schema = json.dumps(selected, ensure_ascii=False)
-    tool_results = _last_turn_tool_text(messages)
-    tools_text = tool_schema + tool_results
+    # 上一轮工具/检索正文不再回传（模型可经 read_last_tool_results 按需取回），
+    # 因此工具段只计每轮真实注入的工具定义。
+    tools_text = tool_schema
 
     attach_tokens, attach_text = _last_user_attachment_estimate(last_user)
 
@@ -302,6 +303,13 @@ def _last_message(messages: list[dict], role: str) -> dict | None:
     return None
 
 
+def _count_tool_calls(messages: list[dict]) -> int:
+    n = 0
+    for msg in messages:
+        n += len(_walk_tool_blocks(msg.get("timeline")))
+    return n
+
+
 def _walk_tool_blocks(blocks) -> list[dict]:
     out: list[dict] = []
     if not isinstance(blocks, list):
@@ -315,31 +323,6 @@ def _walk_tool_blocks(blocks) -> list[dict]:
         if block.get("type") == "tool":
             out.append(block)
     return out
-
-
-def _last_turn_tool_text(messages: list[dict]) -> str:
-    last = _last_message(messages, "assistant")
-    if not last:
-        return ""
-    parts: list[str] = []
-    for block in _walk_tool_blocks(last.get("timeline")):
-        content = str(block.get("content") or "").strip()
-        if content:
-            parts.append(content)
-            continue
-        summary = str(block.get("summary") or "").strip()
-        query = str(block.get("query") or "").strip()
-        chunk = "\n".join(p for p in (summary, query) if p)
-        if chunk:
-            parts.append(chunk)
-    return "\n".join(parts)
-
-
-def _count_tool_calls(messages: list[dict]) -> int:
-    n = 0
-    for msg in messages:
-        n += len(_walk_tool_blocks(msg.get("timeline")))
-    return n
 
 
 def _last_user_attachment_estimate(last_user: dict | None) -> tuple[int, str]:

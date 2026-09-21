@@ -9,6 +9,7 @@ resolve_kb_location = KnowledgeWriter.resolve_location
 
 READ_ONLY_TOOLS = frozenset({
     "search_kb", "read_doc", "read_doc_meta", "list_kb_structure", "read_conversation_context",
+    "read_last_tool_results",
     "fetch_url", "web_search",
     "recall_memory",
     "list_roles",
@@ -114,6 +115,7 @@ TOOL_LABELS = {
     "read_doc_meta": "读取文档元数据",
     "list_kb_structure": "查看知识库目录结构",
     "read_conversation_context": "读取会话上下文",
+    "read_last_tool_results": "读取上一轮工具结果",
     "fetch_url": "打开链接",
     "web_search": "搜索网页",
     "generate_image": "生成图片",
@@ -351,6 +353,18 @@ TOOL_DEFINITIONS: list[dict] = [
                 },
                 "required": [],
             },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "read_last_tool_results",
+            "description": (
+                "读取上一轮工具与检索的原始结果（搜索命中、网页正文等）。"
+                "历史里只保留当时的结论摘要；当用户追问上一轮查到的细节、来源或数据，"
+                "而正文没有原文时，用本工具取回，不要凭记忆复述。"
+            ),
+            "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
     {

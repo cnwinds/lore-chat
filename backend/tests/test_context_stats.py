@@ -147,7 +147,8 @@ def test_attachments_only_count_last_user_message():
     assert att["tokens"] == 765
 
 
-def test_last_assistant_tool_content_counts_as_tools():
+def test_last_turn_tool_content_not_recounted():
+    """上一轮工具正文不再回传下一轮，不计入注入估算；按需经工具取回。"""
     body = _stats(
         {
             "id": "c1",
@@ -169,8 +170,18 @@ def test_last_assistant_tool_content_counts_as_tools():
         }
     )
     tools = _seg(body, "tools")
-    assert tools["tokens"] >= estimate_tokens("检索正文" * 80)
-    assert tools["tokens"] > estimate_tokens("短摘要")
+    # 未配置工具目录时工具段为空：上一轮检索正文不再被当作下一轮注入
+    assert tools["tokens"] == 0
+
+
+def test_select_tools_includes_read_last_tool_results():
+    from app.engine.agent.tool_catalog import select_tools
+
+    names = {
+        d["function"]["name"]
+        for d in select_tools("default", web_enabled=False)
+    }
+    assert "read_last_tool_results" in names
 
 
 def test_skill_catalog_counts_injected_text():

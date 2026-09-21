@@ -58,6 +58,11 @@ def build_tool_dispatch(registry: ToolRegistry) -> dict[str, ToolHandler]:
             args,
             conversation_id=kw.get("conversation_id"),
         ),
+        "read_last_tool_results": lambda args, **kw: asyncio.to_thread(
+            kb_read.read_last_tool_results,
+            args,
+            conversation_id=kw.get("conversation_id"),
+        ),
         "fetch_url": lambda args, **kw: web.fetch_url(args),
         "web_search": lambda args, **kw: web.web_search(args),
         "generate_image": lambda args, **kw: registry.image_tools.generate_image(args),

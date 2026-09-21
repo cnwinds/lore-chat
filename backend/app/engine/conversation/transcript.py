@@ -238,6 +238,33 @@ class ConversationTranscript:
         return "\n\n".join(parts)
 
     @classmethod
+    def last_tool_blocks(cls, conv: dict) -> list[dict]:
+        """最近一条带工具时间线的助手消息的工具块（并行批次已拍平）。
+
+        供 read_last_tool_results 按需取回上一轮工具/检索原文；
+        历史注入本身只带正文摘要，不含这些块。
+        """
+        for msg in reversed(conv.get("messages", [])):
+            if msg.get("role") != "assistant":
+                continue
+            blocks: list[dict] = []
+
+            def walk(items) -> None:
+                for b in items or []:
+                    if not isinstance(b, dict):
+                        continue
+                    if b.get("type") == "parallel":
+                        walk(b.get("children"))
+                        continue
+                    if b.get("type") == "tool":
+                        blocks.append(b)
+
+            walk(msg.get("timeline"))
+            if blocks:
+                return blocks
+        return []
+
+    @classmethod
     def llm_history(
         cls,
         conv: dict,
