@@ -2,6 +2,7 @@ import { useLayoutEffect, useMemo, useRef, type RefObject } from "react";
 import {
   type MergeBlock,
   type MergePick,
+  type PaneFillers,
   type PaneRow,
   type ResultLayout,
 } from "../../utils/mergeModel";
@@ -13,7 +14,7 @@ type Props = {
   rows: PaneRow[];
   blocks: MergeBlock[];
   layout: ResultLayout;
-  fillers: { before: Record<"result", number[]> };
+  fillers: PaneFillers;
   activeChunkId: number | null;
   activeTitle: string | null;
   pendingCount: number;
@@ -61,7 +62,7 @@ export function MergeResultPane({
         tops.push({
           chunkId: block.id,
           top:
-            ((layout.blockStart[index] ?? 0) + fillers.before.result[index]) *
+            ((layout.blockStart[index] ?? 0) + fillers.offset.result[index]) *
               MERGE_LINE_HEIGHT +
             MERGE_PAD_Y,
         });

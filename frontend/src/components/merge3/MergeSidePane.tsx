@@ -2,7 +2,7 @@ import { useMemo, type RefObject } from "react";
 import {
   conflictSide,
   type MergeBlock,
-  type MergePaneKey,
+  type PaneFillers,
   type PaneRow,
 } from "../../utils/mergeModel";
 import { MERGE_LINE_HEIGHT, MERGE_PAD_Y } from "./constants";
@@ -13,7 +13,7 @@ type Props = {
   title: string;
   rows: PaneRow[];
   blocks: MergeBlock[];
-  fillers: { before: Record<MergePaneKey, number[]> };
+  fillers: PaneFillers;
   activeChunkId: number | null;
   scrollerRef: RefObject<HTMLDivElement | null>;
   moverRef: RefObject<HTMLDivElement | null>;
@@ -155,7 +155,7 @@ type SideChunkAction = {
 function chunkButtonsFor(
   side: "ours" | "theirs",
   blocks: MergeBlock[],
-  fillers: { before: Record<MergePaneKey, number[]> },
+  fillers: PaneFillers,
 ) {
   const out: Array<{ chunkId: number; top: number; actions: SideChunkAction[] }> = [];
   const arrow = side === "ours" ? "»" : "«";
@@ -199,9 +199,7 @@ function chunkButtonsFor(
     if (!actions.length) return;
     out.push({
       chunkId: block.id,
-      top:
-        (range.start + fillers.before[side][index]) * MERGE_LINE_HEIGHT +
-        MERGE_PAD_Y,
+      top: (range.start + fillers.offset[side][index]) * MERGE_LINE_HEIGHT + MERGE_PAD_Y,
       actions,
     });
   });

@@ -86,10 +86,10 @@ export const MergeTool = forwardRef<MergeToolHandle, Props>(function MergeTool(
         .filter(({ block }) => isChangeChunk(block))
         .map(({ block, index }) => ({
           id: block.id,
-          oursVirtual: block.oursRange.start + fillers.before.ours[index],
-          resultVirtual: layout.blockStart[index] + fillers.before.result[index],
+          oursVirtual: block.oursRange.start + fillers.offset.ours[index],
+          resultVirtual: layout.blockStart[index] + fillers.offset.result[index],
           theirsVirtual:
-            block.theirsRange.start + fillers.before.theirs[index],
+            block.theirsRange.start + fillers.offset.theirs[index],
         })),
     [blocks, fillers, layout],
   );
@@ -619,9 +619,9 @@ function buildBands({
   blocks.forEach((block, index) => {
     if (block.kind === "equal") return;
     const className = bandClassName(block, block.id === activeId);
-    const oursTop = block.oursRange.start + fillers.before.ours[index];
-    const resultTop = layout.blockStart[index] + fillers.before.result[index];
-    const theirsTop = block.theirsRange.start + fillers.before.theirs[index];
+    const oursTop = block.oursRange.start + fillers.offset.ours[index];
+    const resultTop = layout.blockStart[index] + fillers.offset.result[index];
+    const theirsTop = block.theirsRange.start + fillers.offset.theirs[index];
     const oursHeight = Math.max(
       1,
       block.oursRange.end - block.oursRange.start ||

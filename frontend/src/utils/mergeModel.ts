@@ -590,11 +590,14 @@ export type PaneFillers = {
   before: Record<MergePaneKey, number[]>;
   /** 文末对齐的填充行数。 */
   end: Record<MergePaneKey, number>;
+  /** 块起始的虚拟行 = 内容起始行 + offset（含本块与之前所有填充）。 */
+  offset: Record<MergePaneKey, number[]>;
 };
 
 /**
  * 计算三栏各自的填充行：每个非相同块的起始行插齐到三栏一致，
  * 文末也对齐，于是三栏可以用同一 scrollTop 滚动、连接线保持水平。
+ * 填充行挂到间隔段开头（而非紧贴改动），避免劈开标题与正文。
  */
 export function computePaneFillers(blocks: MergeBlock[]): PaneFillers {
   const cursors: Record<MergePaneKey, number> = { ours: 0, result: 0, theirs: 0 };
@@ -608,9 +611,25 @@ export function computePaneFillers(blocks: MergeBlock[]): PaneFillers {
         before[pane].push(filler);
         cursors[pane] += filler;
       }
+    } else {
+      for (const pane of panes) before[pane].push(0);
     }
     for (const pane of panes) {
       cursors[pane] += paneContentLines(block, pane).length;
+    }
+  }
+  // 把填充行挪到前方相连相同块的开头，避免把标题与其正文劈开
+  for (const pane of panes) {
+    for (let i = 0; i < blocks.length; i++) {
+      const filler = before[pane][i];
+      if (!filler) continue;
+      let j = i - 1;
+      while (j >= 0 && blocks[j].kind === "equal") j--;
+      const attachAt = j + 1;
+      if (attachAt !== i) {
+        before[pane][attachAt] += filler;
+        before[pane][i] = 0;
+      }
     }
   }
   const end: Record<MergePaneKey, number> = { ours: 0, result: 0, theirs: 0 };
@@ -618,7 +637,15 @@ export function computePaneFillers(blocks: MergeBlock[]): PaneFillers {
   for (const pane of panes) {
     end[pane] = Math.min(tail - cursors[pane], MAX_ROW_FILLER);
   }
-  return { before, end };
+  const offset: Record<MergePaneKey, number[]> = { ours: [], result: [], theirs: [] };
+  for (const pane of panes) {
+    let acc = 0;
+    for (let i = 0; i < blocks.length; i++) {
+      acc += before[pane][i];
+      offset[pane].push(acc);
+    }
+  }
+  return { before, end, offset };
 }
 
 export type PaneRowTone =

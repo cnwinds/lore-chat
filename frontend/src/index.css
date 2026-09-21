@@ -8606,25 +8606,29 @@ button.source-link--inline.conversation-md-link {
 
 .merge3-ln.tone-pending {
   color: var(--accent);
-  background: rgba(188, 64, 51, 0.14);
+  background: rgba(188, 64, 51, 0.38);
   font-weight: 600;
 }
 
 .merge3-ln.tone-resolved {
   color: var(--glaze);
-  background: rgba(61, 107, 88, 0.14);
+  background: rgba(61, 107, 88, 0.34);
   font-weight: 600;
 }
 
 .merge3-ln.tone-ignored,
 .merge3-ln.tone-rejected {
   color: var(--text-muted);
-  background: rgba(108, 127, 115, 0.12);
+  background: rgba(108, 127, 115, 0.22);
+}
+
+.merge3-ln.tone-rejected {
+  background: rgba(108, 127, 115, 0.16);
 }
 
 .merge3-ln.tone-custom {
   color: var(--seal-gold);
-  background: rgba(201, 162, 74, 0.14);
+  background: rgba(201, 162, 74, 0.3);
   font-weight: 600;
 }
 
@@ -8633,7 +8637,7 @@ button.source-link--inline.conversation-md-link {
 .merge3-backdrop,
 .merge3-editor {
   margin: 0;
-  padding: 8px 16px 8px 10px;
+  padding: 8px 0;
   font-family: var(--font-mono);
   font-size: 13px;
   line-height: 21px;
@@ -8653,6 +8657,7 @@ button.source-link--inline.conversation-md-link {
 
 .merge3-line {
   height: 21px;
+  padding: 0 16px 0 10px;
   white-space: pre;
 }
 
