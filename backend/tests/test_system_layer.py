@@ -188,7 +188,7 @@ def test_compose_reflects_edits_via_mtime(tmp_path):
 def test_build_system_prompt_injects_layer():
     prompt = build_system_prompt("default", "【系统控制层内容XYZ】")
     assert "【系统控制层内容XYZ】" in prompt
-    assert prompt.index("【系统控制层内容XYZ】") < prompt.index("lorechat")
+    assert prompt.index("【系统控制层内容XYZ】") < prompt.index("界面与上下文")
 
 
 def test_system_prompt_defers_skill_house_rules_to_precepts(tmp_path):
@@ -208,7 +208,9 @@ def test_system_prompt_does_not_duplicate_tool_parameter_table():
 
     assert "工具参数契约" not in SYSTEM_PROMPT
     assert "| write_doc |" not in SYSTEM_PROMPT
-    assert "function 定义为准" in SYSTEM_PROMPT
+    assert "lorechat" not in SYSTEM_PROMPT
+    assert "function 定义为准" not in SYSTEM_PROMPT
+    assert "回答简洁" not in SYSTEM_PROMPT
     assert "## 事实铁律" not in SYSTEM_PROMPT
 
 
