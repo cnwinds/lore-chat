@@ -2,7 +2,7 @@
 
 from types import SimpleNamespace
 
-from app.engine.agent.prompts import SYSTEM_PROMPT, wrap_user_memory
+from app.engine.agent.prompts import wrap_user_memory
 from app.engine.conversations import ConversationStore
 from app.engine.roles import DEFAULT_ROLE_ID, RoleStore
 from app.engine.usage.context_stats import (
@@ -88,7 +88,7 @@ def test_memory_is_separate_and_matches_wrap():
     assert mem["tokens"] > 0
     system = _seg(body, "system")
     assert system["tokens"] > estimate_tokens("心法与戒律正文")
-    assert system["tokens"] >= estimate_tokens(SYSTEM_PROMPT) * 0.8
+    assert system["tokens"] >= estimate_tokens("心法与戒律正文")
 
 
 def test_history_uses_llm_window_not_all_messages():
@@ -106,10 +106,10 @@ def test_history_uses_llm_window_not_all_messages():
     assert history["tokens"] <= estimate_tokens("字" * 32000)
 
 
-def test_system_includes_builtin_prompt():
-    body = _stats({"id": "c1", "messages": []})
+def test_system_omits_redundant_builtin_ui_block():
+    body = _stats({"id": "c1", "messages": []}, include_texts=True)
     system = _seg(body, "system")
-    assert system["tokens"] >= estimate_tokens(SYSTEM_PROMPT) * 0.8
+    assert "界面与上下文" not in (system.get("text") or "")
 
 
 def test_used_tokens_remainder_goes_to_tools():

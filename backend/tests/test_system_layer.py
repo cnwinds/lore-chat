@@ -188,30 +188,48 @@ def test_compose_reflects_edits_via_mtime(tmp_path):
 def test_build_system_prompt_injects_layer():
     prompt = build_system_prompt("default", "【系统控制层内容XYZ】")
     assert "【系统控制层内容XYZ】" in prompt
-    assert prompt.index("【系统控制层内容XYZ】") < prompt.index("界面与上下文")
+    assert "界面与上下文" not in prompt
 
 
 def test_system_prompt_defers_skill_house_rules_to_precepts(tmp_path):
-    from app.engine.agent.prompts import SYSTEM_PROMPT
+    from app.engine.agent.tool_catalog import TOOL_DEFINITIONS
 
     repo = _repo(tmp_path)
     SystemLayer(repo)
     precepts = repo.read_doc("系统/戒律.md").body
     assert "用户生成 Skill" in precepts or "## 八、用户生成 Skill" in precepts
-    assert "事实铁律" not in SYSTEM_PROMPT
-    assert "[Skill 目录]" not in SYSTEM_PROMPT
-    assert "conversation://" in SYSTEM_PROMPT
+    prompt = build_system_prompt("default")
+    assert "事实铁律" not in prompt or "事实铁律（证据）" in precepts
+    assert "[Skill 目录]" not in prompt
+    ctx = next(
+        d["function"]
+        for d in TOOL_DEFINITIONS
+        if d["function"]["name"] == "read_conversation_context"
+    )
+    assert "conversation://" in ctx["description"]
 
 
 def test_system_prompt_does_not_duplicate_tool_parameter_table():
-    from app.engine.agent.prompts import SYSTEM_PROMPT
+    prompt = build_system_prompt("default")
+    assert "工具参数契约" not in prompt
+    assert "| write_doc |" not in prompt
+    assert "lorechat" not in prompt
+    assert "function 定义为准" not in prompt
+    assert "回答简洁" not in prompt
+    assert "## 事实铁律" not in prompt
+    assert "界面与上下文" not in prompt
 
-    assert "工具参数契约" not in SYSTEM_PROMPT
-    assert "| write_doc |" not in SYSTEM_PROMPT
-    assert "lorechat" not in SYSTEM_PROMPT
-    assert "function 定义为准" not in SYSTEM_PROMPT
-    assert "回答简洁" not in SYSTEM_PROMPT
-    assert "## 事实铁律" not in SYSTEM_PROMPT
+
+def test_builtin_ui_context_only_when_ask_user_missing():
+    from app.engine.agent.prompts import (
+        build_builtin_ui_context_for_tool_names,
+        resolve_builtin_ui_context,
+    )
+
+    assert resolve_builtin_ui_context("default", True) == ""
+    hint = build_builtin_ui_context_for_tool_names({"search_kb"})
+    assert hint != ""
+    assert "ask_user" in hint
 
 
 def test_build_system_prompt_web_on_affirms_search():

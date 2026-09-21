@@ -778,13 +778,12 @@ def test_ask_user_contract_requires_tool_not_prose():
 
 
 def test_cross_segment_continuity_contract():
-    from app.engine.agent.prompts import SYSTEM_PROMPT
     from app.engine.agent.tool_catalog import TOOL_DEFINITIONS
 
-    assert "《戒律》三" in SYSTEM_PROMPT
-    assert "会话段" in SYSTEM_PROMPT
     defs = {d["function"]["name"]: d["function"] for d in TOOL_DEFINITIONS}
     ctx = defs["read_conversation_context"]
+    assert "history" in ctx["description"]
+    assert "分隔线" in ctx["description"]
     assert ctx["parameters"]["required"] == []
     assert "上一会话段" in ctx["description"]
     assert "跨段接续" in ctx["description"]

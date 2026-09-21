@@ -334,10 +334,13 @@ TOOL_DEFINITIONS: list[dict] = [
             "name": "read_conversation_context",
             "description": (
                 "读取会话原文。跨段接续时：本段 history 没有用户所指对话须先取回；"
+                "UI 段间分隔线之前的轮次不在本段 history 中，禁止假记。"
                 "未点明是哪一段时可省略 conversation_id（默认本角色上一会话段）；"
                 "省略 message_id 时读取该段尾部。"
                 "已给出时间、主题、标题时，先用 search_kb(scope=conversations) 定位，"
                 "再按命中调用本工具核验邻近上下文。不得用最近一段交差或丢掉限定全库碰运气。"
+                "向用户引用会话：`[标题](conversation://会话id)` 或 "
+                "`conversation://会话id/消息id`；标题供人读，勿把裸 id 当唯一导航文案。"
             ),
             "parameters": {
                 "type": "object",
