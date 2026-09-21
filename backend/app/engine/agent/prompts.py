@@ -78,6 +78,15 @@ def build_role_collab_block(
     return "\n".join(lines)
 
 
+def current_role_header() -> str:
+    """【当前角色】段首说明（与 build_role_identity_block 正文拼接）。"""
+    return (
+        "【当前角色】以下为当前角色的身份（名称与「你是谁」恒生效——"
+        "你即本角色，用户说「你」「自己」「本助手」均指本角色、非其它角色）"
+        "及可选工作方式（叠加在心法/戒律之上；与《戒律》冲突时以《戒律》为准）："
+    )
+
+
 def build_role_identity_block(
     *,
     name: str,
@@ -94,10 +103,7 @@ def build_role_identity_block(
     prompt = (system_prompt or "").strip()
     avatar_path = (avatar or "").strip()
 
-    lines = [
-        f"名称：{role_name}",
-        "你当前就是这个角色。用户说「你」「自己」「本助手」时均指本角色，而非其它角色。",
-    ]
+    lines = [f"名称：{role_name}"]
     if avatar_path:
         lines.append(f"头像：已设置（{avatar_path}）。")
     else:
@@ -192,8 +198,7 @@ def build_system_prompt(
     role_block = ""
     if role_system_prompt and role_system_prompt.strip():
         role_block = (
-            "【当前角色】以下为当前角色的身份（名称与「你是谁」恒生效）及可选工作方式"
-            "（叠加在心法/戒律之上；与《戒律》冲突时以《戒律》为准）：\n"
+            f"{current_role_header()}\n"
             f"{role_system_prompt.strip()}\n\n"
         )
     return (
