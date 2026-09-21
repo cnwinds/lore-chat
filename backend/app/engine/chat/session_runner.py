@@ -5,6 +5,7 @@ from collections.abc import AsyncIterator
 from app.engine.agent.events import done, error_event, text_delta, think_delta
 from app.engine.agent.prompts import MODE_DEFAULT, MODE_FORCE_WRITE, MODE_NO_WRITE
 from app.engine.chat.sse import parse_agent_sse_event
+from app.engine.intent import is_question_only
 from app.engine.chat.turn_hub import TurnExecutionHub
 from app.engine.chat.turn_inject import PendingInject, TurnInjectBroker
 from app.engine.knowledge_writer import is_markdown_path
@@ -214,6 +215,14 @@ def ingest_from_write_doc_result(data: dict) -> dict:
 
 
 async def consume_agent_ingest(agent, text: str) -> dict:
+    # 纯提问在启动 Agent 前直接拒写：省一次 LLM 调用，也不受提示词装配影响
+    if is_question_only(text):
+        return {
+            "status": "rejected",
+            "rel_path": None,
+            "question_id": None,
+            "message": "这是提问而非资料，未写入知识库。",
+        }
     result: dict | None = None
     async for ev in agent.run(text, mode=MODE_FORCE_WRITE):
         parsed = parse_agent_sse_event(ev)
