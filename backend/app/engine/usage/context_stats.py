@@ -132,7 +132,8 @@ def build_context_stats(
         skill_text += msg.get("content") or ""
 
     history_msgs = ConversationTranscript.llm_history(conversation)
-    history_text = "".join(str(m.get("content") or "") for m in history_msgs)
+    history_injected = "".join(str(m.get("content") or "") for m in history_msgs)
+    history_text = ConversationTranscript.render_history_blocks(history_msgs)
 
     tool_schema = ""
     if tools is not None or settings is not None:
@@ -156,7 +157,7 @@ def build_context_stats(
         "system": estimate_tokens(system_text),
         "memory": estimate_tokens(memory_block),
         "skill": estimate_tokens(skill_text),
-        "history": estimate_tokens(history_text),
+        "history": estimate_tokens(history_injected),
         "tools": estimate_tokens(tools_text),
         "attachments": attach_tokens + estimate_tokens(attach_text),
     }

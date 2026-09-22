@@ -175,7 +175,7 @@ def test_transcript_remaps_peer_inbound(tmp_path):
         store.get(cid), responding_role_id=DEFAULT_ROLE_ID
     )
     assert hist[0]["role"] == "user"
-    assert "<peer_message" in hist[0]["content"]
+    assert "【同伴消息】" in hist[0]["content"]
     assert "游戏开发助手" in hist[0]["content"]
     assert hist[1]["role"] == "assistant"
 
@@ -223,7 +223,8 @@ def test_format_peer_message_wraps():
     text = format_peer_message(
         from_name="通用助手大师", from_role_id="default", text="去做X"
     )
-    assert 'from="通用助手大师"' in text
+    assert "【同伴消息】" in text
+    assert "通用助手大师" in text
     assert "去做X" in text
 
 
@@ -1063,7 +1064,7 @@ def test_group_overdue_wakes_assigner_once_as_system(tmp_path):
     stim = started[0]["stimulus"]
     assert stim.responding_role_id == a
     assert stim.speaker.kind == ACTOR_SYSTEM
-    assert "[系统通知]" in started[0]["user_text"]
+    assert "【系统通知】" in started[0]["user_text"]
     extra = stim.extra_system or ""
     assert "假扮系统" in extra
     msgs = store.get(group)["messages"]

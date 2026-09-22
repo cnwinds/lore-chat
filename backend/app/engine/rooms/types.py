@@ -29,9 +29,9 @@ def format_peer_message(
     name = (from_name or "").strip() or from_role_id
     body = (text or "").strip()
     return (
-        f'<peer_message from="{name}" role_id="{from_role_id}">\n'
-        f"{body}\n"
-        f"</peer_message>"
+        "【同伴消息】\n\n"
+        f"- **来自**：{name}（`{from_role_id}`）\n\n"
+        f"{body}"
     )
 
 
@@ -56,7 +56,7 @@ class InboundStimulus:
     def llm_user_text(self) -> str:
         if self.speaker.kind == ACTOR_SYSTEM:
             body = (self.text or "").strip()
-            return f"[系统通知]\n{body}" if body else "[系统通知]"
+            return f"【系统通知】\n\n{body}" if body else "【系统通知】"
         if self.speaker.kind != ACTOR_ROLE:
             return self.text
         return format_peer_message(
