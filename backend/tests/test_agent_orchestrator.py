@@ -421,10 +421,13 @@ async def test_run_injects_skill_catalog(tmp_path):
     system_contents = "\n".join(
         m["content"] for m in messages if m["role"] == "system"
     )
-    assert "Skill 目录" in system_contents
+    assert "【Skill】" in system_contents
     assert "demo-skill" in system_contents
     assert "Use when testing catalog injection." in system_contents
-    assert "技能/demo/SKILL.md" in system_contents
+    assert "`技能/demo`" in system_contents
+    assert "{包根}/SKILL.md" in system_contents
+    assert "入口:" not in system_contents
+    assert "### 冲突" not in system_contents
     assert "ROLE RULE" not in system_contents
 
 
@@ -455,7 +458,7 @@ async def test_run_injects_multi_skill_conflict_rules(tmp_path):
         for m in orchestrator.llm.calls[-1]["messages"]
         if m["role"] == "system"
     )
-    assert "Skill 冲突总则" in system_contents
+    assert "### 冲突" in system_contents
 
 
 @pytest.mark.asyncio
