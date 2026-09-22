@@ -184,7 +184,7 @@ def test_llm_history_wraps_system_notice():
     }
     history = ConversationTranscript.llm_history(conv)
     assert history[0]["role"] == "user"
-    assert history[0]["content"].startswith("[系统通知]")
+    assert history[0]["content"].startswith("【系统通知】")
     assert "超过预期" in history[0]["content"]
 
 
