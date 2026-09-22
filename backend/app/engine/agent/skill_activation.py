@@ -4,7 +4,7 @@ _CATALOG_INTRO = """\
 【Skill】
 
 已跨会话启用。下列仅为 name、触发条件与包根；未命中不要读取 SKILL.md。
-命中后用 `read_doc` 读取 `{包根}/SKILL.md`，再按其中指引按需读取 `references/` 等子文件；勿预读、勿一次读完整个包。"""
+命中后使用渐进式披露原则读取技能。"""
 
 _MULTI_SKILL_RULES = """\
 ### 冲突

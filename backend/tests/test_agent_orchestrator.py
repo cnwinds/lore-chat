@@ -425,7 +425,8 @@ async def test_run_injects_skill_catalog(tmp_path):
     assert "demo-skill" in system_contents
     assert "Use when testing catalog injection." in system_contents
     assert "`技能/demo`" in system_contents
-    assert "{包根}/SKILL.md" in system_contents
+    assert "渐进式披露原则读取技能" in system_contents
+    assert "{包根}/SKILL.md" not in system_contents
     assert "入口:" not in system_contents
     assert "### 冲突" not in system_contents
     assert "ROLE RULE" not in system_contents
