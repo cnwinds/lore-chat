@@ -24,17 +24,14 @@ export function userMessageTextOverflows(
 type CollapsibleUserTextProps = {
   text: string;
   highlightRange?: { start: number; end: number } | null;
-  /** 最新一条用户消息默认展开，便于确认刚发送的内容 */
-  defaultExpanded?: boolean;
 };
 
 export function CollapsibleUserText({
   text,
   highlightRange = null,
-  defaultExpanded = false,
 }: CollapsibleUserTextProps) {
   const contentRef = useRef<HTMLDivElement>(null);
-  const [expanded, setExpanded] = useState(defaultExpanded);
+  const [expanded, setExpanded] = useState(false);
   const [overflows, setOverflows] = useState(false);
   const [collapsedMaxPx, setCollapsedMaxPx] = useState<number | null>(null);
 
@@ -48,8 +45,8 @@ export function CollapsibleUserText({
   }, []);
 
   useEffect(() => {
-    setExpanded(defaultExpanded);
-  }, [text, defaultExpanded]);
+    setExpanded(false);
+  }, [text]);
 
   useEffect(() => {
     if (highlightRange) setExpanded(true);

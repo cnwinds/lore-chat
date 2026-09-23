@@ -57,8 +57,6 @@ export type ChatMessageRowProps = {
   respondingRoleId?: string | null;
   /** 时间线里最新一条有正文的助手回复：元信息常驻，不参与 hover 降噪 */
   latest?: boolean;
-  /** 会话底部最新用户消息：长文本默认展开 */
-  userMessageExpandedByDefault?: boolean;
 };
 
 function basename(path: string): string {
@@ -233,7 +231,6 @@ function renderMessageContent(
     choiceLabel: string,
   ) => void,
   highlightRange: { start: number; end: number } | null,
-  userMessageExpandedByDefault: boolean,
 ) {
   if (m.timeline && m.timeline.length > 0) {
     const cumulative = computeCumulative(m.timeline);
@@ -281,11 +278,7 @@ function renderMessageContent(
   if (m.text) {
     if (m.role === "user") {
       return (
-        <CollapsibleUserText
-          text={m.text}
-          highlightRange={highlightRange}
-          defaultExpanded={userMessageExpandedByDefault}
-        />
+        <CollapsibleUserText text={m.text} highlightRange={highlightRange} />
       );
     }
     const text = stripProtocolMarkup(m.text);
@@ -331,7 +324,6 @@ export function ChatMessageRow({
   roles = [],
   respondingRoleId = null,
   latest = false,
-  userMessageExpandedByDefault = false,
 }: ChatMessageRowProps) {
   const rowRef = useRef<HTMLDivElement>(null);
   const [highlightRange, setHighlightRange] = useState<{
@@ -428,7 +420,6 @@ export function ChatMessageRow({
           onOpenConversation,
           onQuestionResolved,
           highlightRange,
-          userMessageExpandedByDefault,
         )}
         {m.sources && m.sources.length > 0 && (
           <ChatSources
