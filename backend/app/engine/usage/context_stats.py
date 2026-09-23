@@ -39,7 +39,7 @@ _SEGMENTS = (
     ("memory", "记忆"),
     ("skill", "Skill"),
     ("history", "历史消息"),
-    ("tools", "工具与检索结果"),
+    ("tools", "工具定义"),
     ("attachments", "附件与文档"),
 )
 
@@ -82,6 +82,7 @@ def build_context_stats(
     settings=None,
     tools=None,
     role_system_prompt: str = "",
+    include_texts: bool = False,
 ) -> dict[str, Any]:
     messages = conversation.get("messages") or []
     last_user = _last_message(messages, "user")
@@ -92,6 +93,13 @@ def build_context_stats(
     )
     role_list = _safe_sidebar_roles(roles)
     role_messaging = len(role_list) >= 2
+    convs = getattr(tools, "conversations", None)
+    if convs is not None and hasattr(convs, "is_group_conversation"):
+        try:
+            if not convs.is_group_conversation(conversation.get("id") or ""):
+                role_messaging = False
+        except Exception:
+            pass
 
     memory_body = ""
     if system_layer is not None and hasattr(system_layer, "memory_context"):
@@ -101,11 +109,9 @@ def build_context_stats(
     system_text = build_system_prompt(
         MODE_DEFAULT,
         system_layer.compose_rules() if system_layer else "",
-        web_enabled,
         user_memory="",
         role_system_prompt=role_system_prompt
         or _role_identity_text(roles, conversation),
-        search_configured=search_configured,
     )
     if role_messaging:
         busy: set[str] = set()
@@ -126,7 +132,8 @@ def build_context_stats(
         skill_text += msg.get("content") or ""
 
     history_msgs = ConversationTranscript.llm_history(conversation)
-    history_text = "".join(str(m.get("content") or "") for m in history_msgs)
+    history_injected = "".join(str(m.get("content") or "") for m in history_msgs)
+    history_text = ConversationTranscript.render_history_blocks(history_msgs)
 
     tool_schema = ""
     if tools is not None or settings is not None:
@@ -140,8 +147,9 @@ def build_context_stats(
             role_messaging=role_messaging,
         )
         tool_schema = json.dumps(selected, ensure_ascii=False)
-    tool_results = _last_turn_tool_text(messages)
-    tools_text = tool_schema + tool_results
+    # 上一轮工具/检索正文不再回传（模型可经 read_last_tool_results 按需取回），
+    # 因此工具段只计每轮真实注入的工具定义。
+    tools_text = tool_schema
 
     attach_tokens, attach_text = _last_user_attachment_estimate(last_user)
 
@@ -149,7 +157,7 @@ def build_context_stats(
         "system": estimate_tokens(system_text),
         "memory": estimate_tokens(memory_block),
         "skill": estimate_tokens(skill_text),
-        "history": estimate_tokens(history_text),
+        "history": estimate_tokens(history_injected),
         "tools": estimate_tokens(tools_text),
         "attachments": attach_tokens + estimate_tokens(attach_text),
     }
@@ -173,6 +181,14 @@ def build_context_stats(
     )
 
     out_segments: list[dict[str, Any]] = []
+    segment_texts: dict[str, str] = {
+        "system": system_text,
+        "memory": memory_block,
+        "skill": skill_text,
+        "history": history_text,
+        "tools": tools_text,
+        "attachments": attach_text,
+    }
     for key, label in _SEGMENTS:
         item: dict[str, Any] = {
             "key": key,
@@ -181,6 +197,8 @@ def build_context_stats(
         }
         if key == "memory":
             item["preview"] = memory_body.strip()
+        if include_texts:
+            item["text"] = segment_texts.get(key, "")
         out_segments.append(item)
 
     return {
@@ -260,11 +278,15 @@ def _role_identity_text(roles, conversation: dict[str, Any]) -> str:
                 avatar = persona.get("avatar") or avatar
             except KeyError:
                 pass
+        from app.engine.role_onboarding import (
+            build_onboarding_layer,
+            should_inject_onboarding_layer,
+        )
+
+        messages = conversation.get("messages") or []
         onboarding = ""
-        if role.get("onboarding_status", "none") == "active":
-            onboarding = (
-                f"[角色引导]\n你正在协助用户完成角色「{name}」的职责与人设定义。"
-            )
+        if should_inject_onboarding_layer(role, messages):
+            onboarding = build_onboarding_layer(name)
         return build_role_identity_block(
             name=name,
             system_prompt=prompt,
@@ -284,6 +306,13 @@ def _last_message(messages: list[dict], role: str) -> dict | None:
     return None
 
 
+def _count_tool_calls(messages: list[dict]) -> int:
+    n = 0
+    for msg in messages:
+        n += len(_walk_tool_blocks(msg.get("timeline")))
+    return n
+
+
 def _walk_tool_blocks(blocks) -> list[dict]:
     out: list[dict] = []
     if not isinstance(blocks, list):
@@ -297,31 +326,6 @@ def _walk_tool_blocks(blocks) -> list[dict]:
         if block.get("type") == "tool":
             out.append(block)
     return out
-
-
-def _last_turn_tool_text(messages: list[dict]) -> str:
-    last = _last_message(messages, "assistant")
-    if not last:
-        return ""
-    parts: list[str] = []
-    for block in _walk_tool_blocks(last.get("timeline")):
-        content = str(block.get("content") or "").strip()
-        if content:
-            parts.append(content)
-            continue
-        summary = str(block.get("summary") or "").strip()
-        query = str(block.get("query") or "").strip()
-        chunk = "\n".join(p for p in (summary, query) if p)
-        if chunk:
-            parts.append(chunk)
-    return "\n".join(parts)
-
-
-def _count_tool_calls(messages: list[dict]) -> int:
-    n = 0
-    for msg in messages:
-        n += len(_walk_tool_blocks(msg.get("timeline")))
-    return n
 
 
 def _last_user_attachment_estimate(last_user: dict | None) -> tuple[int, str]:

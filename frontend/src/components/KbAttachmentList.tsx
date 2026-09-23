@@ -6,6 +6,7 @@ import {
 import { isLikelyVideoPath } from "../utils/kbVideoUrls";
 import { ImageThumbButton } from "./ImageThumbButton";
 import { VideoThumbButton } from "./VideoThumbButton";
+import { DocGlyph } from "./KbIcons";
 import { useImageLightbox } from "../hooks/useImageLightbox";
 import { useVideoLightbox } from "../hooks/useVideoLightbox";
 
@@ -24,6 +25,41 @@ function basename(path: string): string {
   }
 }
 
+function fileExtLabel(name: string): string {
+  const base = name.split("?")[0] || name;
+  const dot = base.lastIndexOf(".");
+  if (dot <= 0 || dot === base.length - 1) return "";
+  return base.slice(dot + 1).toLowerCase();
+}
+
+/** 非图片/视频附件：卡片展示截断文件名，悬停提示完整文件名与路径。 */
+function FileAttachmentCard({ path }: { path: string }) {
+  const name = basename(path);
+  const ext = fileExtLabel(name);
+  const showPath = path.trim() !== name;
+  return (
+    <a
+      className="kb-file-card"
+      href={mediaDisplayUrl(path)}
+      aria-label={name}
+    >
+      <span className="kb-file-card-icon" aria-hidden>
+        <DocGlyph size={15} />
+      </span>
+      <span className="kb-file-card-main">
+        <span className="kb-file-card-name">{name}</span>
+        {ext ? <span className="kb-file-card-ext">{ext}</span> : null}
+      </span>
+      <span className="kb-file-card-tip" role="tooltip">
+        <span className="kb-file-card-tip-name">{name}</span>
+        {showPath ? (
+          <span className="kb-file-card-tip-path">{path}</span>
+        ) : null}
+      </span>
+    </a>
+  );
+}
+
 type Props = {
   paths: string[];
   className?: string;
@@ -32,7 +68,7 @@ type Props = {
   thumbClassName?: string;
 };
 
-/** 知识库相对路径附件：图片缩略预览（点开大图），视频点击播放，其它为下载链。 */
+/** 知识库相对路径附件：图片缩略预览（点开大图），视频点击播放，其它为文件卡片。 */
 export function KbAttachmentList({
   paths,
   className = "kb-attachment-list",
@@ -77,11 +113,7 @@ export function KbAttachmentList({
             </a>
           </div>
         ) : (
-          <div key={path}>
-            <a href={mediaDisplayUrl(path)}>
-              下载附件：{basename(path)}
-            </a>
-          </div>
+          <FileAttachmentCard key={path} path={path} />
         ),
       )}
       {lightbox}

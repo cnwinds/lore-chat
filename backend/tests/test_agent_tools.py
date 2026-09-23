@@ -549,7 +549,7 @@ async def test_edit_doc_system_precepts_allowed(tmp_path):
     cid = "conv-4"
     await registry.execute("read_doc", {"path": path}, conversation_id=cid)
     original = repo.read_doc(path).body
-    marker = "## 一、落库"
+    marker = "## 一、总原则"
     result = await registry.execute(
         "edit_doc",
         {
@@ -722,7 +722,6 @@ def test_select_tools_force_write_keeps_write_doc():
 
 
 def test_kb_planning_tool_descriptions_match_precepts():
-    from app.engine.agent.prompts import SYSTEM_PROMPT
     from app.engine.agent.tool_catalog import TOOL_DEFINITIONS
 
     defs = {d["function"]["name"]: d["function"] for d in TOOL_DEFINITIONS}
@@ -738,11 +737,10 @@ def test_kb_planning_tool_descriptions_match_precepts():
     assert "须先 list_kb_structure" in move_desc
     assert "建议 list_kb_structure" not in move_desc
     assert "to_filename" not in defs["move_entry"]["parameters"]["required"]
-    assert "**to_filename** 可省略" in SYSTEM_PROMPT
+    assert "省略" in move_desc
 
 
 def test_list_roles_is_readonly_and_describes_catalog():
-    from app.engine.agent.prompts import SYSTEM_PROMPT
     from app.engine.agent.tool_catalog import (
         READ_ONLY_TOOLS,
         TOOL_DEFINITIONS,
@@ -757,13 +755,11 @@ def test_list_roles_is_readonly_and_describes_catalog():
     assert "role_id" in defs["list_roles"]["parameters"]["properties"]
     assert "name" in defs["list_roles"]["parameters"]["properties"]
     assert "先调用 list_roles" in defs["create_role"]["description"]
-    assert "list_roles" in SYSTEM_PROMPT
     names = _tool_names(select_tools(MODE_NO_WRITE, web_enabled=True))
     assert "list_roles" in names
 
 
 def test_ask_user_contract_requires_tool_not_prose():
-    from app.engine.agent.prompts import SYSTEM_PROMPT
     from app.engine.agent.tool_catalog import TOOL_DEFINITIONS
 
     defs = {d["function"]["name"]: d["function"] for d in TOOL_DEFINITIONS}
@@ -777,34 +773,25 @@ def test_ask_user_contract_requires_tool_not_prose():
         "properties"
     ]
     assert "input" in opt_props
-    assert "提问卡片" in SYSTEM_PROMPT
-    assert "必须调用 `ask_user`" in SYSTEM_PROMPT
-    assert "input" in SYSTEM_PROMPT
-    assert "禁止再为同一问题追问一遍" in SYSTEM_PROMPT
     names = _tool_names(select_tools(MODE_DEFAULT, web_enabled=True, role_messaging=True))
     assert "ask_user" in names
 
 
 def test_cross_segment_continuity_contract():
-    from app.engine.agent.prompts import SYSTEM_PROMPT
     from app.engine.agent.tool_catalog import TOOL_DEFINITIONS
 
-    assert "跨段接续" in SYSTEM_PROMPT
-    assert "上一会话段" in SYSTEM_PROMPT
-    assert "read_conversation_context" in SYSTEM_PROMPT
-    assert "已给出时间、主题、标题" in SYSTEM_PROMPT
-    assert "search_kb(scope=conversations)" in SYSTEM_PROMPT
     defs = {d["function"]["name"]: d["function"] for d in TOOL_DEFINITIONS}
     ctx = defs["read_conversation_context"]
+    assert "history" in ctx["description"]
+    assert "分隔线" in ctx["description"]
     assert ctx["parameters"]["required"] == []
     assert "上一会话段" in ctx["description"]
+    assert "跨段接续" in ctx["description"]
     search = defs["search_kb"]
     assert "相关度" in search["description"]
     assert "read_conversation_context" in search["description"]
     assert "ts_after" in search["parameters"]["properties"]
     assert "ts_before" in search["parameters"]["properties"]
-    assert "ts_after" in SYSTEM_PROMPT
-    assert "ts_before" in SYSTEM_PROMPT
     names = _tool_names(select_tools(MODE_DEFAULT, web_enabled=True, role_messaging=True))
     assert "ask_user" in names
 

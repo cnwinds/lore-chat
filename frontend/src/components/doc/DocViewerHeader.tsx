@@ -6,6 +6,7 @@ import { DocOutlineMenu } from "../DocOutlineMenu";
 import { DocOverflowMenu, type OverflowItem } from "../DocOverflowMenu";
 import {
   DocIconBtn,
+  AlertIcon,
   DiffIcon,
   HistoryIcon,
   DiscardIcon,
@@ -51,6 +52,8 @@ type Props = {
   onMergeEditingToggle: () => void;
   onLocateInTree?: (path: string) => void;
   onShareDoc?: (path: string, title: string) => void;
+  /** 戒律官方更新有待确认冲突：工具栏亮红色警示，点击打开合并界面。 */
+  preceptsAlert?: { conflicts: number; onReview: () => void } | null;
 };
 
 export function DocViewerHeader({
@@ -87,6 +90,7 @@ export function DocViewerHeader({
   onMergeEditingToggle,
   onLocateInTree,
   onShareDoc,
+  preceptsAlert,
 }: Props) {
   const conversationId =
     typeof doc?.meta?.conversation_id === "string"
@@ -222,6 +226,16 @@ export function DocViewerHeader({
             )}
           </>
         )}
+        {preceptsAlert ? (
+          <DocIconBtn
+            label={`戒律有官方更新待确认（${preceptsAlert.conflicts} 处冲突，点击合并）`}
+            className="doc-icon-btn--alert"
+            onClick={preceptsAlert.onReview}
+          >
+            <AlertIcon />
+            <span className="doc-icon-btn-dot" aria-hidden />
+          </DocIconBtn>
+        ) : null}
         <DocIconBtn
           label="修订"
           onClick={onViewHistory}

@@ -1,13 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   getDocRevision,
   listDocRevisions,
   type DocRevisionBody,
   type DocRevisionInfo,
 } from "../api";
-import { buildDocDiff } from "../utils/docDiff";
 import { formatRoutineRunTime } from "../utils/displayTime";
 import { DiffIcon, DocIconBtn } from "./DocToolbarIcons";
+import { DocRevisionCompareView } from "./doc/DocRevisionCompareView";
 
 type Props = {
   open: boolean;
@@ -170,17 +170,12 @@ export function DocHistoryModal({
   const canDiff = !current?.binary && current?.text != null && olderText != null;
   const showDiff = comparePrev && canDiff;
 
-  const diffLines = useMemo(() => {
-    if (!showDiff || current?.text == null) return [];
-    return buildDocDiff(olderText ?? "", current.text);
-  }, [showDiff, current, olderText]);
-
   if (!open || !path) return null;
 
   return (
     <div className="doc-diff-overlay" role="presentation" onClick={onClose}>
       <div
-        className="doc-history-modal doc-history-modal--frame"
+        className={`doc-history-modal doc-history-modal--frame${showDiff ? " doc-history-modal--compare" : ""}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby="doc-history-title"
@@ -237,24 +232,11 @@ export function DocHistoryModal({
                 <p className="doc-diff-empty">正在打开这一版…</p>
               ) : current?.binary ? (
                 <p className="doc-diff-empty">这一版是二进制，不能在这里预览。</p>
-              ) : showDiff ? (
-                <pre className="doc-diff-lines">
-                  {diffLines.map((line, i) => (
-                    <div
-                      key={i}
-                      className={`doc-diff-line doc-diff-line--${line.type}`}
-                    >
-                      <span className="doc-diff-gutter" aria-hidden>
-                        {line.type === "added"
-                          ? "+"
-                          : line.type === "removed"
-                            ? "−"
-                            : " "}
-                      </span>
-                      <span className="doc-diff-text">{line.content || " "}</span>
-                    </div>
-                  ))}
-                </pre>
+              ) : showDiff && current.text != null && olderText != null ? (
+                <DocRevisionCompareView
+                  older={olderText}
+                  newer={current.text}
+                />
               ) : (
                 <pre className="doc-history-text">{current?.text ?? ""}</pre>
               )}

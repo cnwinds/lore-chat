@@ -2,7 +2,9 @@
 
 from types import SimpleNamespace
 
-from app.engine.agent.prompts import SYSTEM_PROMPT, wrap_user_memory
+from app.engine.agent.prompts import wrap_user_memory
+from app.engine.conversations import ConversationStore
+from app.engine.roles import DEFAULT_ROLE_ID, RoleStore
 from app.engine.usage.context_stats import (
     build_context_stats,
     estimate_tokens,
@@ -86,7 +88,7 @@ def test_memory_is_separate_and_matches_wrap():
     assert mem["tokens"] > 0
     system = _seg(body, "system")
     assert system["tokens"] > estimate_tokens("心法与戒律正文")
-    assert system["tokens"] >= estimate_tokens(SYSTEM_PROMPT) * 0.8
+    assert system["tokens"] >= estimate_tokens("心法与戒律正文")
 
 
 def test_history_uses_llm_window_not_all_messages():
@@ -104,10 +106,10 @@ def test_history_uses_llm_window_not_all_messages():
     assert history["tokens"] <= estimate_tokens("字" * 32000)
 
 
-def test_system_includes_builtin_prompt():
-    body = _stats({"id": "c1", "messages": []})
+def test_system_omits_redundant_builtin_ui_block():
+    body = _stats({"id": "c1", "messages": []}, include_texts=True)
     system = _seg(body, "system")
-    assert system["tokens"] >= estimate_tokens(SYSTEM_PROMPT) * 0.8
+    assert "界面与上下文" not in (system.get("text") or "")
 
 
 def test_used_tokens_remainder_goes_to_tools():
@@ -147,7 +149,8 @@ def test_attachments_only_count_last_user_message():
     assert att["tokens"] == 765
 
 
-def test_last_assistant_tool_content_counts_as_tools():
+def test_last_turn_tool_content_not_recounted():
+    """上一轮工具正文不再回传下一轮，不计入注入估算；按需经工具取回。"""
     body = _stats(
         {
             "id": "c1",
@@ -169,8 +172,64 @@ def test_last_assistant_tool_content_counts_as_tools():
         }
     )
     tools = _seg(body, "tools")
-    assert tools["tokens"] >= estimate_tokens("检索正文" * 80)
-    assert tools["tokens"] > estimate_tokens("短摘要")
+    # 未配置工具目录时工具段为空：上一轮检索正文不再被当作下一轮注入
+    assert tools["tokens"] == 0
+
+
+def test_select_tools_includes_read_last_tool_results():
+    from app.engine.agent.tool_catalog import select_tools
+
+    names = {
+        d["function"]["name"]
+        for d in select_tools("default", web_enabled=False)
+    }
+    assert "read_last_tool_results" in names
+
+
+def test_owner_dm_context_stats_omit_role_collab(tmp_path):
+    """多角色实例下，主人单角色私聊不应在系统段估算里拼【角色协作】。"""
+    conv_store = ConversationStore(tmp_path / "conversations")
+    role_store = RoleStore(tmp_path / "roles")
+    role_store.create(name="协作角色", system_prompt="协助")
+    cid = conv_store.create()
+    conv = conv_store.get(cid)
+    tools = SimpleNamespace(conversations=conv_store)
+    body = build_context_stats(
+        conversation=conv,
+        roles=role_store,
+        system_layer=_Layer(""),
+        usage_store=_Usage(),
+        models_dev=_Models(),
+        chat_models=[],
+        tools=tools,
+        include_texts=True,
+    )
+    system_text = next(s for s in body["segments"] if s["key"] == "system")["text"]
+    assert "【角色协作】" not in system_text
+    assert "【角色名录】" not in system_text
+
+
+def test_group_context_stats_includes_role_collab(tmp_path):
+    conv_store = ConversationStore(tmp_path / "conversations")
+    role_store = RoleStore(tmp_path / "roles")
+    other = role_store.create(name="协作角色", system_prompt="协助")
+    group = conv_store.rooms.create_group(
+        title="测试群", role_ids=[DEFAULT_ROLE_ID, other["id"]]
+    )
+    conv = conv_store.get(group)
+    tools = SimpleNamespace(conversations=conv_store)
+    body = build_context_stats(
+        conversation=conv,
+        roles=role_store,
+        system_layer=_Layer(""),
+        usage_store=_Usage(),
+        models_dev=_Models(),
+        chat_models=[],
+        tools=tools,
+        include_texts=True,
+    )
+    system_text = next(s for s in body["segments"] if s["key"] == "system")["text"]
+    assert "【角色协作】" in system_text
 
 
 def test_skill_catalog_counts_injected_text():

@@ -238,6 +238,33 @@ class ConversationTranscript:
         return "\n\n".join(parts)
 
     @classmethod
+    def last_tool_blocks(cls, conv: dict) -> list[dict]:
+        """最近一条带工具时间线的助手消息的工具块（并行批次已拍平）。
+
+        供 read_last_tool_results 按需取回上一轮工具/检索原文；
+        历史注入本身只带正文摘要，不含这些块。
+        """
+        for msg in reversed(conv.get("messages", [])):
+            if msg.get("role") != "assistant":
+                continue
+            blocks: list[dict] = []
+
+            def walk(items) -> None:
+                for b in items or []:
+                    if not isinstance(b, dict):
+                        continue
+                    if b.get("type") == "parallel":
+                        walk(b.get("children"))
+                        continue
+                    if b.get("type") == "tool":
+                        blocks.append(b)
+
+            walk(msg.get("timeline"))
+            if blocks:
+                return blocks
+        return []
+
+    @classmethod
     def llm_history(
         cls,
         conv: dict,
@@ -282,7 +309,7 @@ class ConversationTranscript:
                         )
                 elif speaker_kind == "system":
                     candidates.append(
-                        {"role": "user", "content": f"[系统通知]\n{text}"}
+                        {"role": "user", "content": f"【系统通知】\n\n{text}"}
                     )
                 else:
                     candidates.append({"role": "user", "content": text})
@@ -297,6 +324,31 @@ class ConversationTranscript:
                 break
             candidates.pop(0)
         return candidates
+
+    @classmethod
+    def render_history_blocks(cls, messages: list[dict]) -> str:
+        """检查器用：把多轮 role 展开成【用户】/【助手】。
+
+        发给模型的仍是消息 role，不把这两枚标签写进 content。
+        已自带【系统通知】/【同伴消息】的正文不再套一层。
+        """
+        parts: list[str] = []
+        for msg in messages:
+            content = str(msg.get("content") or "").strip()
+            if not content:
+                continue
+            if content.startswith("【系统通知】") or content.startswith("【同伴消息】"):
+                parts.append(content)
+                continue
+            role = msg.get("role")
+            if role == "assistant":
+                title = "【助手】"
+            elif role == "user":
+                title = "【用户】"
+            else:
+                title = "【消息】"
+            parts.append(f"{title}\n\n{content}")
+        return "\n\n".join(parts)
 
     @classmethod
     def context_excerpt(cls, conv: dict, *, max_chars: int = 4000) -> str:

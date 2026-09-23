@@ -9,6 +9,7 @@ resolve_kb_location = KnowledgeWriter.resolve_location
 
 READ_ONLY_TOOLS = frozenset({
     "search_kb", "read_doc", "read_doc_meta", "list_kb_structure", "read_conversation_context",
+    "read_last_tool_results",
     "fetch_url", "web_search",
     "recall_memory",
     "list_roles",
@@ -114,6 +115,7 @@ TOOL_LABELS = {
     "read_doc_meta": "读取文档元数据",
     "list_kb_structure": "查看知识库目录结构",
     "read_conversation_context": "读取会话上下文",
+    "read_last_tool_results": "读取上一轮工具结果",
     "fetch_url": "打开链接",
     "web_search": "搜索网页",
     "generate_image": "生成图片",
@@ -331,9 +333,14 @@ TOOL_DEFINITIONS: list[dict] = [
         "function": {
             "name": "read_conversation_context",
             "description": (
-                "读取会话原文。省略 conversation_id 时读取本角色上一会话段；"
+                "读取会话原文。跨段接续时：本段 history 没有用户所指对话须先取回；"
+                "UI 段间分隔线之前的轮次不在本段 history 中，禁止假记。"
+                "未点明是哪一段时可省略 conversation_id（默认本角色上一会话段）；"
                 "省略 message_id 时读取该段尾部。"
-                "用于消解新段中的指代与接续，或核验检索命中的邻近上下文。"
+                "已给出时间、主题、标题时，先用 search_kb(scope=conversations) 定位，"
+                "再按命中调用本工具核验邻近上下文。不得用最近一段交差或丢掉限定全库碰运气。"
+                "向用户引用会话：`[标题](conversation://会话id)` 或 "
+                "`conversation://会话id/消息id`；标题供人读，勿把裸 id 当唯一导航文案。"
             ),
             "parameters": {
                 "type": "object",
@@ -351,6 +358,18 @@ TOOL_DEFINITIONS: list[dict] = [
                 },
                 "required": [],
             },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "read_last_tool_results",
+            "description": (
+                "读取上一轮工具与检索的原始结果（搜索命中、网页正文等）。"
+                "历史里只保留当时的结论摘要；当用户追问上一轮查到的细节、来源或数据，"
+                "而正文没有原文时，用本工具取回，不要凭记忆复述。"
+            ),
+            "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
     {
@@ -376,7 +395,7 @@ TOOL_DEFINITIONS: list[dict] = [
         "type": "function",
         "function": {
             "name": "web_search",
-            "description": "联网搜索，获取网页摘要。本轮已下发即表示可用，直接查询。",
+            "description": "联网搜索，获取网页摘要。",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -707,7 +726,10 @@ TOOL_DEFINITIONS: list[dict] = [
         "type": "function",
         "function": {
             "name": "delete_kb",
-            "description": "删除知识库中的文档或目录（含目录下所有文件）",
+            "description": (
+                "删除知识库中的文档或目录（含目录下所有文件）。"
+                "仅当用户明确要求删除时调用。"
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {

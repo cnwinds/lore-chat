@@ -430,13 +430,13 @@ def test_role_identity_block_name_without_persona():
 
     block = build_role_identity_block(name="svg大师", system_prompt="", avatar=None)
     assert "svg大师" in block
-    assert "你当前就是这个角色" in block
+    assert "你当前就是这个角色" not in block
     assert "尚未设置" in block
 
     text = build_system_prompt(role_system_prompt=block)
     assert "【当前角色】" in text
     assert "svg大师" in text
-    assert "对外身份" in text or "【当前角色】为准" in text
+    assert "本助手」均指本角色" in text
 
 
 def test_role_identity_block_with_persona_and_avatar():
@@ -468,17 +468,18 @@ def test_turn_hub_always_injects_role_identity(tmp_path):
     hub = TurnExecutionHub(_FakeAgentForRole(), conv, roles=roles)
     block = hub._role_system_prompt_for(cid)
     assert "svg大师" in block
-    assert "你当前就是这个角色" in block
-    assert "[角色引导]" not in block
+    assert "你当前就是这个角色" not in block
+    assert "【角色引导】" not in block
 
     assembled = build_system_prompt(role_system_prompt=block)
     assert "【当前角色】" in assembled
     assert "svg大师" in assembled
-    assert "对外身份以【当前角色】为准" in assembled
+    assert "本助手」均指本角色" in assembled
 
 
 def test_turn_hub_identity_includes_onboarding_layer(tmp_path):
     from app.engine.chat.turn_hub import TurnExecutionHub
+    from app.engine.role_onboarding import onboarding_kickoff_client_message_id
 
     roles = _roles(tmp_path)
     conv = _conv(tmp_path)
@@ -487,13 +488,35 @@ def test_turn_hub_identity_includes_onboarding_layer(tmp_path):
     cid = conv.create(role_id=rid)
 
     hub = TurnExecutionHub(_FakeAgentForRole(), conv, roles=roles)
-    block = hub._role_system_prompt_for(cid)
-    assert "[角色引导]" in block
+    block = hub._role_system_prompt_for(
+        cid, client_message_id=onboarding_kickoff_client_message_id(rid)
+    )
+    assert "【角色引导】" in block
     assert "新人设" in block
-    assert "你当前就是这个角色" in block
-    assert "必须调用 ask_user" in block
+    assert "你当前就是这个角色" not in block
+    assert "`ask_user`" in block
     assert "input" in block
-    assert "不要再为同一问题追问一遍" in block
+    assert "勿重复追问" in block
+
+
+def test_turn_hub_omits_onboarding_layer_after_real_user_message(tmp_path):
+    from app.engine.chat.turn_hub import TurnExecutionHub
+
+    roles = _roles(tmp_path)
+    conv = _conv(tmp_path)
+    rid = roles.create(name="引导中", system_prompt="")["id"]
+    cid = conv.create(role_id=rid)
+    conv.begin_turn(
+        cid,
+        user_text="你好，我想做数据分析助手",
+        client_message_id="user-1",
+    )
+
+    hub = TurnExecutionHub(_FakeAgentForRole(), conv, roles=roles)
+    block = hub._role_system_prompt_for(cid)
+    assert roles.get(rid)["onboarding_status"] == "active"
+    assert "【角色引导】" not in block
+    assert "引导中" in block
 
 
 class _FakeAgentForRole:

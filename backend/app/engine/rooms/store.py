@@ -118,6 +118,19 @@ class RoomStore:
             )
             store.conn.commit()
 
+    def is_group_conversation(self, cid: str) -> bool:
+        """群聊判定：非 owner 私聊，或回复角色之外还有其他角色参与。
+
+        只有群聊才需要「角色协作」协议（send_message / @提及 / 群组 CRUD），
+        单角色普通对话注入这些内容是纯浪费。
+        """
+        try:
+            if self.conversation_kind(cid) != KIND_OWNER_DM:
+                return True
+        except Exception:
+            return False
+        return len(self.list_role_participants(cid)) >= 2
+
     def conversation_kind(self, cid: str) -> str:
         store = self._store
         with store._lock:

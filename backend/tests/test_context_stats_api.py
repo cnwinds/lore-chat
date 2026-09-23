@@ -54,3 +54,25 @@ def test_context_stats_shape(client):
 def test_context_stats_unknown_conversation_is_404(client):
     r = client.get("/api/conversations/nope/context-stats")
     assert r.status_code == 404
+
+
+def test_context_stats_include_texts(client):
+    """include=texts 时各分段附注入全文；默认不带（体积按需拉取）。"""
+    cid = client.post("/api/conversations", json={"title": "统计2"}).json()["id"]
+    client.post(
+        f"/api/conversations/{cid}/messages",
+        json={"messages": [{"role": "user", "text": "你好"}]},
+    )
+
+    plain = client.get(f"/api/conversations/{cid}/context-stats").json()
+    assert all("text" not in seg for seg in plain["segments"])
+
+    body = client.get(
+        f"/api/conversations/{cid}/context-stats?include=texts"
+    ).json()
+    by_key = {seg["key"]: seg for seg in body["segments"]}
+    assert by_key["system"]["text"]
+    # 记忆本轮未注入时为空串而不是缺字段
+    assert by_key["memory"]["text"] == ""
+    # 有 token 的分段文本非空（工具=注入的 schema）
+    assert by_key["tools"]["text"]

@@ -173,7 +173,10 @@ async def test_orchestrator_passes_conversation_history(tmp_path):
     messages = llm.calls[-1]["messages"]
     assert messages[0]["role"] == "system"
     assert messages[1:3] == history
-    assert messages[-1] == {"role": "user", "content": "那 4.8 呢？"}
+    # 当前时间块注入在本轮用户消息最前（缓存友好），用户原文跟在其后
+    assert messages[-1]["role"] == "user"
+    assert messages[-1]["content"].startswith("【当前时间】")
+    assert messages[-1]["content"].endswith("那 4.8 呢？")
 
 
 @pytest.mark.asyncio
@@ -357,11 +360,6 @@ async def test_run_web_enabled_affirms_search_when_configured(tmp_path):
     async for _ in orchestrator.run("你好", web_enabled=True):
         pass
     messages = orchestrator.llm.calls[-1]["messages"]
-    system_contents = "\n".join(
-        m["content"] for m in messages if m["role"] == "system"
-    )
-    assert "本轮已开启联网搜索" in system_contents
-    assert "本轮未开启联网搜索" not in system_contents
     names = _tool_names_from_defs(orchestrator.llm.calls[-1]["tools"])
     assert "web_search" in names
 
@@ -375,11 +373,6 @@ async def test_run_web_enabled_without_provider_does_not_say_toggle_off(tmp_path
     async for _ in orchestrator.run("你好", web_enabled=True):
         pass
     messages = orchestrator.llm.calls[-1]["messages"]
-    system_contents = "\n".join(
-        m["content"] for m in messages if m["role"] == "system"
-    )
-    assert "未配置搜索提供商" in system_contents
-    assert "本轮未开启联网搜索" not in system_contents
     names = _tool_names_from_defs(orchestrator.llm.calls[-1]["tools"])
     assert "web_search" not in names
 
@@ -428,10 +421,14 @@ async def test_run_injects_skill_catalog(tmp_path):
     system_contents = "\n".join(
         m["content"] for m in messages if m["role"] == "system"
     )
-    assert "Skill 目录" in system_contents
+    assert "【Skill】" in system_contents
     assert "demo-skill" in system_contents
     assert "Use when testing catalog injection." in system_contents
-    assert "技能/demo/SKILL.md" in system_contents
+    assert "`技能/demo`" in system_contents
+    assert "渐进式披露原则读取技能" in system_contents
+    assert "{包根}/SKILL.md" not in system_contents
+    assert "入口:" not in system_contents
+    assert "### 冲突" not in system_contents
     assert "ROLE RULE" not in system_contents
 
 
@@ -462,7 +459,7 @@ async def test_run_injects_multi_skill_conflict_rules(tmp_path):
         for m in orchestrator.llm.calls[-1]["messages"]
         if m["role"] == "system"
     )
-    assert "Skill 冲突总则" in system_contents
+    assert "### 冲突" in system_contents
 
 
 @pytest.mark.asyncio

@@ -20,7 +20,7 @@ import { ChatSources } from "../ChatSources";
 import { CopyButton } from "../CopyButton";
 import { TimelineBlockView } from "../TimelineBlockView";
 import { ChatMetaTokens } from "./ChatMetaTokens";
-import { MessageRangeHighlight } from "./MessageRangeHighlight";
+import { CollapsibleUserText } from "./CollapsibleUserText";
 import { useEffect, useRef, useState } from "react";
 import {
   collectTimelineTextSpans,
@@ -277,18 +277,9 @@ function renderMessageContent(
   }
   if (m.text) {
     if (m.role === "user") {
-      if (highlightRange) {
-        return (
-          <div className="chat-user-text">
-            <MessageRangeHighlight
-              text={m.text}
-              start={highlightRange.start}
-              end={highlightRange.end}
-            />
-          </div>
-        );
-      }
-      return <div className="chat-user-text">{m.text}</div>;
+      return (
+        <CollapsibleUserText text={m.text} highlightRange={highlightRange} />
+      );
     }
     const text = stripProtocolMarkup(m.text);
     if (!text) return null;

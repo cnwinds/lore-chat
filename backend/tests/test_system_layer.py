@@ -40,58 +40,68 @@ def test_precepts_align_with_runtime_tools(tmp_path):
     assert "读写删已有条目用 `path`" not in body
     assert "口令不限字面" in body
     assert "不受本条阻挡" in body and "生图" in body
-    # 写库门槛是一条原则（默认不沉淀 且 仅明确要求才写入），不是两条同义规则
-    persist = re.search(r"## 一、落库（知识沉淀）\n(.*?)(?=\n## )", body, re.S)
+    assert "## 一、总原则" in body
+    assert "默认不动" in body
+    assert "ask_user" in body
+    persist = re.search(r"## 四、落库与会话归档\n(.*?)(?=\n## )", body, re.S)
     assert persist is not None
     persist_items = re.findall(
         r"(?ms)^(\d+)\. (.+?)(?=\n\d+\. |\Z)", persist.group(1)
     )
     assert len(persist_items) == 3
     gate = persist_items[0][1]
-    assert "不把对话零散沉淀" in gate
+    assert "默认不沉淀" in gate
     assert "仅当用户明确要求" in gate
-    assert "口令不限字面" in gate
-    assert "仅当用户明确要求" not in persist_items[1][1]
-    assert "不确定是否该记" in persist_items[1][1]
-    assert "不要自行拼接一篇再 `write_doc`" in body
-    assert "系统会标记该会话已总结" in body
+    assert "不自行拼接一篇再 `write_doc`" in body
+    assert "成功后告知用户文档位置" in body
     assert "不再检索" not in body
-    assert "优先依据总结文档" in body
-    assert "无大纲则按 offset 续读" in body
-    assert "可能截断，且不含图片等二进制" in body
-    assert "不必为选路径再列一次目录" in body
-    assert "局部编辑前须先读取目标区域" in body
-    assert "非 Markdown 不得走文档局部编辑" in body
+    assert "以总结文档为权威副本" in body
+    assert "渐进式披露" in body
+    assert "可能截断且不含二进制" in body
+    assert "不必再列目录" in body
+    assert "先读目标区域" in body
+    assert "非 Markdown 整文件覆盖" in body
     assert "普通知识不得写入或移入" in body
     # 驻留/不检索/删除保护/用户修订生效是代码事实，不进提示词
     assert "系统控制层自身" not in body
     assert "不参与检索" not in body
     assert "不得自行删除或绕过" not in body
-    assert "## 六、文档编辑" in body
-    assert "## 七、目录规划" in body
-    assert "## 八、用户生成 Skill" in body
-    assert "写库与生成 Skill 的规矩写在本文件" in body
+    assert "## 二、检索与读取" in body
+    assert "web_search" in body
+    assert "## 五、文档编辑与目录规划" in body
+    assert "## 六、用户生成 Skill" in body
+    assert "## 七、无痕教学" in body
+    assert "建构优先" in body
+    assert "用户意愿最高" in body
+    assert "纯事实查询、版本核实、故障排查" in body
     assert "助手怎么做事" in body
-    assert "不要抄进每个 SKILL.md" in body
-    assert "不视为零散沉淀" in gate
-    skill = re.search(r"## 八、用户生成 Skill\n(.*)\Z", body, re.S)
+    assert "不抄进 SKILL.md" in body
+    assert "不受「默认不沉淀」约束" in body
+    skill = re.search(
+        r"## 六、用户生成 Skill\n(.*?)(?=\n## 七、|\Z)", body, re.S
+    )
     assert skill is not None
     skill_items = re.findall(
         r"(?ms)^(\d+)\. (.+?)(?=\n\d+\. |\Z)", skill.group(1)
     )
     assert [n for n, _ in skill_items] == ["1", "2", "3", "4", "5", "6", "7"]
+    teaching = re.search(r"## 七、无痕教学\n(.*?)\Z", body, re.S)
+    assert teaching is not None
+    teaching_items = re.findall(
+        r"(?ms)^(\d+)\. (.+?)(?=\n\d+\. |\Z)", teaching.group(1)
+    )
+    assert [n for n, _ in teaching_items] == ["1", "2", "3", "4", "5"]
     assert "能固化则固化" in skill_items[2][1]
-    assert "一套或有限几套可遵循的工作流程" in skill_items[2][1]
-    assert "优先写成脚本" in skill_items[2][1]
-    assert "输出用模板或结构约束" in skill_items[2][1]
-    assert "若把这一步换成脚本或模板" in skill_items[2][1]
-    assert "创建时划界" in skill_items[3][1]
-    assert "哪些步骤可固化、哪些必须智能" in skill_items[3][1]
-    assert "只靠模型发挥的提示词" in skill_items[3][1]
+    assert "SKILL.md 是全包的导航地图" in skill_items[1][1]
+    assert "一套或有限几套可遵循的流程" in skill_items[2][1]
+    assert "优先写成脚本或模板" in skill_items[2][1]
+    assert "创建先划界" in skill_items[3][1]
+    assert "哪些步骤固化、哪些必须智能" in skill_items[3][1]
+    assert "临场发挥" in skill_items[3][1]
     assert "使用中自改进" in skill_items[5][1]
-    assert "下一次按这个包做是否还会踩同一坑" in skill_items[5][1]
-    assert "不要记成主人画像" in skill_items[5][1]
-    assert "另写一篇知识" in skill_items[5][1]
+    assert "下次照做仍踩同一坑" in skill_items[5][1]
+    assert "不记画像" in skill_items[5][1]
+    assert "不另写知识" in skill_items[5][1]
     assert "多次结果漂移" in skill_items[5][1]
     assert "本轮流水账" in skill_items[6][1]
     assert "输出模板" in skill_items[6][1]
@@ -110,14 +120,20 @@ def test_precepts_align_with_runtime_tools(tmp_path):
         "bb90720c7925eaae9c235d25a0daa5b6337faa86024046151491ab0a17886373"
         in _SUPERSEDED_PRECEPTS_HASHES
     )
+    assert (
+        "14317525e79ab3791591e8ff6034c01d05dc2a49c18ac1cdb68d4ed0de5e4c0b"
+        in _SUPERSEDED_PRECEPTS_HASHES
+    )
     # YAML 触发头是 write_doc 契约，不进戒律
     assert "--- YAML" not in body
     assert "勿放进 meta" not in body
-    assert "若本轮提供了沙箱工具" in body
+    assert "执行知识库脚本须先投放沙箱" in body
     assert "跨段接续" in body
-    assert "用户所指的那段" in body
-    assert "已给出时间、主题、标题" in body
-    assert "不得改成「最近一段」交差" in body
+    assert "事实铁律（证据）" in body
+    assert "详见事实铁律" not in body
+    assert "必须先取回再行动" in body
+    assert "时间、主题、标题等限定" in body
+    assert "不得降级为「最近一段」" in body
     soul = repo.read_doc("系统/心法.md").body
     assert "默认指向本角色最近一段对话" in soul
     assert "先消解，仍不够再问" in soul
@@ -168,36 +184,42 @@ def test_compose_reflects_edits_via_mtime(tmp_path):
 def test_build_system_prompt_injects_layer():
     prompt = build_system_prompt("default", "【系统控制层内容XYZ】")
     assert "【系统控制层内容XYZ】" in prompt
-    assert prompt.index("【系统控制层内容XYZ】") < prompt.index("lorechat")
+    assert "界面与上下文" not in prompt
 
 
-def test_system_prompt_defers_skill_house_rules_to_precepts():
-    from app.engine.agent.prompts import SYSTEM_PROMPT
+def test_system_prompt_defers_skill_house_rules_to_precepts(tmp_path):
+    from app.engine.agent.tool_catalog import TOOL_DEFINITIONS
 
-    assert "生成、改进与家规见《戒律》" in SYSTEM_PROMPT
-    assert "[Skill 目录]" in SYSTEM_PROMPT
-    # 格式契约不在 SYSTEM 复述
-    assert "--- YAML" not in SYSTEM_PROMPT
-
-
-def test_build_system_prompt_web_on_affirms_search():
-    prompt = build_system_prompt("default", web_enabled=True, search_configured=True)
-    assert "本轮已开启联网搜索" in prompt
-    assert "本轮未开启联网搜索" not in prompt
-    assert "禁止凭印象声称不可用" in prompt
-
-
-def test_build_system_prompt_web_off_denies_search():
-    prompt = build_system_prompt("default", web_enabled=False, search_configured=True)
-    assert "本轮未开启联网搜索" in prompt
-    assert "本轮已开启联网搜索" not in prompt
+    repo = _repo(tmp_path)
+    SystemLayer(repo)
+    precepts = repo.read_doc("系统/戒律.md").body
+    assert "用户生成 Skill" in precepts or "## 六、用户生成 Skill" in precepts
+    prompt = build_system_prompt("default")
+    assert "事实铁律" not in prompt or "事实铁律（证据）" in precepts
+    assert "[Skill 目录]" not in prompt
+    ctx = next(
+        d["function"]
+        for d in TOOL_DEFINITIONS
+        if d["function"]["name"] == "read_conversation_context"
+    )
+    assert "conversation://" in ctx["description"]
 
 
-def test_build_system_prompt_web_on_but_unconfigured():
-    prompt = build_system_prompt("default", web_enabled=True, search_configured=False)
-    assert "未配置搜索提供商" in prompt
-    assert "本轮未开启联网搜索" not in prompt
-    assert "本轮已开启联网搜索" not in prompt
+def test_system_prompt_does_not_duplicate_tool_parameter_table():
+    prompt = build_system_prompt("default")
+    assert "工具参数契约" not in prompt
+    assert "| write_doc |" not in prompt
+    assert "lorechat" not in prompt
+    assert "function 定义为准" not in prompt
+    assert "回答简洁" not in prompt
+    assert "## 事实铁律" not in prompt
+    assert "界面与上下文" not in prompt
+
+
+def test_build_system_prompt_has_no_web_or_builtin_ui_suffix():
+    prompt = build_system_prompt("default")
+    assert "【联网】" not in prompt
+    assert "界面与上下文" not in prompt
 
 
 def test_retriever_excludes_system_prefix(tmp_path):

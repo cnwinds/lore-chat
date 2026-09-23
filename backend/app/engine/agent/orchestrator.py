@@ -89,7 +89,15 @@ class AgentOrchestrator:
                 from app.engine.roles import list_sidebar_roles
 
                 role_list = list_sidebar_roles(roles_store)
-                role_messaging = len(role_list) >= 2
+                # 角色协作协议只在群聊里有意义：单角色普通对话不注入
+                group_chat = False
+                convs = getattr(self.tools, "conversations", None)
+                if convs is not None and conversation_id:
+                    try:
+                        group_chat = convs.is_group_conversation(conversation_id)
+                    except Exception:
+                        group_chat = False
+                role_messaging = len(role_list) >= 2 and group_chat
             except Exception:
                 role_messaging = False
         if role_messaging:
@@ -124,7 +132,6 @@ class AgentOrchestrator:
             user_text,
             mode=mode,
             web_enabled=web_enabled,
-            search_configured=search_configured,
             system_layer_text=system_layer_text,
             user_memory=user_memory,
             history=history,

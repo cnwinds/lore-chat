@@ -199,6 +199,10 @@ class ConversationStore:
             self.conn.commit()
         self._after_turn_finalized = None
 
+    def is_group_conversation(self, cid: str) -> bool:
+        """是否群聊/角色私聊（需注入角色协作协议）。委托 RoomStore。"""
+        return self.rooms.is_group_conversation(cid)
+
     # ------------------------------------------------------------------
     # 内部辅助
     # ------------------------------------------------------------------

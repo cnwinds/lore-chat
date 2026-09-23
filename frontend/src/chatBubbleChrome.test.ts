@@ -78,6 +78,17 @@ describe("overlay scrollbars", () => {
     expect(css).toMatch(/\*::-webkit-scrollbar\s*\{[^}]*display:\s*none;/);
     expect(css).not.toMatch(/\*\s*\{[^}]*scrollbar-width:\s*thin;/);
   });
+
+  it("paints an overlay rail only while visible", () => {
+    expect(css).toMatch(/\.lore-scroll-rail\s*\{[^}]*pointer-events:\s*none;/);
+    expect(css).toMatch(/\.lore-scroll-rail\s*\{[^}]*visibility:\s*hidden;/);
+    expect(css).toMatch(
+      /\.lore-scroll-rail\.is-visible\s*\{[^}]*pointer-events:\s*auto;/,
+    );
+    expect(css).toMatch(
+      /\.lore-scroll-thumb\s*\{[^}]*color-mix\(in srgb,\s*var\(--text\)/,
+    );
+  });
 });
 
 describe("fold chevron", () => {

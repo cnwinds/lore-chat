@@ -80,7 +80,7 @@ def test_clean_three_way_keeps_local_and_official(tmp_path, monkeypatch):
     up.sync()
     live = repo.read_doc("系统/戒律.md").body + "\n## 九、本地试验\n只说中文。\n"
     _persist(writer, repo, live)
-    new_official = sl._PRECEPTS_BODY.replace("宁可不记", "宁可先不记", 1)
+    new_official = sl._PRECEPTS_BODY.replace("宁可不做", "宁可先不记", 1)
     monkeypatch.setattr(sl, "_PRECEPTS_BODY", new_official)
     st = up.sync()
     assert st.status == "applied"
@@ -99,10 +99,10 @@ def test_conflict_does_not_write_markers_and_keeps_live(tmp_path, monkeypatch):
 
     repo, writer, _layer, up = _upgrade(tmp_path)
     up.sync()
-    live = repo.read_doc("系统/戒律.md").body.replace("宁可不记", "必须先问用户", 1)
+    live = repo.read_doc("系统/戒律.md").body.replace("宁可不做", "必须先问用户", 1)
     _persist(writer, repo, live)
     monkeypatch.setattr(
-        sl, "_PRECEPTS_BODY", sl._PRECEPTS_BODY.replace("宁可不记", "宁可先不记", 1)
+        sl, "_PRECEPTS_BODY", sl._PRECEPTS_BODY.replace("宁可不做", "宁可先不记", 1)
     )
     st = up.sync()
     assert st.status == "pending_review"
@@ -123,10 +123,10 @@ def test_pending_without_marked_is_rebuilt(tmp_path, monkeypatch):
 
     repo, writer, _layer, up = _upgrade(tmp_path)
     up.sync()
-    live = repo.read_doc("系统/戒律.md").body.replace("宁可不记", "必须先问用户", 1)
+    live = repo.read_doc("系统/戒律.md").body.replace("宁可不做", "必须先问用户", 1)
     _persist(writer, repo, live)
     monkeypatch.setattr(
-        sl, "_PRECEPTS_BODY", sl._PRECEPTS_BODY.replace("宁可不记", "宁可先不记", 1)
+        sl, "_PRECEPTS_BODY", sl._PRECEPTS_BODY.replace("宁可不做", "宁可先不记", 1)
     )
     st = up.sync()
     assert st.status == "pending_review"
@@ -172,14 +172,14 @@ def test_missing_stock_file_recovers_official_from_git(tmp_path, monkeypatch):
         monkeypatch,
         sl,
         seed,
-        sl._PRECEPTS_BODY.replace("宁可不记", "宁可先不记", 1),
+        sl._PRECEPTS_BODY.replace("宁可不做", "宁可先不记", 1),
     )
     st = up.sync()
     assert st.status == "applied"
     body = repo.read_doc("系统/戒律.md").body
     assert "只说中文" in body
     assert "宁可先不记" in body
-    assert "宁可不记" not in body
+    assert "宁可不做" not in body
     assert sl._seed_hash(
         (repo.root / ".kb/precepts/stock.md").read_text(encoding="utf-8")
     ) == sl._seed_hash(sl._PRECEPTS_BODY)
@@ -191,14 +191,14 @@ def test_missing_stock_overlapping_edit_is_localized_conflict(tmp_path, monkeypa
     repo, writer, _layer, up = _upgrade(tmp_path)
     up.sync()
     seed = repo.read_doc("系统/戒律.md").body
-    live = seed.replace("宁可不记", "必须先问用户", 1)
+    live = seed.replace("宁可不做", "必须先问用户", 1)
     _persist(writer, repo, live)
     (repo.root / ".kb/precepts/stock.md").unlink()
     _bump_official(
         monkeypatch,
         sl,
         seed,
-        sl._PRECEPTS_BODY.replace("宁可不记", "宁可先不记", 1),
+        sl._PRECEPTS_BODY.replace("宁可不做", "宁可先不记", 1),
     )
     st = up.sync()
     assert st.status == "pending_review"
@@ -216,14 +216,14 @@ def test_empty_base_pending_is_rebuilt_from_git_stock(tmp_path, monkeypatch):
     repo, writer, _layer, up = _upgrade(tmp_path)
     up.sync()
     seed = repo.read_doc("系统/戒律.md").body
-    live = seed.replace("宁可不记", "必须先问用户", 1)
+    live = seed.replace("宁可不做", "必须先问用户", 1)
     _persist(writer, repo, live)
     (repo.root / ".kb/precepts/stock.md").unlink()
     _bump_official(
         monkeypatch,
         sl,
         seed,
-        sl._PRECEPTS_BODY.replace("宁可不记", "宁可先不记", 1),
+        sl._PRECEPTS_BODY.replace("宁可不做", "宁可先不记", 1),
     )
     # 模拟旧逻辑：无祖先时把整篇当成一块冲突
     (repo.root / ".kb/precepts").mkdir(parents=True, exist_ok=True)
@@ -257,10 +257,10 @@ def test_confirm_writes_via_writer_and_updates_stock(tmp_path, monkeypatch):
 
     repo, writer, _layer, up = _upgrade(tmp_path)
     up.sync()
-    live = repo.read_doc("系统/戒律.md").body.replace("宁可不记", "必须先问用户", 1)
+    live = repo.read_doc("系统/戒律.md").body.replace("宁可不做", "必须先问用户", 1)
     _persist(writer, repo, live)
     monkeypatch.setattr(
-        sl, "_PRECEPTS_BODY", sl._PRECEPTS_BODY.replace("宁可不记", "宁可先不记", 1)
+        sl, "_PRECEPTS_BODY", sl._PRECEPTS_BODY.replace("宁可不做", "宁可先不记", 1)
     )
     up.sync()
     merged = "# 戒律 · 行为规约\n必须先问用户；拿不准时宁可先不记。\n"
@@ -281,10 +281,10 @@ def test_confirm_rejects_conflict_markers(tmp_path, monkeypatch):
 
     repo, writer, _layer, up = _upgrade(tmp_path)
     up.sync()
-    live = repo.read_doc("系统/戒律.md").body.replace("宁可不记", "必须先问用户", 1)
+    live = repo.read_doc("系统/戒律.md").body.replace("宁可不做", "必须先问用户", 1)
     _persist(writer, repo, live)
     monkeypatch.setattr(
-        sl, "_PRECEPTS_BODY", sl._PRECEPTS_BODY.replace("宁可不记", "宁可先不记", 1)
+        sl, "_PRECEPTS_BODY", sl._PRECEPTS_BODY.replace("宁可不做", "宁可先不记", 1)
     )
     up.sync()
     try:
@@ -301,10 +301,10 @@ def test_dismiss_keeps_live_and_skips_same_official(tmp_path, monkeypatch):
 
     repo, writer, _layer, up = _upgrade(tmp_path)
     up.sync()
-    live = repo.read_doc("系统/戒律.md").body.replace("宁可不记", "必须先问用户", 1)
+    live = repo.read_doc("系统/戒律.md").body.replace("宁可不做", "必须先问用户", 1)
     _persist(writer, repo, live)
     monkeypatch.setattr(
-        sl, "_PRECEPTS_BODY", sl._PRECEPTS_BODY.replace("宁可不记", "宁可先不记", 1)
+        sl, "_PRECEPTS_BODY", sl._PRECEPTS_BODY.replace("宁可不做", "宁可先不记", 1)
     )
     up.sync()
     st = up.dismiss()
@@ -321,10 +321,10 @@ def test_propose_uses_llm_and_rejects_short_or_marked(tmp_path, monkeypatch):
     repo, writer, layer, _ = _upgrade(tmp_path)
     up = PreceptsUpgrade(repo, writer, layer, llm=FakeLLMClient(chat_responses=["太短"]))
     up.sync()
-    live = repo.read_doc("系统/戒律.md").body.replace("宁可不记", "必须先问用户", 1)
+    live = repo.read_doc("系统/戒律.md").body.replace("宁可不做", "必须先问用户", 1)
     _persist(writer, repo, live)
     monkeypatch.setattr(
-        sl, "_PRECEPTS_BODY", sl._PRECEPTS_BODY.replace("宁可不记", "宁可先不记", 1)
+        sl, "_PRECEPTS_BODY", sl._PRECEPTS_BODY.replace("宁可不做", "宁可先不记", 1)
     )
     up.sync()
     fallback = up.status().pending["proposed"]
@@ -345,7 +345,7 @@ def test_use_official_overwrites_live(tmp_path, monkeypatch):
     repo, writer, _layer, up = _upgrade(tmp_path)
     up.sync()
     _persist(writer, repo, "# 戒律\n本地。\n")
-    new_official = sl._PRECEPTS_BODY.replace("宁可不记", "宁可先不记", 1)
+    new_official = sl._PRECEPTS_BODY.replace("宁可不做", "宁可先不记", 1)
     monkeypatch.setattr(sl, "_PRECEPTS_BODY", new_official)
     st = up.use_official()
     assert st.applied
