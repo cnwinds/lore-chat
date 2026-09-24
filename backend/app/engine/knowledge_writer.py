@@ -45,6 +45,7 @@ class _PlainImportPlan:
     kind: str
     payload: bytes | None
     reused: bool = False
+    overwritten: bool = False
 
 
 def is_markdown_path(rel_path: str) -> bool:
@@ -455,6 +456,7 @@ class KnowledgeWriter:
         filename: str,
         data: bytes,
         allow_binary: bool,
+        overwrite: bool = False,
     ) -> _PlainImportPlan:
         from app.engine.kb_pack import read_pack_meta
         from app.engine.kb_skill_zip import is_zip_filename
@@ -476,7 +478,14 @@ class KnowledgeWriter:
                 raise ValueError(MEMORY_FILE_DISABLED_MSG)
             require_skill_md_in_skills_dir(rel, self.skills_dir)
             if self.repo.abs_path(rel).exists():
-                raise KbPathExistsError(rel)
+                if not overwrite:
+                    raise KbPathExistsError(rel)
+                return _PlainImportPlan(
+                    rel=rel,
+                    kind="markdown",
+                    payload=self._imported_markdown_bytes(rel, data),
+                    overwritten=True,
+                )
             return _PlainImportPlan(
                 rel=rel,
                 kind="markdown",
@@ -501,7 +510,11 @@ class KnowledgeWriter:
                 return _PlainImportPlan(
                     rel=rel, kind="file", payload=None, reused=True
                 )
-            raise KbPathExistsError(rel)
+            if not overwrite:
+                raise KbPathExistsError(rel)
+            return _PlainImportPlan(
+                rel=rel, kind="file", payload=payload, overwritten=True
+            )
         return _PlainImportPlan(rel=rel, kind="file", payload=payload)
 
     def import_entries(
@@ -509,6 +522,7 @@ class KnowledgeWriter:
         items: list[tuple[str, str, bytes]],
         *,
         allow_binary: bool = True,
+        overwrite: bool = False,
     ) -> list[dict]:
         """批量导入普通文件：一次 write_files + 一条 changelog。
 
@@ -524,6 +538,7 @@ class KnowledgeWriter:
                 filename=filename,
                 data=data,
                 allow_binary=allow_binary,
+                overwrite=overwrite,
             )
             if plan.rel in seen:
                 raise KbPathExistsError(plan.rel)
@@ -584,6 +599,7 @@ class KnowledgeWriter:
                     "rel_path": plan.rel,
                     "kind": plan.kind,
                     "indexed": indexed_by_rel.get(plan.rel, False),
+                    "overwritten": plan.overwritten,
                 }
             )
         return results
@@ -596,6 +612,7 @@ class KnowledgeWriter:
         data: bytes,
         allow_binary: bool = True,
         dest_root: str | None = None,
+        overwrite: bool = False,
     ) -> dict:
         from app.engine.kb_skill import is_under_dir
         from app.engine.kb_skill_zip import is_zip_filename
@@ -657,6 +674,7 @@ class KnowledgeWriter:
         return self.import_entries(
             [(directory, fn, data)],
             allow_binary=allow_binary,
+            overwrite=overwrite,
         )[0]
 
     def write_text_file(

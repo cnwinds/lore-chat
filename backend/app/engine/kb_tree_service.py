@@ -35,6 +35,7 @@ class KbTreeService:
         filename: str,
         data: bytes,
         dest_root: str | None = None,
+        overwrite: bool = False,
     ) -> dict:
         d = directory.strip()
         if d and self.repo.is_protected(f"{d}/.md"):
@@ -45,12 +46,16 @@ class KbTreeService:
             data=data,
             allow_binary=True,
             dest_root=dest_root,
+            overwrite=overwrite,
         )
         self.index_revision.bump()
         return result
 
     def import_uploads(
-        self, items: list[tuple[str, str, bytes]]
+        self,
+        items: list[tuple[str, str, bytes]],
+        *,
+        overwrite: bool = False,
     ) -> dict:
         if not items:
             raise ValueError("没有可导入的文件")
@@ -62,7 +67,9 @@ class KbTreeService:
             d = directory.strip()
             if d and self.repo.is_protected(f"{d}/.md"):
                 raise PermissionError("禁止写入该目录")
-        results = self.writer.import_entries(items, allow_binary=True)
+        results = self.writer.import_entries(
+            items, allow_binary=True, overwrite=overwrite
+        )
         self.index_revision.bump()
         return {"items": results}
 

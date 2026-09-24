@@ -43,15 +43,19 @@ describe("importChatAttachment", () => {
       indexed: false,
     });
     const file = new File([new Uint8Array([1])], "a.png", { type: "image/png" });
-    await expect(importChatAttachment(file)).resolves.toBe(`${dir}/a.png`);
+    await expect(
+      importChatAttachment(file, dir, { onConflict: () => {} }),
+    ).resolves.toBe(`${dir}/a.png`);
     expect(kbImport).toHaveBeenCalledWith(
       file,
       dir,
       expect.stringMatching(/^[0-9a-f]{32}\.png$/),
+      undefined,
+      false,
     );
   });
 
-  it("auto-retries with suggested_filename on 409", async () => {
+  it("retries with user-chosen rename on 409", async () => {
     const dir = mediaUploadDir();
     vi.mocked(kbImport)
       .mockRejectedValueOnce({
@@ -69,8 +73,21 @@ describe("importChatAttachment", () => {
         indexed: false,
       });
     const file = new File([new Uint8Array([9])], "a.png", { type: "image/png" });
-    await expect(importChatAttachment(file)).resolves.toBe(`${dir}/a (1).png`);
+    await expect(
+      importChatAttachment(file, dir, {
+        onConflict: ({ suggestedFilename, resolve }) => {
+          resolve({ kind: "rename", filename: suggestedFilename });
+        },
+      }),
+    ).resolves.toBe(`${dir}/a (1).png`);
     expect(kbImport).toHaveBeenCalledTimes(2);
-    expect(kbImport).toHaveBeenNthCalledWith(2, file, dir, "a (1).png");
+    expect(kbImport).toHaveBeenNthCalledWith(
+      2,
+      file,
+      dir,
+      "a (1).png",
+      undefined,
+      false,
+    );
   });
 });

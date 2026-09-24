@@ -53,6 +53,21 @@ def test_import_conflict(tmp_path):
     assert suggest_alternate_filename("a.md") == "a (1).md"
 
 
+def test_import_overwrite(tmp_path):
+    repo = KnowledgeRepo(tmp_path / "knowledge")
+    w = _writer(repo, tmp_path)
+    w.import_entry(directory="未分类", filename="note.txt", data=b"old\n")
+    r = w.import_entry(
+        directory="未分类",
+        filename="note.txt",
+        data=b"new\n",
+        overwrite=True,
+    )
+    assert r["rel_path"] == "未分类/note.txt"
+    assert r.get("overwritten") is True
+    assert repo.read_bytes("未分类/note.txt") == b"new\n"
+
+
 def test_import_file_same_bytes_reuses_path(tmp_path):
     repo = KnowledgeRepo(tmp_path / "knowledge")
     w = _writer(repo, tmp_path)
