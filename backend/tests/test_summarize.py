@@ -150,6 +150,48 @@ async def test_summarize_conversation_tool_flow(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_summarize_tool_does_not_block_event_loop(tmp_path, monkeypatch):
+    """归档里的同步 LLM 调用必须离开事件循环，否则单 worker 上整个 API 停住。"""
+    import asyncio
+    import time
+
+    registry, *_ = _make(tmp_path, [])
+    cid = registry.conversations.create()
+    turn = registry.conversations.begin_turn(
+        cid, user_text="记一下", client_message_id="cli-block", observation_allowed=False
+    )
+    registry.conversations.finalize_turn(
+        cid,
+        turn_id=turn["turn_id"],
+        assistant={"text": "好", "timeline": [], "sources": [], "status": "complete"},
+    )
+    llm = registry.kb_mutate.organizer.llm
+
+    def blocking_chat(messages, *, big=False, temperature=0.2):
+        time.sleep(0.4)
+        return "# 归档\n\n内容\n"
+
+    monkeypatch.setattr(llm, "chat", blocking_chat)
+    loop_slept = asyncio.Event()
+
+    async def marker():
+        await asyncio.sleep(0.05)
+        loop_slept.set()
+
+    asyncio.create_task(marker())
+    task = asyncio.create_task(
+        registry.execute(
+            "summarize_conversation",
+            {"directory": "娱乐", "filename": "归档.md"},
+            conversation_id=cid,
+        )
+    )
+    await asyncio.wait_for(loop_slept.wait(), timeout=0.2)
+    result = await task
+    assert "已归档" in result["summary"]
+
+
+@pytest.mark.asyncio
 async def test_summarize_without_conversation_context(tmp_path):
     registry, *_ = _make(tmp_path, [])
     result = await registry.execute("summarize_conversation", {}, conversation_id=None)

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 from fastapi import APIRouter, HTTPException, Request
 
 from pydantic import BaseModel
@@ -315,7 +317,9 @@ async def summarize_conversation(cid: str, body: SummarizeBody, request: Request
     transcript = ConversationStore.full_transcript(conv)
     system_rules = c.system_layer.compose() if c.system_layer else ""
     try:
-        result = c.organizer.summarize_conversation(
+        # 同步等 LLM，不能占住事件循环。
+        result = await asyncio.to_thread(
+            c.organizer.summarize_conversation,
             transcript,
             conv=conv,
             forced_rel_path=rel_path,

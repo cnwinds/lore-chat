@@ -36,8 +36,11 @@ def build_tool_dispatch(registry: ToolRegistry) -> dict[str, ToolHandler]:
         )
 
     async def _summarize(args: dict, **kw) -> dict:
-        return kb_mutate.summarize_conversation(
-            args, conversation_id=kw.get("conversation_id")
+        # 归档会同步等 LLM；必须离开事件循环，否则单 worker 上整个 API 停住。
+        return await asyncio.to_thread(
+            kb_mutate.summarize_conversation,
+            args,
+            conversation_id=kw.get("conversation_id"),
         )
 
     async def _manage_memory(args: dict, **kw) -> dict:
