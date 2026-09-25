@@ -2309,6 +2309,31 @@ a:hover {
   margin: 8px 0 12px;
 }
 
+.kb-conflict-path {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  margin: 0 0 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kb-conflict-path code {
+  font-size: inherit;
+}
+
+.kb-conflict-hint {
+  font-size: var(--text-sm);
+  color: var(--text);
+  margin: 0 0 10px;
+}
+
+.kb-conflict-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .kb-conflict-label {
   display: flex;
   flex-direction: column;

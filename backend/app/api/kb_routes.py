@@ -244,6 +244,7 @@ async def kb_import(
     directory: str = Form(""),
     filename: str | None = Form(None),
     dest_root: str | None = Form(None),
+    overwrite: bool = Form(False),
 ):
     _, svc = kb_tree_service(request)
     name = (filename or file.filename or "upload.bin").strip()
@@ -254,7 +255,11 @@ async def kb_import(
 
     try:
         return svc.import_upload(
-            directory=directory, filename=name, data=data, dest_root=dest_root
+            directory=directory,
+            filename=name,
+            data=data,
+            dest_root=dest_root,
+            overwrite=overwrite,
         )
     except (KbPathExistsError, PackPathChoiceError, PermissionError, ValueError) as e:
         _raise_kb_import_error(e, filename=name)
@@ -266,6 +271,7 @@ async def kb_import_batch(
     request: Request,
     files: list[UploadFile] = File(...),
     items: str = Form(...),
+    overwrite: bool = Form(False),
 ):
     from app.engine.kb_pack import PackPathChoiceError
     from app.engine.kb_tree_service import (
@@ -296,7 +302,9 @@ async def kb_import_batch(
         _reject_oversized_video(data, name)
         payloads.append((directory, name, data))
     try:
-        return await asyncio.to_thread(svc.import_uploads, payloads)
+        return await asyncio.to_thread(
+            svc.import_uploads, payloads, overwrite=overwrite
+        )
     except (KbPathExistsError, PackPathChoiceError, PermissionError, ValueError) as e:
         hint = payloads[0][1] if payloads else "upload.bin"
         rel = getattr(e, "rel_path", None)

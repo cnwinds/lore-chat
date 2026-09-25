@@ -63,6 +63,7 @@ import { ConversationComposerPanel } from "./chat/ConversationComposerPanel";
 import type { DocTrayItem, PendingFile } from "../types/composer";
 import { extractClipboardFiles } from "../utils/clipboard";
 import { importChatAttachment } from "../utils/chatAttachmentImport";
+import { useKbNameConflictPrompt } from "../hooks/useKbNameConflictPrompt";
 import { useChatChainMediaCaps } from "../hooks/chat/useChatChainMediaCaps";
 import {
   buildComposerMediaHints,
@@ -149,6 +150,8 @@ export function Chat({
   onOpenGroup,
 }: Props) {
   const { previewPath, openDoc, refreshKb } = useDocPreview();
+  const { promptConflict: promptUploadConflict, conflictDialog: uploadConflictDialog } =
+    useKbNameConflictPrompt();
 
   const [input, setInput] = useState("");
   const [caret, setCaret] = useState(0);
@@ -544,7 +547,9 @@ export function Chat({
       setPendingFiles([]);
       try {
         for (const pf of filesToUpload) {
-          const rel = await importChatAttachment(pf.file);
+          const rel = await importChatAttachment(pf.file, undefined, {
+            onConflict: promptUploadConflict,
+          });
           uploadedPaths.push(rel);
           refreshKb(rel);
         }
@@ -972,6 +977,7 @@ export function Chat({
       : activeRole?.name || mobileHeaderTitle || "对话";
   return (
     <div className={`chat-panel${mobileLayout ? " chat-panel--mobile" : ""}`}>
+      {uploadConflictDialog}
       {mobileLayout && onOpenMobileNav && (
         <MobileChatHeader
           title={headerTitle}

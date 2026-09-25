@@ -687,12 +687,14 @@ export async function kbImport(
   directory: string,
   filename?: string,
   destRoot?: string,
+  overwrite?: boolean,
 ) {
   const fd = new FormData();
   fd.append("file", file);
   fd.append("directory", directory);
   if (filename) fd.append("filename", filename);
   if (destRoot) fd.append("dest_root", destRoot);
+  if (overwrite) fd.append("overwrite", "true");
   return apiFetch<{
     rel_path: string;
     kind: string;
