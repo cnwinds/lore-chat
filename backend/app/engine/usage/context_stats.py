@@ -21,7 +21,10 @@ from app.engine.agent.prompts import (
     build_system_prompt,
     wrap_user_memory,
 )
-from app.engine.agent.skill_activation import build_skill_catalog_system_messages
+from app.engine.agent.skill_activation import (
+    active_skill_system_messages,
+    build_skill_catalog_system_messages,
+)
 from app.engine.agent.tool_catalog import select_tools
 from app.engine.conversation.transcript import ConversationTranscript
 from app.engine.disclosure import DisclosureWindows
@@ -128,7 +131,14 @@ def build_context_stats(
         )
 
     skill_text = ""
-    for msg in build_skill_catalog_system_messages(skill_catalog or []):
+    skill_msgs = build_skill_catalog_system_messages(skill_catalog or [])
+    try:
+        skill_msgs += active_skill_system_messages(
+            conversation, skill_catalog or [], getattr(tools, "repo", None)
+        )
+    except Exception:
+        pass
+    for msg in skill_msgs:
         skill_text += msg.get("content") or ""
 
     history_msgs = ConversationTranscript.llm_history(conversation)

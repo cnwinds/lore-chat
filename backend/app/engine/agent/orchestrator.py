@@ -1,14 +1,21 @@
 from __future__ import annotations
 
+import logging
 import time
 from collections.abc import AsyncIterator
 
 from app.config import Settings
 from app.engine.agent.message_builder import build_agent_messages
 from app.engine.agent.prompts import MODE_DEFAULT
-from app.engine.agent.skill_activation import build_skill_catalog_system_messages
+from app.engine.agent.skill_activation import (
+    ACTIVE_SKILL_LOOKBACK,
+    active_skill_system_messages,
+    build_skill_catalog_system_messages,
+)
 from app.engine.agent.tool_loop import AgentToolLoop
 from app.engine.agent.tools import ToolRegistry, select_tools
+
+_log = logging.getLogger(__name__)
 
 
 class AgentOrchestrator:
@@ -45,6 +52,23 @@ class AgentOrchestrator:
         self._llm = value
         self._tool_loop.llm = value
 
+    def _active_skill_messages(
+        self, conversation_id: str | None, catalog: list[dict[str, str]]
+    ) -> list[dict]:
+        convs = getattr(self.tools, "conversations", None)
+        if not catalog or not conversation_id or convs is None:
+            return []
+        try:
+            conv = convs.get(conversation_id, tail=ACTIVE_SKILL_LOOKBACK * 3)
+            return active_skill_system_messages(
+                conv, catalog, getattr(self.tools, "repo", None)
+            )
+        except Exception:
+            _log.warning(
+                "active skill injection failed cid=%s", conversation_id, exc_info=True
+            )
+            return []
+
     async def run(
         self,
         user_text: str,
@@ -77,6 +101,7 @@ class AgentOrchestrator:
         catalog = list(skill_catalog) if skill_catalog else []
         skill_msgs = build_skill_catalog_system_messages(catalog)
         extra = list(skill_msgs) if skill_msgs else []
+        extra.extend(self._active_skill_messages(conversation_id, catalog))
         if extra_system:
             extra.extend(extra_system)
         if prefetch_context and prefetch_context.strip():

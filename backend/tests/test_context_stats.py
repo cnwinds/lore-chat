@@ -249,3 +249,39 @@ def test_skill_catalog_counts_injected_text():
     assert "演示技能" in str(skill) or skill["tokens"] >= estimate_tokens(
         "演示技能触发条件写在这里"
     )
+
+
+def test_skill_segment_counts_activated_skill_body():
+    class _Doc:
+        body = "激活后常驻的技能正文" * 50
+
+    class _Repo:
+        def read_doc(self, _path):
+            return _Doc()
+
+    catalog = [
+        {
+            "name": "demo",
+            "description": "演示",
+            "entry": "技能/demo/SKILL.md",
+            "root": "技能/demo",
+        }
+    ]
+    read_block = {
+        "type": "tool",
+        "tool": "read_doc",
+        "status": "done",
+        "sources": [{"type": "kb", "path": "技能/demo/SKILL.md"}],
+    }
+    conv = {
+        "id": "c1",
+        "messages": [
+            {"role": "user", "text": "用 demo"},
+            {"role": "assistant", "text": "好", "timeline": [read_block]},
+        ],
+    }
+    tools = SimpleNamespace(repo=_Repo(), conversations=None)
+    idle = _seg(_stats({"id": "c1", "messages": []}, skill_catalog=catalog, tools=tools), "skill")
+    active = _seg(_stats(conv, skill_catalog=catalog, tools=tools, include_texts=True), "skill")
+    assert active["tokens"] >= idle["tokens"] + estimate_tokens(_Doc.body)
+    assert "激活后常驻的技能正文" in active["text"]

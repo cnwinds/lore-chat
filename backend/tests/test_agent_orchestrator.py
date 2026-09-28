@@ -433,6 +433,81 @@ async def test_run_injects_skill_catalog(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_run_keeps_activated_skill_body_in_later_turns(tmp_path):
+    kb = tmp_path / "knowledge"
+    repo = KnowledgeRepo(kb)
+    repo.write_doc(
+        "技能/demo/SKILL.md",
+        {"title": "Demo"},
+        "---\nname: demo-skill\ndescription: Use when testing.\n---\n\n"
+        "ROLE RULE: speak like demo.\n",
+        commit_msg="seed",
+    )
+    orchestrator = _make_orchestrator(
+        tmp_path,
+        tool_responses=[
+            {"content": "ok", "tool_calls": []},
+            {"content": "ok", "tool_calls": []},
+        ],
+    )
+    catalog = [
+        {
+            "root": "技能/demo",
+            "name": "demo-skill",
+            "description": "Use when testing.",
+            "entry": "技能/demo/SKILL.md",
+        }
+    ]
+    conv = {
+        "id": "c1",
+        "messages": [
+            {"role": "user", "text": "用 demo 做"},
+            {
+                "role": "assistant",
+                "text": "好",
+                "timeline": [
+                    {
+                        "type": "tool",
+                        "tool": "read_doc",
+                        "status": "done",
+                        "sources": [{"type": "kb", "path": "技能/demo/SKILL.md"}],
+                    }
+                ],
+            },
+        ],
+    }
+
+    class _Convs:
+        def get(self, cid, **_kw):
+            assert cid == "c1"
+            return conv
+
+        def is_group_conversation(self, _cid):
+            return False
+
+    orchestrator.tools.conversations = _Convs()
+    async for _ in orchestrator.run("继续", skill_catalog=catalog, conversation_id="c1"):
+        pass
+    system_contents = "\n".join(
+        m["content"]
+        for m in orchestrator.llm.calls[-1]["messages"]
+        if m["role"] == "system"
+    )
+    assert "【已激活 Skill】" in system_contents
+    assert "ROLE RULE: speak like demo." in system_contents
+
+    # 停用后不再常驻
+    async for _ in orchestrator.run("继续", skill_catalog=[], conversation_id="c1"):
+        pass
+    system_contents = "\n".join(
+        m["content"]
+        for m in orchestrator.llm.calls[-1]["messages"]
+        if m["role"] == "system"
+    )
+    assert "ROLE RULE" not in system_contents
+
+
+@pytest.mark.asyncio
 async def test_run_injects_multi_skill_conflict_rules(tmp_path):
     orchestrator = _make_orchestrator(
         tmp_path,
