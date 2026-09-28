@@ -339,6 +339,8 @@ class KnowledgeWriter:
         """读取 KB 文件字节（stage / 工具读侧对称入口）。"""
         norm = rel_path.replace("\\", "/").lstrip("/")
         abs_kb = self.repo.abs_path(norm)
+        if self.repo.is_internal(norm):
+            raise PermissionError(f"禁止访问内部路径：{norm}")
         if not abs_kb.exists() or not abs_kb.is_file():
             raise FileNotFoundError(norm)
         return self.repo.read_bytes(norm)

@@ -109,6 +109,12 @@ class KbReadTools:
                 "sources": [],
                 "error": "missing path",
             }
+        if self.repo.is_internal(path):
+            return {
+                "summary": f"禁止读取内部路径：{path}",
+                "sources": [],
+                "error": "forbidden",
+            }
 
         if is_kb_text_file(path):
             return self._read_text_file(path, args, conversation_id=conversation_id)

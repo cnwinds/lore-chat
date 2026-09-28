@@ -104,6 +104,13 @@ class KbMutateTools:
                 "error": "memory_file_disabled",
                 "status": "failed",
             }
+        if self.repo.is_internal(path):
+            return None, {
+                "summary": f"禁止访问内部路径：{path}",
+                "sources": [],
+                "error": "FORBIDDEN",
+                "status": "failed",
+            }
         return path, None
 
     def read_doc_meta(self, args: dict) -> dict:

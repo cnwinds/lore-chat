@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import posixpath
 import re
 import shutil
 import threading
@@ -528,9 +529,12 @@ class KnowledgeRepo:
             }
 
     def _is_internal(self, rel_path: str) -> bool:
-        """`.kb/`、`.git/` 等内部路径，禁止读写与删除。"""
-        norm = rel_path.replace("\\", "/").lstrip("/")
-        return norm == ".kb" or norm.startswith(".kb/") or norm.startswith(".git/")
+        """`.kb/`、`.git/` 等内部路径，禁止读写与删除。先规范化，`a/../.kb/x` 同样算内部。"""
+        norm = posixpath.normpath(rel_path.replace("\\", "/").lstrip("/") or ".")
+        return norm.split("/", 1)[0] in (".kb", ".git")
+
+    def is_internal(self, rel_path: str) -> bool:
+        return self._is_internal(rel_path)
 
     def _is_protected(self, rel_path: str) -> bool:
         norm = rel_path.replace("\\", "/").lstrip("/")
