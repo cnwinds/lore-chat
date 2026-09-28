@@ -546,6 +546,7 @@ class KnowledgeWriter:
             plans.append(plan)
 
         to_write = [(p.rel, p.payload) for p in plans if p.payload is not None]
+        overwrite_rels = {p.rel for p in plans if p.overwritten}
         indexed_by_rel: dict[str, bool] = {}
         if to_write:
             commit_msg = (
@@ -555,7 +556,21 @@ class KnowledgeWriter:
                 if len(to_write) == 1
                 else f"import: {len(to_write)} files"
             )
-            self.repo.write_files(to_write, commit_msg=commit_msg)
+            new_files = [
+                (rel, data) for rel, data in to_write if rel not in overwrite_rels
+            ]
+            overwrite_files = [
+                (rel, data) for rel, data in to_write if rel in overwrite_rels
+            ]
+            if new_files:
+                self.repo.write_files(new_files, commit_msg=commit_msg)
+            for rel, payload in overwrite_files:
+                file_commit = (
+                    f"import file: {rel}"
+                    if not is_markdown_path(rel)
+                    else f"import: {rel}"
+                )
+                self.repo.write_bytes(rel, payload, commit_msg=file_commit)
             for rel, _ in to_write:
                 if is_markdown_path(rel):
                     doc = self.repo.read_doc(rel)
