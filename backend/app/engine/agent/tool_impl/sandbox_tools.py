@@ -12,6 +12,7 @@ from app.engine.sandbox.command_prep import prepare_streaming_command
 from app.engine.sandbox.execution_engine import SandboxExecutionEngine
 from app.engine.sandbox.kb_exchange import KbSandboxExchange
 from app.engine.sandbox.protocol import SandboxRuntime
+from app.engine.sandbox.result_text import clip_stdout
 from app.engine.sandbox.role_pool import (
     RoleSandboxPool,
     SandboxPoolFullError,
@@ -290,17 +291,13 @@ class SandboxTools:
         await rt.ensure_ready()
         status = await rt.poll_job(eid, log_cursor=None)
         state = "running" if status.running else f"exit={status.exit_code}"
-        logs = (status.logs or "").strip()
-        summary = f"job {eid}: {state}"
-        if logs:
-            summary += f"\n{logs[:3500]}"
         return {
-            "summary": summary,
+            "summary": f"job {eid}: {state}",
             "sources": [],
             "execution_id": eid,
             "running": status.running,
             "exit_code": status.exit_code,
-            "stdout": status.logs,
+            **clip_stdout(status.logs or ""),
         }
 
     async def sandbox_list_dir(

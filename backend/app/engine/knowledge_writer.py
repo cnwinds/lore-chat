@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import posixpath
 import re
 import shutil
 from collections.abc import Callable
@@ -338,12 +339,39 @@ class KnowledgeWriter:
     def read_entry_bytes(self, rel_path: str) -> bytes:
         """读取 KB 文件字节（stage / 工具读侧对称入口）。"""
         norm = rel_path.replace("\\", "/").lstrip("/")
-        abs_kb = self.repo.abs_path(norm)
         if self.repo.is_internal(norm):
             raise PermissionError(f"禁止访问内部路径：{norm}")
+        abs_kb = self.repo.abs_path(norm)
         if not abs_kb.exists() or not abs_kb.is_file():
             raise FileNotFoundError(norm)
         return self.repo.read_bytes(norm)
+
+    def list_entry_files(self, rel_dir: str) -> list[str] | None:
+        """目录下全部文件的 KB 相对路径（递归、排序）；不是目录时返回 None。
+
+        跳过隐藏项（含 `.kb` / `.git`）与 Python 字节码缓存。
+        """
+        norm = posixpath.normpath(rel_dir.replace("\\", "/").strip("/") or ".")
+        if norm == ".":
+            raise PermissionError("不能投放知识库根目录")
+        if self.repo.is_internal(norm):
+            raise PermissionError(f"禁止访问内部路径：{norm}")
+        abs_dir = self.repo.abs_path(norm)
+        if not abs_dir.is_dir():
+            return None
+        if any(part.startswith(".") for part in norm.split("/")):
+            raise PermissionError(f"隐藏目录不能投放：{norm}")
+        out: list[str] = []
+        for p in sorted(abs_dir.rglob("*")):
+            if not p.is_file():
+                continue
+            parts = p.relative_to(abs_dir).parts
+            if any(part.startswith(".") or part == "__pycache__" for part in parts):
+                continue
+            if p.suffix == ".pyc":
+                continue
+            out.append(f"{norm}/{'/'.join(parts)}")
+        return out
 
     def assert_non_md_asset_allowed(self, filename: str, *, allow_binary: bool) -> None:
         """非 Markdown 资产准入。

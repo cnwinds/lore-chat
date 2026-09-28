@@ -10,6 +10,7 @@ from app.engine.chat.progress_log import ensure_line_chunk
 from app.engine.sandbox.execution_registry import ExecutionRegistry
 from app.engine.sandbox.progress import emit_progress
 from app.engine.sandbox.protocol import SandboxRuntime
+from app.engine.sandbox.result_text import clip_stdout
 
 ProgressEmit = Callable[..., None]
 
@@ -108,16 +109,12 @@ class SandboxExecutionEngine:
                     code = status.exit_code if status.exit_code is not None else 0
                     self._emit(f"\n[exit {code}]", phase="end", execution_id=eid)
                     self.registry.remove(eid)
-                    summary = (
-                        f"命令完成 exit={code}"
-                        + (f"\n{full_logs.strip()}" if full_logs.strip() else "")
-                    )
                     out = {
-                        "summary": summary[:4000],
+                        "summary": f"命令完成 exit={code}",
                         "sources": [],
                         "exit_code": code,
                         "execution_id": eid,
-                        "stdout": full_logs,
+                        **clip_stdout(full_logs),
                         "running": False,
                         "checkpoint": False,
                     }
@@ -141,16 +138,14 @@ class SandboxExecutionEngine:
                         code = final.exit_code if final.exit_code is not None else -1
                         self._emit(f"\n[exit {code}]", phase="end", execution_id=eid)
                         self.registry.remove(eid)
-                        summary = (
-                            f"命令已停止 exit={code}（wait 预算 {int(wait_sec)}s 到期）"
-                            + (f"\n{full_logs.strip()}" if full_logs.strip() else "")
-                        )
                         return {
-                            "summary": summary[:4000],
+                            "summary": (
+                                f"命令已停止 exit={code}（wait 预算 {int(wait_sec)}s 到期）"
+                            ),
                             "sources": [],
                             "exit_code": code,
                             "execution_id": eid,
-                            "stdout": full_logs,
+                            **clip_stdout(full_logs),
                             "running": False,
                             "checkpoint": False,
                             "stopped": True,
@@ -158,19 +153,15 @@ class SandboxExecutionEngine:
                             "wait_exceeded": True,
                         }
 
-                    tail = full_logs.strip()
-                    summary = (
-                        f"仍在运行（已 {int(elapsed)}s），execution_id={eid}。"
-                        f"本段 wait 预算 {int(wait_sec)}s 已用尽，请审查进度后决定续接、"
-                        f"wait_until_done 或 sandbox_stop。"
-                    )
-                    if tail:
-                        summary += f"\n{tail[-3500:]}"
                     return {
-                        "summary": summary[:4000],
+                        "summary": (
+                            f"仍在运行（已 {int(elapsed)}s），execution_id={eid}。"
+                            f"本段 wait 预算 {int(wait_sec)}s 已用尽，请审查进度后决定续接、"
+                            f"wait_until_done 或 sandbox_stop。"
+                        ),
                         "sources": [],
                         "execution_id": eid,
-                        "stdout": full_logs,
+                        **clip_stdout(full_logs),
                         "running": True,
                         "checkpoint": True,
                         "wait_exceeded": True,
@@ -208,15 +199,12 @@ class SandboxExecutionEngine:
         code = final.exit_code if final.exit_code is not None else -1
         self._emit(f"\n[exit {code}]", phase="end", execution_id=eid)
         self.registry.remove(eid)
-        summary = f"已停止 execution_id={eid} exit={code}"
-        if full_logs.strip():
-            summary += f"\n{full_logs.strip()[-3500:]}"
         return {
-            "summary": summary[:4000],
+            "summary": f"已停止 execution_id={eid} exit={code}",
             "sources": [],
             "execution_id": eid,
             "exit_code": code,
-            "stdout": full_logs,
+            **clip_stdout(full_logs),
             "running": False,
             "stopped": True,
         }

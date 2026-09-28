@@ -154,11 +154,34 @@ async def test_sandbox_run_gates_risky_command(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_approved_command_continue_prompt_carries_output(tmp_path):
+    from app.engine.pending_resolver import PendingResolveInput, PendingResolver
+
+    reg, pending = _registry(tmp_path, trust=False)
+    gated = await reg.execute("sandbox_run", {"command": "pip install foo"})
+    resolver = PendingResolver(
+        pending=pending,
+        organizer=None,
+        merge_workflow=None,
+        conversations=None,
+        merge_sessions=None,
+        sandbox_tools=reg.sandbox,
+    )
+    result = await resolver.resolve_and_apply(
+        PendingResolveInput(qid=gated["question_id"], choice="approve")
+    )
+    assert result.status == "continue"
+    prompt = result.continue_prompt or ""
+    assert "exit=0" in prompt
+    assert prompt.count("ran:pip install foo") == 1
+
+
+@pytest.mark.asyncio
 async def test_sandbox_run_safe_command_no_gate(tmp_path):
     reg, _ = _registry(tmp_path, trust=False)
     r = await reg.execute("sandbox_run", {"command": "echo hello"})
     assert r.get("exit_code") == 0
-    assert "hello" in r["summary"]
+    assert "hello" in r["stdout"]
 
 
 @pytest.mark.asyncio
@@ -166,7 +189,7 @@ async def test_sandbox_run_trust_mode_skips_gate(tmp_path):
     reg, _ = _registry(tmp_path, trust=True)
     r = await reg.execute("sandbox_run", {"command": "pip install foo"})
     assert r.get("awaiting_user") is not True
-    assert "ran:pip install foo" in r.get("summary", "") or r.get("exit_code") == 0
+    assert "ran:pip install foo" in r.get("stdout", "") or r.get("exit_code") == 0
 
 
 @pytest.mark.asyncio
@@ -193,7 +216,7 @@ async def test_sandbox_job_status(tmp_path):
     for _ in range(40):
         st = await reg.execute("sandbox_job_status", {"execution_id": eid})
         if not st.get("running"):
-            assert st.get("exit_code") == 0 or "done" in st.get("summary", "")
+            assert st.get("exit_code") == 0 or "done" in st.get("stdout", "")
             return
         await asyncio.sleep(0.05)
     raise AssertionError("job did not finish")

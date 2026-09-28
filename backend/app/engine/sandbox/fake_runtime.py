@@ -69,6 +69,14 @@ class FakeSandboxRuntime:
                 return CommandResult(stdout=text, exit_code=0)
             text = " ".join(parts[1:]) + "\n"
             return CommandResult(stdout=text, exit_code=0)
+        if parts[0] == "rm" and "-rf" in parts:
+            for p in parts[1:]:
+                if p in ("-rf", "--"):
+                    continue
+                d = self._norm(p).rstrip("/")
+                for k in [k for k in self._files if k == d or k.startswith(d + "/")]:
+                    del self._files[k]
+            return CommandResult(exit_code=0)
         if parts[0] == "mkdir" and "-p" in parts:
             for p in parts[2:]:
                 d = self._norm(p)

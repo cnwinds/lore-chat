@@ -15,6 +15,7 @@ from app.engine.organizer import Organizer
 from app.engine.pending import PendingStore
 from app.engine.retriever import Retriever
 from app.engine.sandbox.fake_runtime import FakeSandboxRuntime
+from app.engine.sandbox.result_text import display_summary
 from app.engine.web.fetcher import WebFetcher
 from app.engine.web.search import WebSearch
 from app.index.fulltext import FullTextIndex
@@ -91,7 +92,11 @@ async def test_sandbox_run_and_list(tmp_path):
     assert runtime is not None
     r = await registry.execute("sandbox_run", {"command": "echo hello"})
     assert r["exit_code"] == 0
-    assert "hello" in r["summary"]
+    assert "hello" in r["stdout"]
+    # 模型看到的结果里日志只出现一次：summary 只报状态，正文在 stdout
+    assert "hello" not in r["summary"]
+    assert "exit=0" in r["summary"]
+    assert "hello" in display_summary(r)
 
     await registry.execute(
         "sandbox_run",

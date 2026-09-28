@@ -1486,9 +1486,11 @@ TOOL_DEFINITIONS: list[dict] = [
         "function": {
             "name": "stage_to_sandbox",
             "description": (
-                "将知识库中的文件显式投放到沙箱 /workspace，便于 sandbox_run 执行。"
-                "重型调用：多文件务必一次用 files 批量投放，勿逐文件反复调用。"
+                "将知识库中的文件或目录显式投放到沙箱 /workspace，便于 sandbox_run 执行。"
+                "重型调用：多文件务必一次投放——整包用目录 kb_path，零散文件用 files，勿逐文件反复调用。"
                 "默认映射 kb_path → /workspace/{kb_path}；沙箱侧已存在则覆盖。"
+                "目录会递归投放全部文件（跳过隐藏项与 __pycache__）；"
+                "clean=true 先清空目标目录，使沙箱副本与知识库一致（知识库已删的文件不会残留）。"
                 "权威副本仍在知识库；改完脚本应 write_kb_file(overwrite=true) 回写。"
             ),
             "parameters": {
@@ -1506,16 +1508,22 @@ TOOL_DEFINITIONS: list[dict] = [
                                 "kb_path": {
                                     "type": "string",
                                     "description": (
-                                        "知识库相对路径，如 "
+                                        "知识库相对路径（文件或目录），如 "
                                         "技能/hn-video-report/scripts/fetch_hn.py"
                                     ),
                                 },
                                 "sandbox_path": {
                                     "type": "string",
                                     "description": (
-                                        "可选；沙箱绝对路径，须在 /workspace 下。"
+                                        "可选；沙箱绝对路径，须在 /workspace 下"
+                                        "（目录项即目标目录）。"
                                         "省略则使用 /workspace/{kb_path}"
                                     ),
+                                },
+                                "clean": {
+                                    "type": "boolean",
+                                    "description": "仅目录项；先清空目标目录再投放",
+                                    "default": False,
                                 },
                             },
                             "required": ["kb_path"],
@@ -1524,16 +1532,21 @@ TOOL_DEFINITIONS: list[dict] = [
                     "kb_path": {
                         "type": "string",
                         "description": (
-                            "单文件兼容；知识库相对路径。"
-                            "多文件请用 files"
+                            "单项；知识库相对路径（文件或目录，如 技能/某技能 整包投放）。"
+                            "多项请用 files"
                         ),
                     },
                     "sandbox_path": {
                         "type": "string",
                         "description": (
-                            "单文件兼容；沙箱绝对路径，须在 /workspace 下。"
+                            "单项；沙箱绝对路径，须在 /workspace 下（目录项即目标目录）。"
                             "省略则使用 /workspace/{kb_path}"
                         ),
+                    },
+                    "clean": {
+                        "type": "boolean",
+                        "description": "单项且为目录时；先清空目标目录再投放",
+                        "default": False,
                     },
                 },
                 "required": [],

@@ -308,6 +308,179 @@ async def test_stage_rejects_path_escape(tmp_path):
     assert r.get("error") == "path not under /workspace"
 
 
+def _seed_kb(tmp_path, files: dict[str, str | bytes]) -> None:
+    root = tmp_path / "knowledge"
+    for rel, body in files.items():
+        p = root / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_bytes(body if isinstance(body, bytes) else body.encode())
+
+
+async def _missing(runtime, path: str) -> bool:
+    try:
+        await runtime.read_file(path)
+    except FileNotFoundError:
+        return True
+    return False
+
+
+@pytest.mark.asyncio
+async def test_stage_directory_recursive_skips_hidden_and_bytecode(tmp_path):
+    registry, runtime = _make_registry(tmp_path)
+    _seed_kb(
+        tmp_path,
+        {
+            "技能/demo/SKILL.md": "# demo\n",
+            "技能/demo/scripts/run.py": "print(1)\n",
+            "技能/demo/scripts/__pycache__/run.cpython-312.pyc": b"\x00",
+            "技能/demo/stray.pyc": b"\x00",
+            "技能/demo/.cache/x.txt": "hidden\n",
+        },
+    )
+    staged = await registry.execute("stage_to_sandbox", {"kb_path": "技能/demo/"})
+    assert staged.get("error") is None
+    assert staged["ok"] == 2
+    assert staged["sandbox_path"] == "/workspace/技能/demo"
+    assert staged["items"][0]["kind"] == "dir"
+    assert staged["items"][0]["files"] == 2
+    # 目录内逐个文件不刷来源卡片
+    assert staged["sources"] == []
+    assert b"# demo" in await runtime.read_file("/workspace/技能/demo/SKILL.md")
+    assert b"print(1)" in await runtime.read_file(
+        "/workspace/技能/demo/scripts/run.py"
+    )
+    for skipped in (
+        "/workspace/技能/demo/scripts/__pycache__/run.cpython-312.pyc",
+        "/workspace/技能/demo/stray.pyc",
+        "/workspace/技能/demo/.cache/x.txt",
+    ):
+        assert await _missing(runtime, skipped)
+
+
+@pytest.mark.asyncio
+async def test_stage_directory_to_custom_dest_mixed_with_file(tmp_path):
+    registry, runtime = _make_registry(tmp_path)
+    _seed_kb(
+        tmp_path,
+        {
+            "技能/demo/a/b.txt": "b\n",
+            "scripts/one.sh": "echo one\n",
+        },
+    )
+    staged = await registry.execute(
+        "stage_to_sandbox",
+        {
+            "files": [
+                {"kb_path": "技能/demo", "sandbox_path": "/workspace/pkg"},
+                {"kb_path": "scripts/one.sh"},
+            ]
+        },
+    )
+    assert staged["ok"] == 2
+    assert len(staged["items"]) == 2
+    assert b"b" in await runtime.read_file("/workspace/pkg/a/b.txt")
+    assert b"echo one" in await runtime.read_file("/workspace/scripts/one.sh")
+    # 单文件仍进来源；目录项不进
+    assert staged["sources"] == [{"type": "kb", "path": "scripts/one.sh"}]
+
+
+@pytest.mark.asyncio
+async def test_stage_directory_clean_removes_stale_files(tmp_path):
+    registry, runtime = _make_registry(tmp_path)
+    _seed_kb(tmp_path, {"技能/demo/keep.py": "v2\n"})
+    await runtime.write_file("/workspace/技能/demo/keep.py", b"v1\n")
+    await runtime.write_file("/workspace/技能/demo/removed.py", b"stale\n")
+    await runtime.write_file("/workspace/技能/other.py", b"sibling\n")
+
+    kept = await registry.execute("stage_to_sandbox", {"kb_path": "技能/demo"})
+    assert kept.get("error") is None
+    assert b"stale" in await runtime.read_file("/workspace/技能/demo/removed.py")
+
+    cleaned = await registry.execute(
+        "stage_to_sandbox", {"kb_path": "技能/demo", "clean": True}
+    )
+    assert cleaned.get("error") is None
+    assert cleaned["items"][0]["cleaned"] is True
+    assert "已先清空目标" in cleaned["summary"]
+    assert await _missing(runtime, "/workspace/技能/demo/removed.py")
+    assert b"v2" in await runtime.read_file("/workspace/技能/demo/keep.py")
+    # clean 只作用于目标目录本身
+    assert b"sibling" in await runtime.read_file("/workspace/技能/other.py")
+
+
+@pytest.mark.asyncio
+async def test_stage_clean_rejects_file_and_workspace_roots(tmp_path):
+    registry, runtime = _make_registry(tmp_path)
+    _seed_kb(tmp_path, {"技能/demo/a.py": "a\n", "scripts/one.sh": "echo\n"})
+    await runtime.write_file("/workspace/conversations/c1/keep.txt", b"keep\n")
+
+    on_file = await registry.execute(
+        "stage_to_sandbox", {"kb_path": "scripts/one.sh", "clean": True}
+    )
+    assert on_file.get("error") == "invalid clean target"
+
+    for dest in (
+        "/workspace/conversations",
+        "/workspace/conversations/c1",
+        "/workspace/schedules/s1",
+    ):
+        r = await registry.execute(
+            "stage_to_sandbox",
+            {"kb_path": "技能/demo", "sandbox_path": dest, "clean": True},
+        )
+        assert r.get("error") == "invalid clean target", dest
+    assert b"keep" in await runtime.read_file("/workspace/conversations/c1/keep.txt")
+
+    # 更深一层（任务自己的子目录）允许清空
+    ok = await registry.execute(
+        "stage_to_sandbox",
+        {
+            "kb_path": "技能/demo",
+            "sandbox_path": "/workspace/conversations/c1/pkg",
+            "clean": True,
+        },
+    )
+    assert ok.get("error") is None
+    assert b"keep" in await runtime.read_file("/workspace/conversations/c1/keep.txt")
+
+
+@pytest.mark.asyncio
+async def test_stage_rejects_internal_hidden_and_empty_dirs(tmp_path):
+    registry, runtime = _make_registry(tmp_path)
+    _seed_kb(
+        tmp_path,
+        {
+            ".kb/settings.json": "{}",
+            "技能/.hidden/a.txt": "x\n",
+            "技能/empty/.keep": "",
+        },
+    )
+    for kb_path in (".kb", ".kb/settings.json", ".git", "技能/.hidden", "/"):
+        r = await registry.execute("stage_to_sandbox", {"kb_path": kb_path})
+        assert r.get("error") in ("forbidden", "missing kb_path"), kb_path
+    empty = await registry.execute("stage_to_sandbox", {"kb_path": "技能/empty"})
+    assert empty.get("error") == "empty directory"
+    assert await _missing(runtime, "/workspace/.kb/settings.json")
+
+
+@pytest.mark.asyncio
+async def test_stage_directory_limits_write_nothing(tmp_path, monkeypatch):
+    from app.engine.sandbox import kb_exchange
+
+    registry, runtime = _make_registry(tmp_path)
+    _seed_kb(tmp_path, {f"技能/big/f{i}.txt": "x\n" for i in range(4)})
+    monkeypatch.setattr(kb_exchange, "STAGE_MAX_FILES", 3)
+    r = await registry.execute("stage_to_sandbox", {"kb_path": "技能/big"})
+    assert r.get("error") == "too many files"
+    assert await _missing(runtime, "/workspace/技能/big/f0.txt")
+
+    monkeypatch.setattr(kb_exchange, "STAGE_MAX_FILES", 500)
+    monkeypatch.setattr(kb_exchange, "STAGE_MAX_BYTES", 5)
+    r = await registry.execute("stage_to_sandbox", {"kb_path": "技能/big"})
+    assert r.get("error") == "too large"
+    assert await _missing(runtime, "/workspace/技能/big/f0.txt")
+
+
 @pytest.mark.asyncio
 async def test_list_kb_structure_includes_scripts(tmp_path):
     registry, _ = _make_registry(tmp_path)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from app.engine.agent.events import tool_result
 from app.engine.chat.tool_query import clip_tool_query
+from app.engine.sandbox.result_text import SANDBOX_LOG_TOOLS, display_summary
 from app.models.llm import ToolCall
 
 _ASK_KEYS = (
@@ -81,10 +82,11 @@ def emit_tool_result_sse(tc: ToolCall, out: dict, duration_ms: int) -> str:
         "list_groups",
     ):
         extra.update(_copy_keys(out, _COLLAB_KEYS))
+    summary = display_summary(out) if tc.name in SANDBOX_LOG_TOOLS else out["summary"]
     return tool_result(
         tc.id,
         tc.name,
-        out["summary"],
+        summary,
         out.get("sources"),
         duration_ms,
         content=tool_result_content(tc.name, out),
