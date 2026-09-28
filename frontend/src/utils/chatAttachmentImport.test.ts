@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../api", () => ({
   kbImport: vi.fn(),
@@ -12,6 +12,10 @@ import {
 import { mediaUploadDir } from "./kbMediaPaths";
 
 describe("chatAttachmentFilename", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it("hashes image content for stable path reuse", async () => {
     const bytes = new Uint8Array([1, 2, 3, 4]);
     const a = new File([bytes], "image.png", { type: "image/png" });
@@ -20,6 +24,16 @@ describe("chatAttachmentFilename", () => {
     const fb = await chatAttachmentFilename(b);
     expect(fa).toBe(fb);
     expect(fa).toMatch(/^[0-9a-f]{32}\.png$/);
+  });
+
+  it("hashes images when crypto.subtle is missing", async () => {
+    vi.stubGlobal("crypto", { subtle: undefined });
+    const file = new File([new Uint8Array([1, 2, 3, 4])], "image.png", {
+      type: "image/png",
+    });
+    await expect(chatAttachmentFilename(file)).resolves.toMatch(
+      /^[0-9a-f]{32}\.png$/,
+    );
   });
 
   it("keeps original name for non-images", async () => {

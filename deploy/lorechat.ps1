@@ -348,6 +348,12 @@ function Invoke-Compose([string]$Mode, [string[]]$ComposeCommand) {
     throw "Docker not found. Install Docker Desktop first."
   }
   $a = (Get-ComposeArgs $Mode) + $ComposeCommand
+  $env:HTTP_PROXY = Get-EnvValue "HTTP_PROXY"
+  $env:HTTPS_PROXY = Get-EnvValue "HTTPS_PROXY"
+  $env:http_proxy = Get-EnvValue "http_proxy"
+  $env:https_proxy = Get-EnvValue "https_proxy"
+  $env:NO_PROXY = Get-EnvValue "NO_PROXY"
+  $env:no_proxy = Get-EnvValue "no_proxy"
   & docker compose @a
   if ($LASTEXITCODE -ne 0) { throw "docker compose failed ($LASTEXITCODE)" }
 }
@@ -399,9 +405,17 @@ function Warn-AutoupdateTag {
   }
 }
 
+function Get-WatchtowerDockerApi {
+  # containrrr/watchtower 1.7 defaults to Docker API 1.25; Engine 29 needs 1.40+.
+  $api = docker version --format '{{.Server.MinAPIVersion}}' 2>$null
+  if ($api) { return $api }
+  return "1.44"
+}
+
 function Ensure-Watchtower {
   if (-not (Test-Path $AutoupdateFile)) { return }
   $interval = Get-AutoupdateInterval ""
+  $dockerApi = Get-WatchtowerDockerApi
   New-Item -ItemType Directory -Force -Path $Runtime | Out-Null
   Set-Content -Path $AutoupdateFile -Value $interval -NoNewline
   Warn-AutoupdateTag
@@ -409,6 +423,7 @@ function Ensure-Watchtower {
   docker run -d `
     --name $WatchtowerName `
     --restart unless-stopped `
+    -e "DOCKER_API_VERSION=$dockerApi" `
     -v /var/run/docker.sock:/var/run/docker.sock `
     $WatchtowerImage `
     --cleanup `

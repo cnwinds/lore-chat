@@ -6,17 +6,11 @@ import type { KbConflictPrompt } from "../lib/kbMutateWithConflictRetry";
 import { mediaUploadDir } from "./kbMediaPaths";
 import { imageExtFromFile, isImageFile } from "./kbImageUrls";
 import { isVideoFile, videoExtFromFile } from "./kbVideoUrls";
-
-function bytesToHex(buf: ArrayBuffer): string {
-  return Array.from(new Uint8Array(buf))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
+import { sha256Hex } from "./sha256";
 
 async function hashNamedFilename(file: File, ext: string): Promise<string> {
   const bytes = new Uint8Array(await file.arrayBuffer());
-  const digest = await crypto.subtle.digest("SHA-256", bytes);
-  const hex = bytesToHex(digest).slice(0, 32);
+  const hex = await sha256Hex(bytes, 32);
   return `${hex}${ext}`;
 }
 

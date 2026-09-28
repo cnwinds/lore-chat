@@ -364,6 +364,13 @@ run_compose() {
   if [[ "${mode}" == "work" ]]; then
     files+=(-f "${ROOT}/docker-compose.sandbox.yml")
   fi
+  # 出站代理只认安装目录 .env，避免宿主机 HTTPS_PROXY 注入容器
+  HTTP_PROXY="$(env_get HTTP_PROXY)" \
+  HTTPS_PROXY="$(env_get HTTPS_PROXY)" \
+  http_proxy="$(env_get http_proxy)" \
+  https_proxy="$(env_get https_proxy)" \
+  NO_PROXY="$(env_get NO_PROXY)" \
+  no_proxy="$(env_get no_proxy)" \
   docker compose --project-directory "${ROOT}" --env-file "${ROOT}/.env" "${files[@]}" "$@"
 }
 
@@ -420,17 +427,26 @@ warn_autoupdate_tag() {
   fi
 }
 
+watchtower_docker_api() {
+  # containrrr/watchtower 1.7 默认 Docker API 1.25；Docker Engine 29 起最低 1.40+。
+  local api
+  api="$(docker version --format '{{.Server.MinAPIVersion}}' 2>/dev/null || true)"
+  echo "${api:-1.44}"
+}
+
 ensure_watchtower() {
   [[ -f "${AUTOUPDATE_FILE}" ]] || return 0
   need_cmd docker
-  local interval
+  local interval docker_api
   interval="$(autoupdate_interval)"
+  docker_api="$(watchtower_docker_api)"
   printf '%s\n' "${interval}" >"${AUTOUPDATE_FILE}"
   warn_autoupdate_tag
   docker rm -f "${WATCHTOWER_NAME}" >/dev/null 2>&1 || true
   docker run -d \
     --name "${WATCHTOWER_NAME}" \
     --restart unless-stopped \
+    -e "DOCKER_API_VERSION=${docker_api}" \
     -v /var/run/docker.sock:/var/run/docker.sock \
     "${WATCHTOWER_IMAGE}" \
     --cleanup \

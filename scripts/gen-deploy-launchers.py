@@ -323,6 +323,13 @@ run_compose() {{
   if [[ "${{mode}}" == "work" ]]; then
     files+=(-f "${{ROOT}}/docker-compose.sandbox.yml")
   fi
+  # 出站代理只认安装目录 .env，避免宿主机 HTTPS_PROXY 注入容器
+  HTTP_PROXY="$(env_get HTTP_PROXY)" \\
+  HTTPS_PROXY="$(env_get HTTPS_PROXY)" \\
+  http_proxy="$(env_get http_proxy)" \\
+  https_proxy="$(env_get https_proxy)" \\
+  NO_PROXY="$(env_get NO_PROXY)" \\
+  no_proxy="$(env_get no_proxy)" \\
   docker compose --project-directory "${{ROOT}}" --env-file "${{ROOT}}/.env" "${{files[@]}}" "$@"
 }}
 
@@ -379,17 +386,26 @@ warn_autoupdate_tag() {{
   fi
 }}
 
+watchtower_docker_api() {{
+  # containrrr/watchtower 1.7 默认 Docker API 1.25；Docker Engine 29 起最低 1.40+。
+  local api
+  api="$(docker version --format '{{{{.Server.MinAPIVersion}}}}' 2>/dev/null || true)"
+  echo "${{api:-1.44}}"
+}}
+
 ensure_watchtower() {{
   [[ -f "${{AUTOUPDATE_FILE}}" ]] || return 0
   need_cmd docker
-  local interval
+  local interval docker_api
   interval="$(autoupdate_interval)"
+  docker_api="$(watchtower_docker_api)"
   printf '%s\\n' "${{interval}}" >"${{AUTOUPDATE_FILE}}"
   warn_autoupdate_tag
   docker rm -f "${{WATCHTOWER_NAME}}" >/dev/null 2>&1 || true
   docker run -d \\
     --name "${{WATCHTOWER_NAME}}" \\
     --restart unless-stopped \\
+    -e "DOCKER_API_VERSION=${{docker_api}}" \\
     -v /var/run/docker.sock:/var/run/docker.sock \\
     "${{WATCHTOWER_IMAGE}}" \\
     --cleanup \\
@@ -717,6 +733,12 @@ function Invoke-Compose([string]$Mode, [string[]]$ComposeCommand) {{
     throw "Docker not found. Install Docker Desktop first."
   }}
   $a = (Get-ComposeArgs $Mode) + $ComposeCommand
+  $env:HTTP_PROXY = Get-EnvValue "HTTP_PROXY"
+  $env:HTTPS_PROXY = Get-EnvValue "HTTPS_PROXY"
+  $env:http_proxy = Get-EnvValue "http_proxy"
+  $env:https_proxy = Get-EnvValue "https_proxy"
+  $env:NO_PROXY = Get-EnvValue "NO_PROXY"
+  $env:no_proxy = Get-EnvValue "no_proxy"
   & docker compose @a
   if ($LASTEXITCODE -ne 0) {{ throw "docker compose failed ($LASTEXITCODE)" }}
 }}
@@ -768,9 +790,17 @@ function Warn-AutoupdateTag {{
   }}
 }}
 
+function Get-WatchtowerDockerApi {{
+  # containrrr/watchtower 1.7 defaults to Docker API 1.25; Engine 29 needs 1.40+.
+  $api = docker version --format '{{{{.Server.MinAPIVersion}}}}' 2>$null
+  if ($api) {{ return $api }}
+  return "1.44"
+}}
+
 function Ensure-Watchtower {{
   if (-not (Test-Path $AutoupdateFile)) {{ return }}
   $interval = Get-AutoupdateInterval ""
+  $dockerApi = Get-WatchtowerDockerApi
   New-Item -ItemType Directory -Force -Path $Runtime | Out-Null
   Set-Content -Path $AutoupdateFile -Value $interval -NoNewline
   Warn-AutoupdateTag
@@ -778,6 +808,7 @@ function Ensure-Watchtower {{
   docker run -d `
     --name $WatchtowerName `
     --restart unless-stopped `
+    -e "DOCKER_API_VERSION=$dockerApi" `
     -v /var/run/docker.sock:/var/run/docker.sock `
     $WatchtowerImage `
     --cleanup `
