@@ -310,3 +310,21 @@ def test_new_skill_md_enables_but_edit_does_not_reenable(tmp_path):
         changelog_line="edit",
     )
     assert store.load_roots() == []
+
+
+def test_overwrite_import_skill_md_does_not_reenable(tmp_path):
+    writer, repo, store = _writer_with_enabled(tmp_path)
+    body = "---\nname: demo\ndescription: Use demo.\n---\n\n# demo\n"
+    writer.import_entry(
+        directory="技能/demo", filename="SKILL.md", data=body.encode()
+    )
+    store.save_roots([])
+    r = writer.import_entry(
+        directory="技能/demo",
+        filename="SKILL.md",
+        data=body.replace("# demo", "# demo v2").encode(),
+        overwrite=True,
+    )
+    assert r.get("overwritten") is True
+    assert "# demo v2" in repo.read_doc("技能/demo/SKILL.md").body
+    assert store.load_roots() == []

@@ -555,14 +555,16 @@ class KnowledgeWriter:
                 if len(to_write) == 1
                 else f"import: {len(to_write)} files"
             )
-            self.repo.write_files(to_write, commit_msg=commit_msg)
+            self.repo.write_files(to_write, commit_msg=commit_msg, overwrite=overwrite)
+            overwritten = {p.rel for p in plans if p.overwritten}
             for rel, _ in to_write:
                 if is_markdown_path(rel):
                     doc = self.repo.read_doc(rel)
                     if self.indexer is not None:
                         self.indexer.reindex_doc(rel, doc.body)
                     indexed_by_rel[rel] = True
-                    self._enable_new_skill_from_path(rel)
+                    if rel not in overwritten:
+                        self._enable_new_skill_from_path(rel)
                 else:
                     extracted = extract_text(self.repo.abs_path(rel))
                     indexed_by_rel[rel] = self.index_extracted_text(

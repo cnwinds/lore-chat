@@ -290,9 +290,13 @@ class KnowledgeRepo:
         return norm
 
     def write_files(
-        self, files: list[tuple[str, bytes]], *, commit_msg: str
+        self,
+        files: list[tuple[str, bytes]],
+        *,
+        commit_msg: str,
+        overwrite: bool = False,
     ) -> list[str]:
-        """写入多个新文件并一次 commit（Skill 解包等批量导入）。"""
+        """写入多个文件并一次 commit（Skill 解包等批量导入）；默认只写新文件。"""
         if not files:
             raise ValueError("没有可写入的文件")
         written: list[str] = []
@@ -301,7 +305,7 @@ class KnowledgeRepo:
             if self._is_internal(norm):
                 raise ValueError(f"禁止写入：{rel_path}")
             abs_p = self._abs(norm)
-            if abs_p.exists():
+            if abs_p.exists() and not overwrite:
                 raise ValueError(f"目标路径已存在：{rel_path}")
             abs_p.parent.mkdir(parents=True, exist_ok=True)
             abs_p.write_bytes(data)
