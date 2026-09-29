@@ -31,7 +31,9 @@ from app.settings_store import SettingsStore, settings_have_llm_api_key
 
 _DERIVATION_WORKER_INTERVAL_SECONDS = 0.5
 _DERIVATION_WORKER_BATCH_SIZE = 20
+_SEARCH_INDEX_EMBED_BATCH = 32
 _MEMORY_MAINTENANCE_INTERVAL_SECONDS = 24 * 3600
+_CARD_MAINTENANCE_INTERVAL_SECONDS = 3600
 
 
 def _under_pytest() -> bool:
@@ -114,6 +116,7 @@ def create_app(settings: Settings | None = None, llm: LLMClient | None = None) -
         stop_event = threading.Event()
         worker_thread: threading.Thread | None = None
         maintenance_thread: threading.Thread | None = None
+        card_maintenance_thread: threading.Thread | None = None
         catalog_thread: threading.Thread | None = None
         schedule_thread: threading.Thread | None = None
         if not _under_pytest():
@@ -137,6 +140,7 @@ def create_app(settings: Settings | None = None, llm: LLMClient | None = None) -
                 container = app.state.container
                 container.derivation_worker.drain(_DERIVATION_WORKER_BATCH_SIZE)
                 container.memory_worker.drain(_DERIVATION_WORKER_BATCH_SIZE)
+                container.search_index.embed_pending(_SEARCH_INDEX_EMBED_BATCH)
 
             worker_thread = threading.Thread(
                 target=_run_while_idle,
@@ -165,6 +169,20 @@ def create_app(settings: Settings | None = None, llm: LLMClient | None = None) -
                 daemon=True,
             )
             maintenance_thread.start()
+
+            card_maintenance_thread = threading.Thread(
+                target=_run_while_idle,
+                args=(
+                    app,
+                    stop_event,
+                    _CARD_MAINTENANCE_INTERVAL_SECONDS,
+                    "card maintenance",
+                    lambda: app.state.container.knowledge_cards.maintain(),
+                ),
+                name="card-maintenance",
+                daemon=True,
+            )
+            card_maintenance_thread.start()
 
             schedule_thread = threading.Thread(
                 target=_run_while_idle,
@@ -197,6 +215,8 @@ def create_app(settings: Settings | None = None, llm: LLMClient | None = None) -
                 worker_thread.join(timeout=2)
             if maintenance_thread is not None:
                 maintenance_thread.join(timeout=2)
+            if card_maintenance_thread is not None:
+                card_maintenance_thread.join(timeout=2)
             if schedule_thread is not None:
                 schedule_thread.join(timeout=2)
 

@@ -81,6 +81,15 @@ def reindex_all(container: Container) -> dict:
         _log.warning("conversation vector backfill failed: %s", exc, exc_info=True)
         vector_stats = {"indexed": 0, "error": str(exc)}
 
+    cards_indexed = 0
+    card_index = getattr(container, "card_index", None)
+    if card_index is not None:
+        try:
+            rebuild_stats = card_index.rebuild()
+            cards_indexed = int(rebuild_stats.get("cards_indexed") or 0)
+        except Exception as exc:
+            _log.warning("card index rebuild failed: %s", exc, exc_info=True)
+
     container.index_revision.bump()
 
     return {
@@ -88,4 +97,5 @@ def reindex_all(container: Container) -> dict:
         "docs_indexed": docs_indexed,
         "conversations_fts": fts_stats.get("indexed", 0),
         "conversations_vector": vector_stats.get("indexed", 0),
+        "cards_indexed": cards_indexed,
     }

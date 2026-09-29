@@ -550,7 +550,13 @@ class MemoryStore:
                 continue
         return moved
 
-    def mark_superseded(self, fact_id: str, *, supersedes_id: str | None = None) -> None:
+    def mark_superseded(
+        self,
+        fact_id: str,
+        *,
+        supersedes_id: str | None = None,
+        move_evidence: bool = True,
+    ) -> None:
         now = _now()
         with self._connect() as conn:
             conn.execute(
@@ -561,10 +567,11 @@ class MemoryStore:
                 (supersedes_id, now, fact_id),
             )
             conn.commit()
-        # 出处必须跟着存活画像走，否则面板 conversation_ids 为空、跳转全禁用
-        keep = (supersedes_id or "").strip()
-        if keep:
-            self.rebind_evidence(fact_id, keep)
+        if move_evidence:
+            # 出处必须跟着存活画像走，否则面板 conversation_ids 为空、跳转全禁用
+            keep = (supersedes_id or "").strip()
+            if keep:
+                self.rebind_evidence(fact_id, keep)
 
     def find_stale_by_slot(self, slot_key: str) -> list[dict]:
         with self._connect() as conn:
@@ -822,13 +829,21 @@ class MemoryStore:
             conn.commit()
         return self.get_fact(fact_id) or {}
 
-    def set_last_seen_at(self, fact_id: str, ts: str | None = None) -> None:
+    def set_last_seen_at(
+        self, fact_id: str, ts: str | None = None, *, touch_updated: bool = True
+    ) -> None:
         stamp = ts or _now()
         with self._connect() as conn:
-            conn.execute(
-                "UPDATE memory_facts SET last_seen_at = ?, updated_at = ? WHERE id = ?",
-                (stamp, stamp, fact_id),
-            )
+            if touch_updated:
+                conn.execute(
+                    "UPDATE memory_facts SET last_seen_at = ?, updated_at = ? WHERE id = ?",
+                    (stamp, stamp, fact_id),
+                )
+            else:
+                conn.execute(
+                    "UPDATE memory_facts SET last_seen_at = ? WHERE id = ?",
+                    (stamp, fact_id),
+                )
             conn.commit()
 
     def list_active_facts(self) -> list[dict]:

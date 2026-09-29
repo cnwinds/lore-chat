@@ -21,7 +21,8 @@
 | 文档成文 | `backend/app/engine/document_synthesis.py` | 归档/合并/入库合并的 LLM 成文；Organizer 与 MergeWorkflow 共用 |
 | 会话定稿观察 | `backend/app/engine/memory/session_observe.py` | dirty / idle / extract / SlotResolver / CAS **deep module**（`SessionMemoryObserve`；`MemoryWorker` 为兼容别名） |
 | 记忆写入 | `backend/app/engine/memory/resolver.py` + `service.py` | 全部突变经 `MemoryService` → 唯一 `SlotResolver`（remember/confirm/edit/correct/forget） |
-| 角色知识卡 | `backend/app/engine/memory/cards.py` + `role_card_extractor.py` | `KnowledgeCards` 是作用域卡片**唯一入口**：scope 编码进 `owner_key`（`role:<id>` / `persona:<id>`，与主人记忆同库），每 scope 一个卡片方案的 `SlotResolver`；会话镜头（主人私聊 → 主人 + 角色；通道 → 共用角色、来源 `external`）、渲染与注入、跨角色查阅、删角色清卡。见 [ADR 2026-09-28](docs/adr/2026-09-28-role-knowledge-cards.md)、[产品](docs/product/role-knowledge-cards.md) |
+| 角色知识卡 | `backend/app/engine/memory/cards.py` + `role_card_extractor.py` | `KnowledgeCards` 是作用域卡片**唯一入口**：scope 编码进 `owner_key`（`role:<id>` / `persona:<id>`，与主人记忆同库），每 scope 一个卡片方案的 `SlotResolver`；会话镜头（主人私聊 → 主人 + 角色；通道 → 共用角色、来源 `external`）、摄入落卡（`learn`，同时写成长日志）、渲染与注入、跨角色查阅、删角色清卡（卡、成长日志、整理状态一并删）。后台 `maintain()` 由 `card-maintenance` 线程每小时触发，每个作用域每天至多一次：淡出（`card_fade.py`，180 天无新出处 → 已淡出，待印证 180 天 → 作废，主人手改豁免）+ 整理（`card_consolidation.py`，LLM 提议合并 / 抽象 / 补条件 / 取代，只读、来源不混、取代不并出处等由代码校验；有新增才跑）。成长日志在 `card_growth.py`（`memory.db` 同库）。按轮检索与 `recall` 经 `card_index.py`（`CardIndex`，分区 `cards:<scope>`）走分区检索底座：只索引已确认卡，各写入点在作用域锁内对账，每小时与启动时全量兜底；命中必须回源到 `memory.db` 仍是本作用域的已确认卡，渲染用库里的当前文本。核心块已含全部已确认卡时不检索、不嵌入；按轮只补核心块之外的卡（向量分达标或命中稀有词，最多 5 张），注入本轮用户消息前的【相关知识卡】，不改 system 前缀；回合内经 `asyncio.to_thread` 调用。`intent._strip_user_injections` 逐块剥离用户消息前缀。见 [ADR 2026-09-28](docs/adr/2026-09-28-role-knowledge-cards.md)、[产品](docs/product/role-knowledge-cards.md) |
+| 分区检索底座 | `backend/app/index/partitioned/` | `SearchIndex`：`{kb}/.kb/index/partitioned.db`（清单 + 每族 FTS5）+ `vec/` 下 `pidx_<族>_<模型指纹>` 集合。索引是派生投影，租户必须回源校验；分区 `<族>:<键>` 是硬过滤、查询必须显式列出（阶段 A 只注册 `cards` 族）。分词二字组 + 词、两端共用、带版本号；写入走 `sync_partition` 全集对账，全文同步写、向量标待补由 `derivation-worker` 的 `embed_pending` 限流补齐（失败退避）；换嵌入模型靠探测发现、逐批重嵌、旧集合清空即删。查询全文先跑，向量有截止时间，超时 / 未配置 / 模型不一致均降级为只用全文。文档库、会话仍走旧 `Retriever`，待迁。见 [ADR 2026-09-29](docs/adr/2026-09-29-partitioned-retrieval.md) |
 | 知识库树 HTTP | `backend/app/engine/kb_tree_service.py` | import/move/delete + protected + `index_revision.bump` |
 | 归位 | `backend/app/engine/placement.py` | LLM 决定 new/merge 与 `rel_path` |
 | 整理 | `backend/app/engine/organizer.py` | 录入编排 + `PlacementPlanner` + `KnowledgeWriter`；归档/`AgentChoiceResolution` 薄委托 |
@@ -60,7 +61,7 @@
 
 `move_entry` 使用 `from_path` + `to_directory` + `to_filename`。
 
-维护性全量文档索引重建：`backup/reindex.reindex_all` → `KnowledgeWriter.reindex_markdown_body`（不写 changelog）。
+维护性全量文档索引重建：`backup/reindex.reindex_all` → `KnowledgeWriter.reindex_markdown_body`（不写 changelog）；同时 `CardIndex.rebuild()` 重建卡片分区（向量由后台补）。
 
 ## 聊天持久化
 
@@ -69,7 +70,7 @@
 3. `done` / 显式 `POST /api/chat/stop` / 启动孤儿回收 → `finalize_turn`  
 4. Outbox：`index_fts` / `index_vector` / `session_observe_memory`（经 `SessionMemoryObserve`；用户消息只打 `memory_dirty`，空闲或归档后入队；成功抽取递增 `memory_extract_revision`；按条 `observe_memory` / `MemoryIntake` 已废除）
 5. 记忆面板 API：`/api/memory/facts`（列表 / confirm / reject / edit / forget）；知识库侧栏「记忆」浮窗；写路径与自动抽取共用 `SlotResolver`
-6. 知识卡 API：`/api/cards?scope=role:<id>|persona:<id>`（同一组操作）；同一次会话观察里按镜头分别抽主人画像与角色卡；通道会话只抽共用角色卡，默认不注入主人记忆（实例 `include_owner_memory`）
+6. 知识卡 API：`/api/cards?scope=role:<id>|persona:<id>`（同一组操作，另有 `restore` 恢复已淡出；`count` 不含已淡出，另给 `faded_count`）、`/api/cards/growth?scope=`（成长日志：学到 / 整理 / 淡出）；同一次会话观察里按镜头分别抽主人画像与角色卡；通道会话只抽共用角色卡，默认不注入主人记忆（实例 `include_owner_memory`）
 
 无 `conversation_id` 时仅 `stream_ephemeral`，不落库（仍跟连接走）。
 

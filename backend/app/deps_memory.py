@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from app.config import Settings
 from app.engine.conversations import ConversationStore
+from app.engine.memory.card_consolidation import LLMCardConsolidator
 from app.engine.memory.cards import KnowledgeCards
 from app.engine.memory.decay import DecayConfig
 from app.engine.memory.role_card_extractor import LLMRoleCardExtractor
@@ -32,6 +33,7 @@ class MemorySubgraph:
     def rebind_llm(self, llm: LLMClient) -> None:
         self.worker.extractor = LLMSessionExtractor(llm)
         self.worker.card_extractor = LLMRoleCardExtractor(llm)
+        self.cards.consolidator = LLMCardConsolidator(llm, self.cards)
 
 
 def build_memory_subgraph(
@@ -52,6 +54,7 @@ def build_memory_subgraph(
         conversations=conversations,
         channel_instances=channel_instances,
     )
+    cards.consolidator = LLMCardConsolidator(llm, cards)
     memory_worker = SessionMemoryObserve(
         conversations,
         memory_service,

@@ -7,6 +7,7 @@ from app.index.conversation_fts import ConversationFTS
 from app.index.conversation_vector import ConversationVector
 from app.index.fulltext import FullTextIndex
 from app.index.indexer import Indexer
+from app.index.partitioned import LLMEmbedder, SearchIndex
 from app.index.revision import IndexRevision
 from app.index.vector import VectorIndex
 from app.engine.derivation_worker import DerivationWorker
@@ -24,6 +25,7 @@ class IndexSubgraph:
     conversation_vector: ConversationVector
     index_revision: IndexRevision
     retriever: Retriever
+    search_index: SearchIndex
 
     def rebind_llm(
         self, llm: LLMClient, *, derivation_worker: DerivationWorker | None = None
@@ -32,6 +34,8 @@ class IndexSubgraph:
         self.retriever.llm = llm
         if derivation_worker is not None:
             derivation_worker.llm = llm
+        self.search_index.embedder = LLMEmbedder(llm)
+        self.search_index.on_embedder_changed()
 
     def apply_settings(self, settings: Settings) -> None:
         """热应用检索 tunables（与构造时 Settings 同源）。"""
@@ -39,6 +43,7 @@ class IndexSubgraph:
         self.retriever.rrf_k = settings.rrf_k
         self.retriever.lane_candidate_k = settings.lane_candidate_k
         self.retriever.kb_first_throttle = settings.search_kb_first_throttle
+        self.search_index.rrf_k = settings.rrf_k
         if hasattr(self.indexer, "reindex_full_threshold"):
             self.indexer.reindex_full_threshold = settings.reindex_full_threshold
 
@@ -73,6 +78,12 @@ def build_index_subgraph(
         kb_first_throttle=settings.search_kb_first_throttle,
         repo=repo,
     )
+    search_index = SearchIndex(
+        index_dir / "partitioned.db",
+        index_dir / "vec",
+        LLMEmbedder(llm),
+        rrf_k=settings.rrf_k,
+    )
     return IndexSubgraph(
         vector=vector,
         fulltext=fulltext,
@@ -81,4 +92,5 @@ def build_index_subgraph(
         conversation_vector=conversation_vector,
         index_revision=index_revision,
         retriever=retriever,
+        search_index=search_index,
     )

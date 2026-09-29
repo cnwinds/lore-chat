@@ -1554,10 +1554,42 @@ export type KnowledgeCard = {
   statement: string;
   origin: string;
   external: boolean;
-  status: "confirmed" | "candidate";
+  status: "confirmed" | "candidate" | "stale";
   confidence?: number;
   conversation_ids: string[];
   updated_at?: string;
+};
+
+export type CardGrowthAction =
+  | "new"
+  | "revised"
+  | "promoted"
+  | "revived"
+  | "merged"
+  | "abstracted"
+  | "qualified"
+  | "superseded"
+  | "expired"
+  | "dropped";
+
+export type CardGrowthItem = {
+  action: CardGrowthAction;
+  card_id: string;
+  kind: KnowledgeCard["kind"];
+  statement: string;
+  external: boolean;
+  status: "confirmed" | "candidate" | "stale" | "rejected";
+  previous?: string;
+  sources?: Array<{ card_id: string; statement: string }>;
+};
+
+export type CardGrowthEntry = {
+  id: string;
+  kind: "learned" | "consolidated" | "faded";
+  created_at: string;
+  conversation_id: string | null;
+  conversation_title: string | null;
+  items: CardGrowthItem[];
 };
 
 export function roleCardScope(roleId: string): string {
@@ -1570,8 +1602,26 @@ export function personaCardScope(personaId: string): string {
 
 export function listCards(scope: string) {
   const q = new URLSearchParams({ scope });
-  return apiFetch<{ scope: string; cards: KnowledgeCard[]; count: number }>(
-    `/api/cards?${q}`,
+  return apiFetch<{
+    scope: string;
+    cards: KnowledgeCard[];
+    count: number;
+    faded_count: number;
+  }>(`/api/cards?${q}`);
+}
+
+export function listCardGrowth(scope: string, limit = 50) {
+  const q = new URLSearchParams({ scope, limit: String(limit) });
+  return apiFetch<{ scope: string; entries: CardGrowthEntry[] }>(
+    `/api/cards/growth?${q}`,
+  );
+}
+
+export function restoreCard(scope: string, cardId: string) {
+  const q = new URLSearchParams({ scope });
+  return apiFetch<{ ok: boolean; message?: string }>(
+    `/api/cards/${encodeURIComponent(cardId)}/restore?${q}`,
+    { method: "POST" },
   );
 }
 

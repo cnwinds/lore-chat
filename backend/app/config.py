@@ -85,6 +85,10 @@ class Settings(BaseSettings):
 
     # 向量检索余弦相似度下限
     min_vector_score: float = 0.50
+    # 按轮角色卡检索：向量余弦下限（短文本与长文档分布不同，单独一档）
+    card_retrieval_min_vector_score: float = 0.55
+    # 回合内检索等待查询嵌入的上限；超时只用全文
+    retrieval_vector_timeout_ms: int = 800
 
     # Web search：有序链（列表顺序即优先级）；None=未配置链（可从旧三密钥迁移）
     search_providers: list[dict[str, Any]] | None = None

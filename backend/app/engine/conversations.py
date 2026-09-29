@@ -933,6 +933,19 @@ class ConversationStore:
         with self._lock:
             return self._row_origin(self._conversation_row(cid))
 
+    def get_title(self, cid: str) -> str | None:
+        """会话标题；不存在返回 None，存在无标题返回空串。不加载消息。"""
+        with self._lock:
+            try:
+                row = self._conversation_row(cid)
+            except KeyError:
+                return None
+            try:
+                title = row["title"]
+            except (KeyError, IndexError):
+                return ""
+            return title if title is not None else ""
+
     def get_conversation_kind(self, cid: str) -> str:
         from app.engine.rooms.schema import KIND_OWNER_DM
 

@@ -14,6 +14,20 @@ def test_create_and_get(tmp_path):
     assert conv["messages"] == []
 
 
+def test_get_title_without_loading_messages(tmp_path):
+    store = _store(tmp_path)
+    cid = store.create()
+    store.append_exchange(cid, "标题来自首条", {"role": "assistant", "text": "回复"})
+    assert store.get_title(cid) == "标题来自首条"
+    cid2 = store.create()
+    store.conn.execute(
+        "UPDATE conversations SET title = ? WHERE id = ?", ("", cid2)
+    )
+    store.conn.commit()
+    assert store.get_title(cid2) == ""
+    assert store.get_title("missing-id") is None
+
+
 def test_list_all_sorted_by_updated(tmp_path):
     store = _store(tmp_path)
     cid1 = store.create()

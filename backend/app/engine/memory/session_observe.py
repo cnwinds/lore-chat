@@ -180,10 +180,9 @@ class SessionMemoryObserve:
                     existing_cards=existing,
                     owner_summary=owner_summary,
                 )
-                card_resolver = self.cards.resolver(scope)
                 cards_confirmed_landed = False
-                for action in card_actions:
-                    out = card_resolver.apply(action, conversation_id=cid)
+                outs = self.cards.learn(scope, card_actions, conversation_id=cid)
+                for out in outs:
                     if not out.get("ok"):
                         if out.get("error") not in _SOFT_REJECT:
                             hard_failures += 1

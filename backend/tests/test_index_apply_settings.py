@@ -16,6 +16,7 @@ def test_index_subgraph_apply_settings_updates_retriever(tmp_path):
     sub = build_index_subgraph(settings, repo, llm, system_layer_prefix="系统/")
     assert sub.retriever.min_score == 0.2
     assert sub.retriever.rrf_k == 40
+    assert sub.search_index.rrf_k == 40
     assert sub.retriever.lane_candidate_k == 15
 
     next_settings = Settings(
@@ -28,5 +29,6 @@ def test_index_subgraph_apply_settings_updates_retriever(tmp_path):
     sub.apply_settings(next_settings)
     assert sub.retriever.min_score == 0.55
     assert sub.retriever.rrf_k == 80
+    assert sub.search_index.rrf_k == 80
     assert sub.retriever.lane_candidate_k == 30
     assert sub.indexer.reindex_full_threshold == 1000

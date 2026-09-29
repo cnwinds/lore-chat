@@ -45,11 +45,35 @@ def _validate_scope(request: Request, scope: str) -> str:
     return persona_scope(subject_id)
 
 
+@router.get("/cards/growth")
+def list_card_growth(scope: str, request: Request, limit: int = 50):
+    validated = _validate_scope(request, scope)
+    lim = max(1, min(int(limit), 200))
+    entries = _cards(request).growth_entries(validated, limit=lim)
+    return {"scope": validated, "entries": entries}
+
+
 @router.get("/cards")
 def list_cards(scope: str, request: Request):
     validated = _validate_scope(request, scope)
-    cards = _cards(request).list_panel(validated)
-    return {"scope": validated, "cards": cards, "count": len(cards)}
+    svc = _cards(request)
+    cards = svc.list_panel(validated)
+    counts = svc.panel_counts(validated)
+    return {
+        "scope": validated,
+        "cards": cards,
+        "count": counts["count"],
+        "faded_count": counts["faded_count"],
+    }
+
+
+@router.post("/cards/{card_id}/restore")
+def restore_card(card_id: str, request: Request, scope: str):
+    validated = _validate_scope(request, scope)
+    out = _cards(request).restore(validated, card_id)
+    if not out.get("ok"):
+        raise HTTPException(400, detail=out.get("message") or out.get("error"))
+    return out
 
 
 @router.patch("/cards/{card_id}")

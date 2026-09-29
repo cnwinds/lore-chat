@@ -6,6 +6,7 @@ type Props = {
   scope: string;
   title: string;
   docWidth?: DocWidth;
+  refreshKey?: number;
   onClose: () => void;
   onToggleWidth?: () => void;
   onOpenConversation?: (conversationId: string) => void;
@@ -17,6 +18,7 @@ export function KnowledgeCardsFloatLayer({
   scope,
   title,
   docWidth = "wide",
+  refreshKey = 0,
   onClose,
   onToggleWidth,
   onOpenConversation,
@@ -28,6 +30,7 @@ export function KnowledgeCardsFloatLayer({
         scope={scope}
         title={title}
         docWidth={docWidth}
+        refreshKey={refreshKey}
         onClose={onClose}
         onToggleWidth={onToggleWidth}
         onOpenConversation={onOpenConversation}

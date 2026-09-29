@@ -23,8 +23,8 @@ def current_time_block() -> str:
     """当前时间块：逐轮变化，注入在本轮用户消息最前（提示词最末），避免破坏前缀缓存。"""
     now = now_display()
     wd = _WEEKDAY_ZH[now.weekday()]
-    # 块内不用空行：message_builder 用「块 + \\n\\n + 用户原文」分隔，
-    # intent._strip_user_injections 依赖第一个 \\n\\n 切掉整段时间前缀。
+    # 块内不用空行：用户消息前缀由若干「块内无空行」的块以 \\n\\n 相连，
+    # intent._strip_user_injections 依此逐块剥离（【当前时间】、【相关知识卡】等）。
     return (
         "【当前时间】\n"
         f"- **日期**：{now.year} 年 {now.month} 月 {now.day} 日（星期{wd}）\n"
@@ -169,6 +169,18 @@ def build_system_prompt(
         + wrap_role_cards(role_cards)
         + wrap_user_memory(user_memory)
         + suffix
+    )
+
+
+def wrap_turn_cards(turn_cards: str) -> str:
+    """按轮相关卡，注入本轮用户消息前（【当前时间】之后）；块内不得有空行。"""
+    body = (turn_cards or "").strip()
+    if not body:
+        return ""
+    return (
+        "【相关知识卡】\n"
+        "与本条消息相关、【角色知识卡】之外的本角色经验，用法同【角色知识卡】：\n"
+        f"{body}"
     )
 
 

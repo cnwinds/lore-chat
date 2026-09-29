@@ -11,6 +11,7 @@ import { useChatScroll } from "../hooks/chat/useChatScroll";
 import { useAgentStream } from "../hooks/chat/useAgentStream";
 import { createStreamOwnership } from "../hooks/chat/streamOwnership";
 import { useConversationMemoryEvents } from "../hooks/chat/useConversationMemoryEvents";
+import { useOnCardsUpdated } from "../hooks/chat/useOnCardsUpdated";
 import { useSendQueue } from "../hooks/chat/useSendQueue";
 import { useOutboundOrchestrator } from "../hooks/chat/useOutboundOrchestrator";
 import type { JumpTarget } from "../hooks/chat/useConversationJump";
@@ -115,6 +116,7 @@ type Props = {
   roomParticipants?: RoomParticipant[];
   onRoomInterjectSent?: () => void;
   onOpenGroup?: (roomId: string) => void;
+  onCardsUpdated?: () => void;
 };
 
 export function Chat({
@@ -148,6 +150,7 @@ export function Chat({
   roomParticipants = [],
   onRoomInterjectSent,
   onOpenGroup,
+  onCardsUpdated,
 }: Props) {
   const { previewPath, openDoc, refreshKb } = useDocPreview();
   const { promptConflict: promptUploadConflict, conflictDialog: uploadConflictDialog } =
@@ -437,6 +440,7 @@ export function Chat({
   );
   const { notice: memoryNotice, dismissNotice: dismissMemoryNotice } =
     useConversationMemoryEvents(conversationId);
+  useOnCardsUpdated(memoryNotice, onCardsUpdated);
 
   // 上滚接近顶部 → 续载更早段，并保持视口锚点
   useEffect(() => {

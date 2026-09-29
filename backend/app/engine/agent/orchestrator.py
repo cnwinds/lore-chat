@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from collections.abc import AsyncIterator
@@ -97,13 +98,17 @@ class AgentOrchestrator:
         )
         user_memory = ""
         role_cards = ""
+        turn_cards = ""
         if self.system_layer:
-            inj = self.system_layer.card_injection(
+            inj = await asyncio.to_thread(
+                self.system_layer.card_injection,
                 conversation_id=conversation_id,
                 role_id=current_role_id,
+                query=user_text,
             )
             user_memory = inj.owner_memory
             role_cards = inj.role_cards
+            turn_cards = inj.turn_cards
         catalog = list(skill_catalog) if skill_catalog else []
         skill_msgs = build_skill_catalog_system_messages(catalog)
         extra = list(skill_msgs) if skill_msgs else []
@@ -173,6 +178,7 @@ class AgentOrchestrator:
             attachments=attachments,
             role_system_prompt=role_system_prompt,
             role_cards=role_cards,
+            turn_cards=turn_cards,
         )
         tools_for_run = select_tools(
             mode,

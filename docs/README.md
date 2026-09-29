@@ -23,7 +23,7 @@
 | [product/role-rooms.md](product/role-rooms.md) | 已落地 | 角色互通与群聊：房间 + 投递 + 唤醒（ADR 2026-09-12 起） |
 | [product/external-chat-api.md](product/external-chat-api.md) | 已落地（脚本通道） | `POST /api/v1/chat`：人设可共享，每 Key 独立隐藏角色 |
 | [product/channel-plugins.md](product/channel-plugins.md) | 已落地（P0–P2） | 聊天通道插件超集；公众号仅灰显 |
-| [product/role-knowledge-cards.md](product/role-knowledge-cards.md) | 已采纳（P0 已落地） | 角色知识卡：按作用域的记忆与自动进化（ADR 2026-09-28） |
+| [product/role-knowledge-cards.md](product/role-knowledge-cards.md) | 已采纳（P0、P1 已落地） | 角色知识卡：按作用域的记忆与自动进化（ADR 2026-09-28） |
 
 每角色执行沙箱见 [ADR 2026-09-10](adr/2026-09-10-role-scoped-sandbox.md)，不再另写摘要。
 

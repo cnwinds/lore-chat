@@ -169,8 +169,6 @@ class LLMRoleCardExtractor:
             action = str(item.get("action") or "new").strip().lower()
             if action not in ("merge", "replace", "noop", "new"):
                 action = "new"
-            if action == "noop":
-                continue
             slot_key = str(item.get("slot_key") or "").strip()
             try:
                 confidence = float(item.get("confidence", 0.8))

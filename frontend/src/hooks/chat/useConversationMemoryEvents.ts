@@ -1,18 +1,23 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getConversationEvents } from "../../api";
 
-const MEMORY_EVENT_TYPES = new Set(["memory_updated", "memory_decayed"]);
+const MEMORY_EVENT_TYPES = new Set([
+  "memory_updated",
+  "memory_decayed",
+  "cards_updated",
+]);
 const POLL_MS = 5000;
 
 export type MemoryEventNotice = {
   id: string;
-  kind: "memory_updated" | "memory_decayed";
+  kind: "memory_updated" | "memory_decayed" | "cards_updated";
   label: string;
 };
 
 export function memoryEventLabel(eventType: string): string | null {
   if (eventType === "memory_updated") return "已更新记忆";
   if (eventType === "memory_decayed") return "记忆已衰减";
+  if (eventType === "cards_updated") return "已更新知识卡";
   return null;
 }
 

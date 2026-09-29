@@ -441,6 +441,9 @@ class SlotResolver:
         self.store.mark_forgotten(fact["id"], reason="user_forget")
         return {"ok": True, "fact_id": fact["id"], "message": "已遗忘"}
 
+    def maybe_promote(self, fact_id: str) -> dict | None:
+        return self._maybe_promote(fact_id)
+
     def _maybe_promote(self, fact_id: str) -> dict | None:
         fact = self.store.get_fact(fact_id)
         if not fact:

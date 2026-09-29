@@ -3092,6 +3092,182 @@ button.memory-fact-statement--jump:focus-visible {
   font-size: 11px;
 }
 
+.memory-fact-item--stale {
+  opacity: 0.72;
+  border-color: color-mix(in srgb, var(--text-muted) 28%, var(--border));
+}
+
+.knowledge-card-stale {
+  font-size: 11px;
+  line-height: 1.2;
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--bg-muted) 70%, transparent);
+}
+
+.knowledge-card-stale-group {
+  margin-top: 12px;
+}
+
+.knowledge-card-stale-toggle {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.knowledge-card-stale-toggle:hover {
+  color: var(--text-secondary);
+  border-color: var(--border-strong);
+  background: var(--bg-hover);
+}
+
+.knowledge-card-stale-list {
+  margin-top: 8px;
+}
+
+.kb-float-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 16px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.kb-float-tabs .settings-tab {
+  flex: 1;
+  min-width: 0;
+}
+
+.card-growth-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.card-growth-entry {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-muted);
+}
+
+.card-growth-entry-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.card-growth-entry-kind {
+  font-size: 11px;
+  line-height: 1.2;
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--bg-muted) 70%, transparent);
+}
+
+.card-growth-entry-time {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.card-growth-conversation-btn {
+  margin-left: auto;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--accent);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.card-growth-conversation-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.card-growth-conversation-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  color: var(--text-muted);
+}
+
+.card-growth-entry-items {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.card-growth-item-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.card-growth-action,
+.card-growth-kind {
+  font-size: 11px;
+  line-height: 1.2;
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--bg-muted) 70%, transparent);
+}
+
+.card-growth-statement {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--text);
+}
+
+.card-growth-previous {
+  margin: 4px 0 0;
+  font-size: var(--text-xs);
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+.card-growth-sources {
+  margin-top: 6px;
+}
+
+.card-growth-sources-toggle {
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--accent);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.card-growth-sources-list {
+  margin: 6px 0 0;
+  padding-left: 1.1em;
+  font-size: var(--text-xs);
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
 .channel-owner-memory-row {
   display: flex;
   flex-direction: column;

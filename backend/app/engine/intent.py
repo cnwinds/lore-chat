@@ -14,12 +14,15 @@ def _looks_like_question(text: str) -> bool:
 
 
 def _strip_user_injections(text: str) -> str:
-    """去掉组装用户消息时注入的前缀（如【当前时间】块），再作意图/提问判定。"""
+    """去掉组装用户消息时注入的前缀（如【当前时间】【相关知识卡】块），再作意图/提问判定。"""
     text = text.strip()
-    if text.startswith("【当前时间】"):
-        sep = text.find("\n\n")
-        if sep != -1:
-            return text[sep + 2 :].strip()
+    while True:
+        if text.startswith("【当前时间】") or text.startswith("【相关知识卡】"):
+            sep = text.find("\n\n")
+            if sep != -1:
+                text = text[sep + 2 :].strip()
+                continue
+        break
     return text
 
 

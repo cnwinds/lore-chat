@@ -96,7 +96,7 @@ def test_invalid_kind_discarded():
     )
 
 
-def test_noop_discarded():
+def test_noop_kept():
     ext = LLMRoleCardExtractor(
         _FakeLLM(
             _items(
@@ -112,9 +112,11 @@ def test_noop_discarded():
             )
         )
     )
-    assert not ext.extract(
+    actions = ext.extract(
         [("user", "x")], lens=_lens(), existing_cards=[], owner_summary=[]
     )
+    assert len(actions) == 1
+    assert actions[0].action == "noop"
 
 
 def test_filter_before_max_limit_external():

@@ -247,12 +247,21 @@ class SystemLayer:
             return ""
         return self.memory_service.render_context()
 
-    def card_injection(self, *, conversation_id: str | None, role_id: str | None):
+    def card_injection(
+        self,
+        *,
+        conversation_id: str | None,
+        role_id: str | None,
+        query: str = "",
+    ):
         from app.engine.memory.cards import CardInjection
 
         if self.knowledge_cards:
             return self.knowledge_cards.injection_for(
                 conversation_id=conversation_id,
                 role_id=role_id,
+                query=query,
             )
-        return CardInjection(owner_memory=self.memory_context(), role_cards="")
+        return CardInjection(
+            owner_memory=self.memory_context(), role_cards="", turn_cards=""
+        )

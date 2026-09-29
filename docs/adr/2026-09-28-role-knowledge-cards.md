@@ -2,7 +2,7 @@
 
 ## 状态
 
-已采纳（2026-09-29）。P0 已落地，P1–P3 待做。产品展开见 [role-knowledge-cards.md](../product/role-knowledge-cards.md)。
+已采纳（2026-09-29）。P0、P1 已落地，P2–P3 待做。产品展开见 [role-knowledge-cards.md](../product/role-knowledge-cards.md)。
 
 ## 背景
 

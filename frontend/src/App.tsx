@@ -426,6 +426,7 @@ function AppMain() {
                     })
                 : undefined
             }
+            onCardsUpdated={() => setCardsRefreshKey((k) => k + 1)}
           />
         }
         docFloat={
@@ -434,6 +435,7 @@ function AppMain() {
               scope={doc.cardsPanel.scope}
               title={doc.cardsPanel.title}
               docWidth={doc.floatWidth}
+              refreshKey={cardsRefreshKey}
               onClose={() => {
                 doc.closeCardsPanel();
                 setCardsRefreshKey((k) => k + 1);

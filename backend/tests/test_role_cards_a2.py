@@ -39,6 +39,9 @@ def _seed_card(cards, scope: str, *, statement: str, card_id: str = "c1") -> str
         status="confirmed",
         fact_id=card_id,
     )
+    if cards.index is not None:
+        with cards.scope_lock(scope):
+            cards.index.sync_scope_locked(scope)
     return card_id
 
 

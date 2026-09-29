@@ -2,17 +2,29 @@
 
 from __future__ import annotations
 
+import sqlite3
+import threading
+from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from app.engine.channel_plugins.types import is_channel_origin
 from app.engine.conversations import ConversationStore
+from app.engine.memory.card_fade import card_fade_target
+from app.engine.memory.card_growth import CardGrowthLog
 from app.engine.memory.normalize import CARD_SCHEME
-from app.engine.memory.resolver import SlotResolver
+from app.engine.memory.resolver import SlotAction, SlotResolver
 from app.engine.memory.service import MemoryService
 from app.engine.memory.store import MemoryStore
-from app.engine.roles import RoleStore, is_hidden_role
+from app.engine.roles import RoleStore, VISIBILITY_HIDDEN, is_hidden_role
 from app.engine.rooms.schema import KIND_OWNER_DM
+from app.engine.memory.card_index import TURN_CARDS_LIMIT
+from app.logging_config import get_logger
+
+if TYPE_CHECKING:
+    from app.engine.memory.card_index import CardIndex
 
 CARD_KINDS = ("domain", "owner_context", "practice", "lesson", "audience")
 EXTERNAL_KINDS = frozenset({"domain", "audience"})
@@ -26,6 +38,11 @@ KIND_LABELS = {
 CARD_RENDER_MAX_CHARS = 2000
 RECALL_LIMIT_MAX = 10
 MAX_CARDS_PER_SESSION = 6
+CARD_MAINTENANCE_MIN_INTERVAL_HOURS = 24
+CONSOLIDATE_SCOPES_PER_TICK = 3
+
+_log = get_logger("memory.cards")
+_LEARN_GROWTH_PRIORITY = {"new": 0, "revived": 1, "promoted": 2, "revised": 3}
 
 _ORIGIN_SORT = {
     "manual": 0,
@@ -64,6 +81,7 @@ class CardLens:
 class CardInjection:
     owner_memory: str
     role_cards: str
+    turn_cards: str = ""
 
 
 class KnowledgeCards:
@@ -76,6 +94,8 @@ class KnowledgeCards:
         conversations: ConversationStore | None = None,
         channel_instances=None,
         max_chars: int = CARD_RENDER_MAX_CHARS,
+        growth: CardGrowthLog | None = None,
+        consolidator=None,
     ):
         self._db_path = Path(db_path)
         self.owner = owner
@@ -83,8 +103,22 @@ class KnowledgeCards:
         self.conversations = conversations
         self.channel_instances = channel_instances
         self.max_chars = max_chars
+        self.growth = growth or CardGrowthLog(self._db_path)
+        self.consolidator = consolidator
+        self.index: CardIndex | None = None
         self._stores: dict[str, MemoryStore] = {}
         self._resolvers: dict[str, SlotResolver] = {}
+        self._scope_locks: dict[str, threading.Lock] = {}
+        self._scope_locks_guard = threading.Lock()
+
+    @contextmanager
+    def scope_lock(self, scope: str):
+        with self._scope_locks_guard:
+            if scope not in self._scope_locks:
+                self._scope_locks[scope] = threading.Lock()
+            lock = self._scope_locks[scope]
+        with lock:
+            yield
 
     def scope_for_role(self, role_id: str | None) -> str | None:
         rid = (role_id or "").strip()
@@ -153,33 +187,79 @@ class KnowledgeCards:
             self._resolvers[scope] = SlotResolver(self.store(scope), scheme=CARD_SCHEME)
         return self._resolvers[scope]
 
+    def list_scopes(self) -> list[str]:
+        with sqlite3.connect(self._db_path) as conn:
+            rows = conn.execute(
+                """
+                SELECT DISTINCT owner_key FROM memory_facts
+                WHERE owner_key LIKE 'role:%' OR owner_key LIKE 'persona:%'
+                """
+            ).fetchall()
+        return [r[0] for r in rows]
+
+    def subject_for_scope(self, scope: str) -> CardLens | None:
+        try:
+            kind, subject_id = parse_scope(scope)
+        except ValueError:
+            return None
+        if kind == "role":
+            try:
+                role = self.roles.get(subject_id)
+            except KeyError:
+                return None
+            if role.get("visibility") == VISIBILITY_HIDDEN:
+                return None
+            return CardLens(
+                scope,
+                "direct",
+                role.get("name") or subject_id,
+                role.get("system_prompt") or "",
+            )
+        try:
+            persona = self.roles.get_persona(subject_id)
+        except KeyError:
+            return None
+        return CardLens(
+            scope,
+            "external",
+            persona.get("name") or subject_id,
+            persona.get("system_prompt") or "",
+        )
+
+    def _panel_row(self, st: MemoryStore, fact: dict) -> dict:
+        cids = sorted(
+            {
+                ev["conversation_id"]
+                for ev in st.list_evidence(fact["id"])
+                if ev.get("conversation_id")
+            }
+        )
+        kind = fact.get("category") or ""
+        origin = fact.get("origin") or ""
+        return {
+            "id": fact["id"],
+            "slot_key": fact["slot_key"],
+            "kind": kind,
+            "statement": fact["statement"],
+            "origin": origin,
+            "external": origin == "external",
+            "status": fact.get("status"),
+            "confidence": fact.get("confidence"),
+            "conversation_ids": cids,
+            "updated_at": fact.get("updated_at"),
+        }
+
     def list_panel(self, scope: str) -> list[dict]:
         st = self.store(scope)
-        items: list[dict] = []
-        for f in st.list_confirmed() + st.list_candidates():
-            cids = sorted(
-                {
-                    ev["conversation_id"]
-                    for ev in st.list_evidence(f["id"])
-                    if ev.get("conversation_id")
-                }
-            )
-            kind = f.get("category") or ""
-            origin = f.get("origin") or ""
-            items.append(
-                {
-                    "id": f["id"],
-                    "slot_key": f["slot_key"],
-                    "kind": kind,
-                    "statement": f["statement"],
-                    "origin": origin,
-                    "external": origin == "external",
-                    "status": f.get("status"),
-                    "confidence": f.get("confidence"),
-                    "conversation_ids": cids,
-                    "updated_at": f.get("updated_at"),
-                }
-            )
+        items = [
+            self._panel_row(st, f)
+            for f in st.list_confirmed() + st.list_candidates()
+        ]
+        stale_items = [
+            self._panel_row(st, f)
+            for f in st.list_active_facts()
+            if f.get("status") == "stale"
+        ]
 
         def updated_at(row: dict) -> str:
             return row.get("updated_at") or ""
@@ -188,24 +268,150 @@ class KnowledgeCards:
         candidates = [x for x in items if x.get("status") == "candidate"]
         confirmed.sort(key=updated_at, reverse=True)
         candidates.sort(key=updated_at, reverse=True)
-        return confirmed + candidates
+        stale_items.sort(key=updated_at, reverse=True)
+        return confirmed + candidates + stale_items
+
+    def panel_counts(self, scope: str) -> dict:
+        st = self.store(scope)
+        active = st.list_confirmed() + st.list_candidates()
+        stale = [f for f in st.list_active_facts() if f.get("status") == "stale"]
+        return {"count": len(active), "faded_count": len(stale)}
+
+    def learn(
+        self, scope: str, actions: list[SlotAction], *, conversation_id: str
+    ) -> list[dict]:
+        resolver = self.resolver(scope)
+        results: list[dict] = []
+        with self.scope_lock(scope):
+            st = self.store(scope)
+            snapshot = {
+                f["id"]: (f.get("status"), f.get("statement"))
+                for f in st.list_active_facts()
+            }
+            growth_by_id: dict[str, dict] = {}
+            for action in actions:
+                out = resolver.apply(action, conversation_id=conversation_id)
+                results.append(out)
+                if not out.get("ok"):
+                    continue
+                fact = out.get("fact") or {}
+                fid = fact.get("id")
+                if not fid:
+                    continue
+                snap = snapshot.get(fid)
+                growth_action: str | None = None
+                previous: str | None = None
+                if snap is None:
+                    growth_action = "new"
+                else:
+                    old_status, old_stmt = snap
+                    new_status = fact.get("status")
+                    new_stmt = fact.get("statement")
+                    if old_status == "stale" and new_status in ("confirmed", "candidate"):
+                        growth_action = "revived"
+                    elif old_status == "candidate" and new_status == "confirmed":
+                        growth_action = "promoted"
+                    elif old_stmt != new_stmt:
+                        growth_action = "revised"
+                        previous = old_stmt
+                    else:
+                        continue
+                existing = growth_by_id.get(fid)
+                if existing:
+                    old_prio = _LEARN_GROWTH_PRIORITY.get(existing["action"], 99)
+                    new_prio = _LEARN_GROWTH_PRIORITY.get(growth_action or "", 99)
+                    if new_prio >= old_prio:
+                        continue
+                item = {
+                    "action": growth_action,
+                    "card_id": fid,
+                    "kind": fact.get("category") or "",
+                    "statement": fact.get("statement") or "",
+                    "external": (fact.get("origin") or "") == "external",
+                    "status": fact.get("status") or "",
+                }
+                if previous:
+                    item["previous"] = previous
+                growth_by_id[fid] = item
+            items = list(growth_by_id.values())
+            if items:
+                self.growth.append(
+                    scope, "learned", items, conversation_id=conversation_id
+                )
+            if any(r.get("ok") for r in results):
+                self._sync_index_locked(scope)
+        return results
+
+    def _sync_index_locked(self, scope: str) -> None:
+        if self.index is None:
+            return
+        try:
+            self.index.sync_scope_locked(scope)
+        except Exception as exc:  # noqa: BLE001
+            _log.warning("card index sync failed scope=%s err=%s", scope, exc)
+
+    def restore(self, scope: str, card_id: str) -> dict:
+        with self.scope_lock(scope):
+            st = self.store(scope)
+            fact = st.get_fact(card_id)
+            if not fact or fact.get("status") != "stale":
+                return {
+                    "ok": False,
+                    "error": "invalid_status",
+                    "message": "仅已淡出的卡可恢复",
+                }
+            st.set_status(card_id, "confirmed")
+            st.set_last_seen_at(card_id)
+            out = {"ok": True, "fact_id": card_id}
+            self._sync_index_locked(scope)
+            return out
+
+    def growth_entries(self, scope: str, limit: int = 50) -> list[dict]:
+        entries = self.growth.list(scope, limit=limit)
+        for entry in entries:
+            cid = entry.get("conversation_id")
+            title = None
+            if cid and self.conversations:
+                title = self.conversations.get_title(cid)
+            entry["conversation_title"] = title
+        return entries
 
     def edit(self, scope: str, card_id: str, statement: str) -> dict:
-        return self.resolver(scope).edit_fact(card_id, statement)
+        with self.scope_lock(scope):
+            out = self.resolver(scope).edit_fact(card_id, statement)
+            if out.get("ok"):
+                self._sync_index_locked(scope)
+            return out
 
     def forget(self, scope: str, card_id: str) -> dict:
-        return self.resolver(scope).forget(fact_id=card_id)
+        with self.scope_lock(scope):
+            out = self.resolver(scope).forget(fact_id=card_id)
+            if out.get("ok"):
+                self._sync_index_locked(scope)
+            return out
 
     def confirm(self, scope: str, card_id: str) -> dict:
-        return self.resolver(scope).confirm_candidate(card_id)
+        with self.scope_lock(scope):
+            out = self.resolver(scope).confirm_candidate(card_id)
+            if out.get("ok"):
+                self._sync_index_locked(scope)
+            return out
 
     def reject(self, scope: str, card_id: str) -> dict:
-        return self.resolver(scope).reject_candidate(card_id)
+        with self.scope_lock(scope):
+            out = self.resolver(scope).reject_candidate(card_id)
+            if out.get("ok"):
+                self._sync_index_locked(scope)
+            return out
 
     def render(self, scope: str) -> str:
+        text, _ = self.render_with_ids(scope)
+        return text
+
+    def render_with_ids(self, scope: str) -> tuple[str, set[str]]:
         facts = self.store(scope).list_confirmed()
         if not facts:
-            return ""
+            return "", set()
         grouped: dict[str, list[dict]] = {k: [] for k in CARD_KINDS}
         for fact in facts:
             kind = (fact.get("category") or "").strip()
@@ -223,6 +429,7 @@ class KnowledgeCards:
                 )
             )
         lines: list[str] = []
+        included: set[str] = set()
         for kind in CARD_KINDS:
             if not grouped[kind]:
                 continue
@@ -244,18 +451,58 @@ class KnowledgeCards:
                     lines.append(header)
                     section_started = True
                 lines.append(entry)
+                included.add(fact["id"])
             if lines and len("\n".join(lines)) >= self.max_chars:
                 break
-        return "\n".join(lines).strip()
+        return "\n".join(lines).strip(), included
+
+    def turn_cards(self, scope: str, query: str, *, exclude_ids: set[str]) -> str:
+        if self.index is None:
+            return ""
+        facts = self.index.search(
+            scope,
+            query,
+            limit=TURN_CARDS_LIMIT,
+            exclude_ids=exclude_ids,
+            mode="turn",
+        )
+        lines: list[str] = []
+        for fact in facts:
+            stmt = (fact.get("statement") or "").replace("\n", " ").replace("\r", " ")
+            if fact.get("origin") == "external":
+                stmt = f"{stmt}（外部来源）"
+            lines.append(f"- {stmt}")
+        return "\n".join(lines)
 
     def injection_for(
         self,
         *,
         conversation_id: str | None,
         role_id: str | None,
+        query: str = "",
     ) -> CardInjection:
         scope = self.scope_for_role(role_id)
-        role_cards = self.render(scope) if scope else ""
+        role_cards = ""
+        core_ids: set[str] = set()
+        if scope:
+            role_cards, core_ids = self.render_with_ids(scope)
+
+        turn_scope = scope
+        if conversation_id and self.conversations:
+            origin = self.conversations.get_origin(conversation_id)
+            if is_channel_origin(origin):
+                _, lens = self.lenses_for(conversation_id)
+                if lens:
+                    turn_scope = lens.scope
+
+        turn_exclude = core_ids if turn_scope == scope else set()
+        q = (query or "").strip()
+        turn_cards_text = (
+            self.turn_cards(turn_scope, q, exclude_ids=turn_exclude)
+            if q and turn_scope
+            else ""
+        )
+
         if conversation_id and self.conversations:
             origin = self.conversations.get_origin(conversation_id)
             if is_channel_origin(origin):
@@ -270,19 +517,28 @@ class KnowledgeCards:
                 owner_memory = (
                     self.owner.render_context() if include_owner else ""
                 )
-                return CardInjection(owner_memory=owner_memory, role_cards=role_cards)
+                return CardInjection(
+                    owner_memory=owner_memory,
+                    role_cards=role_cards,
+                    turn_cards=turn_cards_text,
+                )
         return CardInjection(
             owner_memory=self.owner.render_context(),
             role_cards=role_cards,
+            turn_cards=turn_cards_text,
         )
 
     def recall(self, scope: str, query: str = "", limit: int = RECALL_LIMIT_MAX) -> list[dict]:
         lim = max(1, min(int(limit), RECALL_LIMIT_MAX))
-        facts = self.store(scope).search_confirmed(query, limit=lim)
-        if not query.strip():
-            facts = sorted(
-                facts, key=lambda f: f.get("updated_at") or "", reverse=True
-            )[:lim]
+        q = (query or "").strip()
+        if q and self.index is not None:
+            facts = self.index.search(scope, q, limit=lim, mode="recall")
+        else:
+            facts = self.store(scope).search_confirmed(query, limit=lim)
+            if not q:
+                facts = sorted(
+                    facts, key=lambda f: f.get("updated_at") or "", reverse=True
+                )[:lim]
         out: list[dict] = []
         for f in facts:
             origin = f.get("origin") or ""
@@ -298,9 +554,140 @@ class KnowledgeCards:
 
     def purge_scope(self, scope: str) -> int:
         n = self.store(scope).purge_owner()
+        self.growth.purge(scope)
         self._stores.pop(scope, None)
         self._resolvers.pop(scope, None)
+        if self.index is not None:
+            try:
+                self.index.drop_scope(scope)
+            except Exception as exc:  # noqa: BLE001
+                _log.warning("card index drop failed scope=%s err=%s", scope, exc)
         return n
+
+    def maintain(
+        self,
+        *,
+        now: datetime | None = None,
+        max_consolidations: int = CONSOLIDATE_SCOPES_PER_TICK,
+    ) -> dict:
+        stamp = now or datetime.now(timezone.utc)
+        if stamp.tzinfo is None:
+            stamp = stamp.replace(tzinfo=timezone.utc)
+        faded_total = 0
+        consolidated_scopes = 0
+        ops_applied = 0
+        min_gap = timedelta(hours=CARD_MAINTENANCE_MIN_INTERVAL_HOURS)
+
+        for scope in self.list_scopes():
+            try:
+                lens = self.subject_for_scope(scope)
+                if lens is None:
+                    continue
+                state = self.growth.scope_state(scope)
+                last_faded = state.get("last_faded_at")
+                if not last_faded or stamp - self._parse_ts(last_faded) >= min_gap:
+                    items = self._fade_scope(scope, now=stamp)
+                    if items:
+                        self.growth.append(scope, "faded", items)
+                        faded_total += len(items)
+                    self.growth.mark_faded(scope, stamp.isoformat())
+
+                if consolidated_scopes >= max_consolidations:
+                    continue
+                if not self.consolidator:
+                    continue
+                last_cons = state.get("last_consolidated_at")
+                if last_cons and stamp - self._parse_ts(last_cons) < min_gap:
+                    continue
+                st = self.store(scope)
+                active = st.list_confirmed() + st.list_candidates()
+                if len(active) < 2:
+                    continue
+                if last_cons and not self._has_card_changes_since(st, active, last_cons):
+                    continue
+                try:
+                    result = self.consolidator.run(scope, lens)
+                except Exception as exc:  # noqa: BLE001
+                    _log.warning(
+                        "card consolidation failed scope=%s err=%s", scope, exc
+                    )
+                    continue
+                consolidated_at = max(
+                    stamp, datetime.now(timezone.utc)
+                ).isoformat()
+                self.growth.mark_consolidated(scope, consolidated_at)
+                consolidated_scopes += 1
+                ops_applied += int(result.get("ops_applied") or 0)
+                with self.scope_lock(scope):
+                    self._sync_index_locked(scope)
+            except Exception as exc:  # noqa: BLE001
+                _log.warning("card maintain failed scope=%s err=%s", scope, exc)
+
+        if self.index is not None:
+            try:
+                self.index.sync_all()
+            except Exception as exc:  # noqa: BLE001
+                _log.warning("card index sync_all failed err=%s", exc)
+
+        return {
+            "faded": faded_total,
+            "consolidated_scopes": consolidated_scopes,
+            "ops_applied": ops_applied,
+        }
+
+    def _fade_scope(self, scope: str, *, now: datetime) -> list[dict]:
+        items: list[dict] = []
+        with self.scope_lock(scope):
+            st = self.store(scope)
+            for fact in st.list_confirmed() + st.list_candidates():
+                target = card_fade_target(fact, now=now)
+                if not target:
+                    continue
+                if target == "stale":
+                    st.set_status(fact["id"], "stale")
+                    items.append(
+                        {
+                            "action": "expired",
+                            "card_id": fact["id"],
+                            "kind": fact.get("category") or "",
+                            "statement": fact.get("statement") or "",
+                            "external": (fact.get("origin") or "") == "external",
+                            "status": "stale",
+                        }
+                    )
+                elif target == "rejected":
+                    st.set_status(fact["id"], "rejected")
+                    items.append(
+                        {
+                            "action": "dropped",
+                            "card_id": fact["id"],
+                            "kind": fact.get("category") or "",
+                            "statement": fact.get("statement") or "",
+                            "external": (fact.get("origin") or "") == "external",
+                            "status": "rejected",
+                        }
+                    )
+            if items:
+                self._sync_index_locked(scope)
+        return items
+
+    @staticmethod
+    def _parse_ts(raw: str) -> datetime:
+        dt = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+
+    @staticmethod
+    def _has_card_changes_since(
+        st: MemoryStore, active: list[dict], last_consolidated_at: str
+    ) -> bool:
+        for fact in active:
+            for field in ("created_at", "updated_at"):
+                ts = fact.get(field)
+                if ts and ts > last_consolidated_at:
+                    return True
+        return False
 
     def _direct_lens_for_role(self, role_id: str) -> CardLens | None:
         scope = self.scope_for_role(role_id)

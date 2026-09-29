@@ -43,7 +43,9 @@ from app.engine.chat.send_queue_store import SendQueueStore
 from app.engine.agent.orchestrator import AgentOrchestrator
 from app.engine.agent.system_layer import SystemLayer
 from app.engine.precepts_upgrade import PreceptsUpgrade
+from app.engine.memory.card_index import CardIndex, CardRetrievalTuning
 from app.engine.memory.cards import KnowledgeCards
+from app.index.partitioned import SearchIndex
 from app.engine.memory.service import MemoryService
 from app.engine.memory.store import MemoryStore
 from app.engine.workspace import ensure_workspace_id
@@ -99,6 +101,8 @@ class Container:
     precepts_upgrade: PreceptsUpgrade
     memory_service: MemoryService
     knowledge_cards: KnowledgeCards
+    search_index: SearchIndex
+    card_index: CardIndex
     enabled_skills: EnabledSkillsStore
     api_keys: ApiKeyStore
     channel_registry: ChannelPluginRegistry
@@ -204,6 +208,17 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
         channel_instances=channel_instances,
     )
     system_layer.knowledge_cards = memory.cards
+
+    card_index = CardIndex(
+        index.search_index,
+        memory.cards,
+        CardRetrievalTuning.from_settings(settings),
+    )
+    memory.cards.index = card_index
+    try:
+        card_index.sync_all()
+    except Exception:
+        logging.getLogger(__name__).exception("card index startup sync failed")
 
     derivation_worker = DerivationWorker(
         conversations,
@@ -317,6 +332,8 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
         precepts_upgrade=precepts_upgrade,
         memory_service=memory.service,
         knowledge_cards=memory.cards,
+        search_index=index.search_index,
+        card_index=card_index,
         enabled_skills=enabled_skills,
         api_keys=api_keys,
         channel_registry=channel_registry,
@@ -367,6 +384,7 @@ def dispose_container(container: Container | None) -> None:
     _close_sqlite(container.indexer.fulltext)
     close_quietly(container.indexer.vector)
     close_quietly(container.conversation_vector)
+    close_quietly(container.search_index)
     if container._usage_store is not None:
         close_quietly(container._usage_store)
     runtime = getattr(container, "channel_runtime", None)
@@ -456,3 +474,6 @@ def apply_settings(
             image_cooldown=image_cooldown,
         )
         container._agent_subgraph.publish(container)
+    card_index = getattr(container, "card_index", None)
+    if card_index is not None:
+        card_index.tuning = CardRetrievalTuning.from_settings(settings)
