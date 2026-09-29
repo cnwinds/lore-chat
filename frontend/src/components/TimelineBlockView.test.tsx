@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import type { TimelineBlock } from "../types/chat";
 import { TimelineBlockView } from "./TimelineBlockView";
@@ -101,6 +101,16 @@ describe("TimelineBlockView default fold", () => {
       "aria-expanded",
       "false",
     );
+  });
+
+  it("uses a fixed-height scroll region when think is expanded", () => {
+    renderBlock({
+      type: "think",
+      ts: "t",
+      content: "先看链接再总结",
+    });
+    fireEvent.click(screen.getByRole("button", { name: /思考过程/ }));
+    expect(document.querySelector(".timeline-think-body")).not.toBeNull();
   });
 
   it("shows duration on a collapsed think header", () => {
