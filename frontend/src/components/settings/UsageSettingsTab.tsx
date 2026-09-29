@@ -61,17 +61,51 @@ function kindLabel(kind: string): string {
   }
 }
 
-function bucketLabel(bucket: string | undefined, granularity: string): string {
+function bucketLabel(
+  bucket: string | undefined,
+  granularity: string,
+  compact = false,
+): string {
   if (!bucket) return "—";
   if (granularity === "hour" && bucket.length >= 13) {
+    if (compact) return `${bucket.slice(11, 13)}时`;
     return `${bucket.slice(5, 10)} ${bucket.slice(11, 13)}时`;
   }
   if (granularity === "day" && bucket.length >= 10) {
+    if (compact) {
+      const day = Number.parseInt(bucket.slice(8, 10), 10);
+      return Number.isFinite(day) ? `${day}日` : bucket.slice(8, 10);
+    }
     return bucket.slice(5, 10);
   }
-  if (granularity === "week") return bucket;
-  if (granularity === "month" && bucket.length >= 7) return bucket.slice(0, 7);
+  if (granularity === "week") {
+    if (compact && bucket.length >= 10) return bucket.slice(5, 10);
+    return bucket;
+  }
+  if (granularity === "month" && bucket.length >= 7) {
+    return compact ? bucket.slice(5, 7) + "月" : bucket.slice(0, 7);
+  }
   return bucket;
+}
+
+/** 窄面板内控制 X 轴刻度数量，避免每个柱都挤一行字。 */
+function trendLabelIndices(count: number, maxLabels = 8): Set<number> {
+  if (count <= 0) return new Set();
+  if (count <= maxLabels) {
+    return new Set(Array.from({ length: count }, (_, i) => i));
+  }
+  const indices = new Set<number>([0, count - 1]);
+  const inner = maxLabels - 2;
+  const step = Math.max(1, Math.ceil((count - 1) / (inner + 1)));
+  for (let i = step; i < count - 1; i += step) {
+    indices.add(i);
+  }
+  return indices;
+}
+
+function trendChartWidth(bucketCount: number): number {
+  const minBar = bucketCount > 20 ? 22 : bucketCount > 12 ? 26 : 32;
+  return Math.max(280, bucketCount * minBar);
 }
 
 function priceKey(p: UsagePrice): string {
@@ -121,40 +155,87 @@ function TrendChart({
   granularity: string;
 }) {
   const max = Math.max(1, ...buckets.map((b) => b.total_tokens || b.calls || 0));
+  const labelIndices = trendLabelIndices(buckets.length);
+  const compactAxis = buckets.length > 12;
+  const chartWidth = trendChartWidth(buckets.length);
+
   if (buckets.length === 0) {
     return <p className="usage-empty">当前区间暂无趋势数据</p>;
   }
+
   return (
-    <div className="usage-trend" role="img" aria-label="用量趋势">
-      {buckets.map((b) => {
-        const height = Math.max(
-          4,
-          Math.round(((b.total_tokens || b.calls || 0) / max) * 100),
-        );
-        const title = `${bucketLabel(b.bucket, granularity)} · ${fmtInt(b.calls)} 次 · ${fmtInt(b.total_tokens)} tokens`;
-        return (
-          <div key={b.bucket ?? title} className="usage-trend-col" title={title}>
-            <div className="usage-trend-bar-track">
-              <div className="usage-trend-bar" style={{ height: `${height}%` }} />
-            </div>
-            <span className="usage-trend-label">
-              {bucketLabel(b.bucket, granularity)}
-            </span>
-          </div>
-        );
-      })}
+    <div className="usage-trend-frame">
+      <div className="usage-trend-scroll" tabIndex={0} aria-label="用量趋势，可横向滚动">
+        <div
+          className="usage-trend"
+          style={{ width: chartWidth }}
+          role="img"
+          aria-label="用量趋势"
+        >
+          {buckets.map((b, index) => {
+            const height = Math.max(
+              4,
+              Math.round(((b.total_tokens || b.calls || 0) / max) * 100),
+            );
+            const fullLabel = bucketLabel(b.bucket, granularity, false);
+            const title = `${fullLabel} · ${fmtInt(b.calls)} 次 · ${fmtInt(b.total_tokens)} tokens`;
+            const showLabel = labelIndices.has(index);
+            const axisLabel = showLabel
+              ? bucketLabel(b.bucket, granularity, compactAxis)
+              : "";
+            return (
+              <div
+                key={b.bucket ?? title}
+                className="usage-trend-col"
+                title={title}
+              >
+                <div className="usage-trend-bar-track">
+                  <div
+                    className="usage-trend-bar"
+                    style={{ height: `${height}%` }}
+                  />
+                </div>
+                <span
+                  className={`usage-trend-label${showLabel ? " usage-trend-label--tick" : ""}${compactAxis && showLabel ? " usage-trend-label--slant" : ""}`}
+                  aria-hidden={!showLabel}
+                >
+                  {axisLabel}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      {buckets.length > 12 ? (
+        <p className="usage-trend-footnote">
+          共 {buckets.length} 个时段 · 悬停柱体查看详情 · 可左右滑动
+        </p>
+      ) : null}
     </div>
   );
+}
+
+function sortModelsByUsage(
+  rows: Array<UsageAgg & { model: string }>,
+): Array<UsageAgg & { model: string }> {
+  return [...rows].sort((a, b) => {
+    const dt = (b.total_tokens ?? 0) - (a.total_tokens ?? 0);
+    if (dt !== 0) return dt;
+    const dc = (b.calls ?? 0) - (a.calls ?? 0);
+    if (dc !== 0) return dc;
+    return a.model.localeCompare(b.model, "zh-CN");
+  });
 }
 
 function ModelBreakdown({ rows }: { rows: Array<UsageAgg & { model: string }> }) {
   if (rows.length === 0) {
     return <p className="usage-empty">暂无模型用量</p>;
   }
-  const maxTokens = Math.max(1, ...rows.map((r) => r.total_tokens));
+  const sorted = sortModelsByUsage(rows);
+  const maxTokens = Math.max(1, ...sorted.map((r) => r.total_tokens));
   return (
     <ul className="usage-model-list">
-      {rows.map((row) => {
+      {sorted.map((row) => {
         const pct = Math.round((row.total_tokens / maxTokens) * 100);
         const costKnown = row.cost_known_calls > 0;
         return (
