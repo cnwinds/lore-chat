@@ -4104,31 +4104,46 @@ button.memory-fact-statement--jump:focus-visible {
   box-shadow: var(--shadow-sm);
 }
 
+.usage-trend-frame {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.usage-trend-scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 2px;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+
 .usage-trend {
   display: flex;
   align-items: stretch;
-  gap: 3px;
-  min-height: 88px;
-  padding: 6px 2px 0;
-  overflow-x: auto;
+  gap: 4px;
+  min-height: 108px;
+  padding: 8px 4px 0;
+  box-sizing: border-box;
 }
 
 .usage-trend-col {
-  flex: 1 0 18px;
-  min-width: 18px;
-  max-width: 36px;
+  flex: 1 1 0;
+  min-width: 20px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
 }
 
 .usage-trend-bar-track {
   flex: 1;
   width: 100%;
+  max-width: 28px;
   display: flex;
   align-items: flex-end;
-  min-height: 56px;
+  min-height: 64px;
 }
 
 .usage-trend-bar {
@@ -4136,16 +4151,40 @@ button.memory-fact-statement--jump:focus-visible {
   border-radius: 3px 3px 1px 1px;
   background: color-mix(in srgb, var(--accent) 72%, var(--bg-subtle));
   min-height: 4px;
+  transition: background 0.15s ease;
+}
+
+.usage-trend-col:hover .usage-trend-bar {
+  background: color-mix(in srgb, var(--accent) 88%, var(--bg-subtle));
 }
 
 .usage-trend-label {
-  font-size: 11px;
+  flex: 0 0 14px;
+  font-size: 10px;
   line-height: 1;
-  color: var(--text-muted);
+  color: transparent;
   white-space: nowrap;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  min-height: 14px;
+}
+
+.usage-trend-label--tick {
+  color: var(--text-muted);
+}
+
+.usage-trend-label--slant {
+  transform: rotate(-42deg);
+  transform-origin: top center;
+  flex: 0 0 22px;
+  min-height: 22px;
+  font-size: 10px;
+}
+
+.usage-trend-footnote {
+  margin: 0;
+  padding: 0 2px;
+  font-size: 10px;
+  line-height: 1.35;
+  color: var(--text-muted);
 }
 
 .usage-empty {
