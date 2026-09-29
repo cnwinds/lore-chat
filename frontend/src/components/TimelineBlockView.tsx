@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   formatDuration,
   type CumulativeInfo,
@@ -381,11 +381,27 @@ function ThinkBlockView({
 }) {
   const [override, setOverride] = useState<boolean | null>(null);
   const open = override ?? false;
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const stickToBottomRef = useRef(true);
   const preview =
     block.content.length > 120
       ? `${block.content.slice(0, 120).trim()}…`
       : block.content.trim();
   const displayMs = thinkDisplayDurationMs(block, { nowMs, isLive });
+
+  useEffect(() => {
+    if (!open || !isLive) return;
+    const el = bodyRef.current;
+    if (!el || !stickToBottomRef.current) return;
+    el.scrollTop = el.scrollHeight;
+  }, [block.content, isLive, open]);
+
+  function onThinkBodyScroll() {
+    const el = bodyRef.current;
+    if (!el) return;
+    const dist = el.scrollHeight - el.scrollTop - el.clientHeight;
+    stickToBottomRef.current = dist < 48;
+  }
 
   return (
     <div className="timeline-think">
@@ -407,7 +423,11 @@ function ThinkBlockView({
         <FoldChevron open={open} className="timeline-think-chevron" />
       </button>
       {open ? (
-        <div className="timeline-think-body">
+        <div
+          ref={bodyRef}
+          className="timeline-think-body"
+          onScroll={onThinkBodyScroll}
+        >
           <MarkdownContent
             className="markdown-body chat-markdown timeline-think-markdown"
             onOpenConversation={onOpenConversation}

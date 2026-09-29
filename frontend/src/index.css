@@ -7826,6 +7826,8 @@ button.memory-fact-statement--jump:focus-visible {
 .timeline-think-body {
   padding: 10px 12px;
   border-top: 1px solid var(--border);
+  max-height: 320px;
+  overflow: auto;
 }
 
 /* 思考正文：灰色弱化，与 timeline-text / chat-markdown 正文区分层级 */

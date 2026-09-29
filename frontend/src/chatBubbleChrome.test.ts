@@ -92,6 +92,11 @@ describe("overlay scrollbars", () => {
 });
 
 describe("fold chevron", () => {
+  it("caps expanded think content in a scroll region like the sandbox terminal", () => {
+    expect(css).toMatch(/\.timeline-think-body\s*\{[^}]*max-height:\s*320px;/);
+    expect(css).toMatch(/\.timeline-think-body\s*\{[^}]*overflow:\s*auto;/);
+  });
+
   it("rotates a shared stroke chevron and respects reduced motion", () => {
     expect(css).toMatch(/\.fold-chevron\.is-open svg\s*\{[^}]*rotate\(90deg\)/);
     expect(css).toMatch(
