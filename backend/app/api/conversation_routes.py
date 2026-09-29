@@ -339,9 +339,7 @@ async def delete_conversation(cid: str, request: Request):
     try:
         c.conversations.delete(
             cid,
-            conversation_fts=c.conversation_fts,
-            conversation_vector=c.conversation_vector,
-            indexer=c.indexer,
+            conversation_index=c.conversation_index,
             index_revision=c.index_revision,
         )
     except KeyError as e:

@@ -23,7 +23,9 @@ class CompiledSearchQuery:
     match_terms: tuple[str, ...]
 
 
-def compile_search_query(text: str, *, max_len: int = 300) -> CompiledSearchQuery:
+def compile_search_query(
+    text: str, *, max_len: int = 300, min_cjk_signal: int = 2
+) -> CompiledSearchQuery:
     text = " ".join((text or "").split())
     if not text:
         return CompiledSearchQuery("", None, None, (), (), ())
@@ -33,10 +35,14 @@ def compile_search_query(text: str, *, max_len: int = 300) -> CompiledSearchQuer
     terms = _extract_terms(text)
     # 连续拉丁词在抽取时仍合成短语（与中文词 AND 时保持「Media Grant」原子）。
     # 查询若整句都是拉丁词，则拆开按词匹配，否则「grok slack」会被当成必现邻接短语。
-    signal = _expand_single_latin_phrase(_signal_terms(terms))
+    signal = _expand_single_latin_phrase(
+        _signal_terms(terms, min_cjk_signal=min_cjk_signal)
+    )
     match_terms = _expand_single_latin_phrase(tuple(terms) if terms else signal)
     like_terms = tuple(
-        t for t in signal if _term_codepoints(t) >= 3 or " " in t
+        t
+        for t in signal
+        if _term_codepoints(t) >= min_cjk_signal or " " in t
     )
     if not like_terms and signal:
         like_terms = signal
@@ -53,16 +59,6 @@ def compile_search_query(text: str, *, max_len: int = 300) -> CompiledSearchQuer
         like_terms=like_terms,
         match_terms=match_terms,
     )
-
-
-def prepare_fts_query(text: str, *, max_len: int = 300) -> str:
-    """兼容入口：返回 relaxed FTS 表达式（旧测试与外部调用）。"""
-    compiled = compile_search_query(text, max_len=max_len)
-    if compiled.relaxed_fts:
-        return compiled.relaxed_fts
-    if compiled.strict_fts:
-        return compiled.strict_fts
-    return ""
 
 
 def _term_codepoints(term: str) -> int:
@@ -118,12 +114,14 @@ def _extract_terms(text: str) -> list[str]:
     return terms
 
 
-def _signal_terms(terms: list[str]) -> tuple[str, ...]:
-    """进入 relaxed / 门控的有效词：中文 ≥3 字或拉丁短语。"""
+def _signal_terms(
+    terms: list[str], *, min_cjk_signal: int = 2
+) -> tuple[str, ...]:
+    """进入 relaxed / 门控的有效词：中文 ≥min_cjk_signal 字或拉丁短语。"""
     usable = [
         t
         for t in terms
-        if _term_codepoints(t) >= 3 or " " in t
+        if _term_codepoints(t) >= min_cjk_signal or " " in t
     ]
     if not usable:
         usable = list(terms)

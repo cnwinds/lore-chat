@@ -3,12 +3,10 @@ from __future__ import annotations
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING
 
-from app.engine.conversation_backfill import (
-    backfill_conversation_fts,
-    backfill_conversation_vectors,
-)
+from app.engine.conversation_backfill import backfill_conversation_fts
 from app.engine.knowledge_writer import is_markdown_path
 from app.index.extract import extract_text
+from app.index.kb_index import KB_PARTITION, normalize_kb_path
 from app.logging_config import get_logger
 
 if TYPE_CHECKING:
@@ -20,6 +18,7 @@ _log = get_logger("backup.reindex")
 def _reindex_kb_files(container: Container) -> int:
     """重建文档索引：Markdown 走 frontmatter；其它文件尽量抽取文本，跳过纯二进制。"""
     docs_indexed = 0
+    rebuilt_groups: set[str] = set()
     for rel_path in container.repo.list_tree():
         if is_markdown_path(rel_path):
             try:
@@ -28,6 +27,7 @@ def _reindex_kb_files(container: Container) -> int:
                 _log.warning("skip markdown reindex path=%s err=%s", rel_path, exc)
                 continue
             container.knowledge_writer.reindex_markdown_body(rel_path, doc.body)
+            rebuilt_groups.add(normalize_kb_path(rel_path))
             docs_indexed += 1
             continue
 
@@ -46,13 +46,27 @@ def _reindex_kb_files(container: Container) -> int:
             )
             continue
         if container.knowledge_writer.index_extracted_text(rel_path, extracted):
+            rebuilt_groups.add(normalize_kb_path(rel_path))
             docs_indexed += 1
+    search_index = container.search_index
+    for group in search_index.groups(KB_PARTITION):
+        if group not in rebuilt_groups:
+            search_index.drop_group(KB_PARTITION, group)
     return docs_indexed
 
 
 def reindex_all(container: Container) -> dict:
-    """Rebuild document FTS/vector indexes and backfill conversation indexes."""
+    """Rebuild document / conversation / card indexes on partitioned base."""
+    from app.index.legacy_migration import (
+        write_conv_migration_marker,
+        write_kb_migration_marker,
+    )
+
     docs_indexed = _reindex_kb_files(container)
+    try:
+        write_kb_migration_marker(container.search_index)
+    except Exception as exc:
+        _log.warning("写入 legacy_kb_migrated_at 失败: %s", exc)
 
     settings = container.settings
     ledger_path = settings.kb_path / ".kb" / "migrations" / "conversation-deletions.jsonl"
@@ -61,25 +75,21 @@ def reindex_all(container: Container) -> dict:
 
     fts_stats = backfill_conversation_fts(
         container.conversations,
-        container.conversation_fts,
+        container.conversation_index,
         ledger_path,
         chunk_chars=chunk_chars,
         overlap=overlap,
     )
+
+    live_cids = {s["id"] for s in container.conversations.list_all()}
+    for cid in container.conversation_index.conversation_ids():
+        if cid not in live_cids:
+            container.conversation_index.delete_conversation(cid)
+
     try:
-        vector_stats = backfill_conversation_vectors(
-            container.conversations,
-            container.conversation_vector,
-            container.llm,
-            ledger_path,
-            checkpoint_path=None,
-            chunk_chars=chunk_chars,
-            overlap=overlap,
-        )
+        write_conv_migration_marker(container.search_index)
     except Exception as exc:
-        # 嵌入 API 不可达时仍保留 FTS；避免整次「重建索引」失败
-        _log.warning("conversation vector backfill failed: %s", exc, exc_info=True)
-        vector_stats = {"indexed": 0, "error": str(exc)}
+        _log.warning("写入 legacy_conv_migrated_at 失败: %s", exc)
 
     cards_indexed = 0
     card_index = getattr(container, "card_index", None)
@@ -96,6 +106,6 @@ def reindex_all(container: Container) -> dict:
         "ok": True,
         "docs_indexed": docs_indexed,
         "conversations_fts": fts_stats.get("indexed", 0),
-        "conversations_vector": vector_stats.get("indexed", 0),
+        "conversations_vector": 0,
         "cards_indexed": cards_indexed,
     }

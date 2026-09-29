@@ -29,7 +29,6 @@ def test_group_provenance_links_summary_and_message():
     assert groups[0]["group_key"] == "conversation:abc"
     assert groups[0]["nav_preference"] == "summary"
     assert len(groups[0]["hits"]) == 2
-    # 必须可 JSON 序列化（否则 tool_loop 写回模型时整轮 interrupted）
     import json
 
     json.dumps(groups, ensure_ascii=False)
@@ -40,60 +39,75 @@ def test_group_provenance_links_summary_and_message():
 
 def test_conv_vector_lane_respects_min_score(tmp_path, monkeypatch):
     from app.engine.retriever import Retriever
-    from app.index.conversation_vector import ConversationVector, ConversationVectorHit
-    from app.index.fulltext import FullTextIndex
-    from app.index.message_chunk import MessageChunk
+    from app.index.partitioned import SearchHit, SearchResult
     from app.index.revision import IndexRevision
-    from app.index.vector import VectorIndex
     from app.models.llm import FakeLLMClient
+    from tests.helpers import make_search_index
 
     llm = FakeLLMClient(embed_dim=8)
+    si = make_search_index(tmp_path, llm)
     retr = Retriever(
-        VectorIndex(tmp_path / "vec"),
-        FullTextIndex(tmp_path / "fts.db"),
+        si,
         llm,
         min_score=0.45,
-        conversation_vector=ConversationVector(tmp_path / "vec"),
         index_revision=IndexRevision(tmp_path / "rev.txt"),
     )
-    cv = retr.conversation_vector
-    assert cv is not None
-    cv.upsert_message_chunks(
-        conversation_id="c1",
-        message_id="low",
-        role="user",
-        ts="t",
-        conversation_title="",
-        chunks=[MessageChunk(0, 0, 4, "低分命中")],
-        embeddings=[[0.01] * 8],
+
+    low = SearchHit(
+        partition="conv:main",
+        item_id="a",
+        text="低分",
+        meta={
+            "conversation_id": "c1",
+            "message_id": "low",
+            "role": "user",
+            "ts": "t",
+            "start_char": 0,
+            "end_char": 4,
+            "chunk_index": 0,
+            "conversation_title": "",
+            "offset_version": "unicode-codepoint-v1",
+        },
+        score=0.1,
+        bm25=None,
+        matched_terms=(),
+        rare_terms=(),
+        vector_score=0.1,
     )
-    cv.upsert_message_chunks(
-        conversation_id="c1",
-        message_id="high",
-        role="user",
-        ts="t",
-        conversation_title="",
-        chunks=[MessageChunk(0, 0, 4, "高分命中")],
-        embeddings=[[1.0] * 8],
+    high = SearchHit(
+        partition="conv:main",
+        item_id="b",
+        text="高分",
+        meta={
+            "conversation_id": "c1",
+            "message_id": "high",
+            "role": "user",
+            "ts": "t",
+            "start_char": 0,
+            "end_char": 4,
+            "chunk_index": 0,
+            "conversation_title": "",
+            "offset_version": "unicode-codepoint-v1",
+        },
+        score=0.95,
+        bm25=None,
+        matched_terms=(),
+        rare_terms=(),
+        vector_score=0.95,
     )
 
-    def fake_query(
-        embedding,
-        k=5,
-        *,
-        conversation_id=None,
-        exclude_conversation_id=None,
-        ts_after=None,
-        ts_before=None,
-    ):
-        del embedding, k, conversation_id, exclude_conversation_id, ts_after, ts_before
-        return [
-            ConversationVectorHit("a", "c1", "low", "user", 0, 4, "低分", 0.1),
-            ConversationVectorHit("b", "c1", "high", "user", 0, 4, "高分", 0.95),
-        ]
+    def fake_search(*_a, **_k):
+        return SearchResult(
+            hits=[high],
+            vector_status="ok",
+            query_terms=(),
+            elapsed_ms=0,
+            lanes={"conv:vec": [low, high]},
+            fts_tiers={},
+        )
 
-    monkeypatch.setattr(cv, "query", fake_query)
-    ids, hit_map, _meta = retr._conv_vector_lane(
+    monkeypatch.setattr(si, "search", fake_search)
+    _fts_out, (ids, hit_map, _meta) = retr._conv_lanes(
         "q",
         5,
         vector_text="q",

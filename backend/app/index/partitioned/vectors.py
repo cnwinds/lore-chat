@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import threading
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Mapping, Sequence
 
 from app.closing import close_quietly
 from app.index.chroma_client import ThreadLocalChroma, make_persistent_client
@@ -72,17 +73,26 @@ class PartitionedVectors:
         self,
         family: str,
         model: str,
-        rows: list[tuple[str, str, str, list[float]]],
+        rows: list[
+            tuple[
+                str,
+                str,
+                str,
+                list[float],
+                Mapping[str, str | int | float | bool],
+            ]
+        ],
     ) -> None:
         if not rows:
             return
         col = self._chroma(family, model).collection()
         ids, docs, embs, metas = [], [], [], []
-        for partition, item_id, text, embedding in rows:
+        for partition, item_id, text, embedding, item_meta in rows:
             ids.append(f"{partition}#{item_id}")
             docs.append(text)
             embs.append(embedding)
-            metas.append({"partition": partition, "item_id": item_id})
+            meta = {**item_meta, "partition": partition, "item_id": item_id}
+            metas.append(meta)
         with self._lock:
             col.upsert(
                 ids=ids, documents=docs, embeddings=embs, metadatas=metas
@@ -122,6 +132,28 @@ class PartitionedVectors:
         finally:
             close_quietly(client)
 
+    @staticmethod
+    def _build_chroma_where(
+        partitions: list[str],
+        eq_ne_filters: Sequence[Any],
+    ) -> dict[str, Any] | None:
+        clauses: list[dict[str, Any]] = []
+        if len(partitions) == 1:
+            clauses.append({"partition": partitions[0]})
+        else:
+            clauses.append({"partition": {"$in": partitions}})
+        for flt in eq_ne_filters:
+            key = flt.key
+            if flt.op == "eq":
+                clauses.append({key: flt.value})
+            elif flt.op == "ne":
+                clauses.append({key: {"$ne": flt.value}})
+        if not clauses:
+            return None
+        if len(clauses) == 1:
+            return clauses[0]
+        return {"$and": clauses}
+
     def query(
         self,
         family: str,
@@ -130,21 +162,22 @@ class PartitionedVectors:
         *,
         partitions: list[str],
         k: int,
+        eq_ne_filters: Sequence[Any] = (),
+        n_results: int | None = None,
     ) -> list[tuple[str, str, float]]:
         if not partitions:
             return []
-        if len(partitions) == 1:
-            where: dict[str, Any] = {"partition": partitions[0]}
-        else:
-            where = {"partition": {"$in": partitions}}
-        n = max(1, k)
+        where = self._build_chroma_where(partitions, eq_ne_filters)
+        n = max(1, n_results if n_results is not None else k)
 
         def _run(col):
-            return col.query(
-                query_embeddings=[embedding],
-                n_results=n,
-                where=where,
-            )
+            kwargs: dict[str, Any] = {
+                "query_embeddings": [embedding],
+                "n_results": n,
+            }
+            if where is not None:
+                kwargs["where"] = where
+            return col.query(**kwargs)
 
         res = self._with_existing_collection(family, model, _run, default=None)
         if not res:

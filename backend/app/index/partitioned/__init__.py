@@ -2,6 +2,7 @@ from app.index.partitioned.embedder import EmbedBatch, Embedder, LLMEmbedder
 from app.index.partitioned.lexical import FAMILIES, partition_family
 from app.index.partitioned.search_index import (
     IndexItem,
+    MetaFilter,
     PartitionTuning,
     SearchHit,
     SearchIndex,
@@ -17,6 +18,7 @@ __all__ = [
     "FAMILIES",
     "IndexItem",
     "LLMEmbedder",
+    "MetaFilter",
     "PartitionTuning",
     "SearchHit",
     "SearchIndex",

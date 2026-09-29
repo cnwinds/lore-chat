@@ -21,8 +21,7 @@ from app.models.models_dev import (
 )
 from app.storage.repo import KnowledgeRepo
 from app.closing import close_quietly
-from app.index.conversation_fts import ConversationFTS
-from app.index.conversation_vector import ConversationVector
+from app.index.conversation_index import ConversationIndex
 from app.index.revision import IndexRevision
 from app.index.indexer import Indexer
 from app.engine.retriever import Retriever
@@ -84,8 +83,7 @@ class Container:
     merge_sessions: MergeSessionStore
     conversations: ConversationStore
     roles: RoleStore
-    conversation_fts: ConversationFTS
-    conversation_vector: ConversationVector
+    conversation_index: ConversationIndex
     index_revision: IndexRevision
     derivation_worker: DerivationWorker
     memory_worker: SessionMemoryObserve
@@ -222,9 +220,7 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
 
     derivation_worker = DerivationWorker(
         conversations,
-        index.conversation_fts,
-        conversation_vector=index.conversation_vector,
-        llm=llm,
+        index.conversation_index,
         index_revision=index.index_revision,
         chunk_chars=settings.conversation_chunk_chars,
         overlap=settings.conversation_chunk_overlap_chars,
@@ -315,8 +311,7 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
         merge_sessions=merge_sessions,
         conversations=conversations,
         roles=roles,
-        conversation_fts=index.conversation_fts,
-        conversation_vector=index.conversation_vector,
+        conversation_index=index.conversation_index,
         index_revision=index.index_revision,
         derivation_worker=derivation_worker,
         memory_worker=memory.worker,
@@ -380,10 +375,6 @@ def dispose_container(container: Container | None) -> None:
 
     _close_sqlite(container.conversations)
     _close_sqlite(container.roles)
-    _close_sqlite(container.conversation_fts)
-    _close_sqlite(container.indexer.fulltext)
-    close_quietly(container.indexer.vector)
-    close_quietly(container.conversation_vector)
     close_quietly(container.search_index)
     if container._usage_store is not None:
         close_quietly(container._usage_store)
@@ -461,9 +452,7 @@ def apply_settings(
         container.precepts_upgrade.llm = new_llm
     if container._index_subgraph is not None:
         container._index_subgraph.apply_settings(settings)
-        container._index_subgraph.rebind_llm(
-            new_llm, derivation_worker=container.derivation_worker
-        )
+        container._index_subgraph.rebind_llm(new_llm)
     if container._memory_subgraph is not None:
         container._memory_subgraph.rebind_llm(new_llm)
     if container._agent_subgraph is not None:

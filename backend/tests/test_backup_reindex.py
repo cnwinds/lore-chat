@@ -37,7 +37,18 @@ def test_reindex_after_import_restores_doc_search(client, tmp_path):
     assert r.status_code == 200, r.text
 
     container = client.app.state.container
-    assert container.indexer.fulltext.query("unique-reindex-token-xyz") == []
+    from app.index.kb_index import KB_FAMILY, KB_PARTITION
+    from app.index.partitioned import PartitionTuning
+
+    pre = container.search_index.search(
+        "unique-reindex-token-xyz",
+        partitions=[KB_PARTITION],
+        limit=5,
+        tunings={KB_FAMILY: PartitionTuning(fts_k=5, vec_k=5)},
+        fts_mode="keywords",
+        lanes=("fts",),
+    )
+    assert not pre.lanes.get(f"{KB_FAMILY}:fts", [])
 
     r = client.post("/api/admin/reindex")
     assert r.status_code == 200, r.text
@@ -45,8 +56,19 @@ def test_reindex_after_import_restores_doc_search(client, tmp_path):
     assert body["ok"] is True
     assert body["docs_indexed"] >= 1
 
-    hits = container.indexer.fulltext.query("unique-reindex-token-xyz")
-    assert hits
+    post = container.search_index.search(
+        "unique-reindex-token-xyz",
+        partitions=[KB_PARTITION],
+        limit=5,
+        tunings={KB_FAMILY: PartitionTuning(fts_k=5, vec_k=5)},
+        fts_mode="keywords",
+        lanes=("fts",),
+    )
+    assert post.lanes.get(f"{KB_FAMILY}:fts", [])
+
+    from app.index.legacy_migration import META_KB_MIGRATED
+
+    assert container.search_index.get_meta(META_KB_MIGRATED) is not None
 
 
 def test_reindex_api_requires_auth(tmp_path):
@@ -95,6 +117,8 @@ def test_reindex_skips_binary_assets_and_backfills_conversations(client):
     assert body["docs_indexed"] >= 1
     assert body["conversations_fts"] >= 1
 
-    hits = container.conversation_fts.query(token, k=5)
+    from tests.helpers import conv_fts_hits
+
+    hits = conv_fts_hits(container.search_index, token, k=5)
     assert hits
-    assert any(h.conversation_id == cid for h in hits)
+    assert any(h.meta.get("conversation_id") == cid for h in hits)

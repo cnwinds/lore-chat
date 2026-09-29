@@ -14,13 +14,11 @@ from app.engine.agent.tools import ToolRegistry
 from app.engine.web.fetcher import WebFetcher
 from app.engine.web.search import WebSearch
 from app.config import Settings
-from app.index.fulltext import FullTextIndex
 from app.index.indexer import Indexer
 from app.index.revision import IndexRevision
-from app.index.vector import VectorIndex
 from app.models.llm import FakeLLMClient
 from app.storage.repo import KnowledgeRepo
-from tests.helpers import make_writer
+from tests.helpers import make_writer, make_search_index, drain_embeddings
 
 
 @pytest.mark.parametrize(
@@ -44,10 +42,9 @@ def test_command_needs_confirmation(cmd, need):
 def _make_org(tmp_path):
     repo = KnowledgeRepo(tmp_path / "knowledge")
     pending = PendingStore(tmp_path / "knowledge" / ".kb" / "pending.json")
-    vi = VectorIndex(tmp_path / "vec")
-    fi = FullTextIndex(tmp_path / "fts.db")
     llm = FakeLLMClient(embed_dim=8)
-    retr = Retriever(vi, fi, llm, index_revision=IndexRevision(tmp_path / "rev.txt"))
+    si = make_search_index(tmp_path, llm)
+    retr = Retriever(si, llm, index_revision=IndexRevision(tmp_path / "rev.txt"))
     writer = make_writer(repo, tmp_path)
     org = Organizer(
         repo=repo, retriever=retr, pending=pending, llm=llm, knowledge_writer=writer
@@ -118,11 +115,10 @@ def test_resolve_sandbox_confirm_deny(tmp_path):
 def _registry(tmp_path, *, trust=False):
     repo = KnowledgeRepo(tmp_path / "knowledge")
     pending = PendingStore(tmp_path / "knowledge" / ".kb" / "pending.json")
-    vi = VectorIndex(tmp_path / "vec")
-    fi = FullTextIndex(tmp_path / "fts.db")
     llm = FakeLLMClient(embed_dim=8)
-    idx = Indexer(vi, fi, llm)
-    retr = Retriever(vi, fi, llm, index_revision=IndexRevision(tmp_path / "rev.txt"))
+    si = make_search_index(tmp_path, llm)
+    idx = Indexer(si)
+    retr = Retriever(si, llm, index_revision=IndexRevision(tmp_path / "rev.txt"))
     settings = Settings(kb_path=tmp_path / "knowledge")
     writer = make_writer(repo, tmp_path)
     org = Organizer(

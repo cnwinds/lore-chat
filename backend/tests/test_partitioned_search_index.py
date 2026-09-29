@@ -54,7 +54,7 @@ class FakeEmbedder:
 
 def test_invalid_partition_raises():
     with pytest.raises(ValueError):
-        partition_family("kb:only-one-part")
+        partition_family("unknown:only-one-part")
     with pytest.raises(ValueError):
         partition_family("nocolon")
     with pytest.raises(ValueError):

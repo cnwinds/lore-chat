@@ -18,4 +18,4 @@ def test_begin_turn_enqueues_fts_and_vector(tmp_path):
         "SELECT kind FROM derivation_outbox WHERE status='pending' ORDER BY kind"
     ).fetchall()
     kinds = [r[0] for r in rows]
-    assert kinds == ["index_fts", "index_vector"]
+    assert kinds == ["index_fts"]

@@ -56,16 +56,15 @@ class DerivationOutbox:
 
     def enqueue_index_jobs(self, message_id: str, turn_id: str | None) -> None:
         now = _now()
-        for kind in ("index_fts", "index_vector"):
-            self.conn.execute(
-                """
-                INSERT INTO derivation_outbox(
-                    kind, source_message_id, source_revision, turn_id,
-                    status, attempts, next_run_at, created_at, updated_at
-                ) VALUES (?, ?, 1, ?, 'pending', 0, ?, ?, ?)
-                """,
-                (kind, message_id, turn_id, now, now, now),
-            )
+        self.conn.execute(
+            """
+            INSERT INTO derivation_outbox(
+                kind, source_message_id, source_revision, turn_id,
+                status, attempts, next_run_at, created_at, updated_at
+            ) VALUES (?, ?, 1, ?, 'pending', 0, ?, ?, ?)
+            """,
+            ("index_fts", message_id, turn_id, now, now, now),
+        )
 
     def enqueue_observe_memory(self, message_id: str, turn_id: str) -> None:
         """已废弃：按条观察不再入队；保留方法以免旧调用崩溃。"""

@@ -3,18 +3,18 @@ import pytest
 from app.engine.enabled_skills import EnabledSkillsStore
 from app.engine.kb_tree_service import KbTreeService
 from app.engine.knowledge_writer import KbPathExistsError, KnowledgeWriter
-from app.index.fulltext import FullTextIndex
 from app.index.indexer import Indexer
 from app.index.revision import IndexRevision
-from app.index.vector import VectorIndex
 from app.models.llm import FakeLLMClient
 from app.storage.repo import KnowledgeRepo
+from tests.helpers import make_search_index, drain_embeddings
 
 
 def _svc(tmp_path, *, protected=("系统",), skills_dir="技能"):
     repo = KnowledgeRepo(tmp_path / "knowledge", protected_dirs=protected)
     llm = FakeLLMClient(embed_dim=8)
-    idx = Indexer(VectorIndex(tmp_path / "vec"), FullTextIndex(tmp_path / "fts.db"), llm)
+    si = make_search_index(tmp_path, llm)
+    idx = Indexer(si, system_prefixes=tuple(f"{p}/" for p in protected))
     writer = KnowledgeWriter(repo, idx, skills_dir=skills_dir)
     rev = IndexRevision(tmp_path / "revision.txt")
     return KbTreeService(repo, writer, rev, skills_dir=skills_dir), repo, rev

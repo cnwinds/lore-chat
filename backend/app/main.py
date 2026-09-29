@@ -140,7 +140,23 @@ def create_app(settings: Settings | None = None, llm: LLMClient | None = None) -
                 container = app.state.container
                 container.derivation_worker.drain(_DERIVATION_WORKER_BATCH_SIZE)
                 container.memory_worker.drain(_DERIVATION_WORKER_BATCH_SIZE)
-                container.search_index.embed_pending(_SEARCH_INDEX_EMBED_BATCH)
+                n = container.search_index.embed_pending(_SEARCH_INDEX_EMBED_BATCH)
+                if n > 0:
+                    container.index_revision.bump()
+
+            def _run_index_migration() -> None:
+                try:
+                    from app.index.legacy_migration import migrate_legacy_indexes
+
+                    migrate_legacy_indexes(app.state.container)
+                except Exception:
+                    logging.getLogger("uvicorn.error").exception(
+                        "index migration failed"
+                    )
+
+            threading.Thread(
+                target=_run_index_migration, name="index-migration", daemon=True
+            ).start()
 
             worker_thread = threading.Thread(
                 target=_run_while_idle,

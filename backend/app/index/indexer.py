@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-from app.index.vector import VectorIndex
-from app.index.fulltext import FullTextIndex
 from app.index.chunk import chunk_text, chunk_starts
-from app.logging_config import get_logger
-from app.models.llm import LLMClient
+from app.index.kb_index import KB_PARTITION, normalize_kb_path
+from app.index.partitioned import IndexItem, SearchIndex
 
 _CHUNK_SIZE = 800
 _CHUNK_OVERLAP = 100
@@ -13,29 +11,40 @@ _CHUNK_OVERLAP = 100
 class Indexer:
     def __init__(
         self,
-        vector: VectorIndex,
-        fulltext: FullTextIndex,
-        llm: LLMClient,
+        search_index: SearchIndex,
         *,
+        system_prefixes: tuple[str, ...] = (),
         reindex_full_threshold: int = 4000,
     ):
-        self.vector = vector
-        self.fulltext = fulltext
-        self.llm = llm
+        self.search_index = search_index
+        self.system_prefixes = tuple(system_prefixes)
         self.reindex_full_threshold = reindex_full_threshold
 
-    def reindex_doc(self, doc_id: str, text: str) -> None:
-        self.remove_doc(doc_id)
+    def _is_system_path(self, doc_id: str) -> bool:
+        norm = normalize_kb_path(doc_id)
+        return any(norm.startswith(p) for p in self.system_prefixes)
+
+    def _sync_doc_chunks(self, doc_id: str, text: str) -> None:
+        doc_id = normalize_kb_path(doc_id)
+        if self._is_system_path(doc_id):
+            self.search_index.drop_group(KB_PARTITION, doc_id)
+            return
         chunks = chunk_text(text)
         if not chunks:
+            self.search_index.drop_group(KB_PARTITION, doc_id)
             return
-        try:
-            embeddings = self.llm.embed(chunks)
-            self.vector.add(doc_id, chunks, embeddings, source=doc_id)
-        except Exception:
-            # Chroma 异常时仍保证全文索引可用（归档/写入不应因此失败）
-            get_logger("indexer").warning("向量索引失败 doc_id=%s", doc_id, exc_info=True)
-        self.fulltext.add(doc_id, chunks, source=doc_id)
+        items = [
+            IndexItem(
+                item_id=f"{doc_id}::{i}",
+                text=c,
+                meta={"source": doc_id, "chunk_index": i},
+            )
+            for i, c in enumerate(chunks)
+        ]
+        self.search_index.sync_group(KB_PARTITION, doc_id, items)
+
+    def reindex_doc(self, doc_id: str, text: str) -> None:
+        self._sync_doc_chunks(doc_id, text)
 
     def reindex_doc_after_edit(
         self,
@@ -45,6 +54,7 @@ class Indexer:
         affected_start: int | None,
         affected_end: int | None,
     ) -> str:
+        doc_id = normalize_kb_path(doc_id)
         stripped = new_body.strip()
         if not stripped:
             self.remove_doc(doc_id)
@@ -79,54 +89,10 @@ class Indexer:
             self.reindex_doc(doc_id, new_body)
             return "full"
 
-        old_chunk_count = len(chunk_text(old_body, size=_CHUNK_SIZE, overlap=_CHUNK_OVERLAP))
-        tail_chunks = all_chunks[first_idx:]
-
-        try:
-            ids_to_delete = [
-                f"{doc_id}::{i}" for i in range(first_idx, old_chunk_count)
-            ]
-            self.vector.delete_ids(ids_to_delete)
-            if tail_chunks:
-                embeddings = self.llm.embed(tail_chunks)
-                self.vector.add(
-                    doc_id,
-                    tail_chunks,
-                    embeddings,
-                    source=doc_id,
-                    start_index=first_idx,
-                )
-        except Exception:
-            get_logger("indexer").warning(
-                "向量增量索引失败 doc_id=%s，回退全量", doc_id, exc_info=True
-            )
-            self.reindex_doc(doc_id, new_body)
-            return "full"
-
-        self.fulltext.delete(doc_id)
-        self.fulltext.add(doc_id, all_chunks, source=doc_id)
+        self._sync_doc_chunks(doc_id, new_body)
         return "partial"
 
     def remove_doc(self, doc_id: str) -> None:
-        try:
-            self.vector.delete(doc_id)
-        except Exception:
-            get_logger("indexer").warning("向量索引失败 doc_id=%s", doc_id, exc_info=True)
-        self.fulltext.delete(doc_id)
-
-    @staticmethod
-    def conversation_doc_id(cid: str) -> str:
-        return f"conv:{cid}"
-
-    def index_conversation(self, cid: str, text: str) -> None:
-        """会话只进全文索引（FTS）：零嵌入开销，作为归档前的可检索兜底。"""
-        doc_id = self.conversation_doc_id(cid)
-        self.fulltext.delete(doc_id)
-        chunks = chunk_text(text)
-        if not chunks:
-            return
-        self.fulltext.add(doc_id, chunks, source=doc_id)
-
-    def remove_conversation(self, cid: str) -> None:
-        doc_id = self.conversation_doc_id(cid)
-        self.fulltext.delete(doc_id)
+        doc_id = normalize_kb_path(doc_id)
+        if doc_id:
+            self.search_index.drop_group(KB_PARTITION, doc_id)

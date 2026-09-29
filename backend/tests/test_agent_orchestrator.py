@@ -12,12 +12,10 @@ from app.engine.pending import PendingStore
 from app.engine.retriever import Retriever
 from app.engine.web.fetcher import WebFetcher
 from app.engine.web.search import WebSearch
-from app.index.fulltext import FullTextIndex
 from app.index.indexer import Indexer
-from app.index.vector import VectorIndex
 from app.models.llm import FakeLLMClient, ToolCall
 from app.storage.repo import KnowledgeRepo
-from tests.helpers import make_writer
+from tests.helpers import make_writer, make_search_index, drain_embeddings
 
 
 def _make_orchestrator(
@@ -39,10 +37,9 @@ def _make_orchestrator(
     )
     llm = FakeLLMClient(tool_responses=tool_responses, embed_dim=8)
     repo = KnowledgeRepo(kb)
-    vi = VectorIndex(tmp_path / "vec")
-    fi = FullTextIndex(tmp_path / "fts.db")
-    idx = Indexer(vi, fi, llm)
-    retr = Retriever(vi, fi, llm)
+    si = make_search_index(tmp_path, llm)
+    idx = Indexer(si)
+    retr = Retriever(si, llm)
     pending = PendingStore(kb / ".kb" / "pending.json")
     writer = make_writer(repo, tmp_path)
     org = Organizer(

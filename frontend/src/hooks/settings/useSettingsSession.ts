@@ -380,7 +380,7 @@ export function useSettingsSession({
     try {
       const result = await reindexKb();
       setBackupMsg(
-        `索引已重建：文档 ${result.docs_indexed}，会话 FTS ${result.conversations_fts}，会话向量 ${result.conversations_vector}`,
+        `索引已重建：文档 ${result.docs_indexed}，会话消息 ${result.conversations_fts}；语义向量在后台补齐`,
       );
     } catch (err) {
       setBackupError(err instanceof Error ? err.message : "重建索引失败");

@@ -3,14 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from app.config import Settings
-from app.index.conversation_fts import ConversationFTS
-from app.index.conversation_vector import ConversationVector
-from app.index.fulltext import FullTextIndex
+from app.index.conversation_index import ConversationIndex
 from app.index.indexer import Indexer
 from app.index.partitioned import LLMEmbedder, SearchIndex
 from app.index.revision import IndexRevision
-from app.index.vector import VectorIndex
-from app.engine.derivation_worker import DerivationWorker
 from app.engine.retriever import Retriever
 from app.models.llm import LLMClient
 from app.storage.repo import KnowledgeRepo
@@ -18,22 +14,14 @@ from app.storage.repo import KnowledgeRepo
 
 @dataclass
 class IndexSubgraph:
-    vector: VectorIndex
-    fulltext: FullTextIndex
     indexer: Indexer
-    conversation_fts: ConversationFTS
-    conversation_vector: ConversationVector
+    conversation_index: ConversationIndex
     index_revision: IndexRevision
     retriever: Retriever
     search_index: SearchIndex
 
-    def rebind_llm(
-        self, llm: LLMClient, *, derivation_worker: DerivationWorker | None = None
-    ) -> None:
-        self.indexer.llm = llm
+    def rebind_llm(self, llm: LLMClient) -> None:
         self.retriever.llm = llm
-        if derivation_worker is not None:
-            derivation_worker.llm = llm
         self.search_index.embedder = LLMEmbedder(llm)
         self.search_index.on_embedder_changed()
 
@@ -56,40 +44,33 @@ def build_index_subgraph(
     system_layer_prefix: str,
 ) -> IndexSubgraph:
     index_dir = settings.kb_path / ".kb" / "index"
-    vector = VectorIndex(index_dir / "vec")
-    fulltext = FullTextIndex(index_dir / "fts.db")
-    indexer = Indexer(
-        vector, fulltext, llm, reindex_full_threshold=settings.reindex_full_threshold
-    )
-    conversation_fts = ConversationFTS(index_dir / "conversation_fts.db")
-    conversation_vector = ConversationVector(index_dir / "vec")
-    index_revision = IndexRevision(index_dir / "revision.txt")
-    retriever = Retriever(
-        vector,
-        fulltext,
-        llm,
-        excluded_prefixes=(system_layer_prefix,),
-        min_score=settings.min_vector_score,
-        conversation_fts=conversation_fts,
-        conversation_vector=conversation_vector,
-        index_revision=index_revision,
-        rrf_k=settings.rrf_k,
-        lane_candidate_k=settings.lane_candidate_k,
-        kb_first_throttle=settings.search_kb_first_throttle,
-        repo=repo,
-    )
     search_index = SearchIndex(
         index_dir / "partitioned.db",
         index_dir / "vec",
         LLMEmbedder(llm),
         rrf_k=settings.rrf_k,
     )
+    conversation_index = ConversationIndex(search_index)
+    indexer = Indexer(
+        search_index,
+        system_prefixes=(system_layer_prefix,),
+        reindex_full_threshold=settings.reindex_full_threshold,
+    )
+    index_revision = IndexRevision(index_dir / "revision.txt")
+    retriever = Retriever(
+        search_index,
+        llm,
+        excluded_prefixes=(system_layer_prefix,),
+        min_score=settings.min_vector_score,
+        index_revision=index_revision,
+        rrf_k=settings.rrf_k,
+        lane_candidate_k=settings.lane_candidate_k,
+        kb_first_throttle=settings.search_kb_first_throttle,
+        repo=repo,
+    )
     return IndexSubgraph(
-        vector=vector,
-        fulltext=fulltext,
         indexer=indexer,
-        conversation_fts=conversation_fts,
-        conversation_vector=conversation_vector,
+        conversation_index=conversation_index,
         index_revision=index_revision,
         retriever=retriever,
         search_index=search_index,

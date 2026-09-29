@@ -1,18 +1,17 @@
 from app.engine.retriever import Retriever
-from app.index.vector import VectorIndex
-from app.index.fulltext import FullTextIndex
 from app.index.indexer import Indexer
 from app.models.llm import FakeLLMClient
+from tests.helpers import drain_embeddings, make_search_index
 
 
 def _setup(tmp_path, chat_responses):
-    vi = VectorIndex(tmp_path / "vec")
-    fi = FullTextIndex(tmp_path / "fts.db")
     llm = FakeLLMClient(chat_responses=chat_responses, embed_dim=8)
-    idx = Indexer(vi, fi, llm)
+    si = make_search_index(tmp_path, llm)
+    idx = Indexer(si)
     idx.reindex_doc("技术/docker/常用命令.md", "docker ps 查看容器，docker logs 看日志")
     idx.reindex_doc("生活/菜谱.md", "番茄炒蛋做法")
-    retr = Retriever(vi, fi, llm)
+    drain_embeddings(si)
+    retr = Retriever(si, llm)
     return retr
 
 
@@ -43,11 +42,11 @@ def test_answer_returns_sources(tmp_path):
 
 
 def test_answer_attaches_non_markdown(tmp_path):
-    vi = VectorIndex(tmp_path / "vec")
-    fi = FullTextIndex(tmp_path / "fts.db")
     llm = FakeLLMClient(chat_responses=["见附件方案。"], embed_dim=8)
-    idx = Indexer(vi, fi, llm)
+    si = make_search_index(tmp_path, llm)
+    idx = Indexer(si)
     idx.reindex_doc("技术/docker/部署方案.pdf", "kubernetes 部署方案详细步骤")
-    retr = Retriever(vi, fi, llm)
+    drain_embeddings(si)
+    retr = Retriever(si, llm)
     ans = retr.answer("部署方案")
     assert "技术/docker/部署方案.pdf" in ans.attachments

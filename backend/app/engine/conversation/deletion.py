@@ -14,20 +14,12 @@ from app.engine.conversation.shared import now_iso as _now
 from app.engine.conversation.shared import dumps_json as _dumps
 
 
-class ConversationFTSLike(Protocol):
-    def delete_conversation(self, conversation_id: str) -> None: ...
-
-
-class ConversationVectorLike(Protocol):
+class ConversationIndexLike(Protocol):
     def delete_conversation(self, conversation_id: str) -> None: ...
 
 
 class IndexRevisionLike(Protocol):
     def bump(self) -> int: ...
-
-
-class IndexerLike(Protocol):
-    def remove_conversation(self, cid: str) -> None: ...
 
 
 class ConversationDeletionWorkflow:
@@ -40,9 +32,7 @@ class ConversationDeletionWorkflow:
         self,
         cid: str,
         *,
-        conversation_fts: ConversationFTSLike | None = None,
-        conversation_vector: ConversationVectorLike | None = None,
-        indexer: IndexerLike | None = None,
+        conversation_index: ConversationIndexLike | None = None,
         index_revision: IndexRevisionLike | None = None,
         ledger_path: str | Path | None = None,
         delete_summary: bool = True,
@@ -89,21 +79,7 @@ class ConversationDeletionWorkflow:
             store.conn.execute("DELETE FROM conversations WHERE id = ?", (cid,))
             store.conn.commit()
 
-        index_cleared = False
-        if conversation_fts is not None:
-            conversation_fts.delete_conversation(cid)
-            index_cleared = True
-        if conversation_vector is not None:
-            try:
-                conversation_vector.delete_conversation(cid)
-            except Exception:
-                from app.logging_config import get_logger
-
-                get_logger("conversations").warning(
-                    "会话向量索引清理失败 conversation_id=%s", cid, exc_info=True
-                )
-            index_cleared = True
-        if index_revision is not None and index_cleared:
-            index_revision.bump()
-        if indexer is not None:
-            indexer.remove_conversation(cid)
+        if conversation_index is not None:
+            conversation_index.delete_conversation(cid)
+            if index_revision is not None:
+                index_revision.bump()

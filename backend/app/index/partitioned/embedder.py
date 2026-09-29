@@ -49,18 +49,24 @@ class QueryEmbedCache:
         self._lock = threading.Lock()
         self._cache: OrderedDict[str, EmbedBatch] = OrderedDict()
 
-    def get(self, text: str) -> EmbedBatch | None:
+    @staticmethod
+    def _key(text: str, model: str) -> str:
+        return f"{text}\x1f{model}"
+
+    def get(self, text: str, model: str) -> EmbedBatch | None:
+        key = self._key(text, model)
         with self._lock:
-            batch = self._cache.get(text)
+            batch = self._cache.get(key)
             if batch is not None:
-                self._cache.move_to_end(text)
+                self._cache.move_to_end(key)
             return batch
 
-    def put(self, text: str, batch: EmbedBatch) -> None:
+    def put(self, text: str, model: str, batch: EmbedBatch) -> None:
+        key = self._key(text, model)
         with self._lock:
-            if text in self._cache:
-                self._cache.move_to_end(text)
-            self._cache[text] = batch
+            if key in self._cache:
+                self._cache.move_to_end(key)
+            self._cache[key] = batch
             while len(self._cache) > self._maxsize:
                 self._cache.popitem(last=False)
 

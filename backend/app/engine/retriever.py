@@ -16,13 +16,16 @@ from app.engine.search_quality import (
     gate_page_hits,
     should_drop_vector_lane,
 )
-from app.index.conversation_fts import ConversationFTS
-from app.index.conversation_vector import ConversationVector
-from app.index.fulltext import FullTextIndex
+from app.index.conversation_index import CONV_FAMILY, CONV_PARTITION, OFFSET_VERSION
+from app.index.kb_index import KB_FAMILY, KB_PARTITION
+from app.index.partitioned import (
+    MetaFilter,
+    PartitionTuning,
+    SearchIndex,
+)
 from app.index.revision import IndexRevision
 from app.index.search_query import compile_search_query
 from app.index.types import Hit
-from app.index.vector import VectorIndex
 from app.logging_config import get_logger
 from app.models.llm import LLMClient
 from app.engine.knowledge_writer import is_markdown_path
@@ -65,14 +68,11 @@ def _parse_cursor(cursor: str) -> dict:
 class Retriever:
     def __init__(
         self,
-        vector: VectorIndex,
-        fulltext: FullTextIndex,
+        search_index: SearchIndex,
         llm: LLMClient,
         *,
         excluded_prefixes: tuple[str, ...] = (),
         min_score: float = MIN_VECTOR_SCORE,
-        conversation_fts: ConversationFTS | None = None,
-        conversation_vector: ConversationVector | None = None,
         index_revision: IndexRevision | None = None,
         rrf_k: int = 60,
         lane_candidate_k: int = 20,
@@ -81,13 +81,10 @@ class Retriever:
         repo=None,
         conversations=None,
     ):
-        self.vector = vector
-        self.fulltext = fulltext
+        self.search_index = search_index
         self.llm = llm
         self.excluded_prefixes = tuple(excluded_prefixes)
         self.min_score = min_score
-        self.conversation_fts = conversation_fts
-        self.conversation_vector = conversation_vector
         self.index_revision = index_revision
         self.rrf_k = rrf_k
         self.lane_candidate_k = lane_candidate_k
@@ -101,20 +98,44 @@ class Retriever:
         return any(norm.startswith(p) for p in self.excluded_prefixes)
 
     @staticmethod
-    def _conversation_hit(ch) -> Hit:
+    def _conversation_hit_from_search(sh, *, score: float) -> Hit:
+        meta = sh.meta
+        cid = str(meta.get("conversation_id") or "")
+        role = str(meta.get("role") or "")
+        ts = str(meta.get("ts") or "")
+        title = str(meta.get("conversation_title") or "")
         return Hit(
-            doc_id=ch.chunk_id,
-            chunk=ch.text,
-            score=ch.score,
-            source=f"conv:{ch.conversation_id}",
-            message_id=ch.message_id,
-            start_char=ch.start_char,
-            end_char=ch.end_char,
-            offset_version=ch.offset_version,
-            role=ch.role or None,
-            ts=ch.ts or None,
-            conversation_title=ch.conversation_title or None,
+            doc_id=sh.item_id,
+            chunk=sh.text,
+            score=score,
+            source=f"conv:{cid}",
+            message_id=str(meta.get("message_id") or ""),
+            start_char=int(meta.get("start_char") or 0),
+            end_char=int(meta.get("end_char") or 0),
+            offset_version=str(meta.get("offset_version") or OFFSET_VERSION),
+            role=role or None,
+            ts=ts or None,
+            conversation_title=title or None,
         )
+
+    @staticmethod
+    def _conv_meta_filters(
+        *,
+        conversation_id: str | None,
+        exclude_conversation_id: str | None,
+        ts_after: str | None,
+        ts_before: str | None,
+    ) -> list[MetaFilter]:
+        filters: list[MetaFilter] = []
+        if conversation_id:
+            filters.append(MetaFilter("conversation_id", "eq", conversation_id))
+        elif exclude_conversation_id:
+            filters.append(MetaFilter("conversation_id", "ne", exclude_conversation_id))
+        if ts_after:
+            filters.append(MetaFilter("ts", "gte", ts_after))
+        if ts_before:
+            filters.append(MetaFilter("ts", "lt", ts_before))
+        return filters
 
     @staticmethod
     def _dedup_hits(hits: list[Hit]) -> list[Hit]:
@@ -125,73 +146,77 @@ class Retriever:
             best[h.doc_id] = h
         return list(best.values())
 
-    def _kb_fts_lane(
-        self, query: str, lane_k: int
-    ) -> tuple[list[str], dict[str, Hit], dict[str, HitMeta]]:
-        outcome = self.fulltext.query_with_tier(query, k=lane_k)
-        hits = [h for h in outcome.hits if not self._excluded(h.source)]
-        hits = self._dedup_hits(hits)
-        hits.sort(key=lambda h: h.score, reverse=True)
-        hit_map = {h.doc_id: h for h in hits}
-        meta_map = {
-            h.doc_id: HitMeta(lane="kb_fts", fts_tier=outcome.tier) for h in hits
-        }
-        return [h.doc_id for h in hits], hit_map, meta_map
+    @staticmethod
+    def _kb_hit_from_search(sh, *, score: float) -> Hit:
+        source = str(sh.meta.get("source") or "")
+        return Hit(doc_id=source, chunk=sh.text, score=score, source=source)
 
-    def _kb_vector_lane(
+    def _kb_lanes(
         self, query: str, lane_k: int, *, vector_text: str
-    ) -> tuple[list[str], dict[str, Hit], dict[str, HitMeta]]:
+    ) -> tuple[
+        tuple[list[str], dict[str, Hit], dict[str, HitMeta]],
+        tuple[list[str], dict[str, Hit], dict[str, HitMeta]],
+    ]:
+        empty: tuple[list[str], dict[str, Hit], dict[str, HitMeta]] = ([], {}, {})
         try:
-            q_emb = self.llm.embed([vector_text])[0]
-            hits = [
-                h for h in self.vector.query(q_emb, k=lane_k) if h.score >= self.min_score
-            ]
-            hits = [h for h in hits if not self._excluded(h.source)]
-            hits = self._dedup_hits(hits)
-            hits.sort(key=lambda h: h.score, reverse=True)
-            if should_drop_vector_lane(hits):
-                return [], {}, {}
-        except Exception:
-            get_logger("retriever").warning("知识库向量检索失败", exc_info=True)
-            return [], {}, {}
-        hit_map = {h.doc_id: h for h in hits}
-        meta_map = {
-            h.doc_id: HitMeta(lane="kb_vector", vector_score=h.score) for h in hits
-        }
-        return [h.doc_id for h in hits], hit_map, meta_map
-
-    def _conv_fts_lane(
-        self,
-        query: str,
-        lane_k: int,
-        *,
-        conversation_id: str | None,
-        exclude_conversation_id: str | None,
-        ts_after: str | None = None,
-        ts_before: str | None = None,
-    ) -> tuple[list[str], dict[str, Hit], dict[str, HitMeta]]:
-        if self.conversation_fts is None:
-            return [], {}, {}
-        try:
-            outcome = self.conversation_fts.query_with_tier(
+            res = self.search_index.search(
                 query,
-                k=lane_k,
-                conversation_id=conversation_id,
-                exclude_conversation_id=exclude_conversation_id,
-                ts_after=ts_after,
-                ts_before=ts_before,
+                partitions=[KB_PARTITION],
+                limit=lane_k,
+                tunings={
+                    KB_FAMILY: PartitionTuning(
+                        fts_k=lane_k,
+                        vec_k=lane_k,
+                        min_vector_score=self.min_score,
+                    )
+                },
+                fts_mode="keywords",
+                vector_text=vector_text,
             )
-            hits = [self._conversation_hit(ch) for ch in outcome.hits]
         except Exception:
-            get_logger("retriever").warning("会话 FTS 检索失败", exc_info=True)
-            return [], {}, {}
-        hit_map = {h.doc_id: h for h in hits}
-        meta_map = {
-            h.doc_id: HitMeta(lane="conv_fts", fts_tier=outcome.tier) for h in hits
-        }
-        return [h.doc_id for h in hits], hit_map, meta_map
+            get_logger("retriever").warning("知识库检索失败", exc_info=True)
+            return empty, empty
 
-    def _conv_vector_lane(
+        fts_tier = res.fts_tiers.get(KB_FAMILY, "none")
+        fts_hits: list[Hit] = []
+        for sh in res.lanes.get(f"{KB_FAMILY}:fts", []):
+            source = str(sh.meta.get("source") or "")
+            if self._excluded(source):
+                continue
+            bm25 = sh.bm25 if sh.bm25 is not None else 0.0
+            fts_hits.append(self._kb_hit_from_search(sh, score=bm25))
+        fts_hits = self._dedup_hits(fts_hits)
+        fts_hits.sort(key=lambda h: h.score, reverse=True)
+        fts_map = {h.doc_id: h for h in fts_hits}
+        fts_meta = {
+            h.doc_id: HitMeta(lane="kb_fts", fts_tier=fts_tier) for h in fts_hits
+        }
+        fts_out = ([h.doc_id for h in fts_hits], fts_map, fts_meta)
+
+        if res.vector_status != "ok":
+            return fts_out, empty
+
+        vec_hits: list[Hit] = []
+        for sh in res.lanes.get(f"{KB_FAMILY}:vec", []):
+            source = str(sh.meta.get("source") or "")
+            if self._excluded(source):
+                continue
+            vs = sh.vector_score
+            if vs is None or vs < self.min_score:
+                continue
+            vec_hits.append(self._kb_hit_from_search(sh, score=vs))
+        vec_hits = self._dedup_hits(vec_hits)
+        vec_hits.sort(key=lambda h: h.score, reverse=True)
+        if should_drop_vector_lane(vec_hits):
+            return fts_out, empty
+        vec_map = {h.doc_id: h for h in vec_hits}
+        vec_meta = {
+            h.doc_id: HitMeta(lane="kb_vector", vector_score=h.score) for h in vec_hits
+        }
+        vec_out = ([h.doc_id for h in vec_hits], vec_map, vec_meta)
+        return fts_out, vec_out
+
+    def _conv_lanes(
         self,
         query: str,
         lane_k: int,
@@ -201,31 +226,69 @@ class Retriever:
         exclude_conversation_id: str | None,
         ts_after: str | None = None,
         ts_before: str | None = None,
-    ) -> tuple[list[str], dict[str, Hit], dict[str, HitMeta]]:
-        if self.conversation_vector is None:
-            return [], {}, {}
+    ) -> tuple[
+        tuple[list[str], dict[str, Hit], dict[str, HitMeta]],
+        tuple[list[str], dict[str, Hit], dict[str, HitMeta]],
+    ]:
+        empty: tuple[list[str], dict[str, Hit], dict[str, HitMeta]] = ([], {}, {})
+        filters = self._conv_meta_filters(
+            conversation_id=conversation_id,
+            exclude_conversation_id=exclude_conversation_id,
+            ts_after=ts_after,
+            ts_before=ts_before,
+        )
         try:
-            q_emb = self.llm.embed([vector_text])[0]
-            raw = self.conversation_vector.query(
-                q_emb,
-                k=lane_k,
-                conversation_id=conversation_id,
-                exclude_conversation_id=exclude_conversation_id,
-                ts_after=ts_after,
-                ts_before=ts_before,
+            res = self.search_index.search(
+                query,
+                partitions=[CONV_PARTITION],
+                limit=lane_k,
+                tunings={
+                    CONV_FAMILY: PartitionTuning(
+                        fts_k=lane_k,
+                        vec_k=lane_k,
+                        min_vector_score=self.min_score,
+                    )
+                },
+                fts_mode="keywords",
+                vector_text=vector_text,
+                filters=filters,
             )
-            hits = [self._conversation_hit(ch) for ch in raw]
-            hits = [h for h in hits if h.score >= self.min_score]
-            if should_drop_vector_lane(hits):
-                return [], {}, {}
         except Exception:
-            get_logger("retriever").warning("会话向量检索失败", exc_info=True)
-            return [], {}, {}
-        hit_map = {h.doc_id: h for h in hits}
-        meta_map = {
-            h.doc_id: HitMeta(lane="conv_vector", vector_score=h.score) for h in hits
+            get_logger("retriever").warning("会话检索失败", exc_info=True)
+            return empty, empty
+
+        fts_tier = res.fts_tiers.get(CONV_FAMILY, "none")
+        fts_hits: list[Hit] = []
+        for sh in res.lanes.get(f"{CONV_FAMILY}:fts", []):
+            bm25 = sh.bm25 if sh.bm25 is not None else 0.0
+            fts_hits.append(self._conversation_hit_from_search(sh, score=bm25))
+        fts_hits = self._dedup_hits(fts_hits)
+        fts_hits.sort(key=lambda h: h.score, reverse=True)
+        fts_map = {h.doc_id: h for h in fts_hits}
+        fts_meta = {
+            h.doc_id: HitMeta(lane="conv_fts", fts_tier=fts_tier) for h in fts_hits
         }
-        return [h.doc_id for h in hits], hit_map, meta_map
+        fts_out = ([h.doc_id for h in fts_hits], fts_map, fts_meta)
+
+        if res.vector_status != "ok":
+            return fts_out, empty
+
+        vec_hits: list[Hit] = []
+        for sh in res.lanes.get(f"{CONV_FAMILY}:vec", []):
+            vs = sh.vector_score
+            if vs is None or vs < self.min_score:
+                continue
+            vec_hits.append(self._conversation_hit_from_search(sh, score=vs))
+        vec_hits = self._dedup_hits(vec_hits)
+        vec_hits.sort(key=lambda h: h.score, reverse=True)
+        if should_drop_vector_lane(vec_hits):
+            return fts_out, empty
+        vec_map = {h.doc_id: h for h in vec_hits}
+        vec_meta = {
+            h.doc_id: HitMeta(lane="conv_vector", vector_score=h.score) for h in vec_hits
+        }
+        vec_out = ([h.doc_id for h in vec_hits], vec_map, vec_meta)
+        return fts_out, vec_out
 
     def _conversation_role_ok(self, cid: str, role_id: str | None) -> bool:
         if not role_id or self.conversations is None:
@@ -310,22 +373,21 @@ class Retriever:
         kb_vec_ids: list[str] = []
 
         if use_kb:
-            ids, m, mm = self._kb_fts_lane(query, lane_k)
+            (ids, m, mm), (v_ids, vm, vmm) = self._kb_lanes(
+                query, lane_k, vector_text=compiled.vector_text
+            )
             kb_fts_ids = ids
             if ids:
                 lanes.append(ids)
                 weights.append(self.lane_weights[0])
                 hit_map.update(m)
                 meta_map.update(mm)
-            ids, m, mm = self._kb_vector_lane(
-                query, lane_k, vector_text=compiled.vector_text
-            )
-            kb_vec_ids = ids
-            if ids:
-                lanes.append(ids)
+            kb_vec_ids = v_ids
+            if v_ids:
+                lanes.append(v_ids)
                 weights.append(self.lane_weights[1])
-                hit_map.update(m)
-                meta_map.update(mm)
+                hit_map.update(vm)
+                meta_map.update(vmm)
 
         conv_lane_k = lane_k
         if (
@@ -345,33 +407,27 @@ class Retriever:
                 conv_lane_k = max(1, lane_k // 3)
 
         if use_conv:
-            ids, m, mm = self._conv_fts_lane(
-                query,
-                conv_lane_k,
-                conversation_id=conversation_id,
-                exclude_conversation_id=exclude_conversation_id,
-                ts_after=ts_after,
-                ts_before=ts_before,
+            (c_fts_ids, c_fts_m, c_fts_mm), (c_vec_ids, c_vec_m, c_vec_mm) = (
+                self._conv_lanes(
+                    query,
+                    conv_lane_k,
+                    vector_text=compiled.vector_text,
+                    conversation_id=conversation_id,
+                    exclude_conversation_id=exclude_conversation_id,
+                    ts_after=ts_after,
+                    ts_before=ts_before,
+                )
             )
-            if ids:
-                lanes.append(ids)
+            if c_fts_ids:
+                lanes.append(c_fts_ids)
                 weights.append(self.lane_weights[2])
-                hit_map.update(m)
-                meta_map.update(mm)
-            ids, m, mm = self._conv_vector_lane(
-                query,
-                conv_lane_k,
-                vector_text=compiled.vector_text,
-                conversation_id=conversation_id,
-                exclude_conversation_id=exclude_conversation_id,
-                ts_after=ts_after,
-                ts_before=ts_before,
-            )
-            if ids:
-                lanes.append(ids)
+                hit_map.update(c_fts_m)
+                meta_map.update(c_fts_mm)
+            if c_vec_ids:
+                lanes.append(c_vec_ids)
                 weights.append(self.lane_weights[3])
-                hit_map.update(m)
-                meta_map.update(mm)
+                hit_map.update(c_vec_m)
+                meta_map.update(c_vec_mm)
 
         fused = reciprocal_rank_fusion(lanes, k=self.rrf_k, weights=weights)
         page_hits: list[Hit] = []

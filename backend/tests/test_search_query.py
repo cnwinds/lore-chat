@@ -1,4 +1,4 @@
-from app.index.search_query import compile_search_query, prepare_fts_query
+from app.index.search_query import compile_search_query
 
 
 def test_latin_phrase_merged():
@@ -22,11 +22,13 @@ def test_relaxed_or_for_multiple_terms():
     assert c.relaxed_fts == '"向量库" OR "本地部署"'
 
 
-def test_short_chinese_fallback_to_all_terms():
+def test_two_char_chinese_is_signal_term():
+    """默认 min_cjk_signal=2：两字中文词进入 relaxed / 门控。"""
     c = compile_search_query("合作 教培机构 本地部署")
+    assert "合作" in c.signal_terms
     assert "教培机构" in c.signal_terms
     assert "本地部署" in c.signal_terms
-    assert prepare_fts_query("合作 教培机构 本地部署") == '"教培机构" OR "本地部署"'
+    assert c.relaxed_fts == '"合作" OR "教培机构" OR "本地部署"'
 
 
 def test_low_signal_latin_dropped_when_alone():

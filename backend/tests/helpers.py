@@ -8,18 +8,54 @@ from app.engine.memory.service import MemoryService
 from app.engine.memory.session_extractor import SessionMemoryExtractor
 from app.engine.memory.store import MemoryStore
 from app.engine.memory_worker import MemoryWorker
-from app.index.fulltext import FullTextIndex
+from app.index.conversation_index import CONV_FAMILY, CONV_PARTITION, ConversationIndex
 from app.index.indexer import Indexer
-from app.index.vector import VectorIndex
+from app.index.partitioned import (
+    LLMEmbedder,
+    PartitionTuning,
+    SearchIndex,
+)
+from app.index.search_query import compile_search_query
 from app.models.llm import FakeLLMClient
 from app.storage.repo import KnowledgeRepo
 
 
+def make_conversation_index(tmp_path, llm=None) -> ConversationIndex:
+    return ConversationIndex(make_search_index(tmp_path, llm))
+
+
+def conv_fts_hits(search_index: SearchIndex, query: str, *, k: int = 5) -> list:
+    compiled = compile_search_query(query)
+    res = search_index.search(
+        query,
+        partitions=[CONV_PARTITION],
+        limit=k,
+        tunings={CONV_FAMILY: PartitionTuning(fts_k=k, vec_k=k)},
+        fts_mode="keywords",
+        vector_text=compiled.vector_text,
+        lanes=("fts",),
+    )
+    return res.lanes.get(f"{CONV_FAMILY}:fts", [])
+
+
+def make_search_index(tmp_path, llm=None) -> SearchIndex:
+    llm = llm or FakeLLMClient(embed_dim=8)
+    return SearchIndex(
+        tmp_path / "partitioned.db",
+        tmp_path / "vec",
+        LLMEmbedder(llm),
+    )
+
+
+def drain_embeddings(search_index: SearchIndex) -> None:
+    while search_index.embed_pending(256) > 0:
+        pass
+
+
 def make_writer(repo: KnowledgeRepo, tmp_path, *, embed_dim: int = 8) -> KnowledgeWriter:
     llm = FakeLLMClient(embed_dim=embed_dim)
-    vi = VectorIndex(tmp_path / "vec")
-    fi = FullTextIndex(tmp_path / "fts.db")
-    idx = Indexer(vi, fi, llm)
+    search_index = make_search_index(tmp_path, llm)
+    idx = Indexer(search_index, system_prefixes=("系统/",))
     return KnowledgeWriter(repo, idx)
 
 

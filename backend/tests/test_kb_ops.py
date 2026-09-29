@@ -4,17 +4,17 @@ from app.engine.knowledge_writer import (
     is_markdown_path,
     suggest_alternate_filename,
 )
-from app.index.fulltext import FullTextIndex
 from app.index.indexer import Indexer
-from app.index.vector import VectorIndex
 from app.models.llm import FakeLLMClient
+from tests.helpers import make_search_index
 from app.storage.repo import KnowledgeRepo
 import pytest
 
 
 def _writer(repo, tmp_path):
     llm = FakeLLMClient(embed_dim=8)
-    idx = Indexer(VectorIndex(tmp_path / "vec"), FullTextIndex(tmp_path / "fts.db"), llm)
+    si = make_search_index(tmp_path, llm)
+    idx = Indexer(si, system_prefixes=("系统/",))
     return KnowledgeWriter(repo, idx)
 
 

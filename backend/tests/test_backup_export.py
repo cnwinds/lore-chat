@@ -18,6 +18,7 @@ def test_export_includes_docs_and_index(tmp_path: Path):
     idx = kb / ".kb" / "index"
     (idx / "vec").mkdir(parents=True)
     (idx / "vec" / "dummy.bin").write_bytes(b"x")
+    (idx / "partitioned.db").write_bytes(b"sqlite")
     (idx / "fts.db").write_bytes(b"sqlite")
     (idx / "conversation_fts.db").write_bytes(b"sqlite")
     (idx / "fts.db-wal").write_bytes(b"wal")
@@ -33,6 +34,7 @@ def test_export_includes_docs_and_index(tmp_path: Path):
     assert any("auth.json" in n for n in norm)
     assert any(n.endswith("manifest.json") for n in norm)
     assert names.count("manifest.json") == 1
+    assert any(n.endswith(".kb/index/partitioned.db") for n in norm)
     assert any(n.endswith(".kb/index/fts.db") for n in norm)
     assert any(n.endswith(".kb/index/conversation_fts.db") for n in norm)
     assert any(".kb/index/vec/dummy.bin" in n for n in norm)

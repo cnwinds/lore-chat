@@ -13,13 +13,11 @@ from app.engine.pending import PendingStore
 from app.engine.retriever import Retriever
 from app.engine.web.fetcher import WebFetcher
 from app.engine.web.search import WebSearch
-from app.index.conversation_fts import ConversationFTS
-from app.index.fulltext import FullTextIndex
+from app.index.conversation_index import ConversationIndex
 from app.index.indexer import Indexer
-from app.index.vector import VectorIndex
 from app.models.llm import FakeLLMClient
 from app.storage.repo import KnowledgeRepo
-from tests.helpers import make_writer
+from tests.helpers import conv_fts_hits, make_writer, make_search_index, drain_embeddings
 
 
 def _decision(rel_path="娱乐/漫剧工具盘点.md"):
@@ -38,11 +36,10 @@ def _decision(rel_path="娱乐/漫剧工具盘点.md"):
 
 def _make(tmp_path, chat_responses):
     repo = KnowledgeRepo(tmp_path / "knowledge", protected_dirs=("系统",))
-    vi = VectorIndex(tmp_path / "vec")
-    fi = FullTextIndex(tmp_path / "fts.db")
     llm = FakeLLMClient(chat_responses=chat_responses, embed_dim=8)
-    idx = Indexer(vi, fi, llm)
-    retr = Retriever(vi, fi, llm, excluded_prefixes=("系统/",))
+    si = make_search_index(tmp_path, llm)
+    idx = Indexer(si)
+    retr = Retriever(si, llm, excluded_prefixes=("系统/",))
     pending = PendingStore(tmp_path / "knowledge" / ".kb" / "pending.json")
     writer = make_writer(repo, tmp_path)
     org = Organizer(
@@ -53,8 +50,8 @@ def _make(tmp_path, chat_responses):
         knowledge_writer=writer,
     )
     conversations = ConversationStore(tmp_path / "knowledge" / ".kb" / "conversations")
-    conversation_fts = ConversationFTS(tmp_path / "knowledge" / ".kb" / "index" / "conversation_fts.db")
-    derivation_worker = DerivationWorker(conversations, conversation_fts)
+    conversation_index = ConversationIndex(si)
+    derivation_worker = DerivationWorker(conversations, conversation_index)
     system_layer = SystemLayer(repo)
     settings = Settings(kb_path=tmp_path / "knowledge")
     registry = ToolRegistry(
@@ -69,7 +66,7 @@ def _make(tmp_path, chat_responses):
         system_layer=system_layer,
         indexer=idx,
     )
-    return registry, repo, conversations, idx, conversation_fts, derivation_worker
+    return registry, repo, conversations, idx, conversation_index, derivation_worker, si
 
 
 def test_conversation_tracks_summary_state(tmp_path):
@@ -108,7 +105,7 @@ def test_full_transcript_includes_both_roles(tmp_path):
 async def test_summarize_conversation_tool_flow(tmp_path, monkeypatch):
     # chat 顺序：_synthesize 正文 → _understand 摘要 → _decide 决策
     synthesized = "# 漫剧工具盘点\n\n剪映、小云雀等工具的综合介绍。\n"
-    registry, repo, conversations, idx, conversation_fts, derivation_worker = _make(
+    registry, repo, conversations, idx, conversation_index, derivation_worker, si = _make(
         tmp_path, [synthesized, "漫剧工具", _decision()]
     )
     cid = conversations.create()
@@ -121,10 +118,12 @@ async def test_summarize_conversation_tool_flow(tmp_path, monkeypatch):
         assistant={"text": "剪映、小云雀", "timeline": [], "sources": [], "status": "complete"},
     )
     derivation_worker.drain(max_jobs=10)
-    assert conversation_fts.query("小云雀", k=5), "消息应已进入会话全文索引"
+    assert conv_fts_hits(si, "小云雀", k=5), "消息应已进入会话全文索引"
 
     removed: list[str] = []
-    monkeypatch.setattr(idx, "remove_conversation", lambda cid: removed.append(cid))
+    monkeypatch.setattr(
+        conversation_index, "delete_conversation", lambda cid: removed.append(cid)
+    )
 
     result = await registry.execute(
         "summarize_conversation",
@@ -145,8 +144,8 @@ async def test_summarize_conversation_tool_flow(tmp_path, monkeypatch):
 
     # 归档不应清空原会话消息的全文索引，也不应调用 remove_conversation
     assert removed == []
-    hits = conversation_fts.query("小云雀", k=5)
-    assert any(h.conversation_id == cid for h in hits)
+    hits = conv_fts_hits(si, "小云雀", k=5)
+    assert any(h.meta.get("conversation_id") == cid for h in hits)
 
 
 @pytest.mark.asyncio
@@ -310,11 +309,13 @@ def test_summarize_endpoint_keeps_message_fts_and_skips_remove_conversation(
             },
         )
         c.derivation_worker.drain(max_jobs=10)
-        assert c.conversation_fts.query("小云雀", k=5), "消息应已进入会话全文索引"
+        assert conv_fts_hits(c.search_index, "小云雀", k=5), "消息应已进入会话全文索引"
 
         removed: list[str] = []
         monkeypatch.setattr(
-            c.indexer, "remove_conversation", lambda cid: removed.append(cid)
+            c.conversation_index,
+            "delete_conversation",
+            lambda cid: removed.append(cid),
         )
 
         r = client.post(
@@ -329,5 +330,5 @@ def test_summarize_endpoint_keeps_message_fts_and_skips_remove_conversation(
         assert conv["summary_path"] == "娱乐/漫剧工具盘点.md"
 
         assert removed == []
-        hits = c.conversation_fts.query("小云雀", k=5)
-        assert any(h.conversation_id == cid for h in hits)
+        hits = conv_fts_hits(c.search_index, "小云雀", k=5)
+        assert any(h.meta.get("conversation_id") == cid for h in hits)

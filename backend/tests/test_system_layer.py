@@ -5,11 +5,10 @@ import pytest
 from app.engine.agent.prompts import build_system_prompt
 from app.engine.agent.system_layer import SystemLayer
 from app.engine.retriever import Retriever
-from app.index.fulltext import FullTextIndex
 from app.index.indexer import Indexer
-from app.index.vector import VectorIndex
 from app.models.llm import FakeLLMClient
 from app.storage.repo import KnowledgeRepo
+from tests.helpers import make_search_index, drain_embeddings
 
 
 def _repo(tmp_path):
@@ -230,10 +229,9 @@ def test_build_system_prompt_has_no_web_or_builtin_ui_suffix():
 
 def test_retriever_excludes_system_prefix(tmp_path):
     llm = FakeLLMClient(embed_dim=8)
-    vi = VectorIndex(tmp_path / "vec")
-    fi = FullTextIndex(tmp_path / "fts.db")
-    idx = Indexer(vi, fi, llm)
-    retr = Retriever(vi, fi, llm, excluded_prefixes=("系统/",))
+    si = make_search_index(tmp_path, llm)
+    idx = Indexer(si, system_prefixes=("系统/",))
+    retr = Retriever(si, llm, excluded_prefixes=("系统/",))
     idx.reindex_doc("系统/戒律.md", "默认不落库，渐进式披露读取资料")
     idx.reindex_doc("技术/note.md", "默认不落库，渐进式披露读取资料")
     hits = retr.search("渐进式披露", k=5).hits

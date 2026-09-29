@@ -38,12 +38,10 @@ def test_summarize_long_conversation_calls_merge(tmp_path):
     from app.engine.organizer import Organizer
     from app.engine.pending import PendingStore
     from app.engine.retriever import Retriever
-    from app.index.fulltext import FullTextIndex
     from app.index.indexer import Indexer
-    from app.index.vector import VectorIndex
     from app.models.llm import FakeLLMClient
     from app.storage.repo import KnowledgeRepo
-    from tests.helpers import make_writer
+    from tests.helpers import make_search_index, make_writer
 
     calls: list[int] = []
 
@@ -65,11 +63,10 @@ def test_summarize_long_conversation_calls_merge(tmp_path):
     conv = store.get(cid)
     llm = CountingLLM(chat_responses=[], embed_dim=8)
     repo = KnowledgeRepo(tmp_path / "kb", protected_dirs=("系统",))
-    vi = VectorIndex(tmp_path / "vec")
-    fi = FullTextIndex(tmp_path / "fts.db")
+    si = make_search_index(tmp_path, llm)
     org = Organizer(
         repo=repo,
-        retriever=Retriever(vi, fi, llm),
+        retriever=Retriever(si, llm),
         pending=PendingStore(tmp_path / "pending.json"),
         llm=llm,
         settings=Settings(summarize_segment_chars=5000),

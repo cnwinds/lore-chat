@@ -68,15 +68,15 @@ def test_ingest_and_summarize_reject_memory_projection_path(tmp_path):
     from app.engine.organizer import Organizer
     from app.engine.pending import PendingStore
     from app.engine.retriever import Retriever
-    from app.index.fulltext import FullTextIndex
-    from app.index.vector import VectorIndex
     from app.models.llm import FakeLLMClient
+    from tests.helpers import make_search_index
 
     repo = KnowledgeRepo(tmp_path / "knowledge", protected_dirs=("系统",))
     llm = FakeLLMClient(chat_responses=[], embed_dim=8)
+    si = make_search_index(tmp_path, llm)
     org = Organizer(
         repo=repo,
-        retriever=Retriever(VectorIndex(tmp_path / "vec"), FullTextIndex(tmp_path / "fts.db"), llm),
+        retriever=Retriever(si, llm),
         pending=PendingStore(tmp_path / "knowledge" / ".kb" / "pending.json"),
         llm=llm,
         knowledge_writer=make_writer(repo, tmp_path),

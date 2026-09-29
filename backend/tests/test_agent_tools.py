@@ -14,25 +14,24 @@ from app.engine.web.fetcher import WebFetcher
 from app.engine.web.search import SearchResult, WebSearch
 from app.engine.conversations import ConversationStore
 from app.engine.enabled_skills import EnabledSkillsStore
-from app.index.conversation_fts import ConversationFTS
-from app.index.fulltext import FullTextIndex
 from app.index.indexer import Indexer
 from app.index.message_chunk import MessageChunk
 from app.index.revision import IndexRevision
-from app.index.vector import VectorIndex
 from app.models.llm import FakeLLMClient
 from app.storage.repo import KnowledgeRepo
-from tests.helpers import make_writer
+from tests.helpers import make_conversation_index, make_search_index, make_writer
 
 
-def _make_registry(tmp_path, chat_responses=None, conversation_fts=None, conversations=None, **settings_kw):
+def _make_registry(tmp_path, chat_responses=None, conversation_index=None, conversations=None, **settings_kw):
     repo = KnowledgeRepo(tmp_path / "knowledge")
-    vi = VectorIndex(tmp_path / "vec")
-    fi = FullTextIndex(tmp_path / "fts.db")
     llm = FakeLLMClient(chat_responses=chat_responses or [], embed_dim=8)
-    idx = Indexer(vi, fi, llm)
+    if conversation_index is not None:
+        si = conversation_index.search_index
+    else:
+        si = make_search_index(tmp_path, llm)
+    idx = Indexer(si)
     rev = IndexRevision(tmp_path / "revision.txt")
-    retr = Retriever(vi, fi, llm, conversation_fts=conversation_fts, index_revision=rev)
+    retr = Retriever(si, llm, index_revision=rev)
     pending = PendingStore(tmp_path / "knowledge" / ".kb" / "pending.json")
     settings = Settings(kb_path=tmp_path / "knowledge", **settings_kw)
     writer = make_writer(repo, tmp_path)
@@ -96,8 +95,8 @@ async def test_search_kb_tool(tmp_path):
 
 @pytest.mark.asyncio
 async def test_search_kb_returns_conversation_source_with_message_fields(tmp_path):
-    cfts = ConversationFTS(tmp_path / "conversation_fts.db")
-    cfts.upsert_message_chunks(
+    ci = make_conversation_index(tmp_path)
+    ci.upsert_message_chunks(
         conversation_id="c1",
         message_id="m1",
         role="user",
@@ -105,7 +104,7 @@ async def test_search_kb_returns_conversation_source_with_message_fields(tmp_pat
         conversation_title="测试会话",
         chunks=[MessageChunk(0, 0, 4, "漫剧工具")],
     )
-    registry, _repo, _idx = _make_registry(tmp_path, conversation_fts=cfts)
+    registry, _repo, _idx = _make_registry(tmp_path, conversation_index=ci)
     result = await registry.execute("search_kb", {"query": "漫剧工具", "k": 5})
     conv_sources = [s for s in result["sources"] if s["type"] == "conversation"]
     assert conv_sources, result["sources"]
@@ -123,8 +122,8 @@ async def test_search_kb_returns_conversation_source_with_message_fields(tmp_pat
 
 @pytest.mark.asyncio
 async def test_search_kb_excludes_active_conversation_by_default(tmp_path):
-    cfts = ConversationFTS(tmp_path / "conversation_fts.db")
-    cfts.upsert_message_chunks(
+    ci = make_conversation_index(tmp_path)
+    ci.upsert_message_chunks(
         conversation_id="current",
         message_id="m-current",
         role="user",
@@ -132,7 +131,7 @@ async def test_search_kb_excludes_active_conversation_by_default(tmp_path):
         conversation_title="当前会话",
         chunks=[MessageChunk(0, 0, 4, "人脑结构")],
     )
-    cfts.upsert_message_chunks(
+    ci.upsert_message_chunks(
         conversation_id="past",
         message_id="m-past",
         role="user",
@@ -140,7 +139,7 @@ async def test_search_kb_excludes_active_conversation_by_default(tmp_path):
         conversation_title="历史会话",
         chunks=[MessageChunk(0, 0, 4, "人脑结构")],
     )
-    registry, _repo, _idx = _make_registry(tmp_path, conversation_fts=cfts)
+    registry, _repo, _idx = _make_registry(tmp_path, conversation_index=ci)
     result = await registry.execute(
         "search_kb",
         {"query": "人脑结构", "k": 5, "scope": "conversations"},
@@ -154,8 +153,8 @@ async def test_search_kb_excludes_active_conversation_by_default(tmp_path):
 
 @pytest.mark.asyncio
 async def test_search_kb_explicit_conversation_id_searches_within_session(tmp_path):
-    cfts = ConversationFTS(tmp_path / "conversation_fts.db")
-    cfts.upsert_message_chunks(
+    ci = make_conversation_index(tmp_path)
+    ci.upsert_message_chunks(
         conversation_id="current",
         message_id="m-current",
         role="user",
@@ -163,7 +162,7 @@ async def test_search_kb_explicit_conversation_id_searches_within_session(tmp_pa
         conversation_title="当前会话",
         chunks=[MessageChunk(0, 0, 4, "人脑结构")],
     )
-    cfts.upsert_message_chunks(
+    ci.upsert_message_chunks(
         conversation_id="past",
         message_id="m-past",
         role="user",
@@ -171,7 +170,7 @@ async def test_search_kb_explicit_conversation_id_searches_within_session(tmp_pa
         conversation_title="历史会话",
         chunks=[MessageChunk(0, 0, 4, "人脑结构")],
     )
-    registry, _repo, _idx = _make_registry(tmp_path, conversation_fts=cfts)
+    registry, _repo, _idx = _make_registry(tmp_path, conversation_index=ci)
     result = await registry.execute(
         "search_kb",
         {
@@ -242,8 +241,8 @@ async def test_read_conversation_context_defaults_to_prior_segment(tmp_path):
 
 @pytest.mark.asyncio
 async def test_search_kb_scope_conversations(tmp_path):
-    cfts = ConversationFTS(tmp_path / "conversation_fts.db")
-    cfts.upsert_message_chunks(
+    ci = make_conversation_index(tmp_path)
+    ci.upsert_message_chunks(
         conversation_id="c1",
         message_id="m1",
         role="user",
@@ -251,7 +250,7 @@ async def test_search_kb_scope_conversations(tmp_path):
         conversation_title="",
         chunks=[MessageChunk(0, 0, 4, "漫剧工具")],
     )
-    registry, repo, idx = _make_registry(tmp_path, conversation_fts=cfts)
+    registry, repo, idx = _make_registry(tmp_path, conversation_index=ci)
     repo.write_doc("技术/漫剧.md", {"title": "漫剧"}, "漫剧工具文档", commit_msg="seed")
     idx.reindex_doc("技术/漫剧.md", "漫剧工具文档")
 
@@ -263,8 +262,8 @@ async def test_search_kb_scope_conversations(tmp_path):
 
 @pytest.mark.asyncio
 async def test_search_kb_filters_conversations_by_ts_range(tmp_path):
-    cfts = ConversationFTS(tmp_path / "conversation_fts.db")
-    cfts.upsert_message_chunks(
+    ci = make_conversation_index(tmp_path)
+    ci.upsert_message_chunks(
         conversation_id="old",
         message_id="m-old",
         role="user",
@@ -272,7 +271,7 @@ async def test_search_kb_filters_conversations_by_ts_range(tmp_path):
         conversation_title="八月游戏",
         chunks=[MessageChunk(0, 0, 5, "马尔可夫链")],
     )
-    cfts.upsert_message_chunks(
+    ci.upsert_message_chunks(
         conversation_id="yesterday",
         message_id="m-y",
         role="user",
@@ -280,7 +279,7 @@ async def test_search_kb_filters_conversations_by_ts_range(tmp_path):
         conversation_title="新闻视频",
         chunks=[MessageChunk(0, 0, 5, "马尔可夫链")],
     )
-    registry, _repo, _idx = _make_registry(tmp_path, conversation_fts=cfts)
+    registry, _repo, _idx = _make_registry(tmp_path, conversation_index=ci)
     result = await registry.execute(
         "search_kb",
         {

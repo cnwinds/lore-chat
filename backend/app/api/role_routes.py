@@ -182,9 +182,7 @@ async def delete_role(role_id: str, request: Request):
                 runner.request_stop(cid)
         deleted = c.conversations.delete_for_role(
             role_id,
-            conversation_fts=c.conversation_fts,
-            conversation_vector=c.conversation_vector,
-            indexer=c.indexer,
+            conversation_index=c.conversation_index,
             index_revision=c.index_revision,
         )
         c.roles.delete(role_id)

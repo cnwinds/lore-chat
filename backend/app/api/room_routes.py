@@ -116,9 +116,7 @@ async def delete_room(rid: str, request: Request):
         delivery.get_group(rid)
         c.conversations.delete(
             rid,
-            conversation_fts=getattr(c, "conversation_fts", None),
-            conversation_vector=getattr(c, "conversation_vector", None),
-            indexer=getattr(c, "indexer", None),
+            conversation_index=getattr(c, "conversation_index", None),
             index_revision=getattr(c, "index_revision", None),
         )
     except KeyError as e:

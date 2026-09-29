@@ -14,11 +14,10 @@ from app.engine.kb_skill_zip import (
     skill_zip_package_name,
 )
 from app.engine.knowledge_writer import KbPathExistsError, KnowledgeWriter
-from app.index.fulltext import FullTextIndex
 from app.index.indexer import Indexer
-from app.index.vector import VectorIndex
 from app.models.llm import FakeLLMClient
 from app.storage.repo import KnowledgeRepo
+from tests.helpers import make_search_index, drain_embeddings
 
 
 def _zip_bytes(entries: dict[str, bytes]) -> bytes:
@@ -37,7 +36,8 @@ def _pack_zip(entries: dict[str, bytes], dir_rel: str) -> bytes:
 def _writer(tmp_path):
     repo = KnowledgeRepo(tmp_path / "knowledge")
     llm = FakeLLMClient(embed_dim=8)
-    idx = Indexer(VectorIndex(tmp_path / "vec"), FullTextIndex(tmp_path / "fts.db"), llm)
+    si = make_search_index(tmp_path, llm)
+    idx = Indexer(si)
     return KnowledgeWriter(repo, idx), repo
 
 
@@ -46,7 +46,8 @@ def _writer_with_enabled(tmp_path):
 
     repo = KnowledgeRepo(tmp_path / "knowledge")
     llm = FakeLLMClient(embed_dim=8)
-    idx = Indexer(VectorIndex(tmp_path / "vec"), FullTextIndex(tmp_path / "fts.db"), llm)
+    si = make_search_index(tmp_path, llm)
+    idx = Indexer(si)
     store = EnabledSkillsStore(tmp_path / "knowledge", skills_dir="技能")
     return KnowledgeWriter(repo, idx, enabled_skills=store), repo, store
 

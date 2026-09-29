@@ -3,11 +3,19 @@ from pathlib import Path
 
 from app.index import chroma_repair
 from app.index.chroma_client import make_persistent_client
-from app.index.vector import VectorIndex
 
 
 def _vec(seed, dim=8):
     return [float((seed + i) % 5) for i in range(dim)]
+
+
+def _seed_legacy_kb(vec_path: Path, doc_id: str, chunks: list[str], embeddings, *, source: str):
+    vec_path.mkdir(parents=True, exist_ok=True)
+    client = make_persistent_client(str(vec_path))
+    col = client.get_or_create_collection("kbs", metadata={"hnsw:space": "cosine"})
+    ids = [f"{doc_id}::{i}" for i in range(len(chunks))]
+    metadatas = [{"doc_id": doc_id, "source": source} for _ in chunks]
+    col.add(ids=ids, documents=chunks, embeddings=embeddings, metadatas=metadatas)
 
 
 def _corrupt_max_seq_id(db_path: Path) -> str:
@@ -28,8 +36,7 @@ def _corrupt_max_seq_id(db_path: Path) -> str:
 
 def test_repair_converts_integer_max_seq_id(tmp_path):
     vec_path = tmp_path / "vec"
-    vi = VectorIndex(vec_path)
-    vi.add("doc1.md", ["docker 命令"], [_vec(1)], source="doc1.md")
+    _seed_legacy_kb(vec_path, "doc1.md", ["docker 命令"], [_vec(1)], source="doc1.md")
 
     db = vec_path / "chroma.sqlite3"
     _corrupt_max_seq_id(db)
@@ -54,8 +61,7 @@ def test_repair_converts_integer_max_seq_id(tmp_path):
 
 def test_make_persistent_client_auto_repairs_before_open(tmp_path):
     vec_path = tmp_path / "vec"
-    vi = VectorIndex(vec_path)
-    vi.add("doc1.md", ["docker 命令"], [_vec(1)], source="doc1.md")
+    _seed_legacy_kb(vec_path, "doc1.md", ["docker 命令"], [_vec(1)], source="doc1.md")
 
     db = vec_path / "chroma.sqlite3"
     _corrupt_max_seq_id(db)
@@ -70,7 +76,7 @@ def test_make_persistent_client_auto_repairs_before_open(tmp_path):
         conn.close()
     assert types == ["blob"]
 
-    vi2 = VectorIndex(vec_path)
-    hits = vi2.query(_vec(1), k=1)
-    assert len(hits) == 1
-    assert hits[0].doc_id == "doc1.md"
+    col = make_persistent_client(str(vec_path)).get_collection("kbs")
+    res = col.query(query_embeddings=[_vec(1)], n_results=1)
+    assert res["ids"][0]
+    assert res["metadatas"][0][0]["doc_id"] == "doc1.md"

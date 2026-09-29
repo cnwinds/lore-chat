@@ -328,7 +328,7 @@ def test_conversations_search_http(client):
     assert created.status_code == 200
     cid = created.json()["id"]
     store = client.app.state.container.conversations
-    fts = client.app.state.container.conversation_fts
+    ci = client.app.state.container.conversation_index
     store.append_exchange(
         cid,
         "讨论 continuity 连续窗口",
@@ -337,7 +337,7 @@ def test_conversations_search_http(client):
     conv = store.get(cid)
     for m in conv["messages"]:
         text = m.get("text") or ""
-        fts.upsert_message_chunks(
+        ci.upsert_message_chunks(
             conversation_id=cid,
             message_id=m["id"],
             role=m["role"],
@@ -354,13 +354,14 @@ def test_conversations_search_http(client):
     assert any(h.get("kind", "message") == "message" for h in data["hits"])
 
 
-def test_conversations_search_vector_without_fts(client):
+def test_conversations_search_vector_after_embed(client):
     from app.index.message_chunk import MessageChunk
+    from tests.helpers import drain_embeddings
 
     cid = client.post("/api/conversations", json={}).json()["id"]
     store = client.app.state.container.conversations
-    vec = client.app.state.container.conversation_vector
-    llm = client.app.state.container.llm
+    ci = client.app.state.container.conversation_index
+    si = client.app.state.container.search_index
     token = "向量独有词zxqv"
     store.append_exchange(
         cid,
@@ -371,15 +372,15 @@ def test_conversations_search_vector_without_fts(client):
     for m in conv["messages"]:
         text = m.get("text") or ""
         chunk = MessageChunk(0, 0, len(text), text)
-        vec.upsert_message_chunks(
+        ci.upsert_message_chunks(
             conversation_id=cid,
             message_id=m["id"],
             role=m["role"],
             ts=m.get("ts") or "",
             conversation_title=conv["title"],
             chunks=[chunk],
-            embeddings=llm.embed([text]),
         )
+    drain_embeddings(si)
     hit = client.get("/api/conversations/search", params={"q": token, "k": 10})
     assert hit.status_code == 200
     assert any(h["conversation_id"] == cid for h in hit.json()["hits"])

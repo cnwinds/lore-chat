@@ -298,8 +298,9 @@ def test_import_api_overwrite_with_open_chroma(client, tmp_path):
     kb = client.app.state.settings_store.get().kb_path
     (kb / "技术").mkdir(parents=True)
     (kb / "技术" / "keep.md").write_text("# keep\n", encoding="utf-8")
-    client.app.state.container.indexer.vector._chroma.collection()
-    client.app.state.container.conversation_vector._chroma.collection()
+    si = client.app.state.container.search_index
+    si._vectors._chroma("kb", "fake-embed-8").collection()  # 预热分区 Chroma
+    client.app.state.container.search_index._vectors._chroma("conv", "fake-embed-8").collection()
     pack = _make_pack(tmp_path, "new/y.md", "new\n")
     with open(pack, "rb") as f:
         r = client.post(

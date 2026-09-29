@@ -17,7 +17,8 @@ def _normalize_rel(rel: str) -> str:
 def _should_exclude(rel: str) -> bool:
     """导出排除项：跳过 wal/shm，以及磁盘上的旧 manifest（打包时写入新生成的一份）。
 
-    全文 / 向量索引（fts.db、conversation_fts.db、.kb/index/vec/）一并打包，
+    分区全文 / 向量索引（partitioned.db、.kb/index/vec/）一并打包；
+    磁盘上若仍有旧 fts.db、conversation_fts.db 也会随 rglob 打进包。
     导入后即可检索，无需强制重建。
     """
     posix = _normalize_rel(rel)

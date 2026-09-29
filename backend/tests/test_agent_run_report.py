@@ -44,12 +44,10 @@ async def test_tool_loop_logs_complete_stop_reason(tmp_path, caplog):
     from app.engine.retriever import Retriever
     from app.engine.web.fetcher import WebFetcher
     from app.engine.web.search import WebSearch
-    from app.index.fulltext import FullTextIndex
     from app.index.indexer import Indexer
-    from app.index.vector import VectorIndex
     from app.models.llm import FakeLLMClient, ToolCall
     from app.storage.repo import KnowledgeRepo
-    from tests.helpers import make_writer
+    from tests.helpers import make_writer, make_search_index, drain_embeddings
 
     caplog.set_level(logging.INFO)
     kb = tmp_path / "knowledge"
@@ -67,10 +65,9 @@ async def test_tool_loop_logs_complete_stop_reason(tmp_path, caplog):
         embed_dim=8,
     )
     repo = KnowledgeRepo(kb)
-    vi = VectorIndex(tmp_path / "vec")
-    fi = FullTextIndex(tmp_path / "fts.db")
-    idx = Indexer(vi, fi, llm)
-    retr = Retriever(vi, fi, llm)
+    si = make_search_index(tmp_path, llm)
+    idx = Indexer(si)
+    retr = Retriever(si, llm)
     pending = PendingStore(kb / ".kb" / "pending.json")
     writer = make_writer(repo, tmp_path)
     org = Organizer(
@@ -117,12 +114,10 @@ async def test_tool_loop_logs_cancelled_stop_reason(tmp_path, caplog):
     from app.engine.pending import PendingStore
     from app.engine.retriever import Retriever
     from app.engine.web.search import WebSearch
-    from app.index.fulltext import FullTextIndex
     from app.index.indexer import Indexer
-    from app.index.vector import VectorIndex
     from app.models.llm import ChatStreamChunk, ChatWithToolsResult, FakeLLMClient
     from app.storage.repo import KnowledgeRepo
-    from tests.helpers import make_writer
+    from tests.helpers import make_search_index, make_writer
 
     caplog.set_level(logging.WARNING)
     kb = tmp_path / "knowledge"
@@ -138,10 +133,9 @@ async def test_tool_loop_logs_cancelled_stop_reason(tmp_path, caplog):
 
     llm = HangThenCancelLLM(tool_responses=[], embed_dim=8)
     repo = KnowledgeRepo(kb)
-    vi = VectorIndex(tmp_path / "vec")
-    fi = FullTextIndex(tmp_path / "fts.db")
-    idx = Indexer(vi, fi, llm)
-    retr = Retriever(vi, fi, llm)
+    si = make_search_index(tmp_path, llm)
+    idx = Indexer(si)
+    retr = Retriever(si, llm)
     pending = PendingStore(kb / ".kb" / "pending.json")
     writer = make_writer(repo, tmp_path)
     org = Organizer(

@@ -1,22 +1,21 @@
 from app.engine.retriever import Retriever
-from app.index.conversation_fts import ConversationFTS
-from app.index.fulltext import FullTextIndex
+from app.index.conversation_index import ConversationIndex
+from app.index.indexer import Indexer
 from app.index.message_chunk import MessageChunk
-from app.index.vector import VectorIndex
 from app.models.llm import FakeLLMClient
+from tests.helpers import drain_embeddings, make_search_index
 
 
 def _setup(tmp_path):
-    vi = VectorIndex(tmp_path / "vec")
-    fi = FullTextIndex(tmp_path / "fts.db")
-    cfts = ConversationFTS(tmp_path / "conversation_fts.db")
-    llm = FakeLLMClient(chat_responses=[], embed_dim=8)
-    return vi, fi, cfts, llm
+    llm = FakeLLMClient(embed_dim=8)
+    si = make_search_index(tmp_path, llm)
+    ci = ConversationIndex(si)
+    return si, ci, llm
 
 
 def test_retriever_includes_conversation_message_hits(tmp_path):
-    vi, fi, cfts, llm = _setup(tmp_path)
-    cfts.upsert_message_chunks(
+    si, ci, llm = _setup(tmp_path)
+    ci.upsert_message_chunks(
         conversation_id="c1",
         message_id="m1",
         role="user",
@@ -24,7 +23,7 @@ def test_retriever_includes_conversation_message_hits(tmp_path):
         conversation_title="测试会话",
         chunks=[MessageChunk(0, 0, 4, "漫剧工具")],
     )
-    retr = Retriever(vi, fi, llm, conversation_fts=cfts)
+    retr = Retriever(si, llm)
 
     hits = retr.search("漫剧", k=5).hits
 
@@ -36,22 +35,29 @@ def test_retriever_includes_conversation_message_hits(tmp_path):
     assert hit.offset_version == "unicode-codepoint-v1"
 
 
-def test_retriever_without_conversation_fts_has_no_message_hits(tmp_path):
-    vi, fi, _cfts, llm = _setup(tmp_path)
-    retr = Retriever(vi, fi, llm)
+def test_scope_knowledge_excludes_conversation_hits(tmp_path):
+    si, ci, llm = _setup(tmp_path)
+    ci.upsert_message_chunks(
+        conversation_id="c1",
+        message_id="m1",
+        role="user",
+        ts="t",
+        conversation_title="",
+        chunks=[MessageChunk(0, 0, 4, "漫剧工具")],
+    )
+    retr = Retriever(si, llm)
 
-    hits = retr.search("漫剧", k=5).hits
+    hits = retr.search("漫剧", k=5, scope="knowledge").hits
 
     assert hits == []
 
 
 def test_retriever_merges_kb_and_conversation_hits_sorted_by_score(tmp_path):
-    from app.index.indexer import Indexer
-
-    vi, fi, cfts, llm = _setup(tmp_path)
-    idx = Indexer(vi, fi, llm)
+    si, ci, llm = _setup(tmp_path)
+    idx = Indexer(si)
     idx.reindex_doc("技术/漫剧.md", "介绍漫剧工具的使用方法")
-    cfts.upsert_message_chunks(
+    drain_embeddings(si)
+    ci.upsert_message_chunks(
         conversation_id="c1",
         message_id="m1",
         role="user",
@@ -59,7 +65,7 @@ def test_retriever_merges_kb_and_conversation_hits_sorted_by_score(tmp_path):
         conversation_title="测试会话",
         chunks=[MessageChunk(0, 0, 4, "漫剧工具")],
     )
-    retr = Retriever(vi, fi, llm, conversation_fts=cfts)
+    retr = Retriever(si, llm)
 
     hits = retr.search("漫剧工具", k=10).hits
 
@@ -69,8 +75,8 @@ def test_retriever_merges_kb_and_conversation_hits_sorted_by_score(tmp_path):
 
 
 def test_retriever_search_filters_conversation_hits_by_ts(tmp_path):
-    vi, fi, cfts, llm = _setup(tmp_path)
-    cfts.upsert_message_chunks(
+    si, ci, llm = _setup(tmp_path)
+    ci.upsert_message_chunks(
         conversation_id="old",
         message_id="m-old",
         role="user",
@@ -78,7 +84,7 @@ def test_retriever_search_filters_conversation_hits_by_ts(tmp_path):
         conversation_title="八月",
         chunks=[MessageChunk(0, 0, 5, "马尔可夫链")],
     )
-    cfts.upsert_message_chunks(
+    ci.upsert_message_chunks(
         conversation_id="yday",
         message_id="m-y",
         role="user",
@@ -86,7 +92,7 @@ def test_retriever_search_filters_conversation_hits_by_ts(tmp_path):
         conversation_title="昨天",
         chunks=[MessageChunk(0, 0, 5, "马尔可夫链")],
     )
-    retr = Retriever(vi, fi, llm, conversation_fts=cfts)
+    retr = Retriever(si, llm)
     hits = retr.search(
         "马尔可夫链",
         k=5,

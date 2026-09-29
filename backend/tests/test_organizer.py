@@ -2,20 +2,17 @@ from app.engine.organizer import Organizer
 from app.engine.retriever import Retriever
 from app.engine.pending import PendingStore
 from app.storage.repo import KnowledgeRepo
-from app.index.vector import VectorIndex
-from app.index.fulltext import FullTextIndex
 from app.index.indexer import Indexer
 from app.models.llm import FakeLLMClient
-from tests.helpers import make_writer
+from tests.helpers import make_writer, make_search_index, drain_embeddings
 
 
 def _make(tmp_path, chat_responses):
     repo = KnowledgeRepo(tmp_path / "knowledge")
-    vi = VectorIndex(tmp_path / "vec")
-    fi = FullTextIndex(tmp_path / "fts.db")
     llm = FakeLLMClient(chat_responses=chat_responses, embed_dim=8)
-    idx = Indexer(vi, fi, llm)
-    retr = Retriever(vi, fi, llm)
+    si = make_search_index(tmp_path, llm)
+    idx = Indexer(si)
+    retr = Retriever(si, llm)
     pending = PendingStore(tmp_path / "knowledge" / ".kb" / "pending.json")
     org = Organizer(
         repo=repo,

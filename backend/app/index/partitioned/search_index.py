@@ -2,13 +2,16 @@ from __future__ import annotations
 
 import json
 import math
+import re
 import threading
 import time
 from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from concurrent.futures import Future, ThreadPoolExecutor
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from app.index.partitioned.embedder import EmbedBatch, Embedder, QueryEmbedCache
 from app.index.partitioned.lexical import (
@@ -20,9 +23,26 @@ from app.index.partitioned.lexical import (
 )
 from app.index.partitioned.tokenize import index_terms, query_terms
 from app.index.partitioned.vectors import PartitionedVectors
+from app.index.search_query import compile_search_query
 from app.logging_config import get_logger
 
 _log = get_logger("partitioned_index")
+
+_META_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
+_VALID_OPS = frozenset({"eq", "ne", "gte", "lt"})
+
+
+@dataclass(frozen=True)
+class MetaFilter:
+    key: str
+    op: str
+    value: str | int | float | bool
+
+    def __post_init__(self) -> None:
+        if not _META_KEY_RE.match(self.key):
+            raise ValueError(f"invalid meta filter key: {self.key!r}")
+        if self.op not in _VALID_OPS:
+            raise ValueError(f"invalid meta filter op: {self.op!r}")
 
 
 @dataclass(frozen=True)
@@ -69,6 +89,8 @@ class SearchResult:
     vector_status: str
     query_terms: tuple[str, ...]
     elapsed_ms: int
+    lanes: dict[str, list[SearchHit]] = field(default_factory=dict)
+    fts_tiers: dict[str, str] = field(default_factory=dict)
 
 
 def default_gate(hit: SearchHit, tuning: PartitionTuning) -> bool:
@@ -76,6 +98,47 @@ def default_gate(hit: SearchHit, tuning: PartitionTuning) -> bool:
         hit.vector_score is not None
         and hit.vector_score >= tuning.min_vector_score
     ) or bool(hit.rare_terms)
+
+
+def _meta_value_passes(
+    meta: dict,
+    flt: MetaFilter,
+) -> bool:
+    raw = meta.get(flt.key)
+    if flt.op == "eq":
+        return raw is not None and raw == flt.value
+    if flt.op == "ne":
+        return raw is None or raw != flt.value
+    if raw is None:
+        return False
+    if flt.op == "gte":
+        try:
+            return raw >= flt.value
+        except TypeError:
+            return False
+    if flt.op == "lt":
+        try:
+            return raw < flt.value
+        except TypeError:
+            return False
+    return False
+
+
+def _passes_meta_filters(meta: dict, filters: Sequence[MetaFilter]) -> bool:
+    return all(_meta_value_passes(meta, flt) for flt in filters)
+
+
+def _like_pattern(term: str) -> str:
+    escaped = term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{escaped}%"
+
+
+def _keyword_phrase(term: str) -> str | None:
+    tokens = index_terms(term)
+    if not tokens:
+        return None
+    inner = " ".join(t.replace('"', '""') for t in tokens)
+    return f'"{inner}"'
 
 
 class SearchIndex:
@@ -104,6 +167,8 @@ class SearchIndex:
         self._warn_last: dict[str, float] = {}
         self._probe_needed = False
         self._probe_next_at = 0.0
+        self._held_families: dict[str, int] = defaultdict(int)
+        self._held_lock = threading.Lock()
 
     @property
     def embedder(self) -> Embedder | None:
@@ -120,6 +185,12 @@ class SearchIndex:
         self._executor.shutdown(wait=False, cancel_futures=True)
         self._vectors.close()
 
+    def get_meta(self, key: str) -> str | None:
+        return self._lexical.get_meta(key)
+
+    def set_meta(self, key: str, value: str) -> None:
+        self._lexical.set_meta(key, value)
+
     def on_embedder_changed(self) -> None:
         with self._write_lock:
             self._lexical.on_embedder_changed()
@@ -135,6 +206,94 @@ class SearchIndex:
         if prev != model:
             _log.info("嵌入模型变更，按需重嵌: %s -> %s", prev, model)
         self._lexical.set_meta("active_embed_model", model)
+
+    def _held_exclude(self) -> frozenset[str]:
+        with self._held_lock:
+            return frozenset(
+                f for f, n in self._held_families.items() if n > 0
+            )
+
+    @contextmanager
+    def embedding_held(self, family: str):
+        if family not in FAMILIES:
+            raise ValueError(f"unknown family: {family!r}")
+        with self._held_lock:
+            self._held_families[family] += 1
+        try:
+            yield
+        finally:
+            with self._held_lock:
+                self._held_families[family] -= 1
+                if self._held_families[family] <= 0:
+                    del self._held_families[family]
+
+    def probe_model(self) -> str | None:
+        if self._closed or self._embedder is None:
+            return None
+        try:
+            batch = self._embedder.embed([self._PROBE_TEXT])
+        except Exception:
+            return None
+        if batch.model == "unknown":
+            return None
+        return batch.model
+
+    def adopt_vectors(
+        self,
+        partition: str,
+        rows: Iterable[tuple[str, str, Sequence[float]]],
+        *,
+        model: str,
+    ) -> int:
+        active = self._active_embed_model()
+        if active is not None and active != model:
+            return 0
+        batch = list(rows)
+        if not batch:
+            return 0
+        if len(batch) > 256:
+            raise ValueError("adopt_vectors batch exceeds 256 rows")
+        if active is None:
+            self._set_active_embed_model(model)
+        family = partition_family(partition)
+        item_ids = [r[0] for r in batch]
+        with self._write_lock:
+            existing = self._lexical.rows_for_adopt(partition, item_ids)
+        adopted = 0
+        vec_rows: list[
+            tuple[str, str, str, list[float], dict[str, str | int | float | bool]]
+        ] = []
+        ok_keys: list[tuple[str, str, str]] = []
+        for item_id, text, embedding in batch:
+            row = existing.get(item_id)
+            if row is None:
+                continue
+            if row["text"] != text:
+                continue
+            if row["vec_state"] == "ok" and row["vec_model"] == model:
+                continue
+            meta = json.loads(row["meta_json"] or "{}")
+            h = row["content_hash"]
+            vec_rows.append(
+                (partition, item_id, text, list(embedding), meta)
+            )
+            ok_keys.append((partition, item_id, h))
+        if not vec_rows:
+            return 0
+        with self._write_lock:
+            try:
+                self._vectors.upsert(family, model, vec_rows)
+            except Exception:
+                _log.warning(
+                    "adopt_vectors 写入失败 partition=%s", partition, exc_info=True
+                )
+                return 0
+            for partition, item_id, h in ok_keys:
+                if self._lexical.mark_embed_ok(
+                    partition, item_id, content_hash=h, model=model
+                ):
+                    adopted += 1
+        return adopted
 
     def _warn_throttled(self, key: str, msg: str, *args) -> None:
         now = time.time()
@@ -174,6 +333,14 @@ class SearchIndex:
                     "向量删除失败 family=%s model=%s", family, model, exc_info=True
                 )
 
+    def _stats_from_counts(self, counts: tuple[int, int, int, int]) -> SyncStats:
+        return SyncStats(
+            added=counts[0],
+            updated=counts[1],
+            removed=counts[2],
+            unchanged=counts[3],
+        )
+
     def sync_partition(
         self, partition: str, items: Iterable[IndexItem]
     ) -> SyncStats:
@@ -183,6 +350,73 @@ class SearchIndex:
         self, partition: str, items: Iterable[IndexItem]
     ) -> SyncStats:
         return self._write_partition(partition, items, delete_absent=False)
+
+    def sync_group(
+        self, partition: str, group: str, items: Sequence[IndexItem]
+    ) -> SyncStats:
+        if not group:
+            raise ValueError("group must not be empty")
+        if not items:
+            removed = self.drop_group(partition, group)
+            return SyncStats(removed=removed)
+        return self._write_group(partition, group, items, delete_absent=True)
+
+    def drop_group(self, partition: str, group: str) -> int:
+        if not group:
+            raise ValueError("group must not be empty")
+        family = partition_family(partition)
+        with self._write_lock:
+            removed, vec_deletes = self._lexical.drop_group_tx(
+                partition, family, group
+            )
+        self._apply_vec_deletes(vec_deletes)
+        return removed
+
+    def drop_groups(self, partition: str, *, prefix: str) -> int:
+        if not prefix:
+            raise ValueError("prefix must not be empty")
+        family = partition_family(partition)
+        with self._write_lock:
+            removed, vec_deletes = self._lexical.drop_groups_tx(
+                partition, family, prefix
+            )
+        self._apply_vec_deletes(vec_deletes)
+        return removed
+
+    def groups(self, partition: str) -> list[str]:
+        partition_family(partition)
+        return self._lexical.groups(partition)
+
+    def group_items(self, partition: str, group: str) -> list[IndexItem]:
+        rows = self._lexical.group_items(partition, group)
+        out: list[IndexItem] = []
+        for r in rows:
+            meta = json.loads(r["meta_json"] or "{}")
+            out.append(
+                IndexItem(item_id=r["item_id"], text=r["text"], meta=meta)
+            )
+        return out
+
+    def _write_group(
+        self,
+        partition: str,
+        group: str,
+        items: Iterable[IndexItem],
+        *,
+        delete_absent: bool,
+    ) -> SyncStats:
+        family = partition_family(partition)
+        normalized = self._normalize_items(items)
+        desired = {
+            iid: (it.text, dict(it.meta), content_hash(it.text, it.meta))
+            for iid, it in normalized.items()
+        }
+        with self._write_lock:
+            counts, vec_deletes = self._lexical.sync_group_tx(
+                partition, family, group, desired, delete_absent=delete_absent
+            )
+        self._apply_vec_deletes(vec_deletes)
+        return self._stats_from_counts(counts)
 
     def _write_partition(
         self,
@@ -202,12 +436,7 @@ class SearchIndex:
                 partition, family, desired, delete_absent=delete_absent
             )
         self._apply_vec_deletes(vec_deletes)
-        return SyncStats(
-            added=counts[0],
-            updated=counts[1],
-            removed=counts[2],
-            unchanged=counts[3],
-        )
+        return self._stats_from_counts(counts)
 
     def delete(self, partition: str, item_ids: Iterable[str]) -> int:
         family = partition_family(partition)
@@ -259,8 +488,11 @@ class SearchIndex:
         if self._closed or self._embedder is None:
             return 0
         active = self._active_embed_model()
+        exclude = self._held_exclude()
         with self._write_lock:
-            rows = self._lexical.select_embed_pending(limit, active)
+            rows = self._lexical.select_embed_pending(
+                limit, active, exclude_families=exclude
+            )
             probe_needed = self._probe_needed
             probe_next_at = self._probe_next_at
         if not rows:
@@ -280,6 +512,7 @@ class SearchIndex:
                 r["family"],
                 r["text"],
                 r["vec_model"],
+                r["meta_json"],
             )
             for r in rows
         ]
@@ -306,20 +539,33 @@ class SearchIndex:
                 self._set_active_embed_model(model)
 
             by_family: dict[
-                str, list[tuple[str, str, str, list[float], str, str | None]]
+                str,
+                list[
+                    tuple[
+                        str,
+                        str,
+                        str,
+                        list[float],
+                        str,
+                        str | None,
+                        dict,
+                    ]
+                ],
             ] = defaultdict(list)
             for i, snap in enumerate(snapshots):
-                partition, item_id, h, family, text, old_model = snap
+                partition, item_id, h, family, text, old_model, meta_json = snap
                 row = self._lexical.get_item(partition, item_id)
                 if row is None or row["content_hash"] != h:
                     continue
+                meta = json.loads(meta_json or "{}")
                 by_family[family].append(
-                    (partition, item_id, text, batch.vectors[i], h, old_model)
+                    (partition, item_id, text, batch.vectors[i], h, old_model, meta)
                 )
 
             for family, items in by_family.items():
                 upsert_rows = [
-                    (p, iid, text, vec) for p, iid, text, vec, _h, _o in items
+                    (p, iid, text, vec, meta)
+                    for p, iid, text, vec, _h, _o, meta in items
                 ]
                 try:
                     self._vectors.upsert(family, model, upsert_rows)
@@ -333,7 +579,7 @@ class SearchIndex:
                         exc_info=True,
                     )
                     continue
-                for p, iid, _text, _vec, h, old_model in items:
+                for p, iid, _text, _vec, h, old_model, _meta in items:
                     if not self._lexical.mark_embed_ok(
                         p, iid, content_hash=h, model=model
                     ):
@@ -380,6 +626,65 @@ class SearchIndex:
         rare = tuple(t for t in matched if doc_map.get(t, 0) <= threshold)
         return matched, rare
 
+    def _fts_keywords_for_family(
+        self,
+        family: str,
+        parts: list[str],
+        compiled,
+        tuning: PartitionTuning,
+        filters: Sequence[MetaFilter],
+    ) -> tuple[list[tuple[str, str, float]], str]:
+        phrases = []
+        for term in compiled.signal_terms:
+            ph = _keyword_phrase(term)
+            if ph:
+                phrases.append(ph)
+        if not phrases:
+            return [], "none"
+
+        n_ph = len(phrases)
+        if n_ph == 1:
+            strict_expr = phrases[0]
+        elif n_ph <= 4:
+            strict_expr = " AND ".join(phrases)
+        else:
+            strict_expr = None
+
+        if strict_expr:
+            hits = self._lexical.fts_search(
+                family,
+                strict_expr,
+                parts,
+                tuning.fts_k,
+                filters,
+            )
+            if hits:
+                return hits, "strict"
+
+        relaxed_expr = " OR ".join(phrases)
+        hits = self._lexical.fts_search(
+            family,
+            relaxed_expr,
+            parts,
+            tuning.fts_k,
+            filters,
+        )
+        if hits:
+            return hits, "relaxed"
+
+        like_ordered = sorted(
+            compiled.like_terms, key=lambda t: len(list(t)), reverse=True
+        )
+        for term in like_ordered:
+            pattern = _like_pattern(term)
+            hits = self._lexical.like_search(
+                family, pattern, parts, tuning.fts_k, filters
+            )
+            if hits:
+                return hits, "like"
+
+        return [], "none"
+
     def search(
         self,
         query: str,
@@ -389,10 +694,15 @@ class SearchIndex:
         tunings: Mapping[str, PartitionTuning] | None = None,
         vector_timeout_s: float | None = None,
         lanes: tuple[str, ...] = ("fts", "vec"),
+        fts_mode: str = "natural",
+        vector_text: str | None = None,
+        filters: Sequence[MetaFilter] = (),
     ) -> SearchResult:
         t0 = time.monotonic()
         if not partitions:
             raise ValueError("partitions must not be empty")
+        if fts_mode not in ("natural", "keywords"):
+            raise ValueError(f"unknown fts_mode: {fts_mode!r}")
         uniq_partitions: list[str] = []
         seen_p: set[str] = set()
         by_family: dict[str, list[str]] = defaultdict(list)
@@ -408,38 +718,53 @@ class SearchIndex:
         if not q:
             return SearchResult([], "skipped", (), 0)
 
+        embed_source = (
+            vector_text.strip()[: self.QUERY_MAX_CHARS]
+            if vector_text is not None
+            else q
+        )
+
         tunings = tunings or {}
         embed_future: Future[EmbedBatch] | None = None
         embed_batch: EmbedBatch | None = None
         vector_status = "skipped"
+
+        active_model = self._active_embed_model()
 
         if "vec" not in lanes:
             vector_status = "skipped"
         elif self._closed or self._embedder is None:
             vector_status = "unavailable"
         else:
-            cached = self._query_cache.get(q)
+            cached = None
+            if active_model:
+                cached = self._query_cache.get(embed_source, active_model)
             if cached is not None:
                 embed_batch = cached
             else:
 
                 def _do_embed() -> EmbedBatch:
-                    return self._embedder.embed([q])  # type: ignore[union-attr]
+                    return self._embedder.embed([embed_source])  # type: ignore[union-attr]
 
                 embed_future = self._executor.submit(_do_embed)
 
                 def _cache_done(fut: Future) -> None:
                     try:
                         batch = fut.result()
-                        self._query_cache.put(q, batch)
+                        self._query_cache.put(embed_source, batch.model, batch)
                     except Exception:
                         pass
 
                 embed_future.add_done_callback(_cache_done)
 
+        compiled_kw = None
+        if fts_mode == "keywords":
+            compiled_kw = compile_search_query(q)
+
         all_terms = query_terms(q)
         family_term_docs: dict[str, tuple[tuple[str, ...], dict[str, int]]] = {}
         fts_hits_by_family: dict[str, list[tuple[str, str, float]]] = {}
+        fts_tiers: dict[str, str] = {}
         family_thresholds: dict[str, int] = {}
 
         for family, parts in by_family.items():
@@ -450,18 +775,32 @@ class SearchIndex:
             family_thresholds[family] = max(
                 1, math.floor(n * tuning.rare_df_ratio)
             )
-            if "fts" in lanes and sel_terms:
+            if "fts" not in lanes:
+                fts_hits_by_family[family] = []
+                fts_tiers[family] = "none"
+            elif fts_mode == "keywords" and compiled_kw is not None:
+                hits, tier = self._fts_keywords_for_family(
+                    family, parts, compiled_kw, tuning, filters
+                )
+                fts_hits_by_family[family] = hits
+                fts_tiers[family] = tier
+            elif sel_terms:
                 expr = self._fts_match_expr(list(sel_terms))
                 fts_hits_by_family[family] = self._lexical.fts_search(
                     family,
                     expr,
                     parts,
-                    tunings.get(family, PartitionTuning()).fts_k,
+                    tuning.fts_k,
+                    filters,
                 )
+                fts_tiers[family] = "natural"
             else:
                 fts_hits_by_family[family] = []
+                fts_tiers[family] = "natural"
 
-        # 向量 lane
+        eq_ne_filters = [f for f in filters if f.op in ("eq", "ne")]
+        range_filters = [f for f in filters if f.op in ("gte", "lt")]
+
         vec_hits_by_family: dict[str, list[tuple[str, str, float]]] = {}
         if "vec" in lanes and not self._closed and self._embedder is not None:
             batch = embed_batch
@@ -480,6 +819,9 @@ class SearchIndex:
                             batch = embed_future.result()
                         else:
                             batch = embed_future.result(timeout=remaining)
+                        self._query_cache.put(
+                            embed_source, batch.model, batch
+                        )
                     except TimeoutError:
                         vector_status = "timeout"
                     except Exception as exc:
@@ -498,29 +840,46 @@ class SearchIndex:
                     vector_status = "ok"
                     for family, parts in by_family.items():
                         tuning = tunings.get(family, PartitionTuning())
+                        n_res = tuning.vec_k
+                        if range_filters:
+                            n_res = tuning.vec_k * 8
                         try:
-                            vec_hits_by_family[family] = self._vectors.query(
+                            raw_hits = self._vectors.query(
                                 family,
                                 active,
                                 emb,
                                 partitions=parts,
                                 k=tuning.vec_k,
+                                eq_ne_filters=eq_ne_filters,
+                                n_results=n_res,
                             )
                         except Exception as exc:
                             vector_status = "error"
                             vec_hits_by_family = {}
                             _log.debug("向量查询失败: %s", exc)
                             break
+                        if filters:
+                            keys = [(p, i) for p, i, _ in raw_hits]
+                            rows = self._lexical.fetch_items(keys)
+                            filtered: list[tuple[str, str, float]] = []
+                            for partition, item_id, score in raw_hits:
+                                row = rows.get((partition, item_id))
+                                if row is None:
+                                    continue
+                                meta = json.loads(row["meta_json"] or "{}")
+                                if _passes_meta_filters(meta, filters):
+                                    filtered.append(
+                                        (partition, item_id, score)
+                                    )
+                            vec_hits_by_family[family] = filtered[: tuning.vec_k]
+                        else:
+                            vec_hits_by_family[family] = raw_hits[: tuning.vec_k]
 
-        # RRF 融合
         merged: dict[tuple[str, str], dict] = {}
         query_term_list = list(all_terms)
 
         for family in by_family:
             tuning = tunings.get(family, PartitionTuning())
-            threshold = family_thresholds[family]
-            _, doc_map = family_term_docs[family]
-
             fts_ranked = fts_hits_by_family.get(family, [])
             for rank, (partition, item_id, bm25) in enumerate(
                 fts_ranked, start=1
@@ -564,8 +923,11 @@ class SearchIndex:
                 if row is None:
                     del merged[key]
                     continue
-                text = row["text"]
                 meta = json.loads(row["meta_json"] or "{}")
+                if filters and not _passes_meta_filters(meta, filters):
+                    del merged[key]
+                    continue
+                text = row["text"]
                 matched, rare = self._compute_term_sets(
                     text,
                     query_term_list,
@@ -581,34 +943,54 @@ class SearchIndex:
                     entry["matched_terms"] = matched
                     entry["rare_terms"] = rare
 
-        hits: list[SearchHit] = []
+        hit_by_key: dict[tuple[str, str], SearchHit] = {}
         for (partition, item_id), entry in merged.items():
-            hits.append(
-                SearchHit(
-                    partition=partition,
-                    item_id=item_id,
-                    text=entry["text"],
-                    meta=entry["meta"],
-                    score=entry["score"],
-                    bm25=entry["bm25"],
-                    matched_terms=entry["matched_terms"],
-                    rare_terms=entry["rare_terms"],
-                    vector_score=entry["vector_score"],
-                )
+            hit_by_key[(partition, item_id)] = SearchHit(
+                partition=partition,
+                item_id=item_id,
+                text=entry["text"],
+                meta=entry["meta"],
+                score=entry["score"],
+                bm25=entry["bm25"],
+                matched_terms=entry["matched_terms"],
+                rare_terms=entry["rare_terms"],
+                vector_score=entry["vector_score"],
             )
 
-        hits.sort(
+        lane_map: dict[str, list[SearchHit]] = {}
+        for family in by_family:
+            fts_key = f"{family}:fts"
+            vec_key = f"{family}:vec"
+            fts_list: list[SearchHit] = []
+            for partition, item_id, _bm in fts_hits_by_family.get(family, []):
+                key = (partition, item_id)
+                if key in hit_by_key:
+                    fts_list.append(hit_by_key[key])
+            vec_list: list[SearchHit] = []
+            for partition, item_id, _vs in vec_hits_by_family.get(family, []):
+                key = (partition, item_id)
+                if key in hit_by_key:
+                    vec_list.append(hit_by_key[key])
+            if fts_list:
+                lane_map[fts_key] = fts_list
+            if vec_list:
+                lane_map[vec_key] = vec_list
+
+        hits = sorted(
+            hit_by_key.values(),
             key=lambda h: (
                 -h.score,
                 -(h.vector_score or -1.0),
                 -(h.bm25 or -1.0),
-            )
-        )
-        hits = hits[:limit]
+            ),
+        )[:limit]
+
         elapsed_ms = int((time.monotonic() - t0) * 1000)
         return SearchResult(
             hits=hits,
             vector_status=vector_status,
             query_terms=tuple(all_terms),
             elapsed_ms=elapsed_ms,
+            lanes=lane_map,
+            fts_tiers=fts_tiers,
         )

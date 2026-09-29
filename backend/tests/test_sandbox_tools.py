@@ -18,13 +18,11 @@ from app.engine.sandbox.fake_runtime import FakeSandboxRuntime
 from app.engine.sandbox.result_text import display_summary
 from app.engine.web.fetcher import WebFetcher
 from app.engine.web.search import WebSearch
-from app.index.fulltext import FullTextIndex
 from app.index.indexer import Indexer
 from app.index.revision import IndexRevision
-from app.index.vector import VectorIndex
 from app.models.llm import FakeLLMClient
 from app.storage.repo import KnowledgeRepo
-from tests.helpers import make_writer
+from tests.helpers import make_writer, make_search_index, drain_embeddings
 
 
 def _tool_names(defs):
@@ -33,12 +31,11 @@ def _tool_names(defs):
 
 def _make_registry(tmp_path, *, sandbox=True):
     repo = KnowledgeRepo(tmp_path / "knowledge")
-    vi = VectorIndex(tmp_path / "vec")
-    fi = FullTextIndex(tmp_path / "fts.db")
     llm = FakeLLMClient(embed_dim=8)
-    idx = Indexer(vi, fi, llm)
+    si = make_search_index(tmp_path, llm)
+    idx = Indexer(si)
     rev = IndexRevision(tmp_path / "revision.txt")
-    retr = Retriever(vi, fi, llm, index_revision=rev)
+    retr = Retriever(si, llm, index_revision=rev)
     pending = PendingStore(tmp_path / "knowledge" / ".kb" / "pending.json")
     settings = Settings(kb_path=tmp_path / "knowledge")
     writer = make_writer(repo, tmp_path)

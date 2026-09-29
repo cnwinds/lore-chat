@@ -20,14 +20,12 @@ from app.engine.sandbox.role_pool import RoleSandboxPool, SandboxPoolFullError
 from app.engine.sandbox.workspace_cwd import default_sandbox_cwd, resolve_sandbox_cwd
 from app.engine.web.fetcher import WebFetcher
 from app.engine.web.search import WebSearch
-from app.index.fulltext import FullTextIndex
 from app.index.indexer import Indexer
 from app.index.revision import IndexRevision
-from app.index.vector import VectorIndex
 from app.models.cooldown import CooldownStore
 from app.models.llm import FakeLLMClient
 from app.storage.repo import KnowledgeRepo
-from tests.helpers import make_writer
+from tests.helpers import make_writer, make_search_index, drain_embeddings
 
 
 def _fake_factory(role_id: str, slot: dict) -> FakeSandboxRuntime:
@@ -45,11 +43,10 @@ def _pool(tmp_path, **kwargs) -> RoleSandboxPool:
 
 def _registry_with_pool(tmp_path, pool: RoleSandboxPool, conversations=None):
     repo = KnowledgeRepo(tmp_path / "knowledge")
-    vi = VectorIndex(tmp_path / "vec")
-    fi = FullTextIndex(tmp_path / "fts.db")
     llm = FakeLLMClient(embed_dim=8)
-    idx = Indexer(vi, fi, llm)
-    retr = Retriever(vi, fi, llm, index_revision=IndexRevision(tmp_path / "rev.txt"))
+    si = make_search_index(tmp_path, llm)
+    idx = Indexer(si)
+    retr = Retriever(si, llm, index_revision=IndexRevision(tmp_path / "rev.txt"))
     pending = PendingStore(tmp_path / "knowledge" / ".kb" / "pending.json")
     settings = Settings(kb_path=tmp_path / "knowledge")
     writer = make_writer(repo, tmp_path)

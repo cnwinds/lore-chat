@@ -1539,9 +1539,7 @@ class ConversationStore:
         self,
         cid: str,
         *,
-        conversation_fts=None,
-        conversation_vector=None,
-        indexer=None,
+        conversation_index=None,
         index_revision=None,
         ledger_path: str | Path | None = None,
         delete_summary: bool = True,
@@ -1549,9 +1547,7 @@ class ConversationStore:
         """兼容委托：协议见 ConversationDeletionWorkflow。"""
         self.deletion.delete(
             cid,
-            conversation_fts=conversation_fts,
-            conversation_vector=conversation_vector,
-            indexer=indexer,
+            conversation_index=conversation_index,
             index_revision=index_revision,
             ledger_path=ledger_path,
             delete_summary=delete_summary,
@@ -1561,9 +1557,7 @@ class ConversationStore:
         self,
         role_id: str,
         *,
-        conversation_fts=None,
-        conversation_vector=None,
-        indexer=None,
+        conversation_index=None,
         index_revision=None,
         ledger_path: str | Path | None = None,
         delete_summary: bool = True,
@@ -1576,9 +1570,7 @@ class ConversationStore:
         for cid in ids:
             self.delete(
                 cid,
-                conversation_fts=conversation_fts,
-                conversation_vector=conversation_vector,
-                indexer=indexer,
+                conversation_index=conversation_index,
                 index_revision=index_revision,
                 ledger_path=ledger_path,
                 delete_summary=delete_summary,

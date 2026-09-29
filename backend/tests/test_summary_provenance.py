@@ -2,12 +2,10 @@ from app.engine.conversations import ConversationStore
 from app.engine.organizer import Organizer, PlacementDecision
 from app.engine.pending import PendingStore
 from app.engine.retriever import Retriever
-from app.index.fulltext import FullTextIndex
 from app.index.indexer import Indexer
-from app.index.vector import VectorIndex
 from app.models.llm import FakeLLMClient
 from app.storage.repo import KnowledgeRepo
-from tests.helpers import make_writer
+from tests.helpers import make_search_index, make_writer
 
 
 def _finalize(store, cid, turn_id, text):
@@ -51,11 +49,10 @@ def test_append_message_marks_summary_stale(tmp_path):
 def test_organizer_writes_conversation_ids_list(tmp_path):
     repo = KnowledgeRepo(tmp_path / "knowledge", protected_dirs=("系统",))
     llm = FakeLLMClient(chat_responses=["# 标题\n\n正文"], embed_dim=8)
-    vi = VectorIndex(tmp_path / "vec")
-    fi = FullTextIndex(tmp_path / "fts.db")
+    si = make_search_index(tmp_path, llm)
     org = Organizer(
         repo=repo,
-        retriever=Retriever(vi, fi, llm),
+        retriever=Retriever(si, llm),
         pending=PendingStore(tmp_path / "pending.json"),
         llm=llm,
         knowledge_writer=make_writer(repo, tmp_path),

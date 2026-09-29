@@ -796,11 +796,11 @@ def test_conversation_tail_and_older_messages(client):
 
 
 def test_delete_conversation_clears_fts_and_vector_indexes(client):
+    from tests.helpers import conv_fts_hits, drain_embeddings
+
     container = client.app.state.container
     store = container.conversations
-    fts = container.conversation_fts
-    vec = container.conversation_vector
-    llm = container.llm
+    si = container.search_index
 
     cid = store.create()
     turn = store.begin_turn(
@@ -819,15 +819,15 @@ def test_delete_conversation_clears_fts_and_vector_indexes(client):
             "status": "complete",
         },
     )
-    assert container.derivation_worker.drain(max_jobs=10) >= 2
-    assert fts.query("人脑", k=5)
-    assert vec.query(llm.embed(["人脑"])[0], k=5)
+    assert container.derivation_worker.drain(max_jobs=10) >= 1
+    assert conv_fts_hits(si, "人脑", k=5)
+    drain_embeddings(si)
 
     r = client.delete(f"/api/conversations/{cid}")
     assert r.status_code == 200
 
-    assert fts.query("人脑", k=5) == []
-    assert vec.query(llm.embed(["人脑"])[0], k=5) == []
+    assert conv_fts_hits(si, "人脑", k=5) == []
+    assert cid not in container.conversation_index.conversation_ids()
 
 
 def test_chat_saves_to_conversation(client):
