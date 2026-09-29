@@ -123,6 +123,9 @@ class LLMClient(Protocol):
         temperature: float = 0.2,
     ) -> Iterator[ChatStreamChunk]: ...
     def embed(self, texts: list[str]) -> list[list[float]]: ...
+    def embed_with_model(
+        self, texts: list[str]
+    ) -> tuple[list[list[float]], str]: ...
 
 
 def _delta_reasoning(delta: Any) -> str | None:
@@ -658,9 +661,11 @@ class OpenAILLMClient:
             )
             return
 
-    def embed(self, texts: list[str]) -> list[list[float]]:
+    def embed_with_model(
+        self, texts: list[str]
+    ) -> tuple[list[list[float]], str]:
         if not texts:
-            return []
+            return [], ""
         attempted: set[str] = set()
         last_exc: BaseException | None = None
         while True:
@@ -726,7 +731,10 @@ class OpenAILLMClient:
                 status="ok",
                 duration_ms=int((time.monotonic() - t0) * 1000),
             )
-            return out
+            return out, model
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        return self.embed_with_model(texts)[0]
 
 
 class FakeLLMClient:
@@ -796,3 +804,8 @@ class FakeLLMClient:
             vec = [((h[i % len(h)] / 255.0) * 2 - 1) for i in range(self.embed_dim)]
             vecs.append(vec)
         return vecs
+
+    def embed_with_model(
+        self, texts: list[str]
+    ) -> tuple[list[list[float]], str]:
+        return self.embed(texts), f"fake-embed-{self.embed_dim}"
