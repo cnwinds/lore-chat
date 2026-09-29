@@ -850,6 +850,42 @@ def test_ensure_active_outside_window_closes_previous(tmp_path, monkeypatch):
     assert old in called
 
 
+def test_archiving_older_segment_keeps_tip_and_prior(tmp_path):
+    """归档不是会话活动：在当前段归档更早的段，不得抢走 tip，也不改变上一会话段。"""
+    from datetime import timedelta
+
+    from app.time import now_display
+
+    conv = _conv(tmp_path)
+    older = conv.create(role_id=DEFAULT_ROLE_ID)
+    prior = conv.create(role_id=DEFAULT_ROLE_ID)
+    tip = conv.create(role_id=DEFAULT_ROLE_ID)
+    for cid in (older, prior, tip):
+        conv.append_exchange(cid, f"u-{cid}", {"role": "assistant", "text": "ok"})
+    now = now_display()
+    with conv._lock:
+        for cid, age in (
+            (older, timedelta(days=3)),
+            (prior, timedelta(hours=8)),
+            (tip, timedelta(minutes=30)),
+        ):
+            stamp = (now - age).isoformat(timespec="seconds")
+            conv.conn.execute(
+                "UPDATE conversations SET created_at = ?, updated_at = ?, "
+                "last_user_message_at = ? WHERE id = ?",
+                (stamp, stamp, stamp, cid),
+            )
+        conv.conn.commit()
+
+    conv.mark_summarized(older, "归档/旧话题.md")
+
+    assert conv.find_active_conversation_id(DEFAULT_ROLE_ID, idle_hours=6) == tip
+    prior_item = conv.latest_prior_owner_dm(
+        DEFAULT_ROLE_ID, exclude_conversation_id=tip
+    )
+    assert prior_item["id"] == prior
+
+
 def test_reassign_role_preserves_updated_at(tmp_path):
     """reassign_role 不改 updated_at，避免迁入会话劫持目标角色 tip。"""
     from datetime import datetime, timedelta, timezone

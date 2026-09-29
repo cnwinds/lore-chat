@@ -29,8 +29,10 @@ def is_unmodified_official(body: str) -> bool:
 # d50de43c… = 「事实铁律」仍在外置 SYSTEM、戒律仅「详见事实铁律」时的播种稿。
 # d2099893… = 「三、检索」与「四、渐进式披露」分节、尚无 web_search 条目前的播种稿。
 # 5646ab1a… = 旧七章结构（落库开头、Skill/教学分节）的播种稿。
+# 2dec5bc1… = 归档仍限「本次会话」、未按跨段接续锁定所指段时的播种稿。
 _SUPERSEDED_PRECEPTS_HASHES = frozenset(
     {
+        "2dec5bc10aa43d518811b0ae4dfc974240e71716084e7c9f57a6cb4d8f31c11d",
         "d50de43c3732e9cf719d7ff7114f44bd136b66560423e9590b7cd4349a9a7388",
         "5938a5065dc5575286d9d604729c294c8f0abf641dcab7d62ed824bb8d7fab09",
         "628f5da095bc721534cd5c553ed2b5365d99ea0c94f776dd0c2e2366e3994791",
@@ -73,7 +75,7 @@ _PRECEPTS_BODY = """# 戒律 · 行为规约
 
 1. **默认不沉淀**：专注解决问题与回答，零散对话不落库。仅当用户明确要求时：
    - 记录一条 → Markdown 用 `write_doc`，脚本 / 代码 / 配置用 `write_kb_file`，只记该条；
-   - 归档 / 总结本次会话 → `summarize_conversation`；
+   - 归档 / 总结会话 → `summarize_conversation`；所指对话不在本段时，先按「跨段接续」锁定那段再归档；
    - 主人长期画像 → `manage_memory`，不写成知识文档。
      用户明确要求的改文档、生图、跑沙箱等走对应工具，不受本条阻挡。
 2. **归档规矩**：对象是整段会话而非某一轮，必须通读全部对话与依据后成文；调用 `summarize_conversation`，不自行拼接一篇再 `write_doc`。

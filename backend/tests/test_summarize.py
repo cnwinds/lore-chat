@@ -192,6 +192,66 @@ async def test_summarize_tool_does_not_block_event_loop(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("as_link", [False, True])
+async def test_summarize_conversation_archives_named_prior_segment(tmp_path, as_link):
+    """超时新开段后，「把我们聊的存进知识库」应归档用户所指的上一段，而不是空的新段。"""
+    synthesized = "# 漫剧工具盘点\n\n剪映、小云雀等工具的综合介绍。\n"
+    registry, repo, conversations, *_ = _make(
+        tmp_path, [synthesized, "漫剧工具", _decision()]
+    )
+    prior = conversations.create()
+    conversations.append_exchange(
+        prior, "有哪些漫剧工具", {"role": "assistant", "text": "剪映、小云雀"}
+    )
+    current = conversations.create()
+    conversations.append_exchange(
+        current, "把我们聊的内容保存为知识库", {"role": "assistant", "text": "好"}
+    )
+
+    result = await registry.execute(
+        "summarize_conversation",
+        {
+            "directory": "娱乐",
+            "filename": "漫剧工具盘点.md",
+            "conversation_id": f"conversation://{prior}" if as_link else prior,
+        },
+        conversation_id=current,
+    )
+    assert "已归档" in result["summary"]
+    doc = repo.read_doc("娱乐/漫剧工具盘点.md")
+    assert doc.meta.get("conversation_ids") == [prior]
+    assert conversations.get(prior)["summarized"] is True
+    assert conversations.get(current)["summarized"] is False
+
+
+@pytest.mark.asyncio
+async def test_summarize_named_segment_not_found(tmp_path):
+    registry, repo, conversations, *_ = _make(tmp_path, [])
+    current = conversations.create()
+    result = await registry.execute(
+        "summarize_conversation",
+        {"directory": "娱乐", "filename": "x.md", "conversation_id": "nope"},
+        conversation_id=current,
+    )
+    assert result.get("error")
+
+
+@pytest.mark.asyncio
+async def test_summarize_named_segment_requires_current_conversation(tmp_path):
+    """无会话的调用（/api/ask 等）不得借 conversation_id 归档任意会话。"""
+    registry, repo, conversations, *_ = _make(tmp_path, [])
+    prior = conversations.create()
+    conversations.append_exchange(prior, "问题", {"role": "assistant", "text": "回答"})
+    result = await registry.execute(
+        "summarize_conversation",
+        {"directory": "娱乐", "filename": "x.md", "conversation_id": prior},
+        conversation_id=None,
+    )
+    assert result.get("error")
+    assert conversations.get(prior)["summarized"] is False
+
+
+@pytest.mark.asyncio
 async def test_summarize_without_conversation_context(tmp_path):
     registry, *_ = _make(tmp_path, [])
     result = await registry.execute("summarize_conversation", {}, conversation_id=None)

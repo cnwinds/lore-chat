@@ -1419,6 +1419,27 @@ class ConversationStore:
             return item
         return None
 
+    def prior_segment(self, cid: str) -> dict | None:
+        """``cid`` 在主人 web 一对一时间线上时，返回其上一会话段。
+
+        群聊、角色私信、通道会话不在该时间线上，没有「上一段」。
+        """
+        from app.engine.channel_plugins.types import is_channel_origin
+        from app.engine.rooms.schema import KIND_OWNER_DM
+
+        with self._lock:
+            row = self._conversation_row(cid)
+            origin = self._row_origin(row)
+            try:
+                kind = (row["kind"] or KIND_OWNER_DM).strip() or KIND_OWNER_DM
+            except (KeyError, IndexError):
+                kind = KIND_OWNER_DM
+        if is_channel_origin(origin) or kind != KIND_OWNER_DM:
+            return None
+        return self.latest_prior_owner_dm(
+            self.get_role_id(cid), exclude_conversation_id=cid
+        )
+
     def _maybe_close_segment_for_memory(self, cid: str | None) -> None:
         """关段时触发记忆抽取；无消息或已 pending 则由 request_immediate 去重。"""
         if not cid:

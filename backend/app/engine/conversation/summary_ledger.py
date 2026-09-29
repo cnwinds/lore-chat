@@ -105,9 +105,10 @@ class ConversationSummaryLedger:
                 at,
             ),
         )
+        # 归档不是会话活动：updated_at 决定角色 tip 与上一会话段，不得因归档旧段而变。
         store.conn.execute(
-            "UPDATE conversations SET indexed_dirty = 0, updated_at = ? WHERE id = ?",
-            (at, cid),
+            "UPDATE conversations SET indexed_dirty = 0 WHERE id = ?",
+            (cid,),
         )
 
     def mark_summarized(self, cid: str, summary_path: str) -> None:

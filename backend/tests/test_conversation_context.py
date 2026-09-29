@@ -130,6 +130,26 @@ def test_read_context_no_prior_segment(tmp_path):
     assert out["messages"] == []
 
 
+def test_read_context_channel_conversation_has_no_prior_segment(tmp_path):
+    """上一会话段只在主人 web 一对一时间线上成立；通道会话不得默认读回主人私聊。"""
+    store = _store(tmp_path)
+    owner_dm = store.create()
+    store.append_exchange(owner_dm, "主人私聊内容", {"role": "assistant", "text": "好"})
+    channel = store.create(origin="feishu")
+    out = read_conversation_context(store, current_conversation_id=channel)
+    assert out["error"] == "no_prior"
+    assert out["messages"] == []
+
+
+def test_read_context_accepts_conversation_link(tmp_path):
+    store = _store(tmp_path)
+    cid = store.create()
+    store.append_exchange(cid, "方案草稿", {"role": "assistant", "text": "先写大纲"})
+    out = read_conversation_context(store, conversation_id=f"conversation://{cid}")
+    assert out["anchor"]["conversation_id"] == cid
+    assert "方案草稿" in " ".join(m["text"] for m in out["messages"])
+
+
 def test_read_context_tail_skips_non_dialogue_roles(tmp_path):
     store = _store(tmp_path)
     cid = store.create()

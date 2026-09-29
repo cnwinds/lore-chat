@@ -19,15 +19,22 @@ def _empty(*, conversation_id: str | None, message_id: str | None, error: str, s
     }
 
 
+def conversation_ref_id(raw: str | None) -> str:
+    """工具参数里的会话引用 → 会话 id；兼容 ``conversation://id[/消息id]`` 链接写法。"""
+    ref = str(raw or "").strip()
+    if ref.startswith("conversation://"):
+        ref = ref[len("conversation://") :].split("/", 1)[0].split("#", 1)[0]
+    return ref.strip()
+
+
 def _resolve_prior_conversation_id(store, current_conversation_id: str | None) -> str | None:
     cid = (current_conversation_id or "").strip()
     if not cid:
         return None
     try:
-        role_id = store.get_role_id(cid)
+        prior = store.prior_segment(cid)
     except KeyError:
         return None
-    prior = store.latest_prior_owner_dm(role_id, exclude_conversation_id=cid)
     if not prior:
         return None
     return prior.get("id")
@@ -75,7 +82,7 @@ def read_conversation_context(
     max_chars: int = 12000,
     current_conversation_id: str | None = None,
 ) -> dict:
-    cid = (conversation_id or "").strip()
+    cid = conversation_ref_id(conversation_id)
     mid = (message_id or "").strip()
     if not cid:
         if mid:

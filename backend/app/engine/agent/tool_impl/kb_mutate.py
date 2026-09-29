@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from app.engine.agent.tool_catalog import resolve_kb_location
 from app.engine.agent.tool_impl.doc_read_guard import DocReadGuard
+from app.engine.conversation_context import conversation_ref_id
 from app.engine.conversations import ConversationStore
 from app.engine.write_policy import WriteMode
 from app.engine.knowledge_writer import (
@@ -261,6 +262,9 @@ class KbMutateTools:
                 "sources": [],
                 "error": "no conversation context",
             }
+        conversation_id = (
+            conversation_ref_id(args.get("conversation_id")) or conversation_id
+        )
         try:
             conv = self.conversations.get(conversation_id)
         except KeyError:

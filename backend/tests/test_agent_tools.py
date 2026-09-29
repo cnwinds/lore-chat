@@ -792,6 +792,11 @@ def test_cross_segment_continuity_contract():
     assert "read_conversation_context" in search["description"]
     assert "ts_after" in search["parameters"]["properties"]
     assert "ts_before" in search["parameters"]["properties"]
+    archive = defs["summarize_conversation"]
+    assert "conversation_id" in archive["parameters"]["properties"]
+    assert "conversation_id" not in archive["parameters"]["required"]
+    assert "默认归档当前段" in archive["description"]
+    assert "本次会话" not in archive["description"]
     names = _tool_names(select_tools(MODE_DEFAULT, web_enabled=True, role_messaging=True))
     assert "ask_user" in names
 

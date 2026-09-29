@@ -14,7 +14,7 @@ from app.engine.agent.events import error_event, sse_event, timeline_state
 from app.engine.agent.prompts import MODE_DEFAULT, build_role_identity_block
 from app.engine.agent.run_report import AgentRunReport
 from app.engine.chat.role_context_prefetch import (
-    build_prefetch_system_message,
+    build_prior_segment_pointer,
     should_prefetch_role_context,
 )
 from app.engine.chat.sse import parse_agent_sse_event
@@ -199,25 +199,11 @@ class TurnExecutionHub:
             return ""
 
     def _prefetch_context_for(
-        self, cid: str, text: str, history: list[dict] | None
+        self, cid: str, history: list[dict] | None
     ) -> str | None:
         if not should_prefetch_role_context(history):
             return None
-        try:
-            retriever = getattr(self.agent.tools.kb_read, "retriever", None)
-        except Exception:
-            retriever = None
-        try:
-            role_id = self.conversations.get_role_id(cid)
-        except KeyError:
-            return None
-        return build_prefetch_system_message(
-            retriever=retriever,
-            conversations=self.conversations,
-            query=text,
-            role_id=role_id,
-            exclude_conversation_id=cid,
-        )
+        return build_prior_segment_pointer(self.conversations, conversation_id=cid)
 
     def _purge_expired(self) -> None:
         """Drop finished turns past retain window so SSE buffers cannot linger forever."""
@@ -578,7 +564,7 @@ class TurnExecutionHub:
 
         self.inject_broker.register_turn(cid, turn_id)
         try:
-            prefetch = self._prefetch_context_for(cid, spec.text, spec.history)
+            prefetch = self._prefetch_context_for(cid, spec.history)
             async for ev in self.agent.run(
                 spec.text,
                 mode=spec.mode or MODE_DEFAULT,

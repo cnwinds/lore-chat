@@ -675,13 +675,21 @@ TOOL_DEFINITIONS: list[dict] = [
         "function": {
             "name": "summarize_conversation",
             "description": (
-                "把当前整段会话通读后全局重构、去重、成文，归档为一篇知识库文档。"
-                "用户要求「总结/归档本次会话/整理成文档/生成会话纪要」时调用。"
+                "把一整段会话通读后全局重构、去重、成文，归档为一篇知识库文档。"
+                "用户要求「总结/归档会话/整理成文档/生成会话纪要」时调用。"
+                "默认归档当前段；用户所指的对话在分隔线之前（如上一会话段）时，"
+                "先用 read_conversation_context 或 search_kb 锁定那段，再传其 conversation_id。"
                 "归档前应先 list_kb_structure 规划 directory 与 filename（归档是新路径）；必须指定二者。"
             ),
             "parameters": {
                 "type": "object",
-                "properties": _path_fields()[0],
+                "properties": {
+                    **_path_fields()[0],
+                    "conversation_id": {
+                        "type": "string",
+                        "description": "要归档的会话 id；省略则归档当前段",
+                    },
+                },
                 "required": ["directory", "filename"],
             },
         },
