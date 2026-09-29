@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
+from app.engine.sandbox.result_text import format_workspace_outputs
 from app.engine.visible_text import strip_protocol_markup
 
 # 写入/改写知识库或会话附件的工具：其 sources/attachments 才算「本轮产出」
@@ -18,6 +19,11 @@ _TURN_OUTPUT_TOOLS = frozenset(
         "edit_doc",
     }
 )
+
+# 执行结束时探测过 /workspace 新写文件的沙箱工具（结果带 workspace_outputs）
+_SANDBOX_OUTPUT_TOOLS = frozenset({"sandbox_run", "sandbox_stop"})
+# 每次命令最多 20 条，一轮多次命令合并后仍要限长，否则每轮 history 都背着长清单
+_SANDBOX_OUTPUTS_MAX = 30
 
 
 class ConversationTranscript:
@@ -179,11 +185,50 @@ class ConversationTranscript:
         return out
 
     @classmethod
-    def format_turn_outputs(cls, paths: list[str]) -> str:
-        if not paths:
+    def turn_sandbox_outputs(cls, msg: dict) -> dict:
+        """本轮沙箱命令在 /workspace 新写或改写、尚未入库的文件（按路径去重，保留最新大小）。"""
+        sizes: dict[str, int] = {}
+        truncated = False
+
+        def walk(blocks: object) -> None:
+            nonlocal truncated
+            if not isinstance(blocks, list):
+                return
+            for block in blocks:
+                if not isinstance(block, dict):
+                    continue
+                if block.get("type") == "parallel":
+                    walk(block.get("children"))
+                    continue
+                if block.get("type") != "tool" or block.get("tool") not in _SANDBOX_OUTPUT_TOOLS:
+                    continue
+                outputs = block.get("workspace_outputs")
+                if not isinstance(outputs, dict):
+                    continue
+                truncated = truncated or bool(outputs.get("truncated"))
+                for f in outputs.get("files") or []:
+                    if isinstance(f, dict) and isinstance(f.get("path"), str) and f["path"]:
+                        sizes[f["path"]] = f.get("size")
+
+        walk(msg.get("timeline"))
+        files = [{"path": p, "size": s} for p, s in sizes.items()]
+        if len(files) > _SANDBOX_OUTPUTS_MAX:
+            files, truncated = files[:_SANDBOX_OUTPUTS_MAX], True
+        return {"files": files, "truncated": truncated}
+
+    @classmethod
+    def format_turn_outputs(
+        cls, paths: list[str], sandbox_outputs: dict | None = None
+    ) -> str:
+        sections: list[str] = []
+        if paths:
+            sections.append("\n".join(f"- {p}" for p in paths))
+        sandbox_section = format_workspace_outputs(sandbox_outputs)
+        if sandbox_section:
+            sections.append(sandbox_section)
+        if not sections:
             return ""
-        lines = "\n".join(f"- {p}" for p in paths)
-        return f"【本轮产出】\n{lines}"
+        return "【本轮产出】\n" + "\n".join(sections)
 
     @classmethod
     def solicitation_for_history(cls, msg: dict) -> str:
@@ -233,7 +278,9 @@ class ConversationTranscript:
         """喂给下一轮 LLM 的助手内容：正文 + 征询 + 确定性本轮产出路径。"""
         text = cls.assistant_content(msg)
         ask = cls.solicitation_for_history(msg)
-        footer = cls.format_turn_outputs(cls.turn_output_paths(msg))
+        footer = cls.format_turn_outputs(
+            cls.turn_output_paths(msg), cls.turn_sandbox_outputs(msg)
+        )
         parts = [p for p in (text, ask, footer) if p]
         return "\n\n".join(parts)
 

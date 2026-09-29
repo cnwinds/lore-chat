@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import errno
 from types import SimpleNamespace
 
 import pytest
 from opensandbox.models.filesystem import WriteEntry
 
+from app.engine.sandbox import probes
 from app.engine.sandbox.opensandbox_runtime import OpenSandboxRuntime
+from app.engine.sandbox.protocol import CommandResult, SandboxNotFound
 
 
 class _FakeFiles:
@@ -115,14 +118,34 @@ async def test_read_file_base64_fallback_when_no_files_api(tmp_path):
     rt._applying_mirrors = True
 
     async def fake_run(command: str, **_kw):
-        from app.engine.sandbox.protocol import CommandResult
-
         assert "base64" in command
         return CommandResult(
-            stdout=base64.b64encode(png).decode("ascii"),
+            output=probes.probe_line(
+                {"ok": True, "b64": base64.b64encode(png).decode("ascii")}
+            ),
             exit_code=0,
         )
 
     rt.run = fake_run  # type: ignore[method-assign]
     out = await rt.read_file("/workspace/a.png", max_bytes=100)
     assert out == png
+
+
+@pytest.mark.asyncio
+async def test_read_file_base64_fallback_classifies_missing(tmp_path):
+    rt = OpenSandboxRuntime(kb_path=tmp_path, domain="localhost")
+    rt._sandbox = SimpleNamespace(files=None)
+    rt._sandbox_id = "test-sb"
+    rt._applying_mirrors = True
+
+    async def fake_run(command: str, **_kw):
+        return CommandResult(
+            output=probes.probe_line(
+                {"ok": False, "errno": errno.ENOENT, "detail": "No such file or directory"}
+            ),
+            exit_code=0,
+        )
+
+    rt.run = fake_run  # type: ignore[method-assign]
+    with pytest.raises(SandboxNotFound):
+        await rt.read_file("/workspace/nope")

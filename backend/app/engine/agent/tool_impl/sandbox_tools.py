@@ -11,7 +11,7 @@ from app.engine.sandbox.command_gate import SandboxCommandGate
 from app.engine.sandbox.command_prep import prepare_streaming_command
 from app.engine.sandbox.execution_engine import SandboxExecutionEngine
 from app.engine.sandbox.kb_exchange import KbSandboxExchange
-from app.engine.sandbox.protocol import SandboxRuntime
+from app.engine.sandbox.protocol import SandboxFsError, SandboxRuntime
 from app.engine.sandbox.result_text import clip_stdout
 from app.engine.sandbox.role_pool import (
     RoleSandboxPool,
@@ -19,6 +19,15 @@ from app.engine.sandbox.role_pool import (
     parse_role_schedule_id,
 )
 from app.engine.sandbox.workspace_cwd import resolve_sandbox_cwd
+
+
+def _fs_error_result(e: SandboxFsError) -> dict:
+    return {
+        "summary": e.describe(),
+        "sources": [],
+        "error": e.kind,
+        "checked_path": e.path,
+    }
 
 
 class SandboxTools:
@@ -311,8 +320,10 @@ class SandboxTools:
             return rt
         path = (args.get("path") or "/workspace").strip() or "/workspace"
         await rt.ensure_ready()
-        entries = await rt.list_dir(path)
-        # 路径权威在 entries[]；summary 仅单行计数，避免 JSON 转义换行导致模型粘连文件名
+        try:
+            entries = await rt.list_dir(path)
+        except SandboxFsError as e:
+            return _fs_error_result(e)
         if entries:
             summary = f"{path} 共 {len(entries)} 项；路径见 entries"
         else:
@@ -349,12 +360,8 @@ class SandboxTools:
         await rt.ensure_ready()
         try:
             data = await rt.read_file(path, max_bytes=max_chars * 4)
-        except FileNotFoundError:
-            return {
-                "summary": f"文件不存在：{path}",
-                "sources": [],
-                "error": "not found",
-            }
+        except SandboxFsError as e:
+            return _fs_error_result(e)
         text = data.decode("utf-8", errors="replace")
         truncated = len(text) > max_chars
         if truncated:

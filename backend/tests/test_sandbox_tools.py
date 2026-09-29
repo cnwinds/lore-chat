@@ -197,7 +197,7 @@ async def test_publish_from_sandbox_batch_partial(tmp_path):
     assert pub.get("error")
     by_sp = {it["sandbox_path"]: it for it in pub["items"]}
     assert by_sp["/workspace/ok.md"]["ok"] is True
-    assert by_sp["/workspace/missing.md"]["error"] == "not found"
+    assert by_sp["/workspace/missing.md"]["error"] == "not_found"
 
 
 @pytest.mark.asyncio

@@ -114,7 +114,7 @@ class TimelineAccumulator:
                 ):
                     if data.get(key) is not None:
                         block[key] = data[key]
-                for key in ("preview", "reindex_mode", "applied"):
+                for key in ("preview", "reindex_mode", "applied", "workspace_outputs"):
                     if data.get(key) is not None:
                         block[key] = data[key]
                 if data.get("attachments"):

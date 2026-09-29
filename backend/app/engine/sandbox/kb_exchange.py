@@ -11,7 +11,7 @@ import shlex
 from pathlib import PurePosixPath
 
 from app.engine.knowledge_writer import KbPathExistsError, KnowledgeWriter
-from app.engine.sandbox.protocol import SandboxRuntime
+from app.engine.sandbox.protocol import SandboxFsError, SandboxRuntime
 from app.storage.kb_media_paths import is_image_filename
 from app.storage.kb_paths import KbPathError
 
@@ -285,7 +285,7 @@ class KbSandboxExchange:
             quoted = " ".join(shlex.quote(d) for d in clean_dirs)
             res = await runtime.run(f"rm -rf -- {quoted}", cwd="/", timeout_sec=60)
             if res.exit_code != 0:
-                detail = (res.stderr or res.stdout or "").strip()[:500]
+                detail = (res.output or "").strip()[-500:]
                 return {
                     "summary": f"清空目标目录失败，未投放任何文件：{detail}",
                     "sources": [],
@@ -359,10 +359,10 @@ class KbSandboxExchange:
             item["sandbox_path"] = norm
             try:
                 data = await runtime.read_file(norm, max_bytes=50 * 1024 * 1024)
-            except FileNotFoundError:
+            except SandboxFsError as e:
                 item["ok"] = False
-                item["error"] = "not found"
-                item["summary"] = f"沙箱文件不存在：{norm}"
+                item["error"] = e.kind
+                item["summary"] = e.describe()
                 items_out.append(item)
                 continue
             try:

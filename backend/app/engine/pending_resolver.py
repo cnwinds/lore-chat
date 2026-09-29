@@ -8,7 +8,7 @@ from app.engine.merge_sessions import MergeSessionStore
 from app.engine.merge_workflow import MergeResult, MergeWorkflow
 from app.engine.organizer import IngestResult, Organizer
 from app.engine.pending import PendingStore
-from app.engine.sandbox.result_text import display_summary
+from app.engine.sandbox.result_text import display_summary, format_workspace_outputs
 
 
 @dataclass
@@ -131,6 +131,9 @@ class PendingResolver:
             conversation_id=run_payload.get("conversation_id") or body.conversation_id,
         )
         summary = display_summary(out).strip() or "(无输出)"
+        files = format_workspace_outputs(out.get("workspace_outputs"))
+        if files:
+            summary += "\n\n" + files
         return IngestResult(
             status="continue",
             rel_path=None,

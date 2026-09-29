@@ -44,4 +44,37 @@ def display_summary(out: dict) -> str:
     return text[:DISPLAY_MAX_CHARS]
 
 
-__all__ = ["SANDBOX_LOG_TOOLS", "clip_stdout", "display_summary"]
+def workspace_output_lines(outputs: object) -> list[str]:
+    """``workspace_outputs`` → ``- 路径（大小）`` 行；列表被截断时末尾注明。"""
+    if not isinstance(outputs, dict):
+        return []
+    lines: list[str] = []
+    for f in outputs.get("files") or []:
+        if isinstance(f, dict) and isinstance(f.get("path"), str) and f["path"]:
+            lines.append(f"- {f['path']}（{_human_size(f.get('size'))}）")
+    if lines and outputs.get("truncated"):
+        lines.append("- …（仅列最近修改的部分文件）")
+    return lines
+
+
+def format_workspace_outputs(outputs: object) -> str:
+    lines = workspace_output_lines(outputs)
+    return "沙箱文件（未入库）：\n" + "\n".join(lines) if lines else ""
+
+
+def _human_size(size: object) -> str:
+    n = size if isinstance(size, int) and size >= 0 else 0
+    if n < 1024:
+        return f"{n} B"
+    if n < 1024 * 1024:
+        return f"{n / 1024:.1f} KB"
+    return f"{n / 1024 / 1024:.1f} MB"
+
+
+__all__ = [
+    "SANDBOX_LOG_TOOLS",
+    "clip_stdout",
+    "display_summary",
+    "format_workspace_outputs",
+    "workspace_output_lines",
+]

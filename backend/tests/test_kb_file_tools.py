@@ -7,6 +7,7 @@ import pytest
 from app.engine.agent.prompts import MODE_DEFAULT, MODE_NO_WRITE
 from app.engine.agent.tool_catalog import resolve_tool_label, select_tools
 from app.engine.knowledge_writer import KbPathExistsError
+from app.engine.sandbox.protocol import SandboxNotFound
 from app.storage.kb_text_files import is_kb_text_file
 from app.storage.repo import KnowledgeRepo
 from tests.helpers import make_writer
@@ -319,7 +320,7 @@ def _seed_kb(tmp_path, files: dict[str, str | bytes]) -> None:
 async def _missing(runtime, path: str) -> bool:
     try:
         await runtime.read_file(path)
-    except FileNotFoundError:
+    except SandboxNotFound:
         return True
     return False
 

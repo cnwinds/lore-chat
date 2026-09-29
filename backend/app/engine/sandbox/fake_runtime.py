@@ -3,11 +3,21 @@
 from __future__ import annotations
 
 import asyncio
+import errno
+import json
 import shlex
+import time
 import uuid
 from pathlib import PurePosixPath
 
-from app.engine.sandbox.protocol import CommandResult, DirEntry, JobStatus
+from app.engine.sandbox import probes
+from app.engine.sandbox.protocol import (
+    CommandResult,
+    DirEntry,
+    JobStatus,
+    SandboxFsError,
+    SandboxNotFound,
+)
 
 
 class FakeSandboxRuntime:
@@ -15,6 +25,7 @@ class FakeSandboxRuntime:
         self.sandbox_id = sandbox_id or "fake-sandbox"
         self.role_id = role_id
         self._files: dict[str, bytes] = {"/workspace/.keep": b""}
+        self._mtimes: dict[str, float] = {}
         self._jobs: dict[str, JobStatus] = {}
         self.last_cwd: str | None = None
         self._active_executions: set[str] = set()
@@ -32,6 +43,10 @@ class FakeSandboxRuntime:
         p = PurePosixPath(path if path.startswith("/") else f"/workspace/{path}")
         return str(p)
 
+    def _put(self, path_n: str, data: bytes) -> None:
+        self._files[path_n] = data
+        self._mtimes[path_n] = time.time()
+
     async def run(
         self,
         command: str,
@@ -42,33 +57,38 @@ class FakeSandboxRuntime:
         del timeout_sec
         # 支持简单 && 链式
         if "&&" in command:
-            stdout_all = ""
-            stderr_all = ""
+            output_all = ""
             code = 0
             for part in command.split("&&"):
                 r = await self.run(part.strip(), cwd=cwd)
-                stdout_all += r.stdout
-                stderr_all += r.stderr
+                output_all += r.output
                 code = r.exit_code
                 if code != 0:
                     break
-            return CommandResult(stdout=stdout_all, stderr=stderr_all, exit_code=code)
+            return CommandResult(output=output_all, exit_code=code)
 
-        self.last_cwd = cwd
-        cwd_n = self._norm(cwd)
         parts = shlex.split(command)
         if not parts:
             return CommandResult(exit_code=0)
+        # 探针是引擎内部命令，不记入 last_cwd（测试用它断言用户命令的工作目录）
+        if parts[:3] == ["python3", "-c", probes.LIST_DIR_SCRIPT] and len(parts) == 4:
+            return CommandResult(output=self._probe_list_dir(parts[3]), exit_code=0)
+        if parts[:3] == ["python3", "-c", probes.WORKSPACE_OUTPUTS_SCRIPT] and len(parts) == 4:
+            return CommandResult(
+                output=self._probe_workspace_outputs(json.loads(parts[3])), exit_code=0
+            )
+        self.last_cwd = cwd
+        cwd_n = self._norm(cwd)
         if parts[0] == "echo":
             # echo foo > /workspace/x or echo foo
             if ">" in parts:
                 idx = parts.index(">")
                 text = " ".join(parts[1:idx]) + "\n"
                 target = parts[idx + 1] if idx + 1 < len(parts) else ""
-                self._files[self._norm(target)] = text.encode()
-                return CommandResult(stdout=text, exit_code=0)
+                self._put(self._norm(target), text.encode())
+                return CommandResult(output=text, exit_code=0)
             text = " ".join(parts[1:]) + "\n"
-            return CommandResult(stdout=text, exit_code=0)
+            return CommandResult(output=text, exit_code=0)
         if parts[0] == "rm" and "-rf" in parts:
             for p in parts[1:]:
                 if p in ("-rf", "--"):
@@ -86,8 +106,8 @@ class FakeSandboxRuntime:
             path = self._norm(parts[1] if parts[1].startswith("/") else f"{cwd_n}/{parts[1]}")
             data = self._files.get(path)
             if data is None:
-                return CommandResult(stderr=f"cat: {path}: No such file\n", exit_code=1)
-            return CommandResult(stdout=data.decode("utf-8", errors="replace"), exit_code=0)
+                return CommandResult(output=f"cat: {path}: No such file\n", exit_code=1)
+            return CommandResult(output=data.decode("utf-8", errors="replace"), exit_code=0)
         if parts[0] == "ls":
             # ls -1Ap -- /path
             path_arg = cwd_n
@@ -115,10 +135,10 @@ class FakeSandboxRuntime:
                 )
                 lines.append(n + ("/" if is_dir else ""))
             out = "\n".join(lines) + ("\n" if lines else "")
-            return CommandResult(stdout=out, exit_code=0)
+            return CommandResult(output=out, exit_code=0)
         if parts[0] == "touch" and len(parts) >= 2:
             path = self._norm(parts[1])
-            self._files.setdefault(path, b"")
+            self._put(path, self._files.get(path, b""))
             return CommandResult(exit_code=0)
         if parts[0] == "head" and "-c" in parts:
             # head -c N -- path
@@ -127,15 +147,15 @@ class FakeSandboxRuntime:
                 nbytes = int(parts[n_idx + 1])
                 path = parts[-1]
             except (ValueError, IndexError):
-                return CommandResult(stderr="bad head\n", exit_code=1)
+                return CommandResult(output="bad head\n", exit_code=1)
             data = self._files.get(self._norm(path))
             if data is None:
-                return CommandResult(stderr="missing\n", exit_code=1)
+                return CommandResult(output="missing\n", exit_code=1)
             return CommandResult(
-                stdout=data[:nbytes].decode("utf-8", errors="replace"),
+                output=data[:nbytes].decode("utf-8", errors="replace"),
                 exit_code=0,
             )
-        return CommandResult(stdout=f"ran:{command}\n", exit_code=0)
+        return CommandResult(output=f"ran:{command}\n", exit_code=0)
 
     async def start_job(self, command: str, *, cwd: str = "/workspace") -> str:
         eid = uuid.uuid4().hex
@@ -179,7 +199,7 @@ class FakeSandboxRuntime:
                 execution_id=eid,
                 running=False,
                 exit_code=result.exit_code,
-                logs=(result.stdout or "") + (result.stderr or ""),
+                logs=result.output or "",
             )
 
         asyncio.create_task(_finish())
@@ -226,34 +246,86 @@ class FakeSandboxRuntime:
             if st.running:
                 await self.interrupt(eid)
 
-    async def list_dir(self, path: str = "/workspace") -> list[DirEntry]:
-        path_n = self._norm(path).rstrip("/")
-        prefix = path_n + "/"
+    def _kind(self, path_n: str) -> str | None:
+        if path_n in self._files:
+            return "file"
+        prefix = path_n.rstrip("/") + "/"
+        if any(k.startswith(prefix) for k in self._files):
+            return "dir"
+        return None
+
+    def _probe_list_dir(self, path: str) -> str:
+        """模拟探针在真实沙箱里的原始输出，由共用解码器解析。"""
+        path_n = self._norm(path).rstrip("/") or "/"
+        kind = self._kind(path_n)
+        if kind is None:
+            return probes.probe_line(
+                {"ok": False, "errno": errno.ENOENT, "detail": "No such file or directory"}
+            )
+        if kind == "file":
+            return probes.probe_line(
+                {"ok": False, "errno": errno.ENOTDIR, "detail": "Not a directory"}
+            )
+        prefix = path_n.rstrip("/") + "/"
         names: dict[str, bool] = {}
         for k in self._files:
             if not k.startswith(prefix):
                 continue
             rest = k[len(prefix) :]
-            if not rest:
-                continue
             first = rest.split("/", 1)[0]
-            if first == ".keep":
+            if not first or first == ".keep":
                 continue
-            is_dir = "/" in rest
-            names[first] = names.get(first, False) or is_dir
-        return [
-            DirEntry(name=n, path=f"{path_n}/{n}", is_dir=names[n])
-            for n in sorted(names)
-        ]
+            names[first] = names.get(first, False) or "/" in rest
+        return probes.probe_line(
+            {
+                "ok": True,
+                "entries": [{"name": n, "is_dir": d} for n, d in names.items()],
+            }
+        )
+
+    def _probe_workspace_outputs(self, cfg: dict) -> str:
+        root = cfg["root"].rstrip("/")
+        since = time.time() - float(cfg["age"])
+        own = {"conversations": cfg.get("conv"), "schedules": cfg.get("sched")}
+        skip = set(cfg.get("skip") or [])
+        hits: list[tuple[float, str, int]] = []
+        for path, data in self._files.items():
+            if not path.startswith(root + "/"):
+                continue
+            segs = path[len(root) + 1 :].split("/")
+            dirs, name = segs[:-1], segs[-1]
+            if name.startswith(".") or any(d.startswith(".") or d in skip for d in dirs):
+                continue
+            if len(dirs) >= 2 and dirs[0] in own and dirs[1] != own[dirs[0]]:
+                continue
+            mtime = self._mtimes.get(path, 0.0)
+            if mtime >= since:
+                hits.append((mtime, path, len(data)))
+        hits.sort(reverse=True)
+        limit = int(cfg["limit"])
+        return probes.probe_line(
+            {
+                "ok": True,
+                "files": [{"path": p, "size": s} for _, p, s in hits[:limit]],
+                "truncated": len(hits) > limit,
+            }
+        )
+
+    async def list_dir(self, path: str = "/workspace") -> list[DirEntry]:
+        result = await self.run(probes.list_dir_command(path), cwd="/")
+        return probes.decode_list_dir(path, result)
 
     async def read_file(self, path: str, *, max_bytes: int = 200_000) -> bytes:
-        data = self._files.get(self._norm(path))
-        if data is None:
-            raise FileNotFoundError(path)
-        return data[:max_bytes]
+        path_n = self._norm(path)
+        kind = self._kind(path_n)
+        if kind is None:
+            raise SandboxNotFound(path)
+        if kind == "dir":
+            raise SandboxFsError(path, "is a directory")
+        return self._files[path_n][:max_bytes]
 
     async def write_file(self, path: str, data: bytes) -> None:
-        self._files[self._norm(path)] = data
+        self._put(self._norm(path), data)
 
     async def write_files(self, entries: list[tuple[str, bytes]]) -> None:
         for path, data in entries:

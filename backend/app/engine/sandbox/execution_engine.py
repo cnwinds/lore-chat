@@ -3,14 +3,19 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from collections.abc import Callable
 
 from app.engine.chat.progress_log import ensure_line_chunk
+from app.engine.sandbox import probes
 from app.engine.sandbox.execution_registry import ExecutionRegistry
+from app.engine.sandbox.job_drain import drain_job
 from app.engine.sandbox.progress import emit_progress
 from app.engine.sandbox.protocol import SandboxRuntime
 from app.engine.sandbox.result_text import clip_stdout
+
+logger = logging.getLogger(__name__)
 
 ProgressEmit = Callable[..., None]
 
@@ -20,6 +25,9 @@ VALID_IF_EXCEEDED = frozenset({"return", "wait_until_done", "stop"})
 class SandboxExecutionEngine:
     DEFAULT_WAIT_SEC = 60.0
     DEFAULT_POLL_INTERVAL = 0.2
+    # 登记晚于 job 实际启动；回溯多留几秒，宁可多列一个刚写的文件
+    OUTPUTS_AGE_SLACK_SEC = 5.0
+    OUTPUTS_PROBE_TIMEOUT_SEC = 15.0
 
     def __init__(
         self,
@@ -90,89 +98,85 @@ class SandboxExecutionEngine:
             full_logs = ""
 
         wait_start = time.monotonic()
+
+        def on_chunk(chunk: str, cur: int | None) -> None:
+            nonlocal full_logs
+            full_logs += chunk
+            self._emit(ensure_line_chunk(chunk), phase="log", execution_id=eid)
+            self.registry.update_cursor(eid, cur, full_logs)
+
         try:
-            while True:
-                status = await runtime.poll_job(eid, log_cursor=cursor)
-                chunk = status.logs or ""
-                if chunk:
-                    full_logs += chunk
-                    self._emit(
-                        ensure_line_chunk(chunk),
-                        phase="log",
-                        execution_id=eid,
-                    )
-                if status.next_cursor is not None:
-                    cursor = status.next_cursor
-                self.registry.update_cursor(eid, cursor, full_logs)
-
-                if not status.running:
-                    code = status.exit_code if status.exit_code is not None else 0
-                    self._emit(f"\n[exit {code}]", phase="end", execution_id=eid)
-                    self.registry.remove(eid)
-                    out = {
-                        "summary": f"命令完成 exit={code}",
-                        "sources": [],
-                        "exit_code": code,
-                        "execution_id": eid,
-                        **clip_stdout(full_logs),
-                        "running": False,
-                        "checkpoint": False,
-                    }
-                    if code != 0:
-                        out["error"] = f"exit_code={code}"
-                    return out
-
-                if not unlimited and (time.monotonic() - wait_start) >= wait_sec:
-                    elapsed = self.registry.elapsed_sec(eid)
-                    if mode == "stop":
-                        await runtime.interrupt(eid)
-                        final = await runtime.poll_job(eid, log_cursor=cursor)
-                        tail = final.logs or ""
-                        if tail:
-                            full_logs += tail
-                            self._emit(
-                                ensure_line_chunk(tail),
-                                phase="log",
-                                execution_id=eid,
-                            )
-                        code = final.exit_code if final.exit_code is not None else -1
-                        self._emit(f"\n[exit {code}]", phase="end", execution_id=eid)
-                        self.registry.remove(eid)
-                        return {
-                            "summary": (
-                                f"命令已停止 exit={code}（wait 预算 {int(wait_sec)}s 到期）"
-                            ),
-                            "sources": [],
-                            "exit_code": code,
-                            "execution_id": eid,
-                            **clip_stdout(full_logs),
-                            "running": False,
-                            "checkpoint": False,
-                            "stopped": True,
-                            "elapsed_sec": round(elapsed, 1),
-                            "wait_exceeded": True,
-                        }
-
-                    return {
-                        "summary": (
-                            f"仍在运行（已 {int(elapsed)}s），execution_id={eid}。"
-                            f"本段 wait 预算 {int(wait_sec)}s 已用尽，请审查进度后决定续接、"
-                            f"wait_until_done 或 sandbox_stop。"
-                        ),
-                        "sources": [],
-                        "execution_id": eid,
-                        **clip_stdout(full_logs),
-                        "running": True,
-                        "checkpoint": True,
-                        "wait_exceeded": True,
-                        "elapsed_sec": round(elapsed, 1),
-                        "wait_sec": wait_sec,
-                    }
-
-                await asyncio.sleep(self.poll_interval_sec)
+            outcome = await drain_job(
+                lambda cur: runtime.poll_job(eid, log_cursor=cur),
+                cursor=cursor,
+                deadline=None if unlimited else wait_start + wait_sec,
+                on_chunk=on_chunk,
+                poll_interval_sec=self.poll_interval_sec,
+            )
         except asyncio.CancelledError:
             await runtime.interrupt(eid)
             raise
+        cursor = outcome.cursor
+        self.registry.update_cursor(eid, cursor, full_logs)
+
+        if not outcome.running:
+            code = outcome.exit_code if outcome.exit_code is not None else 0
+            self._emit(f"\n[exit {code}]", phase="end", execution_id=eid)
+            outputs = await self._finish(runtime, eid)
+            out = {
+                "summary": f"命令完成 exit={code}",
+                "sources": [],
+                "exit_code": code,
+                "execution_id": eid,
+                **clip_stdout(full_logs),
+                "running": False,
+                "checkpoint": False,
+                **outputs,
+            }
+            if code != 0:
+                out["error"] = f"exit_code={code}"
+            return out
+
+        elapsed = self.registry.elapsed_sec(eid)
+        if mode == "stop":
+            await runtime.interrupt(eid)
+            final = await runtime.poll_job(eid, log_cursor=cursor)
+            tail = final.logs or ""
+            if tail:
+                full_logs += tail
+                self._emit(ensure_line_chunk(tail), phase="log", execution_id=eid)
+            code = final.exit_code if final.exit_code is not None else -1
+            self._emit(f"\n[exit {code}]", phase="end", execution_id=eid)
+            outputs = await self._finish(runtime, eid)
+            return {
+                "summary": f"命令已停止 exit={code}（wait 预算 {int(wait_sec)}s 到期）",
+                "sources": [],
+                "exit_code": code,
+                "execution_id": eid,
+                **clip_stdout(full_logs),
+                "running": False,
+                "checkpoint": False,
+                "stopped": True,
+                "elapsed_sec": round(elapsed, 1),
+                "wait_exceeded": True,
+                **outputs,
+            }
+
+        return {
+            "summary": (
+                f"仍在运行（已 {int(elapsed)}s），execution_id={eid}。"
+                f"本段 wait 预算 {int(wait_sec)}s 已用尽，请审查进度后决定续接、"
+                f"wait_until_done 或 sandbox_stop。"
+            ),
+            "sources": [],
+            "execution_id": eid,
+            **clip_stdout(full_logs),
+            "running": True,
+            "checkpoint": True,
+            "wait_exceeded": True,
+            "elapsed_sec": round(elapsed, 1),
+            "wait_sec": wait_sec,
+        }
 
     async def stop(
         self,
@@ -198,7 +202,7 @@ class SandboxExecutionEngine:
             self._emit(ensure_line_chunk(tail), phase="log", execution_id=eid)
         code = final.exit_code if final.exit_code is not None else -1
         self._emit(f"\n[exit {code}]", phase="end", execution_id=eid)
-        self.registry.remove(eid)
+        outputs = await self._finish(runtime, eid)
         return {
             "summary": f"已停止 execution_id={eid} exit={code}",
             "sources": [],
@@ -207,7 +211,36 @@ class SandboxExecutionEngine:
             **clip_stdout(full_logs),
             "running": False,
             "stopped": True,
+            **outputs,
         }
+
+    async def _finish(self, runtime: SandboxRuntime, eid: str) -> dict:
+        """注销 execution，并返回其运行期间 /workspace 下新写或改写的文件；探针失败不影响命令结果。"""
+        rec = self.registry.get(eid)
+        age = self.registry.elapsed_sec(eid) + self.OUTPUTS_AGE_SLACK_SEC
+        self.registry.remove(eid)
+        if rec is None:
+            return {}
+        config = probes.workspace_outputs_config(
+            age_sec=age,
+            conversation_id=rec.conversation_id,
+            schedule_id=rec.schedule_id,
+        )
+        try:
+            result = await runtime.run(
+                probes.workspace_outputs_command(config),
+                cwd="/",
+                timeout_sec=self.OUTPUTS_PROBE_TIMEOUT_SEC,
+            )
+            outputs = probes.decode_workspace_outputs(result)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.warning("workspace outputs probe failed eid=%s: %s", eid, e)
+            return {}
+        if not outputs["files"]:
+            return {}
+        return {"workspace_outputs": outputs}
 
 
 __all__ = ["SandboxExecutionEngine", "VALID_IF_EXCEEDED"]

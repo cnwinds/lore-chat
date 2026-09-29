@@ -44,8 +44,10 @@ def emit_tool_result_sse(tc: ToolCall, out: dict, duration_ms: int) -> str:
     extra: dict = {}
     if tc.name == "ask_user":
         extra.update(_copy_keys(out, _ASK_KEYS))
+    elif tc.name == "sandbox_stop":
+        extra.update(_copy_keys(out, ("workspace_outputs",)))
     elif tc.name == "sandbox_run":
-        extra.update(_copy_keys(out, _ASK_KEYS))
+        extra.update(_copy_keys(out, (*_ASK_KEYS, "workspace_outputs")))
         cmd = tc.arguments.get("command")
         if isinstance(cmd, str):
             q = clip_tool_query(cmd)
