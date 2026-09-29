@@ -1,0 +1,88 @@
+"""角色知识卡 HTTP 接口。"""
+
+from __future__ import annotations
+
+from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel, Field
+
+from app.api.http_deps import container
+from app.engine.memory.cards import parse_scope, persona_scope, role_scope
+from app.engine.roles import VISIBILITY_HIDDEN
+
+router = APIRouter(tags=["cards"])
+
+
+class EditCardBody(BaseModel):
+    statement: str = Field(min_length=1)
+
+
+def _cards(request: Request):
+    return container(request).knowledge_cards
+
+
+def _roles(request: Request):
+    return container(request).roles
+
+
+def _validate_scope(request: Request, scope: str) -> str:
+    try:
+        kind, subject_id = parse_scope(scope)
+    except ValueError as e:
+        raise HTTPException(400, "scope 无效") from e
+    roles = _roles(request)
+    if kind == "role":
+        try:
+            role = roles.get(subject_id)
+        except KeyError as e:
+            raise HTTPException(404, "角色不存在") from e
+        if role.get("visibility") == VISIBILITY_HIDDEN:
+            raise HTTPException(404, "角色不存在")
+        return role_scope(subject_id)
+    try:
+        roles.get_persona(subject_id)
+    except KeyError as e:
+        raise HTTPException(404, "人设不存在") from e
+    return persona_scope(subject_id)
+
+
+@router.get("/cards")
+def list_cards(scope: str, request: Request):
+    validated = _validate_scope(request, scope)
+    cards = _cards(request).list_panel(validated)
+    return {"scope": validated, "cards": cards, "count": len(cards)}
+
+
+@router.patch("/cards/{card_id}")
+def edit_card(card_id: str, body: EditCardBody, request: Request, scope: str):
+    validated = _validate_scope(request, scope)
+    out = _cards(request).edit(validated, card_id, body.statement)
+    if not out.get("ok"):
+        raise HTTPException(400, detail=out.get("message") or out.get("error"))
+    return out
+
+
+@router.post("/cards/{card_id}/forget")
+def forget_card(card_id: str, request: Request, scope: str):
+    validated = _validate_scope(request, scope)
+    out = _cards(request).forget(validated, card_id)
+    if not out.get("ok"):
+        raise HTTPException(400, detail=out.get("message") or out.get("error"))
+    return out
+
+
+@router.post("/cards/{card_id}/confirm")
+def confirm_card(card_id: str, request: Request, scope: str):
+    validated = _validate_scope(request, scope)
+    out = _cards(request).confirm(validated, card_id)
+    if not out.get("ok"):
+        raise HTTPException(400, detail=out.get("message") or out.get("error"))
+    return out
+
+
+@router.post("/cards/{card_id}/reject")
+def reject_card(card_id: str, request: Request, scope: str):
+    validated = _validate_scope(request, scope)
+    out = _cards(request).reject(validated, card_id)
+    if not out.get("ok"):
+        raise HTTPException(400, detail=out.get("message") or out.get("error"))
+    return out

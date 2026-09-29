@@ -30,8 +30,10 @@ def is_unmodified_official(body: str) -> bool:
 # d2099893… = 「三、检索」与「四、渐进式披露」分节、尚无 web_search 条目前的播种稿。
 # 5646ab1a… = 旧七章结构（落库开头、Skill/教学分节）的播种稿。
 # 2dec5bc1… = 归档仍限「本次会话」、未按跨段接续锁定所指段时的播种稿。
+# f030ab80… = 尚无角色知识卡分流时的播种稿。
 _SUPERSEDED_PRECEPTS_HASHES = frozenset(
     {
+        "f030ab80515fb1e42ee0baac1dec52d8ff19f6f3f7b70acebe5b98caff6e107c",
         "2dec5bc10aa43d518811b0ae4dfc974240e71716084e7c9f57a6cb4d8f31c11d",
         "d50de43c3732e9cf719d7ff7114f44bd136b66560423e9590b7cd4349a9a7388",
         "5938a5065dc5575286d9d604729c294c8f0abf641dcab7d62ed824bb8d7fab09",
@@ -102,7 +104,7 @@ _PRECEPTS_BODY = """# 戒律 · 行为规约
 2. **SKILL.md 是全包的导航地图**：必须写清两样——这一包何时该用（触发场景与边界）、本包完整的工作方法与入口。要求读者仅凭 SKILL.md 即可掌握整个包的用法：流程分几步、每步是脚本还是智能步骤、配套的脚本 / 模板 / 资源文件在包内何处、各自承担什么角色。包内任何配套文件都必须在 SKILL.md 中有明确指引，不允许存在「地图上找不到」的隐式步骤。落库、检索、诚实、目录规划等家规以本文件为准，不抄进 SKILL.md。
 3. **能固化则固化**：每个 Skill 必须写明一套或有限几套可遵循的流程（顺序或带分支）；能固定的步骤优先写成脚本或模板，让同任务多次结果稳定；只有必须理解语境、做取舍或开放生成的步骤才交给模型。判定：换成脚本 / 模板后结果仍稳定可用 → 固化；必须理解语境才能做 → 标为智能步骤。
 4. **创建先划界**：新建或大改前先与用户确认「哪些步骤固化、哪些必须智能」，再落包。不擅自整包写成临场发挥，也不在需要弹性处写死。
-5. **长期规矩回本文件**：用户立「以后写 Skill / 写库都要怎样」的规矩 → 修订本文件（先读最小改），不写画像、不写进正在生成的 Skill。判定：规范的是助手怎么做事 → 本文件；规范的是主人是谁 → 画像。
+5. **长期规矩回本文件**：用户立「以后写 Skill / 写库都要怎样」这类对所有角色都成立的规矩 → 修订本文件（先读最小改），不写画像、不写进正在生成的 Skill。判定：规范的是助手怎么做事 → 本文件；规范的是主人是谁 → 画像；只在某个角色的领域里成立的做法 → 不写本文件，由该角色的知识卡在会话结束后沉淀。
 6. **使用中自改进**：按包做事时证实其步骤、入口、触发或脚本有缺陷（照做会失败、误导或缺关键步骤），或用户要求把这次仍成立的流程写回 → 改这个包，不记画像、不另写知识。本应固化却仍靠临场发挥、导致多次结果漂移的，也属本包步骤缺陷。判定：删掉这次发现，下次照做仍踩同一坑 → 改；只影响本轮交付 → 不改。拿不准是包的问题还是本轮特例时先征询，不擅自大改。此回写是家规明确允许的例外，不受「默认不沉淀」约束。
 7. **回写方式**：先读再最小改，只改下一次仍要用的步骤、入口、触发、脚本或输出模板；包内文件有增删或职责变化时，同步更新 SKILL.md 的导航指引，保持地图与实际一致。不把本轮流水账、会话归档或本文件家规抄进 SKILL.md；一次失败不得重写整包。
 
@@ -170,6 +172,7 @@ class SystemLayer:
         soul_filename: str = "心法.md",
         memory_rel: str = MEMORY_DOC_REL,
         memory_service=None,
+        knowledge_cards=None,
     ) -> None:
         self.repo = repo
         self.dir_name = dir_name.strip("/")
@@ -177,6 +180,7 @@ class SystemLayer:
         self.soul_rel = f"{self.dir_name}/{soul_filename}"
         self.memory_rel = memory_rel
         self.memory_service = memory_service
+        self.knowledge_cards = knowledge_cards
         self._cache: dict[str, tuple[float, str]] = {}
         self.ensure_seeded()
 
@@ -242,3 +246,13 @@ class SystemLayer:
         if not self.memory_service:
             return ""
         return self.memory_service.render_context()
+
+    def card_injection(self, *, conversation_id: str | None, role_id: str | None):
+        from app.engine.memory.cards import CardInjection
+
+        if self.knowledge_cards:
+            return self.knowledge_cards.injection_for(
+                conversation_id=conversation_id,
+                role_id=role_id,
+            )
+        return CardInjection(owner_memory=self.memory_context(), role_cards="")

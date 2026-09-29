@@ -3069,6 +3069,44 @@ button.memory-fact-statement--jump:focus-visible {
   background: var(--bg-hover);
 }
 
+.knowledge-card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.knowledge-card-kind,
+.knowledge-card-external {
+  font-size: 11px;
+  line-height: 1.2;
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--bg-muted) 70%, transparent);
+}
+
+.knowledge-card-pending {
+  font-size: 11px;
+}
+
+.channel-owner-memory-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.channel-owner-memory-hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-muted);
+  padding-left: 0;
+}
+
 .settings-group {
   display: flex;
   flex-direction: column;

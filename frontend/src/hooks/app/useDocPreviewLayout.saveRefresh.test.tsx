@@ -188,6 +188,35 @@ describe("useDocPreviewLayout refresh after local save", () => {
     });
     expect(result.current.channelPanelOpen).toBe(false);
   });
+
+  it("openCardsPanel is exclusive with memory and toggles same scope", () => {
+    const refreshSidebar = vi.fn();
+    const { result } = renderHook(() => useDocPreviewLayout(refreshSidebar));
+
+    act(() => {
+      result.current.openMemoryPanel();
+      result.current.openCardsPanel("role:r1", "研究员");
+    });
+    expect(result.current.memoryPanelOpen).toBe(false);
+    expect(result.current.showCardsPanel).toBe(true);
+    expect(result.current.cardsPanel).toEqual({
+      scope: "role:r1",
+      title: "研究员",
+    });
+
+    act(() => {
+      result.current.openCardsPanel("role:r1", "研究员");
+    });
+    expect(result.current.showCardsPanel).toBe(false);
+    expect(result.current.cardsPanel).toBeNull();
+
+    act(() => {
+      result.current.openCardsPanel("role:r1", "研究员");
+      result.current.openMemoryPanel();
+    });
+    expect(result.current.showCardsPanel).toBe(false);
+    expect(result.current.memoryPanelOpen).toBe(true);
+  });
 });
 
 describe("buildDocViewerHandlers onSaved preserves pane position", () => {

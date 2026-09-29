@@ -131,6 +131,9 @@ def build_tool_dispatch(registry: ToolRegistry) -> dict[str, ToolHandler]:
         "recall_memory": lambda args, **kw: asyncio.to_thread(
             memory.recall_memory, args
         ),
+        "recall_cards": lambda args, **kw: asyncio.to_thread(
+            memory.recall_cards, args, conversation_id=kw.get("conversation_id")
+        ),
         "sandbox_run": lambda args, **kw: sandbox.sandbox_run(
             args, conversation_id=kw.get("conversation_id")
         ),

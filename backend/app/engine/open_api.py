@@ -28,8 +28,10 @@ class OpenApiService:
         settings=None,
         usage=None,
         runtime_store=None,
+        knowledge_cards=None,
     ):
         self.roles = roles
+        self.knowledge_cards = knowledge_cards
         self.api_keys = api_keys
         self.conversations = conversations
         self.chat_runner = chat_runner
@@ -87,6 +89,10 @@ class OpenApiService:
         if using:
             raise OpenApiError("仍有通道在使用此人设，请先停用该通道")
         self.roles.delete_persona(persona_id)
+        if self.knowledge_cards is not None:
+            from app.engine.memory.cards import persona_scope
+
+            self.knowledge_cards.purge_scope(persona_scope(persona_id))
 
     def list_keys(self) -> list[dict]:
         out = []
@@ -289,6 +295,7 @@ class OpenApiService:
         enabled: bool | None = None,
         show_thinking: bool | None = None,
         show_tool_output: bool | None = None,
+        include_owner_memory: bool | None = None,
         config: dict | None = None,
         secrets: dict | None = None,
     ) -> dict:
@@ -332,6 +339,7 @@ class OpenApiService:
             enabled=enabled,
             show_thinking=show_thinking,
             show_tool_output=show_tool_output,
+            include_owner_memory=include_owner_memory,
             status=status,
             status_detail=detail,
             config=config,

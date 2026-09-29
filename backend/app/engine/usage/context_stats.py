@@ -19,6 +19,7 @@ from app.engine.agent.prompts import (
     build_role_collab_block,
     build_role_identity_block,
     build_system_prompt,
+    wrap_role_cards,
     wrap_user_memory,
 )
 from app.engine.agent.skill_activation import (
@@ -105,8 +106,21 @@ def build_context_stats(
             pass
 
     memory_body = ""
-    if system_layer is not None and hasattr(system_layer, "memory_context"):
-        memory_body = system_layer.memory_context() or ""
+    role_cards_body = ""
+    if system_layer is not None:
+        rid = (
+            (conversation.get("responding_role_id") or "").strip()
+            or (conversation.get("role_id") or "").strip()
+        )
+        if hasattr(system_layer, "card_injection"):
+            inj = system_layer.card_injection(
+                conversation_id=conversation.get("id") or "",
+                role_id=rid or None,
+            )
+            memory_body = inj.owner_memory or ""
+            role_cards_body = inj.role_cards or ""
+        elif hasattr(system_layer, "memory_context"):
+            memory_body = system_layer.memory_context() or ""
     memory_block = wrap_user_memory(memory_body)
 
     system_text = build_system_prompt(
@@ -115,6 +129,7 @@ def build_context_stats(
         user_memory="",
         role_system_prompt=role_system_prompt
         or _role_identity_text(roles, conversation),
+        role_cards=role_cards_body,
     )
     if role_messaging:
         busy: set[str] = set()

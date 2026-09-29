@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from app.engine.conversation.outbox import SESSION_OBSERVE_IMMEDIATE
 from app.engine.conversations import ConversationStore
-from app.engine.memory.resolver import SlotResolver
 from app.engine.memory.service import MemoryService
 from app.engine.memory.session_extractor import SessionMemoryExtractor
 from app.logging_config import get_logger
@@ -23,6 +22,8 @@ class SessionMemoryObserve:
         memory_service: MemoryService,
         *,
         extractor: SessionMemoryExtractor | None = None,
+        cards=None,
+        card_extractor=None,
         idle_hours: float = 24.0,
     ):
         self.conversations = conversations
@@ -30,6 +31,8 @@ class SessionMemoryObserve:
         self.memory_service = memory_service
         # 无 LLM 抽取器时跳过落库，保留 dirty 待下次（不回退启发式）
         self.extractor = extractor
+        self.cards = cards
+        self.card_extractor = card_extractor
         self.idle_hours = idle_hours
         # 与 MemoryService 共用同一 Resolver（写不变式 locality）
         self._resolver = memory_service.resolver
@@ -98,45 +101,109 @@ class SessionMemoryObserve:
                 self._complete_and_requeue_immediate(job_id, cid)
                 return
 
-            if self.extractor is None:
-                _log.info(
-                    "session_observe 跳过：未配置 LLM 抽取器 cid=%s",
-                    cid,
+            if self.cards:
+                owner_lens, card_lens = self.cards.lenses_for(cid)
+            else:
+                owner_lens, card_lens = True, None
+
+            if not owner_lens and not card_lens:
+                self.schedule.clear_dirty(
+                    cid, expected_last_user_message_at=started_last_user_at
                 )
                 self._complete_and_requeue_immediate(job_id, cid)
                 return
 
-            confirmed = [
-                {
-                    "slot_key": f["slot_key"],
-                    "statement": f["statement"],
-                    "category": f.get("category"),
-                }
-                for f in self.memory_service.store.list_confirmed()
-            ]
-            actions = self.extractor.extract(turns, confirmed_summary=confirmed)
-            confirmed_landed = False
-            hard_failures = 0
-            for action in actions:
-                out = self._resolver.apply(action, conversation_id=cid)
-                if not out.get("ok"):
-                    if out.get("error") not in _SOFT_REJECT:
-                        hard_failures += 1
-                    continue
-                fact = out.get("fact") or {}
-                if fact.get("status") == "confirmed":
-                    confirmed_landed = True
-
-            if confirmed_landed:
-                self.conversations.system_events.append(
+            lenses_ready = True
+            if owner_lens and self.extractor is None:
+                _log.info(
+                    "session_observe 跳过主人镜头：未配置 LLM 抽取器 cid=%s",
                     cid,
-                    "memory_updated",
-                    {
-                        "type": "memory_updated",
-                        "conversation_id": cid,
-                    },
                 )
-            if hard_failures == 0:
+                lenses_ready = False
+            if card_lens and self.card_extractor is None:
+                _log.info(
+                    "session_observe 跳过角色卡镜头：未配置抽取器 cid=%s",
+                    cid,
+                )
+                lenses_ready = False
+
+            hard_failures = 0
+            memory_confirmed_landed = False
+
+            if owner_lens and self.extractor is not None:
+                confirmed = [
+                    {
+                        "slot_key": f["slot_key"],
+                        "statement": f["statement"],
+                        "category": f.get("category"),
+                    }
+                    for f in self.memory_service.store.list_confirmed()
+                ]
+                actions = self.extractor.extract(turns, confirmed_summary=confirmed)
+                for action in actions:
+                    out = self._resolver.apply(action, conversation_id=cid)
+                    if not out.get("ok"):
+                        if out.get("error") not in _SOFT_REJECT:
+                            hard_failures += 1
+                        continue
+                    fact = out.get("fact") or {}
+                    if fact.get("status") == "confirmed":
+                        memory_confirmed_landed = True
+
+                if memory_confirmed_landed:
+                    self.conversations.system_events.append(
+                        cid,
+                        "memory_updated",
+                        {
+                            "type": "memory_updated",
+                            "conversation_id": cid,
+                        },
+                    )
+
+            if card_lens and self.card_extractor is not None:
+                scope = card_lens.scope
+                card_store = self.cards.store(scope)
+                existing = [
+                    {
+                        "slot_key": f["slot_key"],
+                        "statement": f["statement"],
+                        "category": f.get("category"),
+                    }
+                    for f in card_store.list_confirmed() + card_store.list_candidates()
+                ]
+                owner_summary = [
+                    f["statement"] for f in self.memory_service.store.list_confirmed()
+                ]
+                card_actions = self.card_extractor.extract(
+                    turns,
+                    lens=card_lens,
+                    existing_cards=existing,
+                    owner_summary=owner_summary,
+                )
+                card_resolver = self.cards.resolver(scope)
+                cards_confirmed_landed = False
+                for action in card_actions:
+                    out = card_resolver.apply(action, conversation_id=cid)
+                    if not out.get("ok"):
+                        if out.get("error") not in _SOFT_REJECT:
+                            hard_failures += 1
+                        continue
+                    fact = out.get("fact") or {}
+                    if fact.get("status") == "confirmed":
+                        cards_confirmed_landed = True
+
+                if cards_confirmed_landed:
+                    self.conversations.system_events.append(
+                        cid,
+                        "cards_updated",
+                        {
+                            "type": "cards_updated",
+                            "conversation_id": cid,
+                            "scope": scope,
+                        },
+                    )
+
+            if hard_failures == 0 and lenses_ready:
                 self.schedule.clear_dirty(
                     cid, expected_last_user_message_at=started_last_user_at
                 )

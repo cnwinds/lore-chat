@@ -933,6 +933,21 @@ class ConversationStore:
         with self._lock:
             return self._row_origin(self._conversation_row(cid))
 
+    def get_conversation_kind(self, cid: str) -> str:
+        from app.engine.rooms.schema import KIND_OWNER_DM
+
+        with self._lock:
+            row = self._conversation_row(cid)
+            try:
+                kind = (row["kind"] or KIND_OWNER_DM).strip() or KIND_OWNER_DM
+            except (KeyError, IndexError):
+                kind = KIND_OWNER_DM
+            return kind
+
+    def get_channel_instance_id(self, cid: str) -> str | None:
+        with self._lock:
+            return self._row_channel_instance_id(self._conversation_row(cid))
+
     # ------------------------------------------------------------------
     # CRUD
     # ------------------------------------------------------------------

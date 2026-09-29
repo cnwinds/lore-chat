@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from app.engine.memory.normalize import (
+    OWNER_SCHEME,
+    SlotScheme,
     is_abstract_slot_key,
     resolve_slot_key,
     value_hash,
@@ -59,8 +61,9 @@ class SlotAction:
 
 
 class SlotResolver:
-    def __init__(self, store: MemoryStore):
+    def __init__(self, store: MemoryStore, *, scheme: SlotScheme = OWNER_SCHEME):
         self.store = store
+        self.scheme = scheme
 
     def apply(
         self,
@@ -84,15 +87,20 @@ class SlotResolver:
             statement,
             slot_hint=action.slot_hint,
             existing=existing,
+            scheme=self.scheme,
         )
-        category = (action.category or "preference").strip().lower()
+        category = (
+            action.category or self.scheme.default_category
+        ).strip().lower()
         origin = (action.origin or "direct").strip()
         act = (action.action or "new").strip().lower()
         if act not in ("merge", "replace", "noop", "new"):
             act = "new"
 
         sensitivity = infer_sensitivity(statement)
-        if not allows_automatic_save(sensitivity, origin):
+        if self.scheme.gate_sensitive and not allows_automatic_save(
+            sensitivity, origin
+        ):
             return {"ok": False, "error": "rejected", "message": "敏感内容未获授权，已拒绝"}
 
         vhash = value_hash(statement)
@@ -102,7 +110,9 @@ class SlotResolver:
         if active_same:
             live = active_same.get("slot_key") or ""
             if live != slot:
-                if _slot_rank(slot, vhash) > _slot_rank(live, vhash):
+                if _slot_rank(slot, vhash, scheme=self.scheme) > _slot_rank(
+                    live, vhash, scheme=self.scheme
+                ):
                     active_same = (
                         self.store.reassign_slot_key(active_same["id"], slot)
                         or active_same
@@ -249,10 +259,19 @@ class SlotResolver:
     ) -> dict:
         from app.engine.memory.normalize import infer_category
 
-        cat = category or infer_category(statement)
+        if category:
+            cat = category
+        elif self.scheme.use_seeds:
+            cat = infer_category(statement)
+        else:
+            cat = self.scheme.default_category
         existing = _align_view(self.store)
         slot = resolve_slot_key(
-            cat, statement, slot_hint=slot_key, existing=existing
+            cat,
+            statement,
+            slot_hint=slot_key,
+            existing=existing,
+            scheme=self.scheme,
         )
         vhash = value_hash(statement)
         if clear_tombstone:
@@ -441,11 +460,13 @@ class SlotResolver:
         return fact
 
 
-def _slot_rank(slot_key: str, vhash: str) -> int:
+def _slot_rank(
+    slot_key: str, vhash: str, *, scheme: SlotScheme = OWNER_SCHEME
+) -> int:
     """槽位阶：命名抽象/种子 > topic 指纹 > 旧 stem/open。用于同值升格。"""
     sk = slot_key or ""
     tip = f".topic_{vhash[:12]}"
-    if is_abstract_slot_key(sk) and not sk.endswith(tip):
+    if is_abstract_slot_key(sk, scheme=scheme) and not sk.endswith(tip):
         return 2
     if sk.endswith(tip):
         return 1

@@ -78,6 +78,19 @@ CREATE TABLE IF NOT EXISTS api_personas (
 );
 """
 
+_REVISION_SCHEMA = """
+CREATE TABLE IF NOT EXISTS persona_revisions (
+    id TEXT PRIMARY KEY,
+    subject_kind TEXT NOT NULL,
+    subject_id TEXT NOT NULL,
+    body TEXT NOT NULL,
+    source TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_persona_revisions_subject
+    ON persona_revisions(subject_kind, subject_id, created_at);
+"""
+
 
 class RoleStore:
     """角色持久化（`{kb}/.kb/roles/roles.db`）。启动时确保存在唯一默认角色。"""
@@ -95,6 +108,8 @@ class RoleStore:
             self._migrate_onboarding_status()
             self._migrate_visibility_and_persona()
             self.conn.executescript(_PERSONA_SCHEMA)
+            self.conn.executescript(_REVISION_SCHEMA)
+            self._seed_persona_revision_baselines()
             self.conn.commit()
             self.ensure_default_role()
         self.schedules = RoleScheduleStore(self.conn, self._lock)
@@ -121,6 +136,88 @@ class RoleStore:
                 WHERE onboarding_status = 'none'
                 """
             )
+
+    def _seed_persona_revision_baselines(self) -> None:
+        row = self.conn.execute("SELECT COUNT(*) AS n FROM persona_revisions").fetchone()
+        if int(row["n"] if row else 0) > 0:
+            return
+        stamp = _now()
+        for role_row in self.conn.execute(
+            "SELECT id, system_prompt FROM roles WHERE system_prompt != ''"
+        ):
+            self._insert_persona_revision(
+                "role",
+                role_row["id"],
+                role_row["system_prompt"] or "",
+                "baseline",
+                stamp,
+            )
+        for persona_row in self.conn.execute(
+            "SELECT id, system_prompt FROM api_personas WHERE system_prompt != ''"
+        ):
+            self._insert_persona_revision(
+                "persona",
+                persona_row["id"],
+                persona_row["system_prompt"] or "",
+                "baseline",
+                stamp,
+            )
+
+    def _insert_persona_revision(
+        self,
+        subject_kind: str,
+        subject_id: str,
+        body: str,
+        source: str,
+        created_at: str | None = None,
+    ) -> dict:
+        rid = _new_id()
+        stamp = created_at or _now()
+        self.conn.execute(
+            """
+            INSERT INTO persona_revisions(
+                id, subject_kind, subject_id, body, source, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (rid, subject_kind, subject_id, body, source, stamp),
+        )
+        return {
+            "id": rid,
+            "subject_kind": subject_kind,
+            "subject_id": subject_id,
+            "body": body,
+            "source": source,
+            "created_at": stamp,
+        }
+
+    def list_persona_revisions(
+        self,
+        subject_kind: str,
+        subject_id: str,
+        *,
+        limit: int = 50,
+    ) -> list[dict]:
+        with self._lock:
+            rows = self.conn.execute(
+                """
+                SELECT * FROM persona_revisions
+                WHERE subject_kind = ? AND subject_id = ?
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                (subject_kind, subject_id, max(1, int(limit))),
+            ).fetchall()
+            return [
+                {
+                    "id": row["id"],
+                    "subject_kind": row["subject_kind"],
+                    "subject_id": row["subject_id"],
+                    "body": row["body"],
+                    "source": row["source"],
+                    "created_at": row["created_at"],
+                }
+                for row in rows
+            ]
 
     def _migrate_visibility_and_persona(self) -> None:
         cursor = self.conn.execute("PRAGMA table_info(roles)")
@@ -268,6 +365,10 @@ class RoleStore:
                     stamp,
                 ),
             )
+            if (system_prompt or "").strip():
+                self._insert_persona_revision(
+                    "role", rid, system_prompt or "", "create", stamp
+                )
             self.conn.commit()
             row = self.conn.execute(
                 "SELECT * FROM roles WHERE id = ?", (rid,)
@@ -283,6 +384,7 @@ class RoleStore:
         system_prompt: str | None = None,
         avatar: str | None = None,
         onboarding_status: str | None = None,
+        revision_source: str = "manual",
     ) -> dict:
         with self._lock:
             row = self.conn.execute(
@@ -309,6 +411,16 @@ class RoleStore:
                     "onboarding_status 必须是 none/active/completed/skipped"
                 )
             stamp = _now()
+            if system_prompt is not None and (new_prompt or "") != (
+                row["system_prompt"] or ""
+            ):
+                self._insert_persona_revision(
+                    "role",
+                    role_id,
+                    new_prompt or "",
+                    revision_source,
+                    stamp,
+                )
             self.conn.execute(
                 """
                 UPDATE roles
@@ -355,6 +467,13 @@ class RoleStore:
                 raise ValueError("不能删除默认角色")
             self.conn.execute(
                 "DELETE FROM role_schedules WHERE role_id = ?", (role_id,)
+            )
+            self.conn.execute(
+                """
+                DELETE FROM persona_revisions
+                WHERE subject_kind = 'role' AND subject_id = ?
+                """,
+                (role_id,),
             )
             self.conn.execute("DELETE FROM roles WHERE id = ?", (role_id,))
             self.conn.commit()
@@ -411,6 +530,10 @@ class RoleStore:
                 """,
                 (pid, name, avatar, system_prompt or "", stamp, stamp),
             )
+            if (system_prompt or "").strip():
+                self._insert_persona_revision(
+                    "persona", pid, system_prompt or "", "create", stamp
+                )
             self.conn.commit()
             row = self.conn.execute(
                 "SELECT * FROM api_personas WHERE id = ?", (pid,)
@@ -425,6 +548,7 @@ class RoleStore:
         name: str | None = None,
         system_prompt: str | None = None,
         avatar: str | None = None,
+        revision_source: str = "manual",
     ) -> dict:
         with self._lock:
             row = self.conn.execute(
@@ -440,6 +564,16 @@ class RoleStore:
             )
             new_avatar = row["avatar"] if avatar is None else avatar
             stamp = _now()
+            if system_prompt is not None and (new_prompt or "") != (
+                row["system_prompt"] or ""
+            ):
+                self._insert_persona_revision(
+                    "persona",
+                    persona_id,
+                    new_prompt or "",
+                    revision_source,
+                    stamp,
+                )
             self.conn.execute(
                 """
                 UPDATE api_personas
@@ -462,6 +596,13 @@ class RoleStore:
             ).fetchone()
             if row is None:
                 raise KeyError(persona_id)
+            self.conn.execute(
+                """
+                DELETE FROM persona_revisions
+                WHERE subject_kind = 'persona' AND subject_id = ?
+                """,
+                (persona_id,),
+            )
             self.conn.execute("DELETE FROM api_personas WHERE id = ?", (persona_id,))
             self.conn.commit()
 

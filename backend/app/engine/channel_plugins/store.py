@@ -87,6 +87,7 @@ class ChannelInstanceStore:
             "role_id": key.get("role_id"),
             "show_thinking": bool(key.get("show_thinking")),
             "show_tool_output": bool(key.get("show_tool_output")),
+            "include_owner_memory": bool(key.get("include_owner_memory")),
             "config": {"key_prefix": key.get("prefix") or ""},
             "secrets": {"key_hash": key.get("hash") or ""},
             "status": STATUS_DISABLED if revoked else STATUS_ENABLED,
@@ -126,6 +127,7 @@ class ChannelInstanceStore:
             "role_id": item.get("role_id"),
             "show_thinking": bool(item.get("show_thinking")),
             "show_tool_output": bool(item.get("show_tool_output")),
+            "include_owner_memory": bool(item.get("include_owner_memory")),
             "config": dict(item.get("config") or {}),
             "secrets": public_secrets(item.get("secrets")),
             "status": status,
@@ -210,6 +212,7 @@ class ChannelInstanceStore:
             "role_id": role_id,
             "show_thinking": False,
             "show_tool_output": False,
+            "include_owner_memory": False,
             "config": {"key_prefix": raw[:12]},
             "secrets": {
                 "key_hash": hash_api_key(raw),
@@ -257,6 +260,7 @@ class ChannelInstanceStore:
             "role_id": role_id,
             "show_thinking": False,
             "show_tool_output": False,
+            "include_owner_memory": False,
             "config": dict(config or {}),
             "secrets": dict(secrets or {}),
             "status": status or (STATUS_ENABLED if enabled_flag else STATUS_DISABLED),
@@ -281,6 +285,7 @@ class ChannelInstanceStore:
         enabled: bool | None = None,
         show_thinking: bool | None = None,
         show_tool_output: bool | None = None,
+        include_owner_memory: bool | None = None,
         status: str | None = None,
         status_detail: str | None = None,
         config: dict[str, Any] | None = None,
@@ -311,6 +316,8 @@ class ChannelInstanceStore:
                 found["show_thinking"] = bool(show_thinking)
             if show_tool_output is not None:
                 found["show_tool_output"] = bool(show_tool_output)
+            if include_owner_memory is not None:
+                found["include_owner_memory"] = bool(include_owner_memory)
             if status is not None:
                 found["status"] = status
             if status_detail is not None or status is not None:

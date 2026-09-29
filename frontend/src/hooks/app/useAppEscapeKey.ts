@@ -15,7 +15,8 @@ export function useAppEscapeKey(
         doc.pinnedPath ||
         doc.mediaFolderPath ||
         doc.memoryPanelOpen ||
-        doc.channelPanelOpen,
+        doc.channelPanelOpen ||
+        doc.cardsPanel,
     );
     if (!hasPreview && !snippetSource) return;
     function onKeyDown(e: KeyboardEvent) {
@@ -35,6 +36,10 @@ export function useAppEscapeKey(
       }
       if (doc.memoryPanelOpen) {
         doc.closeMemoryPanel();
+        return;
+      }
+      if (doc.cardsPanel) {
+        doc.closeCardsPanel();
         return;
       }
       if (doc.mediaFolderPath) {
@@ -61,6 +66,7 @@ export function useAppEscapeKey(
     doc.mediaFolderPath,
     doc.memoryPanelOpen,
     doc.channelPanelOpen,
+    doc.cardsPanel,
     doc.floatFocus,
     doc.pinnedFocus,
     snippetSource,

@@ -3,18 +3,45 @@ from __future__ import annotations
 import hashlib
 import re
 import unicodedata
+from dataclasses import dataclass
 from difflib import SequenceMatcher
 
+from app.engine.memory.constants import CATEGORIES
 from app.engine.memory.predicates import SEED_PREDICATES, get_seed
 
 _WS_RE = re.compile(r"\s+")
-_SLOT_RE = re.compile(
-    r"^(?P<cat>identity|preference|goal|project|workflow|constraint)\.(?P<pred>[a-z0-9_\u4e00-\u9fff]+)$"
-)
 _PRED_RE = re.compile(r"^[a-z][a-z0-9_]{1,63}$")
-_CATEGORIES = frozenset(
-    {"identity", "preference", "goal", "project", "workflow", "constraint"}
+_PRED_CHARS = r"[a-z0-9_\u4e00-\u9fff]+"
+
+
+@dataclass(frozen=True)
+class SlotScheme:
+    categories: frozenset[str]
+    default_category: str
+    use_seeds: bool
+    gate_sensitive: bool
+
+
+OWNER_SCHEME = SlotScheme(frozenset(CATEGORIES), "preference", True, True)
+CARD_SCHEME = SlotScheme(
+    frozenset({"domain", "owner_context", "practice", "lesson", "audience"}),
+    "domain",
+    False,
+    False,
 )
+
+
+def _categories_pattern(categories: frozenset[str]) -> str:
+    return "|".join(re.escape(c) for c in sorted(categories))
+
+
+def _supplements_bare_predicate(scheme: SlotScheme) -> bool:
+    """卡片方案才为无类别前缀的 predicate 补 default_category。"""
+    return (
+        scheme.categories == CARD_SCHEME.categories
+        and scheme.default_category == CARD_SCHEME.default_category
+        and scheme.use_seeds == CARD_SCHEME.use_seeds
+    )
 _LATIN_TOKEN_RE = re.compile(r"[a-z0-9]{2,}")
 _CJK_RUN_RE = re.compile(r"[\u4e00-\u9fff]+")
 
@@ -29,21 +56,37 @@ def value_hash(statement: str) -> str:
     return hashlib.sha256(normalize_text(statement).encode("utf-8")).hexdigest()
 
 
-def canonicalize_slot_key(slot_key: str) -> str | None:
+def canonicalize_slot_key(
+    slot_key: str, *, scheme: SlotScheme = OWNER_SCHEME
+) -> str | None:
     raw = (slot_key or "").strip().lower().replace("-", "_")
-    m = _SLOT_RE.match(raw)
+    if not raw:
+        return None
+    cats_pat = _categories_pattern(scheme.categories)
+    m = re.match(rf"^(?P<cat>{cats_pat})\.(?P<pred>{_PRED_CHARS})$", raw)
     if m:
         return f"{m.group('cat')}.{m.group('pred')}"
     if "." in raw:
         cat, pred = raw.split(".", 1)
-        if cat in _CATEGORIES and pred:
+        if cat in scheme.categories and pred:
             return f"{cat}.{pred}"
+        if pred and _supplements_bare_predicate(scheme):
+            pred_norm = pred.lower().replace("-", "_")
+            if pred_norm:
+                return f"{scheme.default_category}.{pred_norm}"
+        return None
+    if _supplements_bare_predicate(scheme):
+        pred_only = raw
+        if _PRED_RE.match(pred_only) and not pred_only.startswith("open_"):
+            return f"{scheme.default_category}.{pred_only}"
     return None
 
 
-def is_abstract_slot_key(slot_key: str) -> bool:
+def is_abstract_slot_key(
+    slot_key: str, *, scheme: SlotScheme = OWNER_SCHEME
+) -> bool:
     """抽象槽：category + 英文蛇形谓词；不含 statement stem / 中文 / 旧 open_ 全文指纹。"""
-    key = canonicalize_slot_key(slot_key)
+    key = canonicalize_slot_key(slot_key, scheme=scheme)
     if not key:
         return False
     _cat, pred = key.split(".", 1)
@@ -103,6 +146,7 @@ def align_existing_slot(
     existing: list[dict] | None = None,
     min_score: float = 0.5,
     min_overlap: int = 5,
+    scheme: SlotScheme = OWNER_SCHEME,
 ) -> str | None:
     """若与已有画像近义，复用其抽象 slot（避免开放槽按措辞分裂）。"""
     if not existing:
@@ -129,8 +173,8 @@ def align_existing_slot(
         coverage = len(overlap) / max(min(len(tokens), len(other)), 1)
         seq = SequenceMatcher(None, text, normalize_text(other_stmt)).ratio()
         sk = str(fact.get("slot_key") or "")
-        cand = canonicalize_slot_key(sk) or sk
-        if not cand or not is_abstract_slot_key(cand):
+        cand = canonicalize_slot_key(sk, scheme=scheme) or sk
+        if not cand or not is_abstract_slot_key(cand, scheme=scheme):
             continue  # 不复用旧 open_/中文 stem 槽
         score = 0.5 * seq + 0.5 * coverage
         if score > best:
@@ -151,6 +195,7 @@ def normalize_slot_key(
     statement: str,
     *,
     existing: list[dict] | None = None,
+    scheme: SlotScheme = OWNER_SCHEME,
 ) -> str:
     """解析或推断抽象 slot_key。
 
@@ -160,28 +205,31 @@ def normalize_slot_key(
     - 与已有画像近义 → 复用其 slot
     - 否则 → `category.topic_{hash}`（无 stem）
     """
-    cat = (category or "preference").strip().lower() or "preference"
+    cat = (category or scheme.default_category).strip().lower() or scheme.default_category
     raw = (statement or "").strip()
     if not raw:
         return f"{cat}.unknown"
 
-    explicit = canonicalize_slot_key(raw)
+    explicit = canonicalize_slot_key(raw, scheme=scheme)
     # 仅保留抽象槽；旧 open_/中文 stem 视为无效，继续按正文对齐
-    if explicit and is_abstract_slot_key(explicit):
+    if explicit and is_abstract_slot_key(explicit, scheme=scheme):
         return explicit
 
     pred_only = raw.lower().replace("-", "_")
     if _PRED_RE.match(pred_only) and not pred_only.startswith("open_"):
         return f"{cat}.{pred_only}"
 
-    seeded = match_seed_slot(raw, category=cat)
-    if seeded:
-        return seeded
-    seeded = match_seed_slot(raw)
-    if seeded:
-        return seeded
+    if scheme.use_seeds:
+        seeded = match_seed_slot(raw, category=cat)
+        if seeded:
+            return seeded
+        seeded = match_seed_slot(raw)
+        if seeded:
+            return seeded
 
-    aligned = align_existing_slot(raw, category=cat, existing=existing)
+    aligned = align_existing_slot(
+        raw, category=cat, existing=existing, scheme=scheme
+    )
     if aligned:
         return aligned
 
@@ -194,21 +242,22 @@ def resolve_slot_key(
     *,
     slot_hint: str | None = None,
     existing: list[dict] | None = None,
+    scheme: SlotScheme = OWNER_SCHEME,
 ) -> str:
     """抽取/写入共用：显式抽象 hint → 否则 normalize（种子/近义/topic_）。"""
-    hint = canonicalize_slot_key(slot_hint or "")
-    if hint and is_abstract_slot_key(hint):
-        # 正文能命中种子时优先种子，避免 LLM 为近义各开新 topic_*
-        seeded = match_seed_slot(statement)
-        if seeded:
-            return seeded
+    hint = canonicalize_slot_key(slot_hint or "", scheme=scheme)
+    if hint and is_abstract_slot_key(hint, scheme=scheme):
+        if scheme.use_seeds:
+            seeded = match_seed_slot(statement)
+            if seeded:
+                return seeded
         aligned = align_existing_slot(
-            statement, category=category, existing=existing
+            statement, category=category, existing=existing, scheme=scheme
         )
         if aligned:
             return aligned
         return hint
-    return normalize_slot_key(category, statement, existing=existing)
+    return normalize_slot_key(category, statement, existing=existing, scheme=scheme)
 
 
 def infer_category(statement: str) -> str:

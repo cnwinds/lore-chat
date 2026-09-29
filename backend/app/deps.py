@@ -43,6 +43,7 @@ from app.engine.chat.send_queue_store import SendQueueStore
 from app.engine.agent.orchestrator import AgentOrchestrator
 from app.engine.agent.system_layer import SystemLayer
 from app.engine.precepts_upgrade import PreceptsUpgrade
+from app.engine.memory.cards import KnowledgeCards
 from app.engine.memory.service import MemoryService
 from app.engine.memory.store import MemoryStore
 from app.engine.workspace import ensure_workspace_id
@@ -97,6 +98,7 @@ class Container:
     system_layer: SystemLayer
     precepts_upgrade: PreceptsUpgrade
     memory_service: MemoryService
+    knowledge_cards: KnowledgeCards
     enabled_skills: EnabledSkillsStore
     api_keys: ApiKeyStore
     channel_registry: ChannelPluginRegistry
@@ -193,8 +195,15 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
     channel_instances.project_legacy_keys()
 
     memory = build_memory_subgraph(
-        settings, repo, llm, conversations, memory_service=memory_service
+        settings,
+        repo,
+        llm,
+        conversations,
+        memory_service=memory_service,
+        roles=roles,
+        channel_instances=channel_instances,
     )
+    system_layer.knowledge_cards = memory.cards
 
     derivation_worker = DerivationWorker(
         conversations,
@@ -224,6 +233,8 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
         image_cooldown=image_cooldown,
         enabled_skills=enabled_skills,
     )
+    agent.tools.memory.cards = memory.cards
+    agent.tools.memory.conversations = conversations
     agent.chat_runner.turn_hub.usage_store = usage_store
 
     # 服务端发送队列：回合结束时由 TurnHub 钩子驱动 drain（注入/续发/暂停）
@@ -305,6 +316,7 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
         system_layer=system_layer,
         precepts_upgrade=precepts_upgrade,
         memory_service=memory.service,
+        knowledge_cards=memory.cards,
         enabled_skills=enabled_skills,
         api_keys=api_keys,
         channel_registry=channel_registry,
@@ -323,6 +335,7 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
             settings=settings,
             usage=usage,
             runtime_store=runtime_store,
+            knowledge_cards=memory.cards,
         ),
         _index_subgraph=index,
         _memory_subgraph=memory,

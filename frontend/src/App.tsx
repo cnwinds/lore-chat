@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
-import { getAuthStatus, getConversation, type SourceRef, type SettingsAttention } from "./api";
+import {
+  getAuthStatus,
+  getConversation,
+  roleCardScope,
+  type SourceRef,
+  type SettingsAttention,
+} from "./api";
 import type { RoomSummary } from "./types/chat";
 import { LoginPage } from "./components/auth/LoginPage";
 import { SetupPage } from "./components/auth/SetupPage";
@@ -27,6 +33,7 @@ import { useEnabledSkillsAttach } from "./hooks/useEnabledSkillsAttach";
 import type { JumpTarget } from "./hooks/chat/useConversationJump";
 import { MediaGalleryFloatLayer } from "./components/app/MediaGalleryFloatLayer";
 import { MemoryFloatLayer } from "./components/app/MemoryFloatLayer";
+import { KnowledgeCardsFloatLayer } from "./components/app/KnowledgeCardsFloatLayer";
 import { SkillPickModal } from "./components/SkillPickModal";
 import { useWorkspaceShell } from "./hooks/app/useWorkspaceShell";
 import { useMobileLayout } from "./hooks/useMobileLayout";
@@ -91,6 +98,7 @@ function AppMain() {
     { type: "search" }
   > | null>(null);
   const [groupEditKey, setGroupEditKey] = useState(0);
+  const [cardsRefreshKey, setCardsRefreshKey] = useState(0);
 
   const refreshSidebar = () => setSidebarRefreshKey((k) => k + 1);
   const doc = useDocPreviewLayout(refreshSidebar);
@@ -328,6 +336,9 @@ function AppMain() {
           collapsed: role.configPanelCollapsed,
           onToggleCollapsed: role.toggleConfigPanel,
           onRoleUpdated: role.refreshRoles,
+          cardsRefreshKey,
+          onOpenCards: (id, name) =>
+            doc.openCardsPanel(roleCardScope(id), name),
         }}
         groupConfigPanelProps={{
           roomId: conversation.activeGroupId,
@@ -418,7 +429,26 @@ function AppMain() {
           />
         }
         docFloat={
-          doc.showMemoryPanel ? (
+          doc.showCardsPanel && doc.cardsPanel ? (
+            <KnowledgeCardsFloatLayer
+              scope={doc.cardsPanel.scope}
+              title={doc.cardsPanel.title}
+              docWidth={doc.floatWidth}
+              onClose={() => {
+                doc.closeCardsPanel();
+                setCardsRefreshKey((k) => k + 1);
+              }}
+              onToggleWidth={doc.toggleFloatWidth}
+              onOpenConversation={(id) => {
+                doc.closeCardsPanel();
+                setCardsRefreshKey((k) => k + 1);
+                void conversation.openConversation(id, {
+                  keepPreviews: true,
+                });
+              }}
+              onMutated={() => setCardsRefreshKey((k) => k + 1)}
+            />
+          ) : doc.showMemoryPanel ? (
             <MemoryFloatLayer
               docWidth={doc.floatWidth}
               onClose={doc.closeMemoryPanel}

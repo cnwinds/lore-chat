@@ -8,6 +8,8 @@ import {
   type ChannelLogItem,
 } from "../../api/channelPlugins";
 import { formatOpenApiWhen } from "../settings/openApiSettingsModel";
+import { personaCardScope } from "../../api";
+import { KnowledgeCardList } from "../cards/KnowledgeCardList";
 import { accessGuide, revokeTabLabel, type DetailTab } from "./channelUiModel";
 
 type TranscriptSeg = { title: string; messages: ChatMessage[] };
@@ -91,6 +93,9 @@ export function ChannelDetails({
     { id: "guide", label: "接入说明" },
     { id: "sessions", label: "会话" },
     { id: "logs", label: "日志" },
+    ...(inst.persona_id
+      ? [{ id: "cards" as const, label: "知识卡" }]
+      : []),
     { id: "revoke", label: revokeLabel },
   ];
 
@@ -207,6 +212,12 @@ export function ChannelDetails({
               )}
             </>
           )}
+        </div>
+      ) : null}
+
+      {activeTab === "cards" && inst.persona_id ? (
+        <div className="channel-details-body">
+          <KnowledgeCardList scope={personaCardScope(inst.persona_id)} />
         </div>
       ) : null}
 

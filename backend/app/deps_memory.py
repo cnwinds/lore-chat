@@ -4,12 +4,15 @@ from dataclasses import dataclass
 
 from app.config import Settings
 from app.engine.conversations import ConversationStore
+from app.engine.memory.cards import KnowledgeCards
 from app.engine.memory.decay import DecayConfig
+from app.engine.memory.role_card_extractor import LLMRoleCardExtractor
 from app.engine.memory.service import MemoryService
 from app.engine.memory.session_extractor import LLMSessionExtractor
 from app.engine.memory.store import MemoryStore
 from app.engine.memory_maintenance import MemoryMaintenanceJob
 from app.engine.memory.session_observe import SessionMemoryObserve
+from app.engine.roles import RoleStore
 from app.models.llm import LLMClient
 from app.storage.repo import KnowledgeRepo
 
@@ -18,14 +21,17 @@ from app.storage.repo import KnowledgeRepo
 class MemorySubgraph:
     store: MemoryStore
     service: MemoryService
+    cards: KnowledgeCards
     worker: SessionMemoryObserve
     maintenance: MemoryMaintenanceJob
 
     def wire_conversations(self, conversations: ConversationStore) -> None:
         self.service.conversations = conversations
+        self.cards.conversations = conversations
 
     def rebind_llm(self, llm: LLMClient) -> None:
         self.worker.extractor = LLMSessionExtractor(llm)
+        self.worker.card_extractor = LLMRoleCardExtractor(llm)
 
 
 def build_memory_subgraph(
@@ -35,11 +41,23 @@ def build_memory_subgraph(
     conversations: ConversationStore,
     *,
     memory_service: MemoryService,
+    roles: RoleStore,
+    channel_instances,
 ) -> MemorySubgraph:
+    memory_db = settings.kb_path / ".kb" / "memory" / "memory.db"
+    cards = KnowledgeCards(
+        memory_db,
+        owner=memory_service,
+        roles=roles,
+        conversations=conversations,
+        channel_instances=channel_instances,
+    )
     memory_worker = SessionMemoryObserve(
         conversations,
         memory_service,
         extractor=LLMSessionExtractor(llm),
+        cards=cards,
+        card_extractor=LLMRoleCardExtractor(llm),
         idle_hours=float(settings.memory_session_idle_hours),
     )
     decay_config = DecayConfig(
@@ -53,6 +71,7 @@ def build_memory_subgraph(
     return MemorySubgraph(
         store=memory_service.store,
         service=memory_service,
+        cards=cards,
         worker=memory_worker,
         maintenance=memory_maintenance,
     )

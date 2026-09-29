@@ -48,6 +48,7 @@ vi.mock("../../api", async (importOriginal) => {
     })),
     listRoleSchedules: vi.fn(async () => ({ schedules: [] })),
     listRoleScheduleRuns: vi.fn(async () => ({ runs: [] })),
+    listCards: vi.fn(async () => ({ scope: "role:default", cards: [], count: 5 })),
   };
 });
 
@@ -347,6 +348,23 @@ describe("RoleConfigPanel", () => {
     expect(screen.getByLabelText("何时运行")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "返回例行任务列表" }));
     expect(await screen.findByRole("button", { name: /每日简报/ })).toBeInTheDocument();
+  });
+
+  it("shows card count and invokes onOpenCards with role id", async () => {
+    const user = userEvent.setup();
+    const onOpenCards = vi.fn();
+    render(
+      <RoleConfigPanel
+        roleId="default"
+        collapsed={false}
+        onToggleCollapsed={vi.fn()}
+        onOpenCards={onOpenCards}
+        cardsRefreshKey={0}
+      />,
+    );
+    const entry = await screen.findByRole("button", { name: "知识卡 · 5 条" });
+    await user.click(entry);
+    expect(onOpenCards).toHaveBeenCalledWith("default", "通用");
   });
 
   it("opens identity editor from the gear", async () => {

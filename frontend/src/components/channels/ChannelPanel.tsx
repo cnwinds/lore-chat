@@ -211,7 +211,7 @@ export function ChannelPanel({
 
   const handleToggleOutput = async (
     inst: ChannelInstance,
-    field: "show_thinking" | "show_tool_output",
+    field: "show_thinking" | "show_tool_output" | "include_owner_memory",
   ) => {
     const next = !inst[field];
     setInstances((prev) =>

@@ -3,7 +3,9 @@ import {
   createRoleSchedule,
   deleteRoleSchedule,
   getRole,
+  listCards,
   listRoleSchedules,
+  roleCardScope,
   updateRole,
   updateRoleSchedule,
   type Role,
@@ -21,6 +23,8 @@ type Props = {
   collapsed?: boolean;
   onToggleCollapsed?: () => void;
   onRoleUpdated?: () => void;
+  onOpenCards?: (roleId: string, roleName: string) => void;
+  cardsRefreshKey?: number;
 };
 
 export function RoleConfigPanel({
@@ -28,6 +32,8 @@ export function RoleConfigPanel({
   collapsed = false,
   onToggleCollapsed,
   onRoleUpdated,
+  onOpenCards,
+  cardsRefreshKey = 0,
 }: Props) {
   const [role, setRole] = useState<Role | null>(null);
   const [schedules, setSchedules] = useState<RoleSchedule[]>([]);
@@ -39,6 +45,7 @@ export function RoleConfigPanel({
   const [avatar, setAvatar] = useState("");
   const [systemPrompt, setSystemPrompt] = useState("");
   const [detail, setDetail] = useState<RoleSchedule | "new" | null>(null);
+  const [cardCount, setCardCount] = useState<number | null>(null);
   const coverAvatar = useRoleAvatarSrc(role?.avatar);
 
   async function loadRole(id: string) {
@@ -73,8 +80,27 @@ export function RoleConfigPanel({
       setSystemPrompt("");
       setEditing(false);
       setDetail(null);
+      setCardCount(null);
     }
   }, [roleId]);
+
+  useEffect(() => {
+    if (!roleId) {
+      setCardCount(null);
+      return;
+    }
+    let cancelled = false;
+    void listCards(roleCardScope(roleId))
+      .then((data) => {
+        if (!cancelled) setCardCount(data.count ?? (data.cards || []).length);
+      })
+      .catch(() => {
+        if (!cancelled) setCardCount(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [roleId, cardsRefreshKey]);
 
   async function handleSaveIdentity() {
     if (!roleId || !role) return;
@@ -318,6 +344,16 @@ export function RoleConfigPanel({
               </div>
             ) : null}
           </div>
+
+          {onOpenCards && role && roleId ? (
+            <button
+              type="button"
+              className="role-config-cards-entry"
+              onClick={() => onOpenCards(roleId, role.name)}
+            >
+              {cardCount !== null ? `知识卡 · ${cardCount} 条` : "知识卡"}
+            </button>
+          ) : null}
 
           <div
             className={`role-config-routines${schedules.length === 0 ? " role-config-routines--empty" : ""}`}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   confirmMemoryFact,
   editMemoryFact,
@@ -8,17 +8,20 @@ import {
   type MemoryFact,
 } from "../../api";
 import type { DocWidth } from "../../types/doc";
-import { FixedOverflowMenu } from "../FixedOverflowMenu";
 import {
   CheckIcon,
   DocIconBtn,
   EditIcon,
-  MoreIcon,
   SaveIcon,
   TrashIcon,
   XIcon,
 } from "../DocToolbarIcons";
 import { SettingsAttentionDot } from "../settings/SettingsAttentionDot";
+import {
+  MemoryFactMenu,
+  MemoryStatement,
+  type MemoryFactMenuAction,
+} from "./MemoryFactParts";
 
 type Props = {
   docWidth?: DocWidth;
@@ -28,147 +31,13 @@ type Props = {
   onAttentionChange?: () => void;
 };
 
-type MenuAction = {
-  id: string;
-  label: string;
-  icon: ReactNode;
-  danger?: boolean;
-  onClick: () => void;
-};
-
-function MemoryFactMenu({
-  actions,
-  disabled,
-}: {
-  actions: MenuAction[];
-  disabled?: boolean;
-}) {
-  const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
-
-  if (actions.length === 0) return null;
-
-  return (
-    <div ref={rootRef} className="doc-overflow-anchor">
-      <DocIconBtn
-        label="更多操作"
-        className="memory-fact-icon-btn"
-        disabled={disabled}
-        active={open}
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-        aria-haspopup="menu"
-      >
-        <MoreIcon />
-      </DocIconBtn>
-      <FixedOverflowMenu
-        open={open}
-        anchorRef={rootRef}
-        align="end"
-        label="记忆操作"
-        onDismiss={() => setOpen(false)}
-      >
-        {actions.map((action) => (
-          <button
-            key={action.id}
-            type="button"
-            role="menuitem"
-            className={`doc-overflow-item${action.danger ? " doc-overflow-item--danger" : ""}`}
-            disabled={disabled}
-            title={action.label}
-            onClick={() => {
-              action.onClick();
-              setOpen(false);
-            }}
-          >
-            {action.icon}
-            <span>{action.label}</span>
-          </button>
-        ))}
-      </FixedOverflowMenu>
-    </div>
-  );
-}
-
-function MemoryStatement({
-  statement,
-  conversationIds,
-  disabled,
-  onOpenConversation,
-}: {
-  statement: string;
-  conversationIds: string[];
-  disabled?: boolean;
-  onOpenConversation?: (conversationId: string) => void;
-}) {
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
-  const canJump =
-    Boolean(onOpenConversation) && conversationIds.length > 0 && !disabled;
-  const multi = conversationIds.length > 1;
-
-  if (!canJump) {
-    return <p className="memory-fact-statement">{statement}</p>;
-  }
-
-  function openOne(cid: string) {
-    onOpenConversation?.(cid);
-    setPickerOpen(false);
-  }
-
-  return (
-    <div ref={rootRef} className="memory-fact-statement-anchor">
-      <button
-        type="button"
-        className="memory-fact-statement memory-fact-statement--jump"
-        title={multi ? "选择来源会话" : "打开来源会话"}
-        aria-label={multi ? "选择来源会话" : "打开来源会话"}
-        aria-expanded={multi ? pickerOpen : undefined}
-        aria-haspopup={multi ? "menu" : undefined}
-        onClick={() => {
-          if (!multi) {
-            openOne(conversationIds[0]);
-            return;
-          }
-          setPickerOpen((v) => !v);
-        }}
-      >
-        {statement}
-      </button>
-      {multi ? (
-        <FixedOverflowMenu
-          open={pickerOpen}
-          anchorRef={rootRef}
-          align="start"
-          label="来源会话"
-          onDismiss={() => setPickerOpen(false)}
-        >
-          {conversationIds.map((cid) => (
-            <button
-              key={cid}
-              type="button"
-              role="menuitem"
-              className="doc-overflow-item"
-              title={cid}
-              aria-label={`打开来源会话 ${cid}`}
-              onClick={() => openOne(cid)}
-            >
-              会话 {cid.length > 8 ? `${cid.slice(0, 8)}…` : cid}
-            </button>
-          ))}
-        </FixedOverflowMenu>
-      ) : null}
-    </div>
-  );
-}
-
 function buildActions(
   fact: MemoryFact,
   onEdit: () => void,
   onConfirm: () => void,
   onReject: () => void,
   onForget: () => void,
-): MenuAction[] {
+): MemoryFactMenuAction[] {
   if (fact.status === "candidate") {
     return [
       {

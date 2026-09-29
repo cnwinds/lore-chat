@@ -13,7 +13,7 @@ export const TYPE_MARK: Record<string, string> = {
 
 export const NEW_EXCLUSIVE_VALUE = "__new_exclusive__";
 
-export type DetailTab = "guide" | "sessions" | "logs" | "revoke";
+export type DetailTab = "guide" | "sessions" | "logs" | "cards" | "revoke";
 
 export function typeLabel(typeId: string, types: ChannelType[]): string {
   return types.find((item) => item.type_id === typeId)?.display_name || typeId;

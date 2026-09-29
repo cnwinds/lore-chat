@@ -95,9 +95,15 @@ class AgentOrchestrator:
         system_layer_text = (
             self.system_layer.compose_rules() if self.system_layer else ""
         )
-        user_memory = (
-            self.system_layer.memory_context() if self.system_layer else ""
-        )
+        user_memory = ""
+        role_cards = ""
+        if self.system_layer:
+            inj = self.system_layer.card_injection(
+                conversation_id=conversation_id,
+                role_id=current_role_id,
+            )
+            user_memory = inj.owner_memory
+            role_cards = inj.role_cards
         catalog = list(skill_catalog) if skill_catalog else []
         skill_msgs = build_skill_catalog_system_messages(catalog)
         extra = list(skill_msgs) if skill_msgs else []
@@ -166,6 +172,7 @@ class AgentOrchestrator:
             extra_system_messages=extra or None,
             attachments=attachments,
             role_system_prompt=role_system_prompt,
+            role_cards=role_cards,
         )
         tools_for_run = select_tools(
             mode,

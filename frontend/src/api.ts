@@ -1546,3 +1546,67 @@ export function forgetMemoryFact(factId: string) {
     { method: "POST" },
   );
 }
+
+export type KnowledgeCard = {
+  id: string;
+  slot_key: string;
+  kind: "domain" | "owner_context" | "practice" | "lesson" | "audience";
+  statement: string;
+  origin: string;
+  external: boolean;
+  status: "confirmed" | "candidate";
+  confidence?: number;
+  conversation_ids: string[];
+  updated_at?: string;
+};
+
+export function roleCardScope(roleId: string): string {
+  return `role:${roleId}`;
+}
+
+export function personaCardScope(personaId: string): string {
+  return `persona:${personaId}`;
+}
+
+export function listCards(scope: string) {
+  const q = new URLSearchParams({ scope });
+  return apiFetch<{ scope: string; cards: KnowledgeCard[]; count: number }>(
+    `/api/cards?${q}`,
+  );
+}
+
+export function editCard(scope: string, cardId: string, statement: string) {
+  const q = new URLSearchParams({ scope });
+  return apiFetch<{ ok: boolean; message?: string }>(
+    `/api/cards/${encodeURIComponent(cardId)}?${q}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ statement }),
+    },
+  );
+}
+
+export function forgetCard(scope: string, cardId: string) {
+  const q = new URLSearchParams({ scope });
+  return apiFetch<{ ok: boolean; message?: string }>(
+    `/api/cards/${encodeURIComponent(cardId)}/forget?${q}`,
+    { method: "POST" },
+  );
+}
+
+export function confirmCard(scope: string, cardId: string) {
+  const q = new URLSearchParams({ scope });
+  return apiFetch<{ ok: boolean; message?: string }>(
+    `/api/cards/${encodeURIComponent(cardId)}/confirm?${q}`,
+    { method: "POST" },
+  );
+}
+
+export function rejectCard(scope: string, cardId: string) {
+  const q = new URLSearchParams({ scope });
+  return apiFetch<{ ok: boolean; message?: string }>(
+    `/api/cards/${encodeURIComponent(cardId)}/reject?${q}`,
+    { method: "POST" },
+  );
+}

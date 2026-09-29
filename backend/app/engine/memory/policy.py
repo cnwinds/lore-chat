@@ -27,6 +27,7 @@ _SENSITIVE_KEYWORDS = (
 _CHANGE_MARKERS = ("现在", "以后", "改为", "不再", "改成")
 _PROMOTION_CONFIDENCE = 0.80
 _PROMOTION_MIN_CONVERSATIONS = 2
+EXTERNAL_MIN_CONVERSATIONS = 3
 
 
 def infer_sensitivity(statement: str) -> str:
@@ -51,6 +52,8 @@ def allows_automatic_save(sensitivity: str, origin: str) -> bool:
 def initial_status(origin: str, statement: str = "") -> str:
     """由 origin 决定初始 status（statement 保留签名供调用方统一）。"""
     del statement
+    if origin == "external":
+        return "candidate"
     if origin in ("manual", "explicit_remember", "direct"):
         return "confirmed"
     return "candidate"
@@ -59,6 +62,8 @@ def initial_status(origin: str, statement: str = "") -> str:
 def should_promote(fact: dict, *, distinct_conversations: int, evidence_count: int) -> bool:
     if fact.get("status") != "candidate":
         return False
+    if fact.get("origin") == "external":
+        return distinct_conversations >= EXTERNAL_MIN_CONVERSATIONS
     if fact.get("origin") == "inferred":
         if distinct_conversations < _PROMOTION_MIN_CONVERSATIONS:
             return False
@@ -75,7 +80,13 @@ def has_change_signal(statement: str) -> bool:
 
 
 def origin_wins_conflict(new_origin: str, old_origin: str) -> bool:
-    rank = {"manual": 4, "explicit_remember": 3, "direct": 2, "inferred": 1}
+    rank = {
+        "manual": 4,
+        "explicit_remember": 3,
+        "direct": 2,
+        "inferred": 1,
+        "external": -1,
+    }
     new_rank = rank.get(new_origin, 0)
     old_rank = rank.get(old_origin, 0)
     if new_rank != old_rank:

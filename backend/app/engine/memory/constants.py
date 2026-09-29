@@ -33,6 +33,7 @@ def is_memory_projection_path(path: str | None) -> bool:
     return normalize_kb_rel(path) == MEMORY_DOC_REL
 
 ORIGIN_RANK = {
+    "external": -1,
     "inferred": 0,
     "direct": 1,
     "explicit_remember": 2,

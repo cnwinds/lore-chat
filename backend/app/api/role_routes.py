@@ -188,6 +188,9 @@ async def delete_role(role_id: str, request: Request):
             index_revision=c.index_revision,
         )
         c.roles.delete(role_id)
+        from app.engine.memory.cards import role_scope
+
+        c.knowledge_cards.purge_scope(role_scope(role_id))
     except KeyError as e:
         raise HTTPException(404, "角色不存在") from e
     except ValueError as e:

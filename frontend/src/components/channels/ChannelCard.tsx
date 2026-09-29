@@ -27,7 +27,7 @@ type Props = {
   onToggle: (inst: ChannelInstance) => void;
   onToggleOutput: (
     inst: ChannelInstance,
-    field: "show_thinking" | "show_tool_output",
+    field: "show_thinking" | "show_tool_output" | "include_owner_memory",
   ) => void;
   onCopy: (inst: ChannelInstance) => void;
   onToggleTab: (id: string, tab: DetailTab) => void;
@@ -186,6 +186,22 @@ export function ChannelCard({
               />
             </div>
           </div>
+        </div>
+
+        <div className="channel-owner-memory-row">
+          <div className="channel-output-toggle">
+            <span className="channel-output-toggle-name">主人记忆</span>
+            <ChannelSwitch
+              on={!!inst.include_owner_memory}
+              label="带上主人记忆"
+              disabled={busy}
+              compact
+              onClick={() => onToggleOutput(inst, "include_owner_memory")}
+            />
+          </div>
+          <p className="channel-owner-memory-hint">
+            打开后外部来访者的对话会带上你的个人记忆。
+          </p>
         </div>
 
         {editingPrompt ? (

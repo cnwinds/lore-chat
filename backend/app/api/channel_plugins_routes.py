@@ -31,6 +31,7 @@ class PatchInstanceBody(BaseModel):
     enabled: bool | None = None
     show_thinking: bool | None = None
     show_tool_output: bool | None = None
+    include_owner_memory: bool | None = None
     config: dict[str, Any] | None = None
     secrets: dict[str, Any] | None = None
 
@@ -99,6 +100,7 @@ async def update_instance(
             enabled=body.enabled,
             show_thinking=body.show_thinking,
             show_tool_output=body.show_tool_output,
+            include_owner_memory=body.include_owner_memory,
             config=body.config,
             secrets=body.secrets,
         )

@@ -12,6 +12,7 @@ READ_ONLY_TOOLS = frozenset({
     "read_last_tool_results",
     "fetch_url", "web_search",
     "recall_memory",
+    "recall_cards",
     "list_roles",
     "list_rooms",
     "list_groups",
@@ -144,6 +145,7 @@ TOOL_LABELS = {
     "move_entry": "移动或重命名路径",
     "manage_memory": "管理长期用户记忆",
     "recall_memory": "回忆已确认的用户画像",
+    "recall_cards": "查阅角色知识卡",
     "sandbox_run": "在沙箱执行命令",
     "sandbox_list_dir": "列出沙箱目录",
     "sandbox_read_file": "读取沙箱文件",
@@ -756,7 +758,8 @@ TOOL_DEFINITIONS: list[dict] = [
             "name": "manage_memory",
             "description": (
                 "记住、更正或遗忘关于用户自身的长期画像事实。"
-                "不是话题知识；规范助手怎么做事的家规不写这里，应修订《戒律》。"
+                "不是话题知识；对所有角色都成立的做事家规不写这里，应修订《戒律》；"
+                "只在本角色领域成立的做法与经验由角色知识卡在会话结束后自动沉淀，不写这里。"
             ),
             "parameters": {
                 "type": "object",
@@ -791,6 +794,24 @@ TOOL_DEFINITIONS: list[dict] = [
                     "limit": {"type": "integer", "default": 10},
                 },
                 "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "recall_cards",
+            "description": (
+                "查阅角色积累的知识卡（领域知识、做法、经验、受众）。"
+                "省略 role 查当前角色；也可查其他左栏角色或通道共用角色，借鉴对方的经验。只读。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "role": {"type": "string", "description": "角色名或 id；省略为当前角色"},
+                    "query": {"type": "string", "description": "关键词；省略返回最近更新的卡"},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 10, "default": 10},
+                },
             },
         },
     },
@@ -1576,6 +1597,7 @@ _API_EXCLUDED_TOOLS = frozenset(
         "delete_kb",
         "publish_from_sandbox",
         "manage_memory",
+        "recall_cards",
         "generate_image",
         "create_role",
         "update_role",

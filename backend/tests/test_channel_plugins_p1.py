@@ -395,7 +395,9 @@ def test_feishu_origin_excluded_from_memory_and_sidebar_tip(tmp_path):
         row = app.state.container.conversations.conn.execute(
             "SELECT memory_dirty FROM conversations WHERE id = ?", (cid,)
         ).fetchone()
-        assert int(row["memory_dirty"] or 0) == 0
+        # 通道会话标 dirty 供人设镜头抽卡，但不抽主人画像
+        assert int(row["memory_dirty"] or 0) == 1
+        assert app.state.container.memory_service.store.list_confirmed() == []
         assert inst["role_id"] not in app.state.container.conversations.last_active_at_by_role()
         assert inst["role_id"] not in app.state.container.conversations.last_reply_preview_by_role()
         sidebar = client.get("/api/roles").json()["roles"]

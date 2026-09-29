@@ -850,3 +850,33 @@ class MemoryStore:
             return facts[:limit]
         matched = [f for f in facts if q in f["statement"].lower() or q in f["slot_key"].lower()]
         return matched[:limit]
+
+    def purge_owner(self) -> int:
+        """删除本 scope（owner_key）下全部 facts / evidence / tombstones / render_state。"""
+        with self._connect() as conn:
+            fact_ids = [
+                row[0]
+                for row in conn.execute(
+                    "SELECT id FROM memory_facts WHERE owner_key = ?",
+                    (self.owner_key,),
+                ).fetchall()
+            ]
+            n = len(fact_ids)
+            if fact_ids:
+                placeholders = ",".join("?" * len(fact_ids))
+                conn.execute(
+                    f"DELETE FROM memory_evidence WHERE fact_id IN ({placeholders})",
+                    fact_ids,
+                )
+            conn.execute(
+                "DELETE FROM memory_facts WHERE owner_key = ?", (self.owner_key,)
+            )
+            conn.execute(
+                "DELETE FROM memory_tombstones WHERE owner_key = ?", (self.owner_key,)
+            )
+            conn.execute(
+                "DELETE FROM memory_render_state WHERE owner_key = ?",
+                (self.owner_key,),
+            )
+            conn.commit()
+            return n

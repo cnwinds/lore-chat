@@ -8,5 +8,6 @@
 | [role-rooms.md](role-rooms.md) | 已落地 | 角色互通与群聊 |
 | [external-chat-api.md](external-chat-api.md) | 已落地（脚本通道） | `POST /api/v1/chat` |
 | [channel-plugins.md](channel-plugins.md) | 已落地（P0–P2） | 聊天通道插件；公众号仅灰显 |
+| [role-knowledge-cards.md](role-knowledge-cards.md) | 已采纳（P0 已落地） | 角色知识卡：按作用域的记忆与自动进化 |
 
 地图见 [docs/README.md](../README.md)。

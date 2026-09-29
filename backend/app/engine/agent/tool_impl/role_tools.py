@@ -222,6 +222,7 @@ class RoleTools:
                 name=name,
                 avatar=avatar,
                 system_prompt=system_prompt,
+                revision_source="tool",
             )
             return {
                 "summary": f"已更新角色「{role['name']}」",
@@ -555,6 +556,7 @@ class RoleTools:
                 role_id=role_id,
                 system_prompt=system_prompt,
                 onboarding_status="completed",
+                revision_source="onboarding",
             )
             schedules_arg = args.get("schedules")
             created_schedules = []

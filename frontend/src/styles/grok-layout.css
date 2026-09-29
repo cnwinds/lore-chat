@@ -1299,6 +1299,25 @@ select.role-config-input {
   cursor: not-allowed;
 }
 
+.role-config-cards-entry {
+  display: block;
+  width: calc(100% - 36px);
+  margin: 0 18px 8px;
+  padding: 10px 12px;
+  text-align: left;
+  font-size: var(--font-ui-base);
+  font-weight: 550;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--bg-muted) 88%, var(--bg-surface));
+  cursor: pointer;
+}
+
+.role-config-cards-entry:hover {
+  background: var(--bg-hover);
+}
+
 .role-config-routines {
   flex-shrink: 0;
   padding: 8px 18px 28px;

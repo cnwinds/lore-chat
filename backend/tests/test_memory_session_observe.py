@@ -530,3 +530,248 @@ def test_partial_failure_still_keeps_confirmed_in_context(tmp_path):
     ).fetchone()
     assert row["memory_dirty"] == 1
 
+
+def test_owner_dm_runs_owner_and_card_extractors(tmp_path):
+    from app.engine.memory.cards import KnowledgeCards, role_scope
+    from app.engine.memory.resolver import SlotAction
+    from app.engine.roles import RoleStore
+
+    owner_calls = {"n": 0}
+    card_calls = {"n": 0}
+
+    class _OwnerExt:
+        def extract(self, _turns, *, confirmed_summary):
+            del confirmed_summary
+            owner_calls["n"] += 1
+            return [
+                preference_action("我偏好短句"),
+            ]
+
+    class _CardExt:
+        def extract(self, _turns, *, lens, existing_cards, owner_summary):
+            del existing_cards, owner_summary
+            card_calls["n"] += 1
+            assert lens.origin == "direct"
+            return [
+                SlotAction(
+                    action="new",
+                    statement="本角色应用清单体写方案",
+                    category="practice",
+                    origin="direct",
+                    confidence=0.9,
+                    slot_hint="practice.outline",
+                )
+            ]
+
+    conv = ConversationStore(tmp_path / "conversations")
+    repo = KnowledgeRepo(tmp_path / "knowledge", protected_dirs=("系统",))
+    mem = MemoryStore(tmp_path / "memory.db", owner_key="ws1")
+    svc = MemoryService(mem, repo, knowledge_writer=make_writer(repo, tmp_path))
+    roles = RoleStore(tmp_path / "roles")
+    role = roles.create(name="策划", system_prompt="你是策划")
+    cards = KnowledgeCards(
+        tmp_path / "memory.db", owner=svc, roles=roles, conversations=conv
+    )
+    worker = MemoryWorker(
+        conv,
+        svc,
+        extractor=_OwnerExt(),
+        cards=cards,
+        card_extractor=_CardExt(),
+        idle_hours=0,
+    )
+    cid = conv.create(role_id=role["id"])
+    conv.begin_turn(cid, "写方案", "c1", observation_allowed=True)
+    past = (datetime.now(timezone.utc) - timedelta(hours=25)).isoformat()
+    conv.conn.execute(
+        "UPDATE conversations SET last_user_message_at = ? WHERE id = ?",
+        (past, cid),
+    )
+    conv.conn.commit()
+    worker.drain(max_jobs=5)
+    assert owner_calls["n"] == 1
+    assert card_calls["n"] == 1
+    assert mem.list_confirmed()
+    scope = role_scope(role["id"])
+    assert cards.store(scope).list_confirmed()
+
+
+def test_channel_session_cards_only_external_candidate(tmp_path):
+    from app.engine.memory.cards import KnowledgeCards, persona_scope
+    from app.engine.memory.resolver import SlotAction
+    from app.engine.roles import RoleStore
+
+    owner_calls = {"n": 0}
+
+    class _OwnerExt:
+        def extract(self, _turns, *, confirmed_summary):
+            del confirmed_summary
+            owner_calls["n"] += 1
+            return [preference_action("不应写入")]
+
+    class _CardExt:
+        def extract(self, _turns, *, lens, existing_cards, owner_summary):
+            del existing_cards, owner_summary
+            assert lens.origin == "external"
+            return [
+                SlotAction(
+                    action="new",
+                    statement="有来访者常问退款进度",
+                    category="audience",
+                    origin="external",
+                    confidence=0.8,
+                    slot_hint="audience.refund",
+                )
+            ]
+
+    conv = ConversationStore(tmp_path / "conversations")
+    repo = KnowledgeRepo(tmp_path / "knowledge", protected_dirs=("系统",))
+    mem = MemoryStore(tmp_path / "memory.db", owner_key="ws1")
+    svc = MemoryService(mem, repo, knowledge_writer=make_writer(repo, tmp_path))
+    roles = RoleStore(tmp_path / "roles")
+    persona = roles.create_persona(name="客服", system_prompt="客服")
+    role = roles.create(name="hidden", system_prompt="h", visibility="hidden")
+    cards = KnowledgeCards(
+        tmp_path / "memory.db",
+        owner=svc,
+        roles=roles,
+        conversations=conv,
+        channel_instances=_ChannelInst({"inst1": {"id": "inst1", "persona_id": persona["id"]}}),
+    )
+    worker = MemoryWorker(
+        conv,
+        svc,
+        extractor=_OwnerExt(),
+        cards=cards,
+        card_extractor=_CardExt(),
+        idle_hours=0,
+    )
+    cid = conv.create(
+        role_id=role["id"],
+        origin="api",
+        channel_instance_id="inst1",
+    )
+    conv.begin_turn(cid, "退款到哪了", "c1", observation_allowed=True)
+    past = (datetime.now(timezone.utc) - timedelta(hours=25)).isoformat()
+    conv.conn.execute(
+        "UPDATE conversations SET last_user_message_at = ? WHERE id = ?",
+        (past, cid),
+    )
+    conv.conn.commit()
+    worker.drain(max_jobs=5)
+    assert owner_calls["n"] == 0
+    assert mem.list_confirmed() == []
+    scope = persona_scope(persona["id"])
+    cands = cards.store(scope).list_candidates()
+    assert len(cands) == 1
+    assert cands[0]["origin"] == "external"
+
+
+class _ChannelInst:
+    def __init__(self, items):
+        self._items = items
+
+    def get(self, iid):
+        return self._items[iid]
+
+
+def test_peer_dm_clears_dirty_without_extraction(tmp_path):
+    from app.engine.memory.cards import KnowledgeCards
+    from app.engine.roles import RoleStore
+
+    owner_calls = {"n": 0}
+    card_calls = {"n": 0}
+
+    class _OwnerExt:
+        def extract(self, *_a, **_k):
+            owner_calls["n"] += 1
+            return []
+
+    class _CardExt:
+        def extract(self, *_a, **_k):
+            card_calls["n"] += 1
+            return []
+
+    conv = ConversationStore(tmp_path / "conversations")
+    repo = KnowledgeRepo(tmp_path / "knowledge", protected_dirs=("系统",))
+    mem = MemoryStore(tmp_path / "memory.db", owner_key="ws1")
+    svc = MemoryService(mem, repo, knowledge_writer=make_writer(repo, tmp_path))
+    roles = RoleStore(tmp_path / "roles")
+    role = roles.create(name="R", system_prompt="")
+    cards = KnowledgeCards(
+        tmp_path / "memory.db", owner=svc, roles=roles, conversations=conv
+    )
+    worker = MemoryWorker(
+        conv,
+        svc,
+        extractor=_OwnerExt(),
+        cards=cards,
+        card_extractor=_CardExt(),
+        idle_hours=0,
+    )
+    cid = conv.create(role_id=role["id"])
+    conv.conn.execute(
+        "UPDATE conversations SET kind = ? WHERE id = ?", ("peer_dm", cid)
+    )
+    conv.conn.commit()
+    conv.begin_turn(cid, "你好", "c1", observation_allowed=True)
+    past = (datetime.now(timezone.utc) - timedelta(hours=25)).isoformat()
+    conv.conn.execute(
+        "UPDATE conversations SET last_user_message_at = ? WHERE id = ?",
+        (past, cid),
+    )
+    conv.conn.commit()
+    worker.drain(max_jobs=5)
+    assert owner_calls["n"] == 0
+    assert card_calls["n"] == 0
+    row = conv.conn.execute(
+        "SELECT memory_dirty FROM conversations WHERE id = ?", (cid,)
+    ).fetchone()
+    assert row["memory_dirty"] == 0
+
+
+def test_missing_card_extractor_keeps_dirty(tmp_path):
+    from app.engine.memory.cards import KnowledgeCards
+    from app.engine.roles import RoleStore
+
+    conv = ConversationStore(tmp_path / "conversations")
+    repo = KnowledgeRepo(tmp_path / "knowledge", protected_dirs=("系统",))
+    mem = MemoryStore(tmp_path / "memory.db", owner_key="ws1")
+    svc = MemoryService(mem, repo, knowledge_writer=make_writer(repo, tmp_path))
+    roles = RoleStore(tmp_path / "roles")
+    role = roles.create(name="策划", system_prompt="")
+    cards = KnowledgeCards(
+        tmp_path / "memory.db", owner=svc, roles=roles, conversations=conv
+    )
+    worker = MemoryWorker(
+        conv,
+        svc,
+        extractor=scripted_memory_extractor(preference_action("偏好")),
+        cards=cards,
+        card_extractor=None,
+        idle_hours=0,
+    )
+    cid = conv.create(role_id=role["id"])
+    conv.begin_turn(cid, "聊", "c1", observation_allowed=True)
+    past = (datetime.now(timezone.utc) - timedelta(hours=25)).isoformat()
+    conv.conn.execute(
+        "UPDATE conversations SET last_user_message_at = ? WHERE id = ?",
+        (past, cid),
+    )
+    conv.conn.commit()
+    worker.drain(max_jobs=5)
+    row = conv.conn.execute(
+        "SELECT memory_dirty FROM conversations WHERE id = ?", (cid,)
+    ).fetchone()
+    assert row["memory_dirty"] == 1
+
+
+def test_channel_begin_turn_marks_memory_dirty(tmp_path):
+    conv = ConversationStore(tmp_path / "conversations")
+    cid = conv.create(origin="api", channel_instance_id="k1")
+    conv.begin_turn(cid, "外部用户消息", "c1", observation_allowed=True)
+    row = conv.conn.execute(
+        "SELECT memory_dirty FROM conversations WHERE id = ?", (cid,)
+    ).fetchone()
+    assert row["memory_dirty"] == 1
+

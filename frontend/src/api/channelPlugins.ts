@@ -21,6 +21,7 @@ export type ChannelInstance = {
   role_id?: string | null;
   show_thinking?: boolean;
   show_tool_output?: boolean;
+  include_owner_memory?: boolean;
   created_at: string;
   last_event_at?: string | null;
   config?: {
@@ -80,6 +81,7 @@ export function patchChannelInstance(
     enabled?: boolean;
     show_thinking?: boolean;
     show_tool_output?: boolean;
+    include_owner_memory?: boolean;
     config?: Record<string, string>;
     secrets?: Record<string, string>;
   },
