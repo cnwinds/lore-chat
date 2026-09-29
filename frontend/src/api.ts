@@ -1555,6 +1555,7 @@ export type KnowledgeCard = {
   origin: string;
   external: boolean;
   status: "confirmed" | "candidate" | "stale";
+  merged_into_persona: boolean;
   confidence?: number;
   conversation_ids: string[];
   updated_at?: string;
@@ -1583,13 +1584,75 @@ export type CardGrowthItem = {
   sources?: Array<{ card_id: string; statement: string }>;
 };
 
-export type CardGrowthEntry = {
+export type CardGrowthPersonaItem =
+  | {
+      action: "evolved";
+      revision_id: string;
+      op: string;
+      reason: string;
+      before: string;
+      after: string;
+      basis: string[];
+    }
+  | {
+      action: "rolled_back";
+      revision_id: string;
+      rollback_revision_id: string;
+      source: string;
+    };
+
+export type CardGrowthProposalItem = {
+  action: "proposed";
+  proposal_id: string;
+  target: "skill" | "doc";
+  title: string;
+  reason: string;
+  basis: string[];
+  status: "pending" | "accepted" | "dismissed";
+};
+
+type CardGrowthEntryBase = {
   id: string;
-  kind: "learned" | "consolidated" | "faded";
   created_at: string;
   conversation_id: string | null;
   conversation_title: string | null;
-  items: CardGrowthItem[];
+};
+
+export type CardGrowthEntry =
+  | (CardGrowthEntryBase & {
+      kind: "learned" | "consolidated" | "faded";
+      items: CardGrowthItem[];
+    })
+  | (CardGrowthEntryBase & { kind: "persona"; items: CardGrowthPersonaItem[] })
+  | (CardGrowthEntryBase & {
+      kind: "proposal";
+      items: CardGrowthProposalItem[];
+    });
+
+export type PersonaRevisionReason = {
+  op: string;
+  reason: string;
+  before: string;
+  after: string;
+  basis: string[];
+};
+
+export type PersonaRevisionRevert = {
+  id: string;
+  source: string;
+  created_at: string;
+};
+
+export type PersonaRevision = {
+  id: string;
+  source: string;
+  created_at: string;
+  body: string;
+  previous_body: string;
+  rolled_back: boolean;
+  can_rollback: boolean;
+  reasons: PersonaRevisionReason[];
+  reverts: PersonaRevisionRevert | null;
 };
 
 export function roleCardScope(roleId: string): string {
@@ -1657,6 +1720,37 @@ export function rejectCard(scope: string, cardId: string) {
   const q = new URLSearchParams({ scope });
   return apiFetch<{ ok: boolean; message?: string }>(
     `/api/cards/${encodeURIComponent(cardId)}/reject?${q}`,
+    { method: "POST" },
+  );
+}
+
+export function listPersonaRevisions(scope: string, limit = 30) {
+  const q = new URLSearchParams({ scope, limit: String(limit) });
+  return apiFetch<{ scope: string; revisions: PersonaRevision[] }>(
+    `/api/cards/persona/revisions?${q}`,
+  );
+}
+
+export function rollbackPersonaRevision(scope: string, revisionId: string) {
+  const q = new URLSearchParams({ scope });
+  return apiFetch<{ ok: true; revision: PersonaRevision; body: string }>(
+    `/api/cards/persona/revisions/${encodeURIComponent(revisionId)}/rollback?${q}`,
+    { method: "POST" },
+  );
+}
+
+export function acceptCardProposal(scope: string, proposalId: string) {
+  const q = new URLSearchParams({ scope });
+  return apiFetch<{ ok: true; request_text: string }>(
+    `/api/cards/proposals/${encodeURIComponent(proposalId)}/accept?${q}`,
+    { method: "POST" },
+  );
+}
+
+export function dismissCardProposal(scope: string, proposalId: string) {
+  const q = new URLSearchParams({ scope });
+  return apiFetch<{ ok: true }>(
+    `/api/cards/proposals/${encodeURIComponent(proposalId)}/dismiss?${q}`,
     { method: "POST" },
   );
 }

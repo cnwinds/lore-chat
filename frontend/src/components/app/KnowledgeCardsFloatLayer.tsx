@@ -11,6 +11,7 @@ type Props = {
   onToggleWidth?: () => void;
   onOpenConversation?: (conversationId: string) => void;
   onMutated?: () => void;
+  onUseProposal?: (text: string) => void;
 };
 
 /** 知识卡浮窗：贴在聊天区左缘，与记忆/媒体/文档浮窗同槽。 */
@@ -23,6 +24,7 @@ export function KnowledgeCardsFloatLayer({
   onToggleWidth,
   onOpenConversation,
   onMutated,
+  onUseProposal,
 }: Props) {
   return (
     <KbFloatLayer onClose={onClose}>
@@ -35,6 +37,7 @@ export function KnowledgeCardsFloatLayer({
         onToggleWidth={onToggleWidth}
         onOpenConversation={onOpenConversation}
         onMutated={onMutated}
+        onUseProposal={onUseProposal}
       />
     </KbFloatLayer>
   );

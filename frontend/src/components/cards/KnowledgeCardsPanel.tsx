@@ -2,8 +2,9 @@ import { useCallback, useState } from "react";
 import type { DocWidth } from "../../types/doc";
 import { CardGrowthTimeline } from "./CardGrowthTimeline";
 import { KnowledgeCardList } from "./KnowledgeCardList";
+import { PersonaHistoryList } from "./PersonaHistoryList";
 
-type PanelTab = "cards" | "growth";
+type PanelTab = "cards" | "growth" | "history";
 
 type Props = {
   scope: string;
@@ -14,6 +15,7 @@ type Props = {
   onToggleWidth?: () => void;
   onOpenConversation?: (conversationId: string) => void;
   onMutated?: () => void;
+  onUseProposal?: (text: string) => void;
 };
 
 export function KnowledgeCardsPanel({
@@ -25,12 +27,14 @@ export function KnowledgeCardsPanel({
   onToggleWidth,
   onOpenConversation,
   onMutated,
+  onUseProposal,
 }: Props) {
   const [localRefreshKey, setLocalRefreshKey] = useState(0);
   const [tab, setTab] = useState<PanelTab>("cards");
   const [cardCount, setCardCount] = useState<number | null>(null);
   const [fadedCount, setFadedCount] = useState<number | null>(null);
   const [growthCount, setGrowthCount] = useState<number | null>(null);
+  const [historyCount, setHistoryCount] = useState<number | null>(null);
 
   const effectiveRefreshKey = externalRefreshKey + localRefreshKey;
 
@@ -46,6 +50,14 @@ export function KnowledgeCardsPanel({
     setGrowthCount(n);
   }, []);
 
+  const handleHistoryCountChange = useCallback((n: number | null) => {
+    setHistoryCount(n);
+  }, []);
+
+  const openPersonaHistory = useCallback(() => {
+    setTab("history");
+  }, []);
+
   const metaLabel =
     tab === "cards"
       ? cardCount === null
@@ -58,11 +70,17 @@ export function KnowledgeCardsPanel({
             ]
               .filter(Boolean)
               .join(" · ")
-      : growthCount === null
-        ? null
-        : growthCount === 0
-          ? "暂无记录"
-          : `${growthCount} 条记录`;
+      : tab === "growth"
+        ? growthCount === null
+          ? null
+          : growthCount === 0
+            ? "暂无记录"
+            : `${growthCount} 条记录`
+        : historyCount === null
+          ? null
+          : historyCount === 0
+            ? "暂无记录"
+            : `${historyCount} 个版本`;
 
   return (
     <div
@@ -114,6 +132,7 @@ export function KnowledgeCardsPanel({
           [
             { id: "cards" as const, label: "卡片" },
             { id: "growth" as const, label: "成长" },
+            { id: "history" as const, label: "人设历史" },
           ] as const
         ).map((item) => {
           const pressed = tab === item.id;
@@ -145,12 +164,22 @@ export function KnowledgeCardsPanel({
             onOpenConversation={onOpenConversation}
             onMutated={onMutated}
           />
-        ) : (
+        ) : tab === "growth" ? (
           <CardGrowthTimeline
             scope={scope}
             refreshKey={effectiveRefreshKey}
             onCountChange={handleGrowthCountChange}
             onOpenConversation={onOpenConversation}
+            onOpenPersonaHistory={openPersonaHistory}
+            onUseProposal={onUseProposal}
+            onMutated={onMutated}
+          />
+        ) : (
+          <PersonaHistoryList
+            scope={scope}
+            refreshKey={effectiveRefreshKey}
+            onCountChange={handleHistoryCountChange}
+            onMutated={onMutated}
           />
         )}
       </div>

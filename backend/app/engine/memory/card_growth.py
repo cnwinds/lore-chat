@@ -46,6 +46,17 @@ class CardGrowthLog:
     def _init_db(self) -> None:
         with self._connect() as conn:
             conn.executescript(_GROWTH_SCHEMA)
+            self._migrate_last_evolved(conn)
+
+    @staticmethod
+    def _migrate_last_evolved(conn: sqlite3.Connection) -> None:
+        cursor = conn.execute("PRAGMA table_info(card_scope_state)")
+        columns = {row[1] for row in cursor.fetchall()}
+        if "last_evolved_at" not in columns:
+            conn.execute(
+                "ALTER TABLE card_scope_state ADD COLUMN last_evolved_at TEXT"
+            )
+            conn.commit()
 
     def append(
         self,
@@ -107,15 +118,40 @@ class CardGrowthLog:
     def scope_state(self, scope: str) -> dict:
         with self._connect() as conn:
             row = conn.execute(
-                "SELECT last_consolidated_at, last_faded_at FROM card_scope_state WHERE scope = ?",
+                """
+                SELECT last_consolidated_at, last_faded_at, last_evolved_at
+                FROM card_scope_state WHERE scope = ?
+                """,
                 (scope,),
             ).fetchone()
         if not row:
-            return {"last_consolidated_at": None, "last_faded_at": None}
+            return {
+                "last_consolidated_at": None,
+                "last_faded_at": None,
+                "last_evolved_at": None,
+            }
+        try:
+            last_evolved = row["last_evolved_at"]
+        except (KeyError, IndexError):
+            last_evolved = None
         return {
             "last_consolidated_at": row["last_consolidated_at"],
             "last_faded_at": row["last_faded_at"],
+            "last_evolved_at": last_evolved,
         }
+
+    def mark_evolved(self, scope: str, ts: str) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO card_scope_state (
+                    scope, last_consolidated_at, last_faded_at, last_evolved_at
+                ) VALUES (?, NULL, NULL, ?)
+                ON CONFLICT(scope) DO UPDATE SET last_evolved_at = excluded.last_evolved_at
+                """,
+                (scope, ts),
+            )
+            conn.commit()
 
     def mark_consolidated(self, scope: str, ts: str) -> None:
         with self._connect() as conn:

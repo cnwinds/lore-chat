@@ -14,7 +14,8 @@ from app.engine.channel_plugins.types import is_channel_origin
 from app.engine.conversations import ConversationStore
 from app.engine.memory.card_fade import card_fade_target
 from app.engine.memory.card_growth import CardGrowthLog
-from app.engine.memory.normalize import CARD_SCHEME
+from app.engine.memory.card_persona_state import CardPersonaState
+from app.engine.memory.normalize import CARD_SCHEME, value_hash
 from app.engine.memory.resolver import SlotAction, SlotResolver
 from app.engine.memory.service import MemoryService
 from app.engine.memory.store import MemoryStore
@@ -40,6 +41,12 @@ RECALL_LIMIT_MAX = 10
 MAX_CARDS_PER_SESSION = 6
 CARD_MAINTENANCE_MIN_INTERVAL_HOURS = 24
 CONSOLIDATE_SCOPES_PER_TICK = 3
+EVOLVE_SCOPES_PER_TICK = 2
+
+_PROPOSAL_REQUEST = {
+    "skill": "请把下面这些经验固化为一个 Skill「{title}」：\n\n{items}\n\n（来自知识卡的升格提议：{reason}）",
+    "doc": "请把下面这些内容整理成一篇文档「{title}」，存进知识库：\n\n{items}\n\n（来自知识卡的升格提议：{reason}）",
+}
 
 _log = get_logger("memory.cards")
 _LEARN_GROWTH_PRIORITY = {"new": 0, "revived": 1, "promoted": 2, "revised": 3}
@@ -96,6 +103,7 @@ class KnowledgeCards:
         max_chars: int = CARD_RENDER_MAX_CHARS,
         growth: CardGrowthLog | None = None,
         consolidator=None,
+        persona_state: CardPersonaState | None = None,
     ):
         self._db_path = Path(db_path)
         self.owner = owner
@@ -105,6 +113,8 @@ class KnowledgeCards:
         self.max_chars = max_chars
         self.growth = growth or CardGrowthLog(self._db_path)
         self.consolidator = consolidator
+        self.persona_state = persona_state or CardPersonaState(self._db_path)
+        self.evolver = None
         self.index: CardIndex | None = None
         self._stores: dict[str, MemoryStore] = {}
         self._resolvers: dict[str, SlotResolver] = {}
@@ -226,7 +236,9 @@ class KnowledgeCards:
             persona.get("system_prompt") or "",
         )
 
-    def _panel_row(self, st: MemoryStore, fact: dict) -> dict:
+    def _panel_row(
+        self, st: MemoryStore, fact: dict, *, merged_ids: set[str] | None = None
+    ) -> dict:
         cids = sorted(
             {
                 ev["conversation_id"]
@@ -236,6 +248,7 @@ class KnowledgeCards:
         )
         kind = fact.get("category") or ""
         origin = fact.get("origin") or ""
+        merged = fact["id"] in (merged_ids or set())
         return {
             "id": fact["id"],
             "slot_key": fact["slot_key"],
@@ -247,16 +260,18 @@ class KnowledgeCards:
             "confidence": fact.get("confidence"),
             "conversation_ids": cids,
             "updated_at": fact.get("updated_at"),
+            "merged_into_persona": merged,
         }
 
     def list_panel(self, scope: str) -> list[dict]:
+        merged_ids = self.merged_card_ids(scope)
         st = self.store(scope)
         items = [
-            self._panel_row(st, f)
+            self._panel_row(st, f, merged_ids=merged_ids)
             for f in st.list_confirmed() + st.list_candidates()
         ]
         stale_items = [
-            self._panel_row(st, f)
+            self._panel_row(st, f, merged_ids=merged_ids)
             for f in st.list_active_facts()
             if f.get("status") == "stale"
         ]
@@ -374,6 +389,13 @@ class KnowledgeCards:
             if cid and self.conversations:
                 title = self.conversations.get_title(cid)
             entry["conversation_title"] = title
+            if entry.get("kind") == "proposal":
+                for item in entry.get("items") or []:
+                    pid = item.get("proposal_id")
+                    if not pid:
+                        continue
+                    prop = self.persona_state.get_proposal(scope, pid)
+                    item["status"] = prop["status"] if prop else "dismissed"
         return entries
 
     def edit(self, scope: str, card_id: str, statement: str) -> dict:
@@ -408,8 +430,29 @@ class KnowledgeCards:
         text, _ = self.render_with_ids(scope)
         return text
 
+    def effective_marks(self, scope: str) -> dict[str, str]:
+        facts = {f["id"]: f for f in self.store(scope).list_active_facts()}
+        rows = self.persona_state.marks(scope)
+        out: dict[str, str] = {}
+        for cid, row in rows.items():
+            fact = facts.get(cid)
+            if fact is None:
+                continue
+            if row.get("statement_hash") == value_hash(fact.get("statement") or ""):
+                out[cid] = row["state"]
+        return out
+
+    def merged_card_ids(self, scope: str) -> set[str]:
+        eff = self.effective_marks(scope)
+        return {cid for cid, state in eff.items() if state == "merged"}
+
     def render_with_ids(self, scope: str) -> tuple[str, set[str]]:
-        facts = self.store(scope).list_confirmed()
+        merged = self.merged_card_ids(scope)
+        facts = [
+            f
+            for f in self.store(scope).list_confirmed()
+            if f["id"] not in merged
+        ]
         if not facts:
             return "", set()
         grouped: dict[str, list[dict]] = {k: [] for k in CARD_KINDS}
@@ -459,11 +502,12 @@ class KnowledgeCards:
     def turn_cards(self, scope: str, query: str, *, exclude_ids: set[str]) -> str:
         if self.index is None:
             return ""
+        exclude = set(exclude_ids) | self.merged_card_ids(scope)
         facts = self.index.search(
             scope,
             query,
             limit=TURN_CARDS_LIMIT,
-            exclude_ids=exclude_ids,
+            exclude_ids=exclude,
             mode="turn",
         )
         lines: list[str] = []
@@ -552,9 +596,50 @@ class KnowledgeCards:
             )
         return out
 
+    def _proposal_request_text(self, scope: str, proposal: dict) -> str:
+        target = proposal.get("target") or "skill"
+        template = _PROPOSAL_REQUEST.get(target) or _PROPOSAL_REQUEST["skill"]
+        active = {f["id"]: f for f in self.store(scope).list_active_facts()}
+        lines: list[str] = []
+        for item in proposal.get("basis") or []:
+            cid = item.get("card_id") or ""
+            stmt = item.get("statement") or ""
+            fact = active.get(cid)
+            if fact:
+                stmt = fact.get("statement") or stmt
+            lines.append(f"- {stmt}")
+        items = "\n".join(lines)
+        return template.format(
+            title=proposal.get("title") or "",
+            items=items,
+            reason=proposal.get("reason") or "",
+        )
+
+    def accept_proposal(self, scope: str, proposal_id: str) -> dict:
+        prop = self.persona_state.get_proposal(scope, proposal_id)
+        if prop is None:
+            return {"ok": False, "error": "not_found"}
+        if prop.get("status") != "pending":
+            return {"ok": False, "error": "invalid_status"}
+        decided = self.persona_state.decide_proposal(scope, proposal_id, "accepted")
+        if decided is None:
+            return {"ok": False, "error": "invalid_status"}
+        text = self._proposal_request_text(scope, decided)
+        return {"ok": True, "request_text": text}
+
+    def dismiss_proposal(self, scope: str, proposal_id: str) -> dict:
+        prop = self.persona_state.get_proposal(scope, proposal_id)
+        if prop is None:
+            return {"ok": False, "error": "not_found"}
+        if prop.get("status") != "pending":
+            return {"ok": False, "error": "invalid_status"}
+        self.persona_state.decide_proposal(scope, proposal_id, "dismissed")
+        return {"ok": True}
+
     def purge_scope(self, scope: str) -> int:
         n = self.store(scope).purge_owner()
         self.growth.purge(scope)
+        self.persona_state.purge(scope)
         self._stores.pop(scope, None)
         self._resolvers.pop(scope, None)
         if self.index is not None:
@@ -576,7 +661,9 @@ class KnowledgeCards:
         faded_total = 0
         consolidated_scopes = 0
         ops_applied = 0
+        evolved_scopes = 0
         min_gap = timedelta(hours=CARD_MAINTENANCE_MIN_INTERVAL_HOURS)
+        evolve_budget = EVOLVE_SCOPES_PER_TICK
 
         for scope in self.list_scopes():
             try:
@@ -584,42 +671,25 @@ class KnowledgeCards:
                 if lens is None:
                     continue
                 state = self.growth.scope_state(scope)
-                last_faded = state.get("last_faded_at")
-                if not last_faded or stamp - self._parse_ts(last_faded) >= min_gap:
-                    items = self._fade_scope(scope, now=stamp)
-                    if items:
-                        self.growth.append(scope, "faded", items)
-                        faded_total += len(items)
-                    self.growth.mark_faded(scope, stamp.isoformat())
-
-                if consolidated_scopes >= max_consolidations:
-                    continue
-                if not self.consolidator:
-                    continue
-                last_cons = state.get("last_consolidated_at")
-                if last_cons and stamp - self._parse_ts(last_cons) < min_gap:
-                    continue
-                st = self.store(scope)
-                active = st.list_confirmed() + st.list_candidates()
-                if len(active) < 2:
-                    continue
-                if last_cons and not self._has_card_changes_since(st, active, last_cons):
-                    continue
-                try:
-                    result = self.consolidator.run(scope, lens)
-                except Exception as exc:  # noqa: BLE001
-                    _log.warning(
-                        "card consolidation failed scope=%s err=%s", scope, exc
-                    )
-                    continue
-                consolidated_at = max(
-                    stamp, datetime.now(timezone.utc)
-                ).isoformat()
-                self.growth.mark_consolidated(scope, consolidated_at)
-                consolidated_scopes += 1
-                ops_applied += int(result.get("ops_applied") or 0)
-                with self.scope_lock(scope):
-                    self._sync_index_locked(scope)
+                faded_total += self._maybe_fade(scope, stamp, state, min_gap)
+                consolidated_scopes, ops_delta = self._maybe_consolidate(
+                    scope,
+                    stamp,
+                    state,
+                    min_gap,
+                    lens,
+                    consolidated_scopes,
+                    max_consolidations,
+                )
+                ops_applied += ops_delta
+                evolved_scopes += self._maybe_evolve(
+                    scope,
+                    stamp,
+                    state,
+                    min_gap,
+                    lens,
+                    evolve_budget - evolved_scopes,
+                )
             except Exception as exc:  # noqa: BLE001
                 _log.warning("card maintain failed scope=%s err=%s", scope, exc)
 
@@ -633,7 +703,86 @@ class KnowledgeCards:
             "faded": faded_total,
             "consolidated_scopes": consolidated_scopes,
             "ops_applied": ops_applied,
+            "evolved_scopes": evolved_scopes,
         }
+
+    def _maybe_fade(
+        self,
+        scope: str,
+        stamp: datetime,
+        state: dict,
+        min_gap: timedelta,
+    ) -> int:
+        last_faded = state.get("last_faded_at")
+        if last_faded and stamp - self._parse_ts(last_faded) < min_gap:
+            return 0
+        items = self._fade_scope(scope, now=stamp)
+        if items:
+            self.growth.append(scope, "faded", items)
+        self.growth.mark_faded(scope, stamp.isoformat())
+        return len(items)
+
+    def _maybe_consolidate(
+        self,
+        scope: str,
+        stamp: datetime,
+        state: dict,
+        min_gap: timedelta,
+        lens: CardLens,
+        consolidated_scopes: int,
+        max_consolidations: int,
+    ) -> tuple[int, int]:
+        if consolidated_scopes >= max_consolidations:
+            return consolidated_scopes, 0
+        if not self.consolidator:
+            return consolidated_scopes, 0
+        last_cons = state.get("last_consolidated_at")
+        if last_cons and stamp - self._parse_ts(last_cons) < min_gap:
+            return consolidated_scopes, 0
+        st = self.store(scope)
+        active = st.list_confirmed() + st.list_candidates()
+        if len(active) < 2:
+            return consolidated_scopes, 0
+        if last_cons and not self._has_card_changes_since(st, active, last_cons):
+            return consolidated_scopes, 0
+        try:
+            result = self.consolidator.run(scope, lens)
+        except Exception as exc:  # noqa: BLE001
+            _log.warning("card consolidation failed scope=%s err=%s", scope, exc)
+            return consolidated_scopes, 0
+        consolidated_at = max(stamp, datetime.now(timezone.utc)).isoformat()
+        self.growth.mark_consolidated(scope, consolidated_at)
+        with self.scope_lock(scope):
+            self._sync_index_locked(scope)
+        return consolidated_scopes + 1, int(result.get("ops_applied") or 0)
+
+    def _maybe_evolve(
+        self,
+        scope: str,
+        stamp: datetime,
+        state: dict,
+        min_gap: timedelta,
+        lens: CardLens,
+        budget: int,
+    ) -> int:
+        if budget <= 0 or self.evolver is None:
+            return 0
+        if scope.startswith("persona:"):
+            return 0
+        last_ev = state.get("last_evolved_at")
+        if last_ev and stamp - self._parse_ts(last_ev) < min_gap:
+            return 0
+        if not self.evolver.should_run(scope):
+            return 0
+        try:
+            result = self.evolver.run(scope, lens)
+        except Exception as exc:  # noqa: BLE001
+            _log.warning("persona evolution failed scope=%s err=%s", scope, exc)
+            return 0
+        if result.get("skipped") == "onboarding":
+            return 0
+        self.growth.mark_evolved(scope, stamp.isoformat())
+        return 1
 
     def _fade_scope(self, scope: str, *, now: datetime) -> list[dict]:
         items: list[dict] = []

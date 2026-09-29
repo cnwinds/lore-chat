@@ -44,6 +44,8 @@ from app.engine.agent.system_layer import SystemLayer
 from app.engine.precepts_upgrade import PreceptsUpgrade
 from app.engine.memory.card_index import CardIndex, CardRetrievalTuning
 from app.engine.memory.cards import KnowledgeCards
+from app.engine.memory.persona_evolution import LLMPersonaEvolver
+from app.engine.memory.persona_history import PersonaHistory
 from app.index.partitioned import SearchIndex
 from app.engine.memory.service import MemoryService
 from app.engine.memory.store import MemoryStore
@@ -99,6 +101,7 @@ class Container:
     precepts_upgrade: PreceptsUpgrade
     memory_service: MemoryService
     knowledge_cards: KnowledgeCards
+    persona_history: PersonaHistory
     search_index: SearchIndex
     card_index: CardIndex
     enabled_skills: EnabledSkillsStore
@@ -206,6 +209,10 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
         channel_instances=channel_instances,
     )
     system_layer.knowledge_cards = memory.cards
+    memory.cards.evolver = LLMPersonaEvolver(
+        llm, memory.cards, rules_text=system_layer.compose_rules
+    )
+    persona_history = PersonaHistory(roles, memory.cards)
 
     card_index = CardIndex(
         index.search_index,
@@ -327,6 +334,7 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
         precepts_upgrade=precepts_upgrade,
         memory_service=memory.service,
         knowledge_cards=memory.cards,
+        persona_history=persona_history,
         search_index=index.search_index,
         card_index=card_index,
         enabled_skills=enabled_skills,

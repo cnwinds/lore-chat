@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 import threading
 import uuid
@@ -109,6 +110,7 @@ class RoleStore:
             self._migrate_visibility_and_persona()
             self.conn.executescript(_PERSONA_SCHEMA)
             self.conn.executescript(_REVISION_SCHEMA)
+            self._migrate_persona_revision_meta()
             self._seed_persona_revision_baselines()
             self.conn.commit()
             self.ensure_default_role()
@@ -163,6 +165,45 @@ class RoleStore:
                 stamp,
             )
 
+    def _migrate_persona_revision_meta(self) -> None:
+        cursor = self.conn.execute("PRAGMA table_info(persona_revisions)")
+        columns = {row[1] for row in cursor.fetchall()}
+        if "meta_json" not in columns:
+            self.conn.execute(
+                "ALTER TABLE persona_revisions ADD COLUMN meta_json TEXT NOT NULL DEFAULT '{}'"
+            )
+        if "rolled_back_by" not in columns:
+            self.conn.execute(
+                "ALTER TABLE persona_revisions ADD COLUMN rolled_back_by TEXT"
+            )
+
+    @staticmethod
+    def _revision_row_to_dict(row: sqlite3.Row) -> dict:
+        try:
+            meta_raw = row["meta_json"]
+        except (KeyError, IndexError):
+            meta_raw = "{}"
+        try:
+            rolled = row["rolled_back_by"]
+        except (KeyError, IndexError):
+            rolled = None
+        try:
+            meta = json.loads(meta_raw or "{}")
+        except json.JSONDecodeError:
+            meta = {}
+        if not isinstance(meta, dict):
+            meta = {}
+        return {
+            "id": row["id"],
+            "subject_kind": row["subject_kind"],
+            "subject_id": row["subject_id"],
+            "body": row["body"],
+            "source": row["source"],
+            "created_at": row["created_at"],
+            "meta": meta,
+            "rolled_back_by": rolled,
+        }
+
     def _insert_persona_revision(
         self,
         subject_kind: str,
@@ -170,16 +211,19 @@ class RoleStore:
         body: str,
         source: str,
         created_at: str | None = None,
+        meta: dict | None = None,
     ) -> dict:
         rid = _new_id()
         stamp = created_at or _now()
+        meta_json = json.dumps(meta or {}, ensure_ascii=False)
         self.conn.execute(
             """
             INSERT INTO persona_revisions(
-                id, subject_kind, subject_id, body, source, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?)
+                id, subject_kind, subject_id, body, source, created_at,
+                meta_json, rolled_back_by
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL)
             """,
-            (rid, subject_kind, subject_id, body, source, stamp),
+            (rid, subject_kind, subject_id, body, source, stamp, meta_json),
         )
         return {
             "id": rid,
@@ -188,7 +232,26 @@ class RoleStore:
             "body": body,
             "source": source,
             "created_at": stamp,
+            "meta": meta or {},
+            "rolled_back_by": None,
         }
+
+    def get_persona_body(self, subject_kind: str, subject_id: str) -> str:
+        with self._lock:
+            if subject_kind == "role":
+                row = self.conn.execute(
+                    "SELECT system_prompt FROM roles WHERE id = ?", (subject_id,)
+                ).fetchone()
+            elif subject_kind == "persona":
+                row = self.conn.execute(
+                    "SELECT system_prompt FROM api_personas WHERE id = ?",
+                    (subject_id,),
+                ).fetchone()
+            else:
+                raise KeyError(subject_id)
+            if row is None:
+                raise KeyError(subject_id)
+            return row["system_prompt"] or ""
 
     def list_persona_revisions(
         self,
@@ -202,22 +265,217 @@ class RoleStore:
                 """
                 SELECT * FROM persona_revisions
                 WHERE subject_kind = ? AND subject_id = ?
-                ORDER BY created_at DESC
+                ORDER BY created_at DESC, rowid DESC
                 LIMIT ?
                 """,
                 (subject_kind, subject_id, max(1, int(limit))),
             ).fetchall()
-            return [
-                {
-                    "id": row["id"],
-                    "subject_kind": row["subject_kind"],
-                    "subject_id": row["subject_id"],
-                    "body": row["body"],
-                    "source": row["source"],
-                    "created_at": row["created_at"],
-                }
-                for row in rows
-            ]
+            return [self._revision_row_to_dict(row) for row in rows]
+
+    def get_persona_revision(self, revision_id: str) -> dict | None:
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT * FROM persona_revisions WHERE id = ?", (revision_id,)
+            ).fetchone()
+            if row is None:
+                return None
+            return self._revision_row_to_dict(row)
+
+    def previous_persona_revision(self, revision_id: str) -> dict | None:
+        with self._lock:
+            current = self.conn.execute(
+                "SELECT * FROM persona_revisions WHERE id = ?", (revision_id,)
+            ).fetchone()
+            if current is None:
+                return None
+            row = self.conn.execute(
+                """
+                SELECT * FROM persona_revisions
+                WHERE subject_kind = ? AND subject_id = ?
+                  AND (created_at, rowid) < (
+                    SELECT created_at, rowid FROM persona_revisions WHERE id = ?
+                  )
+                ORDER BY created_at DESC, rowid DESC
+                LIMIT 1
+                """,
+                (
+                    current["subject_kind"],
+                    current["subject_id"],
+                    revision_id,
+                ),
+            ).fetchone()
+            if row is None:
+                return None
+            return self._revision_row_to_dict(row)
+
+    def latest_persona_revision(
+        self,
+        subject_kind: str,
+        subject_id: str,
+        *,
+        source: str | None = None,
+    ) -> dict | None:
+        with self._lock:
+            if source:
+                row = self.conn.execute(
+                    """
+                    SELECT * FROM persona_revisions
+                    WHERE subject_kind = ? AND subject_id = ? AND source = ?
+                    ORDER BY created_at DESC, rowid DESC
+                    LIMIT 1
+                    """,
+                    (subject_kind, subject_id, source),
+                ).fetchone()
+            else:
+                row = self.conn.execute(
+                    """
+                    SELECT * FROM persona_revisions
+                    WHERE subject_kind = ? AND subject_id = ?
+                    ORDER BY created_at DESC, rowid DESC
+                    LIMIT 1
+                    """,
+                    (subject_kind, subject_id),
+                ).fetchone()
+            if row is None:
+                return None
+            return self._revision_row_to_dict(row)
+
+    def earliest_persona_revision(
+        self, subject_kind: str, subject_id: str
+    ) -> dict | None:
+        with self._lock:
+            row = self.conn.execute(
+                """
+                SELECT * FROM persona_revisions
+                WHERE subject_kind = ? AND subject_id = ?
+                ORDER BY created_at ASC, rowid ASC
+                LIMIT 1
+                """,
+                (subject_kind, subject_id),
+            ).fetchone()
+            if row is None:
+                return None
+            return self._revision_row_to_dict(row)
+
+    def _apply_persona_cas(
+        self,
+        subject_kind: str,
+        subject_id: str,
+        *,
+        expected_body: str,
+        new_body: str,
+        source: str,
+        meta: dict | None = None,
+        mark_rollback_of: str | None = None,
+    ) -> dict | None:
+        if subject_kind == "role":
+            row = self.conn.execute(
+                "SELECT system_prompt FROM roles WHERE id = ?", (subject_id,)
+            ).fetchone()
+            table = "roles"
+        elif subject_kind == "persona":
+            row = self.conn.execute(
+                "SELECT system_prompt FROM api_personas WHERE id = ?", (subject_id,)
+            ).fetchone()
+            table = "api_personas"
+        else:
+            return None
+        if row is None:
+            return None
+        current = row["system_prompt"] or ""
+        if current != expected_body:
+            return None
+        stamp = _now()
+        if table == "roles":
+            self.conn.execute(
+                "UPDATE roles SET system_prompt = ?, updated_at = ? WHERE id = ?",
+                (new_body, stamp, subject_id),
+            )
+        else:
+            self.conn.execute(
+                """
+                UPDATE api_personas
+                SET system_prompt = ?, updated_at = ? WHERE id = ?
+                """,
+                (new_body, stamp, subject_id),
+            )
+        rev = self._insert_persona_revision(
+            subject_kind,
+            subject_id,
+            new_body,
+            source,
+            stamp,
+            meta=meta,
+        )
+        if mark_rollback_of:
+            cur = self.conn.execute(
+                """
+                UPDATE persona_revisions
+                SET rolled_back_by = ?
+                WHERE id = ? AND rolled_back_by IS NULL
+                """,
+                (rev["id"], mark_rollback_of),
+            )
+            if cur.rowcount == 0:
+                self.conn.rollback()
+                return None
+        self.conn.commit()
+        return rev
+
+    def apply_persona_evolution(
+        self,
+        subject_kind: str,
+        subject_id: str,
+        *,
+        expected_body: str,
+        new_body: str,
+        meta: dict,
+    ) -> dict | None:
+        if new_body == expected_body:
+            raise ValueError("new_body must differ from expected_body")
+        with self._lock:
+            return self._apply_persona_cas(
+                subject_kind,
+                subject_id,
+                expected_body=expected_body,
+                new_body=new_body,
+                source="evolution",
+                meta=meta,
+            )
+
+    def rollback_persona_revision(
+        self,
+        subject_kind: str,
+        subject_id: str,
+        *,
+        revision_id: str,
+        expected_body: str,
+        new_body: str,
+    ) -> dict | None:
+        with self._lock:
+            target = self.conn.execute(
+                "SELECT * FROM persona_revisions WHERE id = ?", (revision_id,)
+            ).fetchone()
+            if target is None:
+                return None
+            if (
+                target["subject_kind"] != subject_kind
+                or target["subject_id"] != subject_id
+            ):
+                return None
+            meta = {
+                "reverts": revision_id,
+                "reverted_source": target["source"],
+            }
+            return self._apply_persona_cas(
+                subject_kind,
+                subject_id,
+                expected_body=expected_body,
+                new_body=new_body,
+                source="rollback",
+                meta=meta,
+                mark_rollback_of=revision_id,
+            )
 
     def _migrate_visibility_and_persona(self) -> None:
         cursor = self.conn.execute("PRAGMA table_info(roles)")

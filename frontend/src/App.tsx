@@ -99,6 +99,10 @@ function AppMain() {
   > | null>(null);
   const [groupEditKey, setGroupEditKey] = useState(0);
   const [cardsRefreshKey, setCardsRefreshKey] = useState(0);
+  const [composerPrefill, setComposerPrefill] = useState<{
+    text: string;
+    nonce: number;
+  } | null>(null);
 
   const refreshSidebar = () => setSidebarRefreshKey((k) => k + 1);
   const doc = useDocPreviewLayout(refreshSidebar);
@@ -427,6 +431,7 @@ function AppMain() {
                 : undefined
             }
             onCardsUpdated={() => setCardsRefreshKey((k) => k + 1)}
+            composerPrefill={composerPrefill}
           />
         }
         docFloat={
@@ -448,7 +453,13 @@ function AppMain() {
                   keepPreviews: true,
                 });
               }}
-              onMutated={() => setCardsRefreshKey((k) => k + 1)}
+              onMutated={() => {
+                setCardsRefreshKey((k) => k + 1);
+                role.refreshRoles();
+              }}
+              onUseProposal={(text) => {
+                setComposerPrefill({ text, nonce: Date.now() });
+              }}
             />
           ) : doc.showMemoryPanel ? (
             <MemoryFloatLayer

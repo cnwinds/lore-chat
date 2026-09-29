@@ -1,7 +1,7 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { listCardGrowth, listCards } from "../../api";
+import { listCardGrowth, listCards, listPersonaRevisions } from "../../api";
 import { KnowledgeCardsPanel } from "./KnowledgeCardsPanel";
 
 afterEach(() => {
@@ -15,6 +15,7 @@ vi.mock("../../api", async (importOriginal) => {
     ...actual,
     listCards: vi.fn(),
     listCardGrowth: vi.fn(),
+    listPersonaRevisions: vi.fn(),
     editCard: vi.fn(),
     forgetCard: vi.fn(),
     confirmCard: vi.fn(),
@@ -41,6 +42,7 @@ describe("KnowledgeCardsPanel", () => {
           origin: "direct",
           external: false,
           status: "confirmed",
+          merged_into_persona: false,
           conversation_ids: [],
         },
         {
@@ -51,6 +53,7 @@ describe("KnowledgeCardsPanel", () => {
           origin: "direct",
           external: false,
           status: "candidate",
+          merged_into_persona: false,
           conversation_ids: [],
         },
         {
@@ -61,10 +64,12 @@ describe("KnowledgeCardsPanel", () => {
           origin: "direct",
           external: false,
           status: "stale",
+          merged_into_persona: false,
           conversation_ids: [],
         },
       ],
     });
+    vi.mocked(listPersonaRevisions).mockResolvedValue({ scope, revisions: [] });
     vi.mocked(listCardGrowth).mockResolvedValue({
       scope,
       entries: [
@@ -107,6 +112,56 @@ describe("KnowledgeCardsPanel", () => {
     expect(screen.getByText("学到")).toBeInTheDocument();
   });
 
+  it("switches to persona history tab and shows version meta", async () => {
+    const user = userEvent.setup();
+    vi.mocked(listCards).mockResolvedValue({
+      scope,
+      count: 0,
+      faded_count: 0,
+      cards: [],
+    });
+    vi.mocked(listCardGrowth).mockResolvedValue({ scope, entries: [] });
+    vi.mocked(listPersonaRevisions).mockResolvedValue({
+      scope,
+      revisions: [
+        {
+          id: "r1",
+          source: "manual",
+          created_at: "2026-09-20T10:00:00",
+          body: "人设",
+          previous_body: "",
+          rolled_back: false,
+          can_rollback: false,
+          reasons: [],
+          reverts: null,
+        },
+        {
+          id: "r2",
+          source: "create",
+          created_at: "2026-09-19T10:00:00",
+          body: "初始",
+          previous_body: "",
+          rolled_back: false,
+          can_rollback: false,
+          reasons: [],
+          reverts: null,
+        },
+      ],
+    });
+
+    render(
+      <KnowledgeCardsPanel
+        scope={scope}
+        title="测试角色"
+        onClose={() => undefined}
+      />,
+    );
+
+    await user.click(screen.getByRole("tab", { name: "人设历史" }));
+    expect(await screen.findByText("2 个版本")).toBeInTheDocument();
+    expect(screen.getByText("主人修改")).toBeInTheDocument();
+  });
+
   it("shows empty meta when there are no cards or growth entries", async () => {
     const user = userEvent.setup();
     vi.mocked(listCards).mockResolvedValue({
@@ -116,6 +171,7 @@ describe("KnowledgeCardsPanel", () => {
       cards: [],
     });
     vi.mocked(listCardGrowth).mockResolvedValue({ scope, entries: [] });
+    vi.mocked(listPersonaRevisions).mockResolvedValue({ scope, revisions: [] });
 
     render(
       <KnowledgeCardsPanel

@@ -140,6 +140,9 @@ function KnowledgeCardRow({
           {card.external ? (
             <span className="knowledge-card-external">外部</span>
           ) : null}
+          {card.merged_into_persona ? (
+            <span className="knowledge-card-merged">已并入人设</span>
+          ) : null}
           {candidate ? (
             <span className="memory-fact-status memory-fact-status--candidate knowledge-card-pending">
               待印证

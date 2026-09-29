@@ -3078,7 +3078,8 @@ button.memory-fact-statement--jump:focus-visible {
 }
 
 .knowledge-card-kind,
-.knowledge-card-external {
+.knowledge-card-external,
+.knowledge-card-merged {
   font-size: 11px;
   line-height: 1.2;
   padding: 1px 6px;
@@ -3266,6 +3267,168 @@ button.memory-fact-statement--jump:focus-visible {
   font-size: var(--text-xs);
   line-height: 1.45;
   color: var(--text-secondary);
+}
+
+.card-growth-persona-before {
+  text-decoration: line-through;
+}
+
+.card-growth-persona-after {
+  margin: 4px 0 0;
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--text);
+}
+
+.card-growth-proposal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.card-growth-proposal-btn {
+  padding: 2px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--accent);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.card-growth-proposal-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.card-growth-proposal-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.card-growth-proposal-btn--muted {
+  color: var(--text-muted);
+}
+
+.card-growth-proposal-status {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.persona-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.persona-history-row {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--bg-muted) 35%, transparent);
+}
+
+.persona-history-row-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.persona-history-source {
+  font-size: 11px;
+  line-height: 1.2;
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--bg-muted) 70%, transparent);
+}
+
+.persona-history-time {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.persona-history-badge {
+  font-size: 11px;
+  line-height: 1.2;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.persona-history-badge--current {
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
+  color: var(--accent);
+}
+
+.persona-history-badge--reverted {
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+
+.persona-history-reasons {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.persona-history-reason-text {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.persona-history-diff-wrap {
+  margin-top: 6px;
+}
+
+.persona-history-diff {
+  margin-top: 8px;
+  max-height: 240px;
+  overflow: auto;
+  font-size: var(--text-xs);
+}
+
+.persona-history-diff-empty {
+  margin: 8px 0 0;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.persona-history-actions {
+  margin-top: 8px;
+}
+
+.persona-history-rollback-btn {
+  padding: 2px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--accent);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.persona-history-rollback-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.persona-history-rollback-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.persona-history-row-error {
+  margin: 6px 0 0;
+  font-size: var(--text-xs);
+  color: var(--danger, #c0392b);
 }
 
 .channel-owner-memory-row {

@@ -117,6 +117,7 @@ type Props = {
   onRoomInterjectSent?: () => void;
   onOpenGroup?: (roomId: string) => void;
   onCardsUpdated?: () => void;
+  composerPrefill?: { text: string; nonce: number } | null;
 };
 
 export function Chat({
@@ -151,6 +152,7 @@ export function Chat({
   onRoomInterjectSent,
   onOpenGroup,
   onCardsUpdated,
+  composerPrefill = null,
 }: Props) {
   const { previewPath, openDoc, refreshKb } = useDocPreview();
   const { promptConflict: promptUploadConflict, conflictDialog: uploadConflictDialog } =
@@ -168,6 +170,17 @@ export function Chat({
   } = useChatChainMediaCaps();
   const [webEnabled, setWebEnabled] = useState(() => readWebSearchEnabled());
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const composerPrefillNonceRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!composerPrefill) return;
+    if (composerPrefillNonceRef.current === composerPrefill.nonce) return;
+    composerPrefillNonceRef.current = composerPrefill.nonce;
+    const text = composerPrefill.text;
+    setInput(text);
+    setCaret(text.length);
+    textareaRef.current?.focus();
+  }, [composerPrefill]);
   const mentionCandidates = useMemo(
     () =>
       mentionCandidatesForRoom({

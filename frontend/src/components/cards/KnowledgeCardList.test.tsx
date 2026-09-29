@@ -51,6 +51,7 @@ const sampleConfirmed: KnowledgeCard = {
   origin: "direct",
   external: false,
   status: "confirmed",
+  merged_into_persona: false,
   conversation_ids: [],
 };
 
@@ -79,6 +80,15 @@ const sampleStale: KnowledgeCard = {
 };
 
 describe("KnowledgeCardList", () => {
+  it("shows merged_into_persona tag", async () => {
+    mockList({
+      count: 1,
+      cards: [{ ...sampleConfirmed, merged_into_persona: true }],
+    });
+    render(<KnowledgeCardList scope={scope} />);
+    expect(await screen.findByText("已并入人设")).toBeInTheDocument();
+  });
+
   it("renders kind labels, external tag, and pending status", async () => {
     mockList({
       count: 3,

@@ -34,6 +34,8 @@ class MemorySubgraph:
         self.worker.extractor = LLMSessionExtractor(llm)
         self.worker.card_extractor = LLMRoleCardExtractor(llm)
         self.cards.consolidator = LLMCardConsolidator(llm, self.cards)
+        if self.cards.evolver is not None:
+            self.cards.evolver.llm = llm
 
 
 def build_memory_subgraph(

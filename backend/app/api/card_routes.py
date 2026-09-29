@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 from app.api.http_deps import container
 from app.engine.memory.cards import parse_scope, persona_scope, role_scope
+from app.engine.memory.persona_history import PersonaRollbackError
 from app.engine.roles import VISIBILITY_HIDDEN
 
 router = APIRouter(tags=["cards"])
@@ -18,6 +19,10 @@ class EditCardBody(BaseModel):
 
 def _cards(request: Request):
     return container(request).knowledge_cards
+
+
+def _persona_history(request: Request):
+    return container(request).persona_history
 
 
 def _roles(request: Request):
@@ -109,4 +114,49 @@ def reject_card(card_id: str, request: Request, scope: str):
     out = _cards(request).reject(validated, card_id)
     if not out.get("ok"):
         raise HTTPException(400, detail=out.get("message") or out.get("error"))
+    return out
+
+
+@router.get("/cards/persona/revisions")
+def list_persona_revisions(scope: str, request: Request, limit: int = 30):
+    validated = _validate_scope(request, scope)
+    lim = max(1, min(int(limit), 100))
+    revisions = _persona_history(request).list(validated, limit=lim)
+    return {"scope": validated, "revisions": revisions}
+
+
+@router.post("/cards/persona/revisions/{revision_id}/rollback")
+def rollback_persona_revision(revision_id: str, request: Request, scope: str):
+    validated = _validate_scope(request, scope)
+    try:
+        return _persona_history(request).rollback(validated, revision_id)
+    except PersonaRollbackError as e:
+        if e.code == "not_found":
+            raise HTTPException(404, detail=e.message) from e
+        if e.code == "invalid":
+            raise HTTPException(400, detail=e.message) from e
+        raise HTTPException(409, detail=e.message) from e
+
+
+@router.post("/cards/proposals/{proposal_id}/accept")
+def accept_card_proposal(proposal_id: str, request: Request, scope: str):
+    validated = _validate_scope(request, scope)
+    out = _cards(request).accept_proposal(validated, proposal_id)
+    if not out.get("ok"):
+        err = out.get("error")
+        if err == "not_found":
+            raise HTTPException(404, detail="提议不存在")
+        raise HTTPException(400, detail="提议已处理")
+    return out
+
+
+@router.post("/cards/proposals/{proposal_id}/dismiss")
+def dismiss_card_proposal(proposal_id: str, request: Request, scope: str):
+    validated = _validate_scope(request, scope)
+    out = _cards(request).dismiss_proposal(validated, proposal_id)
+    if not out.get("ok"):
+        err = out.get("error")
+        if err == "not_found":
+            raise HTTPException(404, detail="提议不存在")
+        raise HTTPException(400, detail="提议已处理")
     return out

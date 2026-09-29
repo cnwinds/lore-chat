@@ -1,7 +1,12 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { listCardGrowth, type CardGrowthEntry } from "../../api";
+import {
+  acceptCardProposal,
+  dismissCardProposal,
+  listCardGrowth,
+  type CardGrowthEntry,
+} from "../../api";
 import { CardGrowthTimeline } from "./CardGrowthTimeline";
 
 afterEach(() => {
@@ -14,6 +19,8 @@ vi.mock("../../api", async (importOriginal) => {
   return {
     ...actual,
     listCardGrowth: vi.fn(),
+    acceptCardProposal: vi.fn(),
+    dismissCardProposal: vi.fn(),
   };
 });
 
@@ -241,6 +248,154 @@ describe("CardGrowthTimeline", () => {
     render(<CardGrowthTimeline scope={scope} />);
     const btn = await screen.findByRole("button", { name: "来源会话" });
     expect(btn).toBeDisabled();
+  });
+
+  it("renders persona evolved and rolled_back items", async () => {
+    const onOpenPersonaHistory = vi.fn();
+    vi.mocked(listCardGrowth).mockResolvedValueOnce({
+      scope,
+      entries: [
+        {
+          id: "g-persona",
+          kind: "persona",
+          created_at: "2026-09-17T10:00:00",
+          conversation_id: null,
+          conversation_title: null,
+          items: [
+            {
+              action: "evolved",
+              revision_id: "rev-1",
+              op: "insert",
+              reason: "补充职责描述",
+              before: "",
+              after: "新增句",
+              basis: ["依据卡"],
+            },
+            {
+              action: "rolled_back",
+              revision_id: "rev-old",
+              rollback_revision_id: "rev-rb",
+              source: "evolution",
+            },
+          ],
+        },
+      ],
+    });
+
+    const user = userEvent.setup();
+    render(
+      <CardGrowthTimeline
+        scope={scope}
+        onOpenPersonaHistory={onOpenPersonaHistory}
+      />,
+    );
+
+    expect(await screen.findByText("人设")).toBeInTheDocument();
+    expect(screen.getByText("补充职责描述")).toBeInTheDocument();
+    expect(screen.getByText("新增句")).toBeInTheDocument();
+    expect(screen.getByText("回退了一次自动进化改动")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "在人设历史里查看" }));
+    expect(onOpenPersonaHistory).toHaveBeenCalled();
+  });
+
+  it("accepts proposal with request_text and dismisses pending proposals", async () => {
+    const user = userEvent.setup();
+    const onUseProposal = vi.fn();
+    vi.mocked(listCardGrowth)
+      .mockResolvedValueOnce({
+        scope,
+        entries: [
+          {
+            id: "g-proposal",
+            kind: "proposal",
+            created_at: "2026-09-16T10:00:00",
+            conversation_id: null,
+            conversation_title: null,
+            items: [
+              {
+                action: "proposed",
+                proposal_id: "p1",
+                target: "skill",
+                title: "报价流程",
+                reason: "多步可复用",
+                basis: ["卡一"],
+                status: "pending",
+              },
+              {
+                action: "proposed",
+                proposal_id: "p2",
+                target: "doc",
+                title: "资料清单",
+                reason: "便于翻阅",
+                basis: ["卡二"],
+                status: "dismissed",
+              },
+            ],
+          },
+        ],
+      })
+      .mockResolvedValueOnce({ scope, entries: [] });
+    vi.mocked(acceptCardProposal).mockResolvedValueOnce({
+      ok: true,
+      request_text: "请把下面这些经验固化为一个 Skill",
+    });
+    vi.mocked(dismissCardProposal).mockResolvedValueOnce({ ok: true });
+
+    render(
+      <CardGrowthTimeline scope={scope} onUseProposal={onUseProposal} />,
+    );
+
+    expect(await screen.findByText("提议")).toBeInTheDocument();
+    expect(
+      screen.getByText("提议固化为 Skill「报价流程」"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("已忽略")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "接受" }));
+    await waitFor(() => {
+      expect(acceptCardProposal).toHaveBeenCalledWith(scope, "p1");
+      expect(onUseProposal).toHaveBeenCalledWith(
+        "请把下面这些经验固化为一个 Skill",
+      );
+    });
+  });
+
+  it("hides accept without onUseProposal and calls dismiss", async () => {
+    const user = userEvent.setup();
+    vi.mocked(listCardGrowth)
+      .mockResolvedValueOnce({
+        scope,
+        entries: [
+          {
+            id: "g-proposal",
+            kind: "proposal",
+            created_at: "2026-09-16T10:00:00",
+            conversation_id: null,
+            conversation_title: null,
+            items: [
+              {
+                action: "proposed",
+                proposal_id: "p3",
+                target: "doc",
+                title: "另一文档",
+                reason: "理由",
+                basis: [],
+                status: "pending",
+              },
+            ],
+          },
+        ],
+      })
+      .mockResolvedValueOnce({ scope, entries: [] });
+    vi.mocked(dismissCardProposal).mockResolvedValueOnce({ ok: true });
+
+    render(<CardGrowthTimeline scope={scope} />);
+    await screen.findByText("提议写成文档「另一文档」");
+    expect(screen.queryByRole("button", { name: "接受" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "忽略" }));
+    await waitFor(() => {
+      expect(dismissCardProposal).toHaveBeenCalledWith(scope, "p3");
+    });
   });
 
   it("shows empty state copy", async () => {

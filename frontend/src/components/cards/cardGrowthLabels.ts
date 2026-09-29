@@ -5,6 +5,8 @@ export const CARD_GROWTH_ENTRY_LABELS: Record<CardGrowthEntry["kind"], string> =
     learned: "学到",
     consolidated: "整理",
     faded: "淡出",
+    persona: "人设",
+    proposal: "提议",
   };
 
 export const CARD_GROWTH_ACTION_LABELS: Record<CardGrowthAction, string> = {
