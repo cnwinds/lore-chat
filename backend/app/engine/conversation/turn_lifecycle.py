@@ -189,14 +189,14 @@ class TurnLifecycle:
                 and speaker_kind == "user"
                 and not kickoff
             ):
-                store.memory_schedule.mark_dirty_unlocked(cid, at=started_at)
+                store.memory_schedule.mark_dirty_unlocked(cid, at=now)
             elif not kickoff:
                 raw_for_dirty = (
                     stimulus.text if stimulus is not None else user_text
                 )
                 store._maybe_room_memory_dirty_unlocked(
                     cid,
-                    at=started_at,
+                    at=now,
                     speaker_kind=speaker_kind,
                     text=raw_for_dirty,
                 )
