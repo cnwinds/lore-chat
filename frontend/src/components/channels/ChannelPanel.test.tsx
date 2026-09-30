@@ -9,7 +9,19 @@ import { ChannelPanel } from "./ChannelPanel";
 
 vi.mock("../../api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../api")>();
-  return { ...actual, listRoles: vi.fn() };
+  return {
+    ...actual,
+    listRoles: vi.fn(),
+    listCards: vi.fn(),
+    listCardGrowth: vi.fn(),
+    listPersonaRevisions: vi.fn(),
+    rollbackPersonaRevision: vi.fn(),
+    editCard: vi.fn(),
+    forgetCard: vi.fn(),
+    confirmCard: vi.fn(),
+    rejectCard: vi.fn(),
+    restoreCard: vi.fn(),
+  };
 });
 
 vi.mock("../../api/openApi", () => ({
@@ -40,6 +52,10 @@ vi.mock("../../utils/clipboard", () => ({
 }));
 
 const listRoles = vi.mocked(api.listRoles);
+const listCards = vi.mocked(api.listCards);
+const listCardGrowth = vi.mocked(api.listCardGrowth);
+const listPersonaRevisions = vi.mocked(api.listPersonaRevisions);
+const rollbackPersonaRevision = vi.mocked(api.rollbackPersonaRevision);
 const listApiPersonas = vi.mocked(openApi.listApiPersonas);
 const createApiPersona = vi.mocked(openApi.createApiPersona);
 const listChannelTypes = vi.mocked(channelPlugins.listChannelTypes);
@@ -546,5 +562,69 @@ describe("ChannelPanel", () => {
     expect(confirmSpy).toHaveBeenCalled();
     expect(await screen.findByText("还没有聊天通道")).toBeInTheDocument();
     confirmSpy.mockRestore();
+  });
+
+  it("shows knowledge card sub-tabs and reloads personas after history rollback", async () => {
+    const user = userEvent.setup();
+    listApiPersonas.mockResolvedValue({
+      personas: [sampleInstance.persona!],
+    });
+    listChannelInstances.mockResolvedValue({ instances: [sampleInstance] });
+    listCards.mockResolvedValue({
+      scope: "persona:p1",
+      count: 0,
+      faded_count: 0,
+      cards: [],
+    });
+    listCardGrowth.mockResolvedValue({ scope: "persona:p1", entries: [] });
+    listPersonaRevisions
+      .mockResolvedValueOnce({
+        scope: "persona:p1",
+        revisions: [
+          {
+            id: "rev-1",
+            source: "evolution",
+            created_at: "2026-09-20T10:00:00",
+            body: "新人设",
+            previous_body: "旧人设",
+            rolled_back: false,
+            can_rollback: true,
+            reasons: [],
+            reverts: null,
+          },
+        ],
+      })
+      .mockResolvedValue({ scope: "persona:p1", revisions: [] });
+    rollbackPersonaRevision.mockResolvedValueOnce({
+      ok: true,
+      body: "旧人设",
+      revision: {
+        id: "rev-1",
+        source: "evolution",
+        created_at: "2026-09-20T10:00:00",
+        body: "旧人设",
+        previous_body: "新人设",
+        rolled_back: false,
+        can_rollback: false,
+        reasons: [],
+        reverts: null,
+      },
+    });
+    window.confirm = vi.fn(() => true);
+
+    renderPanel();
+    await user.click(await screen.findByRole("tab", { name: "知识卡" }));
+    expect(await screen.findByRole("tab", { name: "卡片" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "成长" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "人设历史" })).toBeInTheDocument();
+
+    const personaLoadsBefore = listApiPersonas.mock.calls.length;
+    await user.click(screen.getByRole("tab", { name: "人设历史" }));
+    await user.click(await screen.findByRole("button", { name: "回退" }));
+
+    await waitFor(() => {
+      expect(rollbackPersonaRevision).toHaveBeenCalledWith("persona:p1", "rev-1");
+      expect(listApiPersonas.mock.calls.length).toBe(personaLoadsBefore + 1);
+    });
   });
 });

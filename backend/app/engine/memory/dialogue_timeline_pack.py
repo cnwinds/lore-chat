@@ -250,6 +250,54 @@ def compress_dialogue_timeline(
     return _pack_head_tail(pack_src, max_chars=max_chars)
 
 
+_OWNER_ROOM_MAX = 2000
+_PEER_ROLE_ROOM_MAX = 280
+
+
+def compress_room_dialogue(
+    lines: list[tuple[str, str]],
+    *,
+    max_chars: int = _MAX_DIALOGUE_CHARS,
+) -> str:
+    """房间视角对话压缩：`(标签, 正文)` → `[i] 标签：正文`。"""
+    if not lines:
+        return ""
+    rendered: list[str] = []
+    for label, text in lines:
+        body = (text or "").strip()
+        if label == "主人":
+            body = _clip_text(body, _OWNER_ROOM_MAX, keep_tail=False)
+        else:
+            body = _clip_text(body, _PEER_ROLE_ROOM_MAX, keep_tail=True)
+        rendered.append(f"{label}：{body}")
+
+    def _join(rows: list[str]) -> str:
+        return "\n".join(f"[{i + 1}] {row}" for i, row in enumerate(rows))
+
+    out_rows = list(rendered)
+    while out_rows:
+        candidate = _join(out_rows)
+        if len(candidate) <= max_chars:
+            return candidate
+        if len(out_rows) == 1:
+            single = out_rows[0]
+            prefix = "[1] "
+            body_budget = max(1, max_chars - len(prefix))
+            label_part, _, rest = single.partition("：")
+            clipped = _clip_text(rest, body_budget, keep_tail=(label_part != "主人"))
+            line = f"{label_part}：{clipped}"
+            if len(prefix + line) > max_chars:
+                clipped = _clip_text(
+                    rest,
+                    max(1, max_chars - len(prefix) - len(label_part) - 1),
+                    keep_tail=(label_part != "主人"),
+                )
+                line = f"{label_part}：{clipped}"
+            return prefix + line
+        out_rows.pop(0)
+    return ""
+
+
 def compress_to_self_timeline(
     messages: list[str], *, max_chars: int = _MAX_DIALOGUE_CHARS
 ) -> str:

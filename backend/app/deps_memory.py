@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 from app.config import Settings
 from app.engine.conversations import ConversationStore
-from app.engine.memory.card_consolidation import LLMCardConsolidator
+from app.engine.memory.card_consolidation import LLMCardConsolidator, OWNER_PROFILE
 from app.engine.memory.cards import KnowledgeCards
 from app.engine.memory.decay import DecayConfig
 from app.engine.memory.role_card_extractor import LLMRoleCardExtractor
@@ -34,6 +34,9 @@ class MemorySubgraph:
         self.worker.extractor = LLMSessionExtractor(llm)
         self.worker.card_extractor = LLMRoleCardExtractor(llm)
         self.cards.consolidator = LLMCardConsolidator(llm, self.cards)
+        self.cards.owner_consolidator = LLMCardConsolidator(
+            llm, self.cards, profile=OWNER_PROFILE
+        )
         if self.cards.evolver is not None:
             self.cards.evolver.llm = llm
 
@@ -57,6 +60,7 @@ def build_memory_subgraph(
         channel_instances=channel_instances,
     )
     cards.consolidator = LLMCardConsolidator(llm, cards)
+    cards.owner_consolidator = LLMCardConsolidator(llm, cards, profile=OWNER_PROFILE)
     memory_worker = SessionMemoryObserve(
         conversations,
         memory_service,
@@ -71,7 +75,10 @@ def build_memory_subgraph(
         decay_days_candidate=settings.memory_decay_candidate_days,
     )
     memory_maintenance = MemoryMaintenanceJob(
-        memory_service.store, conversations, config=decay_config
+        memory_service.store,
+        conversations,
+        config=decay_config,
+        growth=cards.growth,
     )
     return MemorySubgraph(
         store=memory_service.store,

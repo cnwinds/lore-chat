@@ -213,6 +213,23 @@ describe("KnowledgeCardList", () => {
     expect(screen.queryByRole("menuitem", { name: "编辑" })).not.toBeInTheDocument();
   });
 
+  it("does not render conversation jump when onOpenConversation is omitted", async () => {
+    mockList({
+      count: 1,
+      cards: [
+        {
+          ...sampleConfirmed,
+          conversation_ids: ["conv-1"],
+        },
+      ],
+    });
+    render(<KnowledgeCardList scope={scope} />);
+    expect(await screen.findByText("领域陈述内容足够长")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "打开来源会话" }),
+    ).toBeNull();
+  });
+
   it("calls restoreCard with scope for stale cards", async () => {
     const user = userEvent.setup();
     mockList({ count: 0, faded_count: 1, cards: [sampleStale] });

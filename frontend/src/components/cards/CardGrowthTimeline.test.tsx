@@ -204,7 +204,9 @@ describe("CardGrowthTimeline", () => {
       entries: [learnedEntry],
     });
 
-    render(<CardGrowthTimeline scope={scope} />);
+    render(
+      <CardGrowthTimeline scope={scope} onOpenConversation={() => undefined} />,
+    );
     const btn = await screen.findByRole("button", { name: "来源会话标题" });
     expect(btn).toBeEnabled();
   });
@@ -245,9 +247,24 @@ describe("CardGrowthTimeline", () => {
       ],
     });
 
-    render(<CardGrowthTimeline scope={scope} />);
+    render(
+      <CardGrowthTimeline scope={scope} onOpenConversation={() => undefined} />,
+    );
     const btn = await screen.findByRole("button", { name: "来源会话" });
     expect(btn).toBeDisabled();
+  });
+
+  it("shows conversation label without a button when onOpenConversation is omitted", async () => {
+    vi.mocked(listCardGrowth).mockResolvedValueOnce({
+      scope,
+      entries: [learnedEntry],
+    });
+
+    render(<CardGrowthTimeline scope={scope} />);
+    expect(await screen.findByText("来源会话标题")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "来源会话标题" }),
+    ).toBeNull();
   });
 
   it("renders persona evolved and rolled_back items", async () => {
@@ -406,5 +423,87 @@ describe("CardGrowthTimeline", () => {
         "还没有成长记录。卡片被学到、整理或淡出时会记在这里。",
       ),
     ).toBeInTheDocument();
+  });
+
+  it("shows owner memory kind labels in Chinese", async () => {
+    vi.mocked(listCardGrowth).mockResolvedValueOnce({
+      scope: "owner",
+      entries: [
+        {
+          id: "g-owner",
+          kind: "learned",
+          created_at: "2026-09-20T10:00:00",
+          conversation_id: null,
+          conversation_title: null,
+          items: [
+            {
+              action: "new",
+              card_id: "m1",
+              kind: "workflow",
+              statement: "协作方式正文",
+              external: false,
+              status: "confirmed",
+            },
+          ],
+        },
+      ],
+    });
+    render(<CardGrowthTimeline scope="owner" />);
+    expect(await screen.findByText("协作方式")).toBeInTheDocument();
+  });
+
+  it("shows demoted action label", async () => {
+    vi.mocked(listCardGrowth).mockResolvedValueOnce({
+      scope: "owner",
+      entries: [
+        {
+          id: "g-dem",
+          kind: "faded",
+          created_at: "2026-09-20T10:00:00",
+          conversation_id: null,
+          conversation_title: null,
+          items: [
+            {
+              action: "demoted",
+              card_id: "m2",
+              kind: "preference",
+              statement: "降级正文",
+              external: false,
+              status: "candidate",
+            },
+          ],
+        },
+      ],
+    });
+    render(<CardGrowthTimeline scope="owner" />);
+    expect(await screen.findByText("转回待印证")).toBeInTheDocument();
+  });
+
+  it("hides unknown kind keys", async () => {
+    vi.mocked(listCardGrowth).mockResolvedValueOnce({
+      scope: "owner",
+      entries: [
+        {
+          id: "g-unk",
+          kind: "learned",
+          created_at: "2026-09-20T10:00:00",
+          conversation_id: null,
+          conversation_title: null,
+          items: [
+            {
+              action: "new",
+              card_id: "m3",
+              kind: "not_a_real_kind" as "preference",
+              statement: "未知种类正文",
+              external: false,
+              status: "confirmed",
+            },
+          ],
+        },
+      ],
+    });
+    render(<CardGrowthTimeline scope="owner" />);
+    expect(await screen.findByText("未知种类正文")).toBeInTheDocument();
+    expect(screen.queryByText("not_a_real_kind")).not.toBeInTheDocument();
   });
 });

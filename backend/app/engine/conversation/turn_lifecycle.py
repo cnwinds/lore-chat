@@ -183,13 +183,23 @@ class TurnLifecycle:
                 origin = (conv_row["origin"] or "web").strip() or "web"
             except (KeyError, IndexError):
                 origin = "web"
-            # 通道会话只沉淀共用角色卡（人设镜头），不抽主人画像；同伴房间不打 dirty
+            # 通道会话只沉淀共用角色卡（人设镜头），不抽主人画像
             if (
                 conv_kind == KIND_OWNER_DM
                 and speaker_kind == "user"
                 and not kickoff
             ):
                 store.memory_schedule.mark_dirty_unlocked(cid, at=started_at)
+            elif not kickoff:
+                raw_for_dirty = (
+                    stimulus.text if stimulus is not None else user_text
+                )
+                store._maybe_room_memory_dirty_unlocked(
+                    cid,
+                    at=started_at,
+                    speaker_kind=speaker_kind,
+                    text=raw_for_dirty,
+                )
             store._mark_dirty_and_stale(cid)
 
             title = conv_row["title"]
@@ -367,6 +377,14 @@ class TurnLifecycle:
                 "UPDATE conversations SET active_turn_id = NULL, updated_at = ? WHERE id = ?",
                 (finalized_at, cid),
             )
+            if assistant_msg_id and status == "complete":
+                asst_text = assistant.get("text") or ""
+                store._maybe_room_memory_dirty_unlocked(
+                    cid,
+                    at=now,
+                    speaker_kind="role",
+                    text=asst_text,
+                )
             store.conn.commit()
             return result
 

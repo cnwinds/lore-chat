@@ -38,6 +38,7 @@ type Props = {
   onSavePrompt: (inst: ChannelInstance) => void;
   onCancelEditPrompt: () => void;
   onRevoke: (id: string) => void;
+  onPersonaMutated?: () => void;
 };
 
 export function ChannelCard({
@@ -61,6 +62,7 @@ export function ChannelCard({
   onSavePrompt,
   onCancelEditPrompt,
   onRevoke,
+  onPersonaMutated,
 }: Props) {
   const status = statusLabel(inst);
   const chip = credentialChip(inst);
@@ -256,6 +258,7 @@ export function ChannelCard({
           activeTab={activeTab}
           onToggleTab={(tab) => onToggleTab(inst.id, tab)}
           onRevoke={onRevoke}
+          onPersonaMutated={onPersonaMutated}
         />
       </div>
     </li>

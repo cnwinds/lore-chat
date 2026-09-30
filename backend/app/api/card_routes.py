@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from app.api.http_deps import container
-from app.engine.memory.cards import parse_scope, persona_scope, role_scope
+from app.engine.memory.cards import OWNER_SCOPE, parse_scope, persona_scope, role_scope
 from app.engine.memory.persona_history import PersonaRollbackError
 from app.engine.roles import VISIBILITY_HIDDEN
 
@@ -50,9 +50,15 @@ def _validate_scope(request: Request, scope: str) -> str:
     return persona_scope(subject_id)
 
 
+def _validate_growth_scope(request: Request, scope: str) -> str:
+    if scope == "owner":
+        return OWNER_SCOPE
+    return _validate_scope(request, scope)
+
+
 @router.get("/cards/growth")
 def list_card_growth(scope: str, request: Request, limit: int = 50):
-    validated = _validate_scope(request, scope)
+    validated = _validate_growth_scope(request, scope)
     lim = max(1, min(int(limit), 200))
     entries = _cards(request).growth_entries(validated, limit=lim)
     return {"scope": validated, "entries": entries}

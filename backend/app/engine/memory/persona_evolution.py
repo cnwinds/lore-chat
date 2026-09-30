@@ -131,9 +131,6 @@ class LLMPersonaEvolver:
         self.rules_text = rules_text
 
     def eligible_cards(self, scope: str) -> list[dict]:
-        kind, _ = parse_scope(scope)
-        if kind == "persona":
-            return []
         st = self.cards.store(scope)
         marks = self.cards.effective_marks(scope)
         out: list[dict] = []
@@ -144,9 +141,6 @@ class LLMPersonaEvolver:
         return out
 
     def should_run(self, scope: str) -> bool:
-        kind, _ = parse_scope(scope)
-        if kind == "persona":
-            return False
         marks = self.cards.effective_marks(scope)
         st = self.cards.store(scope)
         for fact in st.list_confirmed():
@@ -158,8 +152,6 @@ class LLMPersonaEvolver:
 
     def run(self, scope: str, lens: CardLens) -> dict:
         kind, sid = parse_scope(scope)
-        if kind == "persona":
-            return {"skipped": "persona_scope"}
 
         if kind == "role":
             try:
@@ -273,13 +265,16 @@ class LLMPersonaEvolver:
             max_edits=EVOLUTION_MAX_EDITS,
         )
 
-        proposals_valid = self._validate_proposals(
-            proposals_raw,
-            card_ref_ids,
-            card_refs,
-            existing_proposals,
-            accepted_this_run=[],
-        )
+        if kind == "persona":
+            proposals_valid = []
+        else:
+            proposals_valid = self._validate_proposals(
+                proposals_raw,
+                card_ref_ids,
+                card_refs,
+                existing_proposals,
+                accepted_this_run=[],
+            )
 
         edits_proposed = len(edits_raw)
         proposals_added = 0

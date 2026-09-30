@@ -166,7 +166,46 @@ class MemoryService:
         others = [x for x in items if x.get("status") != "candidate"]
         candidates.sort(key=updated_at, reverse=True)
         others.sort(key=updated_at, reverse=True)
-        return {"facts": candidates + others, "count": len(items)}
+        stale_items = []
+        for f in self.store.list_active_facts():
+            if f.get("status") != "stale":
+                continue
+            cids = sorted(
+                {
+                    ev["conversation_id"]
+                    for ev in self.store.list_evidence(f["id"])
+                    if ev.get("conversation_id")
+                }
+            )
+            stale_items.append(
+                {
+                    "id": f["id"],
+                    "slot_key": f["slot_key"],
+                    "statement": f["statement"],
+                    "category": f.get("category"),
+                    "origin": f.get("origin"),
+                    "status": f.get("status"),
+                    "confidence": f.get("confidence"),
+                    "conversation_ids": cids,
+                    "updated_at": f.get("updated_at"),
+                }
+            )
+        stale_items.sort(key=updated_at, reverse=True)
+        return {"facts": candidates + others, "count": len(items), "stale": stale_items}
+
+    def restore(self, fact_id: str) -> dict:
+        fact = self.store.get_fact(fact_id)
+        if not fact:
+            return {"ok": False, "error": "not_found", "message": "记忆不存在"}
+        if fact.get("status") != "stale":
+            return {
+                "ok": False,
+                "error": "invalid_status",
+                "message": "仅已淡出的记忆可恢复",
+            }
+        self.store.set_status(fact_id, "confirmed")
+        self.store.set_last_seen_at(fact_id)
+        return {"ok": True, "fact_id": fact_id}
 
     def count_pending_candidates(self) -> int:
         """主界面红点：待确认记忆条数。"""

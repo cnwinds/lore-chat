@@ -1,7 +1,11 @@
 import json
 from datetime import datetime, timedelta, timezone
 
-from app.engine.memory.card_consolidation import LLMCardConsolidator, _SYSTEM_PROMPT
+from app.engine.memory.card_consolidation import (
+    CARD_PROFILE,
+    LLMCardConsolidator,
+    _SYSTEM_PROMPT,
+)
 from app.engine.memory.cards import CardLens, KnowledgeCards, role_scope
 from app.engine.memory.resolver import SlotAction
 from app.engine.memory.service import MemoryService
@@ -684,3 +688,7 @@ def test_external_noop_promotion_three_sessions(tmp_path):
         if it.get("action") == "promoted"
     ]
     assert promoted
+
+
+def test_card_profile_system_prompt_unchanged():
+    assert CARD_PROFILE.system_prompt == _SYSTEM_PROMPT

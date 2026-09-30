@@ -93,6 +93,19 @@ class SessionMemoryObserve:
                 self._complete_and_requeue_immediate(job_id, cid)
                 return
             started_last_user_at = self.schedule.get_last_user_message_at(cid)
+            conv_kind = self.conversations.get_conversation_kind(cid)
+            from app.engine.rooms.schema import KIND_GROUP, KIND_PEER_DM
+
+            if conv_kind in (KIND_PEER_DM, KIND_GROUP):
+                self._run_room_job(
+                    job_id,
+                    cid,
+                    conv_kind,
+                    started_last_user_at=started_last_user_at,
+                    immediate=immediate,
+                )
+                return
+
             turns = self.conversations.list_dialogue_turns(cid)
             if not any(role == "user" and t.strip() for role, t in turns):
                 self.schedule.clear_dirty(
@@ -140,8 +153,14 @@ class SessionMemoryObserve:
                     for f in self.memory_service.store.list_confirmed()
                 ]
                 actions = self.extractor.extract(turns, confirmed_summary=confirmed)
-                for action in actions:
-                    out = self._resolver.apply(action, conversation_id=cid)
+                if self.cards:
+                    outs = self.cards.learn_owner(actions, conversation_id=cid)
+                else:
+                    outs = [
+                        self._resolver.apply(action, conversation_id=cid)
+                        for action in actions
+                    ]
+                for out in outs:
                     if not out.get("ok"):
                         if out.get("error") not in _SOFT_REJECT:
                             hard_failures += 1
@@ -248,6 +267,174 @@ class SessionMemoryObserve:
         self.conversations.complete_outbox(job_id)
         if cid and self.schedule.consume_immediate_pending(cid):
             self.enqueue(cid, immediate=True)
+
+    def _run_room_job(
+        self,
+        job_id: str,
+        cid: str,
+        conv_kind: str,
+        *,
+        started_last_user_at: str | None,
+        immediate: bool,
+    ) -> None:
+        from app.engine.memory.constants import (
+            ROOM_CONTEXT_MESSAGES,
+            ROOM_WINDOW_MAX_MESSAGES,
+        )
+        from app.engine.memory.room_observe import (
+            build_room_dialogue,
+            direct_lens_for_role,
+            owner_turns_from_window,
+            role_name_map,
+            select_room_role_ids,
+        )
+
+        cursor = self.schedule.get_cursor_seq(cid)
+        window = self.conversations.list_room_window(
+            cid,
+            after_seq=cursor,
+            limit=ROOM_WINDOW_MAX_MESSAGES,
+            context=ROOM_CONTEXT_MESSAGES,
+        )
+
+        if not window.lines:
+            if window.end_seq is not None:
+                self.schedule.advance_cursor_seq(cid, window.end_seq)
+            self.schedule.clear_dirty(
+                cid, expected_last_user_message_at=started_last_user_at
+            )
+            self._complete_and_requeue_immediate(job_id, cid)
+            return
+
+        owner_spoke = any(ln.speaker_kind == "user" for ln in window.lines)
+        role_ids = select_room_role_ids(window, self.cards) if self.cards else []
+
+        lenses_ready = True
+        if owner_spoke and self.extractor is None:
+            _log.info(
+                "session_observe 跳过主人镜头：未配置 LLM 抽取器 cid=%s",
+                cid,
+            )
+            lenses_ready = False
+        if role_ids and self.card_extractor is None:
+            _log.info(
+                "session_observe 跳过角色卡镜头：未配置抽取器 cid=%s",
+                cid,
+            )
+            lenses_ready = False
+
+        hard_failures = 0
+        memory_confirmed_landed = False
+
+        if owner_spoke and self.extractor is not None:
+            confirmed = [
+                {
+                    "slot_key": f["slot_key"],
+                    "statement": f["statement"],
+                    "category": f.get("category"),
+                }
+                for f in self.memory_service.store.list_confirmed()
+            ]
+            turns = owner_turns_from_window(window.lines)
+            actions = self.extractor.extract(turns, confirmed_summary=confirmed)
+            if self.cards:
+                outs = self.cards.learn_owner(actions, conversation_id=cid)
+            else:
+                outs = [
+                    self._resolver.apply(action, conversation_id=cid)
+                    for action in actions
+                ]
+            for out in outs:
+                if not out.get("ok"):
+                    if out.get("error") not in _SOFT_REJECT:
+                        hard_failures += 1
+                    continue
+                fact = out.get("fact") or {}
+                if fact.get("status") == "confirmed":
+                    memory_confirmed_landed = True
+            if memory_confirmed_landed:
+                self.conversations.system_events.append(
+                    cid,
+                    "memory_updated",
+                    {
+                        "type": "memory_updated",
+                        "conversation_id": cid,
+                    },
+                )
+
+        role_names = role_name_map(
+            self.cards,
+            {
+                rid
+                for ln in window.lines + window.context
+                if ln.speaker_kind == "role"
+                for rid in [(ln.speaker_id or "").strip()]
+                if rid
+            },
+        ) if self.cards else {}
+
+        title = self.conversations.get_title(cid) or ""
+
+        if self.card_extractor is not None and self.cards:
+            for role_id in role_ids:
+                lens = direct_lens_for_role(self.cards, role_id)
+                if lens is None:
+                    continue
+                card_store = self.cards.store(lens.scope)
+                existing = [
+                    {
+                        "slot_key": f["slot_key"],
+                        "statement": f["statement"],
+                        "category": f.get("category"),
+                    }
+                    for f in card_store.list_confirmed() + card_store.list_candidates()
+                ]
+                owner_summary = [
+                    f["statement"] for f in self.memory_service.store.list_confirmed()
+                ]
+                room = build_room_dialogue(
+                    kind=conv_kind,
+                    title=title,
+                    window=window,
+                    role_id=role_id,
+                    role_names=role_names,
+                )
+                card_actions = self.card_extractor.extract_room(
+                    room,
+                    lens=lens,
+                    existing_cards=existing,
+                    owner_summary=owner_summary,
+                )
+                cards_confirmed_landed = False
+                outs = self.cards.learn(lens.scope, card_actions, conversation_id=cid)
+                for out in outs:
+                    if not out.get("ok"):
+                        if out.get("error") not in _SOFT_REJECT:
+                            hard_failures += 1
+                        continue
+                    fact = out.get("fact") or {}
+                    if fact.get("status") == "confirmed":
+                        cards_confirmed_landed = True
+                if cards_confirmed_landed:
+                    self.conversations.system_events.append(
+                        cid,
+                        "cards_updated",
+                        {
+                            "type": "cards_updated",
+                            "conversation_id": cid,
+                            "scope": lens.scope,
+                        },
+                    )
+
+        if hard_failures == 0 and lenses_ready and window.end_seq is not None:
+            self.schedule.advance_cursor_seq(cid, window.end_seq)
+            if window.has_more:
+                self.schedule.request_immediate(cid)
+            else:
+                self.schedule.clear_dirty(
+                    cid, expected_last_user_message_at=started_last_user_at
+                )
+        self._complete_and_requeue_immediate(job_id, cid)
 
 
 # 兼容旧名

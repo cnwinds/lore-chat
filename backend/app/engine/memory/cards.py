@@ -27,6 +27,8 @@ from app.logging_config import get_logger
 if TYPE_CHECKING:
     from app.engine.memory.card_index import CardIndex
 
+OWNER_SCOPE = "owner"
+
 CARD_KINDS = ("domain", "owner_context", "practice", "lesson", "audience")
 EXTERNAL_KINDS = frozenset({"domain", "audience"})
 KIND_LABELS = {
@@ -113,6 +115,7 @@ class KnowledgeCards:
         self.max_chars = max_chars
         self.growth = growth or CardGrowthLog(self._db_path)
         self.consolidator = consolidator
+        self.owner_consolidator = None
         self.persona_state = persona_state or CardPersonaState(self._db_path)
         self.evolver = None
         self.index: CardIndex | None = None
@@ -303,58 +306,37 @@ class KnowledgeCards:
                 f["id"]: (f.get("status"), f.get("statement"))
                 for f in st.list_active_facts()
             }
-            growth_by_id: dict[str, dict] = {}
             for action in actions:
                 out = resolver.apply(action, conversation_id=conversation_id)
                 results.append(out)
-                if not out.get("ok"):
-                    continue
-                fact = out.get("fact") or {}
-                fid = fact.get("id")
-                if not fid:
-                    continue
-                snap = snapshot.get(fid)
-                growth_action: str | None = None
-                previous: str | None = None
-                if snap is None:
-                    growth_action = "new"
-                else:
-                    old_status, old_stmt = snap
-                    new_status = fact.get("status")
-                    new_stmt = fact.get("statement")
-                    if old_status == "stale" and new_status in ("confirmed", "candidate"):
-                        growth_action = "revived"
-                    elif old_status == "candidate" and new_status == "confirmed":
-                        growth_action = "promoted"
-                    elif old_stmt != new_stmt:
-                        growth_action = "revised"
-                        previous = old_stmt
-                    else:
-                        continue
-                existing = growth_by_id.get(fid)
-                if existing:
-                    old_prio = _LEARN_GROWTH_PRIORITY.get(existing["action"], 99)
-                    new_prio = _LEARN_GROWTH_PRIORITY.get(growth_action or "", 99)
-                    if new_prio >= old_prio:
-                        continue
-                item = {
-                    "action": growth_action,
-                    "card_id": fid,
-                    "kind": fact.get("category") or "",
-                    "statement": fact.get("statement") or "",
-                    "external": (fact.get("origin") or "") == "external",
-                    "status": fact.get("status") or "",
-                }
-                if previous:
-                    item["previous"] = previous
-                growth_by_id[fid] = item
-            items = list(growth_by_id.values())
+            items = _learn_growth_items(snapshot, results)
             if items:
                 self.growth.append(
                     scope, "learned", items, conversation_id=conversation_id
                 )
             if any(r.get("ok") for r in results):
                 self._sync_index_locked(scope)
+        return results
+
+    def learn_owner(
+        self, actions: list[SlotAction], *, conversation_id: str
+    ) -> list[dict]:
+        resolver = self.owner.resolver
+        results: list[dict] = []
+        with self.scope_lock(OWNER_SCOPE):
+            st = self.owner.store
+            snapshot = {
+                f["id"]: (f.get("status"), f.get("statement"))
+                for f in st.list_active_facts()
+            }
+            for action in actions:
+                out = resolver.apply(action, conversation_id=conversation_id)
+                results.append(out)
+            items = _learn_growth_items(snapshot, results)
+            if items:
+                self.growth.append(
+                    OWNER_SCOPE, "learned", items, conversation_id=conversation_id
+                )
         return results
 
     def _sync_index_locked(self, scope: str) -> None:
@@ -665,6 +647,11 @@ class KnowledgeCards:
         min_gap = timedelta(hours=CARD_MAINTENANCE_MIN_INTERVAL_HOURS)
         evolve_budget = EVOLVE_SCOPES_PER_TICK
 
+        consolidated_scopes, ops_delta = self._maybe_consolidate_owner(
+            stamp, min_gap, consolidated_scopes, max_consolidations
+        )
+        ops_applied += ops_delta
+
         for scope in self.list_scopes():
             try:
                 lens = self.subject_for_scope(scope)
@@ -722,6 +709,38 @@ class KnowledgeCards:
         self.growth.mark_faded(scope, stamp.isoformat())
         return len(items)
 
+    def _maybe_consolidate_owner(
+        self,
+        stamp: datetime,
+        min_gap: timedelta,
+        consolidated_scopes: int,
+        max_consolidations: int,
+    ) -> tuple[int, int]:
+        if consolidated_scopes >= max_consolidations:
+            return consolidated_scopes, 0
+        if not self.owner_consolidator:
+            return consolidated_scopes, 0
+        state = self.growth.scope_state(OWNER_SCOPE)
+        last_cons = state.get("last_consolidated_at")
+        if last_cons and stamp - self._parse_ts(last_cons) < min_gap:
+            return consolidated_scopes, 0
+        st = self.owner.store
+        active = st.list_confirmed() + st.list_candidates()
+        if len(active) < 2:
+            return consolidated_scopes, 0
+        if last_cons and not self._has_card_changes_since(st, active, last_cons):
+            return consolidated_scopes, 0
+        try:
+            result = self.owner_consolidator.run(OWNER_SCOPE, None)
+        except Exception as exc:  # noqa: BLE001
+            _log.warning(
+                "owner memory consolidation failed err=%s", exc
+            )
+            return consolidated_scopes, 0
+        consolidated_at = max(stamp, datetime.now(timezone.utc)).isoformat()
+        self.growth.mark_consolidated(OWNER_SCOPE, consolidated_at)
+        return consolidated_scopes + 1, int(result.get("ops_applied") or 0)
+
     def _maybe_consolidate(
         self,
         scope: str,
@@ -766,8 +785,6 @@ class KnowledgeCards:
         budget: int,
     ) -> int:
         if budget <= 0 or self.evolver is None:
-            return 0
-        if scope.startswith("persona:"):
             return 0
         last_ev = state.get("last_evolved_at")
         if last_ev and stamp - self._parse_ts(last_ev) < min_gap:
@@ -878,3 +895,53 @@ class KnowledgeCards:
             persona.get("name") or pid,
             persona.get("system_prompt") or "",
         )
+
+
+def _learn_growth_items(
+    snapshot: dict[str, tuple],
+    results: list[dict],
+) -> list[dict]:
+    growth_by_id: dict[str, dict] = {}
+    for out in results:
+        if not out.get("ok"):
+            continue
+        fact = out.get("fact") or {}
+        fid = fact.get("id")
+        if not fid:
+            continue
+        snap = snapshot.get(fid)
+        growth_action: str | None = None
+        previous: str | None = None
+        if snap is None:
+            growth_action = "new"
+        else:
+            old_status, old_stmt = snap
+            new_status = fact.get("status")
+            new_stmt = fact.get("statement")
+            if old_status == "stale" and new_status in ("confirmed", "candidate"):
+                growth_action = "revived"
+            elif old_status == "candidate" and new_status == "confirmed":
+                growth_action = "promoted"
+            elif old_stmt != new_stmt:
+                growth_action = "revised"
+                previous = old_stmt
+            else:
+                continue
+        existing = growth_by_id.get(fid)
+        if existing:
+            old_prio = _LEARN_GROWTH_PRIORITY.get(existing["action"], 99)
+            new_prio = _LEARN_GROWTH_PRIORITY.get(growth_action or "", 99)
+            if new_prio >= old_prio:
+                continue
+        item = {
+            "action": growth_action,
+            "card_id": fid,
+            "kind": fact.get("category") or "",
+            "statement": fact.get("statement") or "",
+            "external": (fact.get("origin") or "") == "external",
+            "status": fact.get("status") or "",
+        }
+        if previous:
+            item["previous"] = previous
+        growth_by_id[fid] = item
+    return list(growth_by_id.values())

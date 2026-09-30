@@ -464,6 +464,7 @@ export function ChannelPanel({
                     onSavePrompt={(item) => void handleSavePrompt(item)}
                     onCancelEditPrompt={() => setEditingPromptId(null)}
                     onRevoke={(id) => void handleRevoke(id)}
+                    onPersonaMutated={() => void reload()}
                   />
                 ))}
               </ul>

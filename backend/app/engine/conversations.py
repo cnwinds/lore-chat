@@ -233,6 +233,10 @@ class ConversationStore:
                 "ALTER TABLE conversations ADD COLUMN memory_immediate_pending "
                 "INTEGER NOT NULL DEFAULT 0"
             )
+        if "memory_cursor_seq" not in cols:
+            alters.append(
+                "ALTER TABLE conversations ADD COLUMN memory_cursor_seq INTEGER"
+            )
         for sql in alters:
             self.conn.execute(sql)
 
@@ -438,6 +442,70 @@ class ConversationStore:
                 (cid,),
             ).fetchall()
             return [(r["text"] or "") for r in rows]
+
+    def get_memory_cursor_seq(self, cid: str) -> int | None:
+        return self.memory_schedule.get_cursor_seq(cid)
+
+    def list_room_window(
+        self,
+        cid: str,
+        *,
+        after_seq: int | None,
+        limit: int,
+        context: int,
+    ):
+        from app.engine.memory.room_window import build_room_window
+
+        with self._lock:
+            rows = self.conn.execute(
+                """
+                SELECT seq, speaker_kind, speaker_id, speaker_name, text, status
+                FROM messages
+                WHERE conversation_id = ?
+                ORDER BY seq ASC
+                """,
+                (cid,),
+            ).fetchall()
+        return build_room_window(
+            list(rows), after_seq=after_seq, limit=limit, context=context
+        )
+
+    def _count_room_messages_after_cursor_unlocked(self, cid: str) -> int:
+        cursor = self.memory_schedule.get_cursor_seq(cid)
+        row = self.conn.execute(
+            "SELECT COUNT(*) AS n FROM messages WHERE conversation_id = ? AND seq > ?",
+            (cid, cursor or 0),
+        ).fetchone()
+        return int(row["n"])
+
+    def _maybe_room_memory_dirty_unlocked(
+        self,
+        cid: str,
+        *,
+        at: str,
+        speaker_kind: str,
+        text: str,
+    ) -> None:
+        from app.engine.memory.constants import ROOM_WINDOW_MAX_MESSAGES
+        from app.engine.rooms.schema import KIND_GROUP, KIND_PEER_DM, KIND_OWNER_DM
+
+        try:
+            row = self._conversation_row(cid)
+            kind = (row["kind"] or KIND_OWNER_DM).strip() or KIND_OWNER_DM
+        except (KeyError, IndexError):
+            kind = KIND_OWNER_DM
+        if kind not in (KIND_PEER_DM, KIND_GROUP):
+            return
+        if speaker_kind not in ("user", "role"):
+            return
+        if not (text or "").strip():
+            return
+        self.memory_schedule.mark_dirty_unlocked(cid, at=at)
+        if (
+            self._count_room_messages_after_cursor_unlocked(cid)
+            >= ROOM_WINDOW_MAX_MESSAGES
+        ):
+            self.memory_schedule.request_immediate_unlocked(cid)
 
     def list_dialogue_turns(self, cid: str) -> list[tuple[str, str]]:
         """按序返回 (role, text)，仅 user/assistant，供会话级记忆抽取消歧。
@@ -1726,6 +1794,13 @@ class ConversationStore:
                 pass
             if kind == KIND_OWNER_DM and speaker_kind == "user":
                 self.memory_schedule.mark_dirty_unlocked(cid, at=now)
+            else:
+                self._maybe_room_memory_dirty_unlocked(
+                    cid,
+                    at=now,
+                    speaker_kind=speaker_kind,
+                    text=text,
+                )
             self._mark_dirty_and_stale(cid)
             self.conn.execute(
                 "UPDATE conversations SET updated_at = ? WHERE id = ?",

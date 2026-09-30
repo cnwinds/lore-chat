@@ -9,7 +9,7 @@ import {
 } from "../../api/channelPlugins";
 import { formatOpenApiWhen } from "../settings/openApiSettingsModel";
 import { personaCardScope } from "../../api";
-import { KnowledgeCardList } from "../cards/KnowledgeCardList";
+import { KnowledgeCardsTabs } from "../cards/KnowledgeCardsTabs";
 import { accessGuide, revokeTabLabel, type DetailTab } from "./channelUiModel";
 
 type TranscriptSeg = { title: string; messages: ChatMessage[] };
@@ -20,6 +20,7 @@ type Props = {
   activeTab: DetailTab | null;
   onToggleTab: (tab: DetailTab) => void;
   onRevoke: (id: string) => void;
+  onPersonaMutated?: () => void;
 };
 
 export function ChannelDetails({
@@ -28,6 +29,7 @@ export function ChannelDetails({
   activeTab,
   onToggleTab,
   onRevoke,
+  onPersonaMutated,
 }: Props) {
   const [transcript, setTranscript] = useState<TranscriptSeg[] | null>(null);
   const [logs, setLogs] = useState<ChannelLogItem[] | null>(null);
@@ -217,7 +219,11 @@ export function ChannelDetails({
 
       {activeTab === "cards" && inst.persona_id ? (
         <div className="channel-details-body">
-          <KnowledgeCardList scope={personaCardScope(inst.persona_id)} />
+          <KnowledgeCardsTabs
+            variant="inline"
+            scope={personaCardScope(inst.persona_id)}
+            onMutated={onPersonaMutated}
+          />
         </div>
       ) : null}
 

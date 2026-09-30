@@ -53,3 +53,16 @@ def forget_memory_fact(fact_id: str, request: Request):
     if not out.get("ok"):
         raise HTTPException(status_code=400, detail=out.get("message") or out.get("error"))
     return out
+
+
+@router.post("/memory/facts/{fact_id}/restore")
+def restore_memory_fact(fact_id: str, request: Request):
+    out = _svc(request).restore(fact_id)
+    if not out.get("ok"):
+        err = out.get("error")
+        if err == "invalid_status":
+            raise HTTPException(status_code=400, detail=out.get("message") or err)
+        if err == "not_found":
+            raise HTTPException(status_code=404, detail=out.get("message") or "不存在")
+        raise HTTPException(status_code=400, detail=out.get("message") or err or "操作失败")
+    return out

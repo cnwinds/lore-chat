@@ -1,6 +1,6 @@
 """人设历史与提议 HTTP（P2 · 任务 A）。"""
 
-from app.engine.memory.cards import role_scope
+from app.engine.memory.cards import persona_scope, role_scope
 
 
 def test_persona_revisions_and_rollback_routes(client):
@@ -95,3 +95,46 @@ def test_proposal_routes(client):
         params={"scope": scope},
     )
     assert dis.status_code == 200
+
+
+def test_persona_scope_revisions_list_route(client):
+    persona = client.app.state.container.roles.create_persona(
+        name="通道", system_prompt="初始正文"
+    )
+    scope = persona_scope(persona["id"])
+    client.app.state.container.roles.update_persona(
+        persona["id"], system_prompt="进化后正文"
+    )
+    rev = client.app.state.container.roles.apply_persona_evolution(
+        "persona",
+        persona["id"],
+        expected_body="进化后正文",
+        new_body="回退目标",
+        meta={},
+    )
+    listed = client.get("/api/cards/persona/revisions", params={"scope": scope})
+    assert listed.status_code == 200
+    assert listed.json()["revisions"][0]["body"] == "回退目标"
+
+
+def test_persona_scope_rollback_route(client):
+    persona = client.app.state.container.roles.create_persona(
+        name="通道", system_prompt="初始正文"
+    )
+    scope = persona_scope(persona["id"])
+    client.app.state.container.roles.update_persona(
+        persona["id"], system_prompt="中间正文"
+    )
+    rev = client.app.state.container.roles.apply_persona_evolution(
+        "persona",
+        persona["id"],
+        expected_body="中间正文",
+        new_body="进化后正文",
+        meta={},
+    )
+    rb = client.post(
+        f"/api/cards/persona/revisions/{rev['id']}/rollback",
+        params={"scope": scope},
+    )
+    assert rb.status_code == 200
+    assert rb.json()["body"] == "中间正文"

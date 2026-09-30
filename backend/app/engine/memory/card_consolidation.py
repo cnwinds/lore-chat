@@ -1,11 +1,18 @@
 from __future__ import annotations
 
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from app.engine.memory.cards import CARD_KINDS, EXTERNAL_KINDS, KnowledgeCards
-from app.engine.memory.constants import ORIGIN_RANK
-from app.engine.memory.normalize import CARD_SCHEME, resolve_slot_key, value_hash
+from app.engine.memory.cards import (
+    CARD_KINDS,
+    EXTERNAL_KINDS,
+    KnowledgeCards,
+    OWNER_SCOPE,
+)
+from app.engine.memory.constants import CATEGORIES, ORIGIN_RANK
+from app.engine.memory.normalize import CARD_SCHEME, OWNER_SCHEME, resolve_slot_key, value_hash
+from app.engine.memory.policy import allows_automatic_save, infer_sensitivity
 from app.engine.memory.prompt_common import parse_llm_json_list
 from app.engine.memory.resolver import SlotResolver
 from app.engine.memory.role_card_extractor import _truncate_persona
@@ -50,6 +57,35 @@ _SYSTEM_PROMPT = """你是角色知识卡整理器。下面是某个角色积累
 {"op":"supersede","ids":["c6","c8"]}
 ]}"""
 
+_OWNER_SYSTEM_PROMPT = """你是主人记忆整理器。下面是系统记下的关于主人的记忆：主人是谁、怎么协作、长期方向。你的任务是让这组记忆更精炼、更自洽：只重组已有内容，不学新东西，不引入记忆之外的事实。
+
+可做的整理（没有值得做的就返回空数组）：
+
+1. merge 合并：两条及以上说的是同一件事——措辞不同，或一条是另一条的子集。输出合并后的一条正文，保留各条的限定条件与细节。
+2. abstract 抽象：两条及以上的具体记忆指向同一条稳定画像（同一种偏好、同一种协作方式），并且记这一条比逐条记更能说明主人是谁。输出这一条；它必须保留各条共同的限定语境，不得推广到原记忆没有覆盖的场景。只是话题相近、各自独立成立的，不要抽象。
+3. qualify 补条件：两条看似冲突，但从记忆内容能读出它们各自成立的条件（例如「工作日晚上只有约 1 小时」与「周末可以整块学习」）。改写缺条件的那条或两条，把条件写进正文，让两条都成立。
+4. supersede 取代：两条真冲突（例如主人改口），且从记忆内容补不出各自成立的条件。只需标出冲突的两条，系统会让最近出处较新的一条取代较旧的一条。
+
+判定原则：
+- 冲突先补条件：能 qualify 的不要 supersede。
+- 语境保全：合并、抽象、补条件都不能丢掉使命题为真的限定。删掉限定语境后，这句话是否变成对主人的过度概括？若是，不要这样整理。拿不准某条限定能不能去掉时，保留它。
+- 不添新知：正文只能来自所列记忆；补条件时，条件也必须能从记忆内容里读出来，读不出来就不要 qualify。
+- 主语不变：整理后的正文仍是关于主人的陈述，主语写清（主人、主人的孩子……）。不要改写成助手该怎么做事的规矩，也不要把与主人无关的常识写进去。
+- 主人亲定、主人要求记住的记忆只读：可以用来判断别的记忆是否重复或冲突，但不要改写、合并或取代它们。
+- 拿不准就不动：宁可少整理，也不要把不同的事并成一件。
+
+种类 kind 取 identity（身份）、preference（偏好）、goal（目标）、project（项目）、workflow（协作方式）、constraint（硬约束）之一，并且只能从参与这条操作的记忆已有的种类里选。abstract 须给出 slot_key，格式为 kind.predicate，predicate 是描述主题的英文蛇形短词。
+
+每条记忆最多出现在一条操作里；最多输出 12 条操作。
+
+只输出 JSON：
+{"ops":[
+{"op":"merge","ids":["c1","c4"],"kind":"preference","statement":"……"},
+{"op":"abstract","ids":["c2","c5","c9"],"kind":"workflow","slot_key":"workflow.example_topic","statement":"……"},
+{"op":"qualify","ids":["c3","c7"],"rewrite":{"c3":"……"}},
+{"op":"supersede","ids":["c6","c8"]}
+]}"""
+
 _ORIGIN_LABELS = {
     "manual": "主人亲定（只读）",
     "direct": "主人来源",
@@ -57,6 +93,54 @@ _ORIGIN_LABELS = {
     "external": "外部来源",
 }
 _STATUS_LABELS = {"confirmed": "已确认", "candidate": "待印证"}
+
+_OWNER_ORIGIN_LABELS = {
+    "manual": "主人亲定（只读）",
+    "explicit_remember": "主人要求记住（只读）",
+    "direct": "主人自述",
+    "inferred": "对话推断",
+}
+
+
+@dataclass(frozen=True)
+class ConsolidationProfile:
+    owner: bool
+    system_prompt: str
+    kinds: frozenset[str]
+    external_kinds: frozenset[str]
+    scheme: object
+    readonly_origins: frozenset[str]
+    origin_labels: dict[str, str]
+    default_kind: str
+    kind_from_sources: bool
+    gate_sensitive: bool
+
+
+CARD_PROFILE = ConsolidationProfile(
+    owner=False,
+    system_prompt=_SYSTEM_PROMPT,
+    kinds=frozenset(CARD_KINDS),
+    external_kinds=EXTERNAL_KINDS,
+    scheme=CARD_SCHEME,
+    readonly_origins=frozenset({"manual"}),
+    origin_labels=_ORIGIN_LABELS,
+    default_kind="domain",
+    kind_from_sources=False,
+    gate_sensitive=False,
+)
+
+OWNER_PROFILE = ConsolidationProfile(
+    owner=True,
+    system_prompt=_OWNER_SYSTEM_PROMPT,
+    kinds=CATEGORIES,
+    external_kinds=frozenset(),
+    scheme=OWNER_SCHEME,
+    readonly_origins=frozenset({"manual", "explicit_remember"}),
+    origin_labels=_OWNER_ORIGIN_LABELS,
+    default_kind="preference",
+    kind_from_sources=True,
+    gate_sensitive=True,
+)
 
 
 def _trust_class(origin: str) -> str:
@@ -80,12 +164,23 @@ def _max_last_seen(facts: list[dict]) -> str | None:
 
 
 class LLMCardConsolidator:
-    def __init__(self, llm: LLMClient, cards: KnowledgeCards):
+    def __init__(
+        self,
+        llm: LLMClient,
+        cards: KnowledgeCards,
+        profile: ConsolidationProfile = CARD_PROFILE,
+    ):
         self.llm = llm
         self.cards = cards
+        self.profile = profile
 
     def run(self, scope: str, lens) -> dict:
-        st = self.cards.store(scope)
+        if self.profile.owner:
+            st = self.cards.owner.store
+            lock_scope = OWNER_SCOPE
+        else:
+            st = self.cards.store(scope)
+            lock_scope = scope
         facts = [
             f
             for f in st.list_confirmed() + st.list_candidates()
@@ -103,25 +198,32 @@ class LLMCardConsolidator:
             short_to_fact[sid] = fact
             origin = fact.get("origin") or ""
             conv_count = st.count_distinct_conversation_evidence(fact["id"])
+            labels = self.profile.origin_labels
             lines.append(
-                f"- {sid}｜{fact.get('category') or ''}｜{_ORIGIN_LABELS.get(origin, origin)}"
+                f"- {sid}｜{fact.get('category') or ''}｜{labels.get(origin, origin)}"
                 f"｜{_STATUS_LABELS.get(fact.get('status') or '', fact.get('status') or '')}"
                 f"｜{conv_count} 段｜{_date_part(fact.get('last_seen_at'))}｜{fact.get('statement') or ''}"
             )
 
-        user_content = (
-            f"当前角色：{lens.subject_name}\n"
-            f"角色设定（节选，仅供理解领域）：\n"
-            f"{_truncate_persona(lens.persona_text)}\n"
-            f"\n"
-            f"知识卡（编号｜种类｜来源｜状态｜出处会话数｜最近出处｜正文）：\n"
-            + "\n".join(lines)
-        )
+        if self.profile.owner:
+            user_content = (
+                "主人记忆（编号｜种类｜来源｜状态｜出处会话数｜最近出处｜正文）：\n"
+                + "\n".join(lines)
+            )
+        else:
+            user_content = (
+                f"当前角色：{lens.subject_name}\n"
+                f"角色设定（节选，仅供理解领域）：\n"
+                f"{_truncate_persona(lens.persona_text)}\n"
+                f"\n"
+                f"知识卡（编号｜种类｜来源｜状态｜出处会话数｜最近出处｜正文）：\n"
+                + "\n".join(lines)
+            )
 
         snapshot = {sid: dict(f) for sid, f in short_to_fact.items()}
         raw = self.llm.chat(
             [
-                {"role": "system", "content": _SYSTEM_PROMPT},
+                {"role": "system", "content": self.profile.system_prompt},
                 {"role": "user", "content": user_content},
             ],
             big=False,
@@ -134,12 +236,17 @@ class LLMCardConsolidator:
             _log.warning("card consolidation parse failed scope=%s err=%s", scope, exc)
             return {"ops_proposed": 0, "ops_applied": 0, "dropped": []}
 
-        validated, dropped = _validate_ops(ops_raw, short_to_fact, st)
+        validated, dropped = _validate_ops(
+            ops_raw, short_to_fact, st, self.profile
+        )
         growth_items: list[dict] = []
         applied = 0
-        resolver = self.cards.resolver(scope)
+        if self.profile.owner:
+            resolver = self.cards.owner.resolver
+        else:
+            resolver = self.cards.resolver(scope)
 
-        with self.cards.scope_lock(scope):
+        with self.cards.scope_lock(lock_scope):
             for op in validated:
                 result = self._apply_op(scope, op, snapshot, st, resolver)
                 if not result:
@@ -151,7 +258,7 @@ class LLMCardConsolidator:
                 applied += 1
 
         if growth_items:
-            self.cards.growth.append(scope, "consolidated", growth_items)
+            self.cards.growth.append(lock_scope, "consolidated", growth_items)
 
         return {
             "ops_proposed": len(ops_raw),
@@ -209,7 +316,7 @@ class LLMCardConsolidator:
         previous = keep.get("statement") or ""
         statement = op["statement"]
         vhash = value_hash(statement)
-        kind = op.get("kind") or keep.get("category") or "domain"
+        kind = op.get("kind") or keep.get("category") or self.profile.default_kind
         max_conf = max(float(f.get("confidence") or 0) for f in facts)
 
         for other in others:
@@ -402,6 +509,7 @@ def _validate_ops(
     ops_raw: list,
     short_to_fact: dict[str, dict],
     st: MemoryStore,
+    profile: ConsolidationProfile,
 ) -> tuple[list[dict], list[tuple[int, str]]]:
     used_ids: set[str] = set()
     validated: list[dict] = []
@@ -413,11 +521,13 @@ def _validate_ops(
     }
 
     for idx, raw in enumerate(ops_raw[:CONSOLIDATION_MAX_OPS]):
-        reason = _validate_single_op(raw, short_to_fact, st, used_ids, alive_hashes)
+        reason = _validate_single_op(
+            raw, short_to_fact, st, used_ids, alive_hashes, profile
+        )
         if reason:
             dropped.append((idx, reason))
             continue
-        op = _normalize_op(raw, short_to_fact, st)
+        op = _normalize_op(raw, short_to_fact, st, profile)
         validated.append(op)
         for sid in op["ids"]:
             used_ids.add(sid)
@@ -452,6 +562,7 @@ def _validate_single_op(
     st: MemoryStore,
     used_ids: set[str],
     alive_hashes: set[str],
+    profile: ConsolidationProfile,
 ) -> str | None:
     op = str(raw.get("op") or "").strip().lower()
     if op not in ("merge", "abstract", "qualify", "supersede"):
@@ -471,8 +582,10 @@ def _validate_single_op(
         return "G3_count"
 
     facts = [short_to_fact[i] for i in ids]
-    manuals = [f for f in facts if f.get("origin") == "manual"]
-    if op in ("merge", "abstract") and manuals:
+    readonly = [
+        f for f in facts if (f.get("origin") or "") in profile.readonly_origins
+    ]
+    if op in ("merge", "abstract") and readonly:
         return "G4_manual_readonly"
     if op == "qualify":
         rewrite = raw.get("rewrite") or {}
@@ -480,8 +593,12 @@ def _validate_single_op(
             return "G10_rewrite"
         if not set(rewrite.keys()).issubset(set(ids)):
             return "G10_rewrite_keys"
-        manual_ids = {i for i in ids if short_to_fact[i].get("origin") == "manual"}
-        if manual_ids & set(rewrite.keys()):
+        readonly_ids = {
+            i
+            for i in ids
+            if (short_to_fact[i].get("origin") or "") in profile.readonly_origins
+        }
+        if readonly_ids & set(rewrite.keys()):
             return "G4_manual_readonly"
         for sid, val in rewrite.items():
             stmt = str(val or "").strip()
@@ -491,6 +608,10 @@ def _validate_single_op(
                 stmt, st, alive_hashes, exclude_hashes={short_to_fact[sid].get("normalized_value_hash")}
             ):
                 return "G7_statement"
+            if profile.gate_sensitive:
+                origin = short_to_fact[sid].get("origin") or "inferred"
+                if not allows_automatic_save(infer_sensitivity(stmt), origin):
+                    return "G8_sensitive"
 
     trust_classes = {_trust_class(f.get("origin") or "") for f in facts}
     if op in ("merge", "abstract") and len(trust_classes) > 1:
@@ -498,7 +619,7 @@ def _validate_single_op(
 
     if op == "supersede":
         winner, loser = _pick_supersede_pair(facts)
-        if loser.get("origin") == "manual":
+        if (loser.get("origin") or "") in profile.readonly_origins:
             return "G4_manual_loser"
         w_class = _trust_class(winner.get("origin") or "")
         l_class = _trust_class(loser.get("origin") or "")
@@ -518,16 +639,33 @@ def _validate_single_op(
         ):
             return "G7_statement"
         kind = str(raw.get("kind") or "").strip()
+        source_kinds = {(f.get("category") or "") for f in facts}
         if op == "abstract":
-            if kind not in CARD_KINDS:
+            if profile.kind_from_sources:
+                if kind not in source_kinds:
+                    return "G6_kind_not_in_sources"
+            elif kind not in profile.kinds:
                 return "G6_kind"
         else:
             keeper = _pick_merge_keeper(facts, st)
             kind = kind or (keeper.get("category") or "")
-            if kind not in CARD_KINDS:
+            if profile.kind_from_sources:
+                if kind not in source_kinds:
+                    return "G6_kind_not_in_sources"
+            elif kind not in profile.kinds:
                 return "G6_kind"
+        if profile.gate_sensitive:
+            if op == "merge":
+                keeper = _pick_merge_keeper(facts, st)
+                gate_origin = keeper.get("origin") or "inferred"
+            else:
+                gate_origin = max(
+                    facts, key=lambda f: _origin_rank(f.get("origin") or "")
+                ).get("origin") or "inferred"
+            if not allows_automatic_save(infer_sensitivity(stmt), gate_origin):
+                return "G8_sensitive"
         origins = {f.get("origin") for f in facts}
-        if "external" in origins and kind not in EXTERNAL_KINDS:
+        if "external" in origins and kind not in profile.external_kinds:
             return "G6_external_kind"
 
     if op == "abstract":
@@ -535,7 +673,7 @@ def _validate_single_op(
         kind = str(raw.get("kind") or "").strip()
         stmt = str(raw.get("statement") or "").strip()
         resolved = resolve_slot_key(
-            kind, stmt, slot_hint=slot_key, existing=[], scheme=CARD_SCHEME
+            kind, stmt, slot_hint=slot_key, existing=[], scheme=profile.scheme
         )
         conflict = any(
             f.get("slot_key") == resolved
@@ -577,7 +715,12 @@ def _valid_statement(
     return True
 
 
-def _normalize_op(raw: dict, short_to_fact: dict[str, dict], st: MemoryStore) -> dict:
+def _normalize_op(
+    raw: dict,
+    short_to_fact: dict[str, dict],
+    st: MemoryStore,
+    profile: ConsolidationProfile,
+) -> dict:
     op = str(raw.get("op") or "").strip().lower()
     ids = [str(x).strip() for x in (raw.get("ids") or [])]
     facts = [short_to_fact[i] for i in ids]
@@ -589,7 +732,7 @@ def _normalize_op(raw: dict, short_to_fact: dict[str, dict], st: MemoryStore) ->
             stmt = out["statement"]
             slot_hint = str(raw.get("slot_key") or "").strip()
             resolved = resolve_slot_key(
-                kind, stmt, slot_hint=slot_hint, existing=[], scheme=CARD_SCHEME
+                kind, stmt, slot_hint=slot_hint, existing=[], scheme=profile.scheme
             )
             conflict = any(
                 f.get("slot_key") == resolved
@@ -604,7 +747,7 @@ def _normalize_op(raw: dict, short_to_fact: dict[str, dict], st: MemoryStore) ->
         else:
             keeper = _pick_merge_keeper(facts, st)
             out["kind"] = str(raw.get("kind") or "").strip() or (
-                keeper.get("category") or "domain"
+                keeper.get("category") or profile.default_kind
             )
     elif op == "qualify":
         rewrite = raw.get("rewrite") or {}

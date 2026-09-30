@@ -9,7 +9,7 @@ import {
   type CardGrowthProposalItem,
 } from "../../api";
 import { formatMessageTime } from "../../utils/displayTime";
-import { CARD_KIND_LABELS } from "./cardKindLabels";
+import { growthKindLabel } from "./cardKindLabels";
 import {
   CARD_GROWTH_ACTION_LABELS,
   CARD_GROWTH_ENTRY_LABELS,
@@ -38,7 +38,9 @@ function GrowthCardItemRow({ item }: { item: CardGrowthItem }) {
         <span className="card-growth-action">
           {CARD_GROWTH_ACTION_LABELS[item.action]}
         </span>
-        <span className="card-growth-kind">{CARD_KIND_LABELS[item.kind]}</span>
+        {growthKindLabel(item.kind) ? (
+          <span className="card-growth-kind">{growthKindLabel(item.kind)}</span>
+        ) : null}
         {item.external ? (
           <span className="knowledge-card-external">外部</span>
         ) : null}
@@ -254,16 +256,24 @@ function GrowthEntryRow({
           {formatMessageTime(entry.created_at)}
         </time>
         {entry.kind === "learned" && hasConversation ? (
-          <button
-            type="button"
-            className="card-growth-conversation-btn"
-            disabled={conversationDisabled}
-            onClick={() => {
-              if (entry.conversation_id) onOpenConversation?.(entry.conversation_id);
-            }}
-          >
-            {entry.conversation_title || "来源会话"}
-          </button>
+          onOpenConversation ? (
+            <button
+              type="button"
+              className="card-growth-conversation-btn"
+              disabled={conversationDisabled}
+              onClick={() => {
+                if (entry.conversation_id) {
+                  onOpenConversation(entry.conversation_id);
+                }
+              }}
+            >
+              {entry.conversation_title || "来源会话"}
+            </button>
+          ) : (
+            <span className="card-growth-conversation-label">
+              {entry.conversation_title || "来源会话"}
+            </span>
+          )
         ) : null}
       </header>
       <div className="card-growth-entry-items">

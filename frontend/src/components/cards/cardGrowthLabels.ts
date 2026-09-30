@@ -20,6 +20,7 @@ export const CARD_GROWTH_ACTION_LABELS: Record<CardGrowthAction, string> = {
   superseded: "取代",
   expired: "过期",
   dropped: "作废",
+  demoted: "转回待印证",
 };
 
 export function cardGrowthSourcesLabel(

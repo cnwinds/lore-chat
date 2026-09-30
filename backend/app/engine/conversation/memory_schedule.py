@@ -270,6 +270,44 @@ class MemoryExtractSchedule:
             self.conn.commit()
             return True
 
+    def get_cursor_seq(self, cid: str) -> int | None:
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT memory_cursor_seq FROM conversations WHERE id = ?",
+                (cid,),
+            ).fetchone()
+            if not row:
+                return None
+            try:
+                val = row["memory_cursor_seq"]
+            except (KeyError, IndexError):
+                return None
+            if val is None:
+                return None
+            return int(val)
+
+    def advance_cursor_seq(self, cid: str, seq: int) -> None:
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT memory_cursor_seq FROM conversations WHERE id = ?",
+                (cid,),
+            ).fetchone()
+            prev = None
+            if row:
+                try:
+                    raw = row["memory_cursor_seq"]
+                    if raw is not None:
+                        prev = int(raw)
+                except (KeyError, IndexError, TypeError, ValueError):
+                    prev = None
+            if prev is not None and seq <= prev:
+                return
+            self.conn.execute(
+                "UPDATE conversations SET memory_cursor_seq = ? WHERE id = ?",
+                (seq, cid),
+            )
+            self.conn.commit()
+
     def list_idle_dirty(
         self, *, idle_hours: float = 24.0, limit: int = 20
     ) -> list[dict]:

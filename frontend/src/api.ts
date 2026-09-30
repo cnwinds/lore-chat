@@ -1512,8 +1512,27 @@ export type MemoryFact = {
 };
 
 export function listMemoryFacts() {
-  return apiFetch<{ facts: MemoryFact[]; count: number }>("/api/memory/facts");
+  return apiFetch<{ facts: MemoryFact[]; count: number; stale?: MemoryFact[] }>(
+    "/api/memory/facts",
+  );
 }
+
+export function restoreMemoryFact(factId: string) {
+  return apiFetch<{ ok: boolean; message?: string }>(
+    `/api/memory/facts/${encodeURIComponent(factId)}/restore`,
+    { method: "POST" },
+  );
+}
+
+export const OWNER_GROWTH_SCOPE = "owner";
+
+export type OwnerMemoryKind =
+  | "identity"
+  | "preference"
+  | "goal"
+  | "project"
+  | "workflow"
+  | "constraint";
 
 export function confirmMemoryFact(factId: string) {
   return apiFetch<{ ok: boolean; message?: string }>(
@@ -1571,12 +1590,13 @@ export type CardGrowthAction =
   | "qualified"
   | "superseded"
   | "expired"
-  | "dropped";
+  | "dropped"
+  | "demoted";
 
 export type CardGrowthItem = {
   action: CardGrowthAction;
   card_id: string;
-  kind: KnowledgeCard["kind"];
+  kind: KnowledgeCard["kind"] | OwnerMemoryKind;
   statement: string;
   external: boolean;
   status: "confirmed" | "candidate" | "stale" | "rejected";

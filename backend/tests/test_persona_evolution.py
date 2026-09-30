@@ -122,15 +122,156 @@ def test_should_run_thresholds(tmp_path):
     assert evolver.should_run(scope) is False
 
 
-def test_persona_scope_never_runs(tmp_path):
+def test_persona_scope_external_only_does_not_run(tmp_path):
     cards, roles, _, _, evolver = _setup(tmp_path)
     persona = roles.create_persona(name="通道人设", system_prompt="p")
     pscope = persona_scope(persona["id"])
     st = cards.store(pscope)
-    _eligible_card(st, cards, pscope, "p1")
+    _seed(st, fact_id="ext", origin="external", status="confirmed")
+    st.add_session_evidence("ext", "s1")
+    st.add_session_evidence("ext", "s2")
+    st.add_session_evidence("ext", "s3")
     assert evolver.should_run(pscope) is False
     lens = CardLens(pscope, "external", persona["name"], persona["system_prompt"])
-    assert evolver.run(pscope, lens) == {"skipped": "persona_scope"}
+    assert evolver.run(pscope, lens) == {"skipped": "no_new_cards"}
+
+
+def test_persona_scope_evolves_with_manual_card(tmp_path):
+    cards, roles, _, _, evolver = _setup(tmp_path, prompt="通道人设\n")
+    persona = roles.create_persona(name="通道人设", system_prompt="通道人设\n")
+    pid = persona["id"]
+    pscope = persona_scope(pid)
+    st = cards.store(pscope)
+    _seed(st, fact_id="ext", origin="external", statement="外部卡正文", kind="audience")
+    st.add_session_evidence("ext", "e1")
+    st.add_session_evidence("ext", "e2")
+    st.add_session_evidence("ext", "e3")
+    _seed(st, fact_id="manual1", origin="manual", statement="亲定做法", kind="practice")
+    st.add_session_evidence("manual1", "m1")
+    lens = CardLens(pscope, "external", persona["name"], persona["system_prompt"])
+    payload = {
+        "edits": [
+            {
+                "op": "insert",
+                "after": "",
+                "text": "新增段",
+                "basis": ["c1"],
+                "reason": "并入做法",
+            },
+            {
+                "op": "insert",
+                "after": "",
+                "text": "不应写入",
+                "basis": ["c2"],
+                "reason": "外部编号",
+            },
+        ],
+        "proposals": [
+            {
+                "target": "skill",
+                "title": "流程",
+                "basis": ["c1"],
+                "reason": "应忽略",
+            }
+        ],
+    }
+    evolver.llm = FakeLLM(payload)
+    result = evolver.run(pscope, lens)
+    assert result["edits_applied"] == 1
+    assert result["dropped"] == [{"index": 1, "reason": "bad_basis"}]
+    assert result["proposals_added"] == 0
+    assert cards.persona_state.list_proposals(pscope) == []
+    assert roles.get_persona_body("persona", pid) == "通道人设\n新增段\n"
+    rev = roles.latest_persona_revision("persona", pid, source="evolution")
+    assert rev
+    assert rev["source"] == "evolution"
+    assert rev["subject_kind"] == "persona"
+    meta = rev["meta"]
+    assert meta["ops"] == [
+        {
+            "op": "insert",
+            "find": "",
+            "after": "",
+            "text": "新增段",
+            "reason": "并入做法",
+            "basis": [
+                {
+                    "ref": "c1",
+                    "card_id": "manual1",
+                    "statement": "亲定做法",
+                }
+            ],
+        }
+    ]
+    marks = cards.persona_state.marks(pscope)
+    assert marks["manual1"]["state"] == "merged"
+    assert "ext" not in marks
+    growth = cards.growth.list(pscope, limit=5)
+    prop_items = [it for e in growth if e["kind"] == "proposal" for it in e["items"]]
+    assert prop_items == []
+    persona_items = [
+        it for e in growth if e["kind"] == "persona" for it in e["items"]
+    ]
+    assert persona_items == [
+        {
+            "action": "evolved",
+            "revision_id": rev["id"],
+            "op": "insert",
+            "reason": "并入做法",
+            "before": "",
+            "after": "新增段",
+            "basis": ["亲定做法"],
+        }
+    ]
+    user = evolver.llm.last_messages[1]["content"]
+    assert "【主人记忆】（编号｜正文）：\n（无）" in user
+    assert "- c1｜practice｜主人亲定｜亲定做法" in user
+    assert "外部卡正文" not in user
+
+
+def test_persona_scope_rollback_via_history(tmp_path):
+    cards, roles, _, _, evolver = _setup(tmp_path, prompt="通道人设\n")
+    persona = roles.create_persona(name="通道人设", system_prompt="通道人设\n")
+    pid = persona["id"]
+    pscope = persona_scope(pid)
+    st = cards.store(pscope)
+    _seed(st, fact_id="ext", origin="external", statement="外部卡正文", kind="audience")
+    st.add_session_evidence("ext", "e1")
+    st.add_session_evidence("ext", "e2")
+    st.add_session_evidence("ext", "e3")
+    _seed(st, fact_id="manual1", origin="manual", statement="亲定做法", kind="practice")
+    st.add_session_evidence("manual1", "m1")
+    lens = CardLens(pscope, "external", persona["name"], persona["system_prompt"])
+    evolver.llm = FakeLLM(
+        {
+            "edits": [
+                {
+                    "op": "insert",
+                    "after": "",
+                    "text": "新增段",
+                    "basis": ["c1"],
+                    "reason": "并入做法",
+                }
+            ],
+            "proposals": [],
+        }
+    )
+    r1 = evolver.run(pscope, lens)
+    rev_id = r1["revision_id"]
+    assert rev_id
+    PersonaHistory(roles, cards).rollback(pscope, rev_id)
+    assert roles.get_persona_body("persona", pid) == "通道人设\n"
+    assert cards.persona_state.marks(pscope)["manual1"]["state"] == "rejected"
+    growth = cards.growth.list(pscope, limit=10)
+    rolled = [
+        it
+        for e in growth
+        if e["kind"] == "persona"
+        for it in e["items"]
+        if it.get("action") == "rolled_back"
+    ]
+    assert len(rolled) == 1
+    assert rolled[0]["revision_id"] == rev_id
 
 
 def test_onboarding_skipped_without_mark_evolved(tmp_path):
@@ -650,13 +791,14 @@ def test_maintain_evolve_scheduling(tmp_path):
     scope2 = role_scope(role2["id"])
     st2 = cards.store(scope2)
     _eligible_card(st2, cards, scope2, "b")
-    role3 = roles.create(name="R3", system_prompt="y")
-    scope3 = role_scope(role3["id"])
-    st3 = cards.store(scope3)
-    _eligible_card(st3, cards, scope3, "c")
+    persona = roles.create_persona(name="P", system_prompt="y")
+    pscope = persona_scope(persona["id"])
+    pst = cards.store(pscope)
+    _seed(pst, fact_id="pc", origin="manual", statement="通道亲定")
+    pst.add_session_evidence("pc", "ps1")
     scopes = sorted(cards.list_scopes())
-    assert {scope, scope2, scope3} <= set(scopes)
-    third = sorted([scope, scope2, scope3])[2]
+    assert {scope, scope2, pscope} <= set(scopes)
+    third = sorted([scope, scope2, pscope])[2]
     now = datetime.now(timezone.utc)
     r1 = cards.maintain(now=now)
     assert r1["evolved_scopes"] == 2
@@ -665,20 +807,20 @@ def test_maintain_evolve_scheduling(tmp_path):
     assert r2["evolved_scopes"] == 1
     assert cards.growth.scope_state(third).get("last_evolved_at")
 
-    persona = roles.create_persona(name="P", system_prompt="")
-    pscope = persona_scope(persona["id"])
-    pst = cards.store(pscope)
-    _eligible_card(pst, cards, pscope, "pz")
+    persona3 = roles.create_persona(name="P3", system_prompt="z")
+    pscope3 = persona_scope(persona3["id"])
+    pst3 = cards.store(pscope3)
+    _seed(pst3, fact_id="fresh", origin="manual", statement="新开")
     calls = {"n": 0}
 
     class CountingEvolver(LLMPersonaEvolver):
         def run(self, s, l):
             calls["n"] += 1
-            return {"skipped": "persona_scope"}
+            return {"skipped": "no_new_cards"}
 
     cards.evolver = CountingEvolver(evolver.llm, cards)
     cards.maintain(now=now + timedelta(hours=50))
-    assert calls["n"] == 0
+    assert calls["n"] == 1
 
     class BoomEvolver(LLMPersonaEvolver):
         def run(self, s, l):

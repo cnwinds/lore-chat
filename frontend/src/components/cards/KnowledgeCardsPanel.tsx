@@ -1,10 +1,6 @@
-import { useCallback, useState } from "react";
+import { useState } from "react";
 import type { DocWidth } from "../../types/doc";
-import { CardGrowthTimeline } from "./CardGrowthTimeline";
-import { KnowledgeCardList } from "./KnowledgeCardList";
-import { PersonaHistoryList } from "./PersonaHistoryList";
-
-type PanelTab = "cards" | "growth" | "history";
+import { KnowledgeCardsTabs } from "./KnowledgeCardsTabs";
 
 type Props = {
   scope: string;
@@ -30,57 +26,8 @@ export function KnowledgeCardsPanel({
   onUseProposal,
 }: Props) {
   const [localRefreshKey, setLocalRefreshKey] = useState(0);
-  const [tab, setTab] = useState<PanelTab>("cards");
-  const [cardCount, setCardCount] = useState<number | null>(null);
-  const [fadedCount, setFadedCount] = useState<number | null>(null);
-  const [growthCount, setGrowthCount] = useState<number | null>(null);
-  const [historyCount, setHistoryCount] = useState<number | null>(null);
 
   const effectiveRefreshKey = externalRefreshKey + localRefreshKey;
-
-  const handleCardCountChange = useCallback((n: number | null) => {
-    setCardCount(n);
-  }, []);
-
-  const handleFadedCountChange = useCallback((n: number | null) => {
-    setFadedCount(n);
-  }, []);
-
-  const handleGrowthCountChange = useCallback((n: number | null) => {
-    setGrowthCount(n);
-  }, []);
-
-  const handleHistoryCountChange = useCallback((n: number | null) => {
-    setHistoryCount(n);
-  }, []);
-
-  const openPersonaHistory = useCallback(() => {
-    setTab("history");
-  }, []);
-
-  const metaLabel =
-    tab === "cards"
-      ? cardCount === null
-        ? null
-        : cardCount === 0 && (fadedCount ?? 0) === 0
-          ? "暂无条目"
-          : [
-              `${cardCount} 条`,
-              fadedCount && fadedCount > 0 ? `已淡出 ${fadedCount}` : null,
-            ]
-              .filter(Boolean)
-              .join(" · ")
-      : tab === "growth"
-        ? growthCount === null
-          ? null
-          : growthCount === 0
-            ? "暂无记录"
-            : `${growthCount} 条记录`
-        : historyCount === null
-          ? null
-          : historyCount === 0
-            ? "暂无记录"
-            : `${historyCount} 个版本`;
 
   return (
     <div
@@ -123,66 +70,14 @@ export function KnowledgeCardsPanel({
         </div>
       </header>
 
-      <div
-        className="kb-float-tabs"
-        role="tablist"
-        aria-label="知识卡页签"
-      >
-        {(
-          [
-            { id: "cards" as const, label: "卡片" },
-            { id: "growth" as const, label: "成长" },
-            { id: "history" as const, label: "人设历史" },
-          ] as const
-        ).map((item) => {
-          const pressed = tab === item.id;
-          return (
-            <button
-              key={item.id}
-              type="button"
-              role="tab"
-              aria-selected={pressed}
-              aria-pressed={pressed}
-              className={`settings-tab${pressed ? " settings-tab--active" : ""}`}
-              onClick={() => setTab(item.id)}
-            >
-              {item.label}
-            </button>
-          );
-        })}
-      </div>
-
-      <div className="kb-float-meta">{metaLabel}</div>
-
-      <div className="kb-float-body">
-        {tab === "cards" ? (
-          <KnowledgeCardList
-            scope={scope}
-            refreshKey={effectiveRefreshKey}
-            onCountChange={handleCardCountChange}
-            onFadedCountChange={handleFadedCountChange}
-            onOpenConversation={onOpenConversation}
-            onMutated={onMutated}
-          />
-        ) : tab === "growth" ? (
-          <CardGrowthTimeline
-            scope={scope}
-            refreshKey={effectiveRefreshKey}
-            onCountChange={handleGrowthCountChange}
-            onOpenConversation={onOpenConversation}
-            onOpenPersonaHistory={openPersonaHistory}
-            onUseProposal={onUseProposal}
-            onMutated={onMutated}
-          />
-        ) : (
-          <PersonaHistoryList
-            scope={scope}
-            refreshKey={effectiveRefreshKey}
-            onCountChange={handleHistoryCountChange}
-            onMutated={onMutated}
-          />
-        )}
-      </div>
+      <KnowledgeCardsTabs
+        variant="float"
+        scope={scope}
+        refreshKey={effectiveRefreshKey}
+        onOpenConversation={onOpenConversation}
+        onMutated={onMutated}
+        onUseProposal={onUseProposal}
+      />
     </div>
   );
 }

@@ -563,6 +563,11 @@ def test_owner_dm_runs_owner_and_card_extractors(tmp_path):
                 )
             ]
 
+        def extract_room(self, _room, *, lens, existing_cards, owner_summary):
+            return self.extract(
+                [], lens=lens, existing_cards=existing_cards, owner_summary=owner_summary
+            )
+
     conv = ConversationStore(tmp_path / "conversations")
     repo = KnowledgeRepo(tmp_path / "knowledge", protected_dirs=("系统",))
     mem = MemoryStore(tmp_path / "memory.db", owner_key="ws1")
@@ -624,6 +629,11 @@ def test_channel_session_cards_only_external_candidate(tmp_path):
                 )
             ]
 
+        def extract_room(self, _room, *, lens, existing_cards, owner_summary):
+            return self.extract(
+                [], lens=lens, existing_cards=existing_cards, owner_summary=owner_summary
+            )
+
     conv = ConversationStore(tmp_path / "conversations")
     repo = KnowledgeRepo(tmp_path / "knowledge", protected_dirs=("系统",))
     mem = MemoryStore(tmp_path / "memory.db", owner_key="ws1")
@@ -680,7 +690,7 @@ def test_peer_dm_clears_dirty_without_extraction(tmp_path):
     from app.engine.roles import RoleStore
 
     owner_calls = {"n": 0}
-    card_calls = {"n": 0}
+    card_room_calls = {"n": 0}
 
     class _OwnerExt:
         def extract(self, *_a, **_k):
@@ -689,7 +699,10 @@ def test_peer_dm_clears_dirty_without_extraction(tmp_path):
 
     class _CardExt:
         def extract(self, *_a, **_k):
-            card_calls["n"] += 1
+            return []
+
+        def extract_room(self, *_a, **_k):
+            card_room_calls["n"] += 1
             return []
 
     conv = ConversationStore(tmp_path / "conversations")
@@ -722,8 +735,8 @@ def test_peer_dm_clears_dirty_without_extraction(tmp_path):
     )
     conv.conn.commit()
     worker.drain(max_jobs=5)
-    assert owner_calls["n"] == 0
-    assert card_calls["n"] == 0
+    assert owner_calls["n"] == 1
+    assert card_room_calls["n"] == 0
     row = conv.conn.execute(
         "SELECT memory_dirty FROM conversations WHERE id = ?", (cid,)
     ).fetchone()
