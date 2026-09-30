@@ -100,18 +100,20 @@ def test_role_reply_finalize_marks_dirty(tmp_path):
     a = roles.create(name="A", system_prompt="")
     b = roles.create(name="B", system_prompt="")
     gid = conv.rooms.create_group(title="群", role_ids=[a["id"], b["id"]])
-    turn = conv.begin_turn(gid, "主人问", "c1")
+    owner_ts = "2026-09-30T00:00:00Z"
+    role_ts = "2026-09-30T00:00:01Z"
+    turn = conv.begin_turn(gid, "主人问", "c1", user_ts=owner_ts)
     conv.finalize_turn(
         gid,
         turn["turn_id"],
-        assistant={"text": "角色答", "status": "complete", "ts": "2026-09-30T00:00:00Z"},
+        assistant={"text": "角色答", "status": "complete", "ts": role_ts},
     )
     row = conv.conn.execute(
         "SELECT memory_dirty, last_user_message_at FROM conversations WHERE id = ?",
         (gid,),
     ).fetchone()
     assert row["memory_dirty"] == 1
-    assert row["last_user_message_at"] == "2026-09-30T00:00:00Z"
+    assert row["last_user_message_at"] == role_ts
 
 
 def test_system_stimulus_does_not_mark_dirty(tmp_path):
