@@ -40,7 +40,12 @@ class TurnLifecycle:
         with store._lock:
             conv_row = store._conversation_row(cid)
             from app.engine.roles import DEFAULT_ROLE_ID
-            from app.engine.rooms.schema import KIND_OWNER_DM, ROOM_ROLE_PLACEHOLDER
+            from app.engine.rooms.schema import (
+                KIND_GROUP,
+                KIND_OWNER_DM,
+                KIND_PEER_DM,
+                ROOM_ROLE_PLACEHOLDER,
+            )
 
             try:
                 conv_kind = (conv_row["kind"] or KIND_OWNER_DM).strip() or KIND_OWNER_DM
@@ -175,6 +180,13 @@ class TurnLifecycle:
                 ),
             )
 
+            user_ts_row = store.conn.execute(
+                "SELECT ts FROM messages WHERE id = ?", (msg_id,)
+            ).fetchone()
+            dirty_at = (
+                (user_ts_row["ts"] if user_ts_row else None) or started_at
+            )
+
             kickoff = is_onboarding_kickoff_id(client_message_id)
             if not reuse_user_message_id and not inbound_reuse and not kickoff:
                 store._enqueue_index_jobs(msg_id, turn_id)
@@ -189,17 +201,23 @@ class TurnLifecycle:
                 and speaker_kind == "user"
                 and not kickoff
             ):
-                store.memory_schedule.mark_dirty_unlocked(cid, at=started_at)
+                store.memory_schedule.mark_dirty_unlocked(cid, at=dirty_at)
             elif not kickoff:
                 raw_for_dirty = (
                     stimulus.text if stimulus is not None else user_text
                 )
-                store._maybe_room_memory_dirty_unlocked(
-                    cid,
-                    at=started_at,
-                    speaker_kind=speaker_kind,
-                    text=raw_for_dirty,
+                # 群/互通：主人开回合等角色回，CAS 时钟在 finalize 用角色消息 ts 推进
+                room_owner_turn = (
+                    conv_kind in (KIND_PEER_DM, KIND_GROUP)
+                    and speaker_kind == "user"
                 )
+                if not room_owner_turn:
+                    store._maybe_room_memory_dirty_unlocked(
+                        cid,
+                        at=dirty_at,
+                        speaker_kind=speaker_kind,
+                        text=raw_for_dirty,
+                    )
             store._mark_dirty_and_stale(cid)
 
             title = conv_row["title"]
