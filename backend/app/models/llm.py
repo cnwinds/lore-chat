@@ -37,14 +37,18 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from app.engine.usage.recorder import UsageRecorder
+    from app.engine.usage.request_log import RequestLogRecorder
 
 
 def consolidate_system_messages(messages: list[dict]) -> list[dict]:
     """合并开头的多条 system 消息为一条（部分 OpenAI 兼容 API 只认首条 system）。"""
+    from app.engine.agent.prompt_parts import PARTS_KEY, extra_label_from_content
+
     if not messages:
         return messages
     i = 0
-    parts: list[str] = []
+    texts: list[str] = []
+    merged_parts: list[dict] = []
     while i < len(messages) and messages[i].get("role") == "system":
         content = messages[i].get("content")
         if isinstance(content, str):
@@ -54,12 +58,25 @@ def consolidate_system_messages(messages: list[dict]) -> list[dict]:
         else:
             text = ""
         if text:
-            parts.append(text)
+            texts.append(text)
+        tagged = messages[i].get(PARTS_KEY)
+        if tagged:
+            merged_parts.extend(list(tagged))
+        elif text:
+            merged_parts.append(
+                {
+                    "kind": "extra",
+                    "label": extra_label_from_content(text),
+                    "text": text,
+                }
+            )
         i += 1
     if i <= 1:
         return messages
-    merged = [{"role": "system", "content": "\n\n".join(parts)}]
-    return merged + messages[i:]
+    merged: dict = {"role": "system", "content": "\n\n".join(texts)}
+    if merged_parts:
+        merged[PARTS_KEY] = merged_parts
+    return [merged] + messages[i:]
 
 
 def _display_model_label(cand: ModelCandidate) -> str:
@@ -172,10 +189,12 @@ class OpenAILLMClient:
         self,
         settings: Settings,
         usage_recorder: "UsageRecorder | None" = None,
+        request_log: "RequestLogRecorder | None" = None,
         cooldown: CooldownStore | None = None,
     ):
         self.settings = settings
         self.usage_recorder = usage_recorder
+        self.request_log = request_log
         kb = Path(settings.kb_path)
         from app.models.cooldown import cooldown_path_for_kb
 
@@ -239,26 +258,71 @@ class OpenAILLMClient:
     def _signing_secret(self) -> str:
         return attachment_signing_secret(self.settings)
 
-    def _materialize(self, messages: list[dict], candidate: ModelCandidate) -> list[dict]:
+    def _materialize(
+        self, messages: list[dict], candidate: ModelCandidate
+    ) -> tuple[list[dict], list[dict]]:
+        from app.engine.agent.prompt_parts import PARTS_KEY
+
         messages = consolidate_system_messages(messages)
         out: list[dict] = []
+        annotations: list[dict] = []
         for m in messages:
             msg = dict(m)
+            parts = list(msg.pop(PARTS_KEY, None) or [])
             attachments = msg.pop("attachments", None)
-            if msg.get("role") == "user" and attachments:
+            att_list = list(attachments or [])
+            if msg.get("role") == "user" and att_list:
                 text = msg.get("content")
                 if not isinstance(text, str):
                     text = str(text or "")
                 msg["content"] = build_user_content_with_media(
                     text,
-                    list(attachments),
+                    att_list,
                     candidate=candidate,
                     kb_path=Path(self.settings.kb_path),
                     public_base_url=self.settings.public_base_url,
                     signing_secret=self._signing_secret(),
                 )
             out.append(msg)
-        return out
+            annotations.append({"parts": parts, "attachments": att_list})
+        return out, annotations
+
+    def _request_begin(
+        self,
+        cand: ModelCandidate,
+        api_messages: list[dict],
+        annotations: list[dict],
+        tools: list[dict] | None,
+        kwargs: dict[str, Any],
+    ) -> int | None:
+        if self.request_log is None:
+            return None
+        try:
+            params = {
+                k: v
+                for k, v in kwargs.items()
+                if k not in ("messages", "tools")
+            }
+            return self.request_log.begin(
+                model=cand.model,
+                model_label=_display_model_label(cand),
+                candidate_id=cand.id,
+                api_messages=api_messages,
+                annotations=annotations,
+                tools=tools,
+                params=params,
+            )
+        except Exception:
+            _log.exception("request_log.begin failed")
+            return None
+
+    def _request_finish(self, call_id: int | None, **kwargs) -> None:
+        if self.request_log is None or call_id is None:
+            return
+        try:
+            self.request_log.finish(call_id, **kwargs)
+        except Exception:
+            _log.exception("request_log.finish failed")
 
     def _select(
         self,
@@ -311,7 +375,7 @@ class OpenAILLMClient:
             cand = sel.candidate
             client = self._client_for(cand)
             model = cand.model
-            api_messages = self._materialize(messages, cand)
+            api_messages, _annotations = self._materialize(messages, cand)
             t0 = time.monotonic()
             kwargs: dict[str, Any] = {
                 "model": model,
@@ -373,7 +437,7 @@ class OpenAILLMClient:
             cand = sel.candidate
             client = self._client_for(cand)
             model = cand.model
-            api_messages = self._materialize(messages, cand)
+            api_messages, annotations = self._materialize(messages, cand)
             kwargs: dict[str, Any] = {
                 "model": model,
                 "messages": api_messages,
@@ -383,12 +447,27 @@ class OpenAILLMClient:
                 kwargs["tools"] = tools
             kwargs.update(thinking_request_kwargs(cand, enable=cand.thinking))
             t0 = time.monotonic()
+            call_id = self._request_begin(
+                cand, api_messages, annotations, tools, kwargs
+            )
             try:
                 resp = client.chat.completions.create(**kwargs)
             except BaseException as e:
                 if is_local_abort(e):
+                    self._request_finish(
+                        call_id,
+                        status="aborted",
+                        duration_ms=int((time.monotonic() - t0) * 1000),
+                        error=str(e),
+                    )
                     raise
                 last_exc = e
+                self._request_finish(
+                    call_id,
+                    status="error",
+                    duration_ms=int((time.monotonic() - t0) * 1000),
+                    error=str(e),
+                )
                 self._record(
                     model=model,
                     kind="chat_tools",
@@ -401,6 +480,15 @@ class OpenAILLMClient:
                 continue
             self.cooldown.record_success(cand.id)
             pt, ct, tt, cache, known = self._usage_from_resp(resp)
+            elapsed = int((time.monotonic() - t0) * 1000)
+            self._request_finish(
+                call_id,
+                status="ok",
+                prompt_tokens=pt,
+                completion_tokens=ct,
+                cache_tokens=cache,
+                duration_ms=elapsed,
+            )
             self._record(
                 model=model,
                 kind="chat_tools",
@@ -411,7 +499,7 @@ class OpenAILLMClient:
                 cache_tokens=cache,
                 tokens_known=known,
                 status="ok",
-                duration_ms=int((time.monotonic() - t0) * 1000),
+                duration_ms=elapsed,
             )
             msg = resp.choices[0].message
             return ChatWithToolsResult(
@@ -451,7 +539,7 @@ class OpenAILLMClient:
 
             client = self._client_for(cand)
             model = cand.model
-            api_messages = self._materialize(messages, cand)
+            api_messages, annotations = self._materialize(messages, cand)
             stream_id = uuid.uuid4().hex[:8]
             kwargs: dict[str, Any] = {
                 "model": model,
@@ -463,6 +551,9 @@ class OpenAILLMClient:
             if tools:
                 kwargs["tools"] = tools
             kwargs.update(thinking_request_kwargs(cand, enable=cand.thinking))
+            call_id = self._request_begin(
+                cand, api_messages, annotations, tools, kwargs
+            )
 
             _log.info(
                 "llm stream start id=%s model=%s chain=%s messages=%d tools=%d failover=%s",
@@ -600,6 +691,12 @@ class OpenAILLMClient:
                     )
             except BaseException as e:
                 if is_local_abort(e):
+                    self._request_finish(
+                        call_id,
+                        status="aborted",
+                        duration_ms=int((time.monotonic() - t0) * 1000),
+                        error=str(e),
+                    )
                     raise
                 elapsed_ms = int((time.monotonic() - t0) * 1000)
                 _log.error(
@@ -610,6 +707,12 @@ class OpenAILLMClient:
                     chunk_count,
                     e,
                     exc_info=True,
+                )
+                self._request_finish(
+                    call_id,
+                    status="error",
+                    duration_ms=elapsed_ms,
+                    error=str(e),
                 )
                 self._record(
                     model=model,
@@ -640,6 +743,14 @@ class OpenAILLMClient:
                 think_chars,
                 len(tool_calls),
                 finish_reason,
+            )
+            self._request_finish(
+                call_id,
+                status="ok",
+                prompt_tokens=usage_prompt,
+                completion_tokens=usage_completion,
+                cache_tokens=usage_cache,
+                duration_ms=elapsed_ms,
             )
             self._record(
                 model=model,

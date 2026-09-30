@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+from app.engine.agent.prompt_parts import tag
+
 _CATALOG_INTRO = """\
 【Skill】
 
@@ -43,7 +45,8 @@ def build_skill_catalog_system_messages(
         root = (item.get("root") or "").strip()
         blocks.append(f"{i}. **{item['name']}** · `{root}`")
         blocks.append(f"   {item['description']}")
-    return [{"role": "system", "content": "\n".join(blocks)}]
+    msg = {"role": "system", "content": "\n".join(blocks)}
+    return [tag(msg, "skill_catalog", label="Skill 目录")]
 
 
 def activated_skill_roots(
@@ -91,6 +94,7 @@ def build_active_skill_messages(
         for item in catalog
     }
     sections: list[str] = []
+    titles: list[str] = []
     budget = ACTIVE_SKILL_TOTAL_CHARS
     for root in roots:
         entry = f"{root}/{_SKILL_ENTRY}"
@@ -111,11 +115,13 @@ def build_active_skill_messages(
             )
         budget -= min(len(body), cap)
         title = names.get(root) or root
+        titles.append(title)
         sections.append(f"### {title} · `{root}`\n\n{body}")
     if not sections:
         return []
     content = _ACTIVE_INTRO + "\n\n" + "\n\n".join(sections)
-    return [{"role": "system", "content": content}]
+    msg = {"role": "system", "content": content}
+    return [tag(msg, "skill_active", label=f"Skill「{'、'.join(titles)}」")]
 
 
 def active_skill_system_messages(

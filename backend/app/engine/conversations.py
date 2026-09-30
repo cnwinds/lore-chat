@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Callable, Iterable
 import sqlite3
 import threading
@@ -156,6 +157,7 @@ class ConversationStore:
         self.db_path = self.dir / "conversations.db"
         self._lock = threading.RLock()
         self._usage_store = None
+        self._request_log_store = None
         self.conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         with self._lock:
@@ -1620,6 +1622,14 @@ class ConversationStore:
             ledger_path=ledger_path,
             delete_summary=delete_summary,
         )
+        rlog = self._request_log_store
+        if rlog is not None:
+            try:
+                rlog.delete_conversation(cid)
+            except Exception:
+                logging.getLogger(__name__).exception(
+                    "request log delete failed cid=%s", cid
+                )
 
     def delete_for_role(
         self,

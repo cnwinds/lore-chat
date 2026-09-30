@@ -34,7 +34,9 @@ from app.engine.agent.tools import (
 )
 from app.engine.agent.tool_progress import ToolProgressExecutor
 from app.engine.source_key import extend_sources
+from app.engine.agent.prompt_parts import tag
 from app.engine.usage.context import usage_context
+from app.engine.usage.request_capture import request_capture_context
 from app.engine.visible_text import VisibleTextStream, strip_protocol_markup
 from app.logging_config import get_logger
 from app.models.llm import ChatWithToolsResult, LLMClient, ToolCall
@@ -126,7 +128,11 @@ class AgentToolLoop:
                 result: ChatWithToolsResult | None = None
                 text_out = VisibleTextStream()
                 think_out = VisibleTextStream()
-                with usage_context(
+                with request_capture_context(
+                    conversation_id=conversation_id,
+                    turn_id=turn_id,
+                    round=llm_rounds,
+                ), usage_context(
                     conversation_id=conversation_id,
                     turn_id=turn_id,
                     channel_instance_id=_channel_instance_id(
@@ -508,6 +514,7 @@ class AgentToolLoop:
         for item in pending:
             content = self._format_inject_content(item)
             msg: dict = {"role": "user", "content": content}
+            tag(msg, "inject", label="插话", text=content)
             if item.attachments:
                 from pathlib import Path
 
@@ -585,31 +592,38 @@ class AgentToolLoop:
     ) -> None:
         # 仅写入已执行的 tool_calls（征询中途停下时可能只跑了部分）
         executed = [tc for tc, _, _ in outputs]
-        messages.append(
-            {
-                "role": "assistant",
-                "content": result.content,
-                "tool_calls": [
-                    {
-                        "id": tc.id,
-                        "type": "function",
-                        "function": {
-                            "name": tc.name,
-                            "arguments": json.dumps(tc.arguments, ensure_ascii=False),
-                        },
-                    }
-                    for tc in executed
-                ],
-            }
-        )
-        for tc, out, _ in outputs:
-            messages.append(
+        names = "、".join(tc.name for tc in executed)
+        assistant_msg: dict = {
+            "role": "assistant",
+            "content": result.content,
+            "tool_calls": [
                 {
-                    "role": "tool",
-                    "tool_call_id": tc.id,
-                    "content": self._serialize_tool_output(out),
+                    "id": tc.id,
+                    "type": "function",
+                    "function": {
+                        "name": tc.name,
+                        "arguments": json.dumps(tc.arguments, ensure_ascii=False),
+                    },
                 }
-            )
+                for tc in executed
+            ],
+        }
+        tag(
+            assistant_msg,
+            "tool_call",
+            label=f"调用 {names}",
+            text=str(result.content or ""),
+        )
+        messages.append(assistant_msg)
+        for tc, out, _ in outputs:
+            body = self._serialize_tool_output(out)
+            tool_msg: dict = {
+                "role": "tool",
+                "tool_call_id": tc.id,
+                "content": body,
+            }
+            tag(tool_msg, "tool_result", label=f"结果 {tc.name}", text=body)
+            messages.append(tool_msg)
 
     @staticmethod
     def _serialize_tool_output(out: dict) -> str:

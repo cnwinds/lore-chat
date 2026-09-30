@@ -87,6 +87,17 @@ def test_active_messages_inject_current_body_and_skip_missing():
     assert "### skill-a · `技能/a`" in content
     assert "RULE A v2" in content
     assert "skill-b" not in content
+    # 块名只列真正注入了正文的包
+    assert msgs[0]["_parts"] == [
+        {"kind": "skill_active", "label": "Skill「skill-a」", "text": content}
+    ]
+
+
+def test_active_messages_label_lists_every_injected_skill():
+    msgs = build_active_skill_messages(
+        CATALOG, ["技能/b", "技能/a"], lambda path: f"body of {path}"
+    )
+    assert msgs[0]["_parts"][0]["label"] == "Skill「skill-b、skill-a」"
 
 
 def test_active_messages_empty_when_nothing_readable():

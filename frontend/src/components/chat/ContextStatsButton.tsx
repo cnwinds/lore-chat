@@ -1,18 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  getContextStats,
-  type ContextStats,
-} from "../../api";
+import { getContextStats, type ContextStats } from "../../api";
 import { FixedOverflowMenu } from "../FixedOverflowMenu";
 import { compactTokenCount } from "../../utils/chatMessageFormat";
-import { ContextInspectorModal } from "./ContextInspectorModal";
-import { segmentColor } from "./contextSegmentColors";
+import { categoryColor } from "./requestCategories";
+import { RequestInspectorModal } from "./request-inspector/RequestInspectorModal";
 
 type Props = {
   conversationId: string | null;
+  streaming?: boolean;
 };
 
-/** 圆形进度环：上下文占用百分比（进度色=青釉，>80% 转朱砂预警）。 */
+/** 圆环：总量为实测 prompt tokens；>80% 时预警色。 */
 function ContextRing({ used, limit }: { used: number | null; limit: number | null }) {
   const size = 20;
   const stroke = 2.4;
@@ -21,12 +19,7 @@ function ContextRing({ used, limit }: { used: number | null; limit: number | nul
   const pct = used != null && limit ? Math.min(1, used / limit) : 0;
   const progressColor = pct > 0.8 ? "var(--accent)" : "var(--glaze)";
   return (
-    <svg
-      width={size}
-      height={size}
-      viewBox={`0 0 ${size} ${size}`}
-      aria-hidden
-    >
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden>
       <circle
         cx={size / 2}
         cy={size / 2}
@@ -50,14 +43,16 @@ function ContextRing({ used, limit }: { used: number | null; limit: number | nul
   );
 }
 
-/** 输入条右侧的会话统计环：点击弹出容量/分项/命中率面板，点分项看注入全文。 */
-export function ContextStatsButton({ conversationId }: Props) {
+/** 输入条右侧统计环：弹层看容量与分项估算；「查看发送内容」打开最近一次请求快照。 */
+export function ContextStatsButton({ conversationId, streaming = false }: Props) {
   const [open, setOpen] = useState(false);
   const [stats, setStats] = useState<ContextStats | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [inspecting, setInspecting] = useState<string | null>(null);
+  const [inspectorOpen, setInspectorOpen] = useState(false);
+  const [inspectorCategory, setInspectorCategory] = useState<string | null>(null);
   const anchorRef = useRef<HTMLButtonElement>(null);
+  const wasStreaming = useRef(false);
 
   const load = useCallback(async () => {
     if (!conversationId) return;
@@ -73,7 +68,6 @@ export function ContextStatsButton({ conversationId }: Props) {
   }, [conversationId]);
 
   useEffect(() => {
-    // 环上的百分比需要数据：挂载即拉一次
     void load();
   }, [load]);
 
@@ -81,16 +75,29 @@ export function ContextStatsButton({ conversationId }: Props) {
     if (open) void load();
   }, [open, load]);
 
+  useEffect(() => {
+    if (wasStreaming.current && !streaming) {
+      void load();
+    }
+    wasStreaming.current = streaming;
+  }, [streaming, load]);
+
   if (!conversationId) return null;
 
   const used = stats?.context.used_tokens ?? null;
   const limit = stats?.context.limit_tokens ?? null;
   const pct = used != null && limit ? (used / limit) * 100 : null;
-  // 无上限时按构成占比铺满整条；比例始终以分项 tokens 为准
+  const hasCapture = (stats?.segments?.length ?? 0) > 0 || stats?.latest_call_id != null;
   const barDenominator = limit ?? used;
   const barSegments = (stats?.segments ?? []).filter(
     (seg) => seg.tokens > 0 && barDenominator,
   );
+
+  const openInspector = (category: string | null) => {
+    setOpen(false);
+    setInspectorCategory(category);
+    setInspectorOpen(true);
+  };
 
   return (
     <>
@@ -99,11 +106,7 @@ export function ContextStatsButton({ conversationId }: Props) {
         type="button"
         className="composer-icon-btn ctxstats-ring-btn"
         onClick={() => setOpen((v) => !v)}
-        title={
-          pct != null
-            ? `会话统计：上下文 ${pct.toFixed(1)}%`
-            : "会话统计"
-        }
+        title={pct != null ? `会话统计：上下文 ${pct.toFixed(1)}%` : "会话统计"}
         aria-label="会话统计"
         aria-expanded={open}
       >
@@ -130,84 +133,82 @@ export function ContextStatsButton({ conversationId }: Props) {
               >
                 {pct != null ? `${pct.toFixed(1)}%` : "—"}
               </span>
-            </div>
-            <div className="ctxstats-bar-track">
-              {barSegments.map((seg) => {
-                const width =
-                  barDenominator && barDenominator > 0
-                    ? (seg.tokens / barDenominator) * 100
-                    : 0;
-                const share =
-                  used && used > 0
-                    ? ` · ${((seg.tokens / used) * 100).toFixed(1)}%`
-                    : "";
-                return (
-                  <div
-                    key={seg.key}
-                    className="ctxstats-bar-seg"
-                    style={{
-                      width: `${width}%`,
-                      background: segmentColor(seg.key),
-                    }}
-                    title={`${seg.label}${share}`}
-                  />
-                );
-              })}
+              <button
+                type="button"
+                className="ctxstats-link"
+                onClick={() => openInspector(null)}
+              >
+                查看发送内容
+              </button>
             </div>
             <div className="ctxstats-used">
               {used != null
-                ? `${compactTokenCount(used)}${limit ? ` / ${compactTokenCount(limit)}` : ""} tokens`
+                ? `${compactTokenCount(used)}${limit ? ` / ${compactTokenCount(limit)}` : ""}`
                 : "暂无用量的模型调用"}
             </div>
-            <div className="ctxstats-section">
-              {stats.segments.map((seg) => {
-                const segPct =
-                  used != null && used > 0
-                    ? (seg.tokens / used) * 100
-                    : null;
-                return (
-                  <button
-                    key={seg.key}
-                    type="button"
-                    className="ctxstats-row ctxstats-row--peek"
-                    onClick={() => {
-                      setOpen(false);
-                      setInspecting(seg.key);
-                    }}
-                    title={`查看${seg.label}的注入全文`}
-                  >
-                    <span className="ctxstats-row-label">
-                      <span
-                        className="ctxstats-dot"
-                        style={{ background: segmentColor(seg.key) }}
+            {hasCapture ? (
+              <>
+                <div className="ctxstats-bar-track">
+                  {barSegments.map((seg) => {
+                    const width =
+                      barDenominator && barDenominator > 0
+                        ? (seg.tokens / barDenominator) * 100
+                        : 0;
+                    return (
+                      <div
+                        key={seg.key}
+                        className="ctxstats-bar-seg"
+                        style={{
+                          width: `${width}%`,
+                          background: categoryColor(seg.key),
+                        }}
                       />
-                      {seg.label}
-                    </span>
-                    <span className="ctxstats-row-value">
-                      {compactTokenCount(seg.tokens)}
-                      {segPct != null ? ` · ${segPct.toFixed(1)}%` : ""}
-                      <span className="ctxstats-row-chevron" aria-hidden>
-                        ›
-                      </span>
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
+                    );
+                  })}
+                </div>
+                <div className="ctxstats-section">
+                  {stats.segments.map((seg) => {
+                    const segPct =
+                      used != null && used > 0 ? (seg.tokens / used) * 100 : null;
+                    return (
+                      <button
+                        key={seg.key}
+                        type="button"
+                        className="ctxstats-row ctxstats-row--peek"
+                        onClick={() => openInspector(seg.key)}
+                        title="按实测总量分摊的估算"
+                      >
+                        <span className="ctxstats-row-label">
+                          <span
+                            className="ctxstats-dot"
+                            style={{ background: categoryColor(seg.key) }}
+                          />
+                          {seg.label}
+                        </span>
+                        <span className="ctxstats-row-value">
+                          ≈{compactTokenCount(seg.tokens)}
+                          {segPct != null ? ` · ${segPct.toFixed(0)}%` : ""}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            ) : (
+              <p className="ctxstats-hint">发出消息后显示</p>
+            )}
             <div className="ctxstats-section ctxstats-rows">
               {stats.cache_hit_rate != null && (
                 <div className="ctxstats-row">
-                  <span className="ctxstats-row-label">缓存命中率</span>
+                  <span className="ctxstats-row-label">缓存命中</span>
                   <span className="ctxstats-row-value">
-                    {(stats.cache_hit_rate * 100).toFixed(1)}%
+                    {(stats.cache_hit_rate * 100).toFixed(0)}%
                   </span>
                 </div>
               )}
               <div className="ctxstats-row">
                 <span className="ctxstats-row-label">工具调用</span>
-                <span className="ctxstats-row-value">
-                  {stats.tool_calls} 次
-                </span>
+                <span className="ctxstats-row-value">{stats.tool_calls}</span>
               </div>
               {stats.cost_total != null && (
                 <div className="ctxstats-row">
@@ -219,22 +220,21 @@ export function ContextStatsButton({ conversationId }: Props) {
               )}
               {stats.model && (
                 <div className="ctxstats-row">
-                  <span className="ctxstats-row-label">当前模型</span>
-                  <span className="ctxstats-row-value">{stats.model}</span>
+                  <span className="ctxstats-row-value ctxstats-row-value--full">
+                    {stats.model}
+                  </span>
                 </div>
               )}
-            </div>
-            <div className="ctxstats-footnote">
-              分项按实际注入文本估算；圆环为上次调用实测。点分项查看注入全文。
             </div>
           </>
         ) : null}
       </FixedOverflowMenu>
-      <ContextInspectorModal
-        open={inspecting !== null}
+      <RequestInspectorModal
+        open={inspectorOpen}
         conversationId={conversationId}
-        initialKey={inspecting}
-        onClose={() => setInspecting(null)}
+        initialCategory={inspectorCategory}
+        initialCallId={stats?.latest_call_id ?? "latest"}
+        onClose={() => setInspectorOpen(false)}
       />
     </>
   );

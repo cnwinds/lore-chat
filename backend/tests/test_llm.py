@@ -29,7 +29,7 @@ def test_openai_client_materialize_merges_system_for_api():
 
     llm = OpenAILLMClient(Settings())
     cand = MagicMock()
-    api_msgs = llm._materialize(
+    api_msgs, _ann = llm._materialize(
         [
             {"role": "system", "content": "rules"},
             {"role": "system", "content": "[Skill 目录] douyin-transcript"},

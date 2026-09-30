@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from pathlib import PurePosixPath
 
+from app.engine.agent.prompt_parts import PARTS_KEY, copy_tag_history, speaker_label, tag
 from app.engine.agent.prompts import (
-    build_system_prompt,
+    build_system_prompt_parts,
     current_time_block,
     wrap_turn_cards,
 )
@@ -44,16 +45,18 @@ def build_agent_messages(
     role_cards: str = "",
     turn_cards: str = "",
 ) -> list[dict]:
+    sys_parts = build_system_prompt_parts(
+        mode,
+        system_layer_text,
+        user_memory,
+        role_system_prompt=role_system_prompt,
+        role_cards=role_cards,
+    )
     messages: list[dict] = [
         {
             "role": "system",
-            "content": build_system_prompt(
-                mode,
-                system_layer_text,
-                user_memory,
-                role_system_prompt=role_system_prompt,
-                role_cards=role_cards,
-            ),
+            "content": "".join(p["text"] for p in sys_parts),
+            PARTS_KEY: sys_parts,
         },
     ]
     paths = list(active_doc_paths or [])
@@ -63,28 +66,53 @@ def build_agent_messages(
             paths = [active_doc_path]
     tray_lines = [_tray_entry_label(p, primary) for p in paths]
     if tray_lines:
+        tray_content = (
+            "【工作托盘】\n\n"
+            "下列路径为本轮主要工作对象；"
+            "目录表示优先在该目录范围内检索与读写。\n\n"
+            + "\n".join(tray_lines)
+        )
         messages.append(
-            {
-                "role": "system",
-                "content": (
-                    "【工作托盘】\n\n"
-                    "下列路径为本轮主要工作对象；"
-                    "目录表示优先在该目录范围内检索与读写。\n\n"
-                    + "\n".join(tray_lines)
-                ),
-            }
+            tag(
+                {"role": "system", "content": tray_content},
+                "tray",
+                label="工作托盘",
+                text=tray_content,
+            )
         )
     if extra_system_messages:
-        messages.extend(extra_system_messages)
+        for raw in extra_system_messages:
+            msg = dict(raw)
+            if PARTS_KEY not in msg:
+                content = str(msg.get("content") or "")
+                tag(msg, "extra", text=content)
+            messages.append(msg)
     if history:
-        messages.extend(history)
+        for h in history:
+            messages.append(copy_tag_history(h))
     # 当前时间逐轮变化，放整条提示词最末（本轮用户消息最前），保住前缀缓存
     prefix = [current_time_block()]
     block = wrap_turn_cards(turn_cards)
     if block:
         prefix.append(block)
     user_content = "\n\n".join([*prefix, user_text])
-    user_msg: dict = {"role": "user", "content": user_content}
+    user_parts: list[dict] = [
+        {"kind": "time", "label": "当前时间", "text": prefix[0]},
+    ]
+    if block:
+        user_parts.append({"kind": "turn_cards", "label": "相关知识卡", "text": block})
+    user_parts.append(
+        {
+            "kind": "user_text",
+            "label": speaker_label(user_text, "user"),
+            "text": user_text,
+        }
+    )
+    user_msg: dict = {
+        "role": "user",
+        "content": user_content,
+        PARTS_KEY: user_parts,
+    }
     if attachments:
         user_msg["attachments"] = list(attachments)
     messages.append(user_msg)

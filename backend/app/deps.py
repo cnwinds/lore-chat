@@ -65,6 +65,7 @@ from app.deps_index import IndexSubgraph, build_index_subgraph
 from app.deps_memory import MemorySubgraph, build_memory_subgraph
 from app.deps_agent import AgentSubgraph, build_agent_subgraph
 from app.engine.usage import UsageRecorder, UsageService, UsageStore
+from app.engine.usage.request_log import RequestLogRecorder, RequestLogStore
 
 
 @dataclass
@@ -115,6 +116,7 @@ class Container:
     _memory_subgraph: MemorySubgraph | None = field(default=None, repr=False)
     _agent_subgraph: AgentSubgraph | None = field(default=None, repr=False)
     _usage_store: UsageStore | None = field(default=None, repr=False)
+    request_log_store: RequestLogStore | None = field(default=None, repr=False)
     _runtime_store: ChannelRuntimeStore | None = field(default=None, repr=False)
     room_delivery: object | None = None
 
@@ -122,6 +124,10 @@ class Container:
 def build_container(settings: Settings, llm: LLMClient | None = None) -> Container:
     workspace_id = ensure_workspace_id(settings.kb_path)
     usage_store = UsageStore(settings.kb_path / ".kb" / "usage" / "usage.db")
+    request_log_store = RequestLogStore(
+        settings.kb_path / ".kb" / "usage" / "requests.db"
+    )
+    request_log_recorder = RequestLogRecorder(request_log_store)
     send_queue_store = SendQueueStore(
         settings.kb_path / ".kb" / "conversations" / "send_queue.db"
     )
@@ -133,11 +139,16 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
     models_dev = shared_models_dev_store(models_dev_cache_path_for_kb(settings.kb_path))
     set_active_models_dev_store(models_dev)
     llm = llm or OpenAILLMClient(
-        settings, usage_recorder=usage_recorder, cooldown=model_cooldown
+        settings,
+        usage_recorder=usage_recorder,
+        request_log=request_log_recorder,
+        cooldown=model_cooldown,
     )
     if isinstance(llm, OpenAILLMClient):
         if llm.usage_recorder is None:
             llm.usage_recorder = usage_recorder
+        if llm.request_log is None:
+            llm.request_log = request_log_recorder
         llm.cooldown = model_cooldown
     repo = KnowledgeRepo(settings.kb_path, protected_dirs=(settings.system_layer_dir,))
     from app.engine.skills_dir import ensure_skills_dir
@@ -193,6 +204,7 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
         settings.kb_path / ".kb" / "conversations"
     )
     conversations._usage_store = usage_store
+    conversations._request_log_store = request_log_store
     roles = RoleStore(settings.kb_path / ".kb" / "roles")
     api_keys = ApiKeyStore(settings.kb_path)
     channel_registry = ChannelPluginRegistry.builtin()
@@ -361,6 +373,7 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
         _memory_subgraph=memory,
         _agent_subgraph=agent,
         _usage_store=usage_store,
+        request_log_store=request_log_store,
         queue_drainer=queue_drainer,
         _runtime_store=runtime_store,
     )
@@ -386,6 +399,8 @@ def dispose_container(container: Container | None) -> None:
     close_quietly(container.search_index)
     if container._usage_store is not None:
         close_quietly(container._usage_store)
+    if container.request_log_store is not None:
+        close_quietly(container.request_log_store)
     runtime = getattr(container, "channel_runtime", None)
     if runtime is not None:
         runtime.shutdown()
@@ -431,6 +446,7 @@ def apply_settings(
     if runtime is not None:
         runtime.settings = settings
     recorder = None
+    req_log = None
     if container._usage_store is not None:
         recorder = UsageRecorder(container._usage_store)
         old = getattr(container.llm, "usage_recorder", None)
@@ -438,6 +454,8 @@ def apply_settings(
             recorder.resolve_channel_instance = getattr(
                 old, "resolve_channel_instance", None
             )
+    if container.request_log_store is not None:
+        req_log = RequestLogRecorder(container.request_log_store)
     cooldown = container.model_cooldown
     search_cooldown = container.search_cooldown
     image_cooldown = container.image_cooldown
@@ -446,14 +464,21 @@ def apply_settings(
         container.llm.cooldown = cooldown
         if container.llm.usage_recorder is None and recorder:
             container.llm.usage_recorder = recorder
+        if container.llm.request_log is None and req_log:
+            container.llm.request_log = req_log
         new_llm = container.llm
     else:
         new_llm = llm or OpenAILLMClient(
-            settings, usage_recorder=recorder, cooldown=cooldown
+            settings,
+            usage_recorder=recorder,
+            request_log=req_log,
+            cooldown=cooldown,
         )
         if isinstance(new_llm, OpenAILLMClient):
             if new_llm.usage_recorder is None and recorder:
                 new_llm.usage_recorder = recorder
+            if new_llm.request_log is None and req_log:
+                new_llm.request_log = req_log
             new_llm.cooldown = cooldown
     container.llm = new_llm
     if getattr(container, "precepts_upgrade", None) is not None:

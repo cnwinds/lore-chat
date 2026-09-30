@@ -1299,27 +1299,115 @@ export type ContextStatsSegment = {
   key: string;
   label: string;
   tokens: number;
-  preview?: string | null;
-  /** include=texts 时附带的实际注入全文。 */
-  text?: string | null;
 };
 
 export type ContextStats = {
   model: string | null;
   context: { used_tokens: number | null; limit_tokens: number | null };
   segments: ContextStatsSegment[];
+  latest_call_id: number | null;
+  captured_at: string | null;
   cache_hit_rate: number | null;
   tool_calls: number;
   cost_total: number | null;
   turns_with_usage: number;
 };
 
-export function getContextStats(conversationId: string, options?: { includeTexts?: boolean }) {
-  const params = new URLSearchParams();
-  if (options?.includeTexts) params.set("include", "texts");
-  const query = params.toString();
+export function getContextStats(conversationId: string) {
   return apiFetch<ContextStats>(
-    `/api/conversations/${encodeURIComponent(conversationId)}/context-stats${query ? `?${query}` : ""}`,
+    `/api/conversations/${encodeURIComponent(conversationId)}/context-stats`,
+  );
+}
+
+export type RequestCallSummary = {
+  id: number;
+  turn_id: string;
+  round: number;
+  ts: string;
+  status: string;
+  model_label: string | null;
+  prompt_tokens: number | null;
+  cache_tokens: number | null;
+  completion_tokens: number | null;
+  message_count: number;
+  tool_count: number;
+};
+
+export type RequestSegment = {
+  kind: string;
+  category: string;
+  label: string;
+  text: string;
+  tokens: number;
+  media?: { type: string; name: string; path?: string };
+};
+
+export type RequestMessage = {
+  index: number;
+  role: string;
+  tokens: number;
+  segments: RequestSegment[];
+  tool_calls: { id: string; name: string; arguments: unknown }[] | null;
+  tool_call_id: string | null;
+};
+
+export type RequestTool = {
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
+  tokens: number;
+};
+
+export type RequestCategory = {
+  key: string;
+  label: string;
+  tokens: number;
+};
+
+export type RequestDetail = {
+  id: number;
+  turn_id: string;
+  round: number;
+  ts: string;
+  status: string;
+  error: string | null;
+  attempts: number;
+  model: string | null;
+  model_label: string | null;
+  params: Record<string, unknown>;
+  usage: {
+    prompt_tokens: number | null;
+    completion_tokens: number | null;
+    cache_tokens: number | null;
+  };
+  limit_tokens: number | null;
+  estimated: boolean;
+  messages: RequestMessage[];
+  tools: RequestTool[];
+  categories: RequestCategory[];
+};
+
+export function listConversationRequests(conversationId: string) {
+  return apiFetch<{ calls: RequestCallSummary[] }>(
+    `/api/conversations/${encodeURIComponent(conversationId)}/requests`,
+  );
+}
+
+export function getConversationRequest(
+  conversationId: string,
+  callId: number | "latest",
+) {
+  return apiFetch<RequestDetail>(
+    `/api/conversations/${encodeURIComponent(conversationId)}/requests/${callId}`,
+  );
+}
+
+export function getConversationRequestRaw(
+  conversationId: string,
+  callId: number | "latest",
+) {
+  return apiFetch<Record<string, unknown>>(
+    `/api/conversations/${encodeURIComponent(conversationId)}/requests/${callId}/raw`,
   );
 }
 

@@ -7,6 +7,7 @@ from collections.abc import AsyncIterator
 
 from app.config import Settings
 from app.engine.agent.message_builder import build_agent_messages
+from app.engine.agent.prompt_parts import tag
 from app.engine.agent.prompts import MODE_DEFAULT
 from app.engine.agent.skill_activation import (
     ACTIVE_SKILL_LOOKBACK,
@@ -116,7 +117,15 @@ class AgentOrchestrator:
         if extra_system:
             extra.extend(extra_system)
         if prefetch_context and prefetch_context.strip():
-            extra.append({"role": "system", "content": prefetch_context.strip()})
+            pc = prefetch_context.strip()
+            extra.append(
+                tag(
+                    {"role": "system", "content": pc},
+                    "prefetch",
+                    label="预取上下文",
+                    text=pc,
+                )
+            )
         role_messaging = False
         roles_store = getattr(getattr(self.tools, "roles_tools", None), "roles", None)
         role_list: list[dict] = []
@@ -146,15 +155,18 @@ class AgentOrchestrator:
                     busy = set(convs.list_busy_role_ids())
                 except Exception:
                     busy = set()
+            collab = build_role_collab_block(
+                role_list,
+                current_role_id=current_role_id,
+                busy_ids=busy,
+            )
             extra.append(
-                {
-                    "role": "system",
-                    "content": build_role_collab_block(
-                        role_list,
-                        current_role_id=current_role_id,
-                        busy_ids=busy,
-                    ),
-                }
+                tag(
+                    {"role": "system", "content": collab},
+                    "role_collab",
+                    label="角色协作",
+                    text=collab,
+                )
             )
         search_configured = (
             self.tools.web_search is not None

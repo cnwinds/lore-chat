@@ -129,7 +129,7 @@ export function ComposerToolbar({
         </button>
       </div>
       <div className="composer-toolbar-right">
-        <ContextStatsButton conversationId={conversationId} />
+        <ContextStatsButton conversationId={conversationId} streaming={streaming} />
         <ModelPickerButton />
         {streaming && onStop ? (
           <button

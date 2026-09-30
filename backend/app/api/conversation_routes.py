@@ -241,15 +241,8 @@ async def pause_send_queue(cid: str, request: Request):
 
 
 @router.get("/conversations/{cid}/context-stats")
-def get_conversation_context_stats(
-    cid: str,
-    request: Request,
-    include: str = "",
-):
-    """会话上下文统计：容量、分段占比、缓存命中率、工具调用、成本。
-
-    `include=texts` 时附带各分段实际注入全文（检查器用，体积较大按需拉取）。
-    """
+def get_conversation_context_stats(cid: str, request: Request):
+    """会话上下文统计：容量、分段占比、缓存命中率、工具调用、成本。"""
     from app.engine.usage.context_stats import build_context_stats
 
     c = container(request)
@@ -259,17 +252,74 @@ def get_conversation_context_stats(
         raise HTTPException(404, "对话不存在") from e
     return build_context_stats(
         conversation=conv,
-        roles=c.roles,
-        system_layer=c.system_layer,
         usage_store=c.usage.store,
         models_dev=c.models_dev,
         chat_models=c.settings.chat_models or [],
-        skill_catalog=c.chat_runner.resolve_skill_catalog(),
-        settings=c.settings,
-        tools=c.agent.tools,
-        role_system_prompt=c.chat_runner.turn_hub._role_system_prompt_for(cid),
-        include_texts=include == "texts",
+        request_log_store=c.request_log_store,
     )
+
+
+def _request_call_row(c, cid: str, call_id: str):
+    try:
+        c.conversations.get(cid)
+    except KeyError as e:
+        raise HTTPException(404, "对话不存在") from e
+    store = c.request_log_store
+    row = store.get_call_row(cid, call_id) if store is not None else None
+    if row is None:
+        raise HTTPException(404, "调用不存在")
+    return store, row
+
+
+@router.get("/conversations/{cid}/requests")
+def list_conversation_requests(cid: str, request: Request):
+    c = container(request)
+    try:
+        c.conversations.get(cid)
+    except KeyError as e:
+        raise HTTPException(404, "对话不存在") from e
+    store = c.request_log_store
+    if store is None:
+        return {"calls": []}
+    calls = []
+    for row in store.list_calls(cid, limit=100):
+        calls.append(
+            {
+                "id": row["id"],
+                "turn_id": row["turn_id"],
+                "round": row["round"],
+                "ts": row["ts"],
+                "status": row["status"],
+                "model_label": row["model_label"],
+                "prompt_tokens": row["prompt_tokens"],
+                "cache_tokens": row["cache_tokens"],
+                "completion_tokens": row["completion_tokens"],
+                "message_count": row.get("message_count") or 0,
+                "tool_count": row.get("tool_count") or 0,
+            }
+        )
+    return {"calls": calls}
+
+
+@router.get("/conversations/{cid}/requests/{call_id}")
+def get_conversation_request(cid: str, call_id: str, request: Request):
+    from app.engine.usage.model_limit import resolve_context_limit
+    from app.engine.usage.request_detail import build_request_detail
+
+    c = container(request)
+    store, row = _request_call_row(c, cid, call_id)
+    limit_tokens = resolve_context_limit(
+        model=row["model"],
+        chat_models=c.settings.chat_models or [],
+        models_dev=c.models_dev,
+    )
+    return build_request_detail(store, row, limit_tokens=limit_tokens)
+
+
+@router.get("/conversations/{cid}/requests/{call_id}/raw")
+def get_conversation_request_raw(cid: str, call_id: str, request: Request):
+    store, row = _request_call_row(container(request), cid, call_id)
+    return store.build_raw_request(row)
 
 
 @router.get("/conversations/{cid}/messages")

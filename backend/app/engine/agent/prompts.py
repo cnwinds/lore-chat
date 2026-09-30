@@ -117,6 +117,53 @@ def build_role_identity_block(
     return body
 
 
+def build_system_prompt_parts(
+    mode: str = MODE_DEFAULT,
+    system_layer_text: str = "",
+    user_memory: str = "",
+    role_system_prompt: str = "",
+    role_cards: str = "",
+) -> list[dict]:
+    """与 build_system_prompt 同序各块；空块不出现。"""
+    parts: list[dict] = []
+    if system_layer_text and system_layer_text.strip():
+        text = (
+            "【系统控制层】\n\n"
+            "用户知识库《心法》《戒律》；规定落库、归档、检索、目录与编辑等行为，须优先遵守。\n\n"
+            f"{system_layer_text.strip()}\n\n"
+        )
+        parts.append({"kind": "rules", "label": "系统控制层", "text": text})
+    if role_system_prompt and role_system_prompt.strip():
+        text = (
+            f"{current_role_preamble()}\n\n"
+            f"{role_system_prompt.strip()}\n\n"
+        )
+        parts.append({"kind": "role", "label": "当前角色", "text": text})
+    rc = wrap_role_cards(role_cards)
+    if rc:
+        parts.append({"kind": "role_cards", "label": "角色知识卡", "text": rc})
+    um = wrap_user_memory(user_memory)
+    if um:
+        parts.append({"kind": "owner_memory", "label": "用户记忆", "text": um})
+    if mode == MODE_FORCE_WRITE:
+        suffix = (
+            "\n\n【本轮模式】\n\n"
+            "用户要求录入资料。须调用本轮下发的落库工具，"
+            "将用户给出的全部内容写入知识库（参数见 function 定义）。"
+        )
+    elif mode == MODE_NO_WRITE:
+        suffix = (
+            "\n\n【本轮模式】\n\n"
+            "禁止调用落库/写库类工具；只回答问题、检索和搜索。"
+            "回答须严格依据工具检索结果，不得编造。"
+        )
+    else:
+        suffix = ""
+    if suffix:
+        parts.append({"kind": "mode", "label": "本轮模式", "text": suffix})
+    return parts
+
+
 def build_system_prompt(
     mode: str = MODE_DEFAULT,
     system_layer_text: str = "",
@@ -135,40 +182,15 @@ def build_system_prompt(
 
     当前时间见 current_time_block（注入用户消息最前）。
     """
-    if mode == MODE_FORCE_WRITE:
-        suffix = (
-            "\n\n【本轮模式】\n\n"
-            "用户要求录入资料。须调用本轮下发的落库工具，"
-            "将用户给出的全部内容写入知识库（参数见 function 定义）。"
+    return "".join(
+        p["text"]
+        for p in build_system_prompt_parts(
+            mode,
+            system_layer_text,
+            user_memory,
+            role_system_prompt=role_system_prompt,
+            role_cards=role_cards,
         )
-    elif mode == MODE_NO_WRITE:
-        suffix = (
-            "\n\n【本轮模式】\n\n"
-            "禁止调用落库/写库类工具；只回答问题、检索和搜索。"
-            "回答须严格依据工具检索结果，不得编造。"
-        )
-    else:
-        suffix = ""
-
-    prefix = ""
-    if system_layer_text and system_layer_text.strip():
-        prefix = (
-            "【系统控制层】\n\n"
-            "用户知识库《心法》《戒律》；规定落库、归档、检索、目录与编辑等行为，须优先遵守。\n\n"
-            f"{system_layer_text.strip()}\n\n"
-        )
-    role_block = ""
-    if role_system_prompt and role_system_prompt.strip():
-        role_block = (
-            f"{current_role_preamble()}\n\n"
-            f"{role_system_prompt.strip()}\n\n"
-        )
-    return (
-        prefix
-        + role_block
-        + wrap_role_cards(role_cards)
-        + wrap_user_memory(user_memory)
-        + suffix
     )
 
 

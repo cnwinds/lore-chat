@@ -56,18 +56,21 @@ def test_stream_with_images_still_uses_true_streaming():
         patch.object(
             llm,
             "_materialize",
-            return_value=[
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": "描述图片"},
-                        {
-                            "type": "image_url",
-                            "image_url": {"url": "https://example/x.png"},
-                        },
-                    ],
-                }
-            ],
+            return_value=(
+                [
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": "描述图片"},
+                            {
+                                "type": "image_url",
+                                "image_url": {"url": "https://example/x.png"},
+                            },
+                        ],
+                    }
+                ],
+                [],
+            ),
         ),
         patch.object(
             llm,

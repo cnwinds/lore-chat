@@ -16,7 +16,9 @@ from app.engine.agent.system_layer import SystemLayer, is_unmodified_official
 from app.engine.agent.tool_catalog import select_tools
 from app.engine.memory.cards import persona_scope, role_scope
 from app.engine.roles import RoleStore
-from app.engine.usage.context_stats import build_context_stats
+from app.engine.usage.request_capture import request_capture_context
+from app.engine.usage.request_detail import build_request_detail
+from app.engine.usage.request_log import RequestLogRecorder
 from app.storage.repo import KnowledgeRepo
 from tests.helpers import make_writer
 
@@ -144,19 +146,54 @@ def test_context_stats_system_includes_role_cards(container):
     scope = role_scope(role["id"])
     _seed_card(container.knowledge_cards, scope, statement="归档前先查目录")
     cid = container.conversations.create(role_id=role["id"])
-    conv = container.conversations.get(cid)
-    body = build_context_stats(
-        conversation=conv,
-        roles=container.roles,
-        system_layer=container.system_layer,
-        usage_store=container.usage.store,
-        models_dev=container.models_dev,
-        chat_models=[],
-        include_texts=True,
+    inj = container.system_layer.card_injection(
+        conversation_id=cid, role_id=role["id"]
     )
-    system_text = next(s for s in body["segments"] if s["key"] == "system")["text"]
-    assert "【角色知识卡】" in system_text
-    assert "归档前先查目录" in system_text
+    messages = build_agent_messages(
+        "问",
+        mode="default",
+        web_enabled=False,
+        system_layer_text=container.system_layer.compose_rules(),
+        user_memory=inj.owner_memory,
+        role_cards=inj.role_cards,
+        history=None,
+        active_doc_path=None,
+        active_doc_paths=None,
+        primary_doc_path=None,
+        role_system_prompt=role["system_prompt"],
+    )
+    from unittest.mock import MagicMock
+
+    llm = container.llm
+    mock_cand = MagicMock()
+    mock_cand.model = "test"
+    mock_cand.id = "test"
+    mock_cand.thinking = False
+    mock_cand.effort = ""
+    mock_cand.effort_options = ()
+    mock_cand.provider = None
+    mock_cand.provider_label = None
+    api, ann = llm._materialize(messages, mock_cand)
+    store = container.request_log_store
+    rec = RequestLogRecorder(store)
+    with request_capture_context(conversation_id=cid, turn_id="turn1", round=1):
+        call_id = rec.begin(
+            model="test",
+            model_label="test",
+            candidate_id="test",
+            api_messages=api,
+            annotations=ann,
+            tools=None,
+            params={},
+        )
+        rec.finish(call_id, status="ok", prompt_tokens=500)
+    row = store.get_call_row(cid, call_id)
+    detail = build_request_detail(store, row, limit_tokens=128000)
+    sys_msg = next(m for m in detail["messages"] if m["role"] == "system")
+    kinds = [s["kind"] for s in sys_msg["segments"]]
+    assert "role_cards" in kinds
+    blob = " ".join(s["text"] for s in sys_msg["segments"])
+    assert "归档前先查目录" in blob
 
 
 def test_prompt_cache_order_unchanged_with_role_cards():

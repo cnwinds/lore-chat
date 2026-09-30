@@ -1,201 +1,67 @@
-"""会话上下文统计：容量、分段占比、缓存命中率、工具调用、成本。
-
-口径：
-- used_tokens = 最近一次 LLM 调用的 prompt_tokens（圆环）；
-- limit_tokens = 当前首选对话模型在 models.dev 目录中的 limit.context；
-- 分项按「下一轮会真正注入」的文本估算（与 build_agent_messages / llm_history
-  / select_tools 同一套装配），不再用会话全文或时间线摘要冒充。
-- 汉字约 1 token/字，其它字符约 0.3 token/字；有 used_tokens 且估算偏低时，
-  差额记入「工具」（当轮工具回灌未完整落盘）。
-"""
+"""会话上下文统计：读最近一次请求快照或回落用量记录。"""
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
-from app.engine.agent.prompts import (
-    MODE_DEFAULT,
-    build_role_collab_block,
-    build_role_identity_block,
-    build_system_prompt,
-    wrap_role_cards,
-    wrap_user_memory,
-)
-from app.engine.agent.skill_activation import (
-    active_skill_system_messages,
-    build_skill_catalog_system_messages,
-)
-from app.engine.agent.tool_catalog import select_tools
-from app.engine.conversation.transcript import ConversationTranscript
-from app.engine.disclosure import DisclosureWindows
-from app.engine.roles import list_sidebar_roles
-from app.models.media import attachment_is_video
-from app.models.vision import is_vision_image_path
-
-# 识图/视频没有逐帧精确公式时的保守占位（高清图常见量级）。
-_VISION_TOKENS_PER_IMAGE = 765
-_VISION_TOKENS_PER_VIDEO = 1000
-
-# 按实际上下文装配顺序：系统 → 记忆 → Skill → 历史 → 工具定义/回灌 → 附件。
-_SEGMENTS = (
-    ("system", "系统提示词"),
-    ("memory", "记忆"),
-    ("skill", "Skill"),
-    ("history", "历史消息"),
-    ("tools", "工具定义"),
-    ("attachments", "附件与文档"),
-)
-
-
-def estimate_tokens(text: str) -> int:
-    """中英混排启发式：汉字 ≈ 1 token，拉丁/符号 ≈ 0.3 token。"""
-    if not text:
-        return 0
-    cjk = 0
-    other = 0
-    for ch in text:
-        code = ord(ch)
-        if _is_cjk(code):
-            cjk += 1
-        else:
-            other += 1
-    return int(cjk * 1.0 + other * 0.3)
-
-
-def _is_cjk(code: int) -> bool:
-    return (
-        0x4E00 <= code <= 0x9FFF
-        or 0x3400 <= code <= 0x4DBF
-        or 0xF900 <= code <= 0xFAFF
-        or 0x20000 <= code <= 0x2CEAF
-        or 0x3000 <= code <= 0x303F
-        or 0xFF00 <= code <= 0xFFEF
-    )
+from app.engine.agent.prompt_parts import category_order_key
+from app.engine.usage.model_limit import resolve_context_limit
+from app.engine.usage.request_detail import build_request_detail
+from app.engine.usage.request_log import RequestLogStore
 
 
 def build_context_stats(
     *,
     conversation: dict[str, Any],
-    roles,
-    system_layer,
     usage_store,
     models_dev,
     chat_models: list[dict[str, Any]],
-    skill_catalog: list[dict[str, str]] | None = None,
-    settings=None,
-    tools=None,
-    role_system_prompt: str = "",
-    include_texts: bool = False,
+    request_log_store: RequestLogStore | None = None,
 ) -> dict[str, Any]:
     messages = conversation.get("messages") or []
-    last_user = _last_message(messages, "user")
-    web_enabled = bool((last_user or {}).get("web_enabled"))
+    cid = conversation.get("id") or ""
+    usage = usage_store.conversation_usage_totals(cid)
 
-    search_configured, imagegen_configured, sandbox_enabled, windows = (
-        _capability_flags(settings, tools)
-    )
-    role_list = _safe_sidebar_roles(roles)
-    role_messaging = len(role_list) >= 2
-    convs = getattr(tools, "conversations", None)
-    if convs is not None and hasattr(convs, "is_group_conversation"):
-        try:
-            if not convs.is_group_conversation(conversation.get("id") or ""):
-                role_messaging = False
-        except Exception:
-            pass
-
-    memory_body = ""
-    role_cards_body = ""
-    if system_layer is not None:
-        rid = (
-            (conversation.get("responding_role_id") or "").strip()
-            or (conversation.get("role_id") or "").strip()
-        )
-        if hasattr(system_layer, "card_injection"):
-            inj = system_layer.card_injection(
-                conversation_id=conversation.get("id") or "",
-                role_id=rid or None,
-            )
-            memory_body = inj.owner_memory or ""
-            role_cards_body = inj.role_cards or ""
-        elif hasattr(system_layer, "memory_context"):
-            memory_body = system_layer.memory_context() or ""
-    memory_block = wrap_user_memory(memory_body)
-
-    system_text = build_system_prompt(
-        MODE_DEFAULT,
-        system_layer.compose_rules() if system_layer else "",
-        user_memory="",
-        role_system_prompt=role_system_prompt
-        or _role_identity_text(roles, conversation),
-        role_cards=role_cards_body,
-    )
-    if role_messaging:
-        busy: set[str] = set()
-        convs = getattr(tools, "conversations", None) if tools is not None else None
-        if convs is not None:
-            try:
-                busy = set(convs.list_busy_role_ids())
-            except Exception:
-                busy = set()
-        system_text += "\n\n" + build_role_collab_block(
-            role_list,
-            current_role_id=conversation.get("role_id"),
-            busy_ids=busy,
-        )
-
-    skill_text = ""
-    skill_msgs = build_skill_catalog_system_messages(skill_catalog or [])
-    try:
-        skill_msgs += active_skill_system_messages(
-            conversation, skill_catalog or [], getattr(tools, "repo", None)
-        )
-    except Exception:
-        pass
-    for msg in skill_msgs:
-        skill_text += msg.get("content") or ""
-
-    history_msgs = ConversationTranscript.llm_history(conversation)
-    history_injected = "".join(str(m.get("content") or "") for m in history_msgs)
-    history_text = ConversationTranscript.render_history_blocks(history_msgs)
-
-    tool_schema = ""
-    if tools is not None or settings is not None:
-        selected = select_tools(
-            MODE_DEFAULT,
-            web_enabled,
-            search_configured=search_configured,
-            imagegen_configured=imagegen_configured,
-            sandbox_enabled=sandbox_enabled,
-            disclosure_windows=windows,
-            role_messaging=role_messaging,
-        )
-        tool_schema = json.dumps(selected, ensure_ascii=False)
-    # 上一轮工具/检索正文不再回传（模型可经 read_last_tool_results 按需取回），
-    # 因此工具段只计每轮真实注入的工具定义。
-    tools_text = tool_schema
-
-    attach_tokens, attach_text = _last_user_attachment_estimate(last_user)
-
-    estimates = {
-        "system": estimate_tokens(system_text),
-        "memory": estimate_tokens(memory_block),
-        "skill": estimate_tokens(skill_text),
-        "history": estimate_tokens(history_injected),
-        "tools": estimate_tokens(tools_text),
-        "attachments": attach_tokens + estimate_tokens(attach_text),
-    }
-
-    usage = usage_store.conversation_usage_totals(conversation.get("id") or "")
+    latest_call_id = None
+    captured_at = None
+    segments: list[dict[str, Any]] = []
     used_tokens = usage.get("last_prompt_tokens")
-    segments = _reconcile_segments(estimates, used_tokens)
 
-    model = usage.get("last_model") or _first_chat_model(chat_models)
-    limit_tokens = None
-    if model:
-        provider = _provider_for_model(chat_models, model)
-        limit_tokens = models_dev.context_limit(model, provider)
+    model = usage.get("last_model")
+    limit_tokens = resolve_context_limit(
+        model=model, chat_models=chat_models, models_dev=models_dev
+    )
+
+    if request_log_store is not None:
+        row = request_log_store.pick_stats_row(cid)
+        if row:
+            latest_call_id = int(row["id"])
+            captured_at = row.get("ts")
+            if row.get("model"):
+                model = row["model"]
+            limit_tokens = resolve_context_limit(
+                model=model, chat_models=chat_models, models_dev=models_dev
+            )
+            detail = build_request_detail(
+                request_log_store,
+                row,
+                limit_tokens=limit_tokens,
+            )
+            segments = [
+                {
+                    "key": c["key"],
+                    "label": c["label"],
+                    "tokens": c["tokens"],
+                }
+                for c in detail.get("categories") or []
+            ]
+            segments.sort(key=lambda s: category_order_key(s["key"]))
+            if row.get("status") == "ok" and row.get("prompt_tokens") is not None:
+                used_tokens = int(row["prompt_tokens"])
+            else:
+                cat_sum = sum(s["tokens"] for s in segments)
+                if cat_sum > 0:
+                    used_tokens = cat_sum
 
     cache_tokens = usage.get("cache_tokens") or 0
     prompt_total = usage.get("prompt_tokens") or 0
@@ -205,130 +71,20 @@ def build_context_stats(
         else None
     )
 
-    out_segments: list[dict[str, Any]] = []
-    segment_texts: dict[str, str] = {
-        "system": system_text,
-        "memory": memory_block,
-        "skill": skill_text,
-        "history": history_text,
-        "tools": tools_text,
-        "attachments": attach_text,
-    }
-    for key, label in _SEGMENTS:
-        item: dict[str, Any] = {
-            "key": key,
-            "label": label,
-            "tokens": segments[key],
-        }
-        if key == "memory":
-            item["preview"] = memory_body.strip()
-        if include_texts:
-            item["text"] = segment_texts.get(key, "")
-        out_segments.append(item)
-
     return {
         "model": model,
         "context": {
             "used_tokens": used_tokens,
             "limit_tokens": limit_tokens,
         },
-        "segments": out_segments,
+        "segments": segments,
+        "latest_call_id": latest_call_id,
+        "captured_at": captured_at,
         "cache_hit_rate": cache_hit_rate,
         "tool_calls": _count_tool_calls(messages),
         "cost_total": usage.get("cost_total"),
         "turns_with_usage": usage.get("turns_with_usage", 0),
     }
-
-
-def _capability_flags(settings, tools) -> tuple[bool, bool, bool, DisclosureWindows]:
-    windows = DisclosureWindows()
-    if settings is not None:
-        windows = DisclosureWindows(
-            spot=getattr(settings, "read_disclosure_chars", windows.spot),
-            deep=getattr(settings, "read_disclosure_deep_chars", windows.deep),
-            max_chars=getattr(settings, "read_disclosure_max_chars", windows.max_chars),
-        )
-    search_configured = False
-    imagegen_configured = False
-    sandbox_enabled = bool(getattr(settings, "sandbox_enabled", False))
-    if tools is not None:
-        web = getattr(tools, "web_search", None)
-        search_configured = web is not None and getattr(web, "provider", None) is not None
-        image_tools = getattr(tools, "image_tools", None)
-        image_gen = getattr(image_tools, "image_gen", None) if image_tools else None
-        imagegen_configured = bool(
-            image_gen is not None and getattr(image_gen, "configured", False)
-        )
-        sandbox_enabled = bool(
-            sandbox_enabled
-            and (
-                getattr(tools, "sandbox_pool", None) is not None
-                or getattr(tools, "sandbox_runtime", None) is not None
-                or getattr(getattr(tools, "sandbox", None), "available", False)
-            )
-        )
-        if getattr(tools, "disclosure_windows", None) is not None:
-            windows = tools.disclosure_windows
-    return search_configured, imagegen_configured, sandbox_enabled, windows
-
-
-def _safe_sidebar_roles(roles) -> list[dict]:
-    if roles is None:
-        return []
-    try:
-        return list_sidebar_roles(roles)
-    except Exception:
-        return []
-
-
-def _role_identity_text(roles, conversation: dict[str, Any]) -> str:
-    if roles is None:
-        return ""
-    try:
-        rid = (conversation.get("responding_role_id") or "").strip() or (
-            conversation.get("role_id") or ""
-        ).strip()
-        if not rid:
-            return ""
-        role = roles.get(rid)
-        name = role.get("name") or "角色"
-        prompt = role.get("system_prompt") or ""
-        avatar = role.get("avatar")
-        persona_id = role.get("persona_id")
-        if persona_id and hasattr(roles, "get_persona"):
-            try:
-                persona = roles.get_persona(persona_id)
-                name = persona.get("name") or name
-                prompt = persona.get("system_prompt") or ""
-                avatar = persona.get("avatar") or avatar
-            except KeyError:
-                pass
-        from app.engine.role_onboarding import (
-            build_onboarding_layer,
-            should_inject_onboarding_layer,
-        )
-
-        messages = conversation.get("messages") or []
-        onboarding = ""
-        if should_inject_onboarding_layer(role, messages):
-            onboarding = build_onboarding_layer(name)
-        return build_role_identity_block(
-            name=name,
-            system_prompt=prompt,
-            avatar=avatar,
-            onboarding_layer=onboarding,
-        )
-    except KeyError:
-        return ""
-    except Exception:
-        return ""
-
-
-def _last_message(messages: list[dict], role: str) -> dict | None:
-    for msg in reversed(messages):
-        if msg.get("role") == role:
-            return msg
-    return None
 
 
 def _count_tool_calls(messages: list[dict]) -> int:
@@ -351,64 +107,3 @@ def _walk_tool_blocks(blocks) -> list[dict]:
         if block.get("type") == "tool":
             out.append(block)
     return out
-
-
-def _last_user_attachment_estimate(last_user: dict | None) -> tuple[int, str]:
-    if not last_user:
-        return 0, ""
-    paths = [p for p in (last_user.get("attachments") or []) if isinstance(p, str)]
-    if not paths:
-        return 0, ""
-    vision = 0
-    other: list[str] = []
-    for path in paths:
-        if is_vision_image_path(path):
-            vision += _VISION_TOKENS_PER_IMAGE
-        elif attachment_is_video(path):
-            vision += _VISION_TOKENS_PER_VIDEO
-        else:
-            other.append(path)
-    footnote = ""
-    if other:
-        footnote = "（附件：" + "、".join(other) + "）"
-    return vision, footnote
-
-
-def _reconcile_segments(
-    estimates: dict[str, int], used_tokens: int | None
-) -> dict[str, int]:
-    keys = [k for k, _ in _SEGMENTS]
-    out = {k: max(0, int(estimates.get(k, 0))) for k in keys}
-    if not used_tokens or used_tokens <= 0:
-        return out
-    total = sum(out.values())
-    if total <= 0:
-        return {k: 0 for k in keys}
-    gap = used_tokens - total
-    if gap > 0:
-        out["tools"] = out["tools"] + gap
-        return out
-    factor = used_tokens / total
-    scaled = {k: int(out[k] * factor) for k in keys}
-    drift = used_tokens - sum(scaled.values())
-    if drift != 0:
-        largest = max(keys, key=lambda k: scaled[k])
-        scaled[largest] += drift
-    return scaled
-
-
-def _first_chat_model(chat_models: list[dict[str, Any]]) -> str | None:
-    for c in chat_models or []:
-        m = (c.get("model") or "").strip()
-        if m:
-            return m
-    return None
-
-
-def _provider_for_model(
-    chat_models: list[dict[str, Any]], model: str
-) -> str | None:
-    for c in chat_models or []:
-        if (c.get("model") or "").strip() == model:
-            return (c.get("provider") or "").strip() or None
-    return None

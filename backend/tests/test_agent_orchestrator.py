@@ -169,7 +169,9 @@ async def test_orchestrator_passes_conversation_history(tmp_path):
     assert llm.calls
     messages = llm.calls[-1]["messages"]
     assert messages[0]["role"] == "system"
-    assert messages[1:3] == history
+    for i, h in enumerate(history):
+        assert messages[i + 1]["role"] == h["role"]
+        assert messages[i + 1]["content"] == h["content"]
     # 当前时间块注入在本轮用户消息最前（缓存友好），用户原文跟在其后
     assert messages[-1]["role"] == "user"
     assert messages[-1]["content"].startswith("【当前时间】")
