@@ -43,7 +43,6 @@ class TurnLifecycle:
             from app.engine.rooms.schema import (
                 KIND_GROUP,
                 KIND_OWNER_DM,
-                KIND_PEER_DM,
                 ROOM_ROLE_PLACEHOLDER,
             )
 
@@ -206,10 +205,9 @@ class TurnLifecycle:
                 raw_for_dirty = (
                     stimulus.text if stimulus is not None else user_text
                 )
-                # 群/互通：主人开回合等角色回，CAS 时钟在 finalize 用角色消息 ts 推进
+                # 群聊：主人开回合等角色回，CAS 时钟在 finalize 用角色消息 ts 推进
                 room_owner_turn = (
-                    conv_kind in (KIND_PEER_DM, KIND_GROUP)
-                    and speaker_kind == "user"
+                    conv_kind == KIND_GROUP and speaker_kind == "user"
                 )
                 if not room_owner_turn:
                     store._maybe_room_memory_dirty_unlocked(
