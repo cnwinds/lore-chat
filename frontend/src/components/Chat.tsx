@@ -27,6 +27,7 @@ import {
 } from "../hooks/chat/useRoleTimeline";
 import {
   beginChatTurn,
+  getActiveTurnStatus,
   getConversation,
   isMarkdownPath,
   normalizeDocContext,
@@ -837,23 +838,40 @@ export function Chat({
             ? { id: mentionedRole.id, name: mentionedRole.name }
             : undefined,
       };
-      if (streamingForView || sendQueue.items.length > 0) {
-        sendQueue.enqueue({
-          text: result.continue_prompt,
-          timing: "defer",
-          webEnabled,
-          mentions: streamOpts.mentions,
-        });
-        if (!streamingForView) void outbound.flushQueue();
-      } else {
-        void runAgentStream(
-          result.continue_prompt,
+      // 征询续聊必须在本页开流式观测；仅入服务端队列不会 attach SSE（见 useOutboundOrchestrator）。
+      void (async () => {
+        const prompt = result.continue_prompt!;
+        let ok = await runAgentStream(
+          prompt,
           choiceLabel,
           undefined,
           undefined,
           streamOpts,
         );
-      }
+        if (!ok) {
+          await new Promise((r) => window.setTimeout(r, 80));
+          ok = await runAgentStream(
+            prompt,
+            choiceLabel,
+            undefined,
+            undefined,
+            streamOpts,
+          );
+        }
+        if (ok || !resumeCid) return;
+        try {
+          const status = await getActiveTurnStatus(resumeCid);
+          if (status.status === "running" && status.observable) {
+            await resumeActiveTurn(
+              resumeCid,
+              status.started_at,
+              status.responding_role_id,
+            );
+          }
+        } catch {
+          /* 观测失败时用户仍可刷新或手动重连 */
+        }
+      })();
       return;
     }
     // Resume deferred queue after the user answered.

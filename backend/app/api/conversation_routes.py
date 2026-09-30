@@ -236,8 +236,11 @@ async def clear_send_queue(cid: str, request: Request):
 async def pause_send_queue(cid: str, request: Request):
     c = container(request)
     body = await request.json()
-    c.send_queue.set_paused(cid, bool(body.get("paused")))
-    return {"paused": bool(body.get("paused"))}
+    paused = bool(body.get("paused"))
+    c.send_queue.set_paused(cid, paused)
+    if not paused:
+        c.queue_drainer.schedule_drain(cid, delay=0.1)
+    return {"paused": paused}
 
 
 @router.get("/conversations/{cid}/context-stats")
