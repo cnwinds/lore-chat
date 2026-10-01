@@ -16,6 +16,8 @@ type Props = {
   align?: "start" | "end";
   label?: string;
   className?: string;
+  /** 默认 menu；内嵌 listbox 等时用 presentation 避免嵌套语义冲突。 */
+  containerRole?: "menu" | "presentation";
   onDismiss: () => void;
   children: ReactNode;
 };
@@ -27,6 +29,7 @@ export function FixedOverflowMenu({
   align = "end",
   label,
   className,
+  containerRole = "menu",
   onDismiss,
   children,
 }: Props) {
@@ -72,8 +75,8 @@ export function FixedOverflowMenu({
     <div
       ref={menuRef}
       className={`doc-overflow-menu doc-overflow-menu--fixed${className ? ` ${className}` : ""}`}
-      role="menu"
-      aria-label={label}
+      role={containerRole}
+      aria-label={containerRole === "menu" ? label : undefined}
       style={
         box
           ? { top: box.top, left: box.left }

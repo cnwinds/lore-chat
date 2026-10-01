@@ -300,7 +300,10 @@ describe("RequestInspectorModal", () => {
       />,
     );
     await screen.findByText("规则");
-    await user.selectOptions(screen.getByRole("combobox"), "1");
+    await user.click(screen.getByRole("button", { name: "请求快照" }));
+    await user.click(
+      screen.getByRole("option", { name: /第 1 回合 · 第 1 次/ }),
+    );
     await waitFor(() =>
       expect(getConversationRequest).toHaveBeenCalledWith("c1", 1),
     );
