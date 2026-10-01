@@ -1,10 +1,61 @@
-import json
+"""共享夹具。顶部的导入期钩子必须先于应用打开数据库与 git：测试里关掉落盘同步、调低 bcrypt 强度。"""
 
-import pytest
-from fastapi.testclient import TestClient
+import os
+import sys
 
-from app.main import create_app
-from app.models.llm import ChatWithToolsResult, FakeLLMClient, ToolCall
+
+def _append_git_config(key: str, value: str) -> None:
+    count = int(os.environ.get("GIT_CONFIG_COUNT", "0"))
+    os.environ[f"GIT_CONFIG_KEY_{count}"] = key
+    os.environ[f"GIT_CONFIG_VALUE_{count}"] = value
+    os.environ["GIT_CONFIG_COUNT"] = str(count + 1)
+
+
+_append_git_config("core.fsync", "none")
+
+
+def _wrap_sqlite_connect(module) -> None:
+    if getattr(module, "_lorechat_test_connect_wrapped", False):
+        return
+    orig_connect = module.connect
+
+    def connect(*args, **kwargs):
+        conn = orig_connect(*args, **kwargs)
+        conn.execute("PRAGMA synchronous=OFF")
+        return conn
+
+    module.connect = connect  # type: ignore[method-assign]
+    module._lorechat_test_connect_wrapped = True
+
+
+import sqlite3 as _stdlib_sqlite3  # noqa: E402
+
+_wrap_sqlite_connect(_stdlib_sqlite3)
+
+import app.sqlite_compat  # noqa: E402, F401
+
+_wrap_sqlite_connect(sys.modules["sqlite3"])
+
+try:
+    import pysqlite3.dbapi2 as _pysqlite3_dbapi2
+
+    _wrap_sqlite_connect(_pysqlite3_dbapi2)
+    if "pysqlite3" in sys.modules:
+        _wrap_sqlite_connect(sys.modules["pysqlite3"])
+except ImportError:
+    pass
+
+from app.auth import passwords as _passwords  # noqa: E402
+
+_passwords.BCRYPT_ROUNDS = 4
+
+import json  # noqa: E402
+
+import pytest  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
+
+from app.main import create_app  # noqa: E402
+from app.models.llm import ChatWithToolsResult, FakeLLMClient, ToolCall  # noqa: E402
 
 
 def _build_tool_responses() -> list[dict]:
@@ -71,6 +122,16 @@ class AgentFakeLLM(FakeLLMClient):
                 args["query"] = user_text
             patched.append(ToolCall(id=tc.id, name=tc.name, arguments=args))
         return ChatWithToolsResult(content=result.content, tool_calls=patched)
+
+
+@pytest.fixture(autouse=True)
+def _clear_path_keyed_stores():
+    """按知识库路径缓存的单例每个测试后清空，否则每个 tmp_path 都会常驻内存。"""
+    yield
+    from app.models import cooldown, models_dev
+
+    models_dev._SHARED.clear()
+    cooldown._SHARED.clear()
 
 
 @pytest.fixture

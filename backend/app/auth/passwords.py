@@ -2,9 +2,13 @@ from __future__ import annotations
 
 import bcrypt
 
+BCRYPT_ROUNDS = 12
+
 
 def hash_password(password: str) -> str:
-    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("ascii")
+    return bcrypt.hashpw(
+        password.encode("utf-8"), bcrypt.gensalt(rounds=BCRYPT_ROUNDS)
+    ).decode("ascii")
 
 
 def verify_password(password: str, password_hash: str) -> bool:

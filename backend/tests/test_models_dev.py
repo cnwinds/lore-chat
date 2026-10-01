@@ -344,6 +344,31 @@ def test_parse_remote_model_max_images():
     assert hit.max_images == 5
 
 
+def test_bundled_catalog_shared_across_cache_paths(tmp_path):
+    cache_a = tmp_path / "a" / "models_dev_cache.json"
+    cache_b = tmp_path / "b" / "models_dev_cache.json"
+    store_a = ModelsDevStore(cache_a)
+    store_b = ModelsDevStore(cache_b)
+    assert store_a._source == "bundled"
+    assert store_b._source == "bundled"
+    assert store_a._index is store_b._index
+    assert store_a._context_limits is store_b._context_limits
+
+
+def test_disk_cache_takes_precedence_over_bundled(tmp_path):
+    import json
+
+    cache = tmp_path / "cache.json"
+    blob = {"fetched_at": 1_700_000_000.0, "url": "https://models.dev/api.json", "data": SAMPLE}
+    cache.write_text(json.dumps(blob), encoding="utf-8")
+    store = ModelsDevStore(cache)
+    assert store._source == "cache"
+    assert store.lookup("gpt-4o") is not None
+    bundled_only = ModelsDevStore(tmp_path / "other" / "cache.json")
+    assert bundled_only._source == "bundled"
+    assert store._index is not bundled_only._index
+
+
 def test_from_hit_max_images(tmp_path):
     from app.models.catalog import _from_hit
     from app.models.models_dev import CatalogHit

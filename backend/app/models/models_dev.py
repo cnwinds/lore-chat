@@ -64,6 +64,12 @@ DEFAULT_TIMEOUT_SEC = 8.0
 _SHARED: dict[str, "ModelsDevStore"] = {}
 _LOCK = threading.Lock()
 
+# 内置快照解析结果按文件身份全进程共享；各 store 只整体替换 _index，不得原地修改。
+_BUNDLED_PARSED: dict[
+    tuple[str, int, int], tuple[dict[str, CatalogHit], dict[str, int]]
+] = {}
+_BUNDLED_LOCK = threading.Lock()
+
 
 def default_bundled_path() -> Path:
     """镜像/包内默认目录；优先 gzip，兼容明文 json。"""
@@ -325,6 +331,36 @@ def index_payload(payload: dict[str, Any]) -> dict[str, CatalogHit]:
     return out
 
 
+def _shared_bundled_indexes(
+    path: Path,
+) -> tuple[dict[str, CatalogHit], dict[str, int]] | None:
+    """同一份内置快照每进程只解析一次。"""
+    resolved = path.resolve()
+    if not resolved.is_file():
+        return None
+    stat = resolved.stat()
+    key = (str(resolved), stat.st_mtime_ns, stat.st_size)
+    with _BUNDLED_LOCK:
+        cached = _BUNDLED_PARSED.get(key)
+        if cached is not None:
+            return cached
+        try:
+            payload = _read_json_file(resolved)
+        except (OSError, json.JSONDecodeError, EOFError) as e:
+            _log.warning("models.dev bundled read failed: %s", e)
+            return None
+        if not isinstance(payload, dict):
+            return None
+        parsed = (index_payload(payload), context_limits_from_payload(payload))
+        _BUNDLED_PARSED[key] = parsed
+        _log.info(
+            "models.dev loaded bundled entries≈%d path=%s",
+            len({h.id for h in parsed[0].values()}),
+            resolved,
+        )
+        return parsed
+
+
 def context_limits_from_payload(payload: dict[str, Any]) -> dict[str, int]:
     """provider → models → limit.context；键位与 index_payload 一致。"""
     out: dict[str, int] = {}
@@ -479,22 +515,17 @@ class ModelsDevStore:
         if not path.is_file():
             _log.warning("models.dev bundled catalog missing: %s", path)
             return
-        try:
-            payload = _read_json_file(path)
-        except (OSError, json.JSONDecodeError, EOFError) as e:
-            _log.warning("models.dev bundled read failed: %s", e)
+        shared = _shared_bundled_indexes(path)
+        if shared is None:
             return
-        if not isinstance(payload, dict):
-            return
+        index, limits = shared
         # 内置快照：fetched_at=0 → is_stale，可旁路尝试在线刷新
-        self._apply_payload(
-            payload, source="bundled", fetched_at=0.0, persist=False
-        )
-        _log.info(
-            "models.dev loaded bundled entries≈%d path=%s",
-            len({h.id for h in self._index.values()}),
-            path,
-        )
+        with self._lock:
+            self._index = index
+            self._context_limits = limits
+            self._fetched_at = 0.0
+            self._source = "bundled"
+            self._error = None
 
     def _save_disk(self, payload: dict[str, Any], fetched_at: float) -> None:
         self.cache_path.parent.mkdir(parents=True, exist_ok=True)
