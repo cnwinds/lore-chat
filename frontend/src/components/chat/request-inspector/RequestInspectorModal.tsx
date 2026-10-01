@@ -14,6 +14,7 @@ import {
 } from "../../../api";
 import { compactTokenCount } from "../../../utils/chatMessageFormat";
 import { categoryColor } from "../requestCategories";
+import { RequestInspectorCallPicker } from "./RequestInspectorCallPicker";
 import { RequestInspectorCatalog } from "./RequestInspectorCatalog";
 import { RequestInspectorTools } from "./RequestInspectorTools";
 import { RequestMessageCard } from "./RequestMessageCard";
@@ -263,20 +264,12 @@ export function RequestInspectorModal({
               >
                 ‹
               </button>
-              <div className="reqinspector-call-select-wrap">
-                <select
-                  className="reqinspector-call-select"
-                  value={resolvedId ?? ""}
-                  onChange={(e) => setCallId(Number(e.target.value))}
-                  aria-label="请求快照"
-                >
-                  {calls.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {callLabel(c)}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <RequestInspectorCallPicker
+                calls={calls}
+                resolvedId={resolvedId}
+                labelFor={callLabel}
+                onSelect={(id) => setCallId(id)}
+              />
               <button
                 type="button"
                 className="reqinspector-call-step"
