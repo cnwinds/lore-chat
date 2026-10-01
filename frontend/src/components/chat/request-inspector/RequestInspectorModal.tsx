@@ -147,7 +147,7 @@ export function RequestInspectorModal({
       if (e.key === "Escape") onClose();
       if (e.key === "/" && dialogRef.current?.contains(document.activeElement)) {
         e.preventDefault();
-        dialogRef.current.querySelector<HTMLInputElement>(".reqinspector-search")?.focus();
+        dialogRef.current.querySelector<HTMLInputElement>(".reqinspector-find-input")?.focus();
       }
     };
     window.addEventListener("keydown", onKey);
@@ -240,86 +240,141 @@ export function RequestInspectorModal({
         onClick={(e) => e.stopPropagation()}
       >
         <header className="reqinspector-head">
-          <h3>发送内容</h3>
-          <button
-            type="button"
-            className="reqinspector-catalog-mobile-btn"
-            onClick={() => setCatalogOpen((v) => !v)}
-          >
-            目录
-          </button>
-          <div className="reqinspector-call-nav">
+          <div className="reqinspector-head-start">
+            <h3>发送内容</h3>
             <button
               type="button"
-              disabled={calls.length < 2}
-              onClick={() => {
-                const idx = calls.findIndex((c) => c.id === resolvedId);
-                if (idx < calls.length - 1) setCallId(calls[idx + 1].id);
-              }}
-              aria-label="上一次调用"
+              className="reqinspector-catalog-mobile-btn"
+              onClick={() => setCatalogOpen((v) => !v)}
             >
-              ‹
+              目录
             </button>
-            <select
-              value={resolvedId ?? ""}
-              onChange={(e) => setCallId(Number(e.target.value))}
-            >
-              {calls.map((c) => (
-                <option key={c.id} value={c.id}>{callLabel(c)}</option>
-              ))}
-            </select>
-            <button
-              type="button"
-              disabled={calls.length < 2}
-              onClick={() => {
-                const idx = calls.findIndex((c) => c.id === resolvedId);
-                if (idx > 0) setCallId(calls[idx - 1].id);
-              }}
-              aria-label="下一次调用"
-            >
-              ›
-            </button>
+            <div className="reqinspector-call-nav" role="group" aria-label="选择请求快照">
+              <button
+                type="button"
+                className="reqinspector-call-step"
+                disabled={calls.length < 2}
+                onClick={() => {
+                  const idx = calls.findIndex((c) => c.id === resolvedId);
+                  if (idx < calls.length - 1) setCallId(calls[idx + 1].id);
+                }}
+                aria-label="上一条快照"
+                title="上一条快照"
+              >
+                ‹
+              </button>
+              <div className="reqinspector-call-select-wrap">
+                <select
+                  className="reqinspector-call-select"
+                  value={resolvedId ?? ""}
+                  onChange={(e) => setCallId(Number(e.target.value))}
+                  aria-label="请求快照"
+                >
+                  {calls.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {callLabel(c)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <button
+                type="button"
+                className="reqinspector-call-step"
+                disabled={calls.length < 2}
+                onClick={() => {
+                  const idx = calls.findIndex((c) => c.id === resolvedId);
+                  if (idx > 0) setCallId(calls[idx - 1].id);
+                }}
+                aria-label="下一条快照"
+                title="下一条快照"
+              >
+                ›
+              </button>
+            </div>
+            <div className="reqinspector-view-toggle" role="group" aria-label="视图">
+              <button
+                type="button"
+                className={view === "blocks" ? "is-active" : ""}
+                onClick={() => setView("blocks")}
+              >
+                分块
+              </button>
+              <button
+                type="button"
+                className={view === "raw" ? "is-active" : ""}
+                onClick={() => setView("raw")}
+              >
+                原始
+              </button>
+            </div>
           </div>
-          <div className="reqinspector-view-toggle">
-            <button
-              type="button"
-              className={view === "blocks" ? "is-active" : ""}
-              onClick={() => setView("blocks")}
-            >
-              分块
-            </button>
-            <button
-              type="button"
-              className={view === "raw" ? "is-active" : ""}
-              onClick={() => setView("raw")}
-            >
-              原始
-            </button>
-          </div>
-          <button type="button" className="reqinspector-copy" onClick={copyContent}>
-            复制
-          </button>
-          <button type="button" className="reqinspector-close" onClick={onClose} aria-label="关闭">
-            ×
-          </button>
-        </header>
-        <div className="reqinspector-search-row">
-          <input
-            className="reqinspector-search"
-            placeholder="搜索…"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) goNextMatch();
-              if (e.key === "Enter" && e.shiftKey) goPrevMatch();
-            }}
-          />
-          {hitCount > 0 ? (
-            <span className="reqinspector-search-count">
-              第 {activeMatch + 1} / 共 {hitCount} 处
+          <div className="reqinspector-find" role="search">
+            <span className="reqinspector-find-icon" aria-hidden>
+              ⌕
             </span>
-          ) : null}
-        </div>
+            <input
+              className="reqinspector-find-input"
+              type="search"
+              placeholder="在正文中搜索…"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  goNextMatch();
+                }
+                if (e.key === "Enter" && e.shiftKey) {
+                  e.preventDefault();
+                  goPrevMatch();
+                }
+              }}
+            />
+            <div className="reqinspector-find-meta">
+              <span className="reqinspector-find-count" aria-live="polite">
+                {searchQuery.trim()
+                  ? hitCount > 0
+                    ? `${activeMatch + 1} / ${hitCount}`
+                    : "无匹配"
+                  : "—"}
+              </span>
+              <div className="reqinspector-find-steps">
+                <button
+                  type="button"
+                  className="reqinspector-find-step"
+                  disabled={!hitCount}
+                  onClick={goPrevMatch}
+                  aria-label="上一处"
+                  title="上一处 (Shift+Enter)"
+                >
+                  上一处
+                </button>
+                <button
+                  type="button"
+                  className="reqinspector-find-step"
+                  disabled={!hitCount}
+                  onClick={goNextMatch}
+                  aria-label="下一处"
+                  title="下一处 (Enter)"
+                >
+                  下一处
+                </button>
+              </div>
+            </div>
+          </div>
+          <div className="reqinspector-head-actions">
+            <button type="button" className="reqinspector-copy" onClick={copyContent}>
+              复制
+            </button>
+            <button
+              type="button"
+              className="reqinspector-close"
+              onClick={onClose}
+              aria-label="关闭"
+            >
+              ×
+            </button>
+          </div>
+        </header>
         {loading && !detail ? (
           <p className="reqinspector-empty">加载中…</p>
         ) : error ? (

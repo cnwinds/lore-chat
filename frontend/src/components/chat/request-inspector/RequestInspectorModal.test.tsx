@@ -246,9 +246,9 @@ describe("RequestInspectorModal", () => {
       />,
     );
     await screen.findByText("规则");
-    const input = screen.getByPlaceholderText("搜索…");
+    const input = screen.getByPlaceholderText("在正文中搜索…");
     await user.type(input, "末尾");
-    expect(screen.getByText(/共 1 处/)).toBeInTheDocument();
+    expect(screen.getByText("1 / 1")).toBeInTheDocument();
     expect(document.querySelector("mark.reqinspector-mark")).toBeTruthy();
     expect(screen.getByText("末尾")).toBeInTheDocument();
   });
@@ -265,8 +265,8 @@ describe("RequestInspectorModal", () => {
       />,
     );
     await screen.findByText("规则");
-    await user.type(screen.getByPlaceholderText("搜索…"), "ok");
-    expect(screen.getByText(/共 1 处/)).toBeInTheDocument();
+    await user.type(screen.getByPlaceholderText("在正文中搜索…"), "ok");
+    expect(screen.getByText("1 / 1")).toBeInTheDocument();
     expect(document.querySelectorAll("mark.reqinspector-mark")).toHaveLength(1);
   });
 
@@ -282,8 +282,8 @@ describe("RequestInspectorModal", () => {
       />,
     );
     await screen.findByText("规则");
-    await user.type(screen.getByPlaceholderText("搜索…"), "第二句");
-    expect(screen.getByText(/共 1 处/)).toBeInTheDocument();
+    await user.type(screen.getByPlaceholderText("在正文中搜索…"), "第二句");
+    expect(screen.getByText("1 / 1")).toBeInTheDocument();
     const tools = screen.getByRole("region", { name: /工具定义/ });
     expect(within(tools).getByText("第二句").tagName).toBe("MARK");
   });
