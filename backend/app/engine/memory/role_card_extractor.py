@@ -22,6 +22,7 @@ from app.engine.memory.prompt_common import (
 )
 from app.engine.memory.resolver import SlotAction
 from app.engine.secrets import scan_secrets
+from app.engine.background.purpose import llm_purpose
 from app.models.llm import LLMClient
 
 _SYSTEM_PROMPT = """你是角色知识卡抽取器。一段对话结束后，你从中提炼「这个角色下次接同类活仍然用得上」的认知，写成知识卡。知识卡属于角色，不是主人画像，也不是对所有角色都成立的家规。
@@ -248,14 +249,15 @@ class LLMRoleCardExtractor:
             owner_summary=owner_summary,
             dialogue_body=body,
         )
-        raw = self.llm.chat(
-            [
-                {"role": "system", "content": _SYSTEM_PROMPT},
-                {"role": "user", "content": user_content},
-            ],
-            big=False,
-            temperature=0.1,
-        ).strip()
+        with llm_purpose("cards.extract", variant="dm"):
+            raw = self.llm.chat(
+                [
+                    {"role": "system", "content": _SYSTEM_PROMPT},
+                    {"role": "user", "content": user_content},
+                ],
+                big=False,
+                temperature=0.1,
+            ).strip()
         items = parse_llm_json_list(raw, key="items")
         return _parse_extracted_items(items, lens=lens)
 
@@ -289,14 +291,15 @@ class LLMRoleCardExtractor:
             existing_cards=existing_cards,
             owner_summary=owner_summary,
         )
-        raw = self.llm.chat(
-            [
-                {"role": "system", "content": _SYSTEM_PROMPT},
-                {"role": "user", "content": user_content},
-            ],
-            big=False,
-            temperature=0.1,
-        ).strip()
+        with llm_purpose("cards.extract", variant="room"):
+            raw = self.llm.chat(
+                [
+                    {"role": "system", "content": _SYSTEM_PROMPT},
+                    {"role": "user", "content": user_content},
+                ],
+                big=False,
+                temperature=0.1,
+            ).strip()
         items = parse_llm_json_list(raw, key="items")
         return _parse_extracted_items(items, lens=lens)
 

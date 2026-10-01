@@ -318,3 +318,14 @@ class DerivationOutbox:
                 params,
             ).fetchall()
             return [dict(r) for r in rows]
+
+    def count_pending(self, kind: str) -> int:
+        with self._lock:
+            row = self.conn.execute(
+                """
+                SELECT COUNT(*) AS n FROM derivation_outbox
+                WHERE kind = ? AND status = 'pending'
+                """,
+                (kind,),
+            ).fetchone()
+            return int(row["n"]) if row else 0

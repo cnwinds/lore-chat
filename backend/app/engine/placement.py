@@ -5,9 +5,24 @@ import re
 from dataclasses import dataclass
 
 from app.engine.retriever import Retriever
+from app.engine.background.purpose import llm_purpose
 from app.models.llm import LLMClient
 from app.storage.kb_paths import title_from_rel_path
 from app.storage.repo import KnowledgeRepo
+
+PLACEMENT_UNDERSTAND_SYSTEM = "用一句话概括这条内容的主题，便于检索。"
+
+PLACEMENT_DECIDE_SYSTEM = (
+    "你是知识库组织员。果断决策，避免让用户确认。\n"
+    "规则：\n"
+    "1. 与已有文档同一主题、同一问题的补充 → merge 到最相关的一篇"
+    "（系统会读取原文并整篇重组为完整文档，非简单追加），ambiguous=false\n"
+    "2. 不要为同一主题创建重复文档；已有相关文档时优先 merge\n"
+    "3. 全新主题 → action=new\n"
+    "4. ambiguous=true 仅在完全无法判断归到哪篇时使用（应极少出现）\n"
+    "只输出 JSON：action(new|merge|append), rel_path(以.md结尾), "
+    "title, category(如 技术/powershell), tags(数组), ambiguous(bool), reason"
+)
 
 
 @dataclass
@@ -31,10 +46,12 @@ class PlacementPlanner:
 
     def understand(self, content: str) -> str:
         messages = [
-            {"role": "system", "content": "用一句话概括这条内容的主题，便于检索。"},
+            {"role": "system", "content": PLACEMENT_UNDERSTAND_SYSTEM},
             {"role": "user", "content": content},
         ]
-        return self.llm.chat(messages)
+
+        with llm_purpose("docs.placement", variant="understand"):
+            return self.llm.chat(messages)
 
     def decide(self, content: str, summary: str, related) -> PlacementDecision:
         related_desc = (
@@ -44,24 +61,16 @@ class PlacementPlanner:
         messages = [
             {
                 "role": "system",
-                "content": (
-                    "你是知识库组织员。果断决策，避免让用户确认。\n"
-                    "规则：\n"
-                    "1. 与已有文档同一主题、同一问题的补充 → merge 到最相关的一篇"
-                    "（系统会读取原文并整篇重组为完整文档，非简单追加），ambiguous=false\n"
-                    "2. 不要为同一主题创建重复文档；已有相关文档时优先 merge\n"
-                    "3. 全新主题 → action=new\n"
-                    "4. ambiguous=true 仅在完全无法判断归到哪篇时使用（应极少出现）\n"
-                    "只输出 JSON：action(new|merge|append), rel_path(以.md结尾), "
-                    "title, category(如 技术/powershell), tags(数组), ambiguous(bool), reason"
-                ),
+                "content": PLACEMENT_DECIDE_SYSTEM,
             },
             {
                 "role": "user",
                 "content": f"新内容：{content}\n摘要：{summary}\n相关文档：\n{related_desc}",
             },
         ]
-        raw = self.llm.chat(messages)
+
+        with llm_purpose("docs.placement", variant="decide"):
+            raw = self.llm.chat(messages)
         data = self._parse_json(raw)
         return PlacementDecision(
             action=data.get("action", "new"),

@@ -181,6 +181,32 @@ class Settings(BaseSettings):
     # 群内派工：工人真正开回合后，超过该分钟数未回执则叫醒协调者
     group_assignment_due_minutes: int = 15
 
+    background_paused: list[str] = []
+
+    @field_validator("background_paused", mode="before")
+    @classmethod
+    def _parse_background_paused(cls, v: Any) -> list:
+        if v is None:
+            return []
+        if isinstance(v, str):
+            import json
+
+            return json.loads(v) if v.strip() else []
+        return list(v)
+
+    @field_validator("background_paused")
+    @classmethod
+    def _validate_background_paused(cls, v: list[str]) -> list[str]:
+        allowed = ("session_observe", "consolidation", "persona_evolution")
+        seen: set[str] = set()
+        out: list[str] = []
+        for item in v or []:
+            key = str(item).strip()
+            if key in allowed and key not in seen:
+                seen.add(key)
+                out.append(key)
+        return out
+
 
 EDITABLE_SETTING_KEYS: frozenset[str] = frozenset(
     name

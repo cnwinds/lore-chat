@@ -595,6 +595,18 @@ class SearchIndex:
 
         return written
 
+    def count_embed_pending(self) -> int:
+        if self._closed:
+            return 0
+        try:
+            with self._lexical._connect() as conn:
+                row = conn.execute(
+                    "SELECT COUNT(*) AS n FROM items WHERE vec_state='pending'"
+                ).fetchone()
+                return int(row["n"]) if row else 0
+        except Exception:
+            return 0
+
     @staticmethod
     def _fts_match_expr(terms: list[str]) -> str:
         parts = []

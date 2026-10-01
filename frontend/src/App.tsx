@@ -11,6 +11,7 @@ import { LoginPage } from "./components/auth/LoginPage";
 import { SetupPage } from "./components/auth/SetupPage";
 import { Chat } from "./components/Chat";
 import { SearchSnippetModal } from "./components/SearchSnippetModal";
+import { BackgroundFlowModal } from "./components/background/BackgroundFlowModal";
 import { SettingsPanel, type SettingsTab } from "./components/settings/SettingsPanel";
 import { ShareLinkModal, type ShareLinkModalTarget } from "./components/share/ShareLinkModal";
 import { SharePage } from "./pages/SharePage";
@@ -103,6 +104,7 @@ function AppMain() {
     text: string;
     nonce: number;
   } | null>(null);
+  const [backgroundFlowOpen, setBackgroundFlowOpen] = useState(false);
 
   const refreshSidebar = () => setSidebarRefreshKey((k) => k + 1);
   const doc = useDocPreviewLayout(refreshSidebar);
@@ -221,6 +223,18 @@ function AppMain() {
   const handleSettingsNavigateHandled = useCallback(() => {
     setSettingsNavigateTab(null);
   }, []);
+
+  const openBackgroundFlowFromSettings = useCallback(() => {
+    setSettingsOpen(false);
+    clearLlmSetupGuide();
+    setLiveAttention(null);
+    setBackgroundFlowOpen(true);
+  }, [clearLlmSetupGuide, setSettingsOpen]);
+
+  const openModelSettingsFromBackgroundFlow = useCallback(() => {
+    setBackgroundFlowOpen(false);
+    navigateSettingsTab("model");
+  }, [navigateSettingsTab]);
 
   const mobileLayout = useMobileLayout();
   const {
@@ -537,6 +551,12 @@ function AppMain() {
               attention={attention}
               onAttentionChange={refreshAttention}
               onLiveAttentionChange={setLiveAttention}
+              onOpenBackgroundFlow={openBackgroundFlowFromSettings}
+            />
+            <BackgroundFlowModal
+              open={backgroundFlowOpen}
+              onClose={() => setBackgroundFlowOpen(false)}
+              onOpenModelSettings={openModelSettingsFromBackgroundFlow}
             />
             <SkillPickModal
               open={skillPick !== null}

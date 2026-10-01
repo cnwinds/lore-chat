@@ -1630,6 +1630,14 @@ class ConversationStore:
                 logging.getLogger(__name__).exception(
                     "request log delete failed cid=%s", cid
                 )
+        blog = getattr(self, "_background_call_log", None)
+        if blog is not None:
+            try:
+                blog.delete_conversation(cid)
+            except Exception:
+                logging.getLogger(__name__).exception(
+                    "background call log delete failed cid=%s", cid
+                )
 
     def delete_for_role(
         self,
@@ -2119,6 +2127,16 @@ class ConversationStore:
         message_id: str | None = None,
     ) -> list[dict]:
         return self._outbox.list_jobs(kind=kind, message_id=message_id)
+
+    def count_memory_dirty(self) -> int:
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT COUNT(*) AS n FROM conversations WHERE memory_dirty = 1"
+            ).fetchone()
+            return int(row["n"]) if row else 0
+
+    def count_outbox_pending(self, kind: str) -> int:
+        return self._outbox.count_pending(kind)
 
     def append_system_event(self, conversation_id: str, event_type: str, payload: dict) -> dict:
         """兼容委托 → system_events.append。"""

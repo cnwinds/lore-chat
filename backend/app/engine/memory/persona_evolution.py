@@ -9,6 +9,7 @@ from app.engine.memory.cards import CardLens, KnowledgeCards, parse_scope
 from app.engine.memory.normalize import value_hash
 from app.engine.persona_edits import plan_edits, texts_to_spans, owner_changes
 from app.engine.secrets import scan_secrets
+from app.engine.background.purpose import llm_purpose
 from app.logging_config import get_logger
 from app.models.llm import LLMClient
 
@@ -83,6 +84,19 @@ _USER_TEMPLATE = """当前角色：{subject_name}
 
 【全局规则】（只读，仅用来避免冲突）：
 {rules}"""
+
+
+def sample_persona_evolution_user() -> str:
+    return _USER_TEMPLATE.format(
+        subject_name="示例角色",
+        current="示例人设第一段。\n第二行职责说明。",
+        owner_lines="（无）",
+        tombstone_lines="（无）",
+        card_lines="- c1｜practice｜2 段｜示例知识卡正文。",
+        memory_lines="（无）",
+        proposal_lines="（无）",
+        rules="{《戒律》全文运行时注入}",
+    )
 
 
 def _parse_llm_evolution_payload(raw: str) -> tuple[list[dict], list[dict]]:
@@ -242,14 +256,16 @@ class LLMPersonaEvolver:
             card_refs,
         )
 
-        raw = self.llm.chat(
-            [
-                {"role": "system", "content": _SYSTEM_PROMPT},
-                {"role": "user", "content": user_content},
-            ],
-            big=True,
-            temperature=0.1,
-        )
+
+        with llm_purpose("persona.evolve"):
+            raw = self.llm.chat(
+                [
+                    {"role": "system", "content": _SYSTEM_PROMPT},
+                    {"role": "user", "content": user_content},
+                ],
+                big=True,
+                temperature=0.1,
+            )
         edits_raw, proposals_raw = _parse_llm_evolution_payload(raw)
 
         card_ref_ids = set(card_refs)

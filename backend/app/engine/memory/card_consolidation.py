@@ -19,6 +19,7 @@ from app.engine.memory.role_card_extractor import _truncate_persona
 from app.engine.memory.store import MemoryStore
 from app.engine.secrets import scan_secrets
 from app.logging_config import get_logger
+from app.engine.background.purpose import llm_purpose
 from app.models.llm import LLMClient
 
 _log = get_logger("memory.card_consolidation")
@@ -163,6 +164,28 @@ def _max_last_seen(facts: list[dict]) -> str | None:
     return max(stamps) if stamps else None
 
 
+def build_consolidation_user_content(
+    *,
+    owner: bool,
+    lens,
+    fact_lines: list[str],
+) -> str:
+    joined = "\n".join(fact_lines)
+    if owner:
+        return (
+            "主人记忆（编号｜种类｜来源｜状态｜出处会话数｜最近出处｜正文）：\n"
+            + joined
+        )
+    return (
+        f"当前角色：{lens.subject_name}\n"
+        f"角色设定（节选，仅供理解领域）：\n"
+        f"{_truncate_persona(lens.persona_text)}\n"
+        f"\n"
+        f"知识卡（编号｜种类｜来源｜状态｜出处会话数｜最近出处｜正文）：\n"
+        + joined
+    )
+
+
 class LLMCardConsolidator:
     def __init__(
         self,
@@ -206,29 +229,28 @@ class LLMCardConsolidator:
             )
 
         if self.profile.owner:
-            user_content = (
-                "主人记忆（编号｜种类｜来源｜状态｜出处会话数｜最近出处｜正文）：\n"
-                + "\n".join(lines)
+            user_content = build_consolidation_user_content(
+                owner=True, lens=None, fact_lines=lines
             )
         else:
-            user_content = (
-                f"当前角色：{lens.subject_name}\n"
-                f"角色设定（节选，仅供理解领域）：\n"
-                f"{_truncate_persona(lens.persona_text)}\n"
-                f"\n"
-                f"知识卡（编号｜种类｜来源｜状态｜出处会话数｜最近出处｜正文）：\n"
-                + "\n".join(lines)
+            user_content = build_consolidation_user_content(
+                owner=False, lens=lens, fact_lines=lines
             )
 
         snapshot = {sid: dict(f) for sid, f in short_to_fact.items()}
-        raw = self.llm.chat(
-            [
-                {"role": "system", "content": self.profile.system_prompt},
-                {"role": "user", "content": user_content},
-            ],
-            big=False,
-            temperature=0.1,
-        ).strip()
+        purpose = (
+            "memory.owner_consolidate" if self.profile.owner else "cards.consolidate"
+        )
+
+        with llm_purpose(purpose):
+            raw = self.llm.chat(
+                [
+                    {"role": "system", "content": self.profile.system_prompt},
+                    {"role": "user", "content": user_content},
+                ],
+                big=False,
+                temperature=0.1,
+            ).strip()
 
         try:
             ops_raw = parse_llm_json_list(raw, key="ops")

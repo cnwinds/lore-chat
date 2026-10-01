@@ -6,6 +6,7 @@ import { ModelSettingsTab } from "./ModelSettingsTab";
 import { ShareSettingsTab } from "./ShareSettingsTab";
 import { SearchSettingsTab } from "./SearchSettingsTab";
 import { UsageSettingsTab } from "./UsageSettingsTab";
+import { BackgroundSettingsTab } from "./BackgroundSettingsTab";
 import { SettingsAttentionDot } from "./SettingsAttentionDot";
 import { StarterPackGuide } from "./StarterPackGuide";
 import {
@@ -32,6 +33,7 @@ type Props = {
   attention?: SettingsAttention | null;
   onAttentionChange?: () => void;
   onLiveAttentionChange?: (live: SettingsAttention | null) => void;
+  onOpenBackgroundFlow?: () => void;
 };
 
 export function SettingsPanel({
@@ -44,6 +46,7 @@ export function SettingsPanel({
   attention = null,
   onAttentionChange,
   onLiveAttentionChange,
+  onOpenBackgroundFlow,
 }: Props) {
   const session = useSettingsSession({
     open,
@@ -282,6 +285,12 @@ export function SettingsPanel({
                   </footer>
                 ) : null}
               </form>
+
+              {session.activeTab === "background" ? (
+                <BackgroundSettingsTab
+                  onOpenBackgroundFlow={() => onOpenBackgroundFlow?.()}
+                />
+              ) : null}
 
               {session.activeTab === "usage" ? (
                 <UsageSettingsTab

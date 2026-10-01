@@ -40,6 +40,15 @@ class MemorySubgraph:
         if self.cards.evolver is not None:
             self.cards.evolver.llm = llm
 
+    def apply_settings(self, settings: Settings) -> None:
+        self.worker.idle_hours = float(settings.memory_session_idle_hours)
+        decay_config = DecayConfig(
+            stale_days_goal_project=settings.memory_decay_stale_days,
+            decay_days_inferred=settings.memory_decay_inferred_days,
+            decay_days_candidate=settings.memory_decay_candidate_days,
+        )
+        self.maintenance.config = decay_config
+
 
 def build_memory_subgraph(
     settings: Settings,

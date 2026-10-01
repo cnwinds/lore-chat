@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.engine.usage.context import get_usage_context
+from app.engine.background.purpose import current_llm_purpose
 from app.engine.usage.store import UsageStore, _utc_now
 
 # 价目单位：每百万 tokens（与厂商价目表一致）
@@ -95,6 +96,8 @@ class UsageRecorder:
         ctx = get_usage_context()
         cid = conversation_id or ctx.conversation_id
         chid = channel_instance_id or ctx.channel_instance_id
+        bg_purpose = current_llm_purpose()
+        purpose_str = bg_purpose.purpose if bg_purpose else None
         if not chid and cid and self.resolve_channel_instance is not None:
             try:
                 chid = self.resolve_channel_instance(cid)
@@ -139,5 +142,6 @@ class UsageRecorder:
             "conversation_id": cid,
             "turn_id": turn_id or ctx.turn_id,
             "channel_instance_id": chid,
+            "purpose": purpose_str,
         }
         return self.store.insert_event(event)

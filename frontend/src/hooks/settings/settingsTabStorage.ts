@@ -3,6 +3,7 @@ export type SettingsTab =
   | "search"
   | "agent"
   | "kb"
+  | "background"
   | "usage"
   | "account"
   | "share";
@@ -13,6 +14,7 @@ export const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
   { id: "agent", label: "Agent" },
   { id: "kb", label: "知识库" },
   { id: "share", label: "分享" },
+  { id: "background", label: "后台" },
   { id: "usage", label: "用量" },
   { id: "account", label: "账户" },
 ];

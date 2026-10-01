@@ -14,6 +14,7 @@ from app.engine.channel_plugins.types import is_channel_origin
 from app.engine.conversations import ConversationStore
 from app.engine.memory.card_fade import card_fade_target
 from app.engine.memory.card_growth import CardGrowthLog
+from app.engine.background.purpose import llm_call_subject
 from app.engine.memory.card_persona_state import CardPersonaState
 from app.engine.memory.normalize import CARD_SCHEME, value_hash
 from app.engine.memory.resolver import SlotAction, SlotResolver
@@ -629,6 +630,12 @@ class KnowledgeCards:
                 self.index.drop_scope(scope)
             except Exception as exc:  # noqa: BLE001
                 _log.warning("card index drop failed scope=%s err=%s", scope, exc)
+        blog = getattr(self, "background_call_log", None)
+        if blog is not None:
+            try:
+                blog.delete_scope(scope)
+            except Exception:
+                _log.exception("background call log purge scope=%s", scope)
         return n
 
     def maintain(
@@ -636,6 +643,7 @@ class KnowledgeCards:
         *,
         now: datetime | None = None,
         max_consolidations: int = CONSOLIDATE_SCOPES_PER_TICK,
+        paused: frozenset[str] = frozenset(),
     ) -> dict:
         stamp = now or datetime.now(timezone.utc)
         if stamp.tzinfo is None:
@@ -646,11 +654,14 @@ class KnowledgeCards:
         evolved_scopes = 0
         min_gap = timedelta(hours=CARD_MAINTENANCE_MIN_INTERVAL_HOURS)
         evolve_budget = EVOLVE_SCOPES_PER_TICK
+        skip_consolidate = "consolidation" in paused
+        skip_evolve = "persona_evolution" in paused
 
-        consolidated_scopes, ops_delta = self._maybe_consolidate_owner(
-            stamp, min_gap, consolidated_scopes, max_consolidations
-        )
-        ops_applied += ops_delta
+        if not skip_consolidate:
+            consolidated_scopes, ops_delta = self._maybe_consolidate_owner(
+                stamp, min_gap, consolidated_scopes, max_consolidations
+            )
+            ops_applied += ops_delta
 
         for scope in self.list_scopes():
             try:
@@ -659,24 +670,26 @@ class KnowledgeCards:
                     continue
                 state = self.growth.scope_state(scope)
                 faded_total += self._maybe_fade(scope, stamp, state, min_gap)
-                consolidated_scopes, ops_delta = self._maybe_consolidate(
-                    scope,
-                    stamp,
-                    state,
-                    min_gap,
-                    lens,
-                    consolidated_scopes,
-                    max_consolidations,
-                )
-                ops_applied += ops_delta
-                evolved_scopes += self._maybe_evolve(
-                    scope,
-                    stamp,
-                    state,
-                    min_gap,
-                    lens,
-                    evolve_budget - evolved_scopes,
-                )
+                if not skip_consolidate:
+                    consolidated_scopes, ops_delta = self._maybe_consolidate(
+                        scope,
+                        stamp,
+                        state,
+                        min_gap,
+                        lens,
+                        consolidated_scopes,
+                        max_consolidations,
+                    )
+                    ops_applied += ops_delta
+                if not skip_evolve:
+                    evolved_scopes += self._maybe_evolve(
+                        scope,
+                        stamp,
+                        state,
+                        min_gap,
+                        lens,
+                        evolve_budget - evolved_scopes,
+                    )
             except Exception as exc:  # noqa: BLE001
                 _log.warning("card maintain failed scope=%s err=%s", scope, exc)
 
@@ -731,7 +744,8 @@ class KnowledgeCards:
         if last_cons and not self._has_card_changes_since(st, active, last_cons):
             return consolidated_scopes, 0
         try:
-            result = self.owner_consolidator.run(OWNER_SCOPE, None)
+            with llm_call_subject(scope=OWNER_SCOPE):
+                result = self.owner_consolidator.run(OWNER_SCOPE, None)
         except Exception as exc:  # noqa: BLE001
             _log.warning(
                 "owner memory consolidation failed err=%s", exc
@@ -765,7 +779,8 @@ class KnowledgeCards:
         if last_cons and not self._has_card_changes_since(st, active, last_cons):
             return consolidated_scopes, 0
         try:
-            result = self.consolidator.run(scope, lens)
+            with llm_call_subject(scope=scope):
+                result = self.consolidator.run(scope, lens)
         except Exception as exc:  # noqa: BLE001
             _log.warning("card consolidation failed scope=%s err=%s", scope, exc)
             return consolidated_scopes, 0
@@ -792,7 +807,8 @@ class KnowledgeCards:
         if not self.evolver.should_run(scope):
             return 0
         try:
-            result = self.evolver.run(scope, lens)
+            with llm_call_subject(scope=scope):
+                result = self.evolver.run(scope, lens)
         except Exception as exc:  # noqa: BLE001
             _log.warning("persona evolution failed scope=%s err=%s", scope, exc)
             return 0

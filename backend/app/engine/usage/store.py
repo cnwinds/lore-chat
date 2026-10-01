@@ -234,6 +234,14 @@ class UsageStore:
             "ON usage_events(turn_id)"
         )
 
+        event_cols = self._table_cols("usage_events")
+        if "purpose" not in event_cols:
+            self.conn.execute("ALTER TABLE usage_events ADD COLUMN purpose TEXT")
+            self.conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_usage_events_purpose "
+                "ON usage_events(purpose)"
+            )
+
         self.conn.commit()
 
     def _ensure_meta(self, key: str, value: str) -> None:
@@ -413,8 +421,9 @@ class UsageStore:
                     prompt_tokens, completion_tokens, total_tokens, cache_tokens, tokens_known,
                     prompt_price_per_1m, completion_price_per_1m, cache_input_price_per_1m,
                     embed_price_per_1m, cost,
-                    status, error, duration_ms, conversation_id, turn_id, channel_instance_id
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    status, error, duration_ms, conversation_id, turn_id, channel_instance_id,
+                    purpose
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     eid,
@@ -438,11 +447,90 @@ class UsageStore:
                     event.get("conversation_id"),
                     event.get("turn_id"),
                     event.get("channel_instance_id"),
+                    event.get("purpose"),
                 ),
             )
             self.conn.commit()
         self.ensure_model_price_row(event["model"], kind=event.get("kind"))
         return eid
+
+    def background_purpose_stats(
+        self, purpose: str, *, since_24h: str, since_7d: str
+    ) -> dict[str, Any]:
+        with self._lock:
+            row24 = self.conn.execute(
+                """
+                SELECT
+                  COUNT(*) AS calls,
+                  SUM(CASE WHEN status != 'ok' THEN 1 ELSE 0 END) AS errors
+                FROM usage_events
+                WHERE purpose = ? AND ts >= ?
+                """,
+                (purpose, since_24h),
+            ).fetchone()
+            row_all = self.conn.execute(
+                """
+                SELECT MAX(ts) AS last_ts,
+                  (SELECT status FROM usage_events e2
+                   WHERE e2.purpose = ? ORDER BY ts DESC LIMIT 1) AS last_status
+                FROM usage_events
+                WHERE purpose = ?
+                """,
+                (purpose, purpose),
+            ).fetchone()
+            row7 = self.conn.execute(
+                """
+                SELECT
+                  COUNT(*) AS calls,
+                  COALESCE(SUM(prompt_tokens), 0) AS pt,
+                  COALESCE(SUM(completion_tokens), 0) AS ct,
+                  SUM(cost) AS cost_sum,
+                  COUNT(cost) AS cost_n
+                FROM usage_events
+                WHERE purpose = ? AND ts >= ? AND status = 'ok'
+                """,
+                (purpose, since_7d),
+            ).fetchone()
+        cost_7d = None
+        if row7 and int(row7["cost_n"] or 0) > 0:
+            cost_7d = float(row7["cost_sum"] or 0)
+        return {
+            "calls_24h": int(row24["calls"] or 0) if row24 else 0,
+            "errors_24h": int(row24["errors"] or 0) if row24 else 0,
+            "calls_7d": int(row7["calls"] or 0) if row7 else 0,
+            "prompt_tokens_7d": int(row7["pt"] or 0) if row7 else 0,
+            "completion_tokens_7d": int(row7["ct"] or 0) if row7 else 0,
+            "cost_7d": cost_7d,
+            "last_call_at": row_all["last_ts"] if row_all else None,
+            "last_status": row_all["last_status"] if row_all else None,
+        }
+
+    def background_totals_since(self, since_iso: str) -> dict[str, Any]:
+        with self._lock:
+            row = self.conn.execute(
+                """
+                SELECT
+                  COUNT(*) AS calls,
+                  SUM(CASE WHEN status != 'ok' THEN 1 ELSE 0 END) AS errors,
+                  COALESCE(SUM(prompt_tokens), 0) AS pt,
+                  COALESCE(SUM(completion_tokens), 0) AS ct,
+                  SUM(cost) AS cost_sum,
+                  COUNT(cost) AS cost_n
+                FROM usage_events
+                WHERE purpose IS NOT NULL AND purpose != '' AND ts >= ?
+                """,
+                (since_iso,),
+            ).fetchone()
+        cost = None
+        if row and int(row["cost_n"] or 0) > 0:
+            cost = float(row["cost_sum"] or 0)
+        return {
+            "calls": int(row["calls"] or 0) if row else 0,
+            "errors": int(row["errors"] or 0) if row else 0,
+            "prompt_tokens": int(row["pt"] or 0) if row else 0,
+            "completion_tokens": int(row["ct"] or 0) if row else 0,
+            "cost": cost,
+        }
 
     def sum_chat_tokens_for_turns(
         self, turn_ids: list[str]

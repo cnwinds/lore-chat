@@ -23,6 +23,7 @@ from app.engine.memory.prompt_common import (
 )
 from app.engine.memory.resolver import SlotAction
 from app.engine.secrets import scan_secrets
+from app.engine.background.purpose import llm_purpose
 from app.models.llm import LLMClient
 
 _MAX_ITEMS = 8
@@ -48,6 +49,27 @@ _SYSTEM_PROMPT = f"""你是用户长期记忆抽取器。在「整段会话定�
 
 只输出 JSON：
 {{"items":[{{"slot_key":"preference.illustration_style","action":"merge","statement":"我…","category":"preference","origin":"direct","confidence":0.9}}]}}"""
+
+
+def build_session_extract_user_content(
+    confirmed_summary: list[dict],
+    dialogue_body: str,
+) -> str:
+    confirmed_lines = []
+    for f in confirmed_summary[:40]:
+        confirmed_lines.append(f"- {f.get('slot_key')}: {f.get('statement')}")
+    confirmed_block = (
+        "已确认画像（请对齐合并）：\n" + "\n".join(confirmed_lines)
+        if confirmed_lines
+        else "已确认画像：空"
+    )
+    return (
+        seed_prompt_block()
+        + "\n\n"
+        + confirmed_block
+        + "\n\n对话（按时间；assistant 行仅供消歧）：\n"
+        + dialogue_body
+    )
 
 
 class SessionMemoryExtractor(Protocol):
@@ -100,29 +122,17 @@ class LLMSessionExtractor:
         if not any(role == "user" for role, _ in safe_turns):
             return []
         body = compress_dialogue_timeline(safe_turns)
-        confirmed_lines = []
-        for f in confirmed_summary[:40]:
-            confirmed_lines.append(f"- {f.get('slot_key')}: {f.get('statement')}")
-        confirmed_block = (
-            "已确认画像（请对齐合并）：\n" + "\n".join(confirmed_lines)
-            if confirmed_lines
-            else "已确认画像：空"
-        )
-        user_content = (
-            seed_prompt_block()
-            + "\n\n"
-            + confirmed_block
-            + "\n\n对话（按时间；assistant 行仅供消歧）：\n"
-            + body
-        )
-        raw = self.llm.chat(
-            [
-                {"role": "system", "content": _SYSTEM_PROMPT},
-                {"role": "user", "content": user_content},
-            ],
-            big=False,
-            temperature=0.1,
-        ).strip()
+        user_content = build_session_extract_user_content(confirmed_summary, body)
+
+        with llm_purpose("memory.owner_extract"):
+            raw = self.llm.chat(
+                [
+                    {"role": "system", "content": _SYSTEM_PROMPT},
+                    {"role": "user", "content": user_content},
+                ],
+                big=False,
+                temperature=0.1,
+            ).strip()
         items = parse_llm_json_list(raw, key="items")[:_MAX_ITEMS]
         # 长句优先，便于同批近义对齐到同一 topic_/种子
         items.sort(key=lambda x: len(str(x.get("statement") or "")), reverse=True)

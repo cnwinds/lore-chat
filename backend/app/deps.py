@@ -66,6 +66,9 @@ from app.deps_memory import MemorySubgraph, build_memory_subgraph
 from app.deps_agent import AgentSubgraph, build_agent_subgraph
 from app.engine.usage import UsageRecorder, UsageService, UsageStore
 from app.engine.usage.request_log import RequestLogRecorder, RequestLogStore
+from app.engine.background.call_log import BackgroundCallLog
+from app.engine.background.runtime import BackgroundRuntime
+from app.engine.background.service import BackgroundOverviewService
 
 
 @dataclass
@@ -117,6 +120,11 @@ class Container:
     _agent_subgraph: AgentSubgraph | None = field(default=None, repr=False)
     _usage_store: UsageStore | None = field(default=None, repr=False)
     request_log_store: RequestLogStore | None = field(default=None, repr=False)
+    background_call_log: BackgroundCallLog | None = field(default=None, repr=False)
+    background_runtime: BackgroundRuntime | None = field(default=None, repr=False)
+    background_overview: BackgroundOverviewService | None = field(
+        default=None, repr=False
+    )
     _runtime_store: ChannelRuntimeStore | None = field(default=None, repr=False)
     room_delivery: object | None = None
 
@@ -128,6 +136,10 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
         settings.kb_path / ".kb" / "usage" / "requests.db"
     )
     request_log_recorder = RequestLogRecorder(request_log_store)
+    background_call_log = BackgroundCallLog(
+        settings.kb_path / ".kb" / "usage" / "background_calls.db"
+    )
+    background_runtime = BackgroundRuntime()
     send_queue_store = SendQueueStore(
         settings.kb_path / ".kb" / "conversations" / "send_queue.db"
     )
@@ -142,6 +154,7 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
         settings,
         usage_recorder=usage_recorder,
         request_log=request_log_recorder,
+        background_call_log=background_call_log,
         cooldown=model_cooldown,
     )
     if isinstance(llm, OpenAILLMClient):
@@ -149,6 +162,8 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
             llm.usage_recorder = usage_recorder
         if llm.request_log is None:
             llm.request_log = request_log_recorder
+        if llm.background_call_log is None:
+            llm.background_call_log = background_call_log
         llm.cooldown = model_cooldown
     repo = KnowledgeRepo(settings.kb_path, protected_dirs=(settings.system_layer_dir,))
     from app.engine.skills_dir import ensure_skills_dir
@@ -205,6 +220,7 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
     )
     conversations._usage_store = usage_store
     conversations._request_log_store = request_log_store
+    conversations._background_call_log = background_call_log
     roles = RoleStore(settings.kb_path / ".kb" / "roles")
     api_keys = ApiKeyStore(settings.kb_path)
     channel_registry = ChannelPluginRegistry.builtin()
@@ -224,6 +240,7 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
     memory.cards.evolver = LLMPersonaEvolver(
         llm, memory.cards, rules_text=system_layer.compose_rules
     )
+    memory.cards.background_call_log = background_call_log
     persona_history = PersonaHistory(roles, memory.cards)
 
     card_index = CardIndex(
@@ -305,6 +322,15 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
 
     usage_recorder.resolve_channel_instance = _resolve_channel_instance
 
+    background_overview = BackgroundOverviewService(
+        settings=settings,
+        runtime=background_runtime,
+        call_log=background_call_log,
+        usage_store=usage_store,
+        conversations=conversations,
+        search_index=index.search_index,
+    )
+
     channel_runtime = ChannelRuntime(
         registry=channel_registry,
         instances=channel_instances,
@@ -374,6 +400,9 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
         _agent_subgraph=agent,
         _usage_store=usage_store,
         request_log_store=request_log_store,
+        background_call_log=background_call_log,
+        background_runtime=background_runtime,
+        background_overview=background_overview,
         queue_drainer=queue_drainer,
         _runtime_store=runtime_store,
     )
@@ -399,6 +428,8 @@ def dispose_container(container: Container | None) -> None:
     close_quietly(container.search_index)
     if container._usage_store is not None:
         close_quietly(container._usage_store)
+    if container.background_call_log is not None:
+        close_quietly(container.background_call_log)
     if container.request_log_store is not None:
         close_quietly(container.request_log_store)
     runtime = getattr(container, "channel_runtime", None)
@@ -456,6 +487,7 @@ def apply_settings(
             )
     if container.request_log_store is not None:
         req_log = RequestLogRecorder(container.request_log_store)
+    bg_log = container.background_call_log
     cooldown = container.model_cooldown
     search_cooldown = container.search_cooldown
     image_cooldown = container.image_cooldown
@@ -466,12 +498,15 @@ def apply_settings(
             container.llm.usage_recorder = recorder
         if container.llm.request_log is None and req_log:
             container.llm.request_log = req_log
+        if container.llm.background_call_log is None and bg_log:
+            container.llm.background_call_log = bg_log
         new_llm = container.llm
     else:
         new_llm = llm or OpenAILLMClient(
             settings,
             usage_recorder=recorder,
             request_log=req_log,
+            background_call_log=bg_log,
             cooldown=cooldown,
         )
         if isinstance(new_llm, OpenAILLMClient):
@@ -479,6 +514,8 @@ def apply_settings(
                 new_llm.usage_recorder = recorder
             if new_llm.request_log is None and req_log:
                 new_llm.request_log = req_log
+            if new_llm.background_call_log is None and bg_log:
+                new_llm.background_call_log = bg_log
             new_llm.cooldown = cooldown
     container.llm = new_llm
     if getattr(container, "precepts_upgrade", None) is not None:
@@ -487,6 +524,7 @@ def apply_settings(
         container._index_subgraph.apply_settings(settings)
         container._index_subgraph.rebind_llm(new_llm)
     if container._memory_subgraph is not None:
+        container._memory_subgraph.apply_settings(settings)
         container._memory_subgraph.rebind_llm(new_llm)
     if container._agent_subgraph is not None:
         container._agent_subgraph.rebind_llm(
@@ -499,3 +537,6 @@ def apply_settings(
     card_index = getattr(container, "card_index", None)
     if card_index is not None:
         card_index.tuning = CardRetrievalTuning.from_settings(settings)
+    overview = getattr(container, "background_overview", None)
+    if overview is not None:
+        overview.settings = settings

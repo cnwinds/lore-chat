@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from app.engine.conversation.outbox import SESSION_OBSERVE_IMMEDIATE
+from app.engine.background.purpose import llm_call_subject
 from app.engine.conversations import ConversationStore
 from app.engine.memory.service import MemoryService
 from app.engine.memory.session_extractor import SessionMemoryExtractor
@@ -152,7 +153,8 @@ class SessionMemoryObserve:
                     }
                     for f in self.memory_service.store.list_confirmed()
                 ]
-                actions = self.extractor.extract(turns, confirmed_summary=confirmed)
+                with llm_call_subject(conversation_id=cid, scope=None):
+                    actions = self.extractor.extract(turns, confirmed_summary=confirmed)
                 if self.cards:
                     outs = self.cards.learn_owner(actions, conversation_id=cid)
                 else:
@@ -193,12 +195,13 @@ class SessionMemoryObserve:
                 owner_summary = [
                     f["statement"] for f in self.memory_service.store.list_confirmed()
                 ]
-                card_actions = self.card_extractor.extract(
-                    turns,
-                    lens=card_lens,
-                    existing_cards=existing,
-                    owner_summary=owner_summary,
-                )
+                with llm_call_subject(conversation_id=cid, scope=scope):
+                    card_actions = self.card_extractor.extract(
+                        turns,
+                        lens=card_lens,
+                        existing_cards=existing,
+                        owner_summary=owner_summary,
+                    )
                 cards_confirmed_landed = False
                 outs = self.cards.learn(scope, card_actions, conversation_id=cid)
                 for out in outs:
@@ -336,7 +339,8 @@ class SessionMemoryObserve:
                 for f in self.memory_service.store.list_confirmed()
             ]
             turns = owner_turns_from_window(window.lines)
-            actions = self.extractor.extract(turns, confirmed_summary=confirmed)
+            with llm_call_subject(conversation_id=cid, scope=None):
+                actions = self.extractor.extract(turns, confirmed_summary=confirmed)
             if self.cards:
                 outs = self.cards.learn_owner(actions, conversation_id=cid)
             else:
@@ -399,12 +403,13 @@ class SessionMemoryObserve:
                     role_id=role_id,
                     role_names=role_names,
                 )
-                card_actions = self.card_extractor.extract_room(
-                    room,
-                    lens=lens,
-                    existing_cards=existing,
-                    owner_summary=owner_summary,
-                )
+                with llm_call_subject(conversation_id=cid, scope=lens.scope):
+                    card_actions = self.card_extractor.extract_room(
+                        room,
+                        lens=lens,
+                        existing_cards=existing,
+                        owner_summary=owner_summary,
+                    )
                 cards_confirmed_landed = False
                 outs = self.cards.learn(lens.scope, card_actions, conversation_id=cid)
                 for out in outs:

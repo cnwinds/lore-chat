@@ -12,6 +12,7 @@ from typing import Any, Protocol, runtime_checkable
 from openai import OpenAI
 
 from app.config import Settings
+from app.engine.background.purpose import current_llm_purpose
 from app.logging_config import get_logger
 from app.models.candidate import (
     ModelCandidate,
@@ -38,6 +39,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from app.engine.usage.recorder import UsageRecorder
     from app.engine.usage.request_log import RequestLogRecorder
+    from app.engine.background.call_log import BackgroundCallLog
 
 
 def consolidate_system_messages(messages: list[dict]) -> list[dict]:
@@ -190,11 +192,13 @@ class OpenAILLMClient:
         settings: Settings,
         usage_recorder: "UsageRecorder | None" = None,
         request_log: "RequestLogRecorder | None" = None,
+        background_call_log: "BackgroundCallLog | None" = None,
         cooldown: CooldownStore | None = None,
     ):
         self.settings = settings
         self.usage_recorder = usage_recorder
         self.request_log = request_log
+        self.background_call_log = background_call_log
         kb = Path(settings.kb_path)
         from app.models.cooldown import cooldown_path_for_kb
 
@@ -240,6 +244,46 @@ class OpenAILLMClient:
             self.usage_recorder.record(**kwargs)
         except Exception:
             _log.exception("usage record failed")
+
+    def _record_background_call(
+        self,
+        *,
+        cand: ModelCandidate,
+        chain: str,
+        api_messages: list[dict],
+        response: str | None,
+        status: str,
+        error: str | None,
+        duration_ms: int | None,
+        temperature: float | None,
+        prompt_tokens: int | None,
+        completion_tokens: int | None,
+    ) -> None:
+        blog = self.background_call_log
+        pur = current_llm_purpose()
+        if blog is None or pur is None:
+            return
+        try:
+            blog.record(
+                purpose=pur.purpose,
+                variant=pur.variant,
+                model=cand.model,
+                model_label=_display_model_label(cand),
+                candidate_id=cand.id,
+                chain=chain if chain in ("utility", "chat", "embed") else None,
+                temperature=temperature,
+                api_messages=api_messages,
+                response=response,
+                status=status,
+                error=error,
+                duration_ms=duration_ms,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                conversation_id=pur.conversation_id,
+                scope=pur.scope,
+            )
+        except Exception:
+            _log.exception("background call log failed")
 
     @staticmethod
     def _cached_tokens_from_usage(usage: Any) -> int | None:
@@ -389,18 +433,33 @@ class OpenAILLMClient:
                 if is_local_abort(e):
                     raise
                 last_exc = e
+                dur = int((time.monotonic() - t0) * 1000)
                 self._record(
                     model=model,
                     kind="chat",
                     role=role,
                     status="error",
                     error=str(e),
-                    duration_ms=int((time.monotonic() - t0) * 1000),
+                    duration_ms=dur,
+                )
+                self._record_background_call(
+                    cand=cand,
+                    chain=chain,
+                    api_messages=api_messages,
+                    response=None,
+                    status="error",
+                    error=str(e),
+                    duration_ms=dur,
+                    temperature=temperature,
+                    prompt_tokens=None,
+                    completion_tokens=None,
                 )
                 self._next_after_failure(failed_id=cand.id, exc=e, attempted=attempted)
                 continue
             self.cooldown.record_success(cand.id)
             pt, ct, tt, cache, known = self._usage_from_resp(resp)
+            dur = int((time.monotonic() - t0) * 1000)
+            content = resp.choices[0].message.content or ""
             self._record(
                 model=model,
                 kind="chat",
@@ -411,9 +470,21 @@ class OpenAILLMClient:
                 cache_tokens=cache,
                 tokens_known=known,
                 status="ok",
-                duration_ms=int((time.monotonic() - t0) * 1000),
+                duration_ms=dur,
             )
-            return resp.choices[0].message.content or ""
+            self._record_background_call(
+                cand=cand,
+                chain=chain,
+                api_messages=api_messages,
+                response=content,
+                status="ok",
+                error=None,
+                duration_ms=dur,
+                temperature=temperature,
+                prompt_tokens=pt,
+                completion_tokens=ct,
+            )
+            return content
 
     def chat_with_tools(
         self,
@@ -865,7 +936,13 @@ class FakeLLMClient:
         self.last_selection = None
 
     def chat(self, messages: list[dict], *, big: bool = False, temperature: float = 0.2) -> str:
-        self.calls.append({"messages": messages, "big": big})
+        self.calls.append(
+            {
+                "messages": messages,
+                "big": big,
+                "purpose": current_llm_purpose(),
+            }
+        )
         if self._i < len(self.chat_responses):
             out = self.chat_responses[self._i]
             self._i += 1

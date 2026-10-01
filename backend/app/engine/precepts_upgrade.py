@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 from app.engine.knowledge_writer import KnowledgeWriter
 from app.engine.text_merge3 import ConflictHunk, has_conflict_markers, merge3
 from app.engine.agent import system_layer as sl
+from app.engine.background.purpose import llm_purpose
 from app.storage.repo import KnowledgeRepo
 from app.time import now_iso_seconds
 
@@ -35,6 +36,20 @@ _RESOLVE_SYSTEM = (
     "5. 禁止输出冲突标记（<<<<<<< / ======= / >>>>>>> / |||||||）。\n"
     "6. 只输出完整 Markdown 正文，不要解释、不要代码围栏。"
 )
+
+
+def build_precepts_resolve_user_content(
+    pending: dict,
+    *,
+    conflict_block: str,
+) -> str:
+    return (
+        "下面是三路合并后的全文：冲突处已用标记标出。"
+        "请按原则只解决冲突，输出完整正文。\n\n"
+        f"{pending.get('marked') or ''}\n\n"
+        "冲突块对照：\n"
+        f"{conflict_block}"
+    )
 
 
 @dataclass
@@ -404,22 +419,19 @@ class PreceptsUpgrade:
                 f"【当前】\n{h.get('ours', '')}\n"
                 f"【新官方】\n{h.get('theirs', '')}\n"
             )
-        user = (
-            "下面是三路合并后的全文：冲突处已用标记标出。"
-            "请按原则只解决冲突，输出完整正文。\n\n"
-            f"{pending.get('marked') or self._marked_from_pending(pending)}\n\n"
-            "冲突块对照：\n"
-            + "\n".join(parts)
+        user = build_precepts_resolve_user_content(
+            pending, conflict_block="\n".join(parts)
         )
         try:
-            raw = self.llm.chat(
-                [
-                    {"role": "system", "content": _RESOLVE_SYSTEM},
-                    {"role": "user", "content": user},
-                ],
-                big=False,
-                temperature=0.0,
-            )
+            with llm_purpose("precepts.resolve"):
+                raw = self.llm.chat(
+                    [
+                        {"role": "system", "content": _RESOLVE_SYSTEM},
+                        {"role": "user", "content": user},
+                    ],
+                    big=False,
+                    temperature=0.0,
+                )
         except Exception:
             _log.exception("precepts AI merge failed")
             return None

@@ -1,0 +1,862 @@
+/* ===== 后台流程图 ===== */
+
+:root {
+  --bg-flow-chain-utility: color-mix(in srgb, #3d7a6a 72%, var(--text-primary));
+  --bg-flow-chain-chat: color-mix(in srgb, var(--accent) 85%, var(--text-primary));
+  --bg-flow-chain-embed: color-mix(in srgb, #5a6b8a 75%, var(--text-primary));
+  --bg-flow-canvas-dot: color-mix(in srgb, var(--border) 55%, transparent);
+  --bg-flow-code-border: color-mix(in srgb, var(--border) 120%, var(--text-muted));
+  --bg-flow-pause-stripe: color-mix(in srgb, var(--text-muted) 12%, transparent);
+}
+
+[data-theme="dark"] {
+  --bg-flow-chain-utility: #6aab98;
+  --bg-flow-chain-chat: color-mix(in srgb, var(--accent) 90%, #fff);
+  --bg-flow-chain-embed: #8fa3c4;
+  --bg-flow-canvas-dot: color-mix(in srgb, var(--border) 80%, transparent);
+}
+
+.bgflow-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1015;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  background: rgba(12, 18, 15, 0.48);
+}
+
+.bgflow-overlay--mobile {
+  padding: 0;
+}
+
+.bgflow {
+  display: flex;
+  flex-direction: column;
+  width: min(1440px, 96vw);
+  height: 92vh;
+  max-height: 92vh;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-lg, 0 16px 48px rgba(0, 0, 0, 0.22));
+  overflow: hidden;
+}
+
+.bgflow-overlay--mobile .bgflow {
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  border-radius: 0;
+  border: none;
+}
+
+.bgflow-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.bgflow-head h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  font-weight: 600;
+}
+
+.bgflow-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.bgflow-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.bgflow-legend-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.bgflow-legend-swatch--utility {
+  background: var(--bg-flow-chain-utility);
+}
+
+.bgflow-legend-swatch--chat {
+  background: var(--bg-flow-chain-chat);
+}
+
+.bgflow-legend-swatch--embed {
+  background: var(--bg-flow-chain-embed);
+}
+
+.bgflow-legend-swatch--code {
+  border: 1px dashed var(--bg-flow-code-border);
+  background: transparent;
+}
+
+.bgflow-legend-swatch--trigger {
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-muted) 35%, transparent);
+}
+
+.bgflow-legend-swatch--store {
+  border-radius: 2px 2px 4px 4px;
+  background: color-mix(in srgb, var(--text-muted) 25%, var(--bg-surface));
+  border: 1px solid var(--border);
+}
+
+.bgflow-summary-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin-left: auto;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.bgflow-summary-bar strong {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.bgflow-close {
+  border: none;
+  background: transparent;
+  font-size: 1.4rem;
+  line-height: 1;
+  padding: 4px 8px;
+  cursor: pointer;
+  color: var(--text-muted);
+}
+
+.bgflow-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+
+.bgflow-canvas {
+  flex: 1;
+  overflow: auto;
+  padding: 20px 24px 32px;
+  background-color: var(--bg-app);
+  background-image: radial-gradient(
+    circle,
+    var(--bg-flow-canvas-dot) 1px,
+    transparent 1px
+  );
+  background-size: 18px 18px;
+}
+
+.bgflow-group {
+  margin-bottom: 28px;
+}
+
+.bgflow-group-title {
+  margin: 0 0 12px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.bgflow-group-hint {
+  margin: -6px 0 14px;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  max-width: 52rem;
+}
+
+.bgflow-lane {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--bg-surface);
+  overflow: hidden;
+  transition: box-shadow 0.2s ease;
+}
+
+.bgflow-lane--highlight {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.bgflow-lane--paused {
+  filter: saturate(0.45);
+  background-image: repeating-linear-gradient(
+    -45deg,
+    transparent,
+    transparent 6px,
+    var(--bg-flow-pause-stripe) 6px,
+    var(--bg-flow-pause-stripe) 12px
+  );
+}
+
+.bgflow-lane-head {
+  flex: 0 0 220px;
+  padding: 14px 14px 12px;
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.bgflow-lane-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.bgflow-lane-title {
+  margin: 0;
+  font-size: 0.92rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.bgflow-lane-badge {
+  font-size: 0.72rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--text-muted) 18%, transparent);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.bgflow-lane-cadence {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.bgflow-lane-worker {
+  font-size: 0.76rem;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.bgflow-error-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #c44;
+  flex-shrink: 0;
+}
+
+.bgflow-pause-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  margin-top: auto;
+}
+
+.bgflow-lane-pause-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: auto;
+}
+
+.bgflow-lane-flow {
+  flex: 1;
+  padding: 16px 18px;
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  overflow-x: auto;
+}
+
+.bgflow-lane-flow--stacked {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.bgflow-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.bgflow-step--stacked {
+  flex-direction: row;
+  align-items: flex-start;
+  width: 100%;
+}
+
+.bgflow-step-nodes {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.bgflow-step-bracket {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-left: 8px;
+  border-left: 2px solid var(--border);
+}
+
+.bgflow-step-arrow {
+  flex: 0 0 28px;
+  align-self: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+}
+
+.bgflow-lane-flow--stacked .bgflow-step-arrow {
+  flex: none;
+  height: 24px;
+  transform: rotate(90deg);
+}
+
+.bgflow-node-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 280px;
+}
+
+.bgflow-node {
+  position: relative;
+  text-align: left;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px 10px 14px;
+  background: var(--bg-surface);
+  cursor: pointer;
+  width: 100%;
+  font: inherit;
+  color: inherit;
+}
+
+.bgflow-node:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.bgflow-node--selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+.bgflow-node--paused {
+  filter: saturate(0.42);
+}
+
+.bgflow-node-paused-badge {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  font-size: 0.65rem;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--text-muted) 20%, var(--bg-surface));
+  color: var(--text-secondary);
+}
+
+.bgflow-node-type-tag {
+  display: inline-block;
+  margin-top: 5px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  line-height: 1.3;
+}
+
+.bgflow-node--trigger {
+  border-radius: 999px;
+  padding: 8px 14px;
+  max-width: 240px;
+}
+
+.bgflow-node--code {
+  border-style: dashed;
+  border-color: var(--bg-flow-code-border);
+  background: color-mix(in srgb, var(--bg-app) 40%, var(--bg-surface));
+}
+
+.bgflow-node--store {
+  border-radius: 8px 8px 14px 14px;
+  border-bottom-width: 3px;
+}
+
+.bgflow-node--chain-utility {
+  border-left: 4px solid var(--bg-flow-chain-utility);
+}
+
+.bgflow-node--chain-chat {
+  border-left: 4px solid var(--bg-flow-chain-chat);
+}
+
+.bgflow-node--chain-embed {
+  border-left: 4px solid var(--bg-flow-chain-embed);
+}
+
+.bgflow-node-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.bgflow-node-icon {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  color: var(--text-muted);
+}
+
+.bgflow-node-title {
+  margin: 0;
+  font-size: 0.86rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.bgflow-node-sub {
+  margin: 4px 0 0;
+  font-size: 0.74rem;
+  color: var(--text-muted);
+  line-height: 1.35;
+}
+
+.bgflow-node-foot {
+  margin-top: 8px;
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: center;
+}
+
+.bgflow-node-guard-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--text-muted) 12%, transparent);
+}
+
+.bgflow-node-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.bgflow-link-chip {
+  font-size: 0.72rem;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg-app) 50%, var(--bg-surface));
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.bgflow-link-chip:hover {
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
+.bgflow-drawer {
+  flex: 0 0 460px;
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--bg-surface);
+}
+
+.bgflow-drawer--overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  flex: none;
+  width: 100%;
+  border-left: none;
+}
+
+.bgflow-drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  gap: 8px;
+}
+
+.bgflow-drawer-head h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.bgflow-drawer-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.bgflow-drawer-tab {
+  font-size: 0.78rem;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.bgflow-drawer-tab--active {
+  border-color: var(--border);
+  background: color-mix(in srgb, var(--bg-app) 45%, var(--bg-surface));
+  color: var(--text-primary);
+}
+
+.bgflow-drawer-body {
+  flex: 1;
+  overflow: auto;
+  padding: 14px 16px 20px;
+}
+
+.bgflow-detail-section {
+  margin-bottom: 16px;
+}
+
+.bgflow-detail-section h4 {
+  margin: 0 0 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.bgflow-detail-list {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.bgflow-detail-list li + li {
+  margin-top: 4px;
+}
+
+.bgflow-settings-link {
+  font-size: 0.84rem;
+  color: var(--accent);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.bgflow-prompt-notice {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--bg-app) 55%, var(--bg-surface));
+  border: 1px solid var(--border);
+}
+
+.bgflow-variant-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.bgflow-prompt-block {
+  margin-bottom: 14px;
+}
+
+.bgflow-prompt-block-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.bgflow-prompt-block-head span {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.bgflow-prompt-pre {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg-app) 65%, var(--bg-surface));
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.75rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 280px;
+  overflow: auto;
+}
+
+.bgflow-prompt-placeholder {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-radius: 3px;
+  padding: 0 2px;
+}
+
+.bgflow-calls-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.bgflow-call-row {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.bgflow-call-row summary {
+  cursor: pointer;
+  padding: 10px 12px;
+  font-size: 0.8rem;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  align-items: center;
+}
+
+.bgflow-call-row summary::-webkit-details-marker {
+  display: none;
+}
+
+.bgflow-call-detail {
+  padding: 0 12px 12px;
+  border-top: 1px solid var(--border);
+}
+
+.bgflow-call-msg {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  font-size: 0.78rem;
+}
+
+.bgflow-call-msg-role {
+  font-weight: 600;
+  margin-bottom: 4px;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.bgflow-call-msg-body {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ui-monospace, monospace;
+  font-size: 0.74rem;
+  line-height: 1.4;
+}
+
+.bgflow-call-msg-body--collapsed {
+  max-height: 4.5em;
+  overflow: hidden;
+}
+
+.bgflow-config-field {
+  margin-bottom: 12px;
+}
+
+.bgflow-config-field label {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.bgflow-config-field input {
+  width: 100%;
+  max-width: 12rem;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  font: inherit;
+}
+
+.bgflow-config-hint {
+  font-size: 0.74rem;
+  color: var(--text-muted);
+  margin: 4px 0 0;
+}
+
+.bgflow-constants-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+}
+
+.bgflow-constants-table th,
+.bgflow-constants-table td {
+  border: 1px solid var(--border);
+  padding: 6px 8px;
+  text-align: left;
+}
+
+.bgflow-empty,
+.bgflow-error {
+  padding: 24px;
+  text-align: center;
+  font-size: 0.88rem;
+  color: var(--text-muted);
+}
+
+.bgflow-error {
+  color: #b44;
+}
+
+.bgflow-retry-btn {
+  margin-top: 10px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  cursor: pointer;
+  font: inherit;
+}
+
+.bgflow-settings-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.bgflow-settings-intro {
+  margin: 0;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.bgflow-settings-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+}
+
+.bgflow-settings-stat {
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg-app) 40%, var(--bg-surface));
+}
+
+.bgflow-settings-stat dt {
+  margin: 0;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.bgflow-settings-stat dd {
+  margin: 4px 0 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.bgflow-open-flow-btn {
+  align-self: flex-start;
+  padding: 10px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--border-strong);
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg-surface));
+  color: var(--text-primary);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.bgflow-open-flow-btn:hover {
+  border-color: var(--accent);
+}
+
+@media (max-width: 900px) {
+  .bgflow-lane {
+    flex-direction: column;
+  }
+
+  .bgflow-lane-head {
+    flex: none;
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .bgflow-lane-flow {
+    flex-direction: column;
+  }
+
+  .bgflow-step {
+    width: 100%;
+  }
+
+  .bgflow-step-arrow {
+    transform: rotate(90deg);
+    height: 20px;
+    flex: none;
+  }
+
+  .bgflow-drawer {
+    flex: none;
+  }
+
+  .bgflow-head {
+    padding: 10px 12px;
+  }
+
+  .bgflow-summary-bar {
+    width: 100%;
+    margin-left: 0;
+  }
+}
+
+@media (max-width: 640px) {
+  .bgflow-legend {
+    display: none;
+  }
+}

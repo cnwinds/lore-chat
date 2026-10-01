@@ -17,6 +17,7 @@ import { listChannelInstances, type ChannelInstance } from "../../api/channelPlu
 import { FoldChevron } from "../FoldChevron";
 import { priceRowNeedsSetup } from "./settingsAttention";
 import { SettingsAttentionDot } from "./SettingsAttentionDot";
+import { fmtCost } from "../../utils/fmtCost";
 
 type Granularity = "hour" | "day" | "week" | "month";
 
@@ -26,13 +27,6 @@ const GRANULARITY_OPTIONS: { value: Granularity; label: string }[] = [
   { value: "week", label: "周" },
   { value: "month", label: "月" },
 ];
-
-function fmtCost(n: number | null | undefined, known: boolean): string {
-  if (!known || n == null) return "—";
-  if (n < 0.01) return n.toFixed(6);
-  if (n < 1) return n.toFixed(4);
-  return n.toFixed(2);
-}
 
 function fmtInt(n: number): string {
   return n.toLocaleString("zh-CN");

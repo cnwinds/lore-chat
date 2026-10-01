@@ -4,7 +4,9 @@ import asyncio
 import logging
 import sys
 import threading
+from collections.abc import Callable
 from contextlib import asynccontextmanager
+from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -19,6 +21,7 @@ from app.config import Settings, get_settings
 from app.models.llm import LLMClient
 from app.deps import build_container
 from app.api.admin_routes import router as admin_router
+from app.api.background_routes import router as background_router
 from app.api.usage_routes import router as usage_router
 from app.api.routes import router
 from app.engine.sandbox.mirrors import normalize_mirror_region
@@ -27,6 +30,8 @@ from app.engine.role_schedule_worker import (
     _SCHEDULE_WORKER_INTERVAL_SECONDS,
     drain_due_role_schedules,
 )
+from app.engine.background.purpose import llm_purpose
+from app.engine.background.runtime import BackgroundRuntime
 from app.settings_store import SettingsStore, settings_have_llm_api_key
 
 _DERIVATION_WORKER_INTERVAL_SECONDS = 0.5
@@ -56,16 +61,61 @@ def _sandbox_pool_capability(request: Request, settings: Settings) -> dict:
     return {"max": max_n, "active": 0, "busy_roles": []}
 
 
-def _run_while_idle(app: FastAPI, stop_event: threading.Event, interval: float, name: str, fn) -> None:
+def _run_while_idle(
+    app: FastAPI,
+    stop_event: threading.Event,
+    interval: float | Callable[[], float],
+    name: str,
+    fn,
+    *,
+    status_name: str | None = None,
+) -> None:
     """Run ``fn`` once per interval, only when maintenance is idle."""
+    key = status_name or name
     while not stop_event.is_set():
+        runtime = getattr(app.state.container, "background_runtime", None)
         with app.state.maintenance_lock.try_idle_slot() as allowed:
             if allowed:
+                if runtime is not None:
+                    runtime.mark_running(key)
                 try:
-                    fn()
-                except Exception:
+                    result = fn()
+                    if runtime is not None:
+                        runtime.record_tick(key, result=result)
+                except Exception as exc:
+                    if runtime is not None:
+                        runtime.record_tick(key, error=str(exc))
                     logging.getLogger("uvicorn.error").exception("%s 执行失败", name)
-        stop_event.wait(interval)
+            elif runtime is not None:
+                runtime.record_tick(key, skipped="maintenance")
+        wait = interval() if callable(interval) else interval
+        stop_event.wait(wait)
+
+
+def _memory_maintenance_interval(app: FastAPI) -> float:
+    hours = float(
+        app.state.container.settings.memory_maintenance_interval_hours or 24
+    )
+    return max(3600.0, hours * 3600.0)
+
+
+def _drain_derivation(app: FastAPI) -> dict[str, Any]:
+    container = app.state.container
+    paused = BackgroundRuntime.paused(container.settings)
+    d = container.derivation_worker.drain(_DERIVATION_WORKER_BATCH_SIZE)
+    if "session_observe" in paused:
+        session_observe: int | str = "paused"
+    else:
+        session_observe = container.memory_worker.drain(_DERIVATION_WORKER_BATCH_SIZE)
+    with llm_purpose("index.embed"):
+        embedded = container.search_index.embed_pending(_SEARCH_INDEX_EMBED_BATCH)
+    if embedded > 0:
+        container.index_revision.bump()
+    return {
+        "derivation": d,
+        "session_observe": session_observe,
+        "embedded": embedded,
+    }
 
 
 def create_app(settings: Settings | None = None, llm: LLMClient | None = None) -> FastAPI:
@@ -136,13 +186,8 @@ def create_app(settings: Settings | None = None, llm: LLMClient | None = None) -
             )
             catalog_thread.start()
 
-            def _drain_derivation() -> None:
-                container = app.state.container
-                container.derivation_worker.drain(_DERIVATION_WORKER_BATCH_SIZE)
-                container.memory_worker.drain(_DERIVATION_WORKER_BATCH_SIZE)
-                n = container.search_index.embed_pending(_SEARCH_INDEX_EMBED_BATCH)
-                if n > 0:
-                    container.index_revision.bump()
+            def _drain_derivation_job() -> dict[str, Any]:
+                return _drain_derivation(app)
 
             def _run_index_migration() -> None:
                 try:
@@ -165,8 +210,9 @@ def create_app(settings: Settings | None = None, llm: LLMClient | None = None) -
                     stop_event,
                     _DERIVATION_WORKER_INTERVAL_SECONDS,
                     "derivation worker",
-                    _drain_derivation,
+                    _drain_derivation_job,
                 ),
+                kwargs={"status_name": "derivation-worker"},
                 name="derivation-worker",
                 daemon=True,
             )
@@ -177,14 +223,20 @@ def create_app(settings: Settings | None = None, llm: LLMClient | None = None) -
                 args=(
                     app,
                     stop_event,
-                    _MEMORY_MAINTENANCE_INTERVAL_SECONDS,
+                    lambda: _memory_maintenance_interval(app),
                     "memory maintenance",
                     lambda: app.state.container.memory_maintenance.run(),
                 ),
+                kwargs={"status_name": "memory-maintenance"},
                 name="memory-maintenance",
                 daemon=True,
             )
             maintenance_thread.start()
+
+            def _run_card_maintenance() -> dict:
+                return app.state.container.knowledge_cards.maintain(
+                    paused=BackgroundRuntime.paused(app.state.container.settings)
+                )
 
             card_maintenance_thread = threading.Thread(
                 target=_run_while_idle,
@@ -193,8 +245,9 @@ def create_app(settings: Settings | None = None, llm: LLMClient | None = None) -
                     stop_event,
                     _CARD_MAINTENANCE_INTERVAL_SECONDS,
                     "card maintenance",
-                    lambda: app.state.container.knowledge_cards.maintain(),
+                    _run_card_maintenance,
                 ),
+                kwargs={"status_name": "card-maintenance"},
                 name="card-maintenance",
                 daemon=True,
             )
@@ -211,6 +264,7 @@ def create_app(settings: Settings | None = None, llm: LLMClient | None = None) -
                         app.state.container, app.state.loop
                     ),
                 ),
+                kwargs={"status_name": "role-schedule-worker"},
                 name="role-schedule-worker",
                 daemon=True,
             )
@@ -287,6 +341,7 @@ def create_app(settings: Settings | None = None, llm: LLMClient | None = None) -
     app.add_middleware(MaintenanceGuardMiddleware)
     app.include_router(auth_router)
     app.include_router(admin_router)
+    app.include_router(background_router)
     app.include_router(usage_router)
     app.include_router(router)
     return app

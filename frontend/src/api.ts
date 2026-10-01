@@ -25,6 +25,12 @@ import {
 } from "./lib/httpTransport";
 import { messageFromImportErrorBody } from "./utils/importKbError";
 import type { ScheduleTiming } from "./utils/scheduleTiming";
+import type {
+  BgCallDetail,
+  BgCallSummary,
+  BgOverview,
+  BgStatus,
+} from "./types/background";
 
 export type { ApiError, PathExistsDetail, PackPathChoiceDetail, ActiveTurnStatus };
 
@@ -1861,4 +1867,32 @@ export function dismissCardProposal(scope: string, proposalId: string) {
     `/api/cards/proposals/${encodeURIComponent(proposalId)}/dismiss?${q}`,
     { method: "POST" },
   );
+}
+
+export type {
+  BgCallDetail,
+  BgCallSummary,
+  BgChain,
+  BgNode,
+  BgOverview,
+  BgStatus,
+} from "./types/background";
+
+export function getBackgroundOverview() {
+  return apiFetch<BgOverview>("/api/admin/background");
+}
+
+export function getBackgroundStatus() {
+  return apiFetch<BgStatus>("/api/admin/background/status");
+}
+
+export function listBackgroundCalls(purpose: string, limit = 20) {
+  const q = new URLSearchParams({ purpose, limit: String(limit) });
+  return apiFetch<{ calls: BgCallSummary[] }>(
+    `/api/admin/background/calls?${q}`,
+  );
+}
+
+export function getBackgroundCall(id: number) {
+  return apiFetch<BgCallDetail>(`/api/admin/background/calls/${id}`);
 }
