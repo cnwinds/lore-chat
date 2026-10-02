@@ -8,7 +8,7 @@ import type { BgOverview } from "../../types/background";
 import { showToast } from "../../utils/toast";
 import { compactTokenCount } from "../../utils/chatMessageFormat";
 import { fmtCost } from "../../utils/fmtCost";
-import { findLaneForNode } from "./backgroundUtils";
+import { findLaneForNode, normalizeBgOverview } from "./backgroundUtils";
 import { FlowCanvas } from "./FlowCanvas";
 import { NodeDetailDrawer } from "./NodeDetailDrawer";
 
@@ -35,7 +35,7 @@ export function BackgroundFlowModal({ open, onClose, onOpenModelSettings }: Prop
     setLoading(true);
     setError(null);
     try {
-      const data = await getBackgroundOverview();
+      const data = normalizeBgOverview(await getBackgroundOverview());
       setOverview(data);
     } catch {
       setError("加载后台流程失败");
@@ -48,7 +48,9 @@ export function BackgroundFlowModal({ open, onClose, onOpenModelSettings }: Prop
     if (!open) return;
     try {
       const status = await getBackgroundStatus();
-      setOverview((prev) => (prev ? { ...prev, status } : prev));
+      setOverview((prev) =>
+        prev ? normalizeBgOverview({ ...prev, status }) : prev,
+      );
     } catch {
       /* ignore poll errors */
     }

@@ -55,6 +55,28 @@ describe("BackgroundFlowModal", () => {
     expect(screen.getByText("卡片维护")).toBeInTheDocument();
   });
 
+  it("opens drawer for store node without conditions/limits in payload", async () => {
+    const user = userEvent.setup();
+    const sparse = { ...mockBackgroundOverview };
+    const store = { ...sparse.nodes["store.owner_memory"] };
+    delete (store as { conditions?: string[] }).conditions;
+    delete (store as { limits?: string[] }).limits;
+    sparse.nodes = { ...sparse.nodes, "store.owner_memory": store };
+    getBackgroundOverview.mockResolvedValue(sparse);
+    render(
+      <BackgroundFlowModal open onClose={() => {}} onOpenModelSettings={() => {}} />,
+    );
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "主人记忆库" })).toBeInTheDocument();
+    });
+    await user.click(screen.getByRole("button", { name: "主人记忆库" }));
+    expect(await screen.findByRole("tab", { name: "概览" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(screen.getByText("长期主人画像。")).toBeInTheDocument();
+  });
+
   it("shows readonly prompt notice when llm node selected", async () => {
     const user = userEvent.setup();
     render(

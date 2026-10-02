@@ -93,6 +93,8 @@ def _node(**kwargs: Any) -> dict[str, Any]:
         "chain": None,
         "temperature": None,
         "purpose": None,
+        "conditions": [],
+        "limits": [],
         "prompts": [],
         "guards": [],
         "outputs": [],

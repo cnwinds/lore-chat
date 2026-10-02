@@ -96,3 +96,30 @@ export function collectLanePauseKeys(
 export function pauseKeyLabel(pausable: BgPausable[], key: string): string {
   return pausable.find((p) => p.key === key)?.label ?? key;
 }
+
+/** API / 旧数据可能缺少数组字段，避免详情抽屉读 .length 崩溃。 */
+export function normalizeBgNode(node: BgNode): BgNode {
+  return {
+    ...node,
+    conditions: node.conditions ?? [],
+    limits: node.limits ?? [],
+    prompts: (node.prompts ?? []).map((p) => ({
+      ...p,
+      notes: p.notes ?? [],
+    })),
+    guards: node.guards ?? [],
+    outputs: node.outputs ?? [],
+    settings: node.settings ?? [],
+    constants: node.constants ?? [],
+    source_files: node.source_files ?? [],
+    links: node.links ?? [],
+  };
+}
+
+export function normalizeBgOverview(overview: BgOverview): BgOverview {
+  const nodes: Record<string, BgNode> = {};
+  for (const [id, node] of Object.entries(overview.nodes)) {
+    nodes[id] = normalizeBgNode(node);
+  }
+  return { ...overview, nodes };
+}

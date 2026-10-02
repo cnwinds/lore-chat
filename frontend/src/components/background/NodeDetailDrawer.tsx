@@ -120,7 +120,7 @@ export function NodeDetailDrawer({
                 <h4>模型链</h4>
                 <p>{chainSummary.label}</p>
                 <ul className="bgflow-detail-list">
-                  {chainSummary.models.map((m) => (
+                  {(chainSummary.models ?? []).map((m) => (
                     <li key={m.model}>
                       {m.label} · {m.model}
                     </li>
