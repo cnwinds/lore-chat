@@ -182,6 +182,7 @@
 
 .bgflow-lane {
   display: flex;
+  align-items: stretch;
   gap: 16px;
   margin-bottom: 18px;
   border: 1px solid var(--border);
@@ -281,9 +282,11 @@
   flex: 1;
   padding: 16px 18px;
   display: flex;
-  align-items: stretch;
+  /* 各步骤列按整行最高列垂直居中，短列不会顶在上方 */
+  align-items: center;
   gap: 0;
   overflow-x: auto;
+  min-height: 0;
 }
 
 .bgflow-lane-flow--stacked {
