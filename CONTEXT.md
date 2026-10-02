@@ -124,7 +124,7 @@ _Avoid_: 在 Organizer / KB 摄入路径解析 `sandbox_confirm`
 **文档托盘（工作托盘）**：用户 Ctrl+单击侧栏**文件或目录**（顶层「技能」除外）加入；项为 `{ path, kind: "document" }`，持久化在 `doc_context`。含义：本轮主要针对这些路径工作（目录=在该目录范围内作业）。编排在 `useComposerPreviewBridge`。
 _Avoid_: 附件托盘；用托盘表达 Skill 启用；Ctrl+单击非「技能」根时打开启用窗；在 `App.tsx` 再堆 pin/tray 状态机
 
-**主文档**：托盘内用于默认 `edit_doc` 目标的普通 Markdown 文档。文档元数据用 `write_doc.meta` / `read_doc_meta` / `update_doc_meta`，调用方不感知磁盘定界。
+**主文档**：托盘内用于默认 `edit_doc` 目标的普通 Markdown 文档。文档元数据用 `write_doc.meta` / `read` / `update_doc_meta`，调用方不感知磁盘定界。
 _Avoid_: 在正文伪造 KB 元数据头
 
 **知识库修订**：任意 KB 文件的版本列表与某版正文来自知识库 git（`KnowledgeRepo.list_revisions` / `read_revision`）；HTTP 为 `GET /api/doc/revisions`、`GET /api/doc/revision`。列表一次 `git log --follow` 取出，并附带最近两版正文。目录改名后仍能顺着旧路径看历史；若工作区已改名但 git 提交失败，打开修订会把这次搬家补进提交。界面 `DocHistoryModal`：文档头栏时钟图标（悬停「修订」）与目录右键「修订」。点开先出窗口和当前正文，对照随后补上。Markdown 展示去掉库头后的正文；连续相同 blob 合并。窗口固定大小；默认与上一版对照，开关状态不随换版本重置。
@@ -133,8 +133,8 @@ _Avoid_: 在 HTTP 里直接跑 git；把冲突标记写进活文件；修订面�
 **官方《戒律》升级**：`PreceptsUpgrade` 用上次同步的官方稿做祖先，与现行正文、新官方稿三路合并（见 [ADR 2026-09-19](docs/adr/2026-09-19-precepts-three-way-upgrade.md)）。无冲突则经 `KnowledgeWriter` 写回并更新祖先；有冲突则活文件不动，打开《戒律》见「戒律更新」：左现行、中结果、右官方。不重叠的改动已合进中间；冲突可跳转并用左边 / 用右边 / 两边都留，中间可改，确认后落盘。待确认时知识库「系统」与《戒律》打红点。AI 只填冲突块，不得削弱硬规则；失败则冲突处留当前。`stock.md` 缺失时从该文件 git 历史找回最近一次官方播种稿再三路；仍找不到且正文已本地化时才两路审阅，不覆盖。
 _Avoid_: 官方/本库分区；把 `<<<<<<<` 写进现行戒律；启动时静默覆盖已演化的正文；用关键词名单决定保哪一段；绕过 KnowledgeWriter 写《戒律》
 
-**Skill 启用集（catalog）**：跨会话保存在 `.kb/enabled_skills.json`；编排在 `useEnabledSkillsAttach`。**仅** Ctrl+单击顶层「技能」目录（或该目录右键「启用 Skill…」）→ 发现全部包 → 勾选维护默认启用集（首次无启用则默认全选，否则预勾选「候选 ∩ 已启用」）。确认后 `PUT /api/enabled-skills` **整表重写** `roots`。新建或导入 Skill 包（含触发头）时由 `KnowledgeWriter` 默认追加进启用集；改已有 `SKILL.md` 不会把用户关掉的包再打开。删除 Skill 包（或包内 `SKILL.md`）经 `KnowledgeWriter.delete_entry`（界面删除与 Agent `delete_kb` 同一 seam）从启用集去掉该根；目录搬家则 `remap_roots`。每轮注入 name/description（见 `[Skill 目录]`）；命中后再 `read_doc`。本会话近 20 条助手消息里成功读过 `SKILL.md` 且仍在启用集的包，此后每轮把知识库**当前**正文作为「已激活 Skill」注入（`skill_activation.active_skill_system_messages`，单包与总量有上限），模型不必重读；停用或超出窗口即不再注入。启用集**不进**托盘；要对某包改内容，Ctrl+单击该包目录/文件加入托盘即可。Skill 包（含 `SKILL.md`）**必须**落在「技能」目录下（发现 / 启用 / 写入硬约束）；对话 catalog 由 `ChatSessionRunner.resolve_skill_catalog` 装配。对话装配时仍跳过启用集里已删/越界的包（绕过写入 seam 的脏名单），缺触发头的现存包仍 400。
-_Avoid_: 挂载即灌入 SKILL.md 全文；跨轮回放当时 `read_doc` 的旧工具结果代替当前正文；子文件夹 Ctrl+单击打开启用窗；把 name/description 写入 `<<<LORE_META`；在 SYSTEM_PROMPT 与 catalog 注入重复写触发契约；在 HTTP 路由内直接编排 `EnabledSkillsStore`；作用域合并双形态 PUT
+**Skill 启用集（catalog）**：跨会话保存在 `.kb/enabled_skills.json`；编排在 `useEnabledSkillsAttach`。**仅** Ctrl+单击顶层「技能」目录（或该目录右键「启用 Skill…」）→ 发现全部包 → 勾选维护默认启用集（首次无启用则默认全选，否则预勾选「候选 ∩ 已启用」）。确认后 `PUT /api/enabled-skills` **整表重写** `roots`。新建或导入 Skill 包（含触发头）时由 `KnowledgeWriter` 默认追加进启用集；改已有 `SKILL.md` 不会把用户关掉的包再打开。删除 Skill 包（或包内 `SKILL.md`）经 `KnowledgeWriter.delete_entry`（界面删除与 Agent `delete_kb` 同一 seam）从启用集去掉该根；目录搬家则 `remap_roots`。每轮注入 name/description（见 `[Skill 目录]`）；命中后再 `read`。本会话近 20 条助手消息里成功读过 `SKILL.md` 且仍在启用集的包，此后每轮把知识库**当前**正文作为「已激活 Skill」注入（`skill_activation.active_skill_system_messages`，单包与总量有上限），模型不必重读；停用或超出窗口即不再注入。启用集**不进**托盘；要对某包改内容，Ctrl+单击该包目录/文件加入托盘即可。Skill 包（含 `SKILL.md`）**必须**落在「技能」目录下（发现 / 启用 / 写入硬约束）；对话 catalog 由 `ChatSessionRunner.resolve_skill_catalog` 装配。对话装配时仍跳过启用集里已删/越界的包（绕过写入 seam 的脏名单），缺触发头的现存包仍 400。
+_Avoid_: 挂载即灌入 SKILL.md 全文；跨轮回放当时 `read` 的旧工具结果代替当前正文；子文件夹 Ctrl+单击打开启用窗；把 name/description 写入 `<<<LORE_META`；在 SYSTEM_PROMPT 与 catalog 注入重复写触发契约；在 HTTP 路由内直接编排 `EnabledSkillsStore`；作用域合并双形态 PUT
 
 **Skill 正文头**：每个 `SKILL.md` 正文开头须有 `---` YAML，含非空 `name` 与 `description`（何时使用，语言不限）。缺头时启用/对话返回可读错误，引导用户改文件。KB 文档元数据只用 `<<<LORE_META`；正文 `---` 不作库头解析。文档预览将触发头拆成表格展示，正文交给编辑器；头栏「开发」打开 Markdown 源码后仍编辑原始 YAML；落盘保留原 header 块。
 _Avoid_: 无触发头的 Skill 包；用关键词黑名单代替 description；预览里把 YAML 当普通 Markdown 渲染；用 Crepe 序列化结果覆盖掉触发头
@@ -150,3 +150,6 @@ _Avoid_: 再引入托盘 Skill 专用 kind / 标签；用托盘驱动 catalog
 
 **多 Skill 并存**：同一启用集可含多个包；catalog 分段列出；与用户消息冲突以用户消息为准；Skill 之间冲突则合并取交集或向用户澄清。
 _Avoid_: 每轮仅允许一个 Skill（除非产品另行限制）
+
+**统一上下文视图（lore://）**：知识库、会话、主人记忆与角色/人设卡在同一棵可寻址目录树下；助手用 `search` / `read` / `list` 三个读工具访问，地址形如 `lore://kb/…`、`lore://conversations/…`、`lore://memory/…`。每回合由 `ViewScope` 算出可见根，工具入参路径只能在该范围内收窄，越界整次报错；`search` 的 `paths` 可一次给多个范围。实现在 `app/engine/context_view/`（`ViewScope` / `compile_search` / `parse`）；旧 `conversation://` 链接仍作别名解析。
+_Avoid_: 再加独立 scheme（`kb://` / `memory://` / `card://`）；在工具实现里绕过 `ViewScope` 直接查库；按「当前角色」而不是按可见范围过滤会话命中

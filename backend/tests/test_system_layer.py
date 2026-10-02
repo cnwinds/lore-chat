@@ -127,6 +127,11 @@ def test_precepts_align_with_runtime_tools(tmp_path):
         "2dec5bc10aa43d518811b0ae4dfc974240e71716084e7c9f57a6cb4d8f31c11d"
         in _SUPERSEDED_PRECEPTS_HASHES
     )
+    assert (
+        "056728c9070524f12472eda25326e3a40ccf60ee65bce7b731bc895aaddfbaed"
+        in _SUPERSEDED_PRECEPTS_HASHES
+    )
+    assert "`search_kb`" not in body
     assert "归档 / 总结本次会话" not in body
     assert "按「跨段接续」锁定" in body
     # YAML 触发头是 write_doc 契约，不进戒律

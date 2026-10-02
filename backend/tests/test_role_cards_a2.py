@@ -430,12 +430,10 @@ def test_old_precepts_hash_recognized_as_official(tmp_path):
     assert is_unmodified_official(seeded) is True
     from app.engine.agent import system_layer as sl
 
-    old_full = sl._PRECEPTS_BODY.replace(
-        "这类对所有角色都成立的规矩",
-        "的规矩",
-    ).replace(
-        "；只在某个角色的领域里成立的做法 → 不写本文件，由该角色的知识卡在会话结束后沉淀",
-        "",
+    old_full = sl._PRECEPTS_BODY.replace("`search`", "`search_kb`", 1)
+    assert (
+        sl._seed_hash(old_full)
+        == "056728c9070524f12472eda25326e3a40ccf60ee65bce7b731bc895aaddfbaed"
     )
     repo.write_doc(
         "系统/戒律.md",

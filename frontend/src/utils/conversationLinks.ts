@@ -1,6 +1,8 @@
 /** 会话深链：conversation://{cid} 或 conversation://{cid}/{messageId} */
 
-export const CONVERSATION_CID_RE = /^[a-f0-9]{12}$/i;
+import { CONVERSATION_CID_RE, parseLoreHref } from "./loreLinks";
+
+export { CONVERSATION_CID_RE };
 
 export type ConversationLinkTarget = {
   conversationId: string;
@@ -18,6 +20,12 @@ export function parseConversationHref(
     rest = rest.replace(/^conversation:\/\//i, "");
   } else if (/^lorechat:\/\/conversation\//i.test(rest)) {
     rest = rest.replace(/^lorechat:\/\/conversation\//i, "");
+  } else if (/^lore:\/\//i.test(raw)) {
+    const lore = parseLoreHref(raw);
+    if (lore?.kind !== "conversation") return null;
+    return lore.messageId
+      ? { conversationId: lore.conversationId, messageId: lore.messageId }
+      : { conversationId: lore.conversationId };
   } else {
     return null;
   }

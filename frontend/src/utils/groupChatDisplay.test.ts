@@ -116,4 +116,12 @@ describe("groupChatDisplay", () => {
       ),
     ).toBe("已发送给「通用助手」。协作房间");
   });
+
+  it("strips lore://conversations room URIs from collaboration previews", () => {
+    expect(
+      sanitizeCollabPreview(
+        "协作房间 lore://conversations/rooms/63be16477aa0/",
+      ),
+    ).toBe("协作房间");
+  });
 });

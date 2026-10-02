@@ -58,6 +58,7 @@ export function isOwnerSpeaker(message: ChatMessage): boolean {
 export function sanitizeCollabPreview(text: string): string {
   return (text || "")
     .replace(/conversation:\/\/[a-f0-9-]+/gi, "")
+    .replace(/lore:\/\/conversations\/[^\s]+/gi, "")
     .replace(/[ \t]{2,}/g, " ")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
