@@ -69,6 +69,14 @@ def tool_awaits_user(out: dict) -> bool:
     return bool(qid) and isinstance(options, list) and len(options) > 0
 
 
+def tool_not_offered_result(name: str) -> dict:
+    return {
+        "summary": f"本回合未提供该工具：{name}",
+        "sources": [],
+        "error": "tool_not_offered",
+    }
+
+
 def tool_stops_loop(out: dict) -> str | None:
     """工具结果是否结束本轮循环；返回 stop_reason，否则 None。"""
     if tool_awaits_user(out):
@@ -113,6 +121,9 @@ class AgentToolLoop:
             turn_id=turn_id,
             run_id=run_id,
             tool_limit=self.settings.agent_max_tool_calls,
+        )
+        offered_tool_names = frozenset(
+            d["function"]["name"] for d in tools_for_run
         )
         _log.info(
             "agent run start cid=%s turn_id=%s run_id=%s tool_limit=%d",
@@ -190,7 +201,9 @@ class AgentToolLoop:
                         len(messages),
                         llm_rounds,
                     )
-                result, stripped = self._promote_plaintext_solicitation(result)
+                result, stripped = self._promote_plaintext_solicitation(
+                    result, offered_tool_names=offered_tool_names
+                )
                 if stripped is not None:
                     yield assistant_visible_set(stripped)
                 if result.tool_calls:
@@ -210,6 +223,7 @@ class AgentToolLoop:
                                 batch,
                                 active_doc_path=tool_active_doc_path,
                                 conversation_id=conversation_id,
+                                offered_tool_names=offered_tool_names,
                             ):
                                 yield ev
                                 if entry is not None:
@@ -239,6 +253,7 @@ class AgentToolLoop:
                                     tc,
                                     active_doc_path=tool_active_doc_path,
                                     conversation_id=conversation_id,
+                                    offered_tool_names=offered_tool_names,
                                 ):
                                     if kind == "progress":
                                         yield tool_progress(
@@ -331,6 +346,8 @@ class AgentToolLoop:
     @staticmethod
     def _promote_plaintext_solicitation(
         result: ChatWithToolsResult,
+        *,
+        offered_tool_names: frozenset[str] | None = None,
     ) -> tuple[ChatWithToolsResult, str | None]:
         """If the model wrote a 征询 into prose, turn it into ask_user.
 
@@ -339,6 +356,8 @@ class AgentToolLoop:
         """
         parsed = parse_plaintext_solicitation(result.content or "")
         if parsed is None:
+            return result, None
+        if offered_tool_names is not None and "ask_user" not in offered_tool_names:
             return result, None
         has_ask = any(tc.name == "ask_user" for tc in result.tool_calls)
         if result.tool_calls and not has_ask:
@@ -405,7 +424,10 @@ class AgentToolLoop:
         *,
         active_doc_path: str | None = None,
         conversation_id: str | None = None,
+        offered_tool_names: frozenset[str] | None = None,
     ) -> tuple[dict, int]:
+        if offered_tool_names is not None and tc.name not in offered_tool_names:
+            return tool_not_offered_result(tc.name), 0
         return await self._tool_progress.run(
             tc,
             active_doc_path=active_doc_path,
@@ -418,7 +440,11 @@ class AgentToolLoop:
         *,
         active_doc_path: str | None = None,
         conversation_id: str | None = None,
+        offered_tool_names: frozenset[str] | None = None,
     ) -> AsyncIterator[tuple[str, object]]:
+        if offered_tool_names is not None and tc.name not in offered_tool_names:
+            yield "result", (tool_not_offered_result(tc.name), 0)
+            return
         async for item in self._tool_progress.stream(
             tc,
             active_doc_path=active_doc_path,
@@ -432,6 +458,7 @@ class AgentToolLoop:
         *,
         active_doc_path: str | None = None,
         conversation_id: str | None = None,
+        offered_tool_names: frozenset[str] | None = None,
     ) -> AsyncIterator[tuple[str, tuple[ToolCall, dict, int] | None]]:
         batch_id = uuid.uuid4().hex[:8]
         batch_start = time.monotonic()
@@ -453,6 +480,7 @@ class AgentToolLoop:
                     tc,
                     active_doc_path=active_doc_path,
                     conversation_id=conversation_id,
+                    offered_tool_names=offered_tool_names,
                 ):
                     await merge_q.put((tc, kind, payload))
             except Exception as e:

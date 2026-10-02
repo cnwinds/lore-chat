@@ -78,7 +78,10 @@ def test_parse_rejects_option_word_without_marker():
 
 def test_promote_injects_ask_user_when_no_tool_calls():
     result = ChatWithToolsResult(content=SCREENSHOT_BODY, tool_calls=[])
-    next_result, remainder = AgentToolLoop._promote_plaintext_solicitation(result)
+    offered = frozenset({"ask_user"})
+    next_result, remainder = AgentToolLoop._promote_plaintext_solicitation(
+        result, offered_tool_names=offered
+    )
     assert remainder is not None
     assert "方向已锁定" in remainder
     assert len(next_result.tool_calls) == 1
@@ -115,7 +118,18 @@ def test_promote_strips_duplicate_beside_real_ask_user():
             )
         ],
     )
-    next_result, remainder = AgentToolLoop._promote_plaintext_solicitation(result)
+    next_result, remainder = AgentToolLoop._promote_plaintext_solicitation(
+        result, offered_tool_names=frozenset({"ask_user"})
+    )
     assert remainder is not None
     assert next_result.tool_calls[0].id == "1"
-    assert "【征询】" not in (next_result.content or "")
+
+
+def test_promote_skips_when_ask_user_not_offered():
+    result = ChatWithToolsResult(content=SCREENSHOT_BODY, tool_calls=[])
+    next_result, remainder = AgentToolLoop._promote_plaintext_solicitation(
+        result, offered_tool_names=frozenset({"search_kb"})
+    )
+    assert remainder is None
+    assert next_result.tool_calls == []
+    assert "【征询】" in (next_result.content or "")

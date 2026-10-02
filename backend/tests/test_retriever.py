@@ -62,6 +62,125 @@ def test_search_conversation_ids_empty_lane(tmp_path):
     assert page.hits == []
 
 
+def test_kb_exact_file_prefix_does_not_match_sibling(tmp_path):
+    llm = FakeLLMClient(chat_responses=[], embed_dim=8)
+    si = make_search_index(tmp_path, llm)
+    idx = Indexer(si)
+    idx.reindex_doc("技能/a.md", "docker ps 容器")
+    idx.reindex_doc("技能/a.mdx", "docker logs 日志")
+    drain_embeddings(si)
+    retr = Retriever(si, llm, min_score=0.0)
+    hits = retr.search("docker", k=5, kb_prefixes=["技能/a.md"]).hits
+    assert {h.doc_id for h in hits} == {"技能/a.md"}
+
+
+def test_cursor_binding_mismatch_expires(tmp_path):
+    llm = FakeLLMClient(chat_responses=[], embed_dim=8)
+    si = make_search_index(tmp_path, llm)
+    idx = Indexer(si)
+    idx.reindex_doc("a.md", "word one two three four")
+    idx.reindex_doc("b.md", "word one two three four five")
+    drain_embeddings(si)
+    retr = Retriever(si, llm, min_score=0.0)
+    page1 = retr.search("word", k=1, scope="knowledge", cursor_binding="conv-a")
+    assert page1.next_cursor
+    cursor = page1.next_cursor
+    page_bad = retr.search(
+        "word",
+        k=1,
+        scope="knowledge",
+        cursor=cursor,
+        cursor_binding="conv-b",
+    )
+    assert page_bad.cursor_expired
+    page_ok = retr.search(
+        "word",
+        k=1,
+        scope="knowledge",
+        cursor=cursor,
+        cursor_binding="conv-a",
+    )
+    assert not page_ok.cursor_expired
+    assert page_ok.hits
+    assert page_ok.hits[0].doc_id != page1.hits[0].doc_id
+
+
+def test_cursor_reuse_same_binding_returns_same_page(tmp_path):
+    llm = FakeLLMClient(chat_responses=[], embed_dim=8)
+    si = make_search_index(tmp_path, llm)
+    idx = Indexer(si)
+    idx.reindex_doc("a.md", "alpha beta gamma")
+    idx.reindex_doc("b.md", "alpha beta gamma delta")
+    drain_embeddings(si)
+    retr = Retriever(si, llm, min_score=0.0)
+    page1 = retr.search("alpha", k=1, scope="knowledge", cursor_binding="bind")
+    assert page1.next_cursor
+    cursor = page1.next_cursor
+    page2a = retr.search(
+        "alpha",
+        k=1,
+        scope="knowledge",
+        cursor=cursor,
+        cursor_binding="bind",
+    )
+    page2b = retr.search(
+        "alpha",
+        k=1,
+        scope="knowledge",
+        cursor=cursor,
+        cursor_binding="bind",
+    )
+    assert not page2a.cursor_expired and not page2b.cursor_expired
+    assert [h.doc_id for h in page2a.hits] == [h.doc_id for h in page2b.hits]
+
+
+def test_cursor_pagination_same_binding(tmp_path):
+    llm = FakeLLMClient(chat_responses=[], embed_dim=8)
+    si = make_search_index(tmp_path, llm)
+    idx = Indexer(si)
+    idx.reindex_doc("a.md", "alpha beta gamma")
+    idx.reindex_doc("b.md", "alpha beta gamma delta")
+    drain_embeddings(si)
+    retr = Retriever(si, llm, min_score=0.0)
+    page1 = retr.search("alpha", k=1, scope="knowledge", cursor_binding="")
+    assert page1.next_cursor and page1.hits
+    page2 = retr.search(
+        "alpha",
+        k=1,
+        scope="knowledge",
+        cursor=page1.next_cursor,
+        cursor_binding="",
+    )
+    assert not page2.cursor_expired
+    assert page1.hits[0].doc_id != page2.hits[0].doc_id
+
+
+def test_cursor_store_eviction_expires_oldest(tmp_path):
+    from app.engine.retriever import _CURSOR_STORE_MAX, Retriever
+
+    llm = FakeLLMClient(chat_responses=[], embed_dim=8)
+    si = make_search_index(tmp_path, llm)
+    idx = Indexer(si)
+    idx.reindex_doc("a.md", "term one two three")
+    idx.reindex_doc("b.md", "term one two three four")
+    drain_embeddings(si)
+    retr = Retriever(si, llm, min_score=0.0)
+    tokens: list[str] = []
+    for _ in range(_CURSOR_STORE_MAX + 1):
+        page = retr.search("term", k=1, scope="knowledge", cursor_binding="x")
+        assert page.next_cursor
+        tokens.append(page.next_cursor)
+    stale = tokens[0]
+    expired = retr.search(
+        "term",
+        k=1,
+        scope="knowledge",
+        cursor=stale,
+        cursor_binding="x",
+    )
+    assert expired.cursor_expired
+
+
 def test_answer_attaches_non_markdown(tmp_path):
     llm = FakeLLMClient(chat_responses=["见附件方案。"], embed_dim=8)
     si = make_search_index(tmp_path, llm)

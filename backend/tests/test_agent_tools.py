@@ -297,10 +297,8 @@ async def test_search_kb_filters_conversations_by_ts_range(tmp_path):
 
 @pytest.mark.asyncio
 async def test_search_kb_reports_cursor_expired(tmp_path):
-    from app.engine.retriever import _make_cursor
-
     registry, _, _ = _make_registry(tmp_path)
-    stale = _make_cursor("q", {"scope": "all", "conversation_id": None}, 999, 0)
+    stale = "eyJxIjoicSIsImYiOnsic2NvcGUiOiJhbGwifX0="  # 伪造的旧式游标
     result = await registry.execute("search_kb", {"query": "q", "k": 1, "cursor": stale})
     assert result.get("cursor_expired") is True
     assert "过期" in result["summary"]

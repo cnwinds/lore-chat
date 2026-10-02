@@ -1596,6 +1596,7 @@ _API_EXCLUDED_TOOLS = frozenset(
         "delete_kb",
         "publish_from_sandbox",
         "manage_memory",
+        "recall_memory",
         "recall_cards",
         "generate_image",
         "create_role",

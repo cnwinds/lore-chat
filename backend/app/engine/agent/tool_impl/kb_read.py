@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from app.engine.channel_plugins.types import is_channel_origin
 from app.engine.conversation.transcript import ConversationTranscript
 from app.engine.conversation_context import read_conversation_context as load_conversation_context
 from app.engine.disclosure import DisclosureWindows, disclose, disclosure_summary
@@ -38,6 +39,10 @@ class KbReadTools:
         role_id = args.get("role_id")
         if conversation_id and self.conversations is not None:
             try:
+                if is_channel_origin(self.conversations.get_origin(conversation_id)):
+                    # 通道回合：会话命中仅限当前线程，忽略模型指定的其它会话 id
+                    explicit_cid = conversation_id
+                    exclude_cid = None
                 # 强制当前会话所属角色，忽略模型随意传的 role_id
                 role_id = self.conversations.get_role_id(conversation_id)
             except KeyError:
@@ -52,6 +57,7 @@ class KbReadTools:
             ts_after=normalize_search_ts(args.get("ts_after")),
             ts_before=normalize_search_ts(args.get("ts_before")),
             cursor=cursor,
+            cursor_binding=conversation_id or "",
         )
         hits = page.hits
         sources = [self._hit_source(h) for h in hits]
