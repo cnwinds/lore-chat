@@ -111,7 +111,7 @@ def build_active_skill_messages(
             body = (
                 body[:cap]
                 + f"\n\n（正文共 {len(body)} 字，此处截至第 {cap} 字；"
-                f"其余用 read_doc path={entry} offset={cap} 读取）"
+                f"其余用 read uri={entry} offset={cap} 读取）"
             )
         budget -= min(len(body), cap)
         title = names.get(root) or root
@@ -152,7 +152,7 @@ def _tool_blocks(blocks: object) -> list[dict]:
 
 
 def _skill_root_read(block: dict) -> str | None:
-    if block.get("tool") != "read_doc" or block.get("status") != "done":
+    if block.get("tool") not in ("read", "read_doc") or block.get("status") != "done":
         return None
     if block.get("error"):
         return None

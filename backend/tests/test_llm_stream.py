@@ -209,7 +209,7 @@ def test_stream_logs_truncated_tool_calls(caplog):
         chunks = list(
             llm.stream_chat_with_tools(
                 [{"role": "user", "content": "hi"}],
-                [{"type": "function", "function": {"name": "search_kb", "parameters": {}}}],
+                [{"type": "function", "function": {"name": "search", "parameters": {}}}],
                 big=True,
             )
         )

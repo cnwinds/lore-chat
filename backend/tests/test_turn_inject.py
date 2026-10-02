@@ -74,7 +74,7 @@ async def test_tool_loop_applies_inject_after_tools(tmp_path):
             {
                 "content": None,
                 "tool_calls": [
-                    ToolCall(id="1", name="search_kb", arguments={"query": "x"}),
+                    ToolCall(id="1", name="search", arguments={"query": "x"}),
                 ],
             },
             {"content": "after inject", "tool_calls": []},

@@ -295,6 +295,8 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
     agent.tools.memory.conversations = conversations
     agent.tools.context_view.cards = memory.cards
     agent.tools.context_view.channel_instances = channel_instances
+    agent.tools.kb_mutate.cards = memory.cards
+    agent.tools.kb_mutate.channel_instances = channel_instances
     agent.chat_runner.turn_hub.usage_store = usage_store
 
     # 服务端发送队列：回合结束时由 TurnHub 钩子驱动 drain（注入/续发/暂停）

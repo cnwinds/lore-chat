@@ -6,17 +6,12 @@ from typing import Literal
 from urllib.parse import unquote
 
 from app.engine.context_view.errors import InvalidUri
-from app.engine.memory.cards import CARD_KINDS
-from app.engine.memory.constants import CATEGORIES
 
 LORE_SCHEME = "lore"
 LORE_ROOT = "lore://"
 
 ConversationBucket = Literal["dm", "rooms", "channels"]
 MemoryScopeKind = Literal["owner", "role", "persona"]
-
-_OWNER_KINDS = frozenset(CATEGORIES)
-_CARD_KINDS = frozenset(CARD_KINDS)
 
 
 def is_kb_internal(rel_path: str) -> bool:
@@ -142,10 +137,14 @@ def _validate_memory_kind(scope_kind: MemoryScopeKind, kind: str | None) -> None
     if not kind:
         return
     if scope_kind == "owner":
-        if kind not in _OWNER_KINDS:
+        from app.engine.memory.constants import CATEGORIES
+
+        if kind not in CATEGORIES:
             raise InvalidUri(f"未知主人记忆种类: {kind}")
     else:
-        if kind not in _CARD_KINDS:
+        from app.engine.memory.cards import CARD_KINDS
+
+        if kind not in CARD_KINDS:
             raise InvalidUri(f"未知卡片种类: {kind}")
 
 
@@ -273,6 +272,16 @@ def parse(raw: str) -> LoreUri | LegacyConversationRef:
     if ns == "memory":
         return _parse_memory(tail_segments, is_dir_hint=is_dir_hint)
     raise InvalidUri(f"未知命名空间: {ns}")
+
+
+def room_uri(room_id: str) -> str:
+    return format_uri(ConversationUri("rooms", None, room_id, None, True))
+
+
+def dm_conversation_uri(role_id: str, conversation_id: str) -> str:
+    return format_uri(
+        ConversationUri("dm", role_id, conversation_id, None, True)
+    )
 
 
 def format_uri(uri: LoreUri | LegacyConversationRef) -> str:

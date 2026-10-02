@@ -94,11 +94,11 @@ def test_promote_injects_ask_user_when_no_tool_calls():
 def test_promote_skips_mixed_tool_round():
     result = ChatWithToolsResult(
         content=SCREENSHOT_BODY,
-        tool_calls=[ToolCall(id="1", name="search_kb", arguments={"query": "x"})],
+        tool_calls=[ToolCall(id="1", name="search", arguments={"query": "x"})],
     )
     next_result, remainder = AgentToolLoop._promote_plaintext_solicitation(result)
     assert remainder is None
-    assert next_result.tool_calls[0].name == "search_kb"
+    assert next_result.tool_calls[0].name == "search"
 
 
 def test_promote_strips_duplicate_beside_real_ask_user():
@@ -128,7 +128,7 @@ def test_promote_strips_duplicate_beside_real_ask_user():
 def test_promote_skips_when_ask_user_not_offered():
     result = ChatWithToolsResult(content=SCREENSHOT_BODY, tool_calls=[])
     next_result, remainder = AgentToolLoop._promote_plaintext_solicitation(
-        result, offered_tool_names=frozenset({"search_kb"})
+        result, offered_tool_names=frozenset({"search"})
     )
     assert remainder is None
     assert next_result.tool_calls == []

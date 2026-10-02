@@ -4,6 +4,8 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
+from app.engine.agent.kb_path_args import normalize_write_tool_args
+
 if TYPE_CHECKING:
     from app.engine.agent.tools import ToolRegistry
 
@@ -21,11 +23,6 @@ def build_tool_dispatch(registry: ToolRegistry) -> dict[str, ToolHandler]:
     interaction = registry.interaction
     sandbox = registry.sandbox
 
-    async def _search(args: dict, **kw) -> dict:
-        return await asyncio.to_thread(
-            kb_read.search_kb, args, conversation_id=kw.get("conversation_id")
-        )
-
     async def _ctx_search(args: dict, **kw) -> dict:
         return await asyncio.to_thread(
             ctx.search, args, conversation_id=kw.get("conversation_id")
@@ -39,11 +36,6 @@ def build_tool_dispatch(registry: ToolRegistry) -> dict[str, ToolHandler]:
     async def _ctx_list(args: dict, **kw) -> dict:
         return await asyncio.to_thread(
             ctx.list, args, conversation_id=kw.get("conversation_id")
-        )
-
-    async def _read_doc(args: dict, **kw) -> dict:
-        return await asyncio.to_thread(
-            kb_read.read_doc, args, conversation_id=kw.get("conversation_id")
         )
 
     async def _edit_doc(args: dict, **kw) -> dict:
@@ -70,16 +62,6 @@ def build_tool_dispatch(registry: ToolRegistry) -> dict[str, ToolHandler]:
         "search": _ctx_search,
         "read": _ctx_read,
         "list": _ctx_list,
-        "search_kb": _search,
-        "read_doc": _read_doc,
-        "list_kb_structure": lambda args, **kw: asyncio.to_thread(
-            kb_read.list_kb_structure, args
-        ),
-        "read_conversation_context": lambda args, **kw: asyncio.to_thread(
-            kb_read.read_conversation_context,
-            args,
-            conversation_id=kw.get("conversation_id"),
-        ),
         "read_last_tool_results": lambda args, **kw: asyncio.to_thread(
             kb_read.read_last_tool_results,
             args,
@@ -93,9 +75,6 @@ def build_tool_dispatch(registry: ToolRegistry) -> dict[str, ToolHandler]:
             kb_mutate.write_kb_file, args
         ),
         "edit_doc": _edit_doc,
-        "read_doc_meta": lambda args, **kw: asyncio.to_thread(
-            kb_mutate.read_doc_meta, args
-        ),
         "update_doc_meta": lambda args, **kw: asyncio.to_thread(
             kb_mutate.update_doc_meta, args
         ),
@@ -147,12 +126,6 @@ def build_tool_dispatch(registry: ToolRegistry) -> dict[str, ToolHandler]:
             args, conversation_id=kw.get("conversation_id")
         ),
         "manage_memory": _manage_memory,
-        "recall_memory": lambda args, **kw: asyncio.to_thread(
-            memory.recall_memory, args
-        ),
-        "recall_cards": lambda args, **kw: asyncio.to_thread(
-            memory.recall_cards, args, conversation_id=kw.get("conversation_id")
-        ),
         "sandbox_run": lambda args, **kw: sandbox.sandbox_run(
             args, conversation_id=kw.get("conversation_id")
         ),
@@ -196,8 +169,11 @@ async def dispatch_tool(
             "sources": [],
             "error": f"unknown tool: {name}",
         }
+    norm_args, path_err = normalize_write_tool_args(name, args)
+    if path_err is not None:
+        return path_err
     result = handler(
-        args,
+        norm_args,
         active_doc_path=active_doc_path,
         conversation_id=conversation_id,
     )

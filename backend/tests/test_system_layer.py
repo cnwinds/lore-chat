@@ -205,9 +205,9 @@ def test_system_prompt_defers_skill_house_rules_to_precepts(tmp_path):
     ctx = next(
         d["function"]
         for d in TOOL_DEFINITIONS
-        if d["function"]["name"] == "read_conversation_context"
+        if d["function"]["name"] == "read"
     )
-    assert "conversation://" in ctx["description"]
+    assert "lore://" in ctx["description"]
 
 
 def test_system_prompt_does_not_duplicate_tool_parameter_table():

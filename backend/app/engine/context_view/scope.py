@@ -349,8 +349,9 @@ class ViewScope:
             return
         if uri.scope_kind == "persona":
             visible = self._visible_persona_ids()
-            if not visible:
-                raise OutOfScope(format_uri(uri))
+            if self.turn_kind == "channel":
+                if not visible:
+                    raise OutOfScope(format_uri(uri))
             if uri.subject and uri.subject not in visible:
                 raise OutOfScope(format_uri(uri))
 

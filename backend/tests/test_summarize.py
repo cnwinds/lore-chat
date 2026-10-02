@@ -54,6 +54,10 @@ def _make(tmp_path, chat_responses):
     derivation_worker = DerivationWorker(conversations, conversation_index)
     system_layer = SystemLayer(repo)
     settings = Settings(kb_path=tmp_path / "knowledge")
+    from app.engine.roles import RoleStore
+    from tests.test_agent_tools import _wire_registry_context
+
+    roles = RoleStore(tmp_path / "roles")
     registry = ToolRegistry(
         retr,
         repo,
@@ -65,7 +69,10 @@ def _make(tmp_path, chat_responses):
         conversations=conversations,
         system_layer=system_layer,
         indexer=idx,
+        roles=roles,
     )
+    _wire_registry_context(registry, tmp_path, conversations=conversations)
+    registry.kb_mutate.roles = roles
     return registry, repo, conversations, idx, conversation_index, derivation_worker, si
 
 

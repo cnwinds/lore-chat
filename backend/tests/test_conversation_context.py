@@ -156,7 +156,7 @@ def test_read_context_tail_skips_non_dialogue_roles(tmp_path):
     store.append_exchange(cid, "真正要接续的方案", {"role": "assistant", "text": "记下了"})
     store.append_messages(
         cid,
-        [{"role": "tool", "text": "search_kb 命中熔岩尾焰鸟"}] * 12,
+        [{"role": "tool", "text": "search 命中熔岩尾焰鸟"}] * 12,
     )
     out = read_conversation_context(store, conversation_id=cid)
     texts = " ".join(m["text"] for m in out["messages"])

@@ -82,7 +82,7 @@ async def test_tool_loop_rejects_unoffered_tool_without_dispatch(tmp_path):
     tools_for_run = [
         {
             "type": "function",
-            "function": {"name": "search_kb", "description": "d", "parameters": {}},
+            "function": {"name": "search", "description": "d", "parameters": {}},
         }
     ]
     events: list[str] = []
@@ -107,7 +107,7 @@ async def test_tool_loop_runs_offered_tool(tmp_path):
             {
                 "content": None,
                 "tool_calls": [
-                    ToolCall(id="1", name="search_kb", arguments={"query": "hello", "k": 1}),
+                    ToolCall(id="1", name="search", arguments={"query": "hello", "k": 1}),
                 ],
             },
             {"content": "done", "tool_calls": []},
@@ -123,7 +123,7 @@ async def test_tool_loop_runs_offered_tool(tmp_path):
     tools_for_run = [
         {
             "type": "function",
-            "function": {"name": "search_kb", "description": "d", "parameters": {}},
+            "function": {"name": "search", "description": "d", "parameters": {}},
         }
     ]
     async for _ in loop.stream(
@@ -135,12 +135,14 @@ async def test_tool_loop_runs_offered_tool(tmp_path):
         pass
 
     mock_execute.assert_awaited_once()
-    assert mock_execute.await_args.args[0] == "search_kb"
+    assert mock_execute.await_args.args[0] == "search"
 
 
-def test_select_tools_api_excludes_recall_memory():
+def test_select_tools_api_includes_search_not_legacy_recall():
     names = {d["function"]["name"] for d in select_tools(MODE_API, web_enabled=False)}
+    assert "search" in names
     assert "recall_memory" not in names
+    assert "recall_cards" not in names
 
 
 def test_read_context_owner_cannot_read_channel_conversation(tmp_path):
@@ -197,14 +199,36 @@ def test_read_context_owner_can_read_owner_dm(tmp_path):
     assert "主人私聊" in " ".join(m["text"] for m in out["messages"])
 
 
+def _channel_pair(tmp_path):
+    from app.engine.channel_plugins.store import ChannelInstanceStore
+    from app.engine.roles import RoleStore
+
+    kb = tmp_path / "knowledge"
+    store = _store(tmp_path)
+    roles = RoleStore(tmp_path / "roles")
+    role = roles.create(name="通道", system_prompt="")
+    persona = roles.create_persona(name="P", system_prompt="")
+    inst = ChannelInstanceStore(kb).create(
+        type_id="script_api",
+        name="ch",
+        persona_id=persona["id"],
+        role_id=role["id"],
+    )
+    channel_a = store.create(
+        role_id=role["id"], origin="api", channel_instance_id=inst["id"]
+    )
+    channel_b = store.create(
+        role_id=role["id"], origin="api", channel_instance_id=inst["id"]
+    )
+    return store, inst["id"], channel_a, channel_b
+
+
 @pytest.mark.asyncio
 async def test_search_kb_channel_turn_pins_conversation_id(tmp_path):
     from tests.test_agent_tools import _make_registry
 
     ci = make_conversation_index(tmp_path)
-    store = _store(tmp_path)
-    channel_a = store.create(origin="api")
-    channel_b = store.create(origin="api")
+    store, inst_id, channel_a, channel_b = _channel_pair(tmp_path)
     ci.upsert_message_chunks(
         conversation_id=channel_a,
         message_id="m-a",
@@ -226,25 +250,108 @@ async def test_search_kb_channel_turn_pins_conversation_id(tmp_path):
         tmp_path, conversation_index=ci, conversations=store
     )
     with patch.object(
-        registry.kb_read.retriever,
+        registry.context_view.retriever,
         "search",
-        wraps=registry.kb_read.retriever.search,
+        wraps=registry.context_view.retriever.search,
     ) as mock_search:
         await registry.execute(
-            "search_kb",
+            "search",
             {
                 "query": "共享词",
                 "k": 5,
-                "scope": "conversations",
-                "conversation_id": channel_b,
+                "paths": [
+                    f"lore://conversations/channels/{inst_id}/{channel_a}/"
+                ],
             },
             conversation_id=channel_a,
         )
-        mock_search.assert_called_once()
+        mock_search.assert_called()
         kwargs = mock_search.call_args.kwargs
-        assert kwargs["conversation_id"] == channel_a
-        assert kwargs["exclude_conversation_id"] is None
-        assert kwargs["cursor_binding"] == channel_a
+        assert kwargs.get("cursor_binding") == channel_a
+        conv_ids = kwargs.get("conversation_ids")
+        assert conv_ids is not None
+        assert channel_a in conv_ids
+        assert channel_b not in conv_ids
+
+
+@pytest.mark.asyncio
+async def test_channel_default_search_does_not_hit_other_thread(tmp_path):
+    from tests.test_agent_tools import _make_registry
+
+    ci = make_conversation_index(tmp_path)
+    store, inst_id, channel_a, channel_b = _channel_pair(tmp_path)
+    unique_b = "乙通道独有检索词"
+    ci.upsert_message_chunks(
+        conversation_id=channel_b,
+        message_id="m-b-only",
+        role="user",
+        ts="2026-07-14T12:00:00",
+        conversation_title="B",
+        chunks=[MessageChunk(0, 0, len(unique_b), unique_b)],
+    )
+    ci.upsert_message_chunks(
+        conversation_id=channel_a,
+        message_id="m-a",
+        role="user",
+        ts="2026-07-14T12:00:00",
+        conversation_title="A",
+        chunks=[MessageChunk(0, 0, 2, "无关")],
+    )
+    registry, _repo, _idx = _make_registry(
+        tmp_path, conversation_index=ci, conversations=store
+    )
+    with patch.object(
+        registry.context_view.retriever,
+        "search",
+        wraps=registry.context_view.retriever.search,
+    ) as mock_search:
+        result = await registry.execute(
+            "search",
+            {"query": unique_b, "k": 5},
+            conversation_id=channel_a,
+        )
+    conv_sources = [s for s in result["sources"] if s["type"] == "conversation"]
+    assert not any(s.get("cid") == channel_b for s in conv_sources)
+    if mock_search.called:
+        kwargs = mock_search.call_args.kwargs
+        conv_ids = kwargs.get("conversation_ids")
+        if conv_ids is not None:
+            assert channel_b not in conv_ids
+
+
+@pytest.mark.asyncio
+async def test_channel_search_explicit_other_thread_out_of_scope_no_retriever(tmp_path):
+    from tests.test_agent_tools import _make_registry
+
+    ci = make_conversation_index(tmp_path)
+    store, inst_id, channel_a, channel_b = _channel_pair(tmp_path)
+    registry, _repo, _idx = _make_registry(
+        tmp_path, conversation_index=ci, conversations=store
+    )
+    with patch.object(registry.context_view.retriever, "search") as mock_search:
+        r_lore = await registry.execute(
+            "search",
+            {
+                "query": "任意",
+                "k": 5,
+                "paths": [
+                    f"lore://conversations/channels/{inst_id}/{channel_b}/"
+                ],
+            },
+            conversation_id=channel_a,
+        )
+        r_legacy = await registry.execute(
+            "search",
+            {
+                "query": "任意",
+                "k": 5,
+                "paths": [f"conversation://{channel_b}"],
+            },
+            conversation_id=channel_a,
+        )
+    mock_search.assert_not_called()
+    assert r_lore.get("error") == "out_of_scope"
+    assert r_legacy.get("error") == "out_of_scope"
 
 
 @pytest.mark.asyncio
@@ -255,9 +362,7 @@ async def test_search_kb_forged_cursor_expires_without_cross_channel_hits(tmp_pa
     from tests.test_agent_tools import _make_registry
 
     ci = make_conversation_index(tmp_path)
-    store = _store(tmp_path)
-    channel_a = store.create(origin="api")
-    channel_b = store.create(origin="api")
+    store, inst_id, channel_a, channel_b = _channel_pair(tmp_path)
     ci.upsert_message_chunks(
         conversation_id=channel_a,
         message_id="m-a",
@@ -279,14 +384,9 @@ async def test_search_kb_forged_cursor_expires_without_cross_channel_hits(tmp_pa
         tmp_path, conversation_index=ci, conversations=store
     )
     forged_filters = {
-        "scope": "conversations",
-        "conversation_id": None,
-        "exclude_conversation_id": None,
-        "role_id": None,
-        "ts_after": None,
-        "ts_before": None,
+        "paths": [f"lore://conversations/channels/{inst_id}/{channel_a}/"],
         "kb_prefixes": None,
-        "conversation_ids": None,
+        "conversation_ids": [channel_b],
     }
     forged = base64.urlsafe_b64encode(
         json.dumps(
@@ -296,8 +396,13 @@ async def test_search_kb_forged_cursor_expires_without_cross_channel_hits(tmp_pa
     ).decode()
 
     result = await registry.execute(
-        "search_kb",
-        {"query": "共享词", "k": 5, "scope": "conversations", "cursor": forged},
+        "search",
+        {
+            "query": "共享词",
+            "k": 5,
+            "paths": [f"lore://conversations/channels/{inst_id}/{channel_a}/"],
+            "cursor": forged,
+        },
         conversation_id=channel_a,
     )
     assert result.get("cursor_expired") is True

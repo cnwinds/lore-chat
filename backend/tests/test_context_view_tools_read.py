@@ -27,7 +27,7 @@ def _write_doc(env, path: str, body: str, *, title: str = "T"):
     env.idx.reindex_doc(path, body)
 
 
-def test_read_doc_meta_no_header_in_body(cv_env):
+def test_read_no_header_in_body(cv_env):
     _write_doc(cv_env, "读/元数据.md", "# 正文\n\nhello", title="Shown")
     cid = cv_env.conv.create(role_id="default")
     out = cv_env.tools.read({"uri": "读/元数据.md"}, conversation_id=cid)

@@ -108,6 +108,7 @@ class ToolRegistry:
             memory_service=memory_service,
             conversations=conversations,
             system_layer=system_layer,
+            roles=roles,
             edit_doc_max_edits=edit_doc_max_edits,
             edit_doc_max_patch_chars=edit_doc_max_patch_chars,
         )

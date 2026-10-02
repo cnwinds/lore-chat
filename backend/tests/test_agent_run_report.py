@@ -18,7 +18,7 @@ def test_run_report_emit_formats_key_fields(caplog):
         llm_rounds=2,
         tool_calls_total=1,
         tool_limit=20,
-        last_tool_names=["search_kb"],
+        last_tool_names=["search"],
         done_emitted=True,
         duration_ms=1500,
     ).emit(logger)
@@ -30,7 +30,7 @@ def test_run_report_emit_formats_key_fields(caplog):
     assert "cid=abc123" in msg
     assert "turn_id=turn-1" in msg
     assert "run_id=run-1" in msg
-    assert "last_tools=search_kb" in msg
+    assert "last_tools=search" in msg
     assert "done_emitted=True" in msg
 
 
@@ -57,7 +57,7 @@ async def test_tool_loop_logs_complete_stop_reason(tmp_path, caplog):
             {
                 "content": None,
                 "tool_calls": [
-                    ToolCall(id="1", name="search_kb", arguments={"query": "x"}),
+                    ToolCall(id="1", name="search", arguments={"query": "x"}),
                 ],
             },
             {"content": "结论", "tool_calls": []},

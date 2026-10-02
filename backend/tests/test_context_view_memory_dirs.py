@@ -71,6 +71,35 @@ def test_channel_memory_role_out_of_scope(cv_env):
     assert out.get("error") == "out_of_scope"
 
 
+def test_owner_list_persona_root_empty_when_no_personas(cv_env):
+    out = cv_env.tools.list({"uri": "lore://memory/persona/"})
+    assert out.get("error") is None
+    assert out.get("entries") == []
+
+
+def test_owner_search_persona_root_empty_when_no_personas(cv_env):
+    out = cv_env.tools.search(
+        {"query": "x", "paths": ["lore://memory/persona/"]},
+    )
+    assert out.get("error") is None
+    assert out.get("memory", []) == []
+
+
+def test_channel_persona_root_out_of_scope_without_persona(cv_env, monkeypatch):
+    role, iid, cid = _channel(cv_env)
+    monkeypatch.setattr(
+        "app.engine.context_view.scope.ViewScope._persona_id_for_instance",
+        staticmethod(lambda store, inst_id: None),
+    )
+    out = cv_env.tools.list({"uri": "lore://memory/persona/"}, conversation_id=cid)
+    assert out.get("error") == "out_of_scope"
+    sr = cv_env.tools.search(
+        {"query": "x", "paths": ["lore://memory/persona/"]},
+        conversation_id=cid,
+    )
+    assert sr.get("error") == "out_of_scope"
+
+
 def test_channel_memory_persona_own_only(cv_env):
     role, iid, cid, persona_id = _channel_with_persona(cv_env)
     plan = compile_search(

@@ -335,13 +335,14 @@ def test_card_http_scopes_isolated(client):
     assert client.get("/api/cards", params={"scope": s2}).json()["count"] == 0
 
 
-def test_select_tools_default_includes_recall_cards_excludes_api():
+def test_select_tools_default_and_api_both_include_search():
     default_names = {
         d["function"]["name"] for d in select_tools(MODE_DEFAULT, web_enabled=False)
     }
     api_names = {d["function"]["name"] for d in select_tools(MODE_API, web_enabled=False)}
-    assert "recall_cards" in default_names
-    assert "recall_cards" not in api_names
+    assert "search" in default_names
+    assert "search" in api_names
+    assert "recall_cards" not in default_names
 
 
 @pytest.mark.asyncio
@@ -351,22 +352,25 @@ async def test_recall_cards_current_and_other_roles(container):
     _seed_card(container.knowledge_cards, scope, statement="查论文先读摘要")
     cid = container.conversations.create(role_id=role["id"])
     out = await container.agent.tools.execute(
-        "recall_cards",
-        {"query": "摘要"},
+        "search",
+        {"query": "摘要", "paths": [f"lore://memory/role/{role['id']}/"]},
         conversation_id=cid,
     )
-    assert out["ok"] is True
-    assert out["count"] == 1
+    memory = out.get("memory") or []
+    assert len(memory) == 1
     other = container.roles.create(name="编辑", system_prompt="")
     other_scope = role_scope(other["id"])
     _seed_card(container.knowledge_cards, other_scope, statement="编辑先通读", card_id="e1")
     out2 = await container.agent.tools.execute(
-        "recall_cards",
-        {"role": "编辑", "query": "通读"},
+        "search",
+        {
+            "query": "通读",
+            "paths": [f"lore://memory/role/{other['id']}/"],
+        },
         conversation_id=cid,
     )
-    assert out2["count"] == 1
-    assert "通读" in out2["cards"][0]["statement"]
+    assert len(out2.get("memory") or []) == 1
+    assert "通读" in out2["memory"][0]["text"]
 
 
 @pytest.mark.asyncio
@@ -376,14 +380,14 @@ async def test_recall_cards_persona_and_not_found(container):
     _seed_card(container.knowledge_cards, scope, statement="共用领域规则", card_id="p1")
     cid = container.conversations.create(role_id=container.roles.default_id())
     out = await container.agent.tools.execute(
-        "recall_cards",
-        {"role": persona["id"]},
+        "search",
+        {"query": "规则", "paths": [f"lore://memory/persona/{persona['id']}/"]},
         conversation_id=cid,
     )
-    assert out["count"] == 1
+    assert len(out.get("memory") or []) == 1
     missing = await container.agent.tools.execute(
-        "recall_cards",
-        {"role": "不存在"},
+        "search",
+        {"query": "x", "paths": ["lore://memory/role/不存在/"]},
         conversation_id=cid,
     )
     assert missing["error"] == "not_found"
@@ -405,11 +409,11 @@ async def test_recall_cards_rejects_channel_session(container):
         channel_instance_id=inst["id"],
     )
     out = await container.agent.tools.execute(
-        "recall_cards",
-        {},
+        "search",
+        {"query": "x", "paths": ["lore://memory/role/"]},
         conversation_id=cid,
     )
-    assert out["error"] == "channel_forbidden"
+    assert out["error"] == "out_of_scope"
 
 
 def test_old_precepts_hash_recognized_as_official(tmp_path):

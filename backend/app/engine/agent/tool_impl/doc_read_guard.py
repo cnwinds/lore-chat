@@ -2,7 +2,7 @@ from __future__ import annotations
 
 
 class DocReadGuard:
-    """edit_doc 前须 read_doc：按会话记录已读路径。"""
+    """edit_doc 前须 read：按会话记录已读路径。"""
 
     def __init__(self, *, require_read: bool = True) -> None:
         self.require_read = require_read

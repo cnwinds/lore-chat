@@ -159,9 +159,9 @@ async def test_write_kb_file_tool_roundtrip(tmp_path):
     )
     assert overwritten.get("overwritten") is True
 
-    read = await registry.execute("read_doc", {"path": "scripts/hello.py"})
+    read = await registry.execute("read", {"uri": "scripts/hello.py"})
     assert "print('bye')" in (read.get("body") or "")
-    assert read.get("kind") == "file"
+    assert read.get("kind") in ("file", "text")
     assert "outline" not in read
 
 
@@ -493,9 +493,6 @@ async def test_list_kb_structure_includes_scripts(tmp_path):
             "content": "#!/bin/sh\necho ok\n",
         },
     )
-    listed = await registry.execute("list_kb_structure", {})
-    assert "run.sh" in listed["summary"] or any(
-        "run.sh" in f
-        for d in listed.get("directories", [])
-        for f in d.get("files", [])
-    )
+    listed = await registry.execute("list", {"uri": "lore://kb/scripts/"})
+    names = [e.get("name") for e in listed.get("entries", [])]
+    assert "run.sh" in names

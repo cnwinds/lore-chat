@@ -342,7 +342,7 @@ def test_llm_history_from_timeline(tmp_path):
         {
             "role": "assistant",
             "timeline": [
-                {"type": "tool", "tool": "search_kb", "summary": "找到 1 条"},
+                {"type": "tool", "tool": "search", "summary": "找到 1 条"},
                 {"type": "text", "content": "第一轮回答"},
             ],
         },

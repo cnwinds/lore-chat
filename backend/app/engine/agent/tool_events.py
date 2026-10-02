@@ -53,10 +53,22 @@ def emit_tool_result_sse(tc: ToolCall, out: dict, duration_ms: int) -> str:
             q = clip_tool_query(cmd)
             if q:
                 extra["query"] = q
-    elif tc.name in ("search_kb", "web_search"):
+    elif tc.name in ("search", "web_search"):
         q = tc.arguments.get("query")
         if isinstance(q, str):
             clipped = clip_tool_query(q)
+            if clipped:
+                extra["query"] = clipped
+    elif tc.name == "read":
+        u = tc.arguments.get("uri")
+        if isinstance(u, str):
+            clipped = clip_tool_query(u)
+            if clipped:
+                extra["query"] = clipped
+    elif tc.name == "list":
+        u = tc.arguments.get("uri")
+        if isinstance(u, str) and u.strip():
+            clipped = clip_tool_query(u)
             if clipped:
                 extra["query"] = clipped
     elif tc.name == "edit_doc":

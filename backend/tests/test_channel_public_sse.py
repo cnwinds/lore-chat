@@ -136,7 +136,7 @@ def test_iter_public_chat_sse_start_text_done_hides_trace():
         yield sse_event("think_delta", {"delta": "先想一步"})
         yield sse_event(
             "tool_start",
-            {"id": "t1", "tool": "search_kb", "label": "检索"},
+            {"id": "t1", "tool": "search", "label": "检索"},
         )
         yield sse_event("text_delta", {"delta": "你好"})
         yield sse_event("done", {"sources": [], "total_duration_ms": 3})

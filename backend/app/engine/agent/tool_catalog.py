@@ -9,11 +9,8 @@ resolve_kb_location = KnowledgeWriter.resolve_location
 
 READ_ONLY_TOOLS = frozenset({
     "search", "read", "list",
-    "search_kb", "read_doc", "read_doc_meta", "list_kb_structure", "read_conversation_context",
     "read_last_tool_results",
     "fetch_url", "web_search",
-    "recall_memory",
-    "recall_cards",
     "list_roles",
     "list_rooms",
     "list_groups",
@@ -56,7 +53,7 @@ def disclosure_intent_limit_props(windows: DisclosureWindows) -> dict:
             "type": "string",
             "enum": ["spot", "deep"],
             "description": (
-                "读取意图：spot=问答取证（可先 search_kb，再小窗阅读；"
+                "读取意图：spot=问答取证（可先 search，再小窗阅读；"
                 f"默认约 {windows.spot} 字，limit 也不得超过该小窗）；"
                 f"deep=深读/核对/成文（默认约 {windows.deep} 字，"
                 f"limit 可放大至硬上限 {windows.max_chars}）。"
@@ -89,15 +86,6 @@ def _read_description(windows: DisclosureWindows) -> str:
     )
 
 
-def _read_doc_description(windows: DisclosureWindows) -> str:
-    return (
-        "按渐进式披露读取知识库文档或文本资产："
-        "Markdown 返回正文并附结构大纲；白名单文本文件（.sh/.py 等）按纯文本读取。"
-        f"默认 intent=spot（约 {windows.spot} 字，可先 search_kb）；"
-        f"深读/核对/成文用 intent=deep（默认约 {windows.deep} 字，硬上限 {windows.max_chars}）。"
-        "内容不足时用 offset 续读，不要盲目全量读取。"
-    )
-
 
 def _fetch_url_description(windows: DisclosureWindows) -> str:
     return (
@@ -115,9 +103,7 @@ def apply_disclosure_windows(tool_def: dict, windows: DisclosureWindows) -> dict
     name = out["function"]["name"]
     props = out["function"]["parameters"]["properties"]
     props.update(disclosure_intent_limit_props(windows))
-    if name == "read_doc":
-        out["function"]["description"] = _read_doc_description(windows)
-    elif name == "read":
+    if name == "read":
         out["function"]["description"] = _read_description(windows)
     elif name == "fetch_url":
         out["function"]["description"] = _fetch_url_description(windows)
@@ -132,11 +118,6 @@ TOOL_LABELS = {
     "search": "检索知识与会话",
     "read": "读取内容",
     "list": "浏览目录",
-    "search_kb": "检索本地知识库",
-    "read_doc": "读取文档",
-    "read_doc_meta": "读取文档元数据",
-    "list_kb_structure": "查看知识库目录结构",
-    "read_conversation_context": "读取会话上下文",
     "read_last_tool_results": "读取上一轮工具结果",
     "fetch_url": "打开链接",
     "web_search": "搜索网页",
@@ -165,8 +146,6 @@ TOOL_LABELS = {
     "update_doc_meta": "更新文档元数据",
     "move_entry": "移动或重命名路径",
     "manage_memory": "管理长期用户记忆",
-    "recall_memory": "回忆已确认的用户画像",
-    "recall_cards": "查阅角色知识卡",
     "sandbox_run": "在沙箱执行命令",
     "sandbox_list_dir": "列出沙箱目录",
     "sandbox_read_file": "读取沙箱文件",
@@ -405,123 +384,6 @@ TOOL_DEFINITIONS: list[dict] = [
     {
         "type": "function",
         "function": {
-            "name": "search_kb",
-            "description": (
-                "按相关度检索本地知识库或会话片段。"
-                "已给出时间时用 ts_after/ts_before 过滤会话命中（工具按时间戳过滤，不是把日期写进 query）；"
-                "主题、标题放 query。未点明是哪一段时不要用本工具在全历史里碰运气，"
-                "应先 read_conversation_context（可省略参数读取上一会话段）。"
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": _SEARCH_QUERY_DESC,
-                    },
-                    "k": {"type": "integer", "description": "返回条数，默认 5", "default": 5},
-                    "scope": {
-                        "type": "string",
-                        "enum": ["all", "knowledge", "conversations"],
-                        "description": "检索范围：全部 / 仅知识库 / 仅会话",
-                    },
-                    "conversation_id": {
-                        "type": "string",
-                        "description": "限定在某个会话内检索（scope=conversations 时有效）；显式传入时覆盖默认的「排除当前会话」",
-                    },
-                    "role_id": {
-                        "type": "string",
-                        "description": "限定本角色的历史会话（默认取当前会话所属角色）；仅影响会话命中，不影响知识库",
-                    },
-                    "cursor": {
-                        "type": "string",
-                        "description": "分页游标，用于续取上一页未返回的结果",
-                    },
-                    "ts_after": {
-                        "type": "string",
-                        "description": (
-                            "仅会话命中：起始时刻（含）。写 ISO 或日期 2026-09-17（当天 00:00 北京时间）。"
-                            "相对时间（昨天/本周）须先按【当前时间】换成日期，不要把「昨天」写进 query。"
-                        ),
-                    },
-                    "ts_before": {
-                        "type": "string",
-                        "description": (
-                            "仅会话命中：结束时刻（不含）。日期 2026-09-18 表示当天 00:00 之前。"
-                            "查「昨天」时 ts_after=昨天日期、ts_before=今天日期。"
-                        ),
-                    },
-                },
-                "required": ["query"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "read_doc",
-            "description": _read_doc_description(DisclosureWindows()),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "path": {"type": "string", "description": "文档相对路径，如 技术/docker/常用命令.md"},
-                    "offset": {"type": "integer", "description": "从第几个字符开始读取，默认 0；可用返回的 next_offset 或大纲中的 @位置", "default": 0},
-                    **disclosure_intent_limit_props(DisclosureWindows()),
-                },
-                "required": ["path"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "list_kb_structure",
-            "description": (
-                "列出知识库当前目录结构与各目录下的 Markdown / 文本代码文件名（只读；"
-                "图片等二进制不在此列出，单目录文件名可能截断）。"
-                "规划新路径（新建 write_doc / write_kb_file / summarize_conversation / "
-                "publish_from_sandbox / generate_image 指定 kb 路径）或 move_entry 之前必须先调用本工具；"
-                "并入已知文档、沿用已确认路径时不必为选路径再调。"
-                "禁止凭记忆编造路径。"
-            ),
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "read_conversation_context",
-            "description": (
-                "读取会话原文。跨段接续时：本段 history 没有用户所指对话须先取回；"
-                "UI 段间分隔线之前的轮次不在本段 history 中，禁止假记。"
-                "未点明是哪一段时可省略 conversation_id（默认本角色上一会话段）；"
-                "省略 message_id 时读取该段尾部。"
-                "已给出时间、主题、标题时，先用 search_kb(scope=conversations) 定位，"
-                "再按命中调用本工具核验邻近上下文。不得用最近一段交差或丢掉限定全库碰运气。"
-                "向用户引用会话：`[标题](conversation://会话id)` 或 "
-                "`conversation://会话id/消息id`；标题供人读，勿把裸 id 当唯一导航文案。"
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "conversation_id": {
-                        "type": "string",
-                        "description": "会话 id；省略则取本角色上一会话段（排除当前段）",
-                    },
-                    "message_id": {
-                        "type": "string",
-                        "description": "锚点消息；省略则读取该会话尾部",
-                    },
-                    "before_messages": {"type": "integer", "minimum": 0, "maximum": 10, "default": 2},
-                    "after_messages": {"type": "integer", "minimum": 0, "maximum": 10, "default": 2},
-                },
-                "required": [],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
             "name": "read_last_tool_results",
             "description": (
                 "读取上一轮工具与检索的原始结果（搜索命中、网页正文等）。"
@@ -632,7 +494,7 @@ TOOL_DEFINITIONS: list[dict] = [
             "name": "write_doc",
             "description": (
                 "将 Markdown 正文写入知识库。必须指定 directory 与 filename；"
-                "规划新路径时先 list_kb_structure；并入已知文档沿用已确认路径时不必再为选路径调用。"
+                "规划新路径时先 list；并入已知文档沿用已确认路径时不必再为选路径调用。"
                 "可选 meta（title/tags/source）；"
                 "正文勿含元数据头。已存在则默认合并，不存在则新建。"
                 "Skill 包放在「技能」目录下；Skill 的 name/description 触发头写在正文 --- YAML，勿放进 meta。"
@@ -672,23 +534,6 @@ TOOL_DEFINITIONS: list[dict] = [
                     **_path_fields()[0],
                 },
                 "required": ["text", "directory", "filename"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "read_doc_meta",
-            "description": "读取文档结构化元数据；读正文用 read_doc。",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "path": {
-                        "type": "string",
-                        "description": "文档相对路径，如 技术/docker/常用命令.md",
-                    },
-                },
-                "required": ["path"],
             },
         },
     },
@@ -738,7 +583,7 @@ TOOL_DEFINITIONS: list[dict] = [
                 "也支持矢量图 .svg（与 PNG/JPG 同为图片资产，可在聊天中预览；"
                 "**SVG 固定写入 媒体/生成/{年月}/**，directory 可传该路径或任意占位）。"
                 "禁止 .md（文档请用 write_doc）。不做 LLM 合并；已存在时须 overwrite=true 整文件覆盖。"
-                "规划新路径时应先 list_kb_structure；覆盖已确认路径时不必再为选路径调用。"
+                "规划新路径时应先 list；覆盖已确认路径时不必再为选路径调用。"
             ),
             "parameters": {
                 "type": "object",
@@ -771,7 +616,7 @@ TOOL_DEFINITIONS: list[dict] = [
             "name": "edit_doc",
             "description": (
                 "对已有知识库文档做局部修改（替换或插入）。"
-                "修改前必须先 read_doc 读取目标区域；old_string 必须从 read_doc 返回内容中精确复制。"
+                "修改前必须先 read 读取目标区域；old_string 必须从 read 返回内容中精确复制。"
                 "小范围修改优先于 write_doc。"
             ),
             "parameters": {
@@ -815,7 +660,7 @@ TOOL_DEFINITIONS: list[dict] = [
                             },
                             "at_offset": {
                                 "type": "integer",
-                                "description": "或在此字符偏移处插入（来自 read_doc 大纲 @位置）",
+                                "description": "或在此字符偏移处插入（来自 read 大纲 @位置）",
                             },
                             "content": {
                                 "type": "string",
@@ -837,8 +682,8 @@ TOOL_DEFINITIONS: list[dict] = [
                 "把一整段会话通读后全局重构、去重、成文，归档为一篇知识库文档。"
                 "用户要求「总结/归档会话/整理成文档/生成会话纪要」时调用。"
                 "默认归档当前段；用户所指的对话在分隔线之前（如上一会话段）时，"
-                "先用 read_conversation_context 或 search_kb 锁定那段，再传其 conversation_id。"
-                "归档前应先 list_kb_structure 规划 directory 与 filename（归档是新路径）；必须指定二者。"
+                "先用 read 读会话地址或 search 锁定那段，再传其 conversation_id。"
+                "归档前应先 list 规划 directory 与 filename（归档是新路径）；必须指定二者。"
             ),
             "parameters": {
                 "type": "object",
@@ -863,7 +708,7 @@ TOOL_DEFINITIONS: list[dict] = [
                 "与侧栏拖放移动行为一致：目录移动时 to_filename 为新文件夹名（省略则用原目录名）；"
                 "单文件移动时 to_filename 为目标文件名（省略则用原文件名）；"
                 "Markdown 须以 .md 结尾；目标为 to_directory/filename。"
-                "移动前须先 list_kb_structure；目标路径不得已存在。"
+                "移动前须先 list；目标路径不得已存在。"
             ),
             "parameters": {
                 "type": "object",
@@ -935,40 +780,6 @@ TOOL_DEFINITIONS: list[dict] = [
                     },
                 },
                 "required": ["action", "statement"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "recall_memory",
-            "description": "查询已确认的用户长期记忆画像，可选返回来源解释",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "检索关键词或自然语言问题"},
-                    "include_sources": {"type": "boolean", "default": False},
-                    "limit": {"type": "integer", "default": 10},
-                },
-                "required": ["query"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "recall_cards",
-            "description": (
-                "查阅角色积累的知识卡（领域知识、做法、经验、受众）。"
-                "省略 role 查当前角色；也可查其他左栏角色或通道共用角色，借鉴对方的经验。只读。"
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "role": {"type": "string", "description": "角色名或 id；省略为当前角色"},
-                    "query": {"type": "string", "description": "关键词；省略返回最近更新的卡"},
-                    "limit": {"type": "integer", "minimum": 1, "maximum": 10, "default": 10},
-                },
             },
         },
     },
@@ -1753,8 +1564,6 @@ _API_EXCLUDED_TOOLS = frozenset(
         "delete_kb",
         "publish_from_sandbox",
         "manage_memory",
-        "recall_memory",
-        "recall_cards",
         "generate_image",
         "create_role",
         "update_role",
@@ -1790,7 +1599,7 @@ def select_tools(
     - mode=no_write：移除 write_doc / write_kb_file / update_doc_meta / manage_memory / publish_from_sandbox / generate_image（保留 stage_to_sandbox）。
     - mode=force_write：保留 write_doc（/api/ingest 依赖 prompt 强制调用）。
     - sandbox_enabled=False：移除全部沙箱工具。
-    - disclosure_windows：注入 read_doc / fetch_url 的实际窗口字数（与 Settings 一致）。
+    - disclosure_windows：注入 read / fetch_url 的实际窗口字数（与 Settings 一致）。
 
     /api/chat 使用 mode=default。ingest/ask 为测试与脚本同步 API。
     """
@@ -1824,7 +1633,7 @@ def select_tools(
         name = d["function"]["name"]
         if name in excluded:
             continue
-        if name in ("read_doc", "read", "fetch_url"):
+        if name in ("read", "fetch_url"):
             selected.append(apply_disclosure_windows(d, windows))
         else:
             selected.append(d)
