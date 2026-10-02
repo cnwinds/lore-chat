@@ -4,6 +4,7 @@ import {
   countChars,
   findLaneForNode,
   groupOverviewLanes,
+  normalizeBgNode,
   splitPromptPlaceholders,
 } from "./backgroundUtils";
 import type { BgLane, BgNode, BgOverview } from "../../types/background";
@@ -107,5 +108,27 @@ describe("countChars", () => {
   it("counts unicode code points", () => {
     expect(countChars("ab")).toBe(2);
     expect(countChars("中文")).toBe(2);
+  });
+});
+
+describe("normalizeBgNode", () => {
+  it("fills missing list fields", () => {
+    const raw = {
+      id: "store.owner_memory",
+      type: "store",
+      title: "主人记忆库",
+      subtitle: "",
+      trigger_kind: null,
+      description: "d",
+      chain: null,
+      temperature: null,
+      purpose: null,
+      pause_key: null,
+    } as BgNode;
+    const n = normalizeBgNode(raw);
+    expect(n.conditions).toEqual([]);
+    expect(n.limits).toEqual([]);
+    expect(n.guards).toEqual([]);
+    expect(n.links).toEqual([]);
   });
 });
