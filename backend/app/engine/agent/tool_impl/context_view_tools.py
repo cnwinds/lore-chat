@@ -15,7 +15,7 @@ from app.engine.context_view.errors import (
 )
 from app.engine.context_view.hits import pair_hit_and_source
 from app.engine.context_view.kb_kind import classify
-from app.engine.context_view.listing import list_entries
+from app.engine.context_view.listing import list_entries, parse_list_depth
 from app.engine.context_view.scope import ViewScope
 from app.engine.context_view.uri import (
     ConversationUri,
@@ -338,19 +338,175 @@ class ContextViewTools:
         scope = self._scope(conversation_id=conversation_id)
         if isinstance(scope, dict):
             return scope
+
         uri_str = (args.get("uri") or "").strip()
-        if not uri_str:
+        raw_uris = args.get("uris")
+        uri_list: list[str] = []
+        if uri_str:
+            uri_list.append(uri_str)
+        if isinstance(raw_uris, list):
+            for u in raw_uris:
+                if isinstance(u, str) and u.strip():
+                    s = u.strip()
+                    if s not in uri_list:
+                        uri_list.append(s)
+        if not uri_list:
             return {
-                "summary": "缺少 uri",
+                "summary": "缺少 uri 或 uris",
                 "sources": [],
                 "error": "invalid_uri",
                 "uri": "",
             }
+
+        max_batch = 8
+        skipped_over: list[str] = []
+        if len(uri_list) > max_batch:
+            skipped_over = uri_list[max_batch:]
+            uri_list = uri_list[:max_batch]
+
+        if len(uri_list) == 1:
+            return self._read_one(
+                scope, uri_list[0], args, conversation_id=conversation_id
+            )
+
+        # 多项：先整体校验范围
+        parsed_list: list[tuple[str, LoreUri | None, dict | None]] = []
+        for u in uri_list:
+            try:
+                parsed = scope.resolve_and_check(u)
+            except ContextViewError as exc:
+                if isinstance(exc, (OutOfScope, InvalidUri)):
+                    err = _error_result(exc)
+                    return err
+                parsed_list.append((u, None, _error_result(exc)))
+                continue
+            parsed_list.append((u, parsed, None))
+
+        offset_ignored = args.get("offset") not in (None, 0, "0", "")
+        batch_args = dict(args)
+        if offset_ignored:
+            batch_args = {**args, "offset": 0}
+
+        budget = self.disclosure.max_chars
+        items: list[dict] = []
+        all_sources: list[dict] = []
+        failed = 0
+        truncated = 0
+
+        for u, parsed, pre_err in parsed_list:
+            if pre_err is not None:
+                items.append({**pre_err, "uri": u})
+                failed += 1
+                continue
+            if parsed is None:
+                continue
+            if budget <= 0:
+                items.append(
+                    {
+                        "uri": u,
+                        "summary": "总字数预算已用完，请单独 read 该项",
+                        "sources": [],
+                        "skipped_budget": True,
+                    }
+                )
+                truncated += 1
+                continue
+            one = self._read_one_parsed(
+                scope,
+                parsed,
+                batch_args,
+                conversation_id=conversation_id,
+                budget_cap=budget,
+            )
+            one.setdefault("uri", u)
+            items.append(one)
+            if one.get("error"):
+                failed += 1
+            else:
+                for src in one.get("sources") or []:
+                    if isinstance(src, dict) and src not in all_sources:
+                        all_sources.append(src)
+                chars = self._read_item_char_count(one)
+                budget -= min(chars, budget)
+
+        extra: list[str] = []
+        if failed:
+            extra.append(f"{failed} 项失败")
+        if truncated or skipped_over:
+            extra.append(
+                f"{truncated + len(skipped_over)} 项因预算或上限未读"
+            )
+        summary = f"读取 {len(items)} 项"
+        if extra:
+            summary += "（" + "，".join(extra) + "）"
+        if offset_ignored:
+            summary += "；offset 仅对单个 uri 生效，多项已忽略"
+        if skipped_over:
+            summary += f"；超出 8 个上限未读：{len(skipped_over)} 个"
+
+        out: dict[str, Any] = {
+            "summary": summary,
+            "items": items,
+            "sources": all_sources,
+        }
+        if skipped_over:
+            out["skipped"] = skipped_over
+        return out
+
+    def _read_item_char_count(self, item: dict) -> int:
+        if item.get("kind") in ("doc", "text") or item.get("extracted"):
+            return int(item.get("returned_chars") or len(item.get("body") or ""))
+        if item.get("messages"):
+            return len(item.get("summary") or "") + sum(
+                len(str(m.get("text") or "")) for m in item.get("messages") or []
+            )
+        if item.get("statement") is not None:
+            return len(str(item.get("statement") or ""))
+        return len(item.get("summary") or "")
+
+    def _read_one(
+        self,
+        scope: ViewScope,
+        uri_str: str,
+        args: dict,
+        *,
+        conversation_id: str | None,
+    ) -> dict:
         try:
             parsed = scope.resolve_and_check(uri_str)
         except ContextViewError as exc:
             return _error_result(exc)
+        return self._read_one_parsed(
+            scope, parsed, args, conversation_id=conversation_id
+        )
 
+    def _kb_uri_as_on_disk(self, parsed: LoreUri) -> LoreUri:
+        """路径存在时以磁盘为准判定目录/文件，不依赖调用方是否写了结尾斜杠。"""
+        if not isinstance(parsed, KbUri):
+            return parsed
+        rel = parsed.rel_path.replace("\\", "/").strip("/")
+        if not rel:
+            return parsed
+        try:
+            abs_p = self.repo.abs_path(rel)
+        except ValueError:
+            return parsed
+        if abs_p.is_dir():
+            return KbUri(rel, True)
+        if abs_p.is_file():
+            return KbUri(rel, False)
+        return parsed
+
+    def _read_one_parsed(
+        self,
+        scope: ViewScope,
+        parsed: LoreUri,
+        args: dict,
+        *,
+        conversation_id: str | None,
+        budget_cap: int | None = None,
+    ) -> dict:
+        parsed = self._kb_uri_as_on_disk(parsed)
         if isinstance(parsed, KbUri):
             if parsed.is_dir or not parsed.rel_path:
                 return {
@@ -359,7 +515,12 @@ class ContextViewTools:
                     "error": "is_directory",
                     "uri": format_uri(parsed),
                 }
-            return self._read_kb(parsed, args, conversation_id=conversation_id)
+            return self._read_kb(
+                parsed,
+                args,
+                conversation_id=conversation_id,
+                budget_cap=budget_cap,
+            )
 
         if isinstance(parsed, ConversationUri):
             return self._read_conversation(parsed, args, conversation_id=conversation_id)
@@ -379,13 +540,20 @@ class ContextViewTools:
         return {"summary": "不支持的 URI", "sources": [], "error": "invalid_uri"}
 
     def _read_kb(
-        self, uri: KbUri, args: dict, *, conversation_id: str | None
+        self,
+        uri: KbUri,
+        args: dict,
+        *,
+        conversation_id: str | None,
+        budget_cap: int | None = None,
     ) -> dict:
         path = uri.rel_path.replace("\\", "/").lstrip("/")
         if is_kb_text_file(path):
-            return self._read_kb_text(path, args, conversation_id=conversation_id)
+            return self._read_kb_text(
+                path, args, conversation_id=conversation_id, budget_cap=budget_cap
+            )
         if classify(path) == "binary":
-            return self._read_kb_binary(path, uri, args)
+            return self._read_kb_binary(path, uri, args, budget_cap=budget_cap)
         try:
             doc = self.repo.read_doc(path)
         except FileNotFoundError:
@@ -397,12 +565,17 @@ class ContextViewTools:
             }
         offset = args.get("offset", 0)
         limit = self.disclosure.resolve_args(args)
+        max_chars = self.disclosure.max_chars
+        if budget_cap is not None:
+            cap = max(1, int(budget_cap))
+            limit = min(limit, cap)
+            max_chars = min(max_chars, cap)
         info = disclose(
             doc.body,
             offset=offset,
             limit=limit,
             with_outline=True,
-            max_chars=self.disclosure.max_chars,
+            max_chars=max_chars,
         )
         rel = doc.rel_path
         out = {
@@ -431,7 +604,12 @@ class ContextViewTools:
         return out
 
     def _read_kb_text(
-        self, path: str, args: dict, *, conversation_id: str | None
+        self,
+        path: str,
+        args: dict,
+        *,
+        conversation_id: str | None,
+        budget_cap: int | None = None,
     ) -> dict:
         uri = format_uri(KbUri(path, False))
         try:
@@ -446,12 +624,17 @@ class ContextViewTools:
         text = data.decode("utf-8", errors="replace")
         offset = args.get("offset", 0)
         limit = self.disclosure.resolve_args(args)
+        max_chars = self.disclosure.max_chars
+        if budget_cap is not None:
+            cap = max(1, int(budget_cap))
+            limit = min(limit, cap)
+            max_chars = min(max_chars, cap)
         info = disclose(
             text,
             offset=offset,
             limit=limit,
             with_outline=False,
-            max_chars=self.disclosure.max_chars,
+            max_chars=max_chars,
         )
         out = {
             "summary": disclosure_summary(f"读取 {path}", info),
@@ -469,7 +652,9 @@ class ContextViewTools:
         self.read_guard.mark(conversation_id, path)
         return out
 
-    def _read_kb_binary(self, path: str, uri: KbUri, args: dict) -> dict:
+    def _read_kb_binary(
+        self, path: str, uri: KbUri, args: dict, *, budget_cap: int | None = None
+    ) -> dict:
         abs_p = self.repo.abs_path(path)
         try:
             size = abs_p.stat().st_size
@@ -500,12 +685,17 @@ class ContextViewTools:
         if extracted.strip():
             offset = args.get("offset", 0)
             limit = self.disclosure.resolve_args(args)
+            max_chars = self.disclosure.max_chars
+            if budget_cap is not None:
+                cap = max(1, int(budget_cap))
+                limit = min(limit, cap)
+                max_chars = min(max_chars, cap)
             info = disclose(
                 extracted,
                 offset=offset,
                 limit=limit,
                 with_outline=False,
-                max_chars=self.disclosure.max_chars,
+                max_chars=max_chars,
             )
             out["body"] = info["body"]
             out["extracted"] = True
@@ -680,7 +870,11 @@ class ContextViewTools:
         if isinstance(scope, dict):
             return scope
         uri_str = (args.get("uri") or "").strip() or LORE_ROOT
-        depth = int(args.get("depth", 1))
+        raw_depth = args.get("depth")
+        pattern = args.get("pattern")
+        type_filter = args.get("type")
+        ts_after = normalize_search_ts(args.get("ts_after"))
+        ts_before = normalize_search_ts(args.get("ts_before"))
         cursor = args.get("cursor")
         offset = 0
         if cursor is not None:
@@ -700,46 +894,72 @@ class ContextViewTools:
             parsed = scope.resolve_and_check(uri_str)
         except ContextViewError as exc:
             return _error_result(exc)
+        parsed = self._kb_uri_as_on_disk(parsed)
 
-        if isinstance(parsed, ConversationUri) and parsed.conversation_id:
-            return {
-                "summary": "会话条目请用 read 读取，不能 list",
-                "sources": [],
-                "error": "use_read",
-                "uri": format_uri(parsed),
-            }
-        if isinstance(parsed, KbUri) and not parsed.is_dir:
-            return {
-                "summary": "这是文件，请用 read 读取",
-                "sources": [],
-                "error": "not_directory",
-                "uri": format_uri(parsed),
-            }
-        if isinstance(parsed, MemoryUri) and parsed.item_id:
-            return {
-                "summary": "记忆条目请用 read 读取",
-                "sources": [],
-                "error": "use_read",
-                "uri": format_uri(parsed),
-            }
-
-        entries, has_more, next_off = list_entries(
-            scope,
-            self.repo,
-            parsed,
-            depth=depth,
-            offset=offset,
+        has_filter = bool(
+            (pattern and str(pattern).strip())
+            or (type_filter and str(type_filter).strip())
+            or ts_after
+            or ts_before
         )
-        listed_uri = uri_str
-        if listed_uri != LORE_ROOT and not listed_uri.endswith("/"):
-            listed_uri = listed_uri + "/"
-        out = {
-            "summary": f"列出 {len(entries)} 项",
+        depth = parse_list_depth(raw_depth, has_filter=has_filter)
+
+        try:
+            result = list_entries(
+                scope,
+                self.repo,
+                parsed,
+                depth=depth,
+                offset=offset,
+                pattern=str(pattern).strip() if pattern else None,
+                type_filter=str(type_filter).strip() if type_filter else None,
+                ts_after=ts_after,
+                ts_before=ts_before,
+            )
+        except NotFound as exc:
+            return _error_result(exc)
+        entries = result.entries
+        listed_uri = format_uri(parsed)
+
+        single_item = len(entries) == 1 and (
+            isinstance(parsed, KbUri)
+            and not parsed.is_dir
+            or isinstance(parsed, ConversationUri)
+            and parsed.conversation_id
+            or isinstance(parsed, MemoryUri)
+            and parsed.item_id
+        )
+        summary_parts = [f"列出 {len(entries)} 项"]
+        if single_item:
+            summary_parts.append("读内容请用 read")
+        if result.unexpanded_dirs:
+            summary_parts.append(
+                f"{result.unexpanded_dirs} 个目录因预算未展开（expanded=false）"
+            )
+        if result.omitted_files:
+            summary_parts.append(
+                f"省略 {result.omitted_files} 个条目（每个目录最多列 20 个非目录条目）"
+            )
+        if result.unlisted:
+            summary_parts.append(
+                f"起点目录还有 {result.unlisted} 项未列出，用 depth=1 加 cursor 翻页可看全"
+            )
+        if result.has_more:
+            summary_parts.append("还有下一页")
+
+        out: dict[str, Any] = {
+            "summary": "；".join(summary_parts),
             "sources": [],
             "entries": entries,
             "uri": listed_uri,
         }
-        if has_more:
+        if result.unexpanded_dirs:
+            out["unexpanded_dirs"] = result.unexpanded_dirs
+        if result.omitted_files:
+            out["omitted_files"] = result.omitted_files
+        if result.unlisted:
+            out["unlisted"] = result.unlisted
+        if result.has_more:
             out["has_more"] = True
-            out["next_cursor"] = str(next_off)
+            out["next_cursor"] = str(result.next_offset)
         return out

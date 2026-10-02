@@ -104,10 +104,12 @@ def test_list_memory_role_roles(cv_env):
     assert len(out.get("entries", [])) >= 1
 
 
-def test_list_conversation_uri_errors(cv_env):
+def test_list_conversation_uri_returns_single_entry(cv_env):
     cid = cv_env.conv.create(role_id="default")
     out = cv_env.tools.list({"uri": f"lore://conversations/dm/default/{cid}/"})
-    assert out.get("error") == "use_read"
+    assert out.get("error") is None
+    assert len(out.get("entries") or []) == 1
+    assert "read" in (out.get("summary") or "")
 
 
 def test_channel_list_root_and_conversations(cv_env):

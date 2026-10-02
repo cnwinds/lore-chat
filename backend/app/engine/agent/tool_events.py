@@ -60,15 +60,32 @@ def emit_tool_result_sse(tc: ToolCall, out: dict, duration_ms: int) -> str:
             if clipped:
                 extra["query"] = clipped
     elif tc.name == "read":
+        parts: list[str] = []
         u = tc.arguments.get("uri")
-        if isinstance(u, str):
-            clipped = clip_tool_query(u)
+        if isinstance(u, str) and u.strip():
+            parts.append(u.strip())
+        raw_uris = tc.arguments.get("uris")
+        if isinstance(raw_uris, list):
+            for item in raw_uris:
+                if isinstance(item, str) and item.strip() and item.strip() not in parts:
+                    parts.append(item.strip())
+        if parts:
+            clipped = clip_tool_query("、".join(parts))
             if clipped:
                 extra["query"] = clipped
     elif tc.name == "list":
+        qparts: list[str] = []
         u = tc.arguments.get("uri")
         if isinstance(u, str) and u.strip():
-            clipped = clip_tool_query(u)
+            qparts.append(u.strip())
+        pat = tc.arguments.get("pattern")
+        if isinstance(pat, str) and pat.strip():
+            qparts.append(f" · {pat.strip()}")
+        typ = tc.arguments.get("type")
+        if isinstance(typ, str) and typ.strip():
+            qparts.append(f" · type={typ.strip()}")
+        if qparts:
+            clipped = clip_tool_query("".join(qparts))
             if clipped:
                 extra["query"] = clipped
     elif tc.name == "edit_doc":

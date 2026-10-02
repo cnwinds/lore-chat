@@ -73,13 +73,17 @@ def disclosure_intent_limit_props(windows: DisclosureWindows) -> dict:
 
 def _read_description(windows: DisclosureWindows) -> str:
     return (
-        "按 lore:// 地址读取一项内容；不带 lore:// 的相对路径视为知识库路径。"
+        "按 lore:// 地址读取内容；不带 lore:// 的相对路径视为知识库路径。"
+        "uri 与 uris 可二选一或合并去重（最多 8 个）；已知多个地址时用 uris 一次读完。"
+        "只读一个地址时返回结构与单项相同；多项时返回 items 与合并的 sources。"
         "知识库 Markdown 文档返回正文（附大纲）与元数据字段；文本文件返回原文；"
         "二进制文件返回类型与大小，能抽取文字的（PDF、Office 等）返回抽取文本并标明 extracted。"
         "会话地址 …/<会话id>/ 读该段尾部，…/<会话id>/<消息id> 读该消息前后 before/after 条。"
         "记忆地址返回正文、种类、来源与状态。目录地址请用 list。"
         f"默认 intent=spot（约 {windows.spot} 字）；"
         f"深读、核对、成文用 intent=deep（默认约 {windows.deep} 字，硬上限 {windows.max_chars}）；"
+        "多项时各项合计不超过硬上限，预算不足的项标 skipped_budget 或截断并给 next_offset；"
+        "offset 仅对单个 uri 生效。"
         "内容不足时用 offset 续读，不要盲目全量读取。"
         "本段 history 里没有用户所指的对话时须先读原文：界面分隔线之前的轮次不在本段 history 中，不得凭印象复述。"
         "向用户引用时写成 [标题](lore://…)，标题供人读，不要把裸 id 当链接文字。"
@@ -312,7 +316,13 @@ TOOL_DEFINITIONS: list[dict] = [
                 "properties": {
                     "uri": {
                         "type": "string",
-                        "description": "lore:// 地址，或知识库相对路径",
+                        "description": "单个 lore:// 地址，或知识库相对路径",
+                    },
+                    "uris": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "maxItems": 8,
+                        "description": "一次读取多个地址（与 uri 合并去重，最多 8 个）",
                     },
                     "offset": {
                         "type": "integer",
@@ -340,7 +350,7 @@ TOOL_DEFINITIONS: list[dict] = [
                         "default": False,
                     },
                 },
-                "required": ["uri"],
+                "required": [],
             },
         },
     },
@@ -353,7 +363,14 @@ TOOL_DEFINITIONS: list[dict] = [
                 "知识库目录列子目录（带子项数）与文件（带类型、文档标题、大小），受保护路径会标出；"
                 "lore://conversations/dm/<角色>/ 与 lore://conversations/rooms/ 按最近活动列会话；"
                 "lore://memory/ 下逐层列作用域、种类与条目。"
-                "默认一层，depth 最大 3，每次最多 200 项，超出用 cursor 续取。"
+                "depth 默认 1、最大 5；一层列表超过 200 项用 cursor 翻页。"
+                "depth>1 时一次给出多层概览，预算内按层展开，每个目录最多列 20 个非目录条目；"
+                "未展开的目录标 expanded=false，可定点下钻。"
+                "pattern 按名称或标题通配（如 *.pdf）；无通配符时按包含匹配。"
+                "type 可取 dir / doc / text / binary / conversation / memory；规划新路径用 type=dir。"
+                "有 pattern、type 或 ts 筛选时在 depth 内递归匹配，命中项平铺分页。"
+                "给出 ts_after / ts_before 时只返回落在该时间范围内的会话条目。"
+                "对文件、会话、记忆条目调用返回该项摘要并提示用 read 读正文。"
                 "规划新的知识库路径（write_doc、write_kb_file、summarize_conversation、"
                 "publish_from_sandbox、generate_image 新建路径）或 move_entry 之前必须先 list 目标目录；"
                 "并入已知文档、沿用已确认路径时不必再调。不得凭记忆编造路径。"
@@ -366,15 +383,28 @@ TOOL_DEFINITIONS: list[dict] = [
                         "description": "lore:// 目录地址；省略为 lore://",
                     },
                     "depth": {
-                        "type": "integer",
-                        "description": "向下展开层数，1–3，默认 1",
+                        "description": "向下展开层数，1–5，默认 1",
                         "default": 1,
-                        "minimum": 1,
-                        "maximum": 3,
+                    },
+                    "pattern": {
+                        "type": "string",
+                        "description": "名称或标题通配筛选（不区分大小写）",
+                    },
+                    "type": {
+                        "type": "string",
+                        "description": "条目类型：dir / doc / text / binary / conversation / memory",
+                    },
+                    "ts_after": {
+                        "type": "string",
+                        "description": "有值时只列该时间之后仍有活动的会话（与 search 同格式）",
+                    },
+                    "ts_before": {
+                        "type": "string",
+                        "description": "有值时只列该时间之前仍有活动的会话（与 search 同格式）",
                     },
                     "cursor": {
                         "type": "string",
-                        "description": "分页游标，续取未返回的条目",
+                        "description": "分页游标（一层列表或筛选结果）",
                     },
                 },
                 "required": [],
