@@ -120,6 +120,7 @@ class KnowledgeCards:
         self.persona_state = persona_state or CardPersonaState(self._db_path)
         self.evolver = None
         self.index: CardIndex | None = None
+        self.owner_index = None
         self._stores: dict[str, MemoryStore] = {}
         self._resolvers: dict[str, SlotResolver] = {}
         self._scope_locks: dict[str, threading.Lock] = {}
@@ -698,6 +699,12 @@ class KnowledgeCards:
                 self.index.sync_all()
             except Exception as exc:  # noqa: BLE001
                 _log.warning("card index sync_all failed err=%s", exc)
+        owner_idx = self.owner_index
+        if owner_idx is not None:
+            try:
+                owner_idx.sync()
+            except Exception as exc:  # noqa: BLE001
+                _log.warning("owner index sync failed err=%s", exc)
 
         return {
             "faded": faded_total,

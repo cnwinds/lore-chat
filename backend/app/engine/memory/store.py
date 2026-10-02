@@ -3,8 +3,11 @@ from __future__ import annotations
 import json
 import sqlite3
 import uuid
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
+
+from app.logging_config import get_logger
 
 from app.engine.memory.constants import ORIGIN_RANK
 
@@ -84,11 +87,29 @@ def _row_to_fact(row: sqlite3.Row) -> dict:
 
 
 class MemoryStore:
-    def __init__(self, db_path: str | Path, *, owner_key: str):
+    def __init__(
+        self,
+        db_path: str | Path,
+        *,
+        owner_key: str,
+        on_mutated: Callable[[], None] | None = None,
+    ):
         self.db_path = Path(db_path)
         self.owner_key = owner_key
+        self.on_mutated = on_mutated
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
+
+    def _notify_mutated(self) -> None:
+        cb = self.on_mutated
+        if cb is None:
+            return
+        try:
+            cb()
+        except Exception as exc:  # noqa: BLE001
+            get_logger("memory.store").warning(
+                "memory store on_mutated failed: %s", exc, exc_info=True
+            )
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path)
@@ -154,6 +175,7 @@ class MemoryStore:
                     self.supersede_others_with_value_hash(
                         out["normalized_value_hash"], keep_id=out["id"]
                     )
+                self._notify_mutated()
                 return out
 
             fid = fact_id or str(uuid.uuid4())
@@ -189,6 +211,7 @@ class MemoryStore:
                 self.supersede_others_with_value_hash(
                     out["normalized_value_hash"], keep_id=out["id"]
                 )
+            self._notify_mutated()
             return out
 
     def get_fact(self, fact_id: str) -> dict | None:
@@ -243,6 +266,7 @@ class MemoryStore:
             normalized_value_hash=fact["normalized_value_hash"],
             reason=reason,
         )
+        self._notify_mutated()
 
     def clear_tombstone(self, *, slot_key: str, normalized_value_hash: str) -> bool:
         now = _now()
@@ -606,6 +630,8 @@ class MemoryStore:
                 continue
             self.mark_superseded(stale["id"], supersedes_id=keep_id)
             n += 1
+        if n:
+            self._notify_mutated()
         return n
 
     def supersede_others_with_value_hash(
@@ -629,6 +655,8 @@ class MemoryStore:
         for r in rows:
             self.mark_superseded(r["id"], supersedes_id=keep)
             n += 1
+        if n:
+            self._notify_mutated()
         return n
 
     def count_evidence(self, fact_id: str) -> int:
@@ -713,6 +741,7 @@ class MemoryStore:
                 (status, now, fact_id),
             )
             conn.commit()
+        self._notify_mutated()
 
     def update_fact_content(
         self,
@@ -792,6 +821,7 @@ class MemoryStore:
             self.supersede_others_with_value_hash(
                 updated["normalized_value_hash"], keep_id=fact_id
             )
+        self._notify_mutated()
         return updated
 
     def sync_topic_slot_key(self, fact_id: str) -> dict:
@@ -894,4 +924,5 @@ class MemoryStore:
                 (self.owner_key,),
             )
             conn.commit()
+            self._notify_mutated()
             return n

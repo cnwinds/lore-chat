@@ -100,6 +100,15 @@ def reindex_all(container: Container) -> dict:
         except Exception as exc:
             _log.warning("card index rebuild failed: %s", exc, exc_info=True)
 
+    owner_facts_indexed = 0
+    owner_memory_index = getattr(container, "owner_memory_index", None)
+    if owner_memory_index is not None:
+        try:
+            owner_stats = owner_memory_index.rebuild()
+            owner_facts_indexed = int(owner_stats.get("facts_indexed") or 0)
+        except Exception as exc:
+            _log.warning("owner index rebuild failed: %s", exc, exc_info=True)
+
     container.index_revision.bump()
 
     return {
@@ -108,4 +117,5 @@ def reindex_all(container: Container) -> dict:
         "conversations_fts": fts_stats.get("indexed", 0),
         "conversations_vector": 0,
         "cards_indexed": cards_indexed,
+        "owner_facts_indexed": owner_facts_indexed,
     }

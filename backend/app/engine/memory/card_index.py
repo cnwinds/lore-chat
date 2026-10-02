@@ -13,6 +13,7 @@ from app.index.partitioned import (
     SyncStats,
     default_gate,
 )
+from app.engine.memory.owner_index import OWNER_PARTITION
 from app.logging_config import get_logger
 
 if TYPE_CHECKING:
@@ -98,6 +99,8 @@ class CardIndex:
         dropped = 0
         for partition in self.index.partitions(CARD_FAMILY):
             # cards:<scope>，scope 本身可含冒号
+            if partition == OWNER_PARTITION:
+                continue
             scope_key = partition[len(CARD_FAMILY) + 1 :]
             if scope_key not in scope_set:
                 try:

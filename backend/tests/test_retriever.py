@@ -41,6 +41,27 @@ def test_answer_returns_sources(tmp_path):
     assert "技术/docker/常用命令.md" in ans.sources
 
 
+def test_search_kb_prefixes(tmp_path):
+    llm = FakeLLMClient(chat_responses=[], embed_dim=8)
+    si = make_search_index(tmp_path, llm)
+    idx = Indexer(si)
+    idx.reindex_doc("技能/a.md", "docker ps 容器列表")
+    idx.reindex_doc("笔记/b.md", "docker logs 日志")
+    drain_embeddings(si)
+    retr = Retriever(si, llm)
+    hits = retr.search("docker", k=5, kb_prefixes=["技能/"]).hits
+    assert hits
+    assert all(h.doc_id.startswith("技能/") for h in hits)
+
+
+def test_search_conversation_ids_empty_lane(tmp_path):
+    llm = FakeLLMClient(chat_responses=[], embed_dim=8)
+    si = make_search_index(tmp_path, llm)
+    retr = Retriever(si, llm)
+    page = retr.search("docker", k=5, scope="conversations", conversation_ids=[])
+    assert page.hits == []
+
+
 def test_answer_attaches_non_markdown(tmp_path):
     llm = FakeLLMClient(chat_responses=["见附件方案。"], embed_dim=8)
     si = make_search_index(tmp_path, llm)
