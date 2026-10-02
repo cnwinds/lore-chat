@@ -388,6 +388,59 @@ def test_meta_filter_invalid_raises():
         MetaFilter("bad-key", "eq", "x")
     with pytest.raises(ValueError):
         MetaFilter("source", "badop", "x")
+    with pytest.raises(ValueError):
+        MetaFilter("source", "in", ())
+    with pytest.raises(ValueError):
+        MetaFilter("source", "in", ["a"] * 1001)
+
+
+def test_meta_filter_in_fts_and_vec(tmp_path):
+    idx = _make_index(tmp_path, FakeEmbedder(text_vectors={"vecq": [1.0] * 8}))
+    part = "kb:main"
+    _seed_meta_filter_corpus(idx, part)
+    idx.embed_pending()
+    assert _fts_ids(
+        idx,
+        part,
+        "sharedkw",
+        filters=[MetaFilter("source", "in", ("a", "b"))],
+    ) == {"s-a", "s-b", "s-d"}
+    assert _vec_ids(
+        idx,
+        part,
+        filters=[MetaFilter("source", "in", ("a",))],
+    ) == {"s-a", "s-d"}
+
+
+def test_group_prefix_filter_fts_and_vec(tmp_path):
+    good = [1.0] * 8
+    emb = FakeEmbedder(text_vectors={"prefixq": good})
+    idx = _make_index(tmp_path, emb)
+    part = "kb:main"
+    idx.sync_group(part, "docs/a.md", [IndexItem("a", "prefixkw alpha")])
+    idx.sync_group(part, "docs/sub/b.md", [IndexItem("b", "prefixkw beta")])
+    idx.sync_group(part, "other/c.md", [IndexItem("c", "prefixkw gamma")])
+    idx.embed_pending()
+    fts = idx.search(
+        "prefixkw",
+        partitions=[part],
+        lanes=("fts",),
+        group_prefixes=["docs/"],
+    )
+    assert {h.item_id for h in fts.hits} == {"a", "b"}
+    vec = idx.search(
+        "prefixq",
+        partitions=[part],
+        lanes=("vec",),
+        group_prefixes=["docs/sub/"],
+    )
+    assert {h.item_id for h in vec.hits} == {"b"}
+
+
+def test_group_prefix_empty_raises(tmp_path):
+    idx = _make_index(tmp_path, FakeEmbedder())
+    with pytest.raises(ValueError):
+        idx.search("q", partitions=["kb:main"], group_prefixes=[""])
 
 
 def test_vec_filter_without_chroma_meta(tmp_path):

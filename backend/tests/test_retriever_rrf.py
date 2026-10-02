@@ -42,24 +42,15 @@ def test_rrf_merges_four_lanes(tmp_path):
 
 def test_cursor_expires_on_revision_bump(tmp_path):
     retr, _ci, rev, _llm = _setup(tmp_path)
-    page1 = retr.search("q", k=1)
+    page1 = retr.search("q", k=1, scope="knowledge")
     assert page1.next_cursor is None or page1.hits
     rev.bump()
-    page2 = retr.search("q", k=1, cursor=page1.next_cursor or _make_dummy_cursor(page1))
     if page1.next_cursor:
+        page2 = retr.search("q", k=1, scope="knowledge", cursor=page1.next_cursor)
         assert page2.cursor_expired
-    else:
-        from app.engine.retriever import _make_cursor
-
-        stale = _make_cursor("q", {"scope": "all", "conversation_id": None}, 0, 0)
-        page2 = retr.search("q", k=1, cursor=stale)
-        assert page2.cursor_expired
-
-
-def _make_dummy_cursor(page1):
-    from app.engine.retriever import _make_cursor
-
-    return _make_cursor("q", {"scope": "all", "conversation_id": None}, page1.index_revision, 0)
+    forged = "eyJxIjogInEifQ=="  # 旧 base64 游标视为未知 token
+    page2 = retr.search("q", k=1, scope="knowledge", cursor=forged)
+    assert page2.cursor_expired
 
 
 def test_vector_lane_failure_does_not_break_fts(tmp_path, monkeypatch):

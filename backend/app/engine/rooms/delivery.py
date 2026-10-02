@@ -25,6 +25,13 @@ log = logging.getLogger("uvicorn.error")
 
 StartTurnFn = Callable[..., dict]
 
+
+def _room_uri(room_id: str) -> str:
+    from app.engine.context_view.uri import room_uri
+
+    return room_uri(room_id)
+
+
 _WORKER_EXTRA = (
     "[协作] 你在本群舞台上用当前角色执行（人设与沙箱是你的）。"
     "按委托办事；做完把回执 send_message 贴回本群即可，不必再点名派工者，系统会叫醒对方。"
@@ -739,35 +746,35 @@ class RoomDelivery:
         if not targets:
             status = "posted"
             summary = posted_only_summary or (
-                f"已发到房间，未点名任何人。协作房间 conversation://{room_id}"
+                f"已发到房间，未点名任何人。协作房间 {_room_uri(room_id)}"
             )
         elif started and not queued:
             status = "started"
             names = "、".join(f"「{t['name']}」" for t in started)
-            summary = f"已发送给{names}：已送达并开始工作。协作房间 conversation://{room_id}"
+            summary = f"已发送给{names}：已送达并开始工作。协作房间 {_room_uri(room_id)}"
         elif queued and not started:
             status = "queued"
             names = "、".join(f"「{t['name']}」" for t in queued)
             if queue_reasons and all(r == "queued_self" for r in queue_reasons):
                 summary = (
                     f"已发送给{names}：已点名，对方将在你说完后开始。"
-                    f"协作房间 conversation://{room_id}"
+                    f"协作房间 {_room_uri(room_id)}"
                 )
             elif queue_reasons and all(r == "queued_role" for r in queue_reasons):
                 summary = (
                     f"已发送给{names}：已排队（对方正忙）。"
-                    f"协作房间 conversation://{room_id}"
+                    f"协作房间 {_room_uri(room_id)}"
                 )
             else:
                 summary = (
                     f"已发送给{names}：已排队（房间里有人在说）。"
-                    f"协作房间 conversation://{room_id}"
+                    f"协作房间 {_room_uri(room_id)}"
                 )
         else:
             status = "mixed"
             summary = (
                 f"已发送：{len(started)} 人开始工作，{len(queued)} 人排队。"
-                f"协作房间 conversation://{room_id}"
+                f"协作房间 {_room_uri(room_id)}"
             )
         handed_off = bool(expect_reply and (started or queued))
         if handed_off:

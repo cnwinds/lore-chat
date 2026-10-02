@@ -19,6 +19,20 @@ describe("conversationLinks", () => {
     expect(parseConversationHref("https://example.com")).toBeNull();
   });
 
+  it("parses lore://conversations session URIs", () => {
+    expect(
+      parseConversationHref("lore://conversations/rooms/6d51bce5465f/"),
+    ).toEqual({ conversationId: "6d51bce5465f" });
+    expect(
+      parseConversationHref(
+        "lore://conversations/dm/default/6d51bce5465f/msg-a",
+      ),
+    ).toEqual({
+      conversationId: "6d51bce5465f",
+      messageId: "msg-a",
+    });
+  });
+
   it("linkifies 会话：cid 标题：… blocks", () => {
     const src =
       "📌 会话：6d51bce5465f 标题： https://www.qbitai.com/2026/08/468766.ht… 时间： 2026-08-10 11:21 ～ 08-11（跨两天）";

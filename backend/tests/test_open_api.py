@@ -264,7 +264,7 @@ def test_select_tools_api_mode_drops_writes():
     assert "update_group" not in names
     assert "delete_group" not in names
     assert "sandbox_run" in names
-    assert "search_kb" in names
+    assert "search" in names
 
 
 def test_hidden_role_and_persona_store(tmp_path):
@@ -394,7 +394,7 @@ def test_v1_chat_stream_emits_tools_when_enabled(tmp_path):
                 "tool_calls": [
                     ToolCall(
                         id="1",
-                        name="search_kb",
+                        name="search",
                         arguments={"query": "周报"},
                     )
                 ],
@@ -435,7 +435,7 @@ def test_v1_chat_stream_emits_tools_when_enabled(tmp_path):
         assert "tool_result" in types
         assert "timeline_state" not in types
         start = next(data for t, data in events if t == "tool_start")
-        assert start["tool"] == "search_kb"
+        assert start["tool"] == "search"
         assert start.get("query") == "周报"
         assert "input" not in start
         done = next(data for t, data in events if t == "done")

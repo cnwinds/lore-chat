@@ -1,7 +1,9 @@
 from __future__ import annotations
 
-import base64
-import json
+import secrets
+import threading
+from collections import OrderedDict
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 from app.engine.provenance import (
@@ -55,14 +57,49 @@ class Answer:
     attachments: list[str]
 
 
-def _make_cursor(query: str, filters: dict, rev: int, offset: int) -> str:
-    payload = {"q": query, "f": filters, "rev": rev, "off": offset}
-    raw = json.dumps(payload, sort_keys=True).encode()
-    return base64.urlsafe_b64encode(raw).decode()
+_CURSOR_STORE_MAX = 512
 
 
-def _parse_cursor(cursor: str) -> dict:
-    return json.loads(base64.urlsafe_b64decode(cursor.encode()))
+def _binding_key(cursor_binding: str | None) -> str:
+    if cursor_binding is None or cursor_binding == "":
+        return ""
+    return cursor_binding
+
+
+def _copy_filters(filters: dict) -> dict:
+    copied = dict(filters)
+    raw_kb = copied.get("kb_prefixes")
+    if raw_kb is not None:
+        copied["kb_prefixes"] = list(raw_kb)
+    raw_cids = copied.get("conversation_ids")
+    if raw_cids is not None:
+        copied["conversation_ids"] = list(raw_cids)
+    return copied
+
+
+@dataclass
+class _CursorEntry:
+    query: str
+    filters: dict
+    rev: int
+    offset: int
+    binding: str
+
+
+def _kb_prefixes_for_index(kb_prefixes: Sequence[str]) -> list[str]:
+    return list(kb_prefixes)
+
+
+def _kb_hit_allowed(source: str, kb_prefixes: Sequence[str]) -> bool:
+    norm = (source or "").replace("\\", "/").lstrip("/")
+    for prefix in kb_prefixes:
+        if prefix.endswith("/"):
+            base = prefix.rstrip("/")
+            if norm == base or norm.startswith(prefix):
+                return True
+        elif norm == prefix:
+            return True
+    return False
 
 
 class Retriever:
@@ -92,6 +129,67 @@ class Retriever:
         self.kb_first_throttle = kb_first_throttle
         self.repo = repo
         self.conversations = conversations
+        self._cursor_store: OrderedDict[str, _CursorEntry] = OrderedDict()
+        self._cursor_lock = threading.Lock()
+
+    def _issue_cursor(
+        self,
+        query: str,
+        filters: dict,
+        rev: int,
+        offset: int,
+        *,
+        cursor_binding: str | None,
+    ) -> str:
+        token = secrets.token_urlsafe(16)
+        entry = _CursorEntry(
+            query=query,
+            filters=_copy_filters(filters),
+            rev=rev,
+            offset=offset,
+            binding=_binding_key(cursor_binding),
+        )
+        with self._cursor_lock:
+            self._cursor_store[token] = entry
+            self._cursor_store.move_to_end(token)
+            while len(self._cursor_store) > _CURSOR_STORE_MAX:
+                self._cursor_store.popitem(last=False)
+        return token
+
+    def _consume_cursor(
+        self,
+        token: str,
+        rev: int,
+        *,
+        cursor_binding: str | None,
+    ) -> _CursorEntry | None:
+        with self._cursor_lock:
+            entry = self._cursor_store.get(token)
+            if entry is None:
+                return None
+            if entry.rev != rev:
+                return None
+            if entry.binding != _binding_key(cursor_binding):
+                return None
+            self._cursor_store.move_to_end(token)
+        return _CursorEntry(
+            query=entry.query,
+            filters=_copy_filters(entry.filters),
+            rev=entry.rev,
+            offset=entry.offset,
+            binding=entry.binding,
+        )
+
+    @staticmethod
+    def _expired_page(rev: int) -> SearchPage:
+        return SearchPage(
+            hits=[],
+            has_more=False,
+            next_cursor=None,
+            index_revision=rev,
+            cursor_expired=True,
+            match_strength="none",
+        )
 
     def _excluded(self, source: str) -> bool:
         norm = (source or "").replace("\\", "/").lstrip("/")
@@ -152,12 +250,22 @@ class Retriever:
         return Hit(doc_id=source, chunk=sh.text, score=score, source=source)
 
     def _kb_lanes(
-        self, query: str, lane_k: int, *, vector_text: str
+        self,
+        query: str,
+        lane_k: int,
+        *,
+        vector_text: str,
+        kb_prefixes: Sequence[str] | None = None,
     ) -> tuple[
         tuple[list[str], dict[str, Hit], dict[str, HitMeta]],
         tuple[list[str], dict[str, Hit], dict[str, HitMeta]],
     ]:
         empty: tuple[list[str], dict[str, Hit], dict[str, HitMeta]] = ([], {}, {})
+        if kb_prefixes is not None and len(kb_prefixes) == 0:
+            return empty, empty
+        index_prefixes = (
+            None if kb_prefixes is None else _kb_prefixes_for_index(kb_prefixes)
+        )
         try:
             res = self.search_index.search(
                 query,
@@ -172,6 +280,7 @@ class Retriever:
                 },
                 fts_mode="keywords",
                 vector_text=vector_text,
+                group_prefixes=index_prefixes,
             )
         except Exception:
             get_logger("retriever").warning("知识库检索失败", exc_info=True)
@@ -182,6 +291,8 @@ class Retriever:
         for sh in res.lanes.get(f"{KB_FAMILY}:fts", []):
             source = str(sh.meta.get("source") or "")
             if self._excluded(source):
+                continue
+            if kb_prefixes is not None and not _kb_hit_allowed(source, kb_prefixes):
                 continue
             bm25 = sh.bm25 if sh.bm25 is not None else 0.0
             fts_hits.append(self._kb_hit_from_search(sh, score=bm25))
@@ -200,6 +311,8 @@ class Retriever:
         for sh in res.lanes.get(f"{KB_FAMILY}:vec", []):
             source = str(sh.meta.get("source") or "")
             if self._excluded(source):
+                continue
+            if kb_prefixes is not None and not _kb_hit_allowed(source, kb_prefixes):
                 continue
             vs = sh.vector_score
             if vs is None or vs < self.min_score:
@@ -224,6 +337,7 @@ class Retriever:
         vector_text: str,
         conversation_id: str | None,
         exclude_conversation_id: str | None,
+        conversation_ids: Sequence[str] | None = None,
         ts_after: str | None = None,
         ts_before: str | None = None,
     ) -> tuple[
@@ -231,12 +345,28 @@ class Retriever:
         tuple[list[str], dict[str, Hit], dict[str, HitMeta]],
     ]:
         empty: tuple[list[str], dict[str, Hit], dict[str, HitMeta]] = ([], {}, {})
-        filters = self._conv_meta_filters(
-            conversation_id=conversation_id,
-            exclude_conversation_id=exclude_conversation_id,
-            ts_after=ts_after,
-            ts_before=ts_before,
-        )
+        if conversation_ids is not None and len(conversation_ids) == 0:
+            return empty, empty
+        conv_id_set: frozenset[str] | None = None
+        if conversation_ids is not None:
+            conv_id_set = frozenset(conversation_ids)
+            filters = self._conv_meta_filters(
+                conversation_id=None,
+                exclude_conversation_id=None,
+                ts_after=ts_after,
+                ts_before=ts_before,
+            )
+            if len(conversation_ids) <= 1000:
+                filters.append(
+                    MetaFilter("conversation_id", "in", tuple(conversation_ids))
+                )
+        else:
+            filters = self._conv_meta_filters(
+                conversation_id=conversation_id,
+                exclude_conversation_id=exclude_conversation_id,
+                ts_after=ts_after,
+                ts_before=ts_before,
+            )
         try:
             res = self.search_index.search(
                 query,
@@ -260,6 +390,10 @@ class Retriever:
         fts_tier = res.fts_tiers.get(CONV_FAMILY, "none")
         fts_hits: list[Hit] = []
         for sh in res.lanes.get(f"{CONV_FAMILY}:fts", []):
+            if conv_id_set is not None and len(conversation_ids) > 1000:  # type: ignore[arg-type]
+                cid = str(sh.meta.get("conversation_id") or "")
+                if cid not in conv_id_set:
+                    continue
             bm25 = sh.bm25 if sh.bm25 is not None else 0.0
             fts_hits.append(self._conversation_hit_from_search(sh, score=bm25))
         fts_hits = self._dedup_hits(fts_hits)
@@ -275,6 +409,10 @@ class Retriever:
 
         vec_hits: list[Hit] = []
         for sh in res.lanes.get(f"{CONV_FAMILY}:vec", []):
+            if conv_id_set is not None and len(conversation_ids) > 1000:  # type: ignore[arg-type]
+                cid = str(sh.meta.get("conversation_id") or "")
+                if cid not in conv_id_set:
+                    continue
             vs = sh.vector_score
             if vs is None or vs < self.min_score:
                 continue
@@ -309,7 +447,10 @@ class Retriever:
         role_id: str | None = None,
         ts_after: str | None = None,
         ts_before: str | None = None,
+        kb_prefixes: Sequence[str] | None = None,
+        conversation_ids: Sequence[str] | None = None,
         cursor: str | None = None,
+        cursor_binding: str | None = None,
     ) -> SearchPage:
         rev = self.index_revision.get() if self.index_revision else 0
         offset = 0
@@ -322,42 +463,33 @@ class Retriever:
             "role_id": role_id,
             "ts_after": ts_after,
             "ts_before": ts_before,
+            "kb_prefixes": list(kb_prefixes) if kb_prefixes is not None else None,
+            "conversation_ids": list(conversation_ids)
+            if conversation_ids is not None
+            else None,
         }
 
         if cursor:
-            try:
-                parsed = _parse_cursor(cursor)
-                if int(parsed.get("rev", -1)) != rev:
-                    return SearchPage(
-                        hits=[],
-                        has_more=False,
-                        next_cursor=None,
-                        index_revision=rev,
-                        cursor_expired=True,
-                        match_strength="none",
-                    )
-                query = parsed.get("q", query)
-                filters = parsed.get("f", filters)
-                scope = filters.get("scope", scope)
-                conversation_id = filters.get("conversation_id", conversation_id)
-                exclude_conversation_id = filters.get(
-                    "exclude_conversation_id", exclude_conversation_id
-                )
-                role_id = filters.get("role_id", role_id)
-                ts_after = normalize_search_ts(filters.get("ts_after") or ts_after)
-                ts_before = normalize_search_ts(filters.get("ts_before") or ts_before)
-                filters["ts_after"] = ts_after
-                filters["ts_before"] = ts_before
-                offset = int(parsed.get("off", 0))
-            except (json.JSONDecodeError, ValueError, TypeError):
-                return SearchPage(
-                    hits=[],
-                    has_more=False,
-                    next_cursor=None,
-                    index_revision=rev,
-                    cursor_expired=True,
-                    match_strength="none",
-                )
+            entry = self._consume_cursor(cursor, rev, cursor_binding=cursor_binding)
+            if entry is None:
+                return self._expired_page(rev)
+            query = entry.query
+            filters = entry.filters
+            scope = filters.get("scope", scope)
+            conversation_id = filters.get("conversation_id", conversation_id)
+            exclude_conversation_id = filters.get(
+                "exclude_conversation_id", exclude_conversation_id
+            )
+            role_id = filters.get("role_id", role_id)
+            ts_after = normalize_search_ts(filters.get("ts_after") or ts_after)
+            ts_before = normalize_search_ts(filters.get("ts_before") or ts_before)
+            filters["ts_after"] = ts_after
+            filters["ts_before"] = ts_before
+            raw_kb = filters.get("kb_prefixes")
+            kb_prefixes = None if raw_kb is None else tuple(raw_kb)
+            raw_cids = filters.get("conversation_ids")
+            conversation_ids = tuple(raw_cids) if raw_cids is not None else None
+            offset = int(entry.offset)
 
         compiled = compile_search_query(query)
         lane_k = max(self.lane_candidate_k, k * 4)
@@ -374,7 +506,10 @@ class Retriever:
 
         if use_kb:
             (ids, m, mm), (v_ids, vm, vmm) = self._kb_lanes(
-                query, lane_k, vector_text=compiled.vector_text
+                query,
+                lane_k,
+                vector_text=compiled.vector_text,
+                kb_prefixes=kb_prefixes,
             )
             kb_fts_ids = ids
             if ids:
@@ -406,6 +541,10 @@ class Retriever:
             if kb_strength == "strong":
                 conv_lane_k = max(1, lane_k // 3)
 
+        conv_id_set_page: frozenset[str] | None = None
+        if conversation_ids is not None:
+            conv_id_set_page = frozenset(conversation_ids)
+
         if use_conv:
             (c_fts_ids, c_fts_m, c_fts_mm), (c_vec_ids, c_vec_m, c_vec_mm) = (
                 self._conv_lanes(
@@ -414,6 +553,7 @@ class Retriever:
                     vector_text=compiled.vector_text,
                     conversation_id=conversation_id,
                     exclude_conversation_id=exclude_conversation_id,
+                    conversation_ids=conversation_ids,
                     ts_after=ts_after,
                     ts_before=ts_before,
                 )
@@ -432,13 +572,18 @@ class Retriever:
         fused = reciprocal_rank_fusion(lanes, k=self.rrf_k, weights=weights)
         page_hits: list[Hit] = []
         next_offset = offset + k
-        need_skip = bool(role_id or ts_after or ts_before)
+        need_skip = bool(
+            role_id or ts_after or ts_before or conv_id_set_page is not None
+        )
 
         def _keep_hit(h: Hit) -> bool:
             src = h.source or ""
             if not src.startswith("conv:"):
                 return True
-            if role_id and not self._conversation_role_ok(src[5:], role_id):
+            cid = src[5:]
+            if conv_id_set_page is not None and cid not in conv_id_set_page:
+                return False
+            if role_id and not self._conversation_role_ok(cid, role_id):
                 return False
             if (ts_after or ts_before) and not ts_in_search_range(
                 h.ts or "", ts_after, ts_before
@@ -491,7 +636,15 @@ class Retriever:
 
         has_more = next_offset < len(fused) and match_strength == "strong"
         next_cursor = (
-            _make_cursor(query, filters, rev, next_offset) if has_more else None
+            self._issue_cursor(
+                query,
+                filters,
+                rev,
+                next_offset,
+                cursor_binding=cursor_binding,
+            )
+            if has_more
+            else None
         )
 
         return SearchPage(

@@ -148,6 +148,8 @@ class PartitionedVectors:
                 clauses.append({key: flt.value})
             elif flt.op == "ne":
                 clauses.append({key: {"$ne": flt.value}})
+            elif flt.op == "in":
+                clauses.append({key: {"$in": list(flt.value)}})
         if not clauses:
             return None
         if len(clauses) == 1:

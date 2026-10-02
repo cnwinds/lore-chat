@@ -82,7 +82,7 @@ def _build_tool_responses() -> list[dict]:
             {
                 "content": None,
                 "tool_calls": [
-                    ToolCall(id=f"s{i}", name="search_kb", arguments={"query": ""})
+                    ToolCall(id=f"s{i}", name="search", arguments={"query": ""})
                 ],
             }
         )
@@ -118,7 +118,7 @@ class AgentFakeLLM(FakeLLMClient):
                     args["directory"] = "未分类"
                 if "filename" not in args:
                     args["filename"] = "ingest.md"
-            elif tc.name == "search_kb" and not args.get("query"):
+            elif tc.name == "search" and not args.get("query"):
                 args["query"] = user_text
             patched.append(ToolCall(id=tc.id, name=tc.name, arguments=args))
         return ChatWithToolsResult(content=result.content, tool_calls=patched)

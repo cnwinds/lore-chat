@@ -162,7 +162,7 @@ def test_fts_keywords_with_markdown_special_chars_no_syntax_error(tmp_path):
 
 
 def test_retriever_cursor_and_match_strength_unchanged(tmp_path):
-    from app.engine.retriever import Retriever, _make_cursor
+    from app.engine.retriever import Retriever
     from app.index.revision import IndexRevision
 
     llm = FakeLLMClient(embed_dim=8)
@@ -178,6 +178,6 @@ def test_retriever_cursor_and_match_strength_unchanged(tmp_path):
     assert page1.hits
     assert page1.index_revision == rev.get()
 
-    stale = _make_cursor("漫剧工具", {"scope": "knowledge"}, rev.get() - 1, 0)
+    stale = "forged-or-rev-stale-token"
     page2 = retr.search("漫剧工具", k=1, scope="knowledge", cursor=stale)
     assert page2.cursor_expired

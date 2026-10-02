@@ -139,7 +139,7 @@ def _fail_not_found(body: str, needle: str) -> PatchResult:
             code="NOT_FOUND",
             message="old_string 在文档中未找到",
             hint=hint,
-            suggestion="请用 read_doc 重新读取后复制精确文本",
+            suggestion="请用 read 重新读取后复制精确文本",
         ),
     )
 
@@ -354,7 +354,7 @@ def apply_insert(body: str, insert: Insert, *, max_patch_chars: int) -> PatchRes
                 error=PatchError(
                     code="NOT_FOUND",
                     message=f"未找到标题：{insert.after_heading}",
-                    suggestion="请用 read_doc 返回的大纲确认标题文本",
+                    suggestion="请用 read 返回的大纲确认标题文本",
                 ),
             )
         pos = _heading_line_end(body, m)

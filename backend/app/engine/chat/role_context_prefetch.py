@@ -30,8 +30,12 @@ def build_prior_segment_pointer(conversations, *, conversation_id: str) -> str |
     if not prior:
         return None
     cid = prior["id"]
+    role_id = prior.get("role_id") or conversations.get_role_id(cid)
     title, _ = mask_secrets((prior.get("title") or "").strip() or cid)
-    facts = [f"[{title}](conversation://{cid})"]
+    from app.engine.context_view.uri import dm_conversation_uri
+
+    link = dm_conversation_uri(role_id, cid)
+    facts = [f"[{title}]({link})"]
     when = parse_search_instant(prior.get("last_user_message_at") or prior.get("updated_at"))
     if when is not None:
         facts.append(f"最后活动 {when.strftime('%Y-%m-%d %H:%M')}（{DISPLAY_TZ_LABEL}）")

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from app.engine.memory.constants import MEMORY_DOC_REL
 from app.engine.memory.renderer import MemoryRenderer
@@ -10,6 +11,9 @@ from app.engine.memory.store import MemoryStore
 from app.engine.secrets import scan_secrets
 from app.engine.knowledge_writer import KnowledgeWriter
 from app.storage.repo import KnowledgeRepo
+
+if TYPE_CHECKING:
+    from app.engine.memory.owner_index import OwnerMemoryIndex
 
 
 @dataclass
@@ -30,9 +34,11 @@ class MemoryService:
         memory_max_chars: int = 4000,
         conversations=None,
         knowledge_writer: KnowledgeWriter,
+        owner_index: OwnerMemoryIndex | None = None,
     ):
         self.store = store
         self.repo = repo
+        self.owner_index = owner_index
         self.memory_rel = memory_rel
         self.memory_max_chars = memory_max_chars
         self.conversations = conversations
@@ -231,8 +237,21 @@ class MemoryService:
             fact_id=fact_id, statement=statement, replacement=replacement
         )
 
-    def recall(self, query: str, *, include_sources: bool = False, limit: int = 10) -> dict:
-        facts = self.store.search_confirmed(query, limit=limit)
+    def recall(
+        self,
+        query: str,
+        *,
+        include_sources: bool = False,
+        limit: int = 10,
+        kind: str | None = None,
+    ) -> dict:
+        q = (query or "").strip()
+        if q and self.owner_index is not None:
+            facts = self.owner_index.search(q, limit=limit, kind=kind)
+            if not facts:
+                facts = self.store.search_confirmed(query, limit=limit, kind=kind)
+        else:
+            facts = self.store.search_confirmed(query, limit=limit, kind=kind)
         out_facts = []
         for f in facts:
             item = {
@@ -242,11 +261,13 @@ class MemoryService:
                 "origin": f["origin"],
             }
             if include_sources:
-                item["sources"] = self._explain_sources(f["id"], sensitivity=f.get("sensitivity", "normal"))
+                item["sources"] = self.explain_sources(
+                    f["id"], sensitivity=f.get("sensitivity", "normal")
+                )
             out_facts.append(item)
         return {"facts": out_facts, "count": len(out_facts)}
 
-    def _explain_sources(self, fact_id: str, *, sensitivity: str = "normal") -> list[dict]:
+    def explain_sources(self, fact_id: str, *, sensitivity: str = "normal") -> list[dict]:
         sources: list[dict] = []
         for ev in self.store.list_evidence(fact_id):
             quote = None
@@ -270,3 +291,5 @@ class MemoryService:
                 }
             )
         return sources
+
+    _explain_sources = explain_sources

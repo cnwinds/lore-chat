@@ -108,7 +108,7 @@ async def test_orchestrator_emits_timeline_events(tmp_path):
         tool_responses=[
             {
                 "content": None,
-                "tool_calls": [ToolCall(id="1", name="search_kb", arguments={"query": "test"})],
+                "tool_calls": [ToolCall(id="1", name="search", arguments={"query": "test"})],
             },
             {"content": "答案是 Y", "tool_calls": []},
         ],
@@ -133,7 +133,7 @@ async def test_orchestrator_tool_result_includes_search_query(tmp_path):
             {
                 "content": None,
                 "tool_calls": [
-                    ToolCall(id="1", name="search_kb", arguments={"query": "docker 日志"}),
+                    ToolCall(id="1", name="search", arguments={"query": "docker 日志"}),
                 ],
             },
             {"content": "结论", "tool_calls": []},
@@ -186,8 +186,8 @@ async def test_orchestrator_parallel_batch(tmp_path):
             {
                 "content": None,
                 "tool_calls": [
-                    ToolCall(id="1", name="search_kb", arguments={"query": "a"}),
-                    ToolCall(id="2", name="read_doc", arguments={"path": "missing.md"}),
+                    ToolCall(id="1", name="search", arguments={"query": "a"}),
+                    ToolCall(id="2", name="read", arguments={"uri": "missing.md"}),
                 ],
             },
             {"content": "综合结论", "tool_calls": []},
@@ -277,7 +277,7 @@ async def test_orchestrator_strips_leaked_function_protocol_markup(tmp_path):
             {
                 "content": "<old_function_results>\n",
                 "tool_calls": [
-                    ToolCall(id="1", name="search_kb", arguments={"query": "hi"}),
+                    ToolCall(id="1", name="search", arguments={"query": "hi"}),
                 ],
             },
             {"content": "你好", "tool_calls": []},

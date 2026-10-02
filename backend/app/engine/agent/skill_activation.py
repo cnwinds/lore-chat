@@ -75,9 +75,9 @@ def activated_skill_roots(
         if seen_msgs > lookback:
             break
         for block in reversed(_tool_blocks(msg.get("timeline"))):
-            root = _skill_root_read(block)
-            if root and root in enabled and root not in found:
-                found.append(root)
+            for root in _skill_roots_read(block):
+                if root in enabled and root not in found:
+                    found.append(root)
     return found
 
 
@@ -111,7 +111,7 @@ def build_active_skill_messages(
             body = (
                 body[:cap]
                 + f"\n\n（正文共 {len(body)} 字，此处截至第 {cap} 字；"
-                f"其余用 read_doc path={entry} offset={cap} 读取）"
+                f"其余用 read uri={entry} offset={cap} 读取）"
             )
         budget -= min(len(body), cap)
         title = names.get(root) or root
@@ -151,16 +151,17 @@ def _tool_blocks(blocks: object) -> list[dict]:
     return out
 
 
-def _skill_root_read(block: dict) -> str | None:
-    if block.get("tool") != "read_doc" or block.get("status") != "done":
-        return None
+def _skill_roots_read(block: dict) -> list[str]:
+    if block.get("tool") not in ("read", "read_doc") or block.get("status") != "done":
+        return []
     if block.get("error"):
-        return None
+        return []
+    roots: list[str] = []
     for src in block.get("sources") or []:
         if not isinstance(src, dict) or src.get("type") != "kb":
             continue
         path = str(src.get("path") or "").replace("\\", "/").strip("/")
         head, _, name = path.rpartition("/")
-        if head and name == _SKILL_ENTRY:
-            return head
-    return None
+        if head and name == _SKILL_ENTRY and head not in roots:
+            roots.append(head)
+    return roots

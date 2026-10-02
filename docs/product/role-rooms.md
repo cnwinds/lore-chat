@@ -277,7 +277,7 @@ WakePolicy.targets(room, message) -> [role_id...]
 | `update_group` | 改标题、头像、成员。 |
 | `delete_group` | 删群（会话与消息一并删）。 |
 
-`send_message` 的工具结果必须带 `room_id`、`message_id`、目标状态（已唤醒 / 已排队），前端才能画协作卡。不要让模型编会话 id 当导航；沿用 `conversation://` 链接约定。
+`send_message` 的工具结果必须带 `room_id`、`message_id`、目标状态（已唤醒 / 已排队），前端才能画协作卡。不要让模型编会话 id 当导航；链接约定为 `lore://conversations/rooms/<房间>/`（旧 `conversation://` 仍可点）。
 
 HTTP 只保留 shell：房间列表、时间线包含协作段、群聊 CRUD、跳转。创建与投递的权威路径仍是 Delivery，UI 与工具共用，禁止在 `role_routes` 里再写一套唤醒。
 
@@ -315,7 +315,7 @@ HTTP 只保留 shell：房间列表、时间线包含协作段、群聊 CRUD、�
 | 沙箱 | 仍 `conversation` → 应者 `role_id` → `RoleSandboxPool.get`；禁止借用 |
 | 时间线 API | `GET /api/roles/{id}/timeline` 改为 participant 并集；tip 算法仍只看 `owner_dm` |
 | 记忆 | `session_observe` / `dialogue_timeline_pack` 只把主人 speaker 当用户行 |
-| 检索 | `search_kb(scope=conversations)` 可按 `room_id` / kind 过滤；跨房间回忆仍须检索，不自动拼 history |
+| 检索 | `search` 的 `paths` 写 `lore://conversations/rooms/`（全部互通/群聊会话）或 `lore://conversations/rooms/<房间>/`（单房间）；跨房间回忆仍须检索，不自动拼 history |
 
 ## 8. 分期
 

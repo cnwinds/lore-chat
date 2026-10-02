@@ -36,6 +36,7 @@ type Props = {
   previewPath?: string | null;
   onOpenSource: (src: SourceRef) => void;
   onOpenConversation?: (target: ConversationLinkTarget) => void;
+  onOpenKbPath?: (path: string) => void;
   conversationId?: string | null;
   onQuestionResolved?: (
     blockId: string,
@@ -81,10 +82,18 @@ function toolOneLiner(block: Extract<TimelineBlock, { type: "tool" }>): string |
   if (
     (block.tool === "web_search" ||
       block.tool === "search_kb" ||
+      block.tool === "search" ||
       block.tool === "generate_image") &&
     block.query
   ) {
     return block.summary ? `${block.query} · ${block.summary}` : block.query;
+  }
+  if (
+    (block.tool === "read" || block.tool === "list") &&
+    block.query &&
+    !block.summary
+  ) {
+    return block.query;
   }
   if (block.tool === "edit_doc" && block.summary) {
     const mode = block.reindex_mode ? ` · ${block.reindex_mode}` : "";
@@ -137,6 +146,7 @@ function ToolBlockView({
   durationBold,
   onOpenSource,
   onOpenConversation,
+  onOpenKbPath,
   previewPath,
   conversationId,
   onQuestionResolved,
@@ -148,6 +158,7 @@ function ToolBlockView({
   durationBold?: boolean;
   onOpenSource: (src: SourceRef) => void;
   onOpenConversation?: (target: ConversationLinkTarget) => void;
+  onOpenKbPath?: (path: string) => void;
   previewPath?: string | null;
   conversationId?: string | null;
   onQuestionResolved?: (
@@ -250,6 +261,7 @@ function ToolBlockView({
       {open &&
         (block.tool === "web_search" ||
           block.tool === "search_kb" ||
+          block.tool === "search" ||
           block.tool === "generate_image") &&
         block.query && (
           <div className="timeline-tool-query">
@@ -302,6 +314,7 @@ function ToolBlockView({
           <MarkdownContent
             className="markdown-body chat-markdown"
             onOpenConversation={onOpenConversation}
+            onOpenKbPath={onOpenKbPath}
           >
             {block.content}
           </MarkdownContent>
@@ -373,11 +386,13 @@ function ThinkBlockView({
   nowMs,
   isLive,
   onOpenConversation,
+  onOpenKbPath,
 }: {
   block: Extract<TimelineBlock, { type: "think" }>;
   nowMs?: number;
   isLive?: boolean;
   onOpenConversation?: (target: ConversationLinkTarget) => void;
+  onOpenKbPath?: (path: string) => void;
 }) {
   const [override, setOverride] = useState<boolean | null>(null);
   const open = override ?? false;
@@ -431,6 +446,7 @@ function ThinkBlockView({
           <MarkdownContent
             className="markdown-body chat-markdown timeline-think-markdown"
             onOpenConversation={onOpenConversation}
+            onOpenKbPath={onOpenKbPath}
           >
             {block.content}
           </MarkdownContent>
@@ -450,6 +466,7 @@ export function TimelineBlockView({
   durationBold,
   onOpenSource,
   onOpenConversation,
+  onOpenKbPath,
   previewPath,
   conversationId,
   onQuestionResolved,
@@ -465,6 +482,7 @@ export function TimelineBlockView({
         durationBold={inParallel ? durationBold : true}
         onOpenSource={onOpenSource}
         onOpenConversation={onOpenConversation}
+        onOpenKbPath={onOpenKbPath}
         previewPath={previewPath}
         conversationId={conversationId}
         onQuestionResolved={onQuestionResolved}
@@ -518,6 +536,7 @@ export function TimelineBlockView({
             }
             onOpenSource={onOpenSource}
             onOpenConversation={onOpenConversation}
+            onOpenKbPath={onOpenKbPath}
             previewPath={previewPath}
             conversationId={conversationId}
             onQuestionResolved={onQuestionResolved}
@@ -535,6 +554,7 @@ export function TimelineBlockView({
         nowMs={nowMs}
         isLive={isLive}
         onOpenConversation={onOpenConversation}
+        onOpenKbPath={onOpenKbPath}
       />
     );
   }
@@ -552,6 +572,7 @@ export function TimelineBlockView({
         <MarkdownContent
           className="markdown-body chat-markdown"
           onOpenConversation={onOpenConversation}
+          onOpenKbPath={onOpenKbPath}
           highlightRange={textHighlight ?? null}
         >
           {content}

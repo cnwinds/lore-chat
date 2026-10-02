@@ -20,4 +20,4 @@ def test_put_memory_doc_is_rejected(client):
 def test_memory_tools_gated_by_mode():
     names = {d["function"]["name"] for d in select_tools("no_write", web_enabled=True)}
     assert "manage_memory" not in names
-    assert "recall_memory" in names
+    assert "search" in names

@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { Components } from "react-markdown";
 import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -10,6 +11,7 @@ import {
   parseConversationHref,
   type ConversationLinkTarget,
 } from "../utils/conversationLinks";
+import { parseLoreHref } from "../utils/loreLinks";
 import { splitForHighlight } from "../utils/unicodeHighlight";
 
 /** 私有区标记：注入源文后由 rehype 换成 <mark>，不依赖 rehype-raw。 */
@@ -21,6 +23,8 @@ type Props = {
   className?: string;
   /** 点击正文内会话深链时跳转 */
   onOpenConversation?: (target: ConversationLinkTarget) => void;
+  /** 点击 lore://kb/… 文件链接时打开知识库路径 */
+  onOpenKbPath?: (path: string) => void;
   /** 源文字符区间高亮（跳转）；仍走 Markdown，以免丢深链/相对图 */
   highlightRange?: { start: number; end: number } | null;
   /** 为标题注入 outline-0… id，供分享页大纲锚点 */
@@ -29,6 +33,7 @@ type Props = {
 
 /** 允许 conversation://（默认 urlTransform 会剥掉非 http(s) 协议）。 */
 function markdownUrlTransform(url: string): string {
+  if (/^lore:\/\//i.test(url) && parseLoreHref(url)) return url;
   if (parseConversationHref(url)) return url;
   return defaultUrlTransform(url);
 }
@@ -105,6 +110,17 @@ function rehypeOutlineHeadingIds() {
   };
 }
 
+function staticMdLinkChip(children: ReactNode, title?: string) {
+  return (
+    <span
+      className="conversation-md-link conversation-md-link--static"
+      title={title}
+    >
+      <span className="source-link-text">{children}</span>
+    </span>
+  );
+}
+
 /**
  * 通用 Markdown 渲染（聊天时间线等）。
  * - 相对路径插图 → /api/download
@@ -114,6 +130,7 @@ export function MarkdownContent({
   children,
   className,
   onOpenConversation,
+  onOpenKbPath,
   highlightRange,
   outlineHeadingIds = false,
 }: Props) {
@@ -130,11 +147,7 @@ export function MarkdownContent({
       const target = parseConversationHref(href);
       if (target) {
         if (!onOpenConversation) {
-          return (
-            <span className="conversation-md-link conversation-md-link--static">
-              <span className="source-link-text">{linkChildren}</span>
-            </span>
-          );
+          return staticMdLinkChip(linkChildren);
         }
         return (
           <button
@@ -153,6 +166,29 @@ export function MarkdownContent({
             <span className="source-link-text">{linkChildren}</span>
           </button>
         );
+      }
+      const lore = parseLoreHref(href);
+      if (lore?.kind === "kb" && !lore.isDir && onOpenKbPath) {
+        return (
+          <button
+            type="button"
+            className="source-link source-link--inline conversation-md-link"
+            title={href ?? undefined}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onOpenKbPath(lore.path);
+            }}
+          >
+            <span className="source-link-icon" aria-hidden>
+              📄
+            </span>
+            <span className="source-link-text">{linkChildren}</span>
+          </button>
+        );
+      }
+      if (href && /^lore:\/\//i.test(href)) {
+        return staticMdLinkChip(linkChildren, href);
       }
       if (!href) {
         return <span>{linkChildren}</span>;

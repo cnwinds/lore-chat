@@ -47,6 +47,9 @@ def _make_registry(tmp_path, *, sandbox=True):
         knowledge_writer=writer,
     )
     runtime = FakeSandboxRuntime() if sandbox else None
+    from app.engine.roles import RoleStore
+    from tests.test_agent_tools import _wire_registry_context
+
     registry = ToolRegistry(
         retr,
         repo,
@@ -57,7 +60,9 @@ def _make_registry(tmp_path, *, sandbox=True):
         writer,
         indexer=idx,
         sandbox_runtime=runtime,
+        roles=RoleStore(tmp_path / "roles"),
     )
+    _wire_registry_context(registry, tmp_path)
     return registry, runtime
 
 

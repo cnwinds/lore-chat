@@ -35,10 +35,10 @@ async def test_read_tools_refuse_internal_paths(tmp_path):
     (kb / ".kb" / "note.md").write_text("# internal\nsk-secret\n", encoding="utf-8")
 
     for path in (".kb/settings.json", ".kb/note.md", "a/../.kb/settings.json", ".git/config"):
-        r = await registry.execute("read_doc", {"path": path})
-        assert r.get("error") == "forbidden", path
+        r = await registry.execute("read", {"uri": path})
+        assert r.get("error") in ("forbidden", "invalid_uri"), path
         assert "sk-secret" not in str(r)
 
-    meta = await registry.execute("read_doc_meta", {"path": ".kb/note.md"})
-    assert meta.get("error") == "FORBIDDEN"
+    meta = await registry.execute("read", {"uri": ".kb/note.md"})
+    assert meta.get("error") in ("forbidden", "invalid_uri", "FORBIDDEN")
     assert "sk-secret" not in str(meta)

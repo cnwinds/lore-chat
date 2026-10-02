@@ -40,13 +40,13 @@ def test_pointer_names_prior_segment_without_transcript(tmp_path):
     text = build_prior_segment_pointer(store, conversation_id=current)
     assert text is not None
     assert text.startswith("【上一会话段】")
-    assert f"conversation://{prior}" in text
+    assert f"lore://conversations/dm/{DEFAULT_ROLE_ID}/{prior}/" in text
     assert "帮我统计最近一个月的 AI 新闻做一个视频" in text
     assert "北京时间" in text
     assert "对话 2 条" in text
     # 只给事实：不带原文，也不复述取回路由（路由以《戒律》「跨段接续」与工具描述为准）
     assert "先对齐范围再动手" not in text
-    assert "read_conversation_context" not in text
+    assert "read" not in text
     assert len(text) < 300
 
 
@@ -55,7 +55,7 @@ def test_pointer_counts_dialogue_not_tool_rows(tmp_path):
     prior = store.create(role_id=DEFAULT_ROLE_ID)
     store.append_exchange(prior, "要接续的方案", {"role": "assistant", "text": "已记下"})
     store.append_messages(
-        prior, [{"role": "tool", "text": "search_kb 熔岩尾焰鸟"}] * 12
+        prior, [{"role": "tool", "text": "search 熔岩尾焰鸟"}] * 12
     )
     current = store.create(role_id=DEFAULT_ROLE_ID)
     text = build_prior_segment_pointer(store, conversation_id=current)

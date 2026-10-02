@@ -12,6 +12,7 @@ from app.engine.agent.tool_catalog import (
 )
 from app.engine.agent.tool_dispatch import dispatch_tool
 from app.engine.agent.tool_impl import (
+    ContextViewTools,
     DocReadGuard,
     InteractionTools,
     KbMutateTools,
@@ -89,6 +90,16 @@ class ToolRegistry:
             conversations=conversations,
             conversation_context_max_chars=conversation_context_max_chars,
         )
+        self.context_view = ContextViewTools(
+            repo=repo,
+            retriever=retriever,
+            conversations=conversations,
+            roles=roles,
+            read_guard=read_guard,
+            disclosure_windows=self.disclosure_windows,
+            conversation_context_max_chars=conversation_context_max_chars,
+            memory_service=memory_service,
+        )
         self.kb_mutate = KbMutateTools(
             repo=repo,
             organizer=organizer,
@@ -97,6 +108,7 @@ class ToolRegistry:
             memory_service=memory_service,
             conversations=conversations,
             system_layer=system_layer,
+            roles=roles,
             edit_doc_max_edits=edit_doc_max_edits,
             edit_doc_max_patch_chars=edit_doc_max_patch_chars,
         )
@@ -151,6 +163,7 @@ class ToolRegistry:
     @memory_service.setter
     def memory_service(self, value) -> None:
         self.memory.memory_service = value
+        self.context_view.memory_service = value
         self._dispatch_handlers = None
 
     def rebind(

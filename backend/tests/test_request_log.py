@@ -298,7 +298,7 @@ async def test_tool_loop_capture_two_rounds(tmp_path):
                             index=0,
                             id="1",
                             function=SimpleNamespace(
-                                name="search_kb",
+                                name="search",
                                 arguments='{"query":"x"}',
                             ),
                         )
@@ -341,7 +341,7 @@ async def test_tool_loop_capture_two_rounds(tmp_path):
     loop = AgentToolLoop(settings, llm, registry)
     async for _ in loop.stream(
         [{"role": "user", "content": "q"}],
-        tools_for_run=[{"type": "function", "function": {"name": "search_kb", "description": "d", "parameters": {}}}],
+        tools_for_run=[{"type": "function", "function": {"name": "search", "description": "d", "parameters": {}}}],
         conversation_id="cid",
         active_doc_path=None,
         turn_id="t1",

@@ -1031,6 +1031,124 @@ class ConversationStore:
         with self._lock:
             return self._row_channel_instance_id(self._conversation_row(cid))
 
+    def get_conversation_row(self, cid: str) -> dict:
+        """只读：会话归属字段，供上下文视图判桶。"""
+        from app.engine.channel_plugins.types import is_channel_origin
+        from app.engine.rooms.schema import KIND_OWNER_DM
+
+        with self._lock:
+            row = self._conversation_row(cid)
+        kind = KIND_OWNER_DM
+        try:
+            kind = (row["kind"] or KIND_OWNER_DM).strip() or KIND_OWNER_DM
+        except (KeyError, IndexError):
+            pass
+        origin = self._row_origin(row)
+        role_id = (row["role_id"] or "").strip()
+        channel_instance_id = self._row_channel_instance_id(row)
+        return {
+            "id": cid,
+            "kind": kind,
+            "origin": origin,
+            "role_id": role_id,
+            "channel_instance_id": channel_instance_id,
+            "is_channel": is_channel_origin(origin),
+        }
+
+    def list_owner_dm_conversation_ids_for_role(self, role_id: str) -> list[str]:
+        """主人私聊（owner_dm、非通道来源），按 stored role_id。"""
+        from app.engine.channel_plugins.types import is_channel_origin
+        from app.engine.rooms.schema import KIND_OWNER_DM
+
+        rid = (role_id or "").strip()
+        if not rid:
+            return []
+        with self._lock:
+            rows = self.conn.execute(
+                """
+                SELECT id, kind, origin, role_id FROM conversations
+                WHERE role_id = ?
+                """,
+                (rid,),
+            ).fetchall()
+        out: list[str] = []
+        for row in rows:
+            kind = (row["kind"] or KIND_OWNER_DM).strip() or KIND_OWNER_DM
+            if kind != KIND_OWNER_DM:
+                continue
+            if is_channel_origin(row["origin"]):
+                continue
+            out.append(str(row["id"]))
+        return out
+
+    def list_room_conversation_ids(self) -> list[str]:
+        """互通 peer_dm 与群聊 group。"""
+        from app.engine.rooms.schema import KIND_GROUP, KIND_PEER_DM
+
+        with self._lock:
+            rows = self.conn.execute(
+                """
+                SELECT id FROM conversations
+                WHERE kind IN (?, ?)
+                """,
+                (KIND_PEER_DM, KIND_GROUP),
+            ).fetchall()
+        return [str(row["id"]) for row in rows]
+
+    def list_context_view_summaries(
+        self, conversation_ids: list[str]
+    ) -> list[dict]:
+        """只读：会话 id、标题、最近活动、user/assistant 消息数（与 load_dialogue_tail 一致）。"""
+        ids = [str(i).strip() for i in conversation_ids if str(i).strip()]
+        if not ids:
+            return []
+        chunk_size = 500
+        meta: dict[str, dict] = {}
+        counts: dict[str, int] = {}
+        with self._lock:
+            for start in range(0, len(ids), chunk_size):
+                chunk = ids[start : start + chunk_size]
+                placeholders = ",".join("?" * len(chunk))
+                rows = self.conn.execute(
+                    f"""
+                    SELECT id, title, updated_at, last_user_message_at
+                    FROM conversations
+                    WHERE id IN ({placeholders})
+                    """,
+                    chunk,
+                ).fetchall()
+                for row in rows:
+                    cid = str(row["id"])
+                    activity = row["last_user_message_at"] or row["updated_at"] or ""
+                    meta[cid] = {
+                        "id": cid,
+                        "title": row["title"] or "",
+                        "last_activity": activity,
+                    }
+                count_rows = self.conn.execute(
+                    f"""
+                    SELECT conversation_id, COUNT(*) AS n
+                    FROM messages
+                    WHERE conversation_id IN ({placeholders})
+                      AND role IN ('user', 'assistant')
+                    GROUP BY conversation_id
+                    """,
+                    chunk,
+                ).fetchall()
+                for row in count_rows:
+                    counts[str(row["conversation_id"])] = int(row["n"] or 0)
+        out: list[dict] = []
+        for cid in ids:
+            if cid not in meta:
+                continue
+            out.append(
+                {
+                    **meta[cid],
+                    "message_count": counts.get(cid, 0),
+                }
+            )
+        return out
+
     # ------------------------------------------------------------------
     # CRUD
     # ------------------------------------------------------------------

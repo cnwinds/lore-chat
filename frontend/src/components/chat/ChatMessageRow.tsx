@@ -232,6 +232,7 @@ function renderMessageContent(
   ) => void,
   highlightRange: { start: number; end: number } | null,
 ) {
+  const onOpenKbPath = (path: string) => onOpenSource({ type: "kb", path });
   if (m.timeline && m.timeline.length > 0) {
     const cumulative = computeCumulative(m.timeline);
     const textSpans = collectTimelineTextSpans(m.timeline);
@@ -267,6 +268,7 @@ function renderMessageContent(
           isLive={isLive}
           onOpenSource={onOpenSource}
           onOpenConversation={onOpenConversation}
+          onOpenKbPath={onOpenKbPath}
           previewPath={previewPath}
           conversationId={conversationId}
           onQuestionResolved={onQuestionResolved}
@@ -287,6 +289,7 @@ function renderMessageContent(
       <MarkdownContent
         className="markdown-body chat-markdown"
         onOpenConversation={onOpenConversation}
+        onOpenKbPath={onOpenKbPath}
         highlightRange={highlightRange}
       >
         {text}

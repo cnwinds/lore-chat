@@ -270,6 +270,15 @@ class PartitionedLexical:
             if not _META_KEY_RE.match(key):
                 raise ValueError(f"invalid meta filter key: {key!r}")
             path = f"$.{key}"
+            if flt.op == "in":
+                if not isinstance(flt.value, tuple) or not flt.value:
+                    raise ValueError("in filter requires non-empty tuple value")
+                placeholders = ",".join("?" * len(flt.value))
+                parts.append(
+                    f"json_extract(i.meta_json, '{path}') IN ({placeholders})"
+                )
+                params.extend(_sql_bind_value(x) for x in flt.value)
+                continue
             val = _sql_bind_value(flt.value)
             if flt.op == "eq":
                 parts.append(f"json_extract(i.meta_json, '{path}') = ?")
@@ -287,6 +296,22 @@ class PartitionedLexical:
                 raise ValueError(f"invalid meta filter op: {flt.op!r}")
         return " AND " + " AND ".join(parts), params
 
+    @staticmethod
+    def _group_prefix_sql_clauses(
+        prefixes: Sequence[str],
+    ) -> tuple[str, list[Any]]:
+        if not prefixes:
+            return "", []
+        parts: list[str] = []
+        params: list[Any] = []
+        for prefix in prefixes:
+            if not prefix:
+                raise ValueError("group prefix must not be empty")
+            upper = prefix + _GRP_PREFIX_UPPER_SUFFIX
+            parts.append("(i.grp >= ? AND i.grp < ?)")
+            params.extend([prefix, upper])
+        return " AND (" + " OR ".join(parts) + ")", params
+
     def fts_search(
         self,
         family: str,
@@ -294,11 +319,14 @@ class PartitionedLexical:
         partitions: list[str],
         limit: int,
         filters: Sequence[Any] = (),
+        *,
+        group_prefixes: Sequence[str] | None = None,
     ) -> list[tuple[str, str, float]]:
         if not match_expr or not partitions:
             return []
         placeholders = ",".join("?" * len(partitions))
         filter_sql, filter_params = self._filter_sql_clauses(filters)
+        grp_sql, grp_params = self._group_prefix_sql_clauses(group_prefixes or ())
         with self._connect() as conn:
             rows = conn.execute(
                 f"""
@@ -306,11 +334,11 @@ class PartitionedLexical:
                 FROM fts_{family} f
                 JOIN items i ON i.partition = f.partition AND i.item_id = f.item_id
                 WHERE fts_{family} MATCH ? AND f.partition IN ({placeholders})
-                {filter_sql}
+                {filter_sql}{grp_sql}
                 ORDER BY bm25(fts_{family})
                 LIMIT ?
                 """,
-                [match_expr, *partitions, *filter_params, limit],
+                [match_expr, *partitions, *filter_params, *grp_params, limit],
             ).fetchall()
         return [
             (r["partition"], r["item_id"], -float(r["bm"]))
@@ -324,11 +352,14 @@ class PartitionedLexical:
         partitions: list[str],
         limit: int,
         filters: Sequence[Any],
+        *,
+        group_prefixes: Sequence[str] | None = None,
     ) -> list[tuple[str, str, float]]:
         if not pattern or not partitions:
             return []
         placeholders = ",".join("?" * len(partitions))
         filter_sql, filter_params = self._filter_sql_clauses(filters)
+        grp_sql, grp_params = self._group_prefix_sql_clauses(group_prefixes or ())
         with self._connect() as conn:
             rows = conn.execute(
                 f"""
@@ -336,10 +367,10 @@ class PartitionedLexical:
                 FROM items i
                 WHERE i.family=? AND i.partition IN ({placeholders})
                   AND i.text LIKE ? ESCAPE '\\'
-                {filter_sql}
+                {filter_sql}{grp_sql}
                 LIMIT ?
                 """,
-                [family, *partitions, pattern, *filter_params, limit],
+                [family, *partitions, pattern, *filter_params, *grp_params, limit],
             ).fetchall()
         return [(r["partition"], r["item_id"], 0.0) for r in rows]
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from app.engine.channel_plugins.types import is_channel_origin
 from app.engine.secrets import mask_secrets
 
 _TAIL_MESSAGES = 12
@@ -25,6 +26,29 @@ def conversation_ref_id(raw: str | None) -> str:
     if ref.startswith("conversation://"):
         ref = ref[len("conversation://") :].split("/", 1)[0].split("#", 1)[0]
     return ref.strip()
+
+
+def _conversation_read_allowed(
+    store,
+    target_cid: str,
+    current_conversation_id: str | None,
+) -> bool:
+    """会话原文可见性：通道回合只能读本会话；主人回合不可读通道会话。"""
+    current_cid = (current_conversation_id or "").strip()
+    if current_cid:
+        try:
+            current_is_channel = is_channel_origin(store.get_origin(current_cid))
+        except KeyError:
+            current_is_channel = False
+    else:
+        current_is_channel = False
+    try:
+        target_is_channel = is_channel_origin(store.get_origin(target_cid))
+    except KeyError:
+        return True
+    if current_is_channel:
+        return target_cid == current_cid
+    return not target_is_channel
 
 
 def _resolve_prior_conversation_id(store, current_conversation_id: str | None) -> str | None:
@@ -103,6 +127,14 @@ def read_conversation_context(
                     error="no_prior",
                     summary="没有可读取的上一会话段",
                 )
+
+    if not _conversation_read_allowed(store, cid, current_conversation_id):
+        return _empty(
+            conversation_id=cid,
+            message_id=mid or None,
+            error="forbidden",
+            summary="无权读取该会话",
+        )
 
     title = ""
     older = 0

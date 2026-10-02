@@ -43,6 +43,7 @@ from app.engine.agent.orchestrator import AgentOrchestrator
 from app.engine.agent.system_layer import SystemLayer
 from app.engine.precepts_upgrade import PreceptsUpgrade
 from app.engine.memory.card_index import CardIndex, CardRetrievalTuning
+from app.engine.memory.owner_index import OwnerMemoryIndex, OwnerRetrievalTuning
 from app.engine.memory.cards import KnowledgeCards
 from app.engine.memory.persona_evolution import LLMPersonaEvolver
 from app.engine.memory.persona_history import PersonaHistory
@@ -108,6 +109,7 @@ class Container:
     persona_history: PersonaHistory
     search_index: SearchIndex
     card_index: CardIndex
+    owner_memory_index: OwnerMemoryIndex
     enabled_skills: EnabledSkillsStore
     api_keys: ApiKeyStore
     channel_registry: ChannelPluginRegistry
@@ -249,8 +251,17 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
         CardRetrievalTuning.from_settings(settings),
     )
     memory.cards.index = card_index
+    owner_memory_index = OwnerMemoryIndex(
+        index.search_index,
+        memory_store,
+        OwnerRetrievalTuning.from_settings(settings),
+    )
+    memory_store.on_mutated = owner_memory_index.sync
+    memory_service.owner_index = owner_memory_index
+    memory.cards.owner_index = owner_memory_index
     try:
         card_index.sync_all()
+        owner_memory_index.sync()
     except Exception:
         logging.getLogger(__name__).exception("card index startup sync failed")
 
@@ -282,6 +293,10 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
     )
     agent.tools.memory.cards = memory.cards
     agent.tools.memory.conversations = conversations
+    agent.tools.context_view.cards = memory.cards
+    agent.tools.context_view.channel_instances = channel_instances
+    agent.tools.kb_mutate.cards = memory.cards
+    agent.tools.kb_mutate.channel_instances = channel_instances
     agent.chat_runner.turn_hub.usage_store = usage_store
 
     # 服务端发送队列：回合结束时由 TurnHub 钩子驱动 drain（注入/续发/暂停）
@@ -375,6 +390,7 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
         persona_history=persona_history,
         search_index=index.search_index,
         card_index=card_index,
+        owner_memory_index=owner_memory_index,
         enabled_skills=enabled_skills,
         api_keys=api_keys,
         channel_registry=channel_registry,
@@ -537,6 +553,9 @@ def apply_settings(
     card_index = getattr(container, "card_index", None)
     if card_index is not None:
         card_index.tuning = CardRetrievalTuning.from_settings(settings)
+    owner_memory_index = getattr(container, "owner_memory_index", None)
+    if owner_memory_index is not None:
+        owner_memory_index.tuning = OwnerRetrievalTuning.from_settings(settings)
     overview = getattr(container, "background_overview", None)
     if overview is not None:
         overview.settings = settings

@@ -5,7 +5,7 @@ from app.engine.agent.events import (
 
 
 def test_sse_event_format():
-    ev = tool_start("t1", "search_kb", "检索本地知识库", {"query": "x"})
+    ev = tool_start("t1", "search", "检索本地知识库", {"query": "x"})
     assert ev.startswith("event: tool_start\n")
     data = json.loads(ev.split("data: ", 1)[1].strip())
     assert data["id"] == "t1"

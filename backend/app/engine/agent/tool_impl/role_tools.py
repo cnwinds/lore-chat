@@ -422,10 +422,12 @@ class RoleTools:
                 role_ids=ids,
                 avatar=avatar,
             )
+            from app.engine.context_view.uri import room_uri
+
             return {
                 "summary": (
                     f"已建群「{room['title']}」，"
-                    f"conversation://{room['id']}"
+                    f"{room_uri(room['id'])}"
                 ),
                 "sources": [],
                 "room_id": room["id"],

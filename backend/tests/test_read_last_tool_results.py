@@ -42,7 +42,7 @@ def test_returns_last_turn_tool_blocks(tmp_path):
         [
             {"type": "tool", "tool": "web_search", "label": "搜索网页",
              "query": "RRF k=60", "content": "命中 1：RRF 原始论文……" * 3},
-            {"type": "tool", "tool": "search_kb", "label": "检索知识库",
+            {"type": "tool", "tool": "search", "label": "检索知识库",
              "query": "RRF 检索", "summary": "本地未命中"},
         ],
         "RRF 是一种倒数排序融合方法。",

@@ -96,7 +96,7 @@
 
 ## 6. 能力与调用（未改）
 
-`select_tools(mode=api)`：只读 KB + 读 Skill + 沙箱执行；无写库、无 `publish_from_sandbox`、无改角色/例行任务/记忆写入。`origin=api` 跳过网页沙箱确认。不跑记忆抽取。`recall_memory` 可只读。
+`select_tools(mode=api)`：只读 KB + 读 Skill + 沙箱执行；无写库、无 `publish_from_sandbox`、无改角色/例行任务/记忆写入。`origin=api` 跳过网页沙箱确认。不跑记忆抽取。通道插件回合的检索与读取可见范围：知识库、当前会话、实例卡片开启「主人记忆」（`include_owner_memory`，默认关）时的主人记忆、以及实例绑定的人设卡；读不到其他来访者的会话、左栏角色私聊与其他角色的知识卡。
 
 Skill catalog =（Key 可选白名单，否则全局启用集）∩ 请求 `skills`。交集空 → 400。
 

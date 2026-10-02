@@ -2,9 +2,14 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 import uuid
+from collections.abc import Callable
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
+
+from app.logging_config import get_logger
 
 from app.engine.memory.constants import ORIGIN_RANK
 
@@ -84,11 +89,53 @@ def _row_to_fact(row: sqlite3.Row) -> dict:
 
 
 class MemoryStore:
-    def __init__(self, db_path: str | Path, *, owner_key: str):
+    def __init__(
+        self,
+        db_path: str | Path,
+        *,
+        owner_key: str,
+        on_mutated: Callable[[], None] | None = None,
+    ):
         self.db_path = Path(db_path)
         self.owner_key = owner_key
+        self.on_mutated = on_mutated
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._mutation_tls = threading.local()
         self._init_db()
+
+    def _fire_on_mutated(self) -> None:
+        cb = self.on_mutated
+        if cb is None:
+            return
+        try:
+            cb()
+        except Exception as exc:  # noqa: BLE001
+            get_logger("memory.store").warning(
+                "memory store on_mutated failed: %s", exc, exc_info=True
+            )
+
+    def _notify_mutated(self) -> None:
+        tls = self._mutation_tls
+        depth = getattr(tls, "depth", 0)
+        if depth > 0:
+            tls.dirty = True
+            return
+        self._fire_on_mutated()
+
+    @contextmanager
+    def _coalesce_mutations(self):
+        tls = self._mutation_tls
+        depth = getattr(tls, "depth", 0)
+        if depth == 0:
+            tls.dirty = False
+        tls.depth = depth + 1
+        try:
+            yield
+        finally:
+            tls.depth = depth
+            if depth == 0 and getattr(tls, "dirty", False):
+                tls.dirty = False
+                self._fire_on_mutated()
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path)
@@ -101,6 +148,32 @@ class MemoryStore:
             conn.executescript(_SCHEMA)
 
     def upsert_fact(
+        self,
+        *,
+        slot_key: str,
+        category: str,
+        statement: str,
+        normalized_value_hash: str,
+        origin: str,
+        confidence: float = 1.0,
+        sensitivity: str = "normal",
+        status: str = "confirmed",
+        fact_id: str | None = None,
+    ) -> dict:
+        with self._coalesce_mutations():
+            return self._upsert_fact_body(
+                slot_key=slot_key,
+                category=category,
+                statement=statement,
+                normalized_value_hash=normalized_value_hash,
+                origin=origin,
+                confidence=confidence,
+                sensitivity=sensitivity,
+                status=status,
+                fact_id=fact_id,
+            )
+
+    def _upsert_fact_body(
         self,
         *,
         slot_key: str,
@@ -154,6 +227,7 @@ class MemoryStore:
                     self.supersede_others_with_value_hash(
                         out["normalized_value_hash"], keep_id=out["id"]
                     )
+                self._notify_mutated()
                 return out
 
             fid = fact_id or str(uuid.uuid4())
@@ -189,6 +263,7 @@ class MemoryStore:
                 self.supersede_others_with_value_hash(
                     out["normalized_value_hash"], keep_id=out["id"]
                 )
+            self._notify_mutated()
             return out
 
     def get_fact(self, fact_id: str) -> dict | None:
@@ -243,6 +318,7 @@ class MemoryStore:
             normalized_value_hash=fact["normalized_value_hash"],
             reason=reason,
         )
+        self._notify_mutated()
 
     def clear_tombstone(self, *, slot_key: str, normalized_value_hash: str) -> bool:
         now = _now()
@@ -572,6 +648,7 @@ class MemoryStore:
             keep = (supersedes_id or "").strip()
             if keep:
                 self.rebind_evidence(fact_id, keep)
+        self._notify_mutated()
 
     def find_stale_by_slot(self, slot_key: str) -> list[dict]:
         with self._connect() as conn:
@@ -588,25 +665,26 @@ class MemoryStore:
         self, slot_key: str, *, keep_id: str | None = None
     ) -> int:
         """同槽仅保留 keep_id（confirmed+candidate+stale）；keep_id 为空则全部 supersede。"""
-        n = 0
-        for fact in self.find_confirmed_by_slot(slot_key):
-            if keep_id and fact["id"] == keep_id:
-                continue
-            self.mark_superseded(fact["id"], supersedes_id=keep_id)
-            n += 1
-        for cand in self.list_candidates():
-            if cand["slot_key"] != slot_key:
-                continue
-            if keep_id and cand["id"] == keep_id:
-                continue
-            self.mark_superseded(cand["id"], supersedes_id=keep_id)
-            n += 1
-        for stale in self.find_stale_by_slot(slot_key):
-            if keep_id and stale["id"] == keep_id:
-                continue
-            self.mark_superseded(stale["id"], supersedes_id=keep_id)
-            n += 1
-        return n
+        with self._coalesce_mutations():
+            n = 0
+            for fact in self.find_confirmed_by_slot(slot_key):
+                if keep_id and fact["id"] == keep_id:
+                    continue
+                self.mark_superseded(fact["id"], supersedes_id=keep_id)
+                n += 1
+            for cand in self.list_candidates():
+                if cand["slot_key"] != slot_key:
+                    continue
+                if keep_id and cand["id"] == keep_id:
+                    continue
+                self.mark_superseded(cand["id"], supersedes_id=keep_id)
+                n += 1
+            for stale in self.find_stale_by_slot(slot_key):
+                if keep_id and stale["id"] == keep_id:
+                    continue
+                self.mark_superseded(stale["id"], supersedes_id=keep_id)
+                n += 1
+            return n
 
     def supersede_others_with_value_hash(
         self, normalized_value_hash: str, *, keep_id: str
@@ -615,21 +693,22 @@ class MemoryStore:
         keep = (keep_id or "").strip()
         if not keep or not normalized_value_hash:
             return 0
-        with self._connect() as conn:
-            rows = conn.execute(
-                """
-                SELECT id FROM memory_facts
-                WHERE owner_key = ? AND normalized_value_hash = ?
-                  AND status IN ('confirmed', 'candidate', 'stale')
-                  AND id != ?
-                """,
-                (self.owner_key, normalized_value_hash, keep),
-            ).fetchall()
-        n = 0
-        for r in rows:
-            self.mark_superseded(r["id"], supersedes_id=keep)
-            n += 1
-        return n
+        with self._coalesce_mutations():
+            with self._connect() as conn:
+                rows = conn.execute(
+                    """
+                    SELECT id FROM memory_facts
+                    WHERE owner_key = ? AND normalized_value_hash = ?
+                      AND status IN ('confirmed', 'candidate', 'stale')
+                      AND id != ?
+                    """,
+                    (self.owner_key, normalized_value_hash, keep),
+                ).fetchall()
+            n = 0
+            for r in rows:
+                self.mark_superseded(r["id"], supersedes_id=keep)
+                n += 1
+            return n
 
     def count_evidence(self, fact_id: str) -> int:
         with self._connect() as conn:
@@ -713,6 +792,7 @@ class MemoryStore:
                 (status, now, fact_id),
             )
             conn.commit()
+        self._notify_mutated()
 
     def update_fact_content(
         self,
@@ -792,6 +872,7 @@ class MemoryStore:
             self.supersede_others_with_value_hash(
                 updated["normalized_value_hash"], keep_id=fact_id
             )
+        self._notify_mutated()
         return updated
 
     def sync_topic_slot_key(self, fact_id: str) -> dict:
@@ -858,12 +939,20 @@ class MemoryStore:
             ).fetchall()
             return [_row_to_fact(r) for r in rows]
 
-    def search_confirmed(self, query: str, *, limit: int = 10) -> list[dict]:
+    def search_confirmed(
+        self, query: str, *, limit: int = 10, kind: str | None = None
+    ) -> list[dict]:
         q = (query or "").strip().lower()
         facts = self.list_confirmed()
+        if kind:
+            facts = [f for f in facts if f.get("category") == kind]
         if not q:
             return facts[:limit]
-        matched = [f for f in facts if q in f["statement"].lower() or q in f["slot_key"].lower()]
+        matched = [
+            f
+            for f in facts
+            if q in f["statement"].lower() or q in f["slot_key"].lower()
+        ]
         return matched[:limit]
 
     def purge_owner(self) -> int:
@@ -894,4 +983,5 @@ class MemoryStore:
                 (self.owner_key,),
             )
             conn.commit()
+            self._notify_mutated()
             return n

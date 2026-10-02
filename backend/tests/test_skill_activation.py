@@ -35,6 +35,20 @@ def _conv(*messages: dict) -> dict:
     return {"id": "c1", "messages": list(messages)}
 
 
+def test_roots_from_read_tool_name():
+    conv = _conv(
+        _assistant(
+            {
+                "type": "tool",
+                "tool": "read",
+                "status": "done",
+                "sources": [{"type": "kb", "path": "技能/a/SKILL.md"}],
+            }
+        ),
+    )
+    assert activated_skill_roots(conv, CATALOG) == ["技能/a"]
+
+
 def test_roots_from_skill_entry_reads_most_recent_first():
     conv = _conv(
         {"role": "user", "text": "q1"},
@@ -118,9 +132,9 @@ def test_active_messages_cap_per_skill_and_total(monkeypatch):
         catalog, ["技能/a", "技能/b", "技能/c"], lambda p: "x" * 30
     )
     content = msgs[0]["content"]
-    assert "read_doc path=技能/a/SKILL.md offset=10" in content
+    assert "read uri=技能/a/SKILL.md offset=10" in content
     # 总预算剩 5 字给第二个包，第三个包放不下
-    assert "read_doc path=技能/b/SKILL.md offset=5" in content
+    assert "read uri=技能/b/SKILL.md offset=5" in content
     assert "skill-c" not in content
 
 

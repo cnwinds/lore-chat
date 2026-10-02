@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from app.engine.agent.tool_catalog import resolve_kb_location
 from app.engine.agent.tool_impl.doc_read_guard import DocReadGuard
-from app.engine.conversation_context import conversation_ref_id
+from app.engine.context_view.conversation_target import (
+    authorize_conversation_target,
+    conversation_id_from_param,
+)
+from app.engine.context_view.scope import ViewScope
 from app.engine.conversations import ConversationStore
 from app.engine.write_policy import WriteMode
 from app.engine.knowledge_writer import (
@@ -32,6 +36,9 @@ class KbMutateTools:
         memory_service=None,
         conversations=None,
         system_layer=None,
+        roles=None,
+        cards=None,
+        channel_instances=None,
         edit_doc_max_edits: int = 10,
         edit_doc_max_patch_chars: int = 8192,
     ) -> None:
@@ -42,6 +49,9 @@ class KbMutateTools:
         self.memory_service = memory_service
         self.conversations = conversations
         self.system_layer = system_layer
+        self.roles = roles
+        self.cards = cards
+        self.channel_instances = channel_instances
         self.edit_doc_max_edits = edit_doc_max_edits
         self.edit_doc_max_patch_chars = edit_doc_max_patch_chars
 
@@ -113,35 +123,6 @@ class KbMutateTools:
                 "status": "failed",
             }
         return path, None
-
-    def read_doc_meta(self, args: dict) -> dict:
-        path, err = self._resolve_doc_meta_path(args)
-        if err:
-            return err
-        assert path is not None
-        try:
-            doc = self.repo.read_doc(path)
-        except FileNotFoundError:
-            return {
-                "summary": f"文档不存在：{path}",
-                "sources": [],
-                "error": "NOT_FOUND",
-                "status": "failed",
-            }
-        except Exception as e:
-            return {
-                "summary": str(e),
-                "sources": [],
-                "error": "READ_FAILED",
-                "status": "failed",
-            }
-        return {
-            "summary": f"已读取元数据：{path}",
-            "sources": [{"type": "kb", "path": path}],
-            "path": path,
-            "meta": dict(doc.meta),
-            "status": "ok",
-        }
 
     def update_doc_meta(self, args: dict) -> dict:
         path, err = self._resolve_doc_meta_path(args)
@@ -262,17 +243,41 @@ class KbMutateTools:
                 "sources": [],
                 "error": "no conversation context",
             }
-        conversation_id = (
-            conversation_ref_id(args.get("conversation_id")) or conversation_id
+        target_param = args.get("conversation_id")
+        parsed_id, parse_err = conversation_id_from_param(
+            str(target_param) if target_param is not None else None
         )
+        if parse_err:
+            return parse_err
+        archive_cid = parsed_id or conversation_id
+        if parsed_id and parsed_id != conversation_id:
+            if self.conversations is None or self.roles is None or self.cards is None:
+                return {
+                    "summary": "会话或角色存储未配置",
+                    "sources": [],
+                    "error": "not_configured",
+                }
+            scope = ViewScope.build(
+                conversations=self.conversations,
+                roles=self.roles,
+                cards=self.cards,
+                channel_instances=self.channel_instances,
+                conversation_id=conversation_id,
+            )
+            auth_err = authorize_conversation_target(
+                scope, parsed_id, current_cid=conversation_id
+            )
+            if auth_err:
+                return auth_err
         try:
-            conv = self.conversations.get(conversation_id)
+            conv = self.conversations.get(archive_cid)
         except KeyError:
             return {
                 "summary": "会话不存在，无法归档。",
                 "sources": [],
-                "error": f"conversation not found: {conversation_id}",
+                "error": f"conversation not found: {archive_cid}",
             }
+        conversation_id = archive_cid
         transcript = ConversationStore.full_transcript(conv)
         system_rules = self.system_layer.compose() if self.system_layer else ""
         rel_path, err = resolve_kb_location(args)
@@ -399,7 +404,7 @@ class KbMutateTools:
             )
 
         if not self.read_guard.is_read(conversation_id, path):
-            return self._edit_doc_error("NOT_READ", f"请先 read_doc 再编辑：{path}")
+            return self._edit_doc_error("NOT_READ", f"请先 read 再编辑：{path}")
 
         try:
             doc = self.repo.read_doc(path)
@@ -451,7 +456,7 @@ class KbMutateTools:
             **extra,
         }
         if code == "NOT_READ":
-            out["suggestion"] = "请先调用 read_doc 读取该文档后再 edit_doc"
+            out["suggestion"] = "请先调用 read 读取该文档后再 edit_doc"
         return out
 
     def _finalize_edit_doc(

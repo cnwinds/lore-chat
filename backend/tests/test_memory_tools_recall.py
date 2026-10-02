@@ -18,11 +18,12 @@ async def test_recall_returns_confirmed(container):
         {"action": "remember", "statement": "记住我用 neovim"},
     )
     out = await container.agent.tools.execute(
-        "recall_memory",
-        {"query": "neovim", "limit": 5},
+        "search",
+        {"query": "neovim", "paths": ["lore://memory/owner/"]},
     )
-    assert out["count"] == 1
-    assert "neovim" in out["facts"][0]["statement"].lower()
+    memory = out.get("memory") or []
+    assert len(memory) == 1
+    assert "neovim" in memory[0]["text"].lower()
 
 
 @pytest.mark.asyncio
@@ -51,7 +52,6 @@ async def test_recall_sources_with_evidence(container):
     out = container.memory_service.recall("简洁", include_sources=True, limit=5)
     assert out["facts"]
     sources = out["facts"][0].get("sources") or []
-    # 出处以会话为准（session:…）；字级 message_id 仅为兼容旧调用方
     assert sources
     assert any(s.get("conversation_id") == cid for s in sources)
     assert any(

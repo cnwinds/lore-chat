@@ -29,20 +29,35 @@ from app.logging_config import get_logger
 _log = get_logger("partitioned_index")
 
 _META_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
-_VALID_OPS = frozenset({"eq", "ne", "gte", "lt"})
+_VALID_OPS = frozenset({"eq", "ne", "gte", "lt", "in"})
+_Scalar = str | int | float | bool
 
 
 @dataclass(frozen=True)
 class MetaFilter:
     key: str
     op: str
-    value: str | int | float | bool
+    value: _Scalar | tuple[_Scalar, ...]
 
     def __post_init__(self) -> None:
         if not _META_KEY_RE.match(self.key):
             raise ValueError(f"invalid meta filter key: {self.key!r}")
         if self.op not in _VALID_OPS:
             raise ValueError(f"invalid meta filter op: {self.op!r}")
+        if self.op == "in":
+            v = self.value
+            if isinstance(v, list):
+                object.__setattr__(self, "value", tuple(v))
+                v = self.value
+            if not isinstance(v, tuple) or len(v) == 0:
+                raise ValueError("in filter value must be a non-empty tuple")
+            if len(v) > 1000:
+                raise ValueError("in filter value exceeds 1000 scalars")
+            for scalar in v:
+                if not isinstance(scalar, (str, int, float, bool)):
+                    raise ValueError(
+                        f"in filter scalar type not allowed: {type(scalar)!r}"
+                    )
 
 
 @dataclass(frozen=True)
@@ -121,11 +136,19 @@ def _meta_value_passes(
             return raw < flt.value
         except TypeError:
             return False
+    if flt.op == "in":
+        if raw is None:
+            return False
+        return raw in flt.value
     return False
 
 
 def _passes_meta_filters(meta: dict, filters: Sequence[MetaFilter]) -> bool:
     return all(_meta_value_passes(meta, flt) for flt in filters)
+
+
+def _grp_matches_prefixes(grp: str, prefixes: Sequence[str]) -> bool:
+    return any((grp or "").startswith(p) for p in prefixes)
 
 
 def _like_pattern(term: str) -> str:
@@ -645,6 +668,7 @@ class SearchIndex:
         compiled,
         tuning: PartitionTuning,
         filters: Sequence[MetaFilter],
+        group_prefixes: Sequence[str] | None = None,
     ) -> tuple[list[tuple[str, str, float]], str]:
         phrases = []
         for term in compiled.signal_terms:
@@ -669,6 +693,7 @@ class SearchIndex:
                 parts,
                 tuning.fts_k,
                 filters,
+                group_prefixes=group_prefixes,
             )
             if hits:
                 return hits, "strict"
@@ -680,6 +705,7 @@ class SearchIndex:
             parts,
             tuning.fts_k,
             filters,
+            group_prefixes=group_prefixes,
         )
         if hits:
             return hits, "relaxed"
@@ -690,7 +716,12 @@ class SearchIndex:
         for term in like_ordered:
             pattern = _like_pattern(term)
             hits = self._lexical.like_search(
-                family, pattern, parts, tuning.fts_k, filters
+                family,
+                pattern,
+                parts,
+                tuning.fts_k,
+                filters,
+                group_prefixes=group_prefixes,
             )
             if hits:
                 return hits, "like"
@@ -709,12 +740,19 @@ class SearchIndex:
         fts_mode: str = "natural",
         vector_text: str | None = None,
         filters: Sequence[MetaFilter] = (),
+        group_prefixes: Sequence[str] | None = None,
     ) -> SearchResult:
         t0 = time.monotonic()
         if not partitions:
             raise ValueError("partitions must not be empty")
         if fts_mode not in ("natural", "keywords"):
             raise ValueError(f"unknown fts_mode: {fts_mode!r}")
+        grp_prefixes: tuple[str, ...] | None = None
+        if group_prefixes:
+            grp_prefixes = tuple(group_prefixes)
+            for p in grp_prefixes:
+                if not p:
+                    raise ValueError("group prefix must not be empty")
         uniq_partitions: list[str] = []
         seen_p: set[str] = set()
         by_family: dict[str, list[str]] = defaultdict(list)
@@ -792,7 +830,12 @@ class SearchIndex:
                 fts_tiers[family] = "none"
             elif fts_mode == "keywords" and compiled_kw is not None:
                 hits, tier = self._fts_keywords_for_family(
-                    family, parts, compiled_kw, tuning, filters
+                    family,
+                    parts,
+                    compiled_kw,
+                    tuning,
+                    filters,
+                    group_prefixes=grp_prefixes,
                 )
                 fts_hits_by_family[family] = hits
                 fts_tiers[family] = tier
@@ -804,14 +847,16 @@ class SearchIndex:
                     parts,
                     tuning.fts_k,
                     filters,
+                    group_prefixes=grp_prefixes,
                 )
                 fts_tiers[family] = "natural"
             else:
                 fts_hits_by_family[family] = []
                 fts_tiers[family] = "natural"
 
-        eq_ne_filters = [f for f in filters if f.op in ("eq", "ne")]
+        chroma_meta_filters = [f for f in filters if f.op in ("eq", "ne", "in")]
         range_filters = [f for f in filters if f.op in ("gte", "lt")]
+        vec_overfetch = bool(range_filters or grp_prefixes)
 
         vec_hits_by_family: dict[str, list[tuple[str, str, float]]] = {}
         if "vec" in lanes and not self._closed and self._embedder is not None:
@@ -853,7 +898,7 @@ class SearchIndex:
                     for family, parts in by_family.items():
                         tuning = tunings.get(family, PartitionTuning())
                         n_res = tuning.vec_k
-                        if range_filters:
+                        if vec_overfetch:
                             n_res = tuning.vec_k * 8
                         try:
                             raw_hits = self._vectors.query(
@@ -862,7 +907,7 @@ class SearchIndex:
                                 emb,
                                 partitions=parts,
                                 k=tuning.vec_k,
-                                eq_ne_filters=eq_ne_filters,
+                                eq_ne_filters=chroma_meta_filters,
                                 n_results=n_res,
                             )
                         except Exception as exc:
@@ -870,7 +915,7 @@ class SearchIndex:
                             vec_hits_by_family = {}
                             _log.debug("向量查询失败: %s", exc)
                             break
-                        if filters:
+                        if filters or grp_prefixes:
                             keys = [(p, i) for p, i, _ in raw_hits]
                             rows = self._lexical.fetch_items(keys)
                             filtered: list[tuple[str, str, float]] = []
@@ -878,11 +923,16 @@ class SearchIndex:
                                 row = rows.get((partition, item_id))
                                 if row is None:
                                     continue
+                                if grp_prefixes and not _grp_matches_prefixes(
+                                    row["grp"] or "", grp_prefixes
+                                ):
+                                    continue
                                 meta = json.loads(row["meta_json"] or "{}")
-                                if _passes_meta_filters(meta, filters):
-                                    filtered.append(
-                                        (partition, item_id, score)
-                                    )
+                                if filters and not _passes_meta_filters(
+                                    meta, filters
+                                ):
+                                    continue
+                                filtered.append((partition, item_id, score))
                             vec_hits_by_family[family] = filtered[: tuning.vec_k]
                         else:
                             vec_hits_by_family[family] = raw_hits[: tuning.vec_k]
@@ -933,6 +983,11 @@ class SearchIndex:
             for key, entry in list(merged.items()):
                 row = rows.get(key)
                 if row is None:
+                    del merged[key]
+                    continue
+                if grp_prefixes and not _grp_matches_prefixes(
+                    row["grp"] or "", grp_prefixes
+                ):
                     del merged[key]
                     continue
                 meta = json.loads(row["meta_json"] or "{}")

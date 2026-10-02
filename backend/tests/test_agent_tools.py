@@ -19,7 +19,55 @@ from app.index.message_chunk import MessageChunk
 from app.index.revision import IndexRevision
 from app.models.llm import FakeLLMClient
 from app.storage.repo import KnowledgeRepo
+from app.engine.roles import RoleStore
 from tests.helpers import make_conversation_index, make_search_index, make_writer
+
+
+def _wire_registry_context(registry, tmp_path, *, conversations=None):
+    from app.engine.channel_plugins.store import ChannelInstanceStore
+    from app.engine.conversations import ConversationStore
+    from app.engine.memory.cards import KnowledgeCards
+    from app.engine.memory.service import MemoryService
+    from app.engine.memory.store import MemoryStore
+    from app.engine.roles import RoleStore
+
+    kb = tmp_path / "knowledge"
+    roles = RoleStore(tmp_path / "roles")
+    conv = conversations or ConversationStore(kb / ".kb" / "conversations")
+    channel_instances = ChannelInstanceStore(kb)
+    owner = MemoryService(
+        MemoryStore(tmp_path / "memory.db", owner_key="ws1"),
+        registry.repo,
+        knowledge_writer=registry.knowledge_writer,
+    )
+    cards = KnowledgeCards(
+        tmp_path / "memory.db",
+        owner=owner,
+        roles=roles,
+        conversations=conv,
+        channel_instances=channel_instances,
+    )
+    registry.context_view.cards = cards
+    registry.context_view.roles = roles
+    registry.context_view.conversations = conv
+    registry.context_view.channel_instances = channel_instances
+    if registry.conversations is None:
+        registry.conversations = conv
+    registry.kb_read.conversations = conv
+    registry.kb_mutate.cards = cards
+    registry.kb_mutate.channel_instances = channel_instances
+    registry.kb_mutate.roles = roles
+    return roles, conv
+
+
+def _conv_uri(conv, cid, *, message_id=None):
+    from app.engine.context_view.uri import ConversationUri, format_uri
+
+    rid = conv.get_role_id(cid)
+    return format_uri(
+        ConversationUri("dm", rid, cid, message_id, message_id is None)
+    )
+
 
 
 def _make_registry(tmp_path, chat_responses=None, conversation_index=None, conversations=None, **settings_kw):
@@ -58,25 +106,27 @@ def _make_registry(tmp_path, chat_responses=None, conversation_index=None, conve
         edit_doc_max_patch_chars=settings.edit_doc_max_patch_chars,
         edit_doc_require_read=settings.edit_doc_require_read,
         web_search_default_k=settings.web_search_default_k,
+        roles=RoleStore(tmp_path / "roles"),
     )
+    _wire_registry_context(registry, tmp_path, conversations=conversations)
     return registry, repo, idx
 
 
 def test_can_parallelize_read_only():
-    assert can_parallelize(["search_kb", "fetch_url"]) is True
-    assert can_parallelize(["search_kb", "write_doc"]) is False
-    assert can_parallelize(["search_kb", "delete_kb"]) is False
-    assert can_parallelize(["search_kb", "edit_doc"]) is False
+    assert can_parallelize(["search", "fetch_url"]) is True
+    assert can_parallelize(["search", "write_doc"]) is False
+    assert can_parallelize(["search", "delete_kb"]) is False
+    assert can_parallelize(["search", "edit_doc"]) is False
     assert can_parallelize(["generate_image", "generate_image"]) is True
-    assert can_parallelize(["generate_image", "search_kb"]) is True
+    assert can_parallelize(["generate_image", "search"]) is True
     assert can_parallelize(["generate_image", "write_doc"]) is False
     assert can_parallelize(["send_message", "send_message"]) is True
-    assert can_parallelize(["send_message", "search_kb"]) is True
+    assert can_parallelize(["send_message", "search"]) is True
     assert can_parallelize(["send_message", "write_doc"]) is False
 
 
 @pytest.mark.asyncio
-async def test_search_kb_tool(tmp_path):
+async def test_search_tool(tmp_path):
     registry, repo, idx = _make_registry(tmp_path)
     repo.write_doc(
         "技术/docker/常用命令.md",
@@ -85,7 +135,7 @@ async def test_search_kb_tool(tmp_path):
         commit_msg="seed",
     )
     idx.reindex_doc("技术/docker/常用命令.md", "docker ps 查看容器，docker logs 看日志")
-    result = await registry.execute("search_kb", {"query": "docker", "k": 5})
+    result = await registry.execute("search", {"query": "docker", "k": 5})
     assert "找到" in result["summary"]
     assert len(result["sources"]) >= 1
     assert result["sources"][0]["type"] == "kb"
@@ -94,22 +144,34 @@ async def test_search_kb_tool(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_search_kb_returns_conversation_source_with_message_fields(tmp_path):
+async def test_search_returns_conversation_source_with_message_fields(tmp_path):
+    store = ConversationStore(tmp_path / "knowledge" / ".kb" / "conversations")
+    cid = store.create()
     ci = make_conversation_index(tmp_path)
     ci.upsert_message_chunks(
-        conversation_id="c1",
+        conversation_id=cid,
         message_id="m1",
         role="user",
         ts="2026-07-14T10:00:00",
         conversation_title="测试会话",
         chunks=[MessageChunk(0, 0, 4, "漫剧工具")],
     )
-    registry, _repo, _idx = _make_registry(tmp_path, conversation_index=ci)
-    result = await registry.execute("search_kb", {"query": "漫剧工具", "k": 5})
+    registry, _repo, _idx = _make_registry(
+        tmp_path, conversation_index=ci, conversations=store
+    )
+    result = await registry.execute(
+        "search",
+        {
+            "query": "漫剧工具",
+            "k": 5,
+            "paths": [f"lore://conversations/dm/default/{cid}/"],
+        },
+        conversation_id=cid,
+    )
     conv_sources = [s for s in result["sources"] if s["type"] == "conversation"]
     assert conv_sources, result["sources"]
     src = conv_sources[0]
-    assert src["cid"] == "c1"
+    assert src["cid"] == cid
     assert src["message_id"] == "m1"
     assert src["start_char"] == 0
     assert src["end_char"] == 4
@@ -121,10 +183,13 @@ async def test_search_kb_returns_conversation_source_with_message_fields(tmp_pat
 
 
 @pytest.mark.asyncio
-async def test_search_kb_excludes_active_conversation_by_default(tmp_path):
+async def test_search_excludes_active_conversation_by_default(tmp_path):
+    store = ConversationStore(tmp_path / "knowledge" / ".kb" / "conversations")
+    current = store.create()
+    past = store.create()
     ci = make_conversation_index(tmp_path)
     ci.upsert_message_chunks(
-        conversation_id="current",
+        conversation_id=current,
         message_id="m-current",
         role="user",
         ts="2026-07-14T12:00:00",
@@ -132,30 +197,39 @@ async def test_search_kb_excludes_active_conversation_by_default(tmp_path):
         chunks=[MessageChunk(0, 0, 4, "人脑结构")],
     )
     ci.upsert_message_chunks(
-        conversation_id="past",
+        conversation_id=past,
         message_id="m-past",
         role="user",
         ts="2026-07-10T10:00:00",
         conversation_title="历史会话",
         chunks=[MessageChunk(0, 0, 4, "人脑结构")],
     )
-    registry, _repo, _idx = _make_registry(tmp_path, conversation_index=ci)
+    registry, _repo, _idx = _make_registry(
+        tmp_path, conversation_index=ci, conversations=store
+    )
     result = await registry.execute(
-        "search_kb",
-        {"query": "人脑结构", "k": 5, "scope": "conversations"},
-        conversation_id="current",
+        "search",
+        {
+            "query": "人脑结构",
+            "k": 5,
+            "paths": ["lore://conversations/dm/~/"],
+        },
+        conversation_id=current,
     )
     conv_sources = [s for s in result["sources"] if s["type"] == "conversation"]
     assert len(conv_sources) == 1
-    assert conv_sources[0]["cid"] == "past"
+    assert conv_sources[0]["cid"] == past
     assert conv_sources[0]["conversation_title"] == "历史会话"
 
 
 @pytest.mark.asyncio
-async def test_search_kb_explicit_conversation_id_searches_within_session(tmp_path):
+async def test_search_explicit_conversation_id_searches_within_session(tmp_path):
+    store = ConversationStore(tmp_path / "knowledge" / ".kb" / "conversations")
+    current = store.create()
+    past = store.create()
     ci = make_conversation_index(tmp_path)
     ci.upsert_message_chunks(
-        conversation_id="current",
+        conversation_id=current,
         message_id="m-current",
         role="user",
         ts="2026-07-14T12:00:00",
@@ -163,31 +237,32 @@ async def test_search_kb_explicit_conversation_id_searches_within_session(tmp_pa
         chunks=[MessageChunk(0, 0, 4, "人脑结构")],
     )
     ci.upsert_message_chunks(
-        conversation_id="past",
+        conversation_id=past,
         message_id="m-past",
         role="user",
         ts="2026-07-10T10:00:00",
         conversation_title="历史会话",
         chunks=[MessageChunk(0, 0, 4, "人脑结构")],
     )
-    registry, _repo, _idx = _make_registry(tmp_path, conversation_index=ci)
+    registry, _repo, _idx = _make_registry(
+        tmp_path, conversation_index=ci, conversations=store
+    )
     result = await registry.execute(
-        "search_kb",
+        "search",
         {
             "query": "人脑结构",
             "k": 5,
-            "scope": "conversations",
-            "conversation_id": "current",
+            "paths": [f"lore://conversations/dm/default/{current}/"],
         },
-        conversation_id="current",
+        conversation_id=current,
     )
     conv_sources = [s for s in result["sources"] if s["type"] == "conversation"]
     assert len(conv_sources) == 1
-    assert conv_sources[0]["cid"] == "current"
+    assert conv_sources[0]["cid"] == current
 
 
 @pytest.mark.asyncio
-async def test_read_conversation_context_tool(tmp_path):
+async def test_read_tool(tmp_path):
     store = ConversationStore(tmp_path / "knowledge" / ".kb" / "conversations")
     cid = store.create()
     turn = store.begin_turn(
@@ -209,13 +284,13 @@ async def test_read_conversation_context_tool(tmp_path):
     message_id = store.get(cid)["messages"][0]["id"]
     registry, _repo, _idx = _make_registry(tmp_path, conversations=store)
     result = await registry.execute(
-        "read_conversation_context",
+        "read",
         {
-            "conversation_id": cid,
-            "message_id": message_id,
-            "before_messages": 0,
-            "after_messages": 1,
+            "uri": _conv_uri(store, cid, message_id=message_id),
+            "before": 0,
+            "after": 1,
         },
+        conversation_id=cid,
     )
     assert "messages" in result
     assert len(result["messages"]) >= 1
@@ -223,15 +298,15 @@ async def test_read_conversation_context_tool(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_read_conversation_context_defaults_to_prior_segment(tmp_path):
+async def test_read_defaults_to_prior_segment(tmp_path):
     store = ConversationStore(tmp_path / "knowledge" / ".kb" / "conversations")
     prior = store.create()
     store.append_exchange(prior, "先做新闻视频方案", {"role": "assistant", "text": "已记下月报流程"})
     current = store.create()
     registry, _repo, _idx = _make_registry(tmp_path, conversations=store)
     result = await registry.execute(
-        "read_conversation_context",
-        {},
+        "read",
+        {"uri": _conv_uri(store, prior)},
         conversation_id=current,
     )
     texts = " ".join(m["text"] for m in result["messages"])
@@ -240,7 +315,7 @@ async def test_read_conversation_context_defaults_to_prior_segment(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_search_kb_scope_conversations(tmp_path):
+async def test_search_scope_conversations(tmp_path):
     ci = make_conversation_index(tmp_path)
     ci.upsert_message_chunks(
         conversation_id="c1",
@@ -255,16 +330,19 @@ async def test_search_kb_scope_conversations(tmp_path):
     idx.reindex_doc("技术/漫剧.md", "漫剧工具文档")
 
     result = await registry.execute(
-        "search_kb", {"query": "漫剧", "k": 5, "scope": "conversations"}
+        "search", {"query": "漫剧", "k": 5, "paths": ["lore://conversations/"]}
     )
     assert all(s["type"] == "conversation" for s in result["sources"])
 
 
 @pytest.mark.asyncio
-async def test_search_kb_filters_conversations_by_ts_range(tmp_path):
+async def test_search_filters_conversations_by_ts_range(tmp_path):
+    store = ConversationStore(tmp_path / "knowledge" / ".kb" / "conversations")
+    old = store.create()
+    yesterday = store.create()
     ci = make_conversation_index(tmp_path)
     ci.upsert_message_chunks(
-        conversation_id="old",
+        conversation_id=old,
         message_id="m-old",
         role="user",
         ts="2026-08-12T10:00:00+08:00",
@@ -272,55 +350,55 @@ async def test_search_kb_filters_conversations_by_ts_range(tmp_path):
         chunks=[MessageChunk(0, 0, 5, "马尔可夫链")],
     )
     ci.upsert_message_chunks(
-        conversation_id="yesterday",
+        conversation_id=yesterday,
         message_id="m-y",
         role="user",
         ts="2026-09-17T15:00:00+08:00",
         conversation_title="新闻视频",
         chunks=[MessageChunk(0, 0, 5, "马尔可夫链")],
     )
-    registry, _repo, _idx = _make_registry(tmp_path, conversation_index=ci)
+    registry, _repo, _idx = _make_registry(
+        tmp_path, conversation_index=ci, conversations=store
+    )
     result = await registry.execute(
-        "search_kb",
+        "search",
         {
             "query": "马尔可夫链",
             "k": 5,
-            "scope": "conversations",
+            "paths": ["lore://conversations/"],
             "ts_after": "2026-09-17",
             "ts_before": "2026-09-18",
         },
     )
     conv_sources = [s for s in result["sources"] if s["type"] == "conversation"]
     assert len(conv_sources) == 1
-    assert conv_sources[0]["cid"] == "yesterday"
+    assert conv_sources[0]["cid"] == yesterday
 
 
 @pytest.mark.asyncio
-async def test_search_kb_reports_cursor_expired(tmp_path):
-    from app.engine.retriever import _make_cursor
-
+async def test_search_reports_cursor_expired(tmp_path):
     registry, _, _ = _make_registry(tmp_path)
-    stale = _make_cursor("q", {"scope": "all", "conversation_id": None}, 999, 0)
-    result = await registry.execute("search_kb", {"query": "q", "k": 1, "cursor": stale})
+    stale = "eyJxIjoicSIsImYiOnsic2NvcGUiOiJhbGwifX0="  # 伪造的旧式游标
+    result = await registry.execute("search", {"query": "q", "k": 1, "cursor": stale})
     assert result.get("cursor_expired") is True
     assert "过期" in result["summary"]
 
 
 @pytest.mark.asyncio
-async def test_read_doc_not_found(tmp_path):
+async def test_read_not_found(tmp_path):
     registry, _, _ = _make_registry(tmp_path)
-    result = await registry.execute("read_doc", {"path": "nope.md"})
+    result = await registry.execute("read", {"uri": "nope.md"})
     assert "不存在" in result["summary"]
     assert result.get("error")
 
 
 @pytest.mark.asyncio
-async def test_read_doc_progressive_disclosure(tmp_path):
+async def test_read_progressive_disclosure(tmp_path):
     registry, repo, _ = _make_registry(tmp_path)
     body = "# 大标题\n" + ("段落内容。" * 2000)  # 远超 3000 字
     repo.write_doc("技术/long.md", {"title": "长文"}, body, commit_msg="seed")
 
-    first = await registry.execute("read_doc", {"path": "技术/long.md"})
+    first = await registry.execute("read", {"uri": "技术/long.md"})
     assert first["returned_chars"] <= 3000
     assert first["has_more"] is True
     assert first["offset"] == 0
@@ -328,34 +406,34 @@ async def test_read_doc_progressive_disclosure(tmp_path):
     assert first["next_offset"] == first["returned_chars"]
 
     nxt = await registry.execute(
-        "read_doc", {"path": "技术/long.md", "offset": first["next_offset"], "limit": 500}
+        "read", {"uri": "技术/long.md", "offset": first["next_offset"], "limit": 500}
     )
     assert nxt["offset"] == first["next_offset"]
     assert nxt["returned_chars"] <= 500
 
 
 @pytest.mark.asyncio
-async def test_read_doc_deep_intent_larger_window(tmp_path):
+async def test_read_deep_intent_larger_window(tmp_path):
     registry, repo, _ = _make_registry(tmp_path)
     body = "# 大标题\n" + ("段落内容。" * 8000)
     repo.write_doc("技术/long.md", {"title": "长文"}, body, commit_msg="seed")
 
     deep = await registry.execute(
-        "read_doc", {"path": "技术/long.md", "intent": "deep"}
+        "read", {"uri": "技术/long.md", "intent": "deep"}
     )
     assert deep["returned_chars"] > 3000
     assert deep["returned_chars"] <= 16000
 
     capped = await registry.execute(
-        "read_doc",
-        {"path": "技术/long.md", "intent": "deep", "limit": 999999},
+        "read",
+        {"uri": "技术/long.md", "intent": "deep", "limit": 999999},
     )
     assert capped["returned_chars"] == 32000
 
     # 问答取证不得借大 limit 绕过小窗
     spot = await registry.execute(
-        "read_doc",
-        {"path": "技术/long.md", "intent": "spot", "limit": 20000},
+        "read",
+        {"uri": "技术/long.md", "intent": "spot", "limit": 20000},
     )
     assert spot["returned_chars"] <= 3000
 
@@ -488,9 +566,10 @@ async def test_delete_kb_directory(tmp_path):
 
 @pytest.mark.asyncio
 async def test_edit_doc_requires_read_first(tmp_path):
-    registry, repo, _ = _make_registry(tmp_path)
+    store = ConversationStore(tmp_path / "knowledge" / ".kb" / "conversations")
+    cid = store.create()
+    registry, repo, _ = _make_registry(tmp_path, conversations=store)
     repo.write_doc("技术/foo.md", {"title": "Foo"}, "hello world\n", commit_msg="seed")
-    cid = "conv-1"
     result = await registry.execute(
         "edit_doc",
         {"path": "技术/foo.md", "edits": [{"old_string": "world", "new_string": "earth"}]},
@@ -498,17 +577,18 @@ async def test_edit_doc_requires_read_first(tmp_path):
     )
     assert result.get("error") == "NOT_READ"
     assert result.get("status") == "failed"
-    assert "read_doc" in (result.get("suggestion") or "")
+    assert "read" in (result.get("suggestion") or "")
 
 
 @pytest.mark.asyncio
 async def test_edit_doc_after_read(tmp_path):
-    registry, repo, idx = _make_registry(tmp_path)
+    store = ConversationStore(tmp_path / "knowledge" / ".kb" / "conversations")
+    cid = store.create()
+    registry, repo, idx = _make_registry(tmp_path, conversations=store)
     path = "技术/foo.md"
     repo.write_doc(path, {"title": "Foo"}, "hello world\n", commit_msg="seed")
     idx.reindex_doc(path, "hello world\n")
-    cid = "conv-2"
-    await registry.execute("read_doc", {"path": path}, conversation_id=cid)
+    await registry.execute("read", {"uri": path}, conversation_id=cid)
     result = await registry.execute(
         "edit_doc",
         {"path": path, "edits": [{"old_string": "world", "new_string": "earth"}]},
@@ -523,8 +603,9 @@ async def test_edit_doc_after_read(tmp_path):
 
 @pytest.mark.asyncio
 async def test_edit_doc_protected_path(tmp_path):
-    registry, repo, _ = _make_registry(tmp_path)
-    cid = "conv-3"
+    store = ConversationStore(tmp_path / "knowledge" / ".kb" / "conversations")
+    cid = store.create()
+    registry, repo, _ = _make_registry(tmp_path, conversations=store)
     result = await registry.execute(
         "edit_doc",
         {"path": ".kb/pending.json", "edits": [{"old_string": "x", "new_string": "y"}]},
@@ -545,8 +626,11 @@ async def test_edit_doc_system_precepts_allowed(tmp_path):
     sl = SystemLayer(repo, dir_name="系统")
     sl.ensure_seeded()
     path = "系统/戒律.md"
-    cid = "conv-4"
-    await registry.execute("read_doc", {"path": path}, conversation_id=cid)
+    store = ConversationStore(tmp_path / "knowledge" / ".kb" / "conversations")
+    cid = store.create()
+    registry.conversations = store
+    registry.context_view.conversations = store
+    await registry.execute("read", {"uri": path}, conversation_id=cid)
     original = repo.read_doc(path).body
     marker = "## 一、总原则"
     result = await registry.execute(
@@ -569,11 +653,12 @@ async def test_edit_doc_system_precepts_allowed(tmp_path):
 
 @pytest.mark.asyncio
 async def test_edit_doc_edits_and_insert_mutually_exclusive(tmp_path):
-    registry, repo, _ = _make_registry(tmp_path)
+    store = ConversationStore(tmp_path / "knowledge" / ".kb" / "conversations")
+    cid = store.create()
+    registry, repo, _ = _make_registry(tmp_path, conversations=store)
     path = "技术/foo.md"
     repo.write_doc(path, {"title": "Foo"}, "body\n", commit_msg="seed")
-    cid = "conv-5"
-    await registry.execute("read_doc", {"path": path}, conversation_id=cid)
+    await registry.execute("read", {"uri": path}, conversation_id=cid)
     result = await registry.execute(
         "edit_doc",
         {
@@ -594,8 +679,11 @@ async def test_edit_doc_insert_after_heading(tmp_path):
     body = "# 部署\n\n## 步骤\n原有\n"
     repo.write_doc(path, {"title": "Deploy"}, body, commit_msg="seed")
     idx.reindex_doc(path, body)
-    cid = "conv-insert-1"
-    await registry.execute("read_doc", {"path": path}, conversation_id=cid)
+    store = ConversationStore(tmp_path / "knowledge" / ".kb" / "conversations")
+    cid = store.create()
+    registry.conversations = store
+    registry.context_view.conversations = store
+    await registry.execute("read", {"uri": path}, conversation_id=cid)
     result = await registry.execute(
         "edit_doc",
         {
@@ -611,11 +699,12 @@ async def test_edit_doc_insert_after_heading(tmp_path):
 
 @pytest.mark.asyncio
 async def test_edit_doc_insert_append(tmp_path):
-    registry, repo, _ = _make_registry(tmp_path)
+    store = ConversationStore(tmp_path / "knowledge" / ".kb" / "conversations")
+    cid = store.create()
+    registry, repo, _ = _make_registry(tmp_path, conversations=store)
     path = "技术/note.md"
     repo.write_doc(path, {"title": "Note"}, "base\n", commit_msg="seed")
-    cid = "conv-insert-2"
-    await registry.execute("read_doc", {"path": path}, conversation_id=cid)
+    await registry.execute("read", {"uri": path}, conversation_id=cid)
     result = await registry.execute(
         "edit_doc",
         {"path": path, "insert": {"content": "more\n"}},
@@ -666,9 +755,9 @@ def test_select_tools_injects_disclosure_window_numbers():
         disclosure_windows=DisclosureWindows(spot=1111, deep=2222, max_chars=3333),
     )
     by_name = {t["function"]["name"]: t for t in tools}
-    read_desc = by_name["read_doc"]["function"]["description"]
+    read_desc = by_name["read"]["function"]["description"]
     assert "1111" in read_desc and "2222" in read_desc and "3333" in read_desc
-    limit_desc = by_name["read_doc"]["function"]["parameters"]["properties"]["limit"][
+    limit_desc = by_name["read"]["function"]["parameters"]["properties"]["limit"][
         "description"
     ]
     assert "1111" in limit_desc and "3333" in limit_desc
@@ -724,17 +813,16 @@ def test_kb_planning_tool_descriptions_match_precepts():
     from app.engine.agent.tool_catalog import TOOL_DEFINITIONS
 
     defs = {d["function"]["name"]: d["function"] for d in TOOL_DEFINITIONS}
-    list_desc = defs["list_kb_structure"]["description"]
+    list_desc = defs["list"]["description"]
     write_desc = defs["write_doc"]["description"]
     move_desc = defs["move_entry"]["description"]
-    assert "图片等二进制不在此列出" in list_desc
-    assert "可能截断" in list_desc
-    assert "规划新路径" in list_desc and "之前必须先调用" in list_desc
-    assert "并入已知文档" in list_desc and "不必为选路径再调" in list_desc
-    assert "写入前先 list_kb_structure" not in write_desc
+    assert "知识库目录" in list_desc
+    assert "规划新的知识库路径" in list_desc and "必须先 list 目标目录" in list_desc
+    assert "并入已知文档" in list_desc
+    assert "写入前先 list" not in write_desc
     assert "并入已知文档沿用已确认路径时不必再为选路径调用" in write_desc
-    assert "须先 list_kb_structure" in move_desc
-    assert "建议 list_kb_structure" not in move_desc
+    assert "须先 list" in move_desc
+    assert "建议 list" not in move_desc
     assert "to_filename" not in defs["move_entry"]["parameters"]["required"]
     assert "省略" in move_desc
 
@@ -780,15 +868,15 @@ def test_cross_segment_continuity_contract():
     from app.engine.agent.tool_catalog import TOOL_DEFINITIONS
 
     defs = {d["function"]["name"]: d["function"] for d in TOOL_DEFINITIONS}
-    ctx = defs["read_conversation_context"]
+    ctx = defs["read"]
     assert "history" in ctx["description"]
     assert "分隔线" in ctx["description"]
     assert ctx["parameters"]["required"] == []
-    assert "上一会话段" in ctx["description"]
-    assert "跨段接续" in ctx["description"]
-    search = defs["search_kb"]
+    assert "uris" in ctx["parameters"]["properties"]
+    search = defs["search"]
+    assert "上一会话段" in search["description"]
     assert "相关度" in search["description"]
-    assert "read_conversation_context" in search["description"]
+    assert "read" in search["description"] or "list" in search["description"]
     assert "ts_after" in search["parameters"]["properties"]
     assert "ts_before" in search["parameters"]["properties"]
     archive = defs["summarize_conversation"]
@@ -819,7 +907,7 @@ def test_role_avatar_tool_accepts_kb_path_and_default_role_update():
 
 
 @pytest.mark.asyncio
-async def test_list_kb_structure_tool(tmp_path):
+async def test_list_tool(tmp_path):
     registry, repo, idx = _make_registry(tmp_path)
     repo.write_doc(
         "技术/docker/常用命令.md",
@@ -827,35 +915,222 @@ async def test_list_kb_structure_tool(tmp_path):
         "docker ps",
         commit_msg="seed",
     )
-    result = await registry.execute("list_kb_structure", {})
-    assert "技术/docker" in result["summary"]
-    assert any(d["path"] == "技术/docker" for d in result["directories"])
-    assert result["total_docs"] >= 1
+    result = await registry.execute("list", {"uri": "lore://kb/技术/"})
+    names = {e.get("name") for e in result.get("entries", [])}
+    assert "docker" in names or any("docker" in (e.get("name") or "") for e in result["entries"])
 
 
 @pytest.mark.asyncio
-async def test_list_kb_structure_omits_binaries_and_truncates(tmp_path):
+async def test_list_omits_binaries_and_truncates(tmp_path):
     registry, repo, _ = _make_registry(tmp_path)
     repo.write_bytes("媒体/shot.png", b"\x89PNG\r\n", commit_msg="png")
-    for i in range(16):
+    for i in range(201):
         repo.write_doc(
             f"备忘/n{i:02d}.md",
             {"title": f"n{i}"},
             f"body {i}\n",
             commit_msg="seed",
         )
-    listed = await registry.execute("list_kb_structure", {})
-    files = [
-        f
-        for d in listed.get("directories", [])
-        if d["path"] == "备忘"
-        for f in d.get("files", [])
-    ]
-    assert "shot.png" not in listed.get("summary", "")
-    assert not any("shot.png" in f for f in files)
-    memo = next(d for d in listed["directories"] if d["path"] == "备忘")
-    assert memo["truncated"] is True
-    assert memo["doc_count"] == 16
-    assert len(memo["files"]) == 15
+    listed = await registry.execute("list", {"uri": "lore://kb/备忘/"})
+    entry_names = [e.get("name") for e in listed.get("entries", [])]
+    assert "shot.png" not in entry_names
+    assert listed.get("has_more") is True
+    assert len(entry_names) == 200
+
+
+def test_legacy_read_tools_removed_from_catalog():
+    from app.engine.agent.tool_catalog import (
+        READ_ONLY_TOOLS,
+        TOOL_DEFINITIONS,
+        TOOL_LABELS,
+    )
+    from app.engine.agent.tool_dispatch import build_tool_dispatch
+
+    legacy = {
+        "search_kb",
+        "read_doc",
+        "read_doc_meta",
+        "list_kb_structure",
+        "read_conversation_context",
+        "recall_memory",
+        "recall_cards",
+    }
+    names = {d["function"]["name"] for d in TOOL_DEFINITIONS}
+    assert legacy.isdisjoint(names)
+    assert legacy.isdisjoint(TOOL_LABELS)
+    assert legacy.isdisjoint(READ_ONLY_TOOLS)
+    reg = ToolRegistry(
+        MagicMock(),
+        MagicMock(),
+        MagicMock(),
+        MagicMock(),
+        MagicMock(),
+        MagicMock(),
+        MagicMock(),
+    )
+    dispatch = build_tool_dispatch(reg)
+    assert legacy.isdisjoint(dispatch)
+
+
+@pytest.mark.asyncio
+async def test_write_doc_accepts_lore_kb_uri(tmp_path):
+    registry, repo, _ = _make_registry(tmp_path)
+    result = await registry.execute(
+        "write_doc",
+        {
+            "text": "hello",
+            "directory": "lore://kb/技术/docker",
+            "filename": "uri-test.md",
+        },
+    )
+    assert result.get("status") == "saved"
+    assert repo.read_doc("技术/docker/uri-test.md").body
+
+
+@pytest.mark.asyncio
+async def test_write_doc_rejects_conversation_uri(tmp_path):
+    registry, _, _ = _make_registry(tmp_path)
+    result = await registry.execute(
+        "write_doc",
+        {
+            "text": "x",
+            "directory": "lore://conversations/dm/r/c1",
+            "filename": "bad.md",
+        },
+    )
+    assert result.get("error") == "read_only_uri"
+    assert "uri" in result
+
+
+@pytest.mark.asyncio
+async def test_write_doc_rejects_conversation_scheme_directory(tmp_path):
+    registry, _, _ = _make_registry(tmp_path)
+    result = await registry.execute(
+        "write_doc",
+        {
+            "text": "x",
+            "directory": "conversation://abc123",
+            "filename": "bad.md",
+        },
+    )
+    assert result.get("error") == "read_only_uri"
+    assert result.get("uri") == "conversation://abc123"
+
+
+@pytest.mark.asyncio
+async def test_summarize_hidden_api_role_dm_returns_not_found(tmp_path):
+    from app.engine.roles import VISIBILITY_HIDDEN
+
+    store = ConversationStore(tmp_path / "knowledge" / ".kb" / "conversations")
+    roles = RoleStore(tmp_path / "roles")
+    persona = roles.create_persona(name="P", system_prompt="")
+    hidden_role = roles.create(
+        name="隐藏通道",
+        system_prompt="",
+        visibility=VISIBILITY_HIDDEN,
+        persona_id=persona["id"],
+        role_id="api_hidden_test",
+    )
+    hidden_cid = store.create(role_id=hidden_role["id"])
+    owner_cid = store.create()
+    registry, _, _ = _make_registry(tmp_path, conversations=store)
+    called = {"n": 0}
+
+    def _boom(*a, **k):
+        called["n"] += 1
+        raise AssertionError("organizer should not run")
+
+    registry.organizer.summarize_conversation = _boom
+    result = await registry.execute(
+        "summarize_conversation",
+        {
+            "directory": "归档",
+            "filename": "x.md",
+            "conversation_id": hidden_cid,
+        },
+        conversation_id=owner_cid,
+    )
+    assert result.get("error") == "not_found"
+    assert called["n"] == 0
+
+
+@pytest.mark.asyncio
+async def test_summarize_conversation_rejects_channel_on_owner_turn(tmp_path):
+    from app.engine.channel_plugins.store import ChannelInstanceStore
+    from app.engine.roles import RoleStore
+
+    store = ConversationStore(tmp_path / "knowledge" / ".kb" / "conversations")
+    roles = RoleStore(tmp_path / "roles")
+    role = roles.create(name="通道", system_prompt="")
+    inst = ChannelInstanceStore(tmp_path / "knowledge").create(
+        type_id="script_api",
+        name="ch",
+        persona_id=roles.create_persona(name="P", system_prompt="")["id"],
+        role_id=role["id"],
+    )
+    channel_cid = store.create(
+        role_id=role["id"], origin="api", channel_instance_id=inst["id"]
+    )
+    owner_cid = store.create()
+    registry, _, _ = _make_registry(tmp_path, conversations=store)
+    called = {"n": 0}
+
+    def _boom(*a, **k):
+        called["n"] += 1
+        raise AssertionError("organizer should not run")
+
+    registry.organizer.summarize_conversation = _boom
+    result = await registry.execute(
+        "summarize_conversation",
+        {
+            "directory": "归档",
+            "filename": "x.md",
+            "conversation_id": f"conversation://{channel_cid}",
+        },
+        conversation_id=owner_cid,
+    )
+    assert result.get("error") == "out_of_scope"
+    assert called["n"] == 0
+
+
+@pytest.mark.asyncio
+async def test_summarize_conversation_out_of_scope(tmp_path):
+    from app.engine.channel_plugins.store import ChannelInstanceStore
+    from app.engine.roles import RoleStore
+
+    store = ConversationStore(tmp_path / "knowledge" / ".kb" / "conversations")
+    roles = RoleStore(tmp_path / "roles")
+    role = roles.create(name="通道", system_prompt="")
+    inst = ChannelInstanceStore(tmp_path / "knowledge").create(
+        type_id="script_api",
+        name="ch",
+        persona_id=roles.create_persona(name="P", system_prompt="")["id"],
+        role_id=role["id"],
+    )
+    current = store.create(
+        role_id=role["id"], origin="api", channel_instance_id=inst["id"]
+    )
+    other = store.create(
+        role_id=role["id"], origin="api", channel_instance_id=inst["id"]
+    )
+    registry, _, _ = _make_registry(tmp_path, conversations=store)
+    called = {"n": 0}
+
+    def _boom(*a, **k):
+        called["n"] += 1
+        raise AssertionError("organizer should not run")
+
+    registry.organizer.summarize_conversation = _boom
+    result = await registry.execute(
+        "summarize_conversation",
+        {
+            "directory": "归档",
+            "filename": "x.md",
+            "conversation_id": other,
+        },
+        conversation_id=current,
+    )
+    assert result.get("error") == "out_of_scope"
+    assert called["n"] == 0
 
 

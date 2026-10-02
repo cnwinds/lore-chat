@@ -57,7 +57,7 @@ def test_stream_emits_prose_after_lone_tag():
 def test_stream_swallows_matched_block_payload():
     s = VisibleTextStream()
     assert s.push("<tool_call>\n") == []
-    assert s.push('{"name": "search_kb"}\n') == []
+    assert s.push('{"name": "search"}\n') == []
     assert s.push("</tool_call>\n你好") == ["你好"]
     assert s.flush() == []
 

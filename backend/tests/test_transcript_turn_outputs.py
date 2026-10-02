@@ -35,7 +35,7 @@ def test_llm_history_collects_write_tool_sources_not_search():
                 "timeline": [
                     {
                         "type": "tool",
-                        "tool": "search_kb",
+                        "tool": "search",
                         "status": "done",
                         "sources": [{"type": "kb", "path": "笔记/旧.md"}],
                     },
@@ -105,7 +105,7 @@ def test_llm_history_ignores_non_write_tool_attachments():
                 "timeline": [
                     {
                         "type": "tool",
-                        "tool": "search_kb",
+                        "tool": "search",
                         "status": "done",
                         "attachments": ["笔记/误挂.md"],
                         "sources": [{"type": "kb", "path": "笔记/命中.md"}],

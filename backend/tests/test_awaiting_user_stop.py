@@ -6,6 +6,8 @@ import pytest
 
 from app.config import Settings
 from app.models.cooldown import CooldownStore
+from app.engine.agent.prompts import MODE_DEFAULT
+from app.engine.agent.tool_catalog import select_tools
 from app.engine.agent.tool_loop import AgentToolLoop, tool_awaits_user, tool_stops_loop
 from app.engine.agent.tools import ToolRegistry
 from app.engine.organizer import Organizer
@@ -63,6 +65,14 @@ def _build_loop(tmp_path, llm: FakeLLMClient) -> AgentToolLoop:
     return AgentToolLoop(settings, llm, registry)
 
 
+def _ask_user_tool_def() -> list[dict]:
+    return [
+        d
+        for d in select_tools(MODE_DEFAULT, web_enabled=False)
+        if d["function"]["name"] == "ask_user"
+    ]
+
+
 @pytest.mark.asyncio
 async def test_ask_user_stops_loop_without_extra_llm_round(tmp_path, caplog):
     import logging
@@ -95,7 +105,7 @@ async def test_ask_user_stops_loop_without_extra_llm_round(tmp_path, caplog):
     events: list[str] = []
     async for ev in loop.stream(
         [{"role": "user", "content": "q"}],
-        tools_for_run=[],
+        tools_for_run=_ask_user_tool_def(),
         conversation_id="cid",
         active_doc_path=None,
         turn_id="t1",
@@ -134,7 +144,7 @@ async def test_plaintext_solicitation_promotes_to_ask_user(tmp_path, caplog):
     events: list[str] = []
     async for ev in loop.stream(
         [{"role": "user", "content": "开发一个解谜游戏"}],
-        tools_for_run=[],
+        tools_for_run=_ask_user_tool_def(),
         conversation_id="cid",
         active_doc_path=None,
         turn_id="t1",
