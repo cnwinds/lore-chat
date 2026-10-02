@@ -828,7 +828,7 @@ def build_lanes(settings: Settings) -> list[dict[str, Any]]:
             "title": "卡片维护",
             "summary": "淡出、整理、人设进化与卡片索引对账",
             "cadence": (
-                f"每小时检查一次，每个角色每天最多整理、进化一次"
+                "每小时检查一次，每个角色每天最多整理、进化一次"
             ),
             "worker": "card-maintenance",
             "pause_key": None,

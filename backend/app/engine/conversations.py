@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Callable, Iterable
+from collections.abc import Callable
 import sqlite3
 import threading
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from app.engine.conversation.deletion import ConversationDeletionWorkflow
@@ -17,12 +17,11 @@ from app.engine.conversation.system_events import ConversationSystemEvents
 from app.engine.conversation.transcript import ConversationTranscript
 from app.engine.conversation.outbox import DerivationOutbox
 from app.engine.conversation.shared import (
-    TurnInProgress,
+    TurnInProgress,  # noqa: F401 — re-exported for tests
     dumps_json as _dumps,
     loads_json as _loads,
     new_id as _new_id,
     now_iso as _now,
-    title_from_text as _title_from_text,
 )
 from app.engine.conversation.turn_lifecycle import TurnLifecycle
 
@@ -1433,8 +1432,6 @@ class ConversationStore:
         self, role_id: str, *, idle_hours: float
     ) -> str | None:
         """解析角色活跃线：仅复用「最新」空会话，否则窗口内最近有消息会话。"""
-        from datetime import datetime, timedelta, timezone
-
         items = self._owner_dm_web_items(role_id)
         if not items:
             return None
@@ -1855,15 +1852,6 @@ class ConversationStore:
             except (KeyError, IndexError):
                 return None
             return rid or None
-
-    def get_message(self, message_id: str) -> dict:
-        with self._lock:
-            row = self.conn.execute(
-                "SELECT * FROM messages WHERE id = ?", (message_id,)
-            ).fetchone()
-            if row is None:
-                raise KeyError(message_id)
-            return self._message_row_to_dict(row)
 
     def get_turn_inbound(self, turn_id: str) -> dict | None:
         with self._lock:

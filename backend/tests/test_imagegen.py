@@ -21,7 +21,6 @@ from app.engine.imagegen.providers import (
     parse_image_providers,
     validate_image_providers_unique,
 )
-from app.engine.imagegen.sizes import OPENAI_SIZE
 from app.engine.imagegen.service import ImageGen
 from app.engine.imagegen.types import (
     GeneratedImage,

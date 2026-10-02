@@ -906,6 +906,8 @@ class RoomDelivery:
             store.conn.commit()
         try:
             msg = self.conversations.get_message(row["message_id"])
+            if msg is None:
+                raise KeyError(row["message_id"])
             from_role = str(msg.get("speaker_id") or "")
             status = self._start_wake(
                 role_id,

@@ -197,7 +197,7 @@ def test_list_provider_models_fallback_on_error(monkeypatch):
 
 
 def test_settings_have_llm_ignores_global_openai_only(tmp_path):
-    from app.settings_store import SettingsStore, settings_have_llm_api_key
+    from app.settings_store import settings_have_llm_api_key
 
     base = Settings(
         kb_path=tmp_path,

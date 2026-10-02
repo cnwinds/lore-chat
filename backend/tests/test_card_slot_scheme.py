@@ -3,7 +3,6 @@ from app.engine.memory.normalize import (
     CARD_SCHEME,
     OWNER_SCHEME,
     canonicalize_slot_key,
-    normalize_slot_key,
     resolve_slot_key,
 )
 from app.engine.memory.policy import initial_status, should_promote

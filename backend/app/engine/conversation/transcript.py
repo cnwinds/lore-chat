@@ -296,17 +296,17 @@ class ConversationTranscript:
                 continue
             blocks: list[dict] = []
 
-            def walk(items) -> None:
+            def walk(items, out: list[dict]) -> None:
                 for b in items or []:
                     if not isinstance(b, dict):
                         continue
                     if b.get("type") == "parallel":
-                        walk(b.get("children"))
+                        walk(b.get("children"), out)
                         continue
                     if b.get("type") == "tool":
-                        blocks.append(b)
+                        out.append(b)
 
-            walk(msg.get("timeline"))
+            walk(msg.get("timeline"), blocks)
             if blocks:
                 return blocks
         return []

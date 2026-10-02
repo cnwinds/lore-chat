@@ -21,7 +21,7 @@ from app.engine.context_view.uri import (
     uri_path_key,
 )
 from app.engine.conversations import ConversationStore
-from app.engine.memory.cards import KnowledgeCards, persona_scope, role_scope
+from app.engine.memory.cards import KnowledgeCards
 from app.engine.roles import DEFAULT_ROLE_ID, RoleStore, is_api_role_id, list_sidebar_roles
 from app.engine.rooms.schema import KIND_GROUP, KIND_OWNER_DM, KIND_PEER_DM
 
@@ -269,7 +269,6 @@ class ViewScope:
         subject = uri.subject
         if uri.scope_kind == "role" and subject:
             subject = self._resolve_role_segment(subject, for_persona=False)
-            scope = role_scope(subject)
             if is_api_role_id(subject):
                 raise NotFound("隐藏工作角色无 memory/role/ 视图", uri=subject)
         elif uri.scope_kind == "persona" and subject:
@@ -391,9 +390,9 @@ class ViewScope:
 
     def default_search_paths(self) -> list[str]:
         if self.turn_kind == "channel":
-            return [f"lore://kb/"]
+            return ["lore://kb/"]
         return [
-            f"lore://kb/",
+            "lore://kb/",
             f"lore://conversations/dm/{self.responding_role_id}/",
         ]
 

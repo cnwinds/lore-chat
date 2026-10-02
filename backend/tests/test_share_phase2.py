@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from app.engine.share_snapshot import load_conversation_snapshot, snapshot_conversation
 from app.models.share_links import ShareLinkStore, public_options
 from app.models.share_unlocks import ShareUnlockStore, unlock_ttl_for_share
@@ -90,7 +92,7 @@ def test_snapshot_unknown_message_id_raises(tmp_path):
             share_id="range02abcdefghij",
             message_ids=["a", "missing"],
         )
-        assert False, "expected ValueError"
+        pytest.fail("expected ValueError")
     except ValueError as e:
         assert "unknown message_ids" in str(e)
 

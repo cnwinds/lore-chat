@@ -2,12 +2,9 @@
 
 from __future__ import annotations
 
-import pytest
 
 from app.engine.agent.skill_activation import activated_skill_roots
 from app.engine.disclosure import DisclosureWindows
-from tests.test_context_view_tools_common import cv_env  # noqa: F401
-
 
 def test_read_batch_three_docs_marks_all_read(cv_env):
     for i in range(3):

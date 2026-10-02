@@ -207,8 +207,16 @@ class KnowledgeRepo:
             self.repo.index.add(rel_paths)
             self.repo.index.commit(msg)
 
-    def read_doc(self, rel_path: str) -> Document:
+    def user_file(self, rel_path: str) -> Path:
+        """解析用户可见文件。符号链接按真实路径再判内部目录，避免绕过 `.kb` / `.git`。"""
         abs_p = self._abs(rel_path)
+        real_rel = abs_p.relative_to(self.root.resolve()).as_posix()
+        if real_rel in (".", "") or self._is_internal(real_rel):
+            raise PermissionError("禁止访问内部路径")
+        return abs_p
+
+    def read_doc(self, rel_path: str) -> Document:
+        abs_p = self.user_file(rel_path)
         if not abs_p.exists():
             raise FileNotFoundError(rel_path)
         meta, body = frontmatter.parse(abs_p.read_text(encoding="utf-8"))
@@ -315,7 +323,7 @@ class KnowledgeRepo:
         return written
 
     def read_bytes(self, rel_path: str) -> bytes:
-        abs_p = self._abs(rel_path)
+        abs_p = self.user_file(rel_path)
         if not abs_p.exists():
             raise FileNotFoundError(rel_path)
         return abs_p.read_bytes()

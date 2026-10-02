@@ -483,6 +483,15 @@ class AgentToolLoop:
                     offered_tool_names=offered_tool_names,
                 ):
                     await merge_q.put((tc, kind, payload))
+            except asyncio.CancelledError:
+                # CancelledError 不是 Exception；不投递 result 会让合并循环永远等剩余工具
+                err = {
+                    "summary": "工具已取消",
+                    "sources": [],
+                    "error": "cancelled",
+                }
+                merge_q.put_nowait((tc, "result", (err, 0)))
+                raise
             except Exception as e:
                 # 保证合并循环能收到结果，避免整批挂死
                 err = {

@@ -8,7 +8,7 @@ from app.engine.context_view.errors import AmbiguousSubject, NotFound, OutOfScop
 from app.engine.context_view.kb_kind import classify
 from app.engine.context_view.scope import ViewScope
 from app.engine.conversations import ConversationStore
-from app.engine.memory.cards import KnowledgeCards, persona_scope, role_scope
+from app.engine.memory.cards import KnowledgeCards, role_scope
 from app.engine.memory.service import MemoryService
 from app.engine.memory.store import MemoryStore
 from app.engine.roles import VISIBILITY_HIDDEN, RoleStore

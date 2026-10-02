@@ -890,7 +890,7 @@ def test_group_tools_list_update(tmp_path):
 
     store = _conv(tmp_path)
     roles = _roles(tmp_path)
-    other = roles.create(name="游戏开发助手")
+    roles.create(name="游戏开发助手")
     delivery = RoomDelivery(store, roles)
     tools = RoleTools(roles, conversations=store, delivery=delivery)
     owner = store.create()

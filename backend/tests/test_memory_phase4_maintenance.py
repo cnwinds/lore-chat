@@ -1,7 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
 from app.engine.conversations import ConversationStore
-from app.engine.memory.decay import DecayConfig
 from app.engine.memory.store import MemoryStore
 from app.engine.memory_maintenance import MemoryMaintenanceJob
 

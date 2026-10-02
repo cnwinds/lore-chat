@@ -25,7 +25,7 @@ from app.index.revision import IndexRevision
 from app.models.cooldown import CooldownStore
 from app.models.llm import FakeLLMClient
 from app.storage.repo import KnowledgeRepo
-from tests.helpers import make_writer, make_search_index, drain_embeddings
+from tests.helpers import make_writer, make_search_index
 
 
 def _fake_factory(role_id: str, slot: dict) -> FakeSandboxRuntime:

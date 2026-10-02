@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
-from tests.test_context_view_tools_common import cv_env  # noqa: F401
 
 
 def test_list_root_owner(cv_env):

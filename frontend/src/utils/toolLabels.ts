@@ -2,6 +2,7 @@ export const TOOL_LABELS: Record<string, string> = {
   search: "检索知识与会话",
   read: "读取内容",
   list: "浏览目录",
+  read_last_tool_results: "读取上一轮工具结果",
   search_kb: "检索本地知识库",
   read_doc: "读取文档",
   read_doc_meta: "读取文档元数据",

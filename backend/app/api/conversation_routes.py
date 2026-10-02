@@ -4,7 +4,6 @@ import asyncio
 
 from fastapi import APIRouter, HTTPException, Request
 
-from pydantic import BaseModel
 
 from app.api.http_deps import (
     AppendMessagesBody,

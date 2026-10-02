@@ -35,7 +35,7 @@ def test_cannot_delete_default(tmp_path):
     store = _roles(tmp_path)
     try:
         store.delete(DEFAULT_ROLE_ID)
-        assert False, "should raise"
+        pytest.fail("should raise")
     except ValueError:
         pass
 

@@ -79,7 +79,6 @@ class GroupAssignmentLedger:
 
     def mark_working(self, room_id: str, assignee_role_id: str) -> None:
         store = self._store
-        now = now_iso()
         with store._lock:
             rows = store.conn.execute(
                 """

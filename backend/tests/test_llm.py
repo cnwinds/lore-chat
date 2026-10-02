@@ -22,7 +22,7 @@ def test_consolidate_system_messages_single_unchanged():
 
 
 def test_openai_client_materialize_merges_system_for_api():
-    from unittest.mock import MagicMock, patch
+    from unittest.mock import MagicMock
 
     from app.config import Settings
     from app.models.llm import OpenAILLMClient

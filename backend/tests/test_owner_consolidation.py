@@ -682,7 +682,7 @@ def test_memory_decay_growth_faded(tmp_path):
     st = MemoryStore(tmp_path / "memory.db", owner_key="ws1")
     cards = KnowledgeCards(tmp_path / "memory.db", owner=MemoryService(st, repo, knowledge_writer=writer), roles=RoleStore(tmp_path / "roles"))
     old = (datetime.now(timezone.utc) - timedelta(days=200)).isoformat()
-    stale = st.upsert_fact(
+    st.upsert_fact(
         slot_key="goal.old",
         category="goal",
         statement="过期目标内容足够",
@@ -691,7 +691,7 @@ def test_memory_decay_growth_faded(tmp_path):
         status="confirmed",
         fact_id="f_stale",
     )
-    cand = st.upsert_fact(
+    st.upsert_fact(
         slot_key="preference.cand_old",
         category="preference",
         statement="过期候选内容足够",
@@ -700,7 +700,7 @@ def test_memory_decay_growth_faded(tmp_path):
         status="candidate",
         fact_id="f_reject",
     )
-    dem = st.upsert_fact(
+    st.upsert_fact(
         slot_key="preference.dem",
         category="preference",
         statement="降级推断内容足够",

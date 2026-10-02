@@ -7,10 +7,7 @@ import pytest
 from app.engine.context_view.compile import compile_search
 from app.engine.context_view.errors import OutOfScope
 from app.engine.context_view.scope import ViewScope
-from app.engine.context_view.uri import parse
 from app.index.message_chunk import MessageChunk
-from tests.test_context_view_tools_common import cv_env  # noqa: F401
-
 
 def _channel_scope(cv_env, *, cid: str, role_id: str, inst_id: str):
     return ViewScope.build(

@@ -38,7 +38,6 @@ def test_summarize_long_conversation_calls_merge(tmp_path):
     from app.engine.organizer import Organizer
     from app.engine.pending import PendingStore
     from app.engine.retriever import Retriever
-    from app.index.indexer import Indexer
     from app.models.llm import FakeLLMClient
     from app.storage.repo import KnowledgeRepo
     from tests.helpers import make_search_index, make_writer

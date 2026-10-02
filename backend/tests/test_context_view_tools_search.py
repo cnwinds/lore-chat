@@ -21,8 +21,6 @@ from app.models.cooldown import CooldownStore
 from app.models.llm import FakeLLMClient, ToolCall
 from app.storage.repo import KnowledgeRepo
 from tests.helpers import make_conversation_index, make_writer
-from tests.test_context_view_tools_common import cv_env  # noqa: F401
-
 
 def test_default_search_paths_owner_kb_and_dm(cv_env):
     cid = cv_env.conv.create(role_id="default")

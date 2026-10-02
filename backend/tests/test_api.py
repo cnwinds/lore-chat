@@ -303,6 +303,21 @@ def test_kb_import_rejects_skill_md_outside_skills_dir(client):
     assert "技能" in r.json()["detail"]
 
 
+def test_download_rejects_traversal_and_kb_symlink(client):
+    r = client.get("/api/download", params={"path": "../../../etc/passwd"})
+    assert r.status_code == 400
+    assert r.json()["detail"] == "路径无效"
+    repo = client.app.state.container.repo
+    (repo.root / "public").mkdir(parents=True, exist_ok=True)
+    secret = repo.root / ".kb" / "secret.txt"
+    secret.write_text("SECRET", encoding="utf-8")
+    link = repo.root / "public" / "link.txt"
+    link.symlink_to(secret)
+    r2 = client.get("/api/download", params={"path": "public/link.txt"})
+    assert r2.status_code == 400
+    assert b"SECRET" not in r2.content
+
+
 def test_upload_and_download(client):
     content = "kubernetes 部署方案".encode("utf-8")
     files = {"file": ("plan.txt", content, "text/plain")}

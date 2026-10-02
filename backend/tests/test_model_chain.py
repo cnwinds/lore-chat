@@ -639,7 +639,6 @@ def test_signed_image_requires_magic_not_suffix(tmp_path):
 
 
 def test_svg_is_display_image_but_not_vision_feed(tmp_path):
-    from app.models.candidate import ModelCandidate
     from app.models.vision import (
         attachment_is_image,
         build_user_content_with_images,

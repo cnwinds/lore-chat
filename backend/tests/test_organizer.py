@@ -4,14 +4,14 @@ from app.engine.pending import PendingStore
 from app.storage.repo import KnowledgeRepo
 from app.index.indexer import Indexer
 from app.models.llm import FakeLLMClient
-from tests.helpers import make_writer, make_search_index, drain_embeddings
+from tests.helpers import make_writer, make_search_index
 
 
 def _make(tmp_path, chat_responses):
     repo = KnowledgeRepo(tmp_path / "knowledge")
     llm = FakeLLMClient(chat_responses=chat_responses, embed_dim=8)
     si = make_search_index(tmp_path, llm)
-    idx = Indexer(si)
+    Indexer(si)
     retr = Retriever(si, llm)
     pending = PendingStore(tmp_path / "knowledge" / ".kb" / "pending.json")
     org = Organizer(

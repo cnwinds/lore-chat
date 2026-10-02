@@ -11,7 +11,6 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
 
 from app.index.partitioned.embedder import EmbedBatch, Embedder, QueryEmbedCache
 from app.index.partitioned.lexical import (

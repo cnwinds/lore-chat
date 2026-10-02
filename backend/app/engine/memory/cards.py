@@ -819,7 +819,7 @@ class KnowledgeCards:
         except Exception as exc:  # noqa: BLE001
             _log.warning("persona evolution failed scope=%s err=%s", scope, exc)
             return 0
-        if result.get("skipped") == "onboarding":
+        if result.get("skipped") == "onboarding" or result.get("aborted"):
             return 0
         self.growth.mark_evolved(scope, stamp.isoformat())
         return 1

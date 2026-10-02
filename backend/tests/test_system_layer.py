@@ -8,7 +8,7 @@ from app.engine.retriever import Retriever
 from app.index.indexer import Indexer
 from app.models.llm import FakeLLMClient
 from app.storage.repo import KnowledgeRepo
-from tests.helpers import make_search_index, drain_embeddings
+from tests.helpers import make_search_index
 
 
 def _repo(tmp_path):

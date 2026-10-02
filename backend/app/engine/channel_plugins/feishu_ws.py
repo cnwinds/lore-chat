@@ -19,7 +19,6 @@ from app.engine.channel_plugins.feishu_frame import (
     HEADER_SUM,
     HEADER_TYPE,
     TYPE_EVENT,
-    TYPE_PING,
     TYPE_PONG,
     WsFrame,
     ping_frame,

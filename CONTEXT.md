@@ -6,7 +6,7 @@
 
 | 层 | 路径 | 职责 |
 |----|------|------|
-| HTTP | `backend/app/api/routes.py` | 鉴权、DTO、StreamingResponse；**不**解析 Agent SSE |
+| HTTP | `backend/app/api/`（`routes.py` 聚合各 `*_routes.py`；`main.py` 另挂 admin / background / auth / usage） | 鉴权、DTO、StreamingResponse；**不**解析 Agent SSE |
 | 聊天 | `backend/app/engine/chat/` | `TurnExecutionHub`（begin/ensure/观测/stop 生命周期）、`ChatSessionRunner`（HTTP 薄 facade + ephemeral）、时间线、SSE；持久回合：结构事件发 `timeline_state` 投影，token/进度只发增量（见 [ADR 2026-08-08](docs/adr/2026-08-08-deepen-memory-turn-tools.md) §5） |
 | 模型链 | `backend/app/models/`（`candidate` / `router` / `cooldown` / `vision` / `media` / `media_adapters` / `thinking` / `catalog` / `models_dev` / `provider_models` / `effort`）+ `llm.py` | chat/utility/embed 优先级链、冷却单例、models.dev 缓存目录（包内 `data/models_dev_api.json.gz` 回退；网络拉取旁路短超时）、OpenAI 兼容 `/models` 拉取（`provider_models`；kind=`llm`/`embedding`/`image`；能力 enrich 经 `catalog`）、识图/视频多模态（`vision` 签名 URL + `media` 物化 + `media_adapters` wire）；**能力唯一真相**为 `catalog.lookup_capabilities`（HTTP：`GET /api/admin/model-capabilities`；设置页 `modelCapabilities.resolveModelCaps`）；HTTP 不自建 CooldownStore / ModelsDevStore |
 | 联网搜索 | `backend/app/engine/web/`（`search_providers` / `search_router` / `search_backends` / `search.py`） | 搜索提供商有序链、与模型同算法的冷却 failover；HTTP 不自建 search CooldownStore |

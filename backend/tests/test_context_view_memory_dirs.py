@@ -6,8 +6,6 @@ import pytest
 
 from app.engine.context_view.compile import compile_search
 from app.engine.context_view.errors import OutOfScope
-from tests.test_context_view_tools_common import cv_env  # noqa: F401
-
 
 def ViewScope_build(cv_env, *, cid=None, role_id=None):
     from app.engine.context_view.scope import ViewScope

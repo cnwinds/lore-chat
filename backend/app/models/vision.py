@@ -6,6 +6,7 @@ import base64
 import hashlib
 import hmac
 import mimetypes
+import secrets
 import time
 from pathlib import Path
 from typing import Any
@@ -85,14 +86,18 @@ def guess_mime(path: str) -> str:
     return "image/jpeg"
 
 
+_EPHEMERAL_ATTACHMENT_SECRET = secrets.token_hex(32)
+
+
 def attachment_signing_secret(settings: Any) -> str:
-    key = (
-        getattr(settings, "openai_api_key", None)
-        or getattr(settings, "embed_api_key", None)
-        or "lorechat-attachment"
-    )
-    text = str(key).strip()
-    return text or "lorechat-attachment"
+    """不用可预测占位密钥签名公开附件 URL。无真实 key 时用进程内随机值。"""
+    from app.models.candidate import PLACEHOLDER_API_KEYS
+
+    for attr in ("openai_api_key", "embed_api_key"):
+        text = str(getattr(settings, attr, None) or "").strip()
+        if text and text not in PLACEHOLDER_API_KEYS:
+            return text
+    return _EPHEMERAL_ATTACHMENT_SECRET
 
 
 def sign_attachment_token(

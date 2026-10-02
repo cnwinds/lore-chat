@@ -10,7 +10,6 @@ from app.engine.agent.prompts import (
     MODE_DEFAULT,
     build_role_identity_block,
     build_system_prompt,
-    wrap_role_cards,
 )
 from app.engine.agent.system_layer import SystemLayer, is_unmodified_official
 from app.engine.agent.tool_catalog import select_tools
@@ -20,7 +19,6 @@ from app.engine.usage.request_capture import request_capture_context
 from app.engine.usage.request_detail import build_request_detail
 from app.engine.usage.request_log import RequestLogRecorder
 from app.storage.repo import KnowledgeRepo
-from tests.helpers import make_writer
 
 
 @pytest.fixture
@@ -425,7 +423,7 @@ def test_old_precepts_hash_recognized_as_official(tmp_path):
 5. **长期规矩回本文件**：用户立「以后写 Skill / 写库都要怎样」的规矩 → 修订本文件（先读最小改），不写画像、不写进正在生成的 Skill。判定：规范的是助手怎么做事 → 本文件；规范的是主人是谁 → 画像。
 """
     assert is_unmodified_official(old_body) is False
-    layer = SystemLayer(repo)
+    SystemLayer(repo)
     seeded = repo.read_doc("系统/戒律.md").body
     assert is_unmodified_official(seeded) is True
     from app.engine.agent import system_layer as sl

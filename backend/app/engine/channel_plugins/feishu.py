@@ -314,6 +314,15 @@ class FeishuAdapter:
             raise RuntimeError(f"feishu media {resp.status_code}")
         return resp.content
 
+    def authenticate(self, instance: dict[str, Any], raw: Any) -> None:
+        """HTTP 回调尚未接入；长连接实例拒绝匿名 HTTP 入站（url_verification 除外）。"""
+        from app.engine.channel_plugins.rawutil import unwrap_raw
+
+        _iid, body, _headers, _query = unwrap_raw(raw)
+        if body.get("type") == "url_verification":
+            return
+        raise ValueError("长连接通道不接受 HTTP 入站")
+
     def challenge(self, raw: Any) -> Any | None:
         from app.engine.channel_plugins.rawutil import unwrap_raw
 

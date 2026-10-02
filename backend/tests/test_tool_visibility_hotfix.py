@@ -36,7 +36,7 @@ def _build_loop(tmp_path, llm: FakeLLMClient) -> tuple[AgentToolLoop, ToolRegist
     settings = Settings(kb_path=kb)
     repo = KnowledgeRepo(kb)
     si = make_search_index(tmp_path, llm)
-    idx = Indexer(si)
+    Indexer(si)
     retr = Retriever(si, llm)
     pending = PendingStore(kb / ".kb" / "pending.json")
     writer = make_writer(repo, tmp_path)

@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import pytest
 
-from tests.test_context_view_tools_common import cv_env  # noqa: F401
-
 _MALFORMED = [
     "lore://memory/owner/not_a_real_kind/",
     "lore://conversations/unknown_bucket/",

@@ -1,5 +1,3 @@
-import json
-import zlib
 
 from app.engine.background.call_log import BackgroundCallLog
 

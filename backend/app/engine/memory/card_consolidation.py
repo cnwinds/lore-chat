@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
 
 from app.engine.memory.cards import (
     CARD_KINDS,
@@ -252,11 +251,8 @@ class LLMCardConsolidator:
                 temperature=0.1,
             ).strip()
 
-        try:
-            ops_raw = parse_llm_json_list(raw, key="ops")
-        except Exception as exc:  # noqa: BLE001
-            _log.warning("card consolidation parse failed scope=%s err=%s", scope, exc)
-            return {"ops_proposed": 0, "ops_applied": 0, "dropped": []}
+        # 解析失败必须抛出，调用方才不会打 last_consolidated_at（否则 24h 内不再重试）
+        ops_raw = parse_llm_json_list(raw, key="ops")
 
         validated, dropped = _validate_ops(
             ops_raw, short_to_fact, st, self.profile

@@ -25,10 +25,8 @@ from app.engine.usage.request_segment import (
     sanitize_api_message,
     segments_for_api_message,
 )
-from app.engine.usage.context_stats import build_context_stats
-from app.engine.usage.tokens import estimate_tokens
 from app.main import create_app
-from app.models.llm import OpenAILLMClient, ToolCall
+from app.models.llm import OpenAILLMClient
 
 
 class _Models:
@@ -254,9 +252,7 @@ async def test_tool_loop_capture_two_rounds(tmp_path):
     from app.engine.retriever import Retriever
     from app.engine.web.fetcher import WebFetcher
     from app.engine.web.search import WebSearch
-    from app.index.indexer import Indexer
     from app.models.cooldown import CooldownStore
-    from app.models.llm import ChatStreamChunk, ChatWithToolsResult
     from app.storage.repo import KnowledgeRepo
     from tests.helpers import make_writer, make_search_index
 
@@ -282,7 +278,6 @@ async def test_tool_loop_capture_two_rounds(tmp_path):
         writer,
     )
     captured: list[dict] = []
-    rounds = 0
 
     def _chunk(content=None, tool_calls=None, finish_reason=None, usage=None):
         delta = SimpleNamespace(content=content, tool_calls=tool_calls or [])

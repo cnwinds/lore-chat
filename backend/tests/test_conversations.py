@@ -1,3 +1,5 @@
+import pytest
+
 from app.engine.conversations import ConversationStore
 
 
@@ -31,7 +33,7 @@ def test_get_title_without_loading_messages(tmp_path):
 def test_list_all_sorted_by_updated(tmp_path):
     store = _store(tmp_path)
     cid1 = store.create()
-    cid2 = store.create()
+    store.create()
     store.append_exchange(cid1, "第一条", {"role": "assistant", "text": "回复"})
     items = store.list_all()
     assert len(items) == 2
@@ -70,7 +72,7 @@ def test_delete(tmp_path):
     store.delete(cid)
     try:
         store.get(cid)
-        assert False, "should raise"
+        pytest.fail("should raise")
     except KeyError:
         pass
 
@@ -300,7 +302,7 @@ def test_duplicate_client_message_id_while_running_raises(tmp_path):
     store.begin_turn(cid, user_text="a", client_message_id="cli-1", observation_allowed=False)
     try:
         store.begin_turn(cid, user_text="a", client_message_id="cli-1", observation_allowed=False)
-        assert False, "expected TurnInProgress"
+        pytest.fail("expected TurnInProgress")
     except Exception as e:
         assert e.__class__.__name__ == "TurnInProgress"
 
@@ -316,7 +318,7 @@ def test_begin_turn_blocks_different_client_message_id_while_running(tmp_path):
         store.begin_turn(
             cid, user_text="b", client_message_id="cli-2", observation_allowed=False
         )
-        assert False, "expected TurnInProgress"
+        pytest.fail("expected TurnInProgress")
     except Exception as e:
         assert e.__class__.__name__ == "TurnInProgress"
         assert e.turn_id == turn1["turn_id"]

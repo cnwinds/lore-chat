@@ -56,7 +56,7 @@ def test_compress_nearby_assistant_only_immediate_next():
         ("user", "我还偏好简洁"),
         ("assistant", "好的，已记录简洁偏好。"),
     ]
-    out = compress_dialogue_timeline(turns, max_chars=120)
+    compress_dialogue_timeline(turns, max_chars=120)
     # 压缩到自述+邻近助手时，第一条用户不应错挂第二条的助手（若触发邻近策略）
     # 全量仍短于预算时两者都在；收紧预算强制走邻近策略
     out2 = compress_dialogue_timeline(

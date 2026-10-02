@@ -19,7 +19,6 @@ from app.engine.channel_plugins.feishu_frame import (
     ping_frame,
 )
 from app.engine.channel_plugins.secret_mask import mask_secret, merge_secrets
-from app.engine.channel_plugins.types import InboundEvent
 from app.engine.roles import EXT_ROLE_PREFIX
 from app.main import create_app
 from app.models.llm import FakeLLMClient

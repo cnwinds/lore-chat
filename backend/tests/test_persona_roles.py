@@ -1,6 +1,5 @@
 """人设修订 CAS 与迁移（P2 · 任务 A）。"""
 
-import sqlite3
 
 from app.engine.roles import RoleStore
 
@@ -109,7 +108,7 @@ def test_get_persona_body_and_neighbors(tmp_path):
     roles = RoleStore(tmp_path / "roles")
     role = roles.create(name="R", system_prompt="a")
     roles.update(role["id"], system_prompt="b")
-    revs = roles.list_persona_revisions("role", role["id"])
+    roles.list_persona_revisions("role", role["id"])
     latest = roles.latest_persona_revision("role", role["id"])
     assert latest["body"] == "b"
     prev = roles.previous_persona_revision(latest["id"])

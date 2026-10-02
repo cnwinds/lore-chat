@@ -4,9 +4,7 @@ from __future__ import annotations
 
 from app.engine.memory.cards import CardLens, KnowledgeCards
 from app.engine.memory.constants import (
-    ROOM_CONTEXT_MESSAGES,
     ROOM_MAX_ROLE_LENSES,
-    ROOM_WINDOW_MAX_MESSAGES,
 )
 from app.engine.memory.room_window import RoomLine, RoomWindow
 from app.engine.memory.role_card_extractor import RoomDialogue

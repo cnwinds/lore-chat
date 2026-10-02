@@ -15,7 +15,7 @@ from app.engine.web.search import WebSearch
 from app.index.indexer import Indexer
 from app.models.llm import FakeLLMClient, ToolCall
 from app.storage.repo import KnowledgeRepo
-from tests.helpers import make_writer, make_search_index, drain_embeddings
+from tests.helpers import make_writer, make_search_index
 
 
 def _make_orchestrator(
@@ -38,7 +38,7 @@ def _make_orchestrator(
     llm = FakeLLMClient(tool_responses=tool_responses, embed_dim=8)
     repo = KnowledgeRepo(kb)
     si = make_search_index(tmp_path, llm)
-    idx = Indexer(si)
+    Indexer(si)
     retr = Retriever(si, llm)
     pending = PendingStore(kb / ".kb" / "pending.json")
     writer = make_writer(repo, tmp_path)
@@ -358,7 +358,6 @@ async def test_run_web_enabled_affirms_search_when_configured(tmp_path):
     )
     async for _ in orchestrator.run("你好", web_enabled=True):
         pass
-    messages = orchestrator.llm.calls[-1]["messages"]
     names = _tool_names_from_defs(orchestrator.llm.calls[-1]["tools"])
     assert "web_search" in names
 
@@ -371,7 +370,6 @@ async def test_run_web_enabled_without_provider_does_not_say_toggle_off(tmp_path
     )
     async for _ in orchestrator.run("你好", web_enabled=True):
         pass
-    messages = orchestrator.llm.calls[-1]["messages"]
     names = _tool_names_from_defs(orchestrator.llm.calls[-1]["tools"])
     assert "web_search" not in names
 

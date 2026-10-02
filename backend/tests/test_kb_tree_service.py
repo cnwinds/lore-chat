@@ -7,7 +7,7 @@ from app.index.indexer import Indexer
 from app.index.revision import IndexRevision
 from app.models.llm import FakeLLMClient
 from app.storage.repo import KnowledgeRepo
-from tests.helpers import make_search_index, drain_embeddings
+from tests.helpers import make_search_index
 
 
 def _svc(tmp_path, *, protected=("系统",), skills_dir="技能"):

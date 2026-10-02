@@ -143,7 +143,6 @@ def _conversation_ids(
     scope: ViewScope, uri: ConversationUri
 ) -> tuple[set[str], bool]:
     """返回会话 id 集合，以及该 URI 是否显式点名当前会话（含消息 URI）。"""
-    explicit = uri.conversation_id is not None
     current_cid = scope.current_conversation_id
     if uri.conversation_id:
         ids = {uri.conversation_id}

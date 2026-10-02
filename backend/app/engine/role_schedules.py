@@ -7,7 +7,6 @@ import sqlite3
 import threading
 import uuid
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 
 from app.engine.schedule_timing import (
     interval_hours_for_storage,

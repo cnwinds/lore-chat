@@ -302,8 +302,9 @@ def create_app(settings: Settings | None = None, llm: LLMClient | None = None) -
 
     @app.exception_handler(Exception)
     async def unhandled_exception_handler(request: Request, exc: Exception):
-        # 返回 JSON 错误，避免浏览器把 500 误报为 CORS 问题
-        return JSONResponse(status_code=500, content={"detail": str(exc)})
+        # 返回 JSON 错误，避免浏览器把 500 误报为 CORS 问题；细节只进日志
+        logging.getLogger("uvicorn.error").exception("unhandled %s", request.url.path)
+        return JSONResponse(status_code=500, content={"detail": "内部错误"})
 
     @app.get("/api/health")
     def health(request: Request):

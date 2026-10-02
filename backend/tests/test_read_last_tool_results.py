@@ -15,7 +15,9 @@ def _tool(conversations):
     )
 
 
-def _save_turn_with_tools(store, cid, user_text, tools_blocks, reply, n=[0]):
+def _save_turn_with_tools(store, cid, user_text, tools_blocks, reply, n=None):
+    if n is None:
+        n = [0]
     n[0] += 1
     turn = store.begin_turn(
         cid, user_text=user_text, client_message_id=f"cm-{n[0]}"

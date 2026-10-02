@@ -12,7 +12,6 @@ from app.models.cooldown import (
     search_cooldown_path_for_kb,
     shared_cooldown_store,
 )
-from app.engine.imagegen import ImageGen
 from app.models.catalog import set_active_models_dev_store
 from app.models.models_dev import (
     ModelsDevStore,

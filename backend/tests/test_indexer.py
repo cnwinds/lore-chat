@@ -48,7 +48,7 @@ def test_chunk_starts_aligns_with_chunk_text():
     starts = chunk_starts(text)
     chunks = chunk_text(text)
     assert len(starts) == len(chunks)
-    for start, chunk in zip(starts, chunks):
+    for start, chunk in zip(starts, chunks, strict=True):
         assert text[start : start + len(chunk)] == chunk
 
 

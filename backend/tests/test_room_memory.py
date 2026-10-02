@@ -1,6 +1,5 @@
 """房间（peer_dm / group）记忆抽取与游标。"""
 
-from datetime import datetime, timedelta, timezone
 
 from app.engine.conversations import ConversationStore
 from app.engine.memory.cards import KnowledgeCards, role_scope

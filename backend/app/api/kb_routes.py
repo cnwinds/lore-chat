@@ -80,7 +80,10 @@ async def download(
     norm = path.replace("\\", "/").lstrip("/")
     if norm.startswith(".kb/") or norm.startswith(".git/"):
         raise HTTPException(404, "文件不存在")
-    abs_p = c.repo.abs_path(norm)
+    try:
+        abs_p = c.repo.user_file(norm)
+    except (ValueError, PermissionError) as e:
+        raise HTTPException(400, "路径无效") from e
     if not abs_p.is_file():
         raise HTTPException(404, "文件不存在")
     filename = abs_p.name
@@ -193,6 +196,8 @@ async def download_zip(path: str, request: Request):
         raise HTTPException(404, "目录不存在")
     except NotADirectoryError:
         raise HTTPException(400, "不是目录")
+    except ValueError as e:
+        raise HTTPException(400, "路径无效") from e
     filename = f"{base_name}.zip"
     from urllib.parse import quote
 

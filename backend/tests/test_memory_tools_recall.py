@@ -28,7 +28,6 @@ async def test_recall_returns_confirmed(container):
 
 @pytest.mark.asyncio
 async def test_recall_sources_with_evidence(container):
-    from app.engine.conversations import ConversationStore
 
     store = container.conversations
     cid = store.create()

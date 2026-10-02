@@ -22,7 +22,7 @@ from app.index.indexer import Indexer
 from app.index.revision import IndexRevision
 from app.models.llm import FakeLLMClient
 from app.storage.repo import KnowledgeRepo
-from tests.helpers import make_writer, make_search_index, drain_embeddings
+from tests.helpers import make_writer, make_search_index
 
 
 def _tool_names(defs):

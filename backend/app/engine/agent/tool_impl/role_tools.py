@@ -207,7 +207,6 @@ class RoleTools:
             return {"summary": "角色系统不可用", "sources": [], "error": "roles unavailable"}
         try:
             role_id = self._get_role_id(args, conversation_id)
-            default_id = self.roles.default_id()
             name = args.get("name")
             if name is not None:
                 name = str(name).strip()

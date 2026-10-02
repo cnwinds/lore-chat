@@ -14,7 +14,9 @@ knowledge/
 docker/data/knowledge/
 docker/data/backups/*
 !docker/data/backups/.gitkeep
-deploy/data/knowledge/
+# 无尾斜杠：符号链接本身不是目录，带 / 的规则匹配不到
+deploy/data/knowledge
+deploy/data/_empty-seed-*/
 deploy/data/backups/*
 !deploy/data/backups/.gitkeep
 deploy/.lorechat/

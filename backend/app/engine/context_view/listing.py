@@ -14,7 +14,6 @@ from app.engine.context_view.errors import NotFound
 from app.engine.context_view.kb_kind import classify
 from app.engine.context_view.scope import ViewScope
 from app.engine.context_view.uri import (
-    LORE_ROOT,
     ConversationRoot,
     ConversationUri,
     KbUri,

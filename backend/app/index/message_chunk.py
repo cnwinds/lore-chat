@@ -19,7 +19,6 @@ def chunk_message(text: str, *, size: int = 1000, overlap: int = 150) -> list[Me
         return []
     if n <= size:
         return [MessageChunk(0, 0, n, text)]
-    step = max(1, size - overlap)
     out: list[MessageChunk] = []
     i = 0
     idx = 0

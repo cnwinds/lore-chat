@@ -66,7 +66,7 @@ async def test_tool_loop_applies_inject_after_tools(tmp_path):
     from app.index.indexer import Indexer
     from app.models.llm import FakeLLMClient, ToolCall
     from app.storage.repo import KnowledgeRepo
-    from tests.helpers import make_writer, make_search_index, drain_embeddings
+    from tests.helpers import make_writer, make_search_index
 
     settings = Settings(kb_path=tmp_path / "knowledge")
     llm = FakeLLMClient(
@@ -83,7 +83,7 @@ async def test_tool_loop_applies_inject_after_tools(tmp_path):
     )
     repo = KnowledgeRepo(tmp_path / "knowledge")
     si = make_search_index(tmp_path, llm)
-    idx = Indexer(si)
+    Indexer(si)
     retr = Retriever(si, llm)
     pending = PendingStore(tmp_path / "knowledge" / ".kb" / "pending.json")
     writer = make_writer(repo, tmp_path)
@@ -164,7 +164,7 @@ async def test_tool_loop_defers_inject_without_tools(tmp_path):
     )
     repo = KnowledgeRepo(tmp_path / "knowledge")
     si = make_search_index(tmp_path, llm)
-    idx = Indexer(si)
+    Indexer(si)
     retr = Retriever(si, llm)
     pending = PendingStore(tmp_path / "knowledge" / ".kb" / "pending.json")
     writer = make_writer(repo, tmp_path)

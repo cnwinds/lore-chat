@@ -17,7 +17,7 @@ from app.index.conversation_index import ConversationIndex
 from app.index.indexer import Indexer
 from app.models.llm import FakeLLMClient
 from app.storage.repo import KnowledgeRepo
-from tests.helpers import conv_fts_hits, make_writer, make_search_index, drain_embeddings
+from tests.helpers import conv_fts_hits, make_writer, make_search_index
 
 
 def _decision(rel_path="娱乐/漫剧工具盘点.md"):

@@ -7,7 +7,7 @@ from __future__ import annotations
 import asyncio
 import json
 
-from app.engine.agent.events import done, text_delta
+from app.engine.agent.events import text_delta
 from app.engine.conversations import ConversationStore, TurnInProgress
 
 

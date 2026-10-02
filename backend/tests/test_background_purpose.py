@@ -9,7 +9,6 @@ from app.engine.memory.card_consolidation import LLMCardConsolidator, OWNER_PROF
 from app.engine.memory.cards import OWNER_SCOPE
 from app.engine.memory.persona_evolution import LLMPersonaEvolver
 from app.engine.memory.role_card_extractor import (
-    CardLens,
     LLMRoleCardExtractor,
     RoomDialogue,
 )

@@ -476,6 +476,45 @@ def test_wecom_instance_enable_without_public_url(tmp_path):
         _close(client)
 
 
+def test_long_connection_http_rejects_events(tmp_path):
+    app, client = _setup(tmp_path)
+    try:
+        created = client.post(
+            "/api/channel-plugins/instances",
+            json={
+                "type_id": "feishu",
+                "name": "飞书",
+                "config": {"app_id": "cli_test", "ingress": "websocket"},
+                "secrets": {"app_secret": "plain-secret"},
+            },
+        )
+        assert created.status_code == 200, created.text
+        inst = created.json()
+        bare = TestClient(app)
+        denied = bare.post(
+            f"/api/channels/{inst['id']}/feishu",
+            json={"header": {"event_type": "im.message.receive_v1"}, "event": {}},
+        )
+        assert denied.status_code == 401, denied.text
+        slack = client.post(
+            "/api/channel-plugins/instances",
+            json={
+                "type_id": "slack",
+                "name": "Slack",
+                "config": {"ingress": "websocket"},
+                "secrets": {"bot_token": "xoxb-1", "app_token": "xapp-1"},
+            },
+        )
+        assert slack.status_code == 200, slack.text
+        denied_slack = bare.post(
+            f"/api/channels/{slack.json()['id']}/slack",
+            json={"type": "event_callback", "event": {"type": "message", "text": "hi"}},
+        )
+        assert denied_slack.status_code == 401, denied_slack.text
+    finally:
+        _close(client)
+
+
 def test_slack_socket_mode_does_not_need_public_url(tmp_path):
     app, client = _setup(tmp_path)
     try:

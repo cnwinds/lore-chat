@@ -189,11 +189,6 @@ class TurnLifecycle:
             kickoff = is_onboarding_kickoff_id(client_message_id)
             if not reuse_user_message_id and not inbound_reuse and not kickoff:
                 store._enqueue_index_jobs(msg_id, turn_id)
-            origin = "web"
-            try:
-                origin = (conv_row["origin"] or "web").strip() or "web"
-            except (KeyError, IndexError):
-                origin = "web"
             # 通道会话只沉淀共用角色卡（人设镜头），不抽主人画像
             if (
                 conv_kind == KIND_OWNER_DM

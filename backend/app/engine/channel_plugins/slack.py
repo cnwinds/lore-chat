@@ -144,9 +144,14 @@ class SlackAdapter:
 
     def authenticate(self, instance: dict[str, Any], raw: Any) -> None:
         cfg = instance.get("config") or {}
-        if str(cfg.get("ingress") or INGRESS_SOCKET) != INGRESS_WEBHOOK:
-            return
         _instance_id, body, headers, _query = unwrap_raw(raw)
+        if str(cfg.get("ingress") or INGRESS_SOCKET) != INGRESS_WEBHOOK:
+            payload = body.get("payload") if isinstance(body.get("payload"), dict) else None
+            if body.get("type") == "url_verification" or (
+                payload and payload.get("type") == "url_verification"
+            ):
+                return
+            raise ValueError("长连接通道不接受 HTTP 入站")
         secret = str((instance.get("secrets") or {}).get("signing_secret") or "").strip()
         if not secret:
             raise ValueError("缺少 Signing Secret")

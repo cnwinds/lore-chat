@@ -17,7 +17,7 @@ from app.engine.knowledge_writer import KbPathExistsError, KnowledgeWriter
 from app.index.indexer import Indexer
 from app.models.llm import FakeLLMClient
 from app.storage.repo import KnowledgeRepo
-from tests.helpers import make_search_index, drain_embeddings
+from tests.helpers import make_search_index
 
 
 def _zip_bytes(entries: dict[str, bytes]) -> bytes:

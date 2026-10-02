@@ -64,11 +64,19 @@ export function useSendQueue(conversationId: string | null) {
     setItemsState([]);
     setPausedState(false);
     if (!conversationId) return;
+    let cancelled = false;
     setLoading(true);
     getContextSendQueue(conversationId)
-      .then(applySnapshot)
+      .then((snap) => {
+        if (!cancelled) applySnapshot(snap);
+      })
       .catch(() => {})
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [conversationId, applySnapshot]);
 
   // 兜底对账：队列非空时定期与服务端收敛（注入完成/跨端变更均会体现）。
@@ -77,7 +85,9 @@ export function useSendQueue(conversationId: string | null) {
     if (!conversationId || items.length === 0) return;
     const timer = window.setInterval(() => {
       getContextSendQueue(conversationId)
-        .then(applySnapshot)
+        .then((snap) => {
+          if (conversationIdRef.current === conversationId) applySnapshot(snap);
+        })
         .catch(() => {});
     }, 4000);
     return () => window.clearInterval(timer);

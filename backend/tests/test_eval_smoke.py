@@ -1,4 +1,3 @@
-import json
 
 from app.config import Settings
 from app.deps import build_container

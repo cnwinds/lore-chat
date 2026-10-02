@@ -7,7 +7,6 @@ from unittest.mock import patch
 import pytest
 
 from app.engine.agent.tools import ToolRegistry
-from app.engine.conversations import ConversationStore
 from app.engine.organizer import Organizer
 from app.engine.pending import PendingStore
 from app.engine.retriever import Retriever
@@ -16,10 +15,7 @@ from app.engine.web.search import WebSearch
 from app.config import Settings
 from app.models.cooldown import CooldownStore
 from app.models.llm import FakeLLMClient
-from app.storage.repo import KnowledgeRepo
 from tests.helpers import make_conversation_index, make_writer
-from tests.test_context_view_tools_common import cv_env  # noqa: F401
-
 
 def _write_doc(env, path: str, body: str, *, title: str = "T"):
     meta = {"title": title, "tags": [], "source": "test"}

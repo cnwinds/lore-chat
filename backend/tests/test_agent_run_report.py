@@ -47,7 +47,7 @@ async def test_tool_loop_logs_complete_stop_reason(tmp_path, caplog):
     from app.index.indexer import Indexer
     from app.models.llm import FakeLLMClient, ToolCall
     from app.storage.repo import KnowledgeRepo
-    from tests.helpers import make_writer, make_search_index, drain_embeddings
+    from tests.helpers import make_writer, make_search_index
 
     caplog.set_level(logging.INFO)
     kb = tmp_path / "knowledge"
@@ -66,7 +66,7 @@ async def test_tool_loop_logs_complete_stop_reason(tmp_path, caplog):
     )
     repo = KnowledgeRepo(kb)
     si = make_search_index(tmp_path, llm)
-    idx = Indexer(si)
+    Indexer(si)
     retr = Retriever(si, llm)
     pending = PendingStore(kb / ".kb" / "pending.json")
     writer = make_writer(repo, tmp_path)
@@ -134,7 +134,7 @@ async def test_tool_loop_logs_cancelled_stop_reason(tmp_path, caplog):
     llm = HangThenCancelLLM(tool_responses=[], embed_dim=8)
     repo = KnowledgeRepo(kb)
     si = make_search_index(tmp_path, llm)
-    idx = Indexer(si)
+    Indexer(si)
     retr = Retriever(si, llm)
     pending = PendingStore(kb / ".kb" / "pending.json")
     writer = make_writer(repo, tmp_path)

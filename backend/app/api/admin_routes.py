@@ -294,7 +294,6 @@ def refresh_model_catalog(request: Request) -> dict[str, Any]:
 
 @router.get("/export")
 def export_kb(request: Request):
-    from datetime import datetime
 
     from fastapi.responses import StreamingResponse
 

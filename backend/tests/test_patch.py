@@ -1,6 +1,5 @@
-import pytest
 
-from app.engine.patch import Edit, Insert, PatchError, apply_edits, apply_insert, diff_affected_range
+from app.engine.patch import Edit, Insert, apply_edits, apply_insert, diff_affected_range
 
 
 def test_apply_edits_single_replace():

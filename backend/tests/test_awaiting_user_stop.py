@@ -18,7 +18,7 @@ from app.engine.web.search import WebSearch
 from app.index.indexer import Indexer
 from app.models.llm import FakeLLMClient, ToolCall
 from app.storage.repo import KnowledgeRepo
-from tests.helpers import make_writer, make_search_index, drain_embeddings
+from tests.helpers import make_writer, make_search_index
 
 
 def test_tool_awaits_user_detects_confirm_shapes():
@@ -42,7 +42,7 @@ def _build_loop(tmp_path, llm: FakeLLMClient) -> AgentToolLoop:
     settings = Settings(kb_path=kb)
     repo = KnowledgeRepo(kb)
     si = make_search_index(tmp_path, llm)
-    idx = Indexer(si)
+    Indexer(si)
     retr = Retriever(si, llm)
     pending = PendingStore(kb / ".kb" / "pending.json")
     writer = make_writer(repo, tmp_path)

@@ -105,7 +105,7 @@ def test_persona_scope_revisions_list_route(client):
     client.app.state.container.roles.update_persona(
         persona["id"], system_prompt="进化后正文"
     )
-    rev = client.app.state.container.roles.apply_persona_evolution(
+    client.app.state.container.roles.apply_persona_evolution(
         "persona",
         persona["id"],
         expected_body="进化后正文",

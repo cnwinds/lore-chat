@@ -618,6 +618,21 @@ def test_maintain_no_llm_without_changes(tmp_path):
     assert cards.maintain(now=datetime.now(timezone.utc))["consolidated_scopes"] == 0
 
 
+def test_maintain_parse_failure_no_mark(tmp_path):
+    cards, _, scope, _ = _setup(tmp_path)
+    st = cards.store(scope)
+    _seed(st, fact_id="a", statement="卡A内容", kind="lesson")
+    _seed(st, fact_id="b", statement="卡B内容", vhash="hb", kind="lesson")
+
+    class GarbageLLM:
+        def chat(self, *_a, **_k):
+            return "not json at all"
+
+    cards.consolidator = LLMCardConsolidator(GarbageLLM(), cards)
+    cards.maintain(now=datetime.now(timezone.utc))
+    assert cards.growth.scope_state(scope)["last_consolidated_at"] is None
+
+
 def test_maintain_llm_exception_no_mark(tmp_path):
     cards, _, scope, _ = _setup(tmp_path)
     st = cards.store(scope)

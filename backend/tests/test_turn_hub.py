@@ -68,8 +68,6 @@ async def test_subscribe_cancel_does_not_stop_turn(tmp_path):
     hub.ensure_running(cid, turn, spec)
     await started.wait()
 
-    events: list[str] = []
-
     async def observe_then_cancel():
         gen = hub.subscribe(cid, turn["turn_id"])
         aiter = gen.__aiter__()

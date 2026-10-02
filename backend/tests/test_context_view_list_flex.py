@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import pytest
 
-from tests.test_context_view_tools_common import cv_env  # noqa: F401
-
 
 def test_list_depth1_pagination_unchanged(cv_env):
     for i in range(210):
@@ -292,7 +290,7 @@ def test_list_lore_root_depth3_conversations_and_memory(cv_env):
     fact = cv_env.owner.store.list_confirmed()[0]
     kind = fact.get("category") or "preference"
     rid = cv_env.roles.create(name="根角", system_prompt="")["id"]
-    cid = cv_env.conv.create(role_id=rid)
+    cv_env.conv.create(role_id=rid)
     cv_env.repo.write_bytes("A/x.txt", b"x", commit_msg="t")
     out = cv_env.tools.list({"uri": "lore://", "depth": 3})
     conv = _dir_by_name(out["entries"], "conversations")

@@ -160,3 +160,6 @@ def client(tmp_path, monkeypatch):
         r = client.post("/api/auth/setup", json={"password": "test-password-123"})
         assert r.status_code == 200, r.text
         yield client
+
+
+from tests.test_context_view_tools_common import cv_env  # noqa: E402, F401

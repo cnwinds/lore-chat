@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from app.config import Settings
 from app.settings_store import EDITABLE_SETTING_KEYS, SettingsStore
 
@@ -110,7 +112,7 @@ def test_update_rejects_kb_path(tmp_path: Path):
     store = SettingsStore(tmp_path, base)
     try:
         store.update({"kb_path": "/tmp/other"})
-        assert False, "expected error"
+        pytest.fail("expected error")
     except ValueError as e:
         assert "kb_path" in str(e).lower() or "not editable" in str(e).lower()
 
@@ -189,7 +191,7 @@ def test_search_providers_reject_duplicate(tmp_path: Path):
                 ]
             }
         )
-        assert False, "expected DuplicateSearchProviderError"
+        pytest.fail("expected DuplicateSearchProviderError")
     except DuplicateSearchProviderError:
         pass
 

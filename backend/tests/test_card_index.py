@@ -350,8 +350,7 @@ def test_purge_scope_drops_partition(tmp_path):
 
 def test_sync_all_drops_orphan_partition(tmp_path):
     cards, roles = _cards(tmp_path)
-    role = roles.create(name="R", system_prompt="")
-    scope = role_scope(role["id"])
+    roles.create(name="R", system_prompt="")
     card_index, search = _wire_index(cards, tmp_path, FakeEmbedder())
     orphan = card_partition("role:orphan")
     search.sync_partition(orphan, [IndexItem("1", "孤儿卡")])

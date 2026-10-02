@@ -6,6 +6,7 @@ describe("TOOL_LABELS", () => {
     expect(TOOL_LABELS.search).toBe("检索知识与会话");
     expect(TOOL_LABELS.read).toBe("读取内容");
     expect(TOOL_LABELS.list).toBe("浏览目录");
+    expect(TOOL_LABELS.read_last_tool_results).toBe("读取上一轮工具结果");
     expect(TOOL_LABELS.search_kb).toBe("检索本地知识库");
     expect(TOOL_LABELS.list_kb_structure).toBe("查看知识库目录结构");
     expect(TOOL_LABELS.read_conversation_context).toBe("读取会话上下文");

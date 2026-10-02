@@ -129,6 +129,11 @@ class DingtalkAdapter:
             http=self._http,
         )
 
+    def authenticate(self, instance: dict[str, Any], raw: Any) -> None:
+        """Stream 长连接不接受 HTTP 入站。"""
+        del instance, raw
+        raise ValueError("长连接通道不接受 HTTP 入站")
+
     def challenge(self, raw: Any) -> Any | None:
         del raw
         return None

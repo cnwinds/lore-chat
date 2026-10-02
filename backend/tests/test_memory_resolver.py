@@ -9,7 +9,6 @@ def test_merge_paraphrases_into_one_confirmed(tmp_path):
     first = (
         "我偏好只用数据可视化元素（如榜单、词云、分布图）来替代插图，而不是使用AI生成的图片。"
     )
-    second = "我偏好用数据可视化（如榜单、词云等）替代插图。"
     merged = (
         "我偏好用数据可视化（榜单/词云/分布图）替代插图，不使用 AI 生成图。"
     )

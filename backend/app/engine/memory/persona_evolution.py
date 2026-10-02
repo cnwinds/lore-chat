@@ -100,9 +100,11 @@ def sample_persona_evolution_user() -> str:
 
 
 def _parse_llm_evolution_payload(raw: str) -> tuple[list[dict], list[dict]]:
+    from app.engine.memory.prompt_common import MemoryExtractParseError
+
     text = (raw or "").strip()
     if not text:
-        return [], []
+        raise MemoryExtractParseError("empty LLM response")
     if text.startswith("```"):
         text = text.strip("`")
         if text.startswith("json"):
@@ -110,13 +112,13 @@ def _parse_llm_evolution_payload(raw: str) -> tuple[list[dict], list[dict]]:
         text = text.strip()
     start, end = text.find("{"), text.rfind("}")
     if start == -1 or end == -1 or end <= start:
-        return [], []
+        raise MemoryExtractParseError("no JSON object in LLM response")
     try:
         data = json.loads(text[start : end + 1])
-    except json.JSONDecodeError:
-        return [], []
+    except json.JSONDecodeError as exc:
+        raise MemoryExtractParseError("invalid JSON in LLM response") from exc
     if not isinstance(data, dict):
-        return [], []
+        raise MemoryExtractParseError("LLM JSON root must be an object")
     edits = data.get("edits")
     proposals = data.get("proposals")
     if not isinstance(edits, list):

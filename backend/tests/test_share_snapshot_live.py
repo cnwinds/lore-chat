@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 
-import pytest
 
 from app.engine.share_snapshot import (
     conversation_share_public_title,

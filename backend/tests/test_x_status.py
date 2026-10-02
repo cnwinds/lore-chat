@@ -202,7 +202,6 @@ async def test_fetch_x_status_miss_does_not_fallback_html():
 
 @pytest.mark.asyncio
 async def test_fetch_x_status_json_code_404_is_miss():
-    tid = "1"
     url = "https://x.com/a/status/1"
 
     class _Client(_AsyncClientStub):

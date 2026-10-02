@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from pathlib import PurePosixPath
 from typing import Any
 from urllib.parse import urlparse, urlunparse

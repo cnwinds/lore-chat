@@ -1,4 +1,3 @@
-import json
 from datetime import datetime, timedelta, timezone
 
 from app.engine.memory.cards import KnowledgeCards, role_scope

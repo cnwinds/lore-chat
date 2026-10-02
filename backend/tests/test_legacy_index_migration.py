@@ -47,7 +47,7 @@ def _add_legacy_conv_message(
         _LEGACY_CONV, metadata=_CHROMA_META
     )
     ids, docs, metas = [], [], []
-    for c, emb in zip(chunks, embeddings):
+    for c, _emb in zip(chunks, embeddings, strict=True):
         item_id = f"conv:{conversation_id}:msg:{message_id}:chunk:{c.index}"
         ids.append(item_id)
         docs.append(c.text)
