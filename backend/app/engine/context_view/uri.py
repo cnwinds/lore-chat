@@ -52,6 +52,18 @@ class LoreRoot:
 
 
 @dataclass(frozen=True)
+class ConversationRoot:
+    def format(self) -> str:
+        return f"{LORE_ROOT}conversations/"
+
+
+@dataclass(frozen=True)
+class MemoryRoot:
+    def format(self) -> str:
+        return f"{LORE_ROOT}memory/"
+
+
+@dataclass(frozen=True)
 class KbUri:
     rel_path: str
     is_dir: bool
@@ -114,7 +126,9 @@ class LegacyConversationRef:
     message_id: str | None = None
 
 
-LoreUri = LoreRoot | KbUri | ConversationUri | MemoryUri
+LoreUri = (
+    LoreRoot | ConversationRoot | MemoryRoot | KbUri | ConversationUri | MemoryUri
+)
 
 
 def _parse_kb_tail(tail: str, *, is_dir_hint: bool | None = None) -> KbUri:
@@ -135,9 +149,13 @@ def _validate_memory_kind(scope_kind: MemoryScopeKind, kind: str | None) -> None
             raise InvalidUri(f"未知卡片种类: {kind}")
 
 
-def _parse_conversation(segments: list[str], *, is_dir_hint: bool) -> ConversationUri:
+def _parse_conversation(
+    segments: list[str], *, is_dir_hint: bool
+) -> ConversationRoot | ConversationUri:
     if not segments:
-        raise InvalidUri("conversations 命名空间缺少桶")
+        if not is_dir_hint:
+            raise InvalidUri("conversations 根路径须以 / 结尾")
+        return ConversationRoot()
     bucket = segments[0]
     if bucket not in ("dm", "rooms", "channels"):
         raise InvalidUri(f"未知会话桶: {bucket}")
@@ -175,9 +193,11 @@ def _parse_conversation(segments: list[str], *, is_dir_hint: bool) -> Conversati
     return ConversationUri(bucket, owner, cid, mid, is_dir)
 
 
-def _parse_memory(segments: list[str], *, is_dir_hint: bool) -> MemoryUri:
+def _parse_memory(segments: list[str], *, is_dir_hint: bool) -> MemoryRoot | MemoryUri:
     if not segments:
-        raise InvalidUri("memory 命名空间缺少作用域")
+        if not is_dir_hint:
+            raise InvalidUri("memory 根路径须以 / 结尾")
+        return MemoryRoot()
     scope_kind = segments[0]
     if scope_kind not in ("owner", "role", "persona"):
         raise InvalidUri(f"未知记忆作用域: {scope_kind}")
@@ -267,6 +287,10 @@ def uri_path_key(uri: LoreUri) -> str:
     """用于前缀包含与去重；目录 URI 保证以 / 结尾。"""
     if isinstance(uri, LoreRoot):
         return LORE_ROOT
+    if isinstance(uri, ConversationRoot):
+        return f"{LORE_ROOT}conversations/"
+    if isinstance(uri, MemoryRoot):
+        return f"{LORE_ROOT}memory/"
     if isinstance(uri, KbUri):
         inner = uri.rel_path.replace("\\", "/")
         if not inner:
@@ -291,6 +315,10 @@ def uri_covers(outer: LoreUri, inner: LoreUri) -> bool:
     """outer 是否包含 inner（同命名空间、整段前缀）。"""
     if isinstance(outer, LoreRoot):
         return True
+    if isinstance(outer, ConversationRoot):
+        return isinstance(inner, (ConversationRoot, ConversationUri))
+    if isinstance(outer, MemoryRoot):
+        return isinstance(inner, (MemoryRoot, MemoryUri))
     o = uri_path_key(outer).rstrip("/")
     i = uri_path_key(inner).rstrip("/")
     if not i.startswith(o):

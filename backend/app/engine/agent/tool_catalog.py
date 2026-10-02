@@ -8,6 +8,7 @@ from app.engine.knowledge_writer import KnowledgeWriter
 resolve_kb_location = KnowledgeWriter.resolve_location
 
 READ_ONLY_TOOLS = frozenset({
+    "search", "read", "list",
     "search_kb", "read_doc", "read_doc_meta", "list_kb_structure", "read_conversation_context",
     "read_last_tool_results",
     "fetch_url", "web_search",
@@ -73,6 +74,21 @@ def disclosure_intent_limit_props(windows: DisclosureWindows) -> dict:
     }
 
 
+def _read_description(windows: DisclosureWindows) -> str:
+    return (
+        "按 lore:// 地址读取一项内容；不带 lore:// 的相对路径视为知识库路径。"
+        "知识库 Markdown 文档返回正文（附大纲）与元数据字段；文本文件返回原文；"
+        "二进制文件返回类型与大小，能抽取文字的（PDF、Office 等）返回抽取文本并标明 extracted。"
+        "会话地址 …/<会话id>/ 读该段尾部，…/<会话id>/<消息id> 读该消息前后 before/after 条。"
+        "记忆地址返回正文、种类、来源与状态。目录地址请用 list。"
+        f"默认 intent=spot（约 {windows.spot} 字）；"
+        f"深读、核对、成文用 intent=deep（默认约 {windows.deep} 字，硬上限 {windows.max_chars}）；"
+        "内容不足时用 offset 续读，不要盲目全量读取。"
+        "本段 history 里没有用户所指的对话时须先读原文：界面分隔线之前的轮次不在本段 history 中，不得凭印象复述。"
+        "向用户引用时写成 [标题](lore://…)，标题供人读，不要把裸 id 当链接文字。"
+    )
+
+
 def _read_doc_description(windows: DisclosureWindows) -> str:
     return (
         "按渐进式披露读取知识库文档或文本资产："
@@ -101,6 +117,8 @@ def apply_disclosure_windows(tool_def: dict, windows: DisclosureWindows) -> dict
     props.update(disclosure_intent_limit_props(windows))
     if name == "read_doc":
         out["function"]["description"] = _read_doc_description(windows)
+    elif name == "read":
+        out["function"]["description"] = _read_description(windows)
     elif name == "fetch_url":
         out["function"]["description"] = _fetch_url_description(windows)
     return out
@@ -111,6 +129,9 @@ def can_parallelize(tool_names: list[str]) -> bool:
 
 
 TOOL_LABELS = {
+    "search": "检索知识与会话",
+    "read": "读取内容",
+    "list": "浏览目录",
     "search_kb": "检索本地知识库",
     "read_doc": "读取文档",
     "read_doc_meta": "读取文档元数据",
@@ -244,7 +265,143 @@ def _path_fields(*, directory_required: bool = True, filename_required: bool = T
 
 
 
+_SEARCH_QUERY_DESC = (
+    "检索问题或关键词；连续英文词按词 AND/OR（不要求彼此紧挨）；"
+    "url/http 等格式词会忽略"
+)
+
 TOOL_DEFINITIONS: list[dict] = [
+    {
+        "type": "function",
+        "function": {
+            "name": "search",
+            "description": (
+                "在本回合可见的上下文里按相关度检索：知识库、会话、记忆。"
+                'paths 用 lore:// 地址限定范围，可给多个，例如 ["lore://kb/技术/", '
+                '"lore://conversations/dm/~/"]；省略时检索知识库与本角色的私聊。'
+                "当前会话默认不计入，要查它须在 paths 里写到它。"
+                "查其他角色的会话或查记忆须显式写路径（如 lore://conversations/dm/<角色>/、"
+                "lore://memory/owner/）。有路径越界时整次调用报错，不返回部分结果。"
+                "知识库与会话命中合并排序、可翻页；记忆命中单独放在 memory 组，最多 10 条。"
+                "已给出时间时用 ts_after/ts_before 过滤会话命中，不要把日期写进 query。"
+                "用户没点明是哪段对话时，不要在全部历史里碰运气：先读【上一会话段】给出的地址，"
+                "或用 list 列出本角色的会话。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": _SEARCH_QUERY_DESC},
+                    "paths": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "maxItems": 8,
+                        "description": (
+                            "lore:// 地址；目录以 / 结尾；<角色> 段可写 ~ 表示当前角色"
+                        ),
+                    },
+                    "k": {"type": "integer", "description": "返回条数，默认 5", "default": 5},
+                    "ts_after": {
+                        "type": "string",
+                        "description": (
+                            "仅会话命中：起始时刻（含）。写 ISO 或日期 2026-09-17（当天 00:00 北京时间）。"
+                            "相对时间（昨天/本周）须先按【当前时间】换成日期，不要把「昨天」写进 query。"
+                        ),
+                    },
+                    "ts_before": {
+                        "type": "string",
+                        "description": (
+                            "仅会话命中：结束时刻（不含）。日期 2026-09-18 表示当天 00:00 之前。"
+                            "查「昨天」时 ts_after=昨天日期、ts_before=今天日期。"
+                        ),
+                    },
+                    "cursor": {
+                        "type": "string",
+                        "description": "分页游标，续取上一页未返回的结果；翻页时其余参数无需重复",
+                    },
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "read",
+            "description": _read_description(DisclosureWindows()),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "uri": {
+                        "type": "string",
+                        "description": "lore:// 地址，或知识库相对路径",
+                    },
+                    "offset": {
+                        "type": "integer",
+                        "description": "从第几个字符开始读，默认 0；用返回的 next_offset 或大纲中的 @位置",
+                        "default": 0,
+                    },
+                    **disclosure_intent_limit_props(DisclosureWindows()),
+                    "before": {
+                        "type": "integer",
+                        "description": "仅会话消息地址：锚点前读几条",
+                        "default": 2,
+                        "minimum": 0,
+                        "maximum": 10,
+                    },
+                    "after": {
+                        "type": "integer",
+                        "description": "仅会话消息地址：锚点后读几条",
+                        "default": 2,
+                        "minimum": 0,
+                        "maximum": 10,
+                    },
+                    "include_sources": {
+                        "type": "boolean",
+                        "description": "仅主人记忆：附带出处",
+                        "default": False,
+                    },
+                },
+                "required": ["uri"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list",
+            "description": (
+                "列出 lore:// 目录下的条目（只读）。省略 uri 列出本回合可见的顶层。"
+                "知识库目录列子目录（带子项数）与文件（带类型、文档标题、大小），受保护路径会标出；"
+                "lore://conversations/dm/<角色>/ 与 lore://conversations/rooms/ 按最近活动列会话；"
+                "lore://memory/ 下逐层列作用域、种类与条目。"
+                "默认一层，depth 最大 3，每次最多 200 项，超出用 cursor 续取。"
+                "规划新的知识库路径（write_doc、write_kb_file、summarize_conversation、"
+                "publish_from_sandbox、generate_image 新建路径）或 move_entry 之前必须先 list 目标目录；"
+                "并入已知文档、沿用已确认路径时不必再调。不得凭记忆编造路径。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "uri": {
+                        "type": "string",
+                        "description": "lore:// 目录地址；省略为 lore://",
+                    },
+                    "depth": {
+                        "type": "integer",
+                        "description": "向下展开层数，1–3，默认 1",
+                        "default": 1,
+                        "minimum": 1,
+                        "maximum": 3,
+                    },
+                    "cursor": {
+                        "type": "string",
+                        "description": "分页游标，续取未返回的条目",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
     {
         "type": "function",
         "function": {
@@ -260,7 +417,7 @@ TOOL_DEFINITIONS: list[dict] = [
                 "properties": {
                     "query": {
                         "type": "string",
-                        "description": "检索问题或关键词；连续英文词按词 AND/OR（不要求彼此紧挨）；url/http 等格式词会忽略",
+                        "description": _SEARCH_QUERY_DESC,
                     },
                     "k": {"type": "integer", "description": "返回条数，默认 5", "default": 5},
                     "scope": {
@@ -1667,7 +1824,7 @@ def select_tools(
         name = d["function"]["name"]
         if name in excluded:
             continue
-        if name in ("read_doc", "fetch_url"):
+        if name in ("read_doc", "read", "fetch_url"):
             selected.append(apply_disclosure_windows(d, windows))
         else:
             selected.append(d)

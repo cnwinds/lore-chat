@@ -5,10 +5,13 @@ from dataclasses import dataclass, field
 from app.engine.context_view.errors import InvalidUri
 from app.engine.context_view.scope import ViewScope
 from app.engine.context_view.uri import (
+    ConversationRoot,
     ConversationUri,
     KbUri,
     LoreUri,
+    MemoryRoot,
     MemoryUri,
+    format_uri,
     uri_covers,
 )
 from app.engine.memory.cards import persona_scope, role_scope
@@ -24,6 +27,7 @@ class SearchPlan:
     conversation_ids: list[str] = field(default_factory=list)
     include_current_conversation: bool = False
     memory_targets: list[tuple[str, str | None]] = field(default_factory=list)
+    paths: list[str] = field(default_factory=list)
 
 
 def compile_search(
@@ -41,7 +45,7 @@ def compile_search(
             scope.check(u)
         resolved.append(u)
     resolved = _dedupe_nested(resolved)
-    plan = SearchPlan()
+    plan = SearchPlan(paths=[format_uri(u) for u in resolved])
     kb_prefixes: list[str] = []
     kb_whole = False
     conv_ids: set[str] = set()
@@ -59,14 +63,20 @@ def compile_search(
                 if uri.is_dir:
                     prefix = prefix.rstrip("/") + "/"
                 kb_prefixes.append(prefix)
+        elif isinstance(uri, ConversationRoot):
+            saw_conversation_uri = True
+            ids, _ = _conversation_ids_from_root(scope)
+            conv_ids.update(ids)
         elif isinstance(uri, ConversationUri):
             saw_conversation_uri = True
             ids, names_current = _conversation_ids(scope, uri)
             conv_ids.update(ids)
             if names_current:
                 explicit_current = True
+        elif isinstance(uri, MemoryRoot):
+            memory.extend(_memory_targets_from_root(scope))
         elif isinstance(uri, MemoryUri):
-            memory.append(_memory_target(uri))
+            memory.extend(_memory_targets(scope, uri))
 
     if kb_whole:
         plan.search_kb = True
@@ -93,6 +103,29 @@ def compile_search(
 
     plan.memory_targets = _dedupe_memory(memory)
     return plan
+
+
+def _memory_targets_from_root(scope: ViewScope) -> list[tuple[str, str | None]]:
+    out: list[tuple[str, str | None]] = []
+    if scope.turn_kind == "owner" or scope.include_owner_memory:
+        out.append(("owner", None))
+    if scope.turn_kind == "owner":
+        for rid in scope.visible_sidebar_role_ids():
+            out.append((role_scope(rid), None))
+    for pid in scope._visible_persona_ids():
+        out.append((persona_scope(pid), None))
+    return out
+
+
+def _conversation_ids_from_root(scope: ViewScope) -> tuple[set[str], bool]:
+    if scope.turn_kind == "channel":
+        cid = scope.current_conversation_id
+        return ({cid} if cid else set()), bool(cid)
+    ids: set[str] = set()
+    for rid in scope.visible_sidebar_role_ids():
+        ids.update(scope.conversations.list_owner_dm_conversation_ids_for_role(rid))
+    ids.update(scope.conversations.list_room_conversation_ids())
+    return ids, False
 
 
 def _dedupe_nested(uris: list[LoreUri]) -> list[LoreUri]:
@@ -130,22 +163,28 @@ def _conversation_ids(
     if uri.bucket == "rooms":
         return set(scope.conversations.list_room_conversation_ids()), False
     if uri.bucket == "channels":
-        if uri.owner and not uri.conversation_id:
-            return set(
-                scope.conversations.list_ids_for_channel_instance(uri.owner)
-            ), False
+        return set(), False
     return set(), False
 
 
-def _memory_target(uri: MemoryUri) -> tuple[str, str | None]:
+def _memory_targets(
+    scope: ViewScope, uri: MemoryUri
+) -> list[tuple[str, str | None]]:
     kind_filter = uri.kind if uri.kind else None
     if uri.scope_kind == "owner":
-        return ("owner", kind_filter)
+        return [("owner", kind_filter)]
     if uri.scope_kind == "role":
-        assert uri.subject
-        return (role_scope(uri.subject), kind_filter)
-    assert uri.subject
-    return (persona_scope(uri.subject), kind_filter)
+        if uri.subject:
+            return [(role_scope(uri.subject), kind_filter)]
+        return [
+            (role_scope(rid), kind_filter)
+            for rid in scope.visible_sidebar_role_ids()
+        ]
+    if uri.subject:
+        return [(persona_scope(uri.subject), kind_filter)]
+    return [
+        (persona_scope(pid), kind_filter) for pid in scope._visible_persona_ids()
+    ]
 
 
 def _dedupe_memory(

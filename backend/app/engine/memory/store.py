@@ -939,12 +939,20 @@ class MemoryStore:
             ).fetchall()
             return [_row_to_fact(r) for r in rows]
 
-    def search_confirmed(self, query: str, *, limit: int = 10) -> list[dict]:
+    def search_confirmed(
+        self, query: str, *, limit: int = 10, kind: str | None = None
+    ) -> list[dict]:
         q = (query or "").strip().lower()
         facts = self.list_confirmed()
+        if kind:
+            facts = [f for f in facts if f.get("category") == kind]
         if not q:
             return facts[:limit]
-        matched = [f for f in facts if q in f["statement"].lower() or q in f["slot_key"].lower()]
+        matched = [
+            f
+            for f in facts
+            if q in f["statement"].lower() or q in f["slot_key"].lower()
+        ]
         return matched[:limit]
 
     def purge_owner(self) -> int:

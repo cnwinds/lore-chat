@@ -6,11 +6,13 @@ from typing import Literal
 from app.engine.channel_plugins.types import is_channel_origin
 from app.engine.context_view.errors import AmbiguousSubject, InvalidUri, NotFound, OutOfScope
 from app.engine.context_view.uri import (
+    ConversationRoot,
     ConversationUri,
     KbUri,
     LegacyConversationRef,
     LoreRoot,
     LoreUri,
+    MemoryRoot,
     MemoryUri,
     format_uri,
     is_kb_internal,
@@ -220,6 +222,8 @@ class ViewScope:
             parsed = parse(str(uri_or_str))
         if isinstance(parsed, LegacyConversationRef):
             return self._legacy_to_canonical(parsed)
+        if isinstance(parsed, (ConversationRoot, MemoryRoot)):
+            return parsed
         if isinstance(parsed, ConversationUri):
             return self._resolve_conversation_uri(parsed)
         if isinstance(parsed, MemoryUri):
@@ -285,9 +289,17 @@ class ViewScope:
     def check(self, uri: LoreUri) -> None:
         """落在可见根内；会话 URI 校验桶归属，不匹配为 NotFound。"""
         roots = self.visible_roots()
+        if isinstance(uri, ConversationRoot):
+            if not any(isinstance(r, ConversationUri) for r in roots):
+                raise OutOfScope(format_uri(uri))
+            return
+        if isinstance(uri, MemoryRoot):
+            if not any(isinstance(r, MemoryUri) for r in roots):
+                raise OutOfScope(format_uri(uri))
+            return
+        if isinstance(uri, LoreRoot):
+            return
         if not any(uri_covers(root, uri) or _same_uri(root, uri) for root in roots):
-            if isinstance(uri, LoreRoot):
-                return
             raise OutOfScope(format_uri(uri))
         if isinstance(uri, ConversationUri):
             self._check_conversation_uri(uri)
@@ -297,14 +309,16 @@ class ViewScope:
             _reject_internal_kb_path(uri.rel_path)
 
     def _check_conversation_uri(self, uri: ConversationUri) -> None:
+        if self.turn_kind == "channel" and uri.bucket in ("dm", "rooms"):
+            raise OutOfScope(format_uri(uri))
+        if self.turn_kind == "owner" and uri.bucket == "channels":
+            raise OutOfScope(format_uri(uri))
         if not uri.conversation_id:
             if uri.bucket == "dm" and uri.owner:
                 if uri.owner not in self.visible_sidebar_role_ids():
                     raise OutOfScope(format_uri(uri))
             if uri.bucket == "channels":
-                if self.turn_kind != "channel":
-                    raise OutOfScope(format_uri(uri))
-                if not uri.conversation_id:
+                if self.turn_kind == "channel":
                     raise OutOfScope(format_uri(uri))
                 if uri.owner and uri.owner != self.channel_instance_id:
                     raise NotFound("实例 id 与当前通道不符", uri=format_uri(uri))
@@ -335,6 +349,8 @@ class ViewScope:
             return
         if uri.scope_kind == "persona":
             visible = self._visible_persona_ids()
+            if not visible:
+                raise OutOfScope(format_uri(uri))
             if uri.subject and uri.subject not in visible:
                 raise OutOfScope(format_uri(uri))
 
@@ -344,6 +360,8 @@ class ViewScope:
             roots.append(ConversationUri("dm", None, None, None, True))
             roots.append(ConversationUri("rooms", None, None, None, True))
             roots.append(MemoryUri("owner", None, None, None, True))
+            roots.append(MemoryUri("role", None, None, None, True))
+            roots.append(MemoryUri("persona", None, None, None, True))
             for rid in self.visible_sidebar_role_ids():
                 roots.append(
                     ConversationUri("dm", rid, None, None, True)
@@ -364,6 +382,8 @@ class ViewScope:
                 )
             if self.include_owner_memory:
                 roots.append(MemoryUri("owner", None, None, None, True))
+            if self._visible_persona_ids():
+                roots.append(MemoryUri("persona", None, None, None, True))
             for pid in self._visible_persona_ids():
                 roots.append(MemoryUri("persona", pid, None, None, True))
         return roots

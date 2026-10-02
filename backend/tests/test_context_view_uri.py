@@ -28,6 +28,18 @@ def test_kb_root_round_trip():
     assert format_uri(u) == "lore://kb/"
 
 
+def test_conversations_root_round_trip():
+    u = parse("lore://conversations/")
+    assert format_uri(u) == "lore://conversations/"
+    assert format_uri(parse(format_uri(u))) == "lore://conversations/"
+
+
+def test_memory_root_round_trip():
+    u = parse("lore://memory/")
+    assert format_uri(u) == "lore://memory/"
+    assert format_uri(parse(format_uri(u))) == "lore://memory/"
+
+
 def test_reject_internal_kb():
     with pytest.raises(InvalidUri):
         parse(".kb/index/foo")

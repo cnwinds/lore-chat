@@ -1095,6 +1095,60 @@ class ConversationStore:
             ).fetchall()
         return [str(row["id"]) for row in rows]
 
+    def list_context_view_summaries(
+        self, conversation_ids: list[str]
+    ) -> list[dict]:
+        """只读：会话 id、标题、最近活动、user/assistant 消息数（与 load_dialogue_tail 一致）。"""
+        ids = [str(i).strip() for i in conversation_ids if str(i).strip()]
+        if not ids:
+            return []
+        chunk_size = 500
+        meta: dict[str, dict] = {}
+        counts: dict[str, int] = {}
+        with self._lock:
+            for start in range(0, len(ids), chunk_size):
+                chunk = ids[start : start + chunk_size]
+                placeholders = ",".join("?" * len(chunk))
+                rows = self.conn.execute(
+                    f"""
+                    SELECT id, title, updated_at, last_user_message_at
+                    FROM conversations
+                    WHERE id IN ({placeholders})
+                    """,
+                    chunk,
+                ).fetchall()
+                for row in rows:
+                    cid = str(row["id"])
+                    activity = row["last_user_message_at"] or row["updated_at"] or ""
+                    meta[cid] = {
+                        "id": cid,
+                        "title": row["title"] or "",
+                        "last_activity": activity,
+                    }
+                count_rows = self.conn.execute(
+                    f"""
+                    SELECT conversation_id, COUNT(*) AS n
+                    FROM messages
+                    WHERE conversation_id IN ({placeholders})
+                      AND role IN ('user', 'assistant')
+                    GROUP BY conversation_id
+                    """,
+                    chunk,
+                ).fetchall()
+                for row in count_rows:
+                    counts[str(row["conversation_id"])] = int(row["n"] or 0)
+        out: list[dict] = []
+        for cid in ids:
+            if cid not in meta:
+                continue
+            out.append(
+                {
+                    **meta[cid],
+                    "message_count": counts.get(cid, 0),
+                }
+            )
+        return out
+
     # ------------------------------------------------------------------
     # CRUD
     # ------------------------------------------------------------------

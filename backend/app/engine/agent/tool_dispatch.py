@@ -14,6 +14,7 @@ def build_tool_dispatch(registry: ToolRegistry) -> dict[str, ToolHandler]:
     """按工具名直挂 tool_impl；对外仍经 ToolRegistry.execute。"""
 
     kb_read = registry.kb_read
+    ctx = registry.context_view
     kb_mutate = registry.kb_mutate
     web = registry.web
     memory = registry.memory
@@ -23,6 +24,21 @@ def build_tool_dispatch(registry: ToolRegistry) -> dict[str, ToolHandler]:
     async def _search(args: dict, **kw) -> dict:
         return await asyncio.to_thread(
             kb_read.search_kb, args, conversation_id=kw.get("conversation_id")
+        )
+
+    async def _ctx_search(args: dict, **kw) -> dict:
+        return await asyncio.to_thread(
+            ctx.search, args, conversation_id=kw.get("conversation_id")
+        )
+
+    async def _ctx_read(args: dict, **kw) -> dict:
+        return await asyncio.to_thread(
+            ctx.read, args, conversation_id=kw.get("conversation_id")
+        )
+
+    async def _ctx_list(args: dict, **kw) -> dict:
+        return await asyncio.to_thread(
+            ctx.list, args, conversation_id=kw.get("conversation_id")
         )
 
     async def _read_doc(args: dict, **kw) -> dict:
@@ -51,6 +67,9 @@ def build_tool_dispatch(registry: ToolRegistry) -> dict[str, ToolHandler]:
     roles = registry.roles_tools
 
     return {
+        "search": _ctx_search,
+        "read": _ctx_read,
+        "list": _ctx_list,
         "search_kb": _search,
         "read_doc": _read_doc,
         "list_kb_structure": lambda args, **kw: asyncio.to_thread(
