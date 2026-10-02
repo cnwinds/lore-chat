@@ -9,24 +9,19 @@ from app.engine.context_view.uri import (
     KbUri,
     LoreUri,
     MemoryUri,
-    format_uri,
-    parse,
     uri_covers,
-    uri_path_key,
 )
 from app.engine.memory.cards import persona_scope, role_scope
 
 MAX_COMPILE_PATHS = 8
 
-# kb_prefixes 中 ``""`` 表示整库 ``kb:main``（等价于 lore://kb/）。
-KB_WHOLE_PREFIX = ""
-
 
 @dataclass
 class SearchPlan:
-    kb_prefixes: list[str] | None = None
-    kb_all: bool = False
-    conversation_ids: list[str] | None = None
+    search_kb: bool = False
+    kb_prefixes: list[str] | None = None  # 仅 search_kb 时有意义；None = 整库
+    search_conversations: bool = False
+    conversation_ids: list[str] = field(default_factory=list)
     include_current_conversation: bool = False
     memory_targets: list[tuple[str, str | None]] = field(default_factory=list)
 
@@ -48,38 +43,53 @@ def compile_search(
     resolved = _dedupe_nested(resolved)
     plan = SearchPlan()
     kb_prefixes: list[str] = []
+    kb_whole = False
     conv_ids: set[str] = set()
+    saw_conversation_uri = False
+    explicit_current = False
     memory: list[tuple[str, str | None]] = []
     current_cid = scope.current_conversation_id
 
     for uri in resolved:
         if isinstance(uri, KbUri):
             if not uri.rel_path and uri.is_dir:
-                plan.kb_all = True
+                kb_whole = True
             else:
                 prefix = uri.rel_path.replace("\\", "/")
                 if uri.is_dir:
                     prefix = prefix.rstrip("/") + "/"
                 kb_prefixes.append(prefix)
         elif isinstance(uri, ConversationUri):
+            saw_conversation_uri = True
             ids, names_current = _conversation_ids(scope, uri)
             conv_ids.update(ids)
-            if names_current and current_cid and current_cid in ids:
-                plan.include_current_conversation = True
+            if names_current:
+                explicit_current = True
         elif isinstance(uri, MemoryUri):
             memory.append(_memory_target(uri))
 
-    if plan.kb_all:
-        plan.kb_prefixes = [KB_WHOLE_PREFIX]
+    if kb_whole:
+        plan.search_kb = True
+        plan.kb_prefixes = None
     elif kb_prefixes:
+        plan.search_kb = True
         plan.kb_prefixes = list(dict.fromkeys(kb_prefixes))
     else:
+        plan.search_kb = False
         plan.kb_prefixes = None
 
-    if conv_ids:
+    if saw_conversation_uri:
+        plan.search_conversations = True
+        if current_cid and not explicit_current:
+            conv_ids.discard(current_cid)
         plan.conversation_ids = sorted(conv_ids)
+        plan.include_current_conversation = bool(
+            explicit_current and current_cid and current_cid in conv_ids
+        )
     else:
-        plan.conversation_ids = None
+        plan.search_conversations = False
+        plan.conversation_ids = []
+        plan.include_current_conversation = False
 
     plan.memory_targets = _dedupe_memory(memory)
     return plan
@@ -99,10 +109,13 @@ def _dedupe_nested(uris: list[LoreUri]) -> list[LoreUri]:
 def _conversation_ids(
     scope: ViewScope, uri: ConversationUri
 ) -> tuple[set[str], bool]:
-    """返回会话 id 集合，以及该 URI 是否显式点名某会话（含消息 URI）。"""
+    """返回会话 id 集合，以及该 URI 是否显式点名当前会话（含消息 URI）。"""
     explicit = uri.conversation_id is not None
+    current_cid = scope.current_conversation_id
     if uri.conversation_id:
-        return {uri.conversation_id}, explicit
+        ids = {uri.conversation_id}
+        names_current = bool(current_cid and uri.conversation_id == current_cid)
+        return ids, names_current
     if uri.bucket == "dm":
         if not uri.owner:
             ids: set[str] = set()

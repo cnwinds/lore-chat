@@ -241,6 +241,8 @@ class MemoryService:
         q = (query or "").strip()
         if q and self.owner_index is not None:
             facts = self.owner_index.search(q, limit=limit)
+            if not facts:
+                facts = self.store.search_confirmed(query, limit=limit)
         else:
             facts = self.store.search_confirmed(query, limit=limit)
         out_facts = []

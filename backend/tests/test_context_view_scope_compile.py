@@ -3,7 +3,7 @@
 import pytest
 
 from app.engine.channel_plugins.store import ChannelInstanceStore
-from app.engine.context_view.compile import KB_WHOLE_PREFIX, compile_search
+from app.engine.context_view.compile import compile_search
 from app.engine.context_view.errors import AmbiguousSubject, NotFound, OutOfScope
 from app.engine.context_view.kb_kind import classify
 from app.engine.context_view.scope import ViewScope
@@ -194,7 +194,8 @@ def test_compile_dedupe_and_memory_kind(ctx):
             "lore://memory/role/default/practice/",
         ],
     )
-    assert plan.kb_prefixes == [KB_WHOLE_PREFIX]
+    assert plan.search_kb is True
+    assert plan.kb_prefixes is None
     assert (role_scope("default"), "practice") in plan.memory_targets
 
 
@@ -203,7 +204,8 @@ def test_compile_explicit_current_conversation(ctx):
     scope = _scope(ctx, cid=cid, role_id="default")
     plan = compile_search(scope, [f"lore://conversations/dm/default/{cid}/"])
     assert plan.include_current_conversation is True
-    assert cid in (plan.conversation_ids or [])
+    assert plan.search_conversations is True
+    assert cid in plan.conversation_ids
 
 
 def test_compile_default_paths_owner(ctx):
@@ -211,6 +213,39 @@ def test_compile_default_paths_owner(ctx):
     paths = scope.default_search_paths()
     assert "lore://kb/" in paths
     assert paths[1].endswith("/dm/default/")
+
+
+def test_compile_kb_dir_and_file_prefixes(ctx, tmp_path):
+    kb = tmp_path / "knowledge"
+    (kb / "技能").mkdir(parents=True)
+    (kb / "技能" / "a.md").write_text("x", encoding="utf-8")
+    (kb / "笔记.md").write_text("y", encoding="utf-8")
+    scope = _scope(ctx, role_id="default")
+    plan = compile_search(
+        scope,
+        ["lore://kb/技能/", "lore://kb/笔记.md"],
+    )
+    assert plan.search_kb is True
+    assert plan.kb_prefixes == ["技能/", "笔记.md"]
+
+
+def test_compile_dm_role_zero_conversations_search_conversations_true(ctx):
+    rid = ctx.roles.create(name="空角色", system_prompt="")["id"]
+    scope = _scope(ctx, role_id="default")
+    plan = compile_search(scope, [f"lore://conversations/dm/{rid}/"])
+    assert plan.search_conversations is True
+    assert plan.conversation_ids == []
+
+
+def test_compile_tilde_dm_excludes_current_conversation(ctx):
+    cid = ctx.conversations.create(role_id="default")
+    other = ctx.conversations.create(role_id="default")
+    scope = _scope(ctx, cid=cid, role_id="default")
+    plan = compile_search(scope, ["lore://conversations/dm/~/"])
+    assert plan.search_conversations is True
+    assert cid not in plan.conversation_ids
+    assert other in plan.conversation_ids
+    assert plan.include_current_conversation is False
 
 
 def test_hidden_api_role_excluded_from_dm_memory(ctx):
