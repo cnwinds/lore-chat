@@ -7,9 +7,11 @@ import "./styles/background-flow.css";
 import { initTheme } from "./theme";
 import { initOverlayScrollbar } from "./utils/overlayScrollbar";
 import App from "./App.tsx";
+import { registerPwa } from "./pwa/registerPwa";
 
 initTheme();
 initOverlayScrollbar();
+registerPwa();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
