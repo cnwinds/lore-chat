@@ -1,9 +1,10 @@
 # Lore Chat — Agent 约定
 
-本文件约束在本仓库工作的 AI。**改提示词**或**做版本发布**前先读对应章节；日常写代码仍以 [CONTEXT.md](CONTEXT.md) 与 [docs/adr/](docs/adr/) 为准。产品展开见 [docs/product/](docs/product/)。
+本文件约束在本仓库工作的 AI。**改提示词**、**做版本发布**或**开子代理**前先读对应章节；日常写代码仍以 [CONTEXT.md](CONTEXT.md) 与 [docs/adr/](docs/adr/) 为准。产品展开见 [docs/product/](docs/product/)。
 
 - [一、提示词编写](#一提示词编写)
 - [二、版本发布](#二版本发布)
+- [三、子代理与模型](#三子代理与模型)
 
 # 一、提示词编写
 
@@ -357,3 +358,25 @@ LORECHAT_IMAGE_TAG=0.1.0
 - [ ] 未把运行时数据、密钥写入提交
 - [ ] 将推送 `master` **和** `vX.Y.Z`
 - [ ] 已提醒：镜像 tag 是 `X.Y.Z`，git tag 是 `vX.Y.Z`
+
+---
+
+# 三、子代理与模型
+
+本节约束在本仓库工作时通过 Task（或其它等价机制）**启动子代理 / 子任务**时的模型选择。主对话的模型由运行环境决定，不在此重复规定。
+
+## 3.1 统一使用 `auto`
+
+开子任务时**必须显式指定** `model` 为 **`auto`**，由 Cursor 在 Grok、Composer 等内置路由内选模型，不要手挑具体 slug 或档位。
+
+## 3.2 禁止事项
+
+1. **禁止**为子代理选用经外部 API 调度的模型（含 `claude-*`、`gpt-*`、`gemini-*`、`muse-*` 等）。
+2. **禁止**对子代理使用 `inherit`、省略 `model`，或写成 `cursor-grok-*` / `composer-*` 等具体 slug——子任务一律 `auto`。
+3. **禁止**在 Task 描述里写「用最强模型」「默认模型」等未绑定到 `auto` 的表述。
+
+## 3.3 自检
+
+启动子代理前问一句：
+
+> 这次 Task 的 `model` 是不是 `auto`？若不是，改完再开。
