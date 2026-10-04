@@ -363,27 +363,20 @@ LORECHAT_IMAGE_TAG=0.1.0
 
 # 三、子代理与模型
 
-本节约束在本仓库工作时通过 Task（或其它等价机制）**启动子代理**时的模型选择。主对话的模型由运行环境决定，不在此重复规定。
+本节约束在本仓库工作时通过 Task（或其它等价机制）**启动子代理 / 子任务**时的模型选择。主对话的模型由运行环境决定，不在此重复规定。
 
-## 3.1 允许使用的模型族
+## 3.1 统一使用 `auto`
 
-子代理**必须显式指定** `model`，且 slug 只能来自下列两类（具体档位按任务选即可）：
-
-| 族 | slug 前缀示例 | 说明 |
-|---|---|---|
-| **Grok** | `cursor-grok-*` | Cursor 内置 Grok 系列 |
-| **Composer** | `composer-*` | Cursor Composer 系列 |
-
-未在表中、且属于 Claude / GPT / Gemini / Muse 等**经外部 API 调度**的模型，一律不得交给子代理。
+开子任务时**必须显式指定** `model` 为 **`auto`**，由 Cursor 在 Grok、Composer 等内置路由内选模型，不要手挑具体 slug 或档位。
 
 ## 3.2 禁止事项
 
-1. **禁止**为子代理选用 API 模型（含 `claude-*`、`gpt-*`、`gemini-*`、`muse-*` 等）。
-2. **禁止**对子代理使用 `inherit` 或省略 `model`，以免落到 API 模型上；需要子代理时必须写明 Grok 或 Composer 的 slug。
-3. **禁止**在子代理的 Task 描述里写「用最强模型」「默认模型」等未绑定到 Grok / Composer 的表述。
+1. **禁止**为子代理选用经外部 API 调度的模型（含 `claude-*`、`gpt-*`、`gemini-*`、`muse-*` 等）。
+2. **禁止**对子代理使用 `inherit`、省略 `model`，或写成 `cursor-grok-*` / `composer-*` 等具体 slug——子任务一律 `auto`。
+3. **禁止**在 Task 描述里写「用最强模型」「默认模型」等未绑定到 `auto` 的表述。
 
 ## 3.3 自检
 
 启动子代理前问一句：
 
-> 这次 Task 的 `model` 是不是明确的 `cursor-grok-*` 或 `composer-*`？若不是，改完再开。
+> 这次 Task 的 `model` 是不是 `auto`？若不是，改完再开。
