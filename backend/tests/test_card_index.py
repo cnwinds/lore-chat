@@ -13,6 +13,7 @@ from app.engine.agent.prompts import (
     build_system_prompt,
     current_time_block,
     wrap_turn_cards,
+    wrap_turn_memory,
 )
 from app.engine.conversations import ConversationStore
 from app.engine.intent import _strip_user_injections
@@ -256,8 +257,17 @@ def test_exclude_all_confirmed_skips_embedder(tmp_path):
     _sync_scope(cards, scope)
     _, core_ids = cards.render_with_ids(scope)
     assert core_ids == {"only"}
+    calls: list[int] = []
+    real_search = cards.index.search
+
+    def _wrapped(*args, **kwargs):
+        calls.append(1)
+        return real_search(*args, **kwargs)
+
+    cards.index.search = _wrapped  # type: ignore[method-assign]
     emb.call_count = 0
     assert cards.turn_cards(scope, "查目录", exclude_ids=core_ids) == ""
+    assert calls == []
     assert emb.call_count == 0
 
 
@@ -474,8 +484,17 @@ def test_turn_cards_empty_when_core_fits_all(tmp_path):
     _wire_index(cards, tmp_path, FakeEmbedder())
     _seed(cards.store(scope), card_id="c1", statement="归档前先查目录结构")
     _sync_scope(cards, scope)
+    calls: list[int] = []
+    real_search = cards.index.search
+
+    def _wrapped(*args, **kwargs):
+        calls.append(1)
+        return real_search(*args, **kwargs)
+
+    cards.index.search = _wrapped  # type: ignore[method-assign]
     inj = cards.injection_for(conversation_id=None, role_id=role["id"], query="查目录")
     assert inj.turn_cards == ""
+    assert calls == []
 
 
 def test_turn_cards_surfaces_truncated_card(tmp_path):
@@ -569,8 +588,12 @@ def test_strip_user_injections_three_cases():
     raw = "真实用户句"
     time_only = f"{current_time_block()}\n\n{raw}"
     turn_block = wrap_turn_cards("- 相关经验")
+    mem_block = wrap_turn_memory("- 相关记忆")
     both = f"{current_time_block()}\n\n{turn_block}\n\n{raw}"
+    three = f"{current_time_block()}\n\n{turn_block}\n\n{mem_block}\n\n{raw}"
     assert _strip_user_injections(both) == raw
+    assert _strip_user_injections(three) == raw
+    assert _strip_user_injections(f"{mem_block}\n\n{raw}") == raw
     assert _strip_user_injections(time_only) == raw
     assert _strip_user_injections(raw) == raw
 

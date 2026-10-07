@@ -12,6 +12,7 @@ from app.index.partitioned import (
     PartitionTuning,
     SearchIndex,
     SyncStats,
+    default_gate,
 )
 from app.logging_config import get_logger
 
@@ -22,6 +23,7 @@ _log = get_logger("memory.owner_index")
 
 OWNER_PARTITION = "cards:owner"
 CARD_FAMILY = "cards"
+TURN_OWNER_MEMORY_LIMIT = 5
 
 
 @dataclass
@@ -128,6 +130,50 @@ class OwnerMemoryIndex:
                 hit.matched_terms
                 or (hit.vector_score or 0) >= pt.min_vector_score
             ):
+                continue
+            out.append(fact)
+            if len(out) >= limit:
+                break
+        return out
+
+    def search_turn(
+        self,
+        query: str,
+        *,
+        limit: int = TURN_OWNER_MEMORY_LIMIT,
+        exclude_ids: set[str] | frozenset[str] = frozenset(),
+    ) -> list[dict]:
+        """按轮补回核心块没放下的已确认事实。
+
+        门槛与角色 ``turn_cards`` 相同：向量分达标，或命中分区里不常见的词。
+        命中后回源，只用当前仍为 confirmed 的正文。索引失败返回空列表。
+        """
+        confirmed = {f["id"]: f for f in self.store.list_confirmed()}
+        eligible = set(confirmed) - set(exclude_ids)
+        q = (query or "").strip()
+        if not eligible or not q:
+            return []
+
+        candidate_k = min(200, max(20, limit + len(exclude_ids)))
+        pt = self.tuning.partition_tuning(candidate_k=candidate_k)
+        try:
+            res = self.index.search(
+                q,
+                partitions=[OWNER_PARTITION],
+                limit=candidate_k,
+                tunings={CARD_FAMILY: pt},
+                vector_timeout_s=self.tuning.vector_timeout_s,
+            )
+        except Exception as exc:  # noqa: BLE001
+            _log.warning("owner turn search failed err=%s", exc)
+            return []
+
+        out: list[dict] = []
+        for hit in res.hits:
+            fact = confirmed.get(hit.item_id)
+            if fact is None or hit.item_id in exclude_ids:
+                continue
+            if not default_gate(hit, pt):
                 continue
             out.append(fact)
             if len(out) >= limit:

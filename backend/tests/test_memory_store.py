@@ -26,6 +26,42 @@ def test_upsert_fact_idempotent(tmp_path):
     assert f2["origin"] == "manual"
 
 
+def test_init_drops_legacy_render_state(tmp_path):
+    import sqlite3
+
+    db = tmp_path / "memory.db"
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "CREATE TABLE memory_render_state (owner_key TEXT PRIMARY KEY, revision INTEGER)"
+    )
+    conn.execute(
+        "INSERT INTO memory_render_state (owner_key, revision) VALUES ('ws1', 4)"
+    )
+    conn.commit()
+    conn.close()
+
+    store = MemoryStore(db, owner_key="ws1")
+    with store._connect() as conn:
+        names = {
+            row[0]
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            )
+        }
+    assert "memory_render_state" not in names
+    assert "memory_facts" in names
+
+    fresh = MemoryStore(tmp_path / "fresh.db", owner_key="ws1")
+    with fresh._connect() as conn:
+        fresh_names = {
+            row[0]
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            )
+        }
+    assert "memory_render_state" not in fresh_names
+
+
 def test_list_confirmed_excludes_forgotten(tmp_path):
     store = MemoryStore(tmp_path / "memory.db", owner_key="ws1")
     f = store.upsert_fact(

@@ -15,6 +15,7 @@ _CATEGORY_BY_KIND: dict[str, str] = {
     "role": "role",
     "role_cards": "cards",
     "turn_cards": "cards",
+    "turn_memory": "memory",
     "owner_memory": "memory",
     "skill_catalog": "skill",
     "skill_active": "skill",

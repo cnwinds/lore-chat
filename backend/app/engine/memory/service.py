@@ -75,12 +75,21 @@ class MemoryService:
 
     def render_context(self) -> str:
         """从 DB 渲染容量裁剪后的注入文本（不落盘）。"""
+        text, _ids = self.render_context_with_ids()
+        return text
+
+    def render_context_with_ids(self) -> tuple[str, set[str]]:
+        """与 render_context 同一段正文，并给出写进核心块的 fact id。
+
+        id 在剥掉 ``<!-- memory:id -->`` 之前就定下来，排除检索时用这套 id，
+        不靠从正文反解析。
+        """
         facts = self.store.list_confirmed()
         if not facts:
-            return ""
+            return "", set()
         renderer = MemoryRenderer(max_chars=self.memory_max_chars)
-        body = renderer.render(facts)
-        return MemoryRenderer.strip_for_injection(body)
+        body, included = renderer.render_with_ids(facts)
+        return MemoryRenderer.strip_for_injection(body), included
 
     def remember(
         self,
@@ -291,5 +300,3 @@ class MemoryService:
                 }
             )
         return sources
-
-    _explain_sources = explain_sources
