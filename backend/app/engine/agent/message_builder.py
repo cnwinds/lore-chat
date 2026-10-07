@@ -7,6 +7,7 @@ from app.engine.agent.prompts import (
     build_system_prompt_parts,
     current_time_block,
     wrap_turn_cards,
+    wrap_turn_memory,
 )
 from app.engine.knowledge_writer import is_markdown_path
 from app.storage.kb_text_files import is_kb_text_file
@@ -44,6 +45,7 @@ def build_agent_messages(
     role_system_prompt: str = "",
     role_cards: str = "",
     turn_cards: str = "",
+    turn_memory: str = "",
 ) -> list[dict]:
     sys_parts = build_system_prompt_parts(
         mode,
@@ -90,17 +92,26 @@ def build_agent_messages(
     if history:
         for h in history:
             messages.append(copy_tag_history(h))
-    # 当前时间逐轮变化，放整条提示词最末（本轮用户消息最前），保住前缀缓存
+    # 当前时间与按轮检索块放本轮用户消息最前，保住前缀缓存
     prefix = [current_time_block()]
-    block = wrap_turn_cards(turn_cards)
-    if block:
-        prefix.append(block)
+    cards_block = wrap_turn_cards(turn_cards)
+    memory_block = wrap_turn_memory(turn_memory)
+    if cards_block:
+        prefix.append(cards_block)
+    if memory_block:
+        prefix.append(memory_block)
     user_content = "\n\n".join([*prefix, user_text])
     user_parts: list[dict] = [
         {"kind": "time", "label": "当前时间", "text": prefix[0]},
     ]
-    if block:
-        user_parts.append({"kind": "turn_cards", "label": "相关知识卡", "text": block})
+    if cards_block:
+        user_parts.append(
+            {"kind": "turn_cards", "label": "相关知识卡", "text": cards_block}
+        )
+    if memory_block:
+        user_parts.append(
+            {"kind": "turn_memory", "label": "相关用户记忆", "text": memory_block}
+        )
     user_parts.append(
         {
             "kind": "user_text",

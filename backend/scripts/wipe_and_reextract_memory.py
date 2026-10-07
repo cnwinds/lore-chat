@@ -33,18 +33,6 @@ def main() -> None:
         conn.execute("DELETE FROM memory_evidence")
         conn.execute("DELETE FROM memory_facts")
         conn.execute("DELETE FROM memory_tombstones")
-        conn.execute(
-            """
-            UPDATE memory_render_state
-            SET revision = 0,
-                file_hash = NULL,
-                file_mtime = NULL,
-                rendered_fact_ids_json = '[]',
-                valid_snapshot_body = NULL,
-                render_dirty = 1,
-                git_dirty = 0
-            """
-        )
         conn.commit()
         after_facts = conn.execute("SELECT COUNT(*) FROM memory_facts").fetchone()[0]
 

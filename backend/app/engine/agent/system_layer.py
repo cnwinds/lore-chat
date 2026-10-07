@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 
-from app.engine.memory.constants import MEMORY_DOC_REL
 from app.storage.repo import KnowledgeRepo
 
 
@@ -172,7 +171,6 @@ class SystemLayer:
         dir_name: str = "系统",
         precepts_filename: str = "戒律.md",
         soul_filename: str = "心法.md",
-        memory_rel: str = MEMORY_DOC_REL,
         memory_service=None,
         knowledge_cards=None,
     ) -> None:
@@ -180,7 +178,6 @@ class SystemLayer:
         self.dir_name = dir_name.strip("/")
         self.precepts_rel = f"{self.dir_name}/{precepts_filename}"
         self.soul_rel = f"{self.dir_name}/{soul_filename}"
-        self.memory_rel = memory_rel
         self.memory_service = memory_service
         self.knowledge_cards = knowledge_cards
         self._cache: dict[str, tuple[float, str]] = {}

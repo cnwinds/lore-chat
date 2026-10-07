@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import sqlite3
 import threading
 import uuid
@@ -58,17 +57,6 @@ CREATE TABLE IF NOT EXISTS memory_tombstones (
     reason TEXT NOT NULL,
     forgotten_at TEXT NOT NULL,
     cleared_at TEXT
-);
-
-CREATE TABLE IF NOT EXISTS memory_render_state (
-    owner_key TEXT PRIMARY KEY,
-    revision INTEGER NOT NULL DEFAULT 0,
-    file_hash TEXT,
-    file_mtime REAL,
-    rendered_fact_ids_json TEXT NOT NULL DEFAULT '[]',
-    valid_snapshot_body TEXT,
-    render_dirty INTEGER NOT NULL DEFAULT 0,
-    git_dirty INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS memory_source_barriers (
@@ -146,6 +134,8 @@ class MemoryStore:
     def _init_db(self) -> None:
         with self._connect() as conn:
             conn.executescript(_SCHEMA)
+            # 注入已改为每次从 facts 渲染，旧缓存表不再读写。
+            conn.execute("DROP TABLE IF EXISTS memory_render_state")
 
     def upsert_fact(
         self,
@@ -481,62 +471,6 @@ class MemoryStore:
                 (fact_id,),
             ).fetchall()
             return [dict(r) for r in rows]
-
-    def get_render_state(self) -> dict:
-        with self._connect() as conn:
-            row = conn.execute(
-                "SELECT * FROM memory_render_state WHERE owner_key = ?",
-                (self.owner_key,),
-            ).fetchone()
-            if not row:
-                return {
-                    "owner_key": self.owner_key,
-                    "revision": 0,
-                    "rendered_fact_ids_json": "[]",
-                    "render_dirty": 0,
-                    "git_dirty": 0,
-                }
-            return dict(row)
-
-    def save_render_state(
-        self,
-        *,
-        revision: int,
-        file_hash: str | None,
-        file_mtime: float | None,
-        rendered_fact_ids: list[str],
-        valid_snapshot_body: str | None,
-        render_dirty: bool = False,
-        git_dirty: bool = False,
-    ) -> None:
-        with self._connect() as conn:
-            conn.execute(
-                """
-                INSERT INTO memory_render_state (
-                    owner_key, revision, file_hash, file_mtime, rendered_fact_ids_json,
-                    valid_snapshot_body, render_dirty, git_dirty
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(owner_key) DO UPDATE SET
-                    revision = excluded.revision,
-                    file_hash = excluded.file_hash,
-                    file_mtime = excluded.file_mtime,
-                    rendered_fact_ids_json = excluded.rendered_fact_ids_json,
-                    valid_snapshot_body = excluded.valid_snapshot_body,
-                    render_dirty = excluded.render_dirty,
-                    git_dirty = excluded.git_dirty
-                """,
-                (
-                    self.owner_key,
-                    revision,
-                    file_hash,
-                    file_mtime,
-                    json.dumps(rendered_fact_ids, ensure_ascii=False),
-                    valid_snapshot_body,
-                    1 if render_dirty else 0,
-                    1 if git_dirty else 0,
-                ),
-            )
-            conn.commit()
 
     def rebind_evidence(self, from_fact_id: str, to_fact_id: str) -> int:
         """将出处从旧 fact 迁到存活 fact（INSERT OR IGNORE 后删旧行）。"""
@@ -956,7 +890,7 @@ class MemoryStore:
         return matched[:limit]
 
     def purge_owner(self) -> int:
-        """删除本 scope（owner_key）下全部 facts / evidence / tombstones / render_state。"""
+        """删除本 scope（owner_key）下全部 facts / evidence / tombstones。"""
         with self._connect() as conn:
             fact_ids = [
                 row[0]
@@ -977,10 +911,6 @@ class MemoryStore:
             )
             conn.execute(
                 "DELETE FROM memory_tombstones WHERE owner_key = ?", (self.owner_key,)
-            )
-            conn.execute(
-                "DELETE FROM memory_render_state WHERE owner_key = ?",
-                (self.owner_key,),
             )
             conn.commit()
             self._notify_mutated()

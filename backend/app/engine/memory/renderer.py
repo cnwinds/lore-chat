@@ -25,8 +25,16 @@ class MemoryRenderer:
     def __init__(self, *, max_chars: int = DEFAULT_MEMORY_MAX_CHARS):
         self.max_chars = max_chars
 
-    def render(self, facts: list[dict], *, revision: int = 0) -> str:
-        del revision  # 保留签名兼容；注入体不再依赖 revision 元数据
+    def render(self, facts: list[dict]) -> str:
+        text, _ids = self.render_with_ids(facts)
+        return text
+
+    def render_with_ids(self, facts: list[dict]) -> tuple[str, set[str]]:
+        """渲染注入正文，并返回实际写进正文的 fact id。
+
+        超出 max_chars 的行被跳过（后面更短的行仍可能放进别的小节）。
+        返回的正文仍带 ``<!-- memory:id -->``，由 strip_for_injection 剥掉。
+        """
         ordered = sorted(
             facts,
             key=lambda f: (
@@ -36,6 +44,7 @@ class MemoryRenderer:
             ),
         )
         sections: dict[str, list[str]] = {title: [] for title in _SECTION_ORDER}
+        included: set[str] = set()
         for fact in ordered:
             section = SECTION_BY_CATEGORY.get(fact.get("category", "preference"), "偏好与沟通方式")
             line = f"- {fact['statement']}\n<!-- memory:{fact['id']} -->"
@@ -44,7 +53,8 @@ class MemoryRenderer:
             if len(self._assemble(trial_sections)) > self.max_chars:
                 continue
             sections[section].append(line)
-        return self._assemble(sections)
+            included.add(fact["id"])
+        return self._assemble(sections), included
 
     def _assemble(self, sections: dict[str, list[str]]) -> str:
         parts = [

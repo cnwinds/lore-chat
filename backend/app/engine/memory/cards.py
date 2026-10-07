@@ -92,6 +92,7 @@ class CardInjection:
     owner_memory: str
     role_cards: str
     turn_cards: str = ""
+    turn_memory: str = ""
 
 
 class KnowledgeCards:
@@ -486,10 +487,18 @@ class KnowledgeCards:
     def turn_cards(self, scope: str, query: str, *, exclude_ids: set[str]) -> str:
         if self.index is None:
             return ""
+        q = (query or "").strip()
+        if not q:
+            return ""
         exclude = set(exclude_ids) | self.merged_card_ids(scope)
+        # 核心块已经放下全部可注入的卡时，不再查索引。
+        if not any(
+            f["id"] not in exclude for f in self.store(scope).list_confirmed()
+        ):
+            return ""
         facts = self.index.search(
             scope,
-            query,
+            q,
             limit=TURN_CARDS_LIMIT,
             exclude_ids=exclude,
             mode="turn",
@@ -531,30 +540,61 @@ class KnowledgeCards:
             else ""
         )
 
-        if conversation_id and self.conversations:
-            origin = self.conversations.get_origin(conversation_id)
-            if is_channel_origin(origin):
-                inst_id = self.conversations.get_channel_instance_id(conversation_id)
-                include_owner = False
-                if inst_id and self.channel_instances:
-                    try:
-                        inst = self.channel_instances.get(inst_id)
-                        include_owner = bool(inst.get("include_owner_memory"))
-                    except KeyError:
-                        include_owner = False
-                owner_memory = (
-                    self.owner.render_context() if include_owner else ""
-                )
-                return CardInjection(
-                    owner_memory=owner_memory,
-                    role_cards=role_cards,
-                    turn_cards=turn_cards_text,
-                )
+        owner_memory = ""
+        turn_memory = ""
+        if self._owner_memory_enabled(conversation_id):
+            owner_memory, included = self.owner.render_context_with_ids()
+            if (
+                q
+                and self.owner_index is not None
+                and self._owner_facts_outside(included)
+            ):
+                turn_memory = self.turn_owner_memory(q, exclude_ids=included)
         return CardInjection(
-            owner_memory=self.owner.render_context(),
+            owner_memory=owner_memory,
             role_cards=role_cards,
             turn_cards=turn_cards_text,
+            turn_memory=turn_memory,
         )
+
+    def _owner_memory_enabled(self, conversation_id: str | None) -> bool:
+        """非通道回合注入主人记忆；通道回合只看实例开关。"""
+        if not conversation_id or not self.conversations:
+            return True
+        origin = self.conversations.get_origin(conversation_id)
+        if not is_channel_origin(origin):
+            return True
+        inst_id = self.conversations.get_channel_instance_id(conversation_id)
+        if not inst_id or not self.channel_instances:
+            return False
+        try:
+            inst = self.channel_instances.get(inst_id)
+        except KeyError:
+            return False
+        return bool(inst.get("include_owner_memory"))
+
+    def _owner_facts_outside(self, included: set[str]) -> bool:
+        return any(
+            f["id"] not in included for f in self.owner.store.list_confirmed()
+        )
+
+    def turn_owner_memory(self, query: str, *, exclude_ids: set[str]) -> str:
+        """预算外、且与本轮原话相关的已确认主人事实。索引失败则空块。"""
+        idx = self.owner_index
+        if idx is None:
+            return ""
+        try:
+            facts = idx.search_turn(query, exclude_ids=exclude_ids)
+        except Exception as exc:  # noqa: BLE001
+            _log.warning("owner turn memory failed err=%s", exc)
+            return ""
+        lines: list[str] = []
+        for fact in facts:
+            stmt = (fact.get("statement") or "").replace("\n", " ").replace("\r", " ")
+            if not stmt.strip():
+                continue
+            lines.append(f"- {stmt}")
+        return "\n".join(lines)
 
     def recall(self, scope: str, query: str = "", limit: int = RECALL_LIMIT_MAX) -> list[dict]:
         lim = max(1, min(int(limit), RECALL_LIMIT_MAX))
