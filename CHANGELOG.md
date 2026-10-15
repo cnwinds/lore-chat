@@ -1,5 +1,7 @@
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-15
+
 ### Added
 
 - 助手浏览目录可以按名称或类型筛选、按时间列会话，多层浏览优先给出全貌并标出没展开的目录；读取可一次读多个文件或会话，少走翻页和逐层调用
@@ -356,7 +358,8 @@
 - MIT 许可证与开源社区文件（SECURITY、CONTRIBUTING、CODE_OF_CONDUCT）
 - GitHub Issue / PR 模板与 CI（backend pytest、frontend lint/test/build）
 
-[Unreleased]: https://github.com/cnwinds/lore-chat/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/cnwinds/lore-chat/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/cnwinds/lore-chat/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/cnwinds/lore-chat/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/cnwinds/lore-chat/compare/v0.2.10...v0.3.0
 [0.2.10]: https://github.com/cnwinds/lore-chat/compare/v0.2.9...v0.2.10
