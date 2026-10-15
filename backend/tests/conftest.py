@@ -1,17 +1,6 @@
-"""共享夹具。顶部的导入期钩子必须先于应用打开数据库与 git：测试里关掉落盘同步、调低 bcrypt 强度。"""
+"""共享夹具。顶部的导入期钩子必须先于应用打开数据库与 git：测试里调低 bcrypt 强度、SQLite 不强制落盘。"""
 
-import os
 import sys
-
-
-def _append_git_config(key: str, value: str) -> None:
-    count = int(os.environ.get("GIT_CONFIG_COUNT", "0"))
-    os.environ[f"GIT_CONFIG_KEY_{count}"] = key
-    os.environ[f"GIT_CONFIG_VALUE_{count}"] = value
-    os.environ["GIT_CONFIG_COUNT"] = str(count + 1)
-
-
-_append_git_config("core.fsync", "none")
 
 
 def _wrap_sqlite_connect(module) -> None:
