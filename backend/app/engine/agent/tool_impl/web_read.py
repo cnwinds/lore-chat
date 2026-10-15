@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+from collections import OrderedDict
+
 from app.engine.disclosure import DisclosureWindows, disclose, disclosure_summary
 
 WEB_SEARCH_K_MIN = 1
 WEB_SEARCH_K_MAX = 20
+FETCH_CACHE_MAX = 32
 
 
 def clamp_web_search_k(k: int, *, fallback: int = 5) -> int:
@@ -27,16 +30,21 @@ class WebReadTools:
         self.searcher = web_search
         self.disclosure = disclosure_windows or DisclosureWindows()
         self.web_search_default_k = clamp_web_search_k(web_search_default_k)
-        self._fetch_cache: dict[str, object] = {}
+        # 实例随 ToolRegistry 与进程同寿，缓存必须有上限
+        self._fetch_cache: OrderedDict[str, object] = OrderedDict()
 
     async def fetch_url(self, args: dict) -> dict:
         url = args["url"]
         result = self._fetch_cache.get(url)
-        if result is None:
+        if result is not None:
+            self._fetch_cache.move_to_end(url)
+        else:
             result = await self.fetcher.fetch(url)
             # 只缓存「有正文」的成功结果；空正文若入缓存会导致同轮重试永远 0 字
             if not result.error and (result.markdown or "").strip():
                 self._fetch_cache[url] = result
+                while len(self._fetch_cache) > FETCH_CACHE_MAX:
+                    self._fetch_cache.popitem(last=False)
         if result.error:
             return {
                 "summary": f"{url} — {result.error}",

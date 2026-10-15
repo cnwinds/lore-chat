@@ -32,8 +32,10 @@ LABEL org.opencontainers.image.title="Lore Chat backend" \
 
 ENV KB_PATH=/data/knowledge
 ENV PYTHONUNBUFFERED=1
+# glibc 默认每线程一个 64MB arena，线程池里的 SQLite/HTML 解析会把各 arena 撑大且不归还
+ENV MALLOC_ARENA_MAX=2
 
 EXPOSE 8000
 
-# 单 worker：SQLite FTS / Chroma 不适合多进程并发写
+# 单 worker：SQLite 索引不适合多进程并发写
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]

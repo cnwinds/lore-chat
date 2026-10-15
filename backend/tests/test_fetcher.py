@@ -358,3 +358,28 @@ async def test_fetch_url_tool_does_not_cache_empty_markdown():
     third = await tools.fetch_url({"url": "https://example.com/a"})
     assert fetcher.calls == 2  # cache hit
     assert "Hello body" in (third.get("markdown") or "")
+
+
+@pytest.mark.asyncio
+async def test_fetch_url_tool_cache_is_bounded_lru():
+    from app.engine.agent.tool_impl.web_read import FETCH_CACHE_MAX, WebReadTools
+    from app.engine.web.types import FetchResult
+
+    class _Fetcher:
+        def __init__(self):
+            self.calls = 0
+
+        async def fetch(self, url: str) -> FetchResult:
+            self.calls += 1
+            return FetchResult(url=url, title="T", markdown="# body", snippet="body")
+
+    fetcher = _Fetcher()
+    tools = WebReadTools(fetcher=fetcher, web_search=None)
+    await tools.fetch_url({"url": "https://example.com/0"})
+    for i in range(1, FETCH_CACHE_MAX + 5):
+        await tools.fetch_url({"url": f"https://example.com/{i}"})
+        await tools.fetch_url({"url": "https://example.com/0"})
+    assert len(tools._fetch_cache) == FETCH_CACHE_MAX
+    assert "https://example.com/0" in tools._fetch_cache
+    assert "https://example.com/1" not in tools._fetch_cache
+    assert fetcher.calls == FETCH_CACHE_MAX + 5
