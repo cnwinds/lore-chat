@@ -12,7 +12,7 @@ class MaintenanceActiveError(Exception):
 class MaintenanceLock:
     """Non-reentrant global write lock for import/export/reindex.
 
-    ``acquire`` also waits for in-flight background drains (Chroma/sqlite)
+    ``acquire`` also waits for in-flight background drains (sqlite)
     and holds that slot until ``release``, so workers cannot reopen files
     while the knowledge-base directory is being replaced.
     """
@@ -53,7 +53,7 @@ class MaintenanceLock:
         """Always enter; yield True only if this background batch may run.
 
         Yields False immediately when import/export/reindex is active, so
-        workers do not reopen Chroma/sqlite while the KB directory is replaced.
+        workers do not reopen sqlite while the KB directory is replaced.
         """
         if self.is_active():
             yield False

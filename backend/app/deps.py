@@ -424,7 +424,7 @@ def build_container(settings: Settings, llm: LLMClient | None = None) -> Contain
 
 
 def dispose_container(container: Container | None) -> None:
-    """Close sqlite/git/chroma handles so kb_path files can be replaced during import."""
+    """Close sqlite/git handles so kb_path files can be replaced during import."""
     if container is None:
         return
 

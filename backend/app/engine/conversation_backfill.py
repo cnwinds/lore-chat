@@ -152,7 +152,6 @@ def main() -> None:
     llm = OpenAILLMClient(settings)
     search_index = SearchIndex(
         index_dir / "partitioned.db",
-        index_dir / "vec",
         LLMEmbedder(llm),
     )
     conv_index = ConversationIndex(search_index)

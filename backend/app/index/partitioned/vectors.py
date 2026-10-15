@@ -1,221 +1,63 @@
 from __future__ import annotations
 
-import hashlib
-import threading
+import math
+import shutil
+from collections.abc import Iterable, Sequence
 from pathlib import Path
-from typing import Any, Callable, Mapping, Sequence
 
-from app.closing import close_quietly
-from app.index.chroma_client import ThreadLocalChroma, make_persistent_client
+import numpy as np
 
+from app.logging_config import get_logger
 
-def _collection_name(family: str, model: str) -> str:
-    digest = hashlib.sha1(model.encode("utf-8")).hexdigest()[:12]
-    return f"pidx_{family}_{digest}"
+_log = get_logger("partitioned_index")
+_DTYPE = np.dtype("<f4")
 
 
-class PartitionedVectors:
-    """Chroma 向量：每 (族, 模型) 一集合。"""
+def remove_legacy_vector_dir(index_dir: str | Path) -> None:
+    """删除旧 Chroma 向量目录；向量已进 partitioned.db，见 ADR 2026-10-15。"""
+    path = Path(index_dir) / "vec"
+    if not path.is_dir():
+        return
+    shutil.rmtree(path, ignore_errors=True)
+    if path.exists():
+        _log.warning("旧向量目录未能删净: %s", path)
+    else:
+        _log.info("已删除旧向量目录: %s", path)
 
-    def __init__(self, path: str | Path):
-        self._path = str(path)
-        Path(self._path).mkdir(parents=True, exist_ok=True)
-        self._lock = threading.Lock()
-        self._chromas: dict[tuple[str, str], ThreadLocalChroma] = {}
 
-    def _chroma(self, family: str, model: str) -> ThreadLocalChroma:
-        key = (family, model)
-        with self._lock:
-            chroma = self._chromas.get(key)
-            if chroma is None:
-                name = _collection_name(family, model)
-                chroma = ThreadLocalChroma(
-                    self._path,
-                    name,
-                    {"hnsw:space": "cosine", "embed_model": model},
-                )
-                self._chromas[key] = chroma
-        return chroma
+def encode(vec: Sequence[float]) -> bytes:
+    """L2 归一化后的 float32 小端字节串；余弦即点积。零向量原样存零。"""
+    arr = np.asarray(vec, dtype=np.float64)
+    if arr.ndim != 1 or arr.size == 0:
+        raise ValueError("embedding must be a non-empty 1-D vector")
+    norm = float(np.linalg.norm(arr))
+    if not math.isfinite(norm):
+        raise ValueError("embedding contains non-finite values")
+    if norm > 0:
+        arr = arr / norm
+    return arr.astype(_DTYPE).tobytes()
 
-    def _close_family(self, family: str) -> None:
-        with self._lock:
-            keys = [k for k in self._chromas if k[0] == family]
-            for key in keys:
-                close_quietly(self._chromas.pop(key))
 
-    def _with_existing_collection(
-        self,
-        family: str,
-        model: str,
-        fn: Callable[[Any], Any],
-        default: Any = None,
-    ) -> Any:
-        key = (family, model)
-        with self._lock:
-            chroma = self._chromas.get(key)
-        if chroma is not None:
-            try:
-                return fn(chroma.collection())
-            except Exception:
-                return default
-        name = _collection_name(family, model)
-        client = make_persistent_client(self._path)
-        try:
-            col = client.get_collection(name)
-            return fn(col)
-        except Exception:
-            return default
-        finally:
-            close_quietly(client)
-
-    def upsert(
-        self,
-        family: str,
-        model: str,
-        rows: list[
-            tuple[
-                str,
-                str,
-                str,
-                list[float],
-                Mapping[str, str | int | float | bool],
-            ]
-        ],
-    ) -> None:
-        if not rows:
-            return
-        col = self._chroma(family, model).collection()
-        ids, docs, embs, metas = [], [], [], []
-        for partition, item_id, text, embedding, item_meta in rows:
-            ids.append(f"{partition}#{item_id}")
-            docs.append(text)
-            embs.append(embedding)
-            meta = {**item_meta, "partition": partition, "item_id": item_id}
-            metas.append(meta)
-        with self._lock:
-            col.upsert(
-                ids=ids, documents=docs, embeddings=embs, metadatas=metas
-            )
-
-    def delete(
-        self, family: str, model: str, keys: list[tuple[str, str]]
-    ) -> None:
-        if not keys:
-            return
-        ids = [f"{p}#{i}" for p, i in keys]
-
-        def _run(col):
-            col.delete(ids=ids)
-
-        self._with_existing_collection(family, model, _run)
-
-    def delete_partition(self, family: str, partition: str) -> None:
-        self._close_family(family)
-        client = make_persistent_client(self._path)
-        prefix = f"pidx_{family}_"
-        try:
-            collections = client.list_collections()
-            for col_info in collections:
-                name = (
-                    col_info.name
-                    if hasattr(col_info, "name")
-                    else col_info.get("name")
-                )
-                if not name or not name.startswith(prefix):
-                    continue
-                try:
-                    col = client.get_collection(name)
-                    col.delete(where={"partition": partition})
-                except Exception:
-                    continue
-        finally:
-            close_quietly(client)
-
-    @staticmethod
-    def _build_chroma_where(
-        partitions: list[str],
-        eq_ne_filters: Sequence[Any],
-    ) -> dict[str, Any] | None:
-        clauses: list[dict[str, Any]] = []
-        if len(partitions) == 1:
-            clauses.append({"partition": partitions[0]})
-        else:
-            clauses.append({"partition": {"$in": partitions}})
-        for flt in eq_ne_filters:
-            key = flt.key
-            if flt.op == "eq":
-                clauses.append({key: flt.value})
-            elif flt.op == "ne":
-                clauses.append({key: {"$ne": flt.value}})
-            elif flt.op == "in":
-                clauses.append({key: {"$in": list(flt.value)}})
-        if not clauses:
-            return None
-        if len(clauses) == 1:
-            return clauses[0]
-        return {"$and": clauses}
-
-    def query(
-        self,
-        family: str,
-        model: str,
-        embedding: list[float],
-        *,
-        partitions: list[str],
-        k: int,
-        eq_ne_filters: Sequence[Any] = (),
-        n_results: int | None = None,
-    ) -> list[tuple[str, str, float]]:
-        if not partitions:
-            return []
-        where = self._build_chroma_where(partitions, eq_ne_filters)
-        n = max(1, n_results if n_results is not None else k)
-
-        def _run(col):
-            kwargs: dict[str, Any] = {
-                "query_embeddings": [embedding],
-                "n_results": n,
-            }
-            if where is not None:
-                kwargs["where"] = where
-            return col.query(**kwargs)
-
-        res = self._with_existing_collection(family, model, _run, default=None)
-        if not res:
-            return []
-        hits: list[tuple[str, str, float]] = []
-        metas = (res.get("metadatas") or [[]])[0]
-        dists = (res.get("distances") or [[]])[0]
-        for meta, dist in zip(metas, dists):
-            if meta is None:
-                continue
-            hits.append(
-                (
-                    meta["partition"],
-                    meta["item_id"],
-                    1.0 - float(dist),
-                )
-            )
-        return hits
-
-    def drop_collection(self, family: str, model: str) -> None:
-        name = _collection_name(family, model)
-        key = (family, model)
-        with self._lock:
-            chroma = self._chromas.pop(key, None)
-        if chroma:
-            chroma.close()
-        client = make_persistent_client(self._path)
-        try:
-            client.delete_collection(name)
-        except Exception:
-            pass
-        finally:
-            close_quietly(client)
-
-    def close(self) -> None:
-        with self._lock:
-            chromas = list(self._chromas.values())
-            self._chromas.clear()
-        for c in chromas:
-            c.close()
+def top_k(
+    batches: Iterable[Sequence[tuple[str, str, bytes]]],
+    query: Sequence[float],
+    k: int,
+) -> list[tuple[str, str, float]]:
+    """分批精确余弦；维度与查询不符的行（旧模型残留）跳过。"""
+    if k <= 0:
+        return []
+    q = np.frombuffer(encode(query), dtype=_DTYPE)
+    width = q.size * _DTYPE.itemsize
+    best: list[tuple[float, str, str]] = []
+    for rows in batches:
+        valid = [r for r in rows if len(r[2]) == width]
+        if not valid:
+            continue
+        mat = np.frombuffer(b"".join(r[2] for r in valid), dtype=_DTYPE)
+        scores = mat.reshape(len(valid), q.size) @ q
+        n = min(k, len(valid))
+        for i in np.argpartition(-scores, n - 1)[:n]:
+            best.append((float(scores[i]), valid[i][0], valid[i][1]))
+        best.sort(key=lambda x: -x[0])
+        del best[k:]
+    return [(partition, item_id, score) for score, partition, item_id in best]

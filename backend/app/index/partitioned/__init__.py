@@ -11,6 +11,7 @@ from app.index.partitioned.search_index import (
     default_gate,
 )
 from app.index.partitioned.tokenize import TOKENIZER_VERSION, index_terms, query_terms
+from app.index.partitioned.vectors import remove_legacy_vector_dir
 
 __all__ = [
     "EmbedBatch",
@@ -29,4 +30,5 @@ __all__ = [
     "index_terms",
     "partition_family",
     "query_terms",
+    "remove_legacy_vector_dir",
 ]

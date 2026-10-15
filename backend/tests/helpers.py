@@ -42,7 +42,6 @@ def make_search_index(tmp_path, llm=None) -> SearchIndex:
     llm = llm or FakeLLMClient(embed_dim=8)
     return SearchIndex(
         tmp_path / "partitioned.db",
-        tmp_path / "vec",
         LLMEmbedder(llm),
     )
 

@@ -150,7 +150,7 @@ def test_legacy_schema_upgrade_without_grp(tmp_path):
     conn.commit()
     conn.close()
 
-    idx = SearchIndex(db_path, tmp_path / "vec", FakeEmbedder())
+    idx = SearchIndex(db_path, FakeEmbedder())
     row = idx._lexical.get_item("cards:role:old", "c1")
     assert row is not None
     assert row["grp"] == ""
@@ -443,39 +443,26 @@ def test_group_prefix_empty_raises(tmp_path):
         idx.search("q", partitions=["kb:main"], group_prefixes=[""])
 
 
-def test_vec_filter_without_chroma_meta(tmp_path):
-    """Chroma 缺 meta 时靠回表过滤。"""
+def test_vec_filter_exact_beyond_vec_k(tmp_path):
+    """过滤在 SQL 里先做：符合条件的条目排在大量同分条目之后也能召回。"""
     good = [1.0] * 8
     emb = FakeEmbedder(text_vectors={"q": good})
     idx = _make_index(tmp_path, emb)
     part = "kb:main"
-    idx.sync_group(
-        part,
-        "d1",
-        [
-            IndexItem("1", "only a", meta={"source": "a"}),
-            IndexItem("2", "only b", meta={"source": "b"}),
-        ],
-    )
-    idx.embed_pending()
-    model = idx._lexical.get_meta("active_embed_model")
-    idx._vectors.upsert(
-        "kb",
-        model,
-        [
-            (part, "1", "only a", good, {}),
-            (part, "2", "only b", good, {}),
-        ],
-    )
+    items = [IndexItem(f"b{i}", f"other {i}", meta={"source": "b"}) for i in range(60)]
+    items.append(IndexItem("a", "target", meta={"source": "a"}))
+    idx.sync_group(part, "d1", items)
+    while idx.embed_pending(limit=64):
+        pass
     r = idx.search(
         "only",
         partitions=[part],
         lanes=("vec",),
         vector_text="q",
         filters=[MetaFilter("source", "eq", "a")],
+        tunings={"kb": PartitionTuning(vec_k=5)},
     )
-    assert any(h.item_id == "1" for h in r.hits)
-    assert all(h.meta.get("source") == "a" for h in r.hits)
+    assert [h.item_id for h in r.hits] == ["a"]
 
 
 def test_keywords_two_char_strict(tmp_path):
@@ -634,49 +621,6 @@ def test_vector_text_and_embed_cache(tmp_path):
         lanes=("vec",),
     )
     assert emb.call_count == 1
-
-
-def test_adopt_vectors(tmp_path):
-    emb = FakeEmbedder()
-    idx = _make_index(tmp_path, emb)
-    part = "kb:main"
-    text = "沿用文本"
-    idx.sync_group(part, "g", [IndexItem("1", text)])
-    vec = [0.5] * 8
-    n = idx.adopt_vectors(part, [("1", text, vec)], model="legacy-m")
-    assert n == 1
-    row = idx._lexical.get_item(part, "1")
-    assert row["vec_state"] == "ok"
-    assert row["vec_model"] == "legacy-m"
-    assert emb.call_count == 0
-
-    idx.sync_group(part, "g", [IndexItem("1", text + "改")])
-    assert idx._lexical.get_item(part, "1")["vec_state"] == "pending"
-    n2 = idx.adopt_vectors(part, [("1", text, vec)], model="legacy-m")
-    assert n2 == 0
-
-    idx._lexical.set_meta("active_embed_model", "other")
-    assert idx.adopt_vectors(part, [("1", text, vec)], model="legacy-m") == 0
-
-
-def test_adopt_vectors_meta_filter(tmp_path):
-    vec = [1.0] + [0.0] * 7
-    idx = _make_index(tmp_path, FakeEmbedder(model="m1", text_vectors={"t": vec}))
-    part = "kb:main"
-    idx.sync_group(
-        part,
-        "g",
-        [IndexItem("1", "t", meta={"source": "doc-a"})],
-    )
-    idx.adopt_vectors(part, [("1", "t", vec)], model="m1")
-    r = idx.search(
-        "t",
-        partitions=[part],
-        lanes=("vec",),
-        vector_text="t",
-        filters=[MetaFilter("source", "eq", "doc-a")],
-    )
-    assert any(h.item_id == "1" for h in r.hits)
 
 
 def test_embedding_held_skips_family(tmp_path):

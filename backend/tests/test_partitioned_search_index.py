@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-import hashlib
 import time
 from dataclasses import dataclass, field
 from typing import Callable
 
 import pytest
 
-from app.index.chroma_client import make_persistent_client
 from app.index.partitioned.embedder import EmbedBatch, LLMEmbedder
 from app.index.partitioned.lexical import partition_family
 from app.index.partitioned.search_index import (
@@ -21,9 +19,7 @@ from app.models.llm import FakeLLMClient
 
 
 def _make_index(tmp_path, embedder=None, **kwargs) -> SearchIndex:
-    db = tmp_path / "partitioned.db"
-    vec = tmp_path / "vec"
-    return SearchIndex(db, vec, embedder, **kwargs)
+    return SearchIndex(tmp_path / "partitioned.db", embedder, **kwargs)
 
 
 @dataclass
@@ -285,15 +281,87 @@ def test_model_migration_and_mismatch(tmp_path):
     assert idx.embed_pending() == 1
     assert idx._lexical.get_item(part, "1")["vec_model"] == "model-b"
 
-    client = make_persistent_client(str(tmp_path / "vec"))
-    names = {c.name for c in client.list_collections()}
-    a_suffix = hashlib.sha1(b"model-a").hexdigest()[:12]
-    assert f"pidx_cards_{a_suffix}" not in names
+    with idx._lexical._connect() as conn:
+        models = [r["model"] for r in conn.execute("SELECT model FROM vectors")]
+    assert models == ["model-b"]
 
     idx.embedder = FakeEmbedder(model="model-wrong")
     r = idx.search("迁移", partitions=[part])
     assert r.vector_status == "model_mismatch"
     assert r.hits
+
+
+def test_stale_model_scan_only_after_model_change(tmp_path, monkeypatch):
+    part = "cards:role:stalescan"
+    idx = _make_index(tmp_path, FakeEmbedder(model="model-a"))
+    idx.sync_partition(part, [IndexItem("1", "旧模型文本")])
+    idx.embed_pending()
+
+    seen: list[str | None] = []
+    real = idx._lexical.select_embed_pending
+
+    def spy(limit, active_model, **kw):
+        seen.append(active_model)
+        return real(limit, active_model, **kw)
+
+    monkeypatch.setattr(idx._lexical, "select_embed_pending", spy)
+    idx.embed_pending()
+    seen.clear()
+    idx.embed_pending()
+    idx.embed_pending()
+    assert seen == [None, None]
+
+    idx.embedder = FakeEmbedder(model="model-b")
+    idx.on_embedder_changed()
+    idx.embed_pending()
+    assert idx.embed_pending() == 1
+    assert idx._lexical.get_item(part, "1")["vec_model"] == "model-b"
+    idx.embed_pending()
+    seen.clear()
+    idx.embed_pending()
+    assert seen == [None]
+
+
+def test_failed_stale_reembed_respects_backoff(tmp_path):
+    part = "cards:role:stalebackoff"
+    idx = _make_index(tmp_path, FakeEmbedder(model="model-a"))
+    idx.sync_partition(part, [IndexItem("1", "退避文本")])
+    idx.embed_pending()
+
+    idx.embedder = FakeEmbedder(model="model-b")
+    idx.on_embedder_changed()
+    idx.embed_pending()
+    failing = FakeEmbedder(model="model-b", error=RuntimeError("down"))
+    idx.embedder = failing
+    assert idx.embed_pending() == 0
+    assert failing.call_count == 1
+    assert idx.embed_pending() == 0
+    assert failing.call_count == 1
+
+    with idx._lexical._connect() as conn:
+        conn.execute("UPDATE items SET vec_next_try_at=0")
+    idx.embedder = FakeEmbedder(model="model-b")
+    assert idx.embed_pending() == 1
+    assert idx._lexical.get_item(part, "1")["vec_model"] == "model-b"
+
+
+def test_lexical_reuses_connection_per_thread_and_survives_close(tmp_path):
+    import threading
+
+    idx = _make_index(tmp_path, FakeEmbedder())
+    lex = idx._lexical
+    assert lex._connect() is lex._connect()
+
+    other: list = []
+    t = threading.Thread(target=lambda: other.append(lex._connect()))
+    t.start()
+    t.join()
+    assert other[0] is not lex._connect()
+
+    idx.close()
+    assert lex._conns == {}
+    lex.set_meta("after_close", "1")
+    assert lex.get_meta("after_close") == "1"
 
 
 def test_same_model_rebind_no_reembed(tmp_path):
@@ -338,7 +406,7 @@ def test_vector_upsert_failure_not_ok(tmp_path, monkeypatch):
     def _boom(*_args, **_kwargs):
         raise RuntimeError("upsert fail")
 
-    monkeypatch.setattr(idx._vectors, "upsert", _boom)
+    monkeypatch.setattr(idx._lexical, "store_embeddings", _boom)
     assert idx.embed_pending() == 0
     row = idx._lexical.get_item(part, "1")
     assert row["vec_state"] == "pending"

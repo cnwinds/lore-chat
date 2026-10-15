@@ -82,7 +82,6 @@ def _wire_index(
     idx_dir = tmp_path / "card_idx"
     search = SearchIndex(
         idx_dir / "partitioned.db",
-        idx_dir / "vec",
         embedder,
     )
     card_index = CardIndex(search, cards, tuning or CardRetrievalTuning())

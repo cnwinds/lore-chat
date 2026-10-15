@@ -21,7 +21,7 @@ from app.index.partitioned.lexical import (
     validate_meta,
 )
 from app.index.partitioned.tokenize import index_terms, query_terms
-from app.index.partitioned.vectors import PartitionedVectors
+from app.index.partitioned import vectors
 from app.index.search_query import compile_search_query
 from app.logging_config import get_logger
 
@@ -171,13 +171,11 @@ class SearchIndex:
     def __init__(
         self,
         db_path: str | Path,
-        vec_path: str | Path,
         embedder: Embedder | None,
         *,
         rrf_k: int = 60,
     ):
         self._lexical = PartitionedLexical(db_path)
-        self._vectors = PartitionedVectors(vec_path)
         self._embedder = embedder
         self.rrf_k = rrf_k
         self._write_lock = threading.RLock()
@@ -189,6 +187,7 @@ class SearchIndex:
         self._warn_last: dict[str, float] = {}
         self._probe_needed = False
         self._probe_next_at = 0.0
+        self._stale_scan_needed = True
         self._held_families: dict[str, int] = defaultdict(int)
         self._held_lock = threading.Lock()
 
@@ -205,7 +204,7 @@ class SearchIndex:
             return
         self._closed = True
         self._executor.shutdown(wait=False, cancel_futures=True)
-        self._vectors.close()
+        self._lexical.close()
 
     def get_meta(self, key: str) -> str | None:
         return self._lexical.get_meta(key)
@@ -227,6 +226,7 @@ class SearchIndex:
         prev = self._active_embed_model()
         if prev != model:
             _log.info("嵌入模型变更，按需重嵌: %s -> %s", prev, model)
+            self._stale_scan_needed = True
         self._lexical.set_meta("active_embed_model", model)
 
     def _held_exclude(self) -> frozenset[str]:
@@ -260,63 +260,6 @@ class SearchIndex:
             return None
         return batch.model
 
-    def adopt_vectors(
-        self,
-        partition: str,
-        rows: Iterable[tuple[str, str, Sequence[float]]],
-        *,
-        model: str,
-    ) -> int:
-        active = self._active_embed_model()
-        if active is not None and active != model:
-            return 0
-        batch = list(rows)
-        if not batch:
-            return 0
-        if len(batch) > 256:
-            raise ValueError("adopt_vectors batch exceeds 256 rows")
-        if active is None:
-            self._set_active_embed_model(model)
-        family = partition_family(partition)
-        item_ids = [r[0] for r in batch]
-        with self._write_lock:
-            existing = self._lexical.rows_for_adopt(partition, item_ids)
-        adopted = 0
-        vec_rows: list[
-            tuple[str, str, str, list[float], dict[str, str | int | float | bool]]
-        ] = []
-        ok_keys: list[tuple[str, str, str]] = []
-        for item_id, text, embedding in batch:
-            row = existing.get(item_id)
-            if row is None:
-                continue
-            if row["text"] != text:
-                continue
-            if row["vec_state"] == "ok" and row["vec_model"] == model:
-                continue
-            meta = json.loads(row["meta_json"] or "{}")
-            h = row["content_hash"]
-            vec_rows.append(
-                (partition, item_id, text, list(embedding), meta)
-            )
-            ok_keys.append((partition, item_id, h))
-        if not vec_rows:
-            return 0
-        with self._write_lock:
-            try:
-                self._vectors.upsert(family, model, vec_rows)
-            except Exception:
-                _log.warning(
-                    "adopt_vectors 写入失败 partition=%s", partition, exc_info=True
-                )
-                return 0
-            for partition, item_id, h in ok_keys:
-                if self._lexical.mark_embed_ok(
-                    partition, item_id, content_hash=h, model=model
-                ):
-                    adopted += 1
-        return adopted
-
     def _warn_throttled(self, key: str, msg: str, *args) -> None:
         now = time.time()
         last = self._warn_last.get(key, 0.0)
@@ -337,23 +280,6 @@ class SearchIndex:
                 item_id=item.item_id, text=text, meta=meta
             )
         return out
-
-    def _apply_vec_deletes(
-        self, vec_deletes: list[tuple[str, str, str | None]]
-    ) -> None:
-        by_model: dict[str, list[tuple[str, str]]] = defaultdict(list)
-        for partition, item_id, model in vec_deletes:
-            if model:
-                family = partition_family(partition)
-                by_model[f"{family}\x1f{model}"].append((partition, item_id))
-        for key, keys in by_model.items():
-            family, model = key.split("\x1f", 1)
-            try:
-                self._vectors.delete(family, model, keys)
-            except Exception:
-                _log.warning(
-                    "向量删除失败 family=%s model=%s", family, model, exc_info=True
-                )
 
     def _stats_from_counts(self, counts: tuple[int, int, int, int]) -> SyncStats:
         return SyncStats(
@@ -388,22 +314,14 @@ class SearchIndex:
             raise ValueError("group must not be empty")
         family = partition_family(partition)
         with self._write_lock:
-            removed, vec_deletes = self._lexical.drop_group_tx(
-                partition, family, group
-            )
-        self._apply_vec_deletes(vec_deletes)
-        return removed
+            return self._lexical.drop_group_tx(partition, family, group)
 
     def drop_groups(self, partition: str, *, prefix: str) -> int:
         if not prefix:
             raise ValueError("prefix must not be empty")
         family = partition_family(partition)
         with self._write_lock:
-            removed, vec_deletes = self._lexical.drop_groups_tx(
-                partition, family, prefix
-            )
-        self._apply_vec_deletes(vec_deletes)
-        return removed
+            return self._lexical.drop_groups_tx(partition, family, prefix)
 
     def groups(self, partition: str) -> list[str]:
         partition_family(partition)
@@ -434,10 +352,9 @@ class SearchIndex:
             for iid, it in normalized.items()
         }
         with self._write_lock:
-            counts, vec_deletes = self._lexical.sync_group_tx(
+            counts = self._lexical.sync_group_tx(
                 partition, family, group, desired, delete_absent=delete_absent
             )
-        self._apply_vec_deletes(vec_deletes)
         return self._stats_from_counts(counts)
 
     def _write_partition(
@@ -454,31 +371,21 @@ class SearchIndex:
             for iid, it in normalized.items()
         }
         with self._write_lock:
-            counts, vec_deletes = self._lexical.sync_partition_tx(
+            counts = self._lexical.sync_partition_tx(
                 partition, family, desired, delete_absent=delete_absent
             )
-        self._apply_vec_deletes(vec_deletes)
         return self._stats_from_counts(counts)
 
     def delete(self, partition: str, item_ids: Iterable[str]) -> int:
         family = partition_family(partition)
         ids = list(item_ids)
         with self._write_lock:
-            removed, vec_deletes = self._lexical.delete_items_tx(
-                partition, family, ids
-            )
-        self._apply_vec_deletes(vec_deletes)
-        return removed
+            return self._lexical.delete_items_tx(partition, family, ids)
 
     def drop_partition(self, partition: str) -> int:
         family = partition_family(partition)
         with self._write_lock:
-            removed, vec_deletes = self._lexical.drop_partition_tx(
-                partition, family
-            )
-        self._apply_vec_deletes(vec_deletes)
-        self._vectors.delete_partition(family, partition)
-        return removed
+            return self._lexical.drop_partition_tx(partition, family)
 
     def partitions(self, family: str) -> list[str]:
         if family not in FAMILIES:
@@ -512,9 +419,15 @@ class SearchIndex:
         active = self._active_embed_model()
         exclude = self._held_exclude()
         with self._write_lock:
+            # 旧模型行只在切换活动模型后出现；后台每轮轮询都扫一遍会全表读 ok 行。
+            scan_stale = self._stale_scan_needed
             rows = self._lexical.select_embed_pending(
-                limit, active, exclude_families=exclude
+                limit,
+                active if scan_stale else None,
+                exclude_families=exclude,
             )
+            if scan_stale and active and not exclude and len(rows) < limit:
+                self._stale_scan_needed = self._lexical.has_stale_vectors(active)
             probe_needed = self._probe_needed
             probe_next_at = self._probe_next_at
         if not rows:
@@ -526,23 +439,12 @@ class SearchIndex:
             ):
                 return self._run_probe()
             return 0
-        snapshots = [
-            (
-                r["partition"],
-                r["item_id"],
-                r["content_hash"],
-                r["family"],
-                r["text"],
-                r["vec_model"],
-                r["meta_json"],
-            )
-            for r in rows
-        ]
-        texts = [s[4] for s in snapshots]
+        keys = [(r["partition"], r["item_id"]) for r in rows]
+        hashes = [r["content_hash"] for r in rows]
+        texts = [r["text"] for r in rows]
         try:
             batch = self._embedder.embed(texts)
         except Exception as exc:
-            keys = [(s[0], s[1]) for s in snapshots]
             with self._write_lock:
                 self._lexical.mark_embed_failed(keys, 1)
             self._warn_throttled(
@@ -553,69 +455,27 @@ class SearchIndex:
             return 0
 
         model = batch.model
-        written = 0
-        old_models_to_check: set[tuple[str, str]] = set()
+        entries: list[tuple[str, str, str, str, bytes]] = []
+        bad: list[tuple[str, str]] = []
+        for (partition, item_id), h, vec in zip(keys, hashes, batch.vectors):
+            try:
+                entries.append((partition, item_id, h, model, vectors.encode(vec)))
+            except ValueError:
+                bad.append((partition, item_id))
 
         with self._write_lock:
             if not active or active != model:
                 self._set_active_embed_model(model)
-
-            by_family: dict[
-                str,
-                list[
-                    tuple[
-                        str,
-                        str,
-                        str,
-                        list[float],
-                        str,
-                        str | None,
-                        dict,
-                    ]
-                ],
-            ] = defaultdict(list)
-            for i, snap in enumerate(snapshots):
-                partition, item_id, h, family, text, old_model, meta_json = snap
-                row = self._lexical.get_item(partition, item_id)
-                if row is None or row["content_hash"] != h:
-                    continue
-                meta = json.loads(meta_json or "{}")
-                by_family[family].append(
-                    (partition, item_id, text, batch.vectors[i], h, old_model, meta)
-                )
-
-            for family, items in by_family.items():
-                upsert_rows = [
-                    (p, iid, text, vec, meta)
-                    for p, iid, text, vec, _h, _o, meta in items
-                ]
-                try:
-                    self._vectors.upsert(family, model, upsert_rows)
-                except Exception:
-                    fail_keys = [(p, iid) for p, iid, *_ in items]
-                    self._lexical.mark_embed_failed(fail_keys, 1)
-                    _log.warning(
-                        "向量写入失败 family=%s model=%s",
-                        family,
-                        model,
-                        exc_info=True,
-                    )
-                    continue
-                for p, iid, _text, _vec, h, old_model, _meta in items:
-                    if not self._lexical.mark_embed_ok(
-                        p, iid, content_hash=h, model=model
-                    ):
-                        continue
-                    written += 1
-                    if old_model and old_model != model:
-                        old_models_to_check.add((family, old_model))
-                        self._vectors.delete(family, old_model, [(p, iid)])
-
-            for family, old_model in old_models_to_check:
-                if self._lexical.count_by_vec_model(family, old_model) == 0:
-                    self._vectors.drop_collection(family, old_model)
-
-        return written
+            if bad:
+                self._lexical.mark_embed_failed(bad, 1)
+                self._warn_throttled("bad_vector", "嵌入向量无效，已退避 %d 条", len(bad))
+            try:
+                written = self._lexical.store_embeddings(entries)
+            except Exception:
+                self._lexical.mark_embed_failed([(e[0], e[1]) for e in entries], 1)
+                _log.warning("向量写入失败 model=%s", model, exc_info=True)
+                return 0
+        return len(written)
 
     def count_embed_pending(self) -> int:
         if self._closed:
@@ -853,10 +713,6 @@ class SearchIndex:
                 fts_hits_by_family[family] = []
                 fts_tiers[family] = "natural"
 
-        chroma_meta_filters = [f for f in filters if f.op in ("eq", "ne", "in")]
-        range_filters = [f for f in filters if f.op in ("gte", "lt")]
-        vec_overfetch = bool(range_filters or grp_prefixes)
-
         vec_hits_by_family: dict[str, list[tuple[str, str, float]]] = {}
         if "vec" in lanes and not self._closed and self._embedder is not None:
             batch = embed_batch
@@ -896,45 +752,21 @@ class SearchIndex:
                     vector_status = "ok"
                     for family, parts in by_family.items():
                         tuning = tunings.get(family, PartitionTuning())
-                        n_res = tuning.vec_k
-                        if vec_overfetch:
-                            n_res = tuning.vec_k * 8
                         try:
-                            raw_hits = self._vectors.query(
+                            vec_hits_by_family[family] = self._lexical.vector_top_k(
                                 family,
                                 active,
                                 emb,
-                                partitions=parts,
-                                k=tuning.vec_k,
-                                eq_ne_filters=chroma_meta_filters,
-                                n_results=n_res,
+                                parts,
+                                tuning.vec_k,
+                                filters,
+                                group_prefixes=grp_prefixes,
                             )
                         except Exception as exc:
                             vector_status = "error"
                             vec_hits_by_family = {}
                             _log.debug("向量查询失败: %s", exc)
                             break
-                        if filters or grp_prefixes:
-                            keys = [(p, i) for p, i, _ in raw_hits]
-                            rows = self._lexical.fetch_items(keys)
-                            filtered: list[tuple[str, str, float]] = []
-                            for partition, item_id, score in raw_hits:
-                                row = rows.get((partition, item_id))
-                                if row is None:
-                                    continue
-                                if grp_prefixes and not _grp_matches_prefixes(
-                                    row["grp"] or "", grp_prefixes
-                                ):
-                                    continue
-                                meta = json.loads(row["meta_json"] or "{}")
-                                if filters and not _passes_meta_filters(
-                                    meta, filters
-                                ):
-                                    continue
-                                filtered.append((partition, item_id, score))
-                            vec_hits_by_family[family] = filtered[: tuning.vec_k]
-                        else:
-                            vec_hits_by_family[family] = raw_hits[: tuning.vec_k]
 
         merged: dict[tuple[str, str], dict] = {}
         query_term_list = list(all_terms)

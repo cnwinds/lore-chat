@@ -24,7 +24,7 @@ QUERY = "独有词Zeta"
 
 def _wire(cards, tmp_path, embedder, tuning=None):
     idx_dir = tmp_path / "owner_idx"
-    search = SearchIndex(idx_dir / "partitioned.db", idx_dir / "vec", embedder)
+    search = SearchIndex(idx_dir / "partitioned.db", embedder)
     index = OwnerMemoryIndex(
         search,
         cards.owner.store,

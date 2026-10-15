@@ -1,4 +1,4 @@
-"""在导入 Chroma / FTS 之前将过旧的系统 sqlite3 替换为 pysqlite3。"""
+"""在使用 FTS5 之前将过旧的系统 sqlite3 替换为 pysqlite3。"""
 
 from __future__ import annotations
 

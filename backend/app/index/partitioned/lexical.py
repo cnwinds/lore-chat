@@ -5,11 +5,14 @@ import json
 import hashlib
 import re
 import sqlite3
+import threading
 import time
 from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+from app.closing import close_quietly
+from app.index.partitioned import vectors
 from app.index.partitioned.tokenize import TOKENIZER_VERSION, index_terms
 from app.time import now_iso_seconds
 
@@ -63,17 +66,46 @@ def _sql_bind_value(value: str | int | float | bool) -> str | int | float:
 
 
 class PartitionedLexical:
-    """partitioned.db：清单 + 每族 FTS5；每次操作独立连接。"""
+    """partitioned.db：清单 + 每族 FTS5；每线程复用一条连接，close() 后退回每次独立连接。"""
 
     def __init__(self, path: str | Path):
         self._path = str(path)
+        self._local = threading.local()
+        self._conns_lock = threading.Lock()
+        self._conns: dict[threading.Thread, sqlite3.Connection] = {}
+        self._closed = False
         Path(self._path).parent.mkdir(parents=True, exist_ok=True)
         self._ensure_schema()
 
-    def _connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self._path, timeout=5)
+    def _open(self) -> sqlite3.Connection:
+        conn = sqlite3.connect(self._path, timeout=5, check_same_thread=False)
         conn.row_factory = sqlite3.Row
         return conn
+
+    def _connect(self) -> sqlite3.Connection:
+        # 调用方只用 `with conn:` 收尾事务、不关闭连接，同一线程内不得嵌套。
+        if self._closed:
+            return self._open()
+        conn = getattr(self._local, "conn", None)
+        if conn is not None:
+            return conn
+        conn = self._open()
+        with self._conns_lock:
+            if self._closed:
+                return conn
+            for thread in [t for t in self._conns if not t.is_alive()]:
+                close_quietly(self._conns.pop(thread))
+            self._conns[threading.current_thread()] = conn
+        self._local.conn = conn
+        return conn
+
+    def close(self) -> None:
+        with self._conns_lock:
+            self._closed = True
+            conns = list(self._conns.values())
+            self._conns.clear()
+        for conn in conns:
+            close_quietly(conn)
 
     def _ensure_grp_column(self, conn: sqlite3.Connection) -> None:
         cols = {
@@ -126,6 +158,31 @@ class PartitionedLexical:
             )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS items_pending ON items(vec_state, vec_next_try_at, updated_at)"
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS vectors(
+                  partition TEXT NOT NULL,
+                  item_id TEXT NOT NULL,
+                  family TEXT NOT NULL,
+                  model TEXT NOT NULL,
+                  vec BLOB NOT NULL,
+                  PRIMARY KEY (partition, item_id)
+                )
+                """
+            )
+            # 向量曾存在 Chroma；没有对应向量行的「已嵌入」条目交后台重嵌。
+            conn.execute(
+                """
+                UPDATE items
+                SET vec_state='pending', vec_model=NULL, vec_attempts=0, vec_next_try_at=0
+                WHERE vec_state='ok' AND NOT EXISTS (
+                  SELECT 1 FROM vectors v
+                  WHERE v.partition = items.partition
+                    AND v.item_id = items.item_id
+                    AND v.model = items.vec_model
+                )
+                """
             )
             for family in FAMILIES:
                 conn.execute(
@@ -345,6 +402,41 @@ class PartitionedLexical:
             for r in rows
         ]
 
+    def vector_top_k(
+        self,
+        family: str,
+        model: str,
+        query: Sequence[float],
+        partitions: list[str],
+        k: int,
+        filters: Sequence[Any] = (),
+        *,
+        group_prefixes: Sequence[str] | None = None,
+        batch_size: int = 512,
+    ) -> list[tuple[str, str, float]]:
+        if not partitions or k <= 0:
+            return []
+        placeholders = ",".join("?" * len(partitions))
+        filter_sql, filter_params = self._filter_sql_clauses(filters)
+        grp_sql, grp_params = self._group_prefix_sql_clauses(group_prefixes or ())
+        with self._connect() as conn:
+            cur = conn.execute(
+                f"""
+                SELECT v.partition, v.item_id, v.vec
+                FROM vectors v
+                JOIN items i ON i.partition = v.partition AND i.item_id = v.item_id
+                WHERE v.family=? AND v.model=? AND v.partition IN ({placeholders})
+                  AND i.vec_state='ok'
+                {filter_sql}{grp_sql}
+                """,
+                [family, model, *partitions, *filter_params, *grp_params],
+            )
+            try:
+                batches = iter(lambda: cur.fetchmany(batch_size), [])
+                return vectors.top_k(batches, query, k)
+            finally:
+                cur.close()
+
     def like_search(
         self,
         family: str,
@@ -403,7 +495,6 @@ class PartitionedLexical:
         meta: dict[str, str | int | float | bool],
         h: str,
         row: sqlite3.Row | None,
-        vec_deletes: list[tuple[str, str, str | None]],
         now: str,
     ) -> str:
         """返回 added | updated | unchanged | moved。"""
@@ -443,9 +534,10 @@ class PartitionedLexical:
             )
             return "unchanged"
 
-        old_model = row["vec_model"]
-        if row["vec_state"] == "ok" and old_model:
-            vec_deletes.append((partition, item_id, old_model))
+        conn.execute(
+            "DELETE FROM vectors WHERE partition=? AND item_id=?",
+            (partition, item_id),
+        )
         conn.execute(
             """
             UPDATE items SET content_hash=?, text=?, meta_json=?, grp=?,
@@ -480,7 +572,7 @@ class PartitionedLexical:
         desired: dict[str, tuple[str, dict[str, str | int | float | bool], str]],
         *,
         delete_absent: bool,
-    ) -> tuple[Any, list[tuple[str, str, str | None]]]:
+    ) -> tuple[int, int, int, int]:
         return self._sync_scope_tx(
             partition,
             family,
@@ -498,7 +590,7 @@ class PartitionedLexical:
         desired: dict[str, tuple[str, dict[str, str | int | float | bool], str]],
         *,
         delete_absent: bool = True,
-    ) -> tuple[Any, list[tuple[str, str, str | None]]]:
+    ) -> tuple[int, int, int, int]:
         return self._sync_scope_tx(
             partition,
             family,
@@ -506,6 +598,23 @@ class PartitionedLexical:
             group=group,
             scope="group",
             delete_absent=delete_absent,
+        )
+
+    @staticmethod
+    def _delete_item(
+        conn: sqlite3.Connection, partition: str, family: str, item_id: str
+    ) -> None:
+        conn.execute(
+            "DELETE FROM items WHERE partition=? AND item_id=?",
+            (partition, item_id),
+        )
+        conn.execute(
+            f"DELETE FROM fts_{family} WHERE partition=? AND item_id=?",
+            (partition, item_id),
+        )
+        conn.execute(
+            "DELETE FROM vectors WHERE partition=? AND item_id=?",
+            (partition, item_id),
         )
 
     def _sync_scope_tx(
@@ -517,9 +626,8 @@ class PartitionedLexical:
         group: str,
         scope: str,
         delete_absent: bool,
-    ) -> tuple[Any, list[tuple[str, str, str | None]]]:
+    ) -> tuple[int, int, int, int]:
         added = updated = removed = unchanged = 0
-        vec_deletes: list[tuple[str, str, str | None]] = []
         now = now_iso_seconds()
         with self._connect() as conn:
             conn.execute("BEGIN")
@@ -535,10 +643,8 @@ class PartitionedLexical:
                         (partition, group),
                     ).fetchall()
                 existing_in_scope = {r["item_id"]: r for r in existing_rows}
-                if scope == "partition":
-                    all_partition = dict(existing_in_scope)
-                else:
-                    all_partition = dict(existing_in_scope)
+                all_partition = dict(existing_in_scope)
+                if scope != "partition":
                     desired_ids_list = list(desired.keys())
                     for i in range(0, len(desired_ids_list), 500):
                         batch_ids = desired_ids_list[i : i + 500]
@@ -566,7 +672,6 @@ class PartitionedLexical:
                         meta=meta,
                         h=h,
                         row=row,
-                        vec_deletes=vec_deletes,
                         now=now,
                     )
                     if outcome == "added":
@@ -581,159 +686,71 @@ class PartitionedLexical:
                         unchanged += 1
 
                 if delete_absent:
-                    for item_id, row in existing_in_scope.items():
+                    for item_id in existing_in_scope:
                         if item_id not in desired_ids:
-                            if row["vec_state"] == "ok" and row["vec_model"]:
-                                vec_deletes.append(
-                                    (partition, item_id, row["vec_model"])
-                                )
-                            conn.execute(
-                                "DELETE FROM items WHERE partition=? AND item_id=?",
-                                (partition, item_id),
-                            )
-                            conn.execute(
-                                f"DELETE FROM fts_{family} WHERE partition=? AND item_id=?",
-                                (partition, item_id),
-                            )
+                            self._delete_item(conn, partition, family, item_id)
                             removed += 1
 
                 conn.commit()
             except Exception:
                 conn.rollback()
                 raise
-        return (added, updated, removed, unchanged), vec_deletes
+        return added, updated, removed, unchanged
 
-    def drop_group_tx(
-        self, partition: str, family: str, group: str
-    ) -> tuple[int, list[tuple[str, str, str | None]]]:
-        vec_deletes: list[tuple[str, str, str | None]] = []
+    def _delete_where_tx(
+        self, family: str, where: str, params: tuple[Any, ...]
+    ) -> int:
         with self._connect() as conn:
             conn.execute("BEGIN")
             try:
                 rows = conn.execute(
-                    "SELECT item_id, vec_state, vec_model FROM items WHERE partition=? AND grp=?",
-                    (partition, group),
+                    f"SELECT partition, item_id FROM items WHERE {where}", params
                 ).fetchall()
                 for r in rows:
-                    if r["vec_state"] == "ok" and r["vec_model"]:
-                        vec_deletes.append(
-                            (partition, r["item_id"], r["vec_model"])
-                        )
-                conn.execute(
-                    "DELETE FROM items WHERE partition=? AND grp=?",
-                    (partition, group),
-                )
-                for r in rows:
-                    conn.execute(
-                        f"DELETE FROM fts_{family} WHERE partition=? AND item_id=?",
-                        (partition, r["item_id"]),
-                    )
-                removed = len(rows)
+                    self._delete_item(conn, r["partition"], family, r["item_id"])
                 conn.commit()
             except Exception:
                 conn.rollback()
                 raise
-        return removed, vec_deletes
+        return len(rows)
 
-    def drop_groups_tx(
-        self, partition: str, family: str, prefix: str
-    ) -> tuple[int, list[tuple[str, str, str | None]]]:
+    def drop_group_tx(self, partition: str, family: str, group: str) -> int:
+        return self._delete_where_tx(
+            family, "partition=? AND grp=?", (partition, group)
+        )
+
+    def drop_groups_tx(self, partition: str, family: str, prefix: str) -> int:
         upper = prefix + _GRP_PREFIX_UPPER_SUFFIX
-        vec_deletes: list[tuple[str, str, str | None]] = []
-        with self._connect() as conn:
-            conn.execute("BEGIN")
-            try:
-                rows = conn.execute(
-                    """
-                    SELECT item_id, vec_state, vec_model FROM items
-                    WHERE partition=? AND grp >= ? AND grp < ?
-                    """,
-                    (partition, prefix, upper),
-                ).fetchall()
-                for r in rows:
-                    if r["vec_state"] == "ok" and r["vec_model"]:
-                        vec_deletes.append(
-                            (partition, r["item_id"], r["vec_model"])
-                        )
-                conn.execute(
-                    """
-                    DELETE FROM items
-                    WHERE partition=? AND grp >= ? AND grp < ?
-                    """,
-                    (partition, prefix, upper),
-                )
-                for r in rows:
-                    conn.execute(
-                        f"DELETE FROM fts_{family} WHERE partition=? AND item_id=?",
-                        (partition, r["item_id"]),
-                    )
-                removed = len(rows)
-                conn.commit()
-            except Exception:
-                conn.rollback()
-                raise
-        return removed, vec_deletes
+        return self._delete_where_tx(
+            family,
+            "partition=? AND grp >= ? AND grp < ?",
+            (partition, prefix, upper),
+        )
 
     def delete_items_tx(
         self, partition: str, family: str, item_ids: list[str]
-    ) -> tuple[int, list[tuple[str, str, str | None]]]:
-        vec_deletes: list[tuple[str, str, str | None]] = []
+    ) -> int:
         removed = 0
         with self._connect() as conn:
             conn.execute("BEGIN")
             try:
                 for item_id in item_ids:
                     row = conn.execute(
-                        "SELECT vec_state, vec_model FROM items WHERE partition=? AND item_id=?",
+                        "SELECT 1 FROM items WHERE partition=? AND item_id=?",
                         (partition, item_id),
                     ).fetchone()
                     if row is None:
                         continue
-                    if row["vec_state"] == "ok" and row["vec_model"]:
-                        vec_deletes.append((partition, item_id, row["vec_model"]))
-                    conn.execute(
-                        "DELETE FROM items WHERE partition=? AND item_id=?",
-                        (partition, item_id),
-                    )
-                    conn.execute(
-                        f"DELETE FROM fts_{family} WHERE partition=? AND item_id=?",
-                        (partition, item_id),
-                    )
+                    self._delete_item(conn, partition, family, item_id)
                     removed += 1
                 conn.commit()
             except Exception:
                 conn.rollback()
                 raise
-        return removed, vec_deletes
+        return removed
 
-    def drop_partition_tx(
-        self, partition: str, family: str
-    ) -> tuple[int, list[tuple[str, str, str | None]]]:
-        vec_deletes: list[tuple[str, str, str | None]] = []
-        with self._connect() as conn:
-            conn.execute("BEGIN")
-            try:
-                rows = conn.execute(
-                    "SELECT item_id, vec_state, vec_model FROM items WHERE partition=?",
-                    (partition,),
-                ).fetchall()
-                for r in rows:
-                    if r["vec_state"] == "ok" and r["vec_model"]:
-                        vec_deletes.append(
-                            (partition, r["item_id"], r["vec_model"])
-                        )
-                conn.execute(
-                    "DELETE FROM items WHERE partition=?", (partition,)
-                )
-                conn.execute(
-                    f"DELETE FROM fts_{family} WHERE partition=?", (partition,)
-                )
-                removed = len(rows)
-                conn.commit()
-            except Exception:
-                conn.rollback()
-                raise
-        return removed, vec_deletes
+    def drop_partition_tx(self, partition: str, family: str) -> int:
+        return self._delete_where_tx(family, "partition=?", (partition,))
 
     def select_embed_pending(
         self,
@@ -768,15 +785,28 @@ class PartitionedLexical:
                     f"""
                     SELECT partition, item_id, content_hash, family, text, vec_model, meta_json
                     FROM items
-                    WHERE vec_state='ok' AND vec_model IS NOT NULL AND vec_model != ?
+                    WHERE vec_state='ok' AND vec_next_try_at <= ?
+                      AND vec_model IS NOT NULL AND vec_model != ?
                     {fam_clause}
                     ORDER BY updated_at DESC
                     LIMIT ?
                     """,
-                    (active_model, *fam_params, remaining),
+                    (now, active_model, *fam_params, remaining),
                 ).fetchall()
                 out.extend(extra)
             return out
+
+    def has_stale_vectors(self, active_model: str) -> bool:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT 1 FROM items
+                WHERE vec_state='ok' AND vec_model IS NOT NULL AND vec_model != ?
+                LIMIT 1
+                """,
+                (active_model,),
+            ).fetchone()
+            return row is not None
 
     def has_ok_items(self) -> bool:
         with self._connect() as conn:
@@ -811,39 +841,45 @@ class PartitionedLexical:
                 conn.rollback()
                 raise
 
-    def mark_embed_ok(
-        self,
-        partition: str,
-        item_id: str,
-        *,
-        content_hash: str,
-        model: str,
-    ) -> bool:
-        """哈希仍匹配才更新；返回是否写入。"""
+    def store_embeddings(
+        self, entries: Sequence[tuple[str, str, str, str, bytes]]
+    ) -> list[tuple[str, str]]:
+        """(partition, item_id, content_hash, model, vec)；哈希仍匹配才写，返回写入的键。"""
+        written: list[tuple[str, str]] = []
+        if not entries:
+            return written
         with self._connect() as conn:
-            row = conn.execute(
-                "SELECT content_hash FROM items WHERE partition=? AND item_id=?",
-                (partition, item_id),
-            ).fetchone()
-            if row is None or row["content_hash"] != content_hash:
-                return False
-            conn.execute(
-                """
-                UPDATE items SET vec_state='ok', vec_model=?, vec_attempts=0, vec_next_try_at=0
-                WHERE partition=? AND item_id=?
-                """,
-                (model, partition, item_id),
-            )
-            conn.commit()
-            return True
-
-    def count_by_vec_model(self, family: str, model: str) -> int:
-        with self._connect() as conn:
-            row = conn.execute(
-                "SELECT count(*) AS c FROM items WHERE family=? AND vec_model=?",
-                (family, model),
-            ).fetchone()
-            return int(row["c"])
+            conn.execute("BEGIN")
+            try:
+                for partition, item_id, h, model, vec in entries:
+                    row = conn.execute(
+                        "SELECT family, content_hash FROM items WHERE partition=? AND item_id=?",
+                        (partition, item_id),
+                    ).fetchone()
+                    if row is None or row["content_hash"] != h:
+                        continue
+                    conn.execute(
+                        """
+                        INSERT INTO vectors(partition, item_id, family, model, vec)
+                        VALUES (?, ?, ?, ?, ?)
+                        ON CONFLICT(partition, item_id) DO UPDATE SET
+                          family=excluded.family, model=excluded.model, vec=excluded.vec
+                        """,
+                        (partition, item_id, row["family"], model, vec),
+                    )
+                    conn.execute(
+                        """
+                        UPDATE items SET vec_state='ok', vec_model=?, vec_attempts=0, vec_next_try_at=0
+                        WHERE partition=? AND item_id=?
+                        """,
+                        (model, partition, item_id),
+                    )
+                    written.append((partition, item_id))
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return written
 
     def on_embedder_changed(self) -> None:
         with self._connect() as conn:
@@ -865,19 +901,3 @@ class PartitionedLexical:
             )
             conn.commit()
         self._ensure_schema()
-
-    def rows_for_adopt(
-        self, partition: str, item_ids: list[str]
-    ) -> dict[str, sqlite3.Row]:
-        if not item_ids:
-            return {}
-        out: dict[str, sqlite3.Row] = {}
-        with self._connect() as conn:
-            for iid in item_ids:
-                row = conn.execute(
-                    "SELECT * FROM items WHERE partition=? AND item_id=?",
-                    (partition, iid),
-                ).fetchone()
-                if row:
-                    out[iid] = row
-        return out

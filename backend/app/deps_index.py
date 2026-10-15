@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from app.config import Settings
 from app.index.conversation_index import ConversationIndex
 from app.index.indexer import Indexer
-from app.index.partitioned import LLMEmbedder, SearchIndex
+from app.index.partitioned import LLMEmbedder, SearchIndex, remove_legacy_vector_dir
 from app.index.revision import IndexRevision
 from app.engine.retriever import Retriever
 from app.models.llm import LLMClient
@@ -44,9 +44,9 @@ def build_index_subgraph(
     system_layer_prefix: str,
 ) -> IndexSubgraph:
     index_dir = settings.kb_path / ".kb" / "index"
+    remove_legacy_vector_dir(index_dir)
     search_index = SearchIndex(
         index_dir / "partitioned.db",
-        index_dir / "vec",
         LLMEmbedder(llm),
         rrf_k=settings.rrf_k,
     )

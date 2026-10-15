@@ -16,7 +16,6 @@ def _owner_stack(tmp_path):
     idx_dir = tmp_path / "idx"
     search = SearchIndex(
         idx_dir / "partitioned.db",
-        idx_dir / "vec",
         FakeEmbedder(),
     )
     owner_index = OwnerMemoryIndex(search, store)

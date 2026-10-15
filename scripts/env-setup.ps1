@@ -176,10 +176,7 @@ function Ensure-BackendVenv([string]$backendDir) {
 
         & $venvPython -m pip install --upgrade pip | Out-Null
         & $venvPython -m pip install -r requirements.txt
-        if ($LASTEXITCODE -ne 0) {
-            Write-Warn "部分依赖安装失败，尝试仅安装 chromadb 预编译包..."
-            & $venvPython -m pip install "chromadb==0.5.*" --only-binary :all:
-        }
+        if ($LASTEXITCODE -ne 0) { throw "后端依赖安装失败" }
         Write-Ok "后端虚拟环境就绪"
         return $venvPython
     } finally {
